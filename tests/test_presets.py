@@ -2398,3 +2398,134 @@ class TestPresetEnableDisable:
 
         assert result.exit_code == 1
         assert "corrupted state" in result.output.lower()
+
+
+# ===== Template Listing / Discovery Tests (#1846) =====
+
+class TestListAvailable:
+    """Test PresetResolver.list_available template discovery."""
+
+    def test_list_available_core_templates(self, project_dir):
+        """Discovers core templates."""
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "spec-template.md").write_text("# Spec")
+        (templates_dir / "other-template.md").write_text("# Other")
+
+        resolver = PresetResolver(project_dir)
+        available = resolver.list_available("template")
+
+        names = [e["name"] for e in available]
+        assert "spec-template" in names
+        assert "other-template" in names
+        assert all(e["source"] == "core" for e in available)
+
+    def test_list_available_core_commands(self, project_dir):
+        """Discovers core commands."""
+        commands_dir = project_dir / ".specify" / "templates" / "commands"
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        (commands_dir / "speckit.specify.md").write_text("# Specify")
+
+        resolver = PresetResolver(project_dir)
+        available = resolver.list_available("command")
+
+        assert len(available) == 1
+        assert available[0]["name"] == "speckit.specify"
+        assert available[0]["source"] == "core"
+
+    def test_list_available_core_scripts(self, project_dir):
+        """Discovers core scripts."""
+        scripts_dir = project_dir / ".specify" / "templates" / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "setup.sh").write_text("#!/bin/bash")
+
+        resolver = PresetResolver(project_dir)
+        available = resolver.list_available("script")
+
+        assert len(available) == 1
+        assert available[0]["name"] == "setup"
+        assert available[0]["source"] == "core"
+
+    def test_list_available_extension_templates(self, project_dir):
+        """Discovers templates from extensions."""
+        ext_dir = project_dir / ".specify" / "extensions" / "my-ext"
+        templates_dir = ext_dir / "templates"
+        templates_dir.mkdir(parents=True)
+        (templates_dir / "ext-template.md").write_text("# Ext")
+
+        # Register in the extension registry
+        extensions_dir = project_dir / ".specify" / "extensions"
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("my-ext", {"version": "2.0.0", "enabled": True, "priority": 5})
+
+        resolver = PresetResolver(project_dir)
+        available = resolver.list_available("template")
+
+        ext_entries = [e for e in available if e["name"] == "ext-template"]
+        assert len(ext_entries) == 1
+        assert "extension:my-ext" in ext_entries[0]["source"]
+        assert "v2.0.0" in ext_entries[0]["source"]
+
+    def test_list_available_higher_priority_wins(self, project_dir):
+        """When same template name exists in multiple sources, higher priority wins."""
+        # Core template
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "shared.md").write_text("# Core version")
+
+        # Extension template with same name (higher priority)
+        ext_dir = project_dir / ".specify" / "extensions" / "override-ext"
+        ext_templates_dir = ext_dir / "templates"
+        ext_templates_dir.mkdir(parents=True)
+        (ext_templates_dir / "shared.md").write_text("# Extension version")
+
+        extensions_dir = project_dir / ".specify" / "extensions"
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("override-ext", {"version": "1.0.0", "enabled": True, "priority": 5})
+
+        resolver = PresetResolver(project_dir)
+        available = resolver.list_available("template")
+
+        # Only one entry for "shared" — extension wins over core
+        shared_entries = [e for e in available if e["name"] == "shared"]
+        assert len(shared_entries) == 1
+        assert "extension:override-ext" in shared_entries[0]["source"]
+
+    def test_list_available_override_wins_over_all(self, project_dir):
+        """Project overrides take highest priority."""
+        # Core template
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "target.md").write_text("# Core")
+
+        # Override
+        overrides_dir = templates_dir / "overrides"
+        overrides_dir.mkdir(parents=True, exist_ok=True)
+        (overrides_dir / "target.md").write_text("# Override")
+
+        resolver = PresetResolver(project_dir)
+        available = resolver.list_available("template")
+
+        target_entries = [e for e in available if e["name"] == "target"]
+        assert len(target_entries) == 1
+        assert target_entries[0]["source"] == "project override"
+
+    def test_list_available_sorted_by_name(self, project_dir):
+        """Results are sorted alphabetically by name."""
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "zebra.md").write_text("# Z")
+        (templates_dir / "alpha.md").write_text("# A")
+        (templates_dir / "middle.md").write_text("# M")
+
+        resolver = PresetResolver(project_dir)
+        available = resolver.list_available("template")
+
+        names = [e["name"] for e in available]
+        assert names == sorted(names)
+
+    def test_list_available_empty(self, project_dir):
+        """Returns empty list when no templates of the given type exist."""
+        resolver = PresetResolver(project_dir)
+        available = resolver.list_available("script")
+        assert available == []

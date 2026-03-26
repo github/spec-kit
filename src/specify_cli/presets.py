@@ -24,7 +24,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
-from .extensions import ExtensionRegistry, normalize_priority
+from .extensions import ExtensionResolver, normalize_priority
 
 
 @dataclass
@@ -1529,48 +1529,7 @@ class PresetResolver:
         self.presets_dir = project_root / ".specify" / "presets"
         self.overrides_dir = self.templates_dir / "overrides"
         self.extensions_dir = project_root / ".specify" / "extensions"
-
-    def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
-        """Build unified list of registered and unregistered extensions sorted by priority.
-
-        Registered extensions use their stored priority; unregistered directories
-        get implicit priority=10. Results are sorted by (priority, ext_id) for
-        deterministic ordering.
-
-        Returns:
-            List of (priority, ext_id, metadata_or_none) tuples sorted by priority.
-        """
-        if not self.extensions_dir.exists():
-            return []
-
-        registry = ExtensionRegistry(self.extensions_dir)
-        # Use keys() to track ALL extensions (including corrupted entries) without deep copy
-        # This prevents corrupted entries from being picked up as "unregistered" dirs
-        registered_extension_ids = registry.keys()
-
-        # Get all registered extensions including disabled; we filter disabled manually below
-        all_registered = registry.list_by_priority(include_disabled=True)
-
-        all_extensions: list[tuple[int, str, dict | None]] = []
-
-        # Only include enabled extensions in the result
-        for ext_id, metadata in all_registered:
-            # Skip disabled extensions
-            if not metadata.get("enabled", True):
-                continue
-            priority = normalize_priority(metadata.get("priority") if metadata else None)
-            all_extensions.append((priority, ext_id, metadata))
-
-        # Add unregistered directories with implicit priority=10
-        for ext_dir in self.extensions_dir.iterdir():
-            if not ext_dir.is_dir() or ext_dir.name.startswith("."):
-                continue
-            if ext_dir.name not in registered_extension_ids:
-                all_extensions.append((10, ext_dir.name, None))
-
-        # Sort by (priority, ext_id) for deterministic ordering
-        all_extensions.sort(key=lambda x: (x[0], x[1]))
-        return all_extensions
+        self._ext_resolver = ExtensionResolver(project_root)
 
     def resolve(
         self,
@@ -1624,18 +1583,10 @@ class PresetResolver:
                     if candidate.exists():
                         return candidate
 
-        # Priority 3: Extension-provided templates (sorted by priority — lower number wins)
-        for _priority, ext_id, _metadata in self._get_all_extensions_by_priority():
-            ext_dir = self.extensions_dir / ext_id
-            if not ext_dir.is_dir():
-                continue
-            for subdir in subdirs:
-                if subdir:
-                    candidate = ext_dir / subdir / f"{template_name}{ext}"
-                else:
-                    candidate = ext_dir / f"{template_name}{ext}"
-                if candidate.exists():
-                    return candidate
+        # Priority 3: Extension-provided templates (delegated to ExtensionResolver)
+        ext_result = self._ext_resolver.resolve(template_name, template_type)
+        if ext_result is not None:
+            return ext_result
 
         # Priority 4: Core templates
         if template_type == "template":
@@ -1693,7 +1644,7 @@ class PresetResolver:
                 except ValueError:
                     continue
 
-        for _priority, ext_id, ext_meta in self._get_all_extensions_by_priority():
+        for _priority, ext_id, ext_meta in self._ext_resolver.get_all_by_priority():
             ext_dir = self.extensions_dir / ext_id
             if not ext_dir.is_dir():
                 continue
@@ -1714,3 +1665,109 @@ class PresetResolver:
                 continue
 
         return {"path": resolved_str, "source": "core"}
+
+    def list_available(
+        self,
+        template_type: str = "template",
+    ) -> List[Dict[str, str]]:
+        """List all available templates of a given type with source attribution.
+
+        Walks the full priority stack and collects all discoverable templates.
+        For templates that exist in multiple sources, only the winning (highest
+        priority) source is included.
+
+        Args:
+            template_type: Template type ("template", "command", or "script")
+
+        Returns:
+            List of dicts with 'name', 'path', and 'source' keys, sorted by name.
+
+        Raises:
+            ValueError: If template_type is not one of "template", "command", "script"
+        """
+        if template_type not in VALID_PRESET_TEMPLATE_TYPES:
+            raise ValueError(
+                f"Invalid template type '{template_type}': "
+                f"must be one of {sorted(VALID_PRESET_TEMPLATE_TYPES)}"
+            )
+
+        seen: set[str] = set()
+        results: List[Dict[str, str]] = []
+
+        # Determine file extension and subdirectory mapping
+        ext = ".sh" if template_type == "script" else ".md"
+        if template_type == "template":
+            subdirs = ["templates", ""]
+        elif template_type == "command":
+            subdirs = ["commands"]
+        else:  # script
+            subdirs = ["scripts"]
+
+        def _name_matches_type(name: str) -> bool:
+            """Check if a file name matches the expected pattern for the template type.
+
+            Commands use dot notation (e.g. speckit.specify), templates use
+            hyphens only (e.g. spec-template). This prevents the shared
+            overrides directory from leaking commands into template listings
+            or vice versa. Scripts live in their own subdirectory so no
+            filtering is needed.
+            """
+            if template_type == "command":
+                return "." in name
+            if template_type == "template":
+                return "." not in name
+            return True
+
+        def _collect(directory: Path, source: str):
+            """Collect template files from a directory."""
+            if not directory.is_dir():
+                return
+            for f in sorted(directory.iterdir()):
+                if f.is_file() and f.suffix == ext:
+                    name = f.stem
+                    if name in seen:
+                        continue
+                    if not _name_matches_type(name):
+                        continue
+                    seen.add(name)
+                    results.append({
+                        "name": name,
+                        "path": str(f),
+                        "source": source,
+                    })
+
+        # Priority 1: Project-local overrides
+        if template_type == "script":
+            _collect(self.overrides_dir / "scripts", "project override")
+        else:
+            _collect(self.overrides_dir, "project override")
+
+        # Priority 2: Installed presets (sorted by priority)
+        if self.presets_dir.exists():
+            registry = PresetRegistry(self.presets_dir)
+            for pack_id, metadata in registry.list_by_priority():
+                pack_dir = self.presets_dir / pack_id
+                version = metadata.get("version", "?") if metadata else "?"
+                source_label = f"{pack_id} v{version}"
+                for subdir in subdirs:
+                    if subdir:
+                        _collect(pack_dir / subdir, source_label)
+                    else:
+                        _collect(pack_dir, source_label)
+
+        # Priority 3: Extension-provided templates (delegated to ExtensionResolver)
+        for entry in self._ext_resolver.list_templates(template_type):
+            if entry["name"] not in seen:
+                seen.add(entry["name"])
+                results.append(entry)
+
+        # Priority 4: Core templates
+        if template_type == "template":
+            _collect(self.templates_dir, "core")
+        elif template_type == "command":
+            _collect(self.templates_dir / "commands", "core")
+        elif template_type == "script":
+            _collect(self.templates_dir / "scripts", "core")
+
+        results.sort(key=lambda x: x["name"])
+        return results

@@ -140,11 +140,15 @@ class ExtensionManifest:
 
         # Validate provides section
         provides = self.data["provides"]
-        if "commands" not in provides or not provides["commands"]:
-            raise ValidationError("Extension must provide at least one command")
+        has_commands = "commands" in provides and provides["commands"]
+        has_scripts = "scripts" in provides and provides["scripts"]
+        if not has_commands and not has_scripts:
+            raise ValidationError(
+                "Extension must provide at least one command or script"
+            )
 
         # Validate commands
-        for cmd in provides["commands"]:
+        for cmd in provides.get("commands", []):
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
 
@@ -153,6 +157,33 @@ class ExtensionManifest:
                 raise ValidationError(
                     f"Invalid command name '{cmd['name']}': "
                     "must follow pattern 'speckit.{extension}.{command}'"
+                )
+
+        # Validate scripts
+        for script in provides.get("scripts", []):
+            if "name" not in script or "file" not in script:
+                raise ValidationError("Script missing 'name' or 'file'")
+
+            # Validate script name format
+            if not re.match(r'^[a-z0-9-]+$', script["name"]):
+                raise ValidationError(
+                    f"Invalid script name '{script['name']}': "
+                    "must be lowercase alphanumeric with hyphens only"
+                )
+
+            # Validate file path safety: must be relative, no anchored/drive
+            # paths, and no parent traversal components
+            file_path = script["file"]
+            p = Path(file_path)
+            if p.is_absolute() or p.anchor:
+                raise ValidationError(
+                    f"Invalid script file path '{file_path}': "
+                    "must be a relative path within the extension directory"
+                )
+            if ".." in p.parts:
+                raise ValidationError(
+                    f"Invalid script file path '{file_path}': "
+                    "must be a relative path within the extension directory"
                 )
 
     @property
@@ -183,7 +214,12 @@ class ExtensionManifest:
     @property
     def commands(self) -> List[Dict[str, Any]]:
         """Get list of provided commands."""
-        return self.data["provides"]["commands"]
+        return self.data["provides"].get("commands", [])
+
+    @property
+    def scripts(self) -> List[Dict[str, Any]]:
+        """Get list of provided scripts."""
+        return self.data["provides"].get("scripts", [])
 
     @property
     def hooks(self) -> Dict[str, Any]:
@@ -874,6 +910,16 @@ class ExtensionManager:
         ignore_fn = self._load_extensionignore(source_dir)
         shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
 
+        # Set execute permissions on extension scripts (POSIX only, best-effort)
+        if os.name == "posix":
+            for script in manifest.scripts:
+                script_path = dest_dir / script["file"]
+                if script_path.exists() and script_path.suffix == ".sh":
+                    try:
+                        script_path.chmod(script_path.stat().st_mode | 0o111)
+                    except OSError:
+                        pass
+
         # Register commands with AI agents
         registered_commands = {}
         if register_commands:
@@ -1066,6 +1112,7 @@ class ExtensionManager:
                     "priority": normalize_priority(metadata.get("priority")),
                     "installed_at": metadata.get("installed_at"),
                     "command_count": len(manifest.commands),
+                    "script_count": len(manifest.scripts),
                     "hook_count": len(manifest.hooks)
                 })
             except ValidationError:
@@ -1079,6 +1126,7 @@ class ExtensionManager:
                     "priority": normalize_priority(metadata.get("priority")),
                     "installed_at": metadata.get("installed_at"),
                     "command_count": 0,
+                    "script_count": 0,
                     "hook_count": 0
                 })
 
@@ -1103,6 +1151,178 @@ class ExtensionManager:
             return ExtensionManifest(manifest_path)
         except ValidationError:
             return None
+
+
+class ExtensionResolver:
+    """Resolves and discovers templates provided by installed extensions.
+
+    Handles priority-based ordering of extensions, template resolution,
+    and source attribution for extension-provided templates.
+
+    This class owns the extension tier of the template resolution stack.
+    PresetResolver delegates to it for extension lookups rather than
+    walking extension directories directly.
+    """
+
+    def __init__(self, project_root: Path):
+        self.project_root = project_root
+        self.extensions_dir = project_root / ".specify" / "extensions"
+
+    def get_all_by_priority(self) -> List[tuple]:
+        """Build unified list of registered and unregistered extensions sorted by priority.
+
+        Registered extensions use their stored priority; unregistered directories
+        get implicit priority=10. Results are sorted by (priority, ext_id) for
+        deterministic ordering.
+
+        Returns:
+            List of (priority, ext_id, metadata_or_none) tuples sorted by priority.
+        """
+        if not self.extensions_dir.exists():
+            return []
+
+        registry = ExtensionRegistry(self.extensions_dir)
+        registered_extension_ids = registry.keys()
+        all_registered = registry.list_by_priority(include_disabled=True)
+
+        all_extensions: list[tuple[int, str, dict | None]] = []
+
+        for ext_id, metadata in all_registered:
+            if not metadata.get("enabled", True):
+                continue
+            priority = normalize_priority(metadata.get("priority") if metadata else None)
+            all_extensions.append((priority, ext_id, metadata))
+
+        for ext_dir in self.extensions_dir.iterdir():
+            if not ext_dir.is_dir() or ext_dir.name.startswith("."):
+                continue
+            if ext_dir.name not in registered_extension_ids:
+                all_extensions.append((10, ext_dir.name, None))
+
+        all_extensions.sort(key=lambda x: (x[0], x[1]))
+        return all_extensions
+
+    def resolve(
+        self,
+        template_name: str,
+        template_type: str = "template",
+    ) -> Optional[Path]:
+        """Resolve a template name to its file path within extensions.
+
+        Args:
+            template_name: Template name (e.g., "spec-template")
+            template_type: Template type ("template", "command", or "script")
+
+        Returns:
+            Path to the resolved template file, or None if not found
+        """
+        subdirs, ext = self._type_config(template_type)
+
+        for _priority, ext_id, _metadata in self.get_all_by_priority():
+            ext_dir = self.extensions_dir / ext_id
+            if not ext_dir.is_dir():
+                continue
+            for subdir in subdirs:
+                if subdir:
+                    candidate = ext_dir / subdir / f"{template_name}{ext}"
+                else:
+                    candidate = ext_dir / f"{template_name}{ext}"
+                if candidate.exists():
+                    return candidate
+
+        return None
+
+    def resolve_with_source(
+        self,
+        template_name: str,
+        template_type: str = "template",
+    ) -> Optional[Dict[str, str]]:
+        """Resolve a template name and return source attribution.
+
+        Args:
+            template_name: Template name (e.g., "spec-template")
+            template_type: Template type ("template", "command", or "script")
+
+        Returns:
+            Dictionary with 'path' and 'source' keys, or None if not found
+        """
+        subdirs, ext = self._type_config(template_type)
+
+        for _priority, ext_id, ext_meta in self.get_all_by_priority():
+            ext_dir = self.extensions_dir / ext_id
+            if not ext_dir.is_dir():
+                continue
+            for subdir in subdirs:
+                if subdir:
+                    candidate = ext_dir / subdir / f"{template_name}{ext}"
+                else:
+                    candidate = ext_dir / f"{template_name}{ext}"
+                if candidate.exists():
+                    if ext_meta:
+                        version = ext_meta.get("version", "?")
+                        source = f"extension:{ext_id} v{version}"
+                    else:
+                        source = f"extension:{ext_id} (unregistered)"
+                    return {"path": str(candidate), "source": source}
+
+        return None
+
+    def list_templates(
+        self,
+        template_type: str = "template",
+    ) -> List[Dict[str, str]]:
+        """List all templates of a given type provided by extensions.
+
+        Returns templates sorted by extension priority, then alphabetically.
+
+        Args:
+            template_type: Template type ("template", "command", or "script")
+
+        Returns:
+            List of dicts with 'name', 'path', and 'source' keys.
+        """
+        subdirs, ext = self._type_config(template_type)
+        results: List[Dict[str, str]] = []
+        seen: set[str] = set()
+
+        for _priority, ext_id, ext_meta in self.get_all_by_priority():
+            ext_dir = self.extensions_dir / ext_id
+            if not ext_dir.is_dir():
+                continue
+
+            if ext_meta:
+                version = ext_meta.get("version", "?")
+                source_label = f"extension:{ext_id} v{version}"
+            else:
+                source_label = f"extension:{ext_id} (unregistered)"
+
+            for subdir in subdirs:
+                scan_dir = ext_dir / subdir if subdir else ext_dir
+                if not scan_dir.is_dir():
+                    continue
+                for f in sorted(scan_dir.iterdir()):
+                    if f.is_file() and f.suffix == ext:
+                        name = f.stem
+                        if name not in seen:
+                            seen.add(name)
+                            results.append({
+                                "name": name,
+                                "path": str(f),
+                                "source": source_label,
+                            })
+
+        return results
+
+    @staticmethod
+    def _type_config(template_type: str) -> tuple:
+        """Return (subdirs, file_extension) for a template type."""
+        if template_type == "template":
+            return ["templates", ""], ".md"
+        elif template_type == "command":
+            return ["commands"], ".md"
+        elif template_type == "script":
+            return ["scripts"], ".sh"
+        return [""], ".md"
 
 
 def version_satisfies(current: str, required: str) -> bool:
@@ -1165,6 +1385,38 @@ class CommandRegistrar:
         base = self._registrar.render_toml_command(frontmatter, body, ext_id)
         context_lines = f"# Extension: {ext_id}\n# Config: .specify/extensions/{ext_id}/\n"
         return base.rstrip("\n") + "\n" + context_lines
+
+    @staticmethod
+    def _filter_commands_for_installed_extensions(
+        commands: List[Dict[str, Any]],
+        project_root: Path,
+    ) -> List[Dict[str, Any]]:
+        """Filter out commands targeting extensions that are not installed.
+
+        Command names follow the pattern: speckit.<ext-id>.<cmd-name>
+        Core commands (e.g. speckit.specify) have only two parts — always kept.
+        Extension-specific commands are only kept if the target extension
+        directory exists under .specify/extensions/.
+
+        If the extensions directory does not exist, it is treated as empty
+        and all extension-scoped commands are filtered out (matching the
+        preset filtering behavior at presets.py:518-529).
+
+        Note: This method is not applied during extension self-registration
+        (all commands in an extension's own manifest are always registered).
+        It is designed for cross-boundary filtering, e.g. when presets provide
+        commands for extensions that may not be installed.
+        """
+        extensions_dir = project_root / ".specify" / "extensions"
+        filtered = []
+        for cmd in commands:
+            parts = cmd["name"].split(".")
+            if len(parts) >= 3 and parts[0] == "speckit":
+                ext_id = parts[1]
+                if not (extensions_dir / ext_id).is_dir():
+                    continue
+            filtered.append(cmd)
+        return filtered
 
     def register_commands_for_agent(
         self,
