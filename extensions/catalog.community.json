@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-19T12:08:20Z",
+  "updated_at": "2026-03-26T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -405,6 +405,36 @@
       "stars": 0,
       "created_at": "2026-03-17T00:00:00Z",
       "updated_at": "2026-03-17T00:00:00Z"
+    },
+    "plan-review": {
+      "name": "Plan Review Gate",
+      "id": "plan-review",
+      "description": "Require spec.md and plan.md to be merged via MR/PR before allowing task generation",
+      "author": "luno",
+      "version": "2.0.0",
+      "download_url": "https://github.com/luno/spec-kit-plan-review/archive/refs/tags/v2.0.0.zip",
+      "repository": "https://github.com/luno/spec-kit-plan-review",
+      "homepage": "https://github.com/luno/spec-kit-plan-review",
+      "documentation": "https://github.com/luno/spec-kit-plan-review/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "review",
+        "quality",
+        "workflow",
+        "gate"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-26T00:00:00Z",
+      "updated_at": "2026-03-26T00:00:00Z"
     },
     "jira": {
       "name": "Jira Integration",
