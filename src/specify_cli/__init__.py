@@ -1493,6 +1493,11 @@ def load_init_options(project_path: Path) -> dict[str, Any]:
 # Default skills directory for agents not in AGENT_CONFIG
 DEFAULT_SKILLS_DIR = ".agents/skills"
 
+# Backward-compatible export: kept for downstream tests/tools that still
+# import this symbol, even though skills directory resolution now relies on
+# AGENT_CONFIG folder + "skills" convention.
+AGENT_SKILLS_DIR_OVERRIDES: dict[str, str] = {}
+
 # Agents whose downloaded template already contains skills in the final layout.
 #
 # Technical debt note:
