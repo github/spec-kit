@@ -1467,11 +1467,21 @@ def ensure_claude_md(project_path: Path, tracker: StepTracker | None = None) -> 
     Claude Code expects `CLAUDE.md` at the project root; this file acts as a
     bridge to `.specify/memory/constitution.md` (the source of truth).
     """
+    memory_constitution = project_path / ".specify" / "memory" / "constitution.md"
     claude_file = project_path / "CLAUDE.md"
     if claude_file.exists():
         if tracker:
             tracker.add("claude-md", "Claude Code role file")
             tracker.skip("claude-md", "existing file preserved")
+        return
+
+    if not memory_constitution.exists():
+        detail = "constitution missing"
+        if tracker:
+            tracker.add("claude-md", "Claude Code role file")
+            tracker.skip("claude-md", detail)
+        else:
+            console.print(f"[yellow]Warning:[/yellow] Not creating CLAUDE.md because {memory_constitution} is missing")
         return
 
     content = (
