@@ -817,6 +817,9 @@ class PresetManager:
             skill_file = skill_subdir / "SKILL.md"
             if not skill_subdir.is_dir():
                 continue
+            if not skill_file.is_file():
+                # Only manage directories that contain the expected skill entrypoint.
+                continue
 
             # Try to find the core command template
             core_file = core_templates_dir / f"{short_name}.md" if core_templates_dir.exists() else None
@@ -1022,17 +1025,26 @@ class PresetManager:
         if not self.registry.is_installed(pack_id):
             return False
 
-        # Unregister commands from AI agents
         metadata = self.registry.get(pack_id)
-        registered_commands = metadata.get("registered_commands", {}) if metadata else {}
-        if registered_commands:
-            self._unregister_commands(registered_commands)
-
         # Restore original skills when preset is removed
         registered_skills = metadata.get("registered_skills", []) if metadata else []
+        registered_commands = metadata.get("registered_commands", {}) if metadata else {}
         pack_dir = self.presets_dir / pack_id
         if registered_skills:
             self._unregister_skills(registered_skills, pack_dir)
+            try:
+                from . import NATIVE_SKILLS_AGENTS
+            except ImportError:
+                NATIVE_SKILLS_AGENTS = set()
+            registered_commands = {
+                agent_name: cmd_names
+                for agent_name, cmd_names in registered_commands.items()
+                if agent_name not in NATIVE_SKILLS_AGENTS
+            }
+
+        # Unregister non-skill command files from AI agents.
+        if registered_commands:
+            self._unregister_commands(registered_commands)
 
         if pack_dir.exists():
             shutil.rmtree(pack_dir)

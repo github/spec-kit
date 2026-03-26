@@ -2249,6 +2249,62 @@ class TestPresetSkills:
         assert "extension:fakeext" in content
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
 
+    def test_preset_remove_skips_skill_dir_without_skill_file(self, project_dir, temp_dir):
+        """Preset removal should not delete arbitrary directories missing SKILL.md."""
+        self._write_init_options(project_dir, ai="codex")
+        skills_dir = project_dir / ".agents" / "skills"
+        stray_skill_dir = skills_dir / "speckit-fakeext-cmd"
+        stray_skill_dir.mkdir(parents=True, exist_ok=True)
+        note_file = stray_skill_dir / "notes.txt"
+        note_file.write_text("user content", encoding="utf-8")
+
+        preset_dir = temp_dir / "ext-skill-missing-file"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            "---\ndescription: Override fakeext cmd\n---\n\npreset:ext-skill-missing-file\n"
+        )
+        preset_manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "ext-skill-missing-file",
+                "name": "Ext Skill Missing File",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(preset_manifest, f)
+
+        manager = PresetManager(project_dir)
+        installed_preset_dir = manager.presets_dir / "ext-skill-missing-file"
+        shutil.copytree(preset_dir, installed_preset_dir)
+        manager.registry.add(
+            "ext-skill-missing-file",
+            {
+                "version": "1.0.0",
+                "source": str(preset_dir),
+                "provides_templates": ["speckit.fakeext.cmd"],
+                "registered_skills": ["speckit-fakeext-cmd"],
+                "priority": 10,
+            },
+        )
+
+        manager.remove("ext-skill-missing-file")
+
+        assert stray_skill_dir.is_dir()
+        assert note_file.read_text(encoding="utf-8") == "user content"
+
     def test_kimi_legacy_dotted_skill_override_still_applies(self, project_dir, temp_dir):
         """Preset overrides should still target legacy dotted Kimi skill directories."""
         self._write_init_options(project_dir, ai="kimi")
