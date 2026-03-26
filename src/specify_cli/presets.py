@@ -587,6 +587,68 @@ class PresetManager:
 
         return skills_dir
 
+    @staticmethod
+    def _skill_names_for_command(cmd_name: str) -> List[str]:
+        """Return the modern and legacy skill directory names for a command."""
+        raw_short_name = cmd_name
+        if raw_short_name.startswith("speckit."):
+            raw_short_name = raw_short_name[len("speckit."):]
+
+        skill_names = [f"speckit-{raw_short_name.replace('.', '-')}"]
+        legacy_skill_name = f"speckit.{raw_short_name}"
+        if legacy_skill_name not in skill_names:
+            skill_names.append(legacy_skill_name)
+
+        return skill_names
+
+    def _find_extension_skill_restore(self, skill_name: str) -> Optional[Dict[str, Any]]:
+        """Find the highest-priority installed extension template for a skill."""
+        from .extensions import ExtensionManifest, ValidationError
+
+        resolver = PresetResolver(self.project_root)
+        extensions_dir = self.project_root / ".specify" / "extensions"
+
+        for _priority, ext_id, _metadata in resolver._get_all_extensions_by_priority():
+            ext_dir = extensions_dir / ext_id
+            manifest_path = ext_dir / "extension.yml"
+            if not manifest_path.is_file():
+                continue
+
+            try:
+                manifest = ExtensionManifest(manifest_path)
+            except ValidationError:
+                continue
+
+            ext_root = ext_dir.resolve()
+            for cmd_info in manifest.commands:
+                cmd_name = cmd_info.get("name")
+                cmd_file_rel = cmd_info.get("file")
+                if not isinstance(cmd_name, str) or not isinstance(cmd_file_rel, str):
+                    continue
+                if skill_name not in self._skill_names_for_command(cmd_name):
+                    continue
+
+                cmd_path = Path(cmd_file_rel)
+                if cmd_path.is_absolute():
+                    continue
+
+                try:
+                    source_file = (ext_root / cmd_path).resolve()
+                    source_file.relative_to(ext_root)
+                except (OSError, ValueError):
+                    continue
+
+                if not source_file.is_file():
+                    continue
+
+                return {
+                    "command_name": cmd_name,
+                    "source_file": source_file,
+                    "source": f"extension:{manifest.id}",
+                }
+
+        return None
+
     def _register_skills(
         self,
         manifest: "PresetManifest",
@@ -656,8 +718,7 @@ class PresetManager:
             if raw_short_name.startswith("speckit."):
                 raw_short_name = raw_short_name[len("speckit."):]
             short_name = raw_short_name.replace(".", "-")
-            skill_name = f"speckit-{short_name}"
-            legacy_skill_name = f"speckit.{raw_short_name}"
+            skill_name, legacy_skill_name = self._skill_names_for_command(cmd_name)
 
             # Only overwrite skills that already exist under skills_dir,
             # including Kimi native skills when ai_skills is false.
@@ -747,7 +808,7 @@ class PresetManager:
 
             skill_subdir = skills_dir / skill_name
             skill_file = skill_subdir / "SKILL.md"
-            if not skill_file.exists():
+            if not skill_subdir.is_dir():
                 continue
 
             # Try to find the core command template
@@ -788,8 +849,43 @@ class PresetManager:
                     f"{body}\n"
                 )
                 skill_file.write_text(skill_content, encoding="utf-8")
+                continue
+
+            extension_restore = self._find_extension_skill_restore(skill_name)
+            if extension_restore:
+                content = extension_restore["source_file"].read_text(encoding="utf-8")
+                frontmatter, body = registrar.parse_frontmatter(content)
+                if isinstance(selected_ai, str):
+                    body = registrar.resolve_skill_placeholders(
+                        selected_ai, frontmatter, body, self.project_root
+                    )
+
+                command_name = extension_restore["command_name"]
+                title_name = command_name
+                if title_name.startswith("speckit."):
+                    title_name = title_name[len("speckit."):]
+                title_name = title_name.replace(".", " ").replace("-", " ").title()
+
+                frontmatter_data = {
+                    "name": skill_name,
+                    "description": frontmatter.get("description", f"Extension command: {command_name}"),
+                    "compatibility": "Requires spec-kit project structure with .specify/ directory",
+                    "metadata": {
+                        "author": "github-spec-kit",
+                        "source": extension_restore["source"],
+                    },
+                }
+                frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+                skill_content = (
+                    f"---\n"
+                    f"{frontmatter_text}\n"
+                    f"---\n\n"
+                    f"# {title_name} Skill\n\n"
+                    f"{body}\n"
+                )
+                skill_file.write_text(skill_content, encoding="utf-8")
             else:
-                # No core template — remove the skill entirely
+                # No core or extension template — remove the skill entirely
                 shutil.rmtree(skill_subdir)
 
     def install_from_directory(

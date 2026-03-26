@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Any
 
 import platform
+import re
 from copy import deepcopy
 import yaml
 
@@ -228,9 +229,28 @@ class CommandRegistrar:
                 continue
 
             for key, script_path in scripts.items():
-                if isinstance(script_path, str) and script_path.startswith("../../scripts/"):
-                    scripts[key] = f".specify/scripts/{script_path[14:]}"
+                if isinstance(script_path, str):
+                    scripts[key] = self._rewrite_project_relative_paths(script_path)
         return frontmatter
+
+    @staticmethod
+    def _rewrite_project_relative_paths(text: str) -> str:
+        """Rewrite repo-relative paths to their generated project locations."""
+        if not isinstance(text, str) or not text:
+            return text
+
+        for old, new in (
+            ("../../memory/", ".specify/memory/"),
+            ("../../scripts/", ".specify/scripts/"),
+            ("../../templates/", ".specify/templates/"),
+        ):
+            text = text.replace(old, new)
+
+        text = re.sub(r"(?<![\w.])/?memory/", ".specify/memory/", text)
+        text = re.sub(r"(?<![\w.])/?scripts/", ".specify/scripts/", text)
+        text = re.sub(r"(?<![\w.])/?templates/", ".specify/templates/", text)
+
+        return text.replace(".specify/.specify/", ".specify/").replace(".specify.specify/", ".specify/")
 
     def render_markdown_command(
         self,
@@ -390,7 +410,8 @@ class CommandRegistrar:
             agent_script_command = agent_script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{AGENT_SCRIPT}", agent_script_command)
 
-        return body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
+        body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
+        return CommandRegistrar._rewrite_project_relative_paths(body)
 
     def _convert_argument_placeholder(self, content: str, from_placeholder: str, to_placeholder: str) -> str:
         """Convert argument placeholder format.
