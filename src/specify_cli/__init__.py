@@ -1461,6 +1461,48 @@ def ensure_constitution_from_template(project_path: Path, tracker: StepTracker |
             console.print(f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]")
 
 
+def ensure_claude_md(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Create a minimal root `CLAUDE.md` for Claude Code if missing.
+
+    Claude Code expects `CLAUDE.md` at the project root; this file acts as a
+    bridge to `.specify/memory/constitution.md` (the source of truth).
+    """
+    claude_file = project_path / "CLAUDE.md"
+    if claude_file.exists():
+        if tracker:
+            tracker.add("claude-md", "Claude Code role file")
+            tracker.skip("claude-md", "existing file preserved")
+        return
+
+    content = (
+        "## Claude's Role\n"
+        "Read `.specify/memory/constitution.md` first. It is the authoritative source of truth for this project. "
+        "Everything in it is non-negotiable.\n\n"
+        "## SpecKit Commands\n"
+        "- `/speckit.specify` — generate spec\n"
+        "- `/speckit.plan` — generate plan\n"
+        "- `/speckit.tasks` — generate task list\n"
+        "- `/speckit.implement` — execute plan\n\n"
+        "## On Ambiguity\n"
+        "If a spec is missing, incomplete, or conflicts with the constitution — stop and ask. "
+        "Do not infer. Do not proceed.\n\n"
+    )
+
+    try:
+        claude_file.write_text(content, encoding="utf-8")
+        if tracker:
+            tracker.add("claude-md", "Claude Code role file")
+            tracker.complete("claude-md", "created")
+        else:
+            console.print("[cyan]Initialized CLAUDE.md for Claude Code[/cyan]")
+    except Exception as e:
+        if tracker:
+            tracker.add("claude-md", "Claude Code role file")
+            tracker.error("claude-md", str(e))
+        else:
+            console.print(f"[yellow]Warning: Could not create CLAUDE.md: {e}[/yellow]")
+
+
 INIT_OPTIONS_FILE = ".specify/init-options.json"
 
 
@@ -2071,6 +2113,8 @@ def init(
         ("constitution", "Constitution setup"),
     ]:
         tracker.add(key, label)
+    if selected_ai == "claude":
+        tracker.add("claude-md", "Claude Code role file")
     if ai_skills:
         tracker.add("ai-skills", "Install agent skills")
     for key, label in [
@@ -2136,6 +2180,9 @@ def init(
             ensure_executable_scripts(project_path, tracker=tracker)
 
             ensure_constitution_from_template(project_path, tracker=tracker)
+
+            if selected_ai == "claude":
+                ensure_claude_md(project_path, tracker=tracker)
 
             # Determine skills directory and migrate any legacy Kimi dotted skills.
             migrated_legacy_kimi_skills = 0

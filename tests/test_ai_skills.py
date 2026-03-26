@@ -693,6 +693,41 @@ class TestNewProjectCommandSkip:
     download_and_extract_template patched to create local fixtures.
     """
 
+    @pytest.mark.skipif(
+        shutil.which("bash") is None or shutil.which("zip") is None,
+        reason="offline scaffolding requires bash + zip",
+    )
+    def test_init_claude_creates_root_CLAUDE_md(self, tmp_path):
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "claude-proj"
+
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                str(target),
+                "--ai",
+                "claude",
+                "--offline",
+                "--ignore-agent-tools",
+                "--no-git",
+                "--script",
+                "sh",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+
+        claude_file = target / "CLAUDE.md"
+        assert claude_file.exists()
+
+        content = claude_file.read_text(encoding="utf-8")
+        assert "## Claude's Role" in content
+        assert "`.specify/memory/constitution.md`" in content
+        assert "/speckit.plan" in content
+
     def _fake_extract(self, agent, project_path, **_kwargs):
         """Simulate template extraction: create agent commands dir."""
         agent_cfg = AGENT_CONFIG.get(agent, {})
