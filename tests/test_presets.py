@@ -1942,10 +1942,10 @@ class TestInitOptions:
 class TestPresetSkills:
     """Tests for preset skill registration and unregistration."""
 
-    def _write_init_options(self, project_dir, ai="claude", ai_skills=True):
+    def _write_init_options(self, project_dir, ai="claude", ai_skills=True, script="sh"):
         from specify_cli import save_init_options
 
-        save_init_options(project_dir, {"ai": ai, "ai_skills": ai_skills})
+        save_init_options(project_dir, {"ai": ai, "ai_skills": ai_skills, "script": script})
 
     def _create_skill(self, skills_dir, skill_name, body="original body"):
         skill_dir = skills_dir / skill_name
@@ -2142,6 +2142,55 @@ class TestPresetSkills:
 
         metadata = manager.registry.get("self-test")
         assert "speckit-specify" in metadata.get("registered_skills", [])
+
+    def test_kimi_preset_skill_override_resolves_script_placeholders(self, project_dir, temp_dir):
+        """Kimi preset skill overrides should resolve {SCRIPT} and __AGENT__ placeholders."""
+        self._write_init_options(project_dir, ai="kimi", ai_skills=False, script="sh")
+        skills_dir = project_dir / ".kimi" / "skills"
+        self._create_skill(skills_dir, "speckit-specify", body="untouched")
+        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+
+        preset_dir = temp_dir / "kimi-placeholder-override"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.specify.md").write_text(
+            "---\n"
+            "description: Kimi placeholder override\n"
+            "scripts:\n"
+            "  sh: scripts/bash/create-new-feature.sh --json \"{ARGS}\"\n"
+            "---\n\n"
+            "Execute `{SCRIPT}` for __AGENT__\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "kimi-placeholder-override",
+                "name": "Kimi Placeholder Override",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.specify",
+                        "file": "commands/speckit.specify.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
+        assert "{SCRIPT}" not in content
+        assert "__AGENT__" not in content
+        assert "scripts/bash/create-new-feature.sh --json \"$ARGUMENTS\"" in content
+        assert "for kimi" in content
 
 
 class TestPresetSetPriority:

@@ -308,8 +308,8 @@ class CommandRegistrar:
         if not isinstance(frontmatter, dict):
             frontmatter = {}
 
-        if agent_name == "codex":
-            body = self._resolve_codex_skill_placeholders(frontmatter, body, project_root)
+        if agent_name in {"codex", "kimi"}:
+            body = self.resolve_skill_placeholders(agent_name, frontmatter, body, project_root)
 
         description = frontmatter.get("description", f"Spec-kit workflow command: {skill_name}")
         skill_frontmatter = {
@@ -324,13 +324,8 @@ class CommandRegistrar:
         return self.render_frontmatter(skill_frontmatter) + "\n" + body
 
     @staticmethod
-    def _resolve_codex_skill_placeholders(frontmatter: dict, body: str, project_root: Path) -> str:
-        """Resolve script placeholders for Codex skill overrides.
-
-        This intentionally scopes the fix to Codex, which is the newly
-        migrated runtime path in this PR. Existing Kimi behavior is left
-        unchanged for now.
-        """
+    def resolve_skill_placeholders(agent_name: str, frontmatter: dict, body: str, project_root: Path) -> str:
+        """Resolve script placeholders for skills-backed agents."""
         try:
             from . import load_init_options
         except ImportError:
@@ -376,7 +371,7 @@ class CommandRegistrar:
             agent_script_command = agent_script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{AGENT_SCRIPT}", agent_script_command)
 
-        return body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", "codex")
+        return body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
 
     def _convert_argument_placeholder(self, content: str, from_placeholder: str, to_placeholder: str) -> str:
         """Convert argument placeholder format.
