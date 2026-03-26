@@ -5,7 +5,7 @@ param(
     [switch]$Json,
     [string]$ShortName,
     [Parameter()]
-    [int]$Number = 0,
+    [long]$Number = 0,
     [switch]$Timestamp,
     [switch]$Help,
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
@@ -48,13 +48,15 @@ if ([string]::IsNullOrWhiteSpace($featureDesc)) {
 function Get-HighestNumberFromSpecs {
     param([string]$SpecsDir)
     
-    $highest = 0
+    [long]$highest = 0
     if (Test-Path $SpecsDir) {
         Get-ChildItem -Path $SpecsDir -Directory | ForEach-Object {
             # Match sequential prefixes (>=3 digits), but skip timestamp dirs.
             if ($_.Name -match '^(\d{3,})-' -and $_.Name -notmatch '^\d{8}-\d{6}-') {
-                $num = [int]$matches[1]
-                if ($num -gt $highest) { $highest = $num }
+                [long]$num = 0
+                if ([long]::TryParse($matches[1], [ref]$num) -and $num -gt $highest) {
+                    $highest = $num
+                }
             }
         }
     }
@@ -64,7 +66,7 @@ function Get-HighestNumberFromSpecs {
 function Get-HighestNumberFromBranches {
     param()
     
-    $highest = 0
+    [long]$highest = 0
     try {
         $branches = git branch -a 2>$null
         if ($LASTEXITCODE -eq 0) {
@@ -74,8 +76,10 @@ function Get-HighestNumberFromBranches {
                 
                 # Extract sequential feature number (>=3 digits), skip timestamp branches.
                 if ($cleanBranch -match '^(\d{3,})-' -and $cleanBranch -notmatch '^\d{8}-\d{6}-') {
-                    $num = [int]$matches[1]
-                    if ($num -gt $highest) { $highest = $num }
+                    [long]$num = 0
+                    if ([long]::TryParse($matches[1], [ref]$num) -and $num -gt $highest) {
+                        $highest = $num
+                    }
                 }
             }
         }

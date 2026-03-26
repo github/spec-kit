@@ -14,6 +14,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CREATE_FEATURE = PROJECT_ROOT / "scripts" / "bash" / "create-new-feature.sh"
+CREATE_FEATURE_PS = PROJECT_ROOT / "scripts" / "powershell" / "create-new-feature.ps1"
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
 
 
@@ -158,6 +159,12 @@ class TestSequentialBranch:
             if line.startswith("BRANCH_NAME:"):
                 branch = line.split(":", 1)[1].strip()
         assert branch == "1001-next-feat", f"expected 1001-next-feat, got: {branch}"
+
+    def test_powershell_scanner_uses_long_tryparse_for_large_prefixes(self):
+        """PowerShell scanner should parse large prefixes without [int] casts."""
+        content = CREATE_FEATURE_PS.read_text(encoding="utf-8")
+        assert "[long]::TryParse($matches[1], [ref]$num)" in content
+        assert "$num = [int]$matches[1]" not in content
 
 
 # ── check_feature_branch Tests ───────────────────────────────────────────────

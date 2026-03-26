@@ -3380,3 +3380,25 @@ class TestHookInvocationRendering:
         assert hook_executor._render_hook_invocation("speckit.plan") == "/skill:speckit-plan"
         assert hook_executor._render_hook_invocation("speckit.tasks") == "/skill:speckit-tasks"
         assert calls["count"] == 1
+
+    def test_hook_message_falls_back_when_invocation_is_empty(self, project_dir):
+        """Hook messages should still render actionable command placeholders."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "kimi", "ai_skills": False}))
+
+        hook_executor = HookExecutor(project_dir)
+        message = hook_executor.format_hook_message(
+            "after_tasks",
+            [
+                {
+                    "extension": "test-ext",
+                    "command": None,
+                    "optional": False,
+                }
+            ],
+        )
+
+        assert "Executing: `/<missing command>`" in message
+        assert "EXECUTE_COMMAND: <missing command>" in message
+        assert "EXECUTE_COMMAND_INVOCATION: /<missing command>" in message
