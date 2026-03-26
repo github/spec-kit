@@ -600,6 +600,14 @@ class PresetManager:
         legacy_skill_name = f"speckit.{raw_short_name}"
         return modern_skill_name, legacy_skill_name
 
+    @staticmethod
+    def _skill_title_from_command(cmd_name: str) -> str:
+        """Return a human-friendly title for a skill command name."""
+        title_name = cmd_name
+        if title_name.startswith("speckit."):
+            title_name = title_name[len("speckit."):]
+        return title_name.replace(".", " ").replace("-", " ").title()
+
     def _build_extension_skill_restore_index(self) -> Dict[str, Dict[str, Any]]:
         """Index extension-backed skill restore data by skill directory name."""
         from .extensions import ExtensionManifest, ValidationError
@@ -723,6 +731,7 @@ class PresetManager:
                 raw_short_name = raw_short_name[len("speckit."):]
             short_name = raw_short_name.replace(".", "-")
             skill_name, legacy_skill_name = self._skill_names_for_command(cmd_name)
+            skill_title = self._skill_title_from_command(cmd_name)
 
             # Only overwrite skills that already exist under skills_dir,
             # including Kimi native skills when ai_skills is false.
@@ -765,7 +774,7 @@ class PresetManager:
                     f"---\n"
                     f"{frontmatter_text}\n"
                     f"---\n\n"
-                    f"# Speckit {short_name.title()} Skill\n\n"
+                    f"# Speckit {skill_title} Skill\n\n"
                     f"{body}\n"
                 )
 
@@ -851,11 +860,12 @@ class PresetManager:
                     },
                 }
                 frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+                skill_title = self._skill_title_from_command(short_name)
                 skill_content = (
                     f"---\n"
                     f"{frontmatter_text}\n"
                     f"---\n\n"
-                    f"# Speckit {short_name.title()} Skill\n\n"
+                    f"# Speckit {skill_title} Skill\n\n"
                     f"{body}\n"
                 )
                 skill_file.write_text(skill_content, encoding="utf-8")
@@ -871,10 +881,7 @@ class PresetManager:
                     )
 
                 command_name = extension_restore["command_name"]
-                title_name = command_name
-                if title_name.startswith("speckit."):
-                    title_name = title_name[len("speckit."):]
-                title_name = title_name.replace(".", " ").replace("-", " ").title()
+                title_name = self._skill_title_from_command(command_name)
 
                 frontmatter_data = {
                     "name": skill_name,

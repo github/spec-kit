@@ -2163,6 +2163,7 @@ class TestPresetSkills:
         content = skill_file.read_text()
         assert "preset:ext-skill-override" in content
         assert "name: speckit-fakeext-cmd" in content
+        assert "# Speckit Fakeext Cmd Skill" in content
 
         metadata = manager.registry.get("ext-skill-override")
         assert "speckit-fakeext-cmd" in metadata.get("registered_skills", [])
@@ -2248,6 +2249,7 @@ class TestPresetSkills:
         assert "source: extension:fakeext" in content
         assert "extension:fakeext" in content
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+        assert "# Fakeext Cmd Skill" in content
 
     def test_preset_remove_skips_skill_dir_without_skill_file(self, project_dir, temp_dir):
         """Preset removal should not delete arbitrary directories missing SKILL.md."""
