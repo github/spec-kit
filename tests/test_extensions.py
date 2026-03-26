@@ -760,6 +760,51 @@ $ARGUMENTS
         assert "Prüfe Konformität" in output
         assert "\\u" not in output
 
+    def test_adjust_script_paths_does_not_mutate_input(self):
+        """Path adjustments should not mutate caller-owned frontmatter dicts."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+        registrar = AgentCommandRegistrar()
+        original = {
+            "scripts": {
+                "sh": "../../scripts/bash/setup-plan.sh {ARGS}",
+                "ps": "../../scripts/powershell/setup-plan.ps1 {ARGS}",
+            }
+        }
+        before = json.loads(json.dumps(original))
+
+        adjusted = registrar._adjust_script_paths(original)
+
+        assert original == before
+        assert adjusted["scripts"]["sh"] == ".specify/scripts/bash/setup-plan.sh {ARGS}"
+        assert adjusted["scripts"]["ps"] == ".specify/scripts/powershell/setup-plan.ps1 {ARGS}"
+
+    def test_render_toml_command_handles_embedded_triple_double_quotes(self):
+        """TOML renderer should stay valid when body includes triple double-quotes."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+        registrar = AgentCommandRegistrar()
+        output = registrar.render_toml_command(
+            {"description": "x"},
+            'line1\n"""danger"""\nline2',
+            "extension:test-ext",
+        )
+
+        assert "prompt = '''" in output
+        assert '"""danger"""' in output
+
+    def test_render_toml_command_escapes_when_both_triple_quote_styles_exist(self):
+        """If body has both triple quote styles, fall back to escaped basic string."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+        registrar = AgentCommandRegistrar()
+        output = registrar.render_toml_command(
+            {"description": "x"},
+            'a """ b\nc \'\'\' d',
+            "extension:test-ext",
+        )
+
+        assert 'prompt = "' in output
+        assert "\\n" in output
+        assert "\\\"\\\"\\\"" in output
+
     def test_register_commands_for_claude(self, extension_dir, project_dir):
         """Test registering commands for Claude agent."""
         # Create .claude directory

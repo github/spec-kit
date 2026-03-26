@@ -728,10 +728,14 @@ class PresetManager:
         if not skills_dir:
             return
 
-        from . import SKILL_DESCRIPTIONS
+        from . import SKILL_DESCRIPTIONS, load_init_options
+        from .agents import CommandRegistrar
 
         # Locate core command templates from the project's installed templates
         core_templates_dir = self.project_root / ".specify" / "templates" / "commands"
+        init_opts = load_init_options(self.project_root)
+        selected_ai = init_opts.get("ai")
+        registrar = CommandRegistrar()
 
         for skill_name in skill_names:
             # Derive command name from skill name (speckit-specify -> specify)
@@ -754,19 +758,11 @@ class PresetManager:
             if core_file:
                 # Restore from core template
                 content = core_file.read_text(encoding="utf-8")
-                if content.startswith("---"):
-                    parts = content.split("---", 2)
-                    if len(parts) >= 3:
-                        frontmatter = yaml.safe_load(parts[1])
-                        if not isinstance(frontmatter, dict):
-                            frontmatter = {}
-                        body = parts[2].strip()
-                    else:
-                        frontmatter = {}
-                        body = content
-                else:
-                    frontmatter = {}
-                    body = content
+                frontmatter, body = registrar.parse_frontmatter(content)
+                if isinstance(selected_ai, str):
+                    body = registrar.resolve_skill_placeholders(
+                        selected_ai, frontmatter, body, self.project_root
+                    )
 
                 original_desc = frontmatter.get("description", "")
                 enhanced_desc = SKILL_DESCRIPTIONS.get(

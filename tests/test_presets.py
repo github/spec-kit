@@ -2040,6 +2040,35 @@ class TestPresetSkills:
         assert "preset:self-test" not in content, "Preset content should be gone"
         assert "templates/commands/specify.md" in content, "Should reference core template"
 
+    def test_skill_restored_on_remove_resolves_script_placeholders(self, project_dir):
+        """Core restore should resolve {SCRIPT}/{ARGS} placeholders like other skill paths."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True, script="sh")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify", body="old")
+        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\n"
+            "description: Core specify command\n"
+            "scripts:\n"
+            "  sh: .specify/scripts/bash/create-new-feature.sh --json \"{ARGS}\"\n"
+            "---\n\n"
+            "Run:\n"
+            "{SCRIPT}\n"
+        )
+
+        manager = PresetManager(project_dir)
+        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
+        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        manager.remove("self-test")
+
+        content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
+        assert "{SCRIPT}" not in content
+        assert "{ARGS}" not in content
+        assert ".specify/scripts/bash/create-new-feature.sh --json \"$ARGUMENTS\"" in content
+
     def test_skill_not_overridden_when_skill_path_is_file(self, project_dir):
         """Preset install should skip non-directory skill targets."""
         self._write_init_options(project_dir, ai="claude")

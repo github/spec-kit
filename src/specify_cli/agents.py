@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Any
 
 import platform
+from copy import deepcopy
 import yaml
 
 
@@ -219,6 +220,8 @@ class CommandRegistrar:
         Returns:
             Modified frontmatter with adjusted paths
         """
+        frontmatter = deepcopy(frontmatter)
+
         for script_key in ("scripts", "agent_scripts"):
             scripts = frontmatter.get(script_key)
             if not isinstance(scripts, dict):
@@ -277,9 +280,25 @@ class CommandRegistrar:
         toml_lines.append(f"# Source: {source_id}")
         toml_lines.append("")
 
-        toml_lines.append('prompt = """')
-        toml_lines.append(body)
-        toml_lines.append('"""')
+        # Keep TOML output valid even when body contains triple-quote delimiters.
+        # Prefer multiline forms, then fall back to escaped basic string.
+        if '"""' not in body:
+            toml_lines.append('prompt = """')
+            toml_lines.append(body)
+            toml_lines.append('"""')
+        elif "'''" not in body:
+            toml_lines.append("prompt = '''")
+            toml_lines.append(body)
+            toml_lines.append("'''")
+        else:
+            escaped_body = (
+                body.replace("\\", "\\\\")
+                .replace('"', '\\"')
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+            )
+            toml_lines.append(f'prompt = "{escaped_body}"')
 
         return "\n".join(toml_lines)
 
