@@ -651,6 +651,7 @@ def install_from_bundled_templates(
 
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
+CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".bin" / "claude"
 
 BANNER = """
 ███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
@@ -911,13 +912,15 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
     Returns:
         True if tool is found, False otherwise
     """
-    # Special handling for Claude CLI after `claude migrate-installer`
+    # Special handling for Claude CLI local installs
     # See: https://github.com/github/spec-kit/issues/123
-    # The migrate-installer command REMOVES the original executable from PATH
-    # and creates an alias at ~/.claude/local/claude instead
-    # This path should be prioritized over other claude executables in PATH
+    # See: https://github.com/github/spec-kit/issues/550
+    # Claude Code can be installed in two local paths:
+    #   1. ~/.claude/local/claude          (after `claude migrate-installer`)
+    #   2. ~/.claude/local/node_modules/.bin/claude  (npm-local install, e.g. via nvm)
+    # Neither path may be on the system PATH, so we check them explicitly.
     if tool == "claude":
-        if CLAUDE_LOCAL_PATH.exists() and CLAUDE_LOCAL_PATH.is_file():
+        if CLAUDE_LOCAL_PATH.is_file() or CLAUDE_NPM_LOCAL_PATH.is_file():
             if tracker:
                 tracker.complete(tool, "available")
             return True
