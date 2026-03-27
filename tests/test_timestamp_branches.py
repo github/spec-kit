@@ -403,3 +403,12 @@ class TestAllowExistingBranch:
             "No git feature",
         )
         assert result.returncode == 0, result.stderr
+
+
+class TestAllowExistingBranchPowerShell:
+    def test_powershell_supports_allow_existing_branch_flag(self):
+        """Static guard: PS script exposes and uses -AllowExistingBranch."""
+        contents = CREATE_FEATURE_PS.read_text(encoding="utf-8")
+        assert "-AllowExistingBranch" in contents
+        # Ensure the flag is referenced in script logic, not just declared
+        assert "AllowExistingBranch" in contents.replace("-AllowExistingBranch", "")

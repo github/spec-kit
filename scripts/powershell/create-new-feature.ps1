@@ -256,6 +256,10 @@ if ($hasGit) {
             if ($AllowExistingBranch) {
                 # Switch to the existing branch instead of failing
                 git checkout -q $branchName 2>$null | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Error "Error: Branch '$branchName' exists but could not be checked out. Resolve any uncommitted changes or conflicts and try again."
+                    exit 1
+                }
             } elseif ($Timestamp) {
                 Write-Error "Error: Branch '$branchName' already exists. Rerun to get a new timestamp or use a different -ShortName."
                 exit 1
@@ -276,7 +280,7 @@ $featureDir = Join-Path $specsDir $branchName
 New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
 
 $specFile = Join-Path $featureDir 'spec.md'
-if (-not (Test-Path $specFile)) {
+if (-not (Test-Path -PathType Leaf $specFile)) {
     $template = Resolve-Template -TemplateName 'spec-template' -RepoRoot $repoRoot
     if ($template -and (Test-Path $template)) {
         Copy-Item $template $specFile -Force

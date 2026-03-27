@@ -294,7 +294,10 @@ if [ "$HAS_GIT" = true ]; then
         if git branch --list "$BRANCH_NAME" | grep -q .; then
             if [ "$ALLOW_EXISTING" = true ]; then
                 # Switch to the existing branch instead of failing
-                git checkout "$BRANCH_NAME" 2>/dev/null || true
+                if ! git checkout "$BRANCH_NAME" 2>/dev/null; then
+                    >&2 echo "Error: Failed to switch to existing branch '$BRANCH_NAME'. Please resolve any local changes or conflicts and try again."
+                    exit 1
+                fi
             elif [ "$USE_TIMESTAMP" = true ]; then
                 >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Rerun to get a new timestamp or use a different --short-name."
                 exit 1
