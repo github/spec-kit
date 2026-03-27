@@ -1517,7 +1517,7 @@ specify extension add github-projects
 /speckit.github.taskstoissues
 ```
 
-**Compatibility shim** (if needed):
+**Migration alias** (if needed):
 
 ```yaml
 # extension.yml
@@ -1525,10 +1525,10 @@ provides:
   commands:
     - name: "speckit.github.taskstoissues"
       file: "commands/taskstoissues.md"
-      aliases: ["speckit.github.sync-taskstoissues"]  # Backward compatibility
+      aliases: ["speckit.github.sync-taskstoissues"]  # Alternate namespaced entry point
 ```
 
-AI agent registers both names, so old scripts work.
+AI agents register both names, so callers can migrate to the alternate alias without relying on deprecated global shortcuts like `/speckit.taskstoissues`.
 
 ---
 

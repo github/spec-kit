@@ -25,7 +25,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
-CORE_COMMAND_NAMES = frozenset({
+_FALLBACK_CORE_COMMAND_NAMES = frozenset({
     "analyze",
     "checklist",
     "clarify",
@@ -37,6 +37,36 @@ CORE_COMMAND_NAMES = frozenset({
     "taskstoissues",
 })
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
+
+
+def _load_core_command_names() -> frozenset[str]:
+    """Discover bundled core command names from the packaged templates.
+
+    Prefer the wheel-time ``core_pack`` bundle when present, and fall back to
+    the source checkout when running from the repository. If neither is
+    available, use the baked-in fallback set so validation still works.
+    """
+    candidate_dirs = [
+        Path(__file__).parent / "core_pack" / "commands",
+        Path(__file__).resolve().parent.parent.parent / "templates" / "commands",
+    ]
+
+    for commands_dir in candidate_dirs:
+        if not commands_dir.is_dir():
+            continue
+
+        command_names = {
+            command_file.stem
+            for command_file in commands_dir.iterdir()
+            if command_file.is_file() and command_file.suffix == ".md"
+        }
+        if command_names:
+            return frozenset(command_names)
+
+    return _FALLBACK_CORE_COMMAND_NAMES
+
+
+CORE_COMMAND_NAMES = _load_core_command_names()
 
 
 class ExtensionError(Exception):
@@ -463,9 +493,9 @@ class ExtensionManager:
     def _collect_manifest_command_names(manifest: ExtensionManifest) -> Dict[str, str]:
         """Collect command and alias names declared by a manifest.
 
-        Performs install-time validation for extension-specific constraints that
-        should not invalidate already-installed legacy manifests:
-        - aliases must use the canonical `speckit.{extension}.{command}` shape
+        Performs install-time validation for extension-specific constraints:
+        - commands and aliases must use the canonical `speckit.{extension}.{command}` shape
+        - commands and aliases must use this extension's namespace
         - command namespaces must not shadow core commands
         - duplicate command/alias names inside one manifest are rejected
 
@@ -512,6 +542,11 @@ class ExtensionManager:
                     )
 
                 namespace = match.group(1)
+                if namespace != manifest.id:
+                    raise ValidationError(
+                        f"{kind.capitalize()} '{name}' must use extension namespace '{manifest.id}'"
+                    )
+
                 if namespace in CORE_COMMAND_NAMES:
                     raise ValidationError(
                         f"{kind.capitalize()} '{name}' conflicts with core command namespace '{namespace}'"

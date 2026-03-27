@@ -186,7 +186,7 @@ What the extension provides.
 - `name`: Command name (must match `speckit.{ext-id}.{command}`)
 - `file`: Path to command file (relative to extension root)
 - `description`: Command description (optional)
-- `aliases`: Alternative command names (optional, array)
+- `aliases`: Alternative command names (optional, array; each must match `speckit.{ext-id}.{command}`)
 
 ### Optional Fields
 
