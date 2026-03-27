@@ -19,7 +19,11 @@ class TestCheckToolClaude:
         fake_claude = tmp_path / "claude"
         fake_claude.touch()
 
+        # Ensure npm-local path is missing so we only exercise migrate-installer path
+        fake_missing = tmp_path / "nonexistent" / "claude"
+
         with patch("specify_cli.CLAUDE_LOCAL_PATH", fake_claude), \
+             patch("specify_cli.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
              patch("shutil.which", return_value=None):
             assert check_tool("claude") is True
 
