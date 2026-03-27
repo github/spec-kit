@@ -136,7 +136,9 @@ $hasGit = Test-HasGit
 Set-Location $repoRoot
 
 $specsDir = Join-Path $repoRoot 'specs'
-New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
+if (-not $DryRun) {
+    New-Item -ItemType Directory -Path $specsDir -Force | Out-Null
+}
 
 # Function to generate branch name with stop word filtering and length filtering
 function Get-BranchName {

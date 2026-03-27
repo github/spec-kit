@@ -444,20 +444,21 @@ class TestDryRun:
             capture_output=True,
             text=True,
         )
+        assert branches.returncode == 0, f"'git branch --list' failed: {branches.stderr}"
         assert branches.stdout.strip() == "", "branch should not exist after dry-run"
 
     def test_dry_run_no_spec_dir_created(self, git_repo: Path):
-        """T011: Dry-run does not create a spec directory."""
+        """T011: Dry-run does not create any directories (including root specs/)."""
+        specs_root = git_repo / "specs"
+        if specs_root.exists():
+            shutil.rmtree(specs_root)
+        assert not specs_root.exists(), "specs/ should not exist before dry-run"
+
         result = run_script(
             git_repo, "--dry-run", "--short-name", "no-dir", "No dir feature"
         )
         assert result.returncode == 0, result.stderr
-        spec_dirs = [
-            d.name
-            for d in (git_repo / "specs").iterdir()
-            if d.is_dir() and "no-dir" in d.name
-        ] if (git_repo / "specs").exists() else []
-        assert len(spec_dirs) == 0, f"spec dir should not exist: {spec_dirs}"
+        assert not specs_root.exists(), "specs/ should not be created during dry-run"
 
     def test_dry_run_empty_repo(self, git_repo: Path):
         """T012: Dry-run returns 001 prefix when no existing specs or branches."""
@@ -584,3 +585,112 @@ class TestDryRun:
             if d.is_dir() and "no-git-dry" in d.name
         ]
         assert len(spec_dirs) == 0
+
+
+# ── PowerShell Dry-Run Tests ─────────────────────────────────────────────────
+
+
+def _has_pwsh() -> bool:
+    """Check if pwsh is available."""
+    try:
+        subprocess.run(["pwsh", "--version"], capture_output=True, check=True)
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+
+
+def run_ps_script(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    """Run create-new-feature.ps1 with given args."""
+    cmd = ["pwsh", "-NoProfile", "-File", str(CREATE_FEATURE_PS), *args]
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+
+
+@pytest.fixture
+def ps_git_repo(tmp_path: Path) -> Path:
+    """Create a temp git repo with PowerShell scripts and .specify dir."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True
+    )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "init", "-q"],
+        cwd=tmp_path,
+        check=True,
+    )
+    ps_dir = tmp_path / "scripts" / "powershell"
+    ps_dir.mkdir(parents=True)
+    shutil.copy(CREATE_FEATURE_PS, ps_dir / "create-new-feature.ps1")
+    common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
+    shutil.copy(common_ps, ps_dir / "common.ps1")
+    (tmp_path / ".specify" / "templates").mkdir(parents=True)
+    return tmp_path
+
+
+@pytest.mark.skipif(not _has_pwsh(), reason="pwsh not available")
+class TestPowerShellDryRun:
+    def test_ps_dry_run_outputs_name(self, ps_git_repo: Path):
+        """PowerShell -DryRun computes correct branch name."""
+        (ps_git_repo / "specs" / "001-first").mkdir(parents=True)
+        result = run_ps_script(
+            ps_git_repo, "-DryRun", "-ShortName", "ps-feat", "PS feature"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = None
+        for line in result.stdout.splitlines():
+            if line.startswith("BRANCH_NAME:"):
+                branch = line.split(":", 1)[1].strip()
+        assert branch == "002-ps-feat", f"expected 002-ps-feat, got: {branch}"
+
+    def test_ps_dry_run_no_branch_created(self, ps_git_repo: Path):
+        """PowerShell -DryRun does not create a git branch."""
+        result = run_ps_script(
+            ps_git_repo, "-DryRun", "-ShortName", "no-ps-branch", "No branch"
+        )
+        assert result.returncode == 0, result.stderr
+        branches = subprocess.run(
+            ["git", "branch", "--list", "*no-ps-branch*"],
+            cwd=ps_git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert branches.returncode == 0, f"'git branch --list' failed: {branches.stderr}"
+        assert branches.stdout.strip() == "", "branch should not exist after dry-run"
+
+    def test_ps_dry_run_no_spec_dir_created(self, ps_git_repo: Path):
+        """PowerShell -DryRun does not create specs/ directory."""
+        specs_root = ps_git_repo / "specs"
+        if specs_root.exists():
+            shutil.rmtree(specs_root)
+        assert not specs_root.exists()
+
+        result = run_ps_script(
+            ps_git_repo, "-DryRun", "-ShortName", "no-ps-dir", "No dir"
+        )
+        assert result.returncode == 0, result.stderr
+        assert not specs_root.exists(), "specs/ should not be created during dry-run"
+
+    def test_ps_dry_run_json_includes_field(self, ps_git_repo: Path):
+        """PowerShell -DryRun JSON output includes DRY_RUN field."""
+        import json
+
+        result = run_ps_script(
+            ps_git_repo, "-DryRun", "-Json", "-ShortName", "ps-json", "JSON test"
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert "DRY_RUN" in data, f"DRY_RUN missing from JSON: {data}"
+        assert data["DRY_RUN"] is True
+
+    def test_ps_dry_run_json_absent_without_flag(self, ps_git_repo: Path):
+        """PowerShell normal JSON output does NOT include DRY_RUN field."""
+        import json
+
+        result = run_ps_script(
+            ps_git_repo, "-Json", "-ShortName", "ps-no-dry", "No dry run"
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert "DRY_RUN" not in data, f"DRY_RUN should not be in normal JSON: {data}"
