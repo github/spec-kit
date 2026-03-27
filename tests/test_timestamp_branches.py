@@ -412,3 +412,175 @@ class TestAllowExistingBranchPowerShell:
         assert "-AllowExistingBranch" in contents
         # Ensure the flag is referenced in script logic, not just declared
         assert "AllowExistingBranch" in contents.replace("-AllowExistingBranch", "")
+
+
+# ── Dry-Run Tests ────────────────────────────────────────────────────────────
+
+
+class TestDryRun:
+    def test_dry_run_sequential_outputs_name(self, git_repo: Path):
+        """T009: Dry-run computes correct branch name with existing specs."""
+        (git_repo / "specs" / "001-first-feat").mkdir(parents=True)
+        (git_repo / "specs" / "002-second-feat").mkdir(parents=True)
+        result = run_script(
+            git_repo, "--dry-run", "--short-name", "new-feat", "New feature"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = None
+        for line in result.stdout.splitlines():
+            if line.startswith("BRANCH_NAME:"):
+                branch = line.split(":", 1)[1].strip()
+        assert branch == "003-new-feat", f"expected 003-new-feat, got: {branch}"
+
+    def test_dry_run_no_branch_created(self, git_repo: Path):
+        """T010: Dry-run does not create a git branch."""
+        result = run_script(
+            git_repo, "--dry-run", "--short-name", "no-branch", "No branch feature"
+        )
+        assert result.returncode == 0, result.stderr
+        branches = subprocess.run(
+            ["git", "branch", "--list", "*no-branch*"],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert branches.stdout.strip() == "", "branch should not exist after dry-run"
+
+    def test_dry_run_no_spec_dir_created(self, git_repo: Path):
+        """T011: Dry-run does not create a spec directory."""
+        result = run_script(
+            git_repo, "--dry-run", "--short-name", "no-dir", "No dir feature"
+        )
+        assert result.returncode == 0, result.stderr
+        spec_dirs = [
+            d.name
+            for d in (git_repo / "specs").iterdir()
+            if d.is_dir() and "no-dir" in d.name
+        ] if (git_repo / "specs").exists() else []
+        assert len(spec_dirs) == 0, f"spec dir should not exist: {spec_dirs}"
+
+    def test_dry_run_empty_repo(self, git_repo: Path):
+        """T012: Dry-run returns 001 prefix when no existing specs or branches."""
+        result = run_script(
+            git_repo, "--dry-run", "--short-name", "first", "First feature"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = None
+        for line in result.stdout.splitlines():
+            if line.startswith("BRANCH_NAME:"):
+                branch = line.split(":", 1)[1].strip()
+        assert branch == "001-first", f"expected 001-first, got: {branch}"
+
+    def test_dry_run_with_short_name(self, git_repo: Path):
+        """T013: Dry-run with --short-name produces expected name."""
+        (git_repo / "specs" / "001-existing").mkdir(parents=True)
+        (git_repo / "specs" / "002-existing").mkdir(parents=True)
+        (git_repo / "specs" / "003-existing").mkdir(parents=True)
+        result = run_script(
+            git_repo, "--dry-run", "--short-name", "user-auth", "Add user authentication"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = None
+        for line in result.stdout.splitlines():
+            if line.startswith("BRANCH_NAME:"):
+                branch = line.split(":", 1)[1].strip()
+        assert branch == "004-user-auth", f"expected 004-user-auth, got: {branch}"
+
+    def test_dry_run_then_real_run_match(self, git_repo: Path):
+        """T014: Dry-run name matches subsequent real creation."""
+        (git_repo / "specs" / "001-existing").mkdir(parents=True)
+        # Dry-run first
+        dry_result = run_script(
+            git_repo, "--dry-run", "--short-name", "match-test", "Match test"
+        )
+        assert dry_result.returncode == 0, dry_result.stderr
+        dry_branch = None
+        for line in dry_result.stdout.splitlines():
+            if line.startswith("BRANCH_NAME:"):
+                dry_branch = line.split(":", 1)[1].strip()
+        # Real run
+        real_result = run_script(
+            git_repo, "--short-name", "match-test", "Match test"
+        )
+        assert real_result.returncode == 0, real_result.stderr
+        real_branch = None
+        for line in real_result.stdout.splitlines():
+            if line.startswith("BRANCH_NAME:"):
+                real_branch = line.split(":", 1)[1].strip()
+        assert dry_branch == real_branch, f"dry={dry_branch} != real={real_branch}"
+
+    def test_dry_run_json_includes_field(self, git_repo: Path):
+        """T015: JSON output includes DRY_RUN field when --dry-run is active."""
+        import json
+
+        result = run_script(
+            git_repo, "--dry-run", "--json", "--short-name", "json-test", "JSON test"
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert "DRY_RUN" in data, f"DRY_RUN missing from JSON: {data}"
+        assert data["DRY_RUN"] is True
+
+    def test_dry_run_json_absent_without_flag(self, git_repo: Path):
+        """T016: Normal JSON output does NOT include DRY_RUN field."""
+        import json
+
+        result = run_script(
+            git_repo, "--json", "--short-name", "no-dry", "No dry run"
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert "DRY_RUN" not in data, f"DRY_RUN should not be in normal JSON: {data}"
+
+    def test_dry_run_with_timestamp(self, git_repo: Path):
+        """T017: Dry-run works with --timestamp flag."""
+        result = run_script(
+            git_repo, "--dry-run", "--timestamp", "--short-name", "ts-feat", "Timestamp feature"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = None
+        for line in result.stdout.splitlines():
+            if line.startswith("BRANCH_NAME:"):
+                branch = line.split(":", 1)[1].strip()
+        assert branch is not None, "no BRANCH_NAME in output"
+        assert re.match(r"^\d{8}-\d{6}-ts-feat$", branch), f"unexpected: {branch}"
+        # Verify no side effects
+        branches = subprocess.run(
+            ["git", "branch", "--list", f"*ts-feat*"],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert branches.stdout.strip() == ""
+
+    def test_dry_run_with_number(self, git_repo: Path):
+        """T018: Dry-run works with --number flag."""
+        result = run_script(
+            git_repo, "--dry-run", "--number", "42", "--short-name", "num-feat", "Number feature"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = None
+        for line in result.stdout.splitlines():
+            if line.startswith("BRANCH_NAME:"):
+                branch = line.split(":", 1)[1].strip()
+        assert branch == "042-num-feat", f"expected 042-num-feat, got: {branch}"
+
+    def test_dry_run_no_git(self, no_git_dir: Path):
+        """T019: Dry-run works in non-git directory."""
+        (no_git_dir / "specs" / "001-existing").mkdir(parents=True)
+        result = run_script(
+            no_git_dir, "--dry-run", "--short-name", "no-git-dry", "No git dry run"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = None
+        for line in result.stdout.splitlines():
+            if line.startswith("BRANCH_NAME:"):
+                branch = line.split(":", 1)[1].strip()
+        assert branch == "002-no-git-dry", f"expected 002-no-git-dry, got: {branch}"
+        # Verify no spec dir created
+        spec_dirs = [
+            d.name
+            for d in (no_git_dir / "specs").iterdir()
+            if d.is_dir() and "no-git-dry" in d.name
+        ]
+        assert len(spec_dirs) == 0

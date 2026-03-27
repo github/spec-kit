@@ -3,6 +3,7 @@
 set -e
 
 JSON_MODE=false
+DRY_RUN=false
 ALLOW_EXISTING=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
@@ -14,6 +15,9 @@ while [ $i -le $# ]; do
     case "$arg" in
         --json)
             JSON_MODE=true
+            ;;
+        --dry-run)
+            DRY_RUN=true
             ;;
         --allow-existing-branch)
             ALLOW_EXISTING=true
@@ -49,10 +53,11 @@ while [ $i -le $# ]; do
             USE_TIMESTAMP=true
             ;;
         --help|-h)
-            echo "Usage: $0 [--json] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] <feature_description>"
+            echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] <feature_description>"
             echo ""
             echo "Options:"
             echo "  --json              Output in JSON format"
+            echo "  --dry-run           Compute branch name and paths without creating branches, directories, or files"
             echo "  --allow-existing-branch  Switch to branch if it already exists instead of failing"
             echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
             echo "  --number N          Specify branch number manually (overrides auto-detection)"
@@ -74,7 +79,7 @@ done
 
 FEATURE_DESCRIPTION="${ARGS[*]}"
 if [ -z "$FEATURE_DESCRIPTION" ]; then
-    echo "Usage: $0 [--json] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] <feature_description>" >&2
+    echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] <feature_description>" >&2
     exit 1
 fi
 
@@ -251,7 +256,19 @@ if [ "$USE_TIMESTAMP" = true ]; then
 else
     # Determine branch number
     if [ -z "$BRANCH_NUMBER" ]; then
-        if [ "$HAS_GIT" = true ]; then
+        if [ "$DRY_RUN" = true ]; then
+            # Dry-run: use locally available data only (skip git fetch)
+            _highest_branch=0
+            if [ "$HAS_GIT" = true ]; then
+                _highest_branch=$(get_highest_from_branches)
+            fi
+            _highest_spec=$(get_highest_from_specs "$SPECS_DIR")
+            _max_num=$_highest_branch
+            if [ "$_highest_spec" -gt "$_max_num" ]; then
+                _max_num=$_highest_spec
+            fi
+            BRANCH_NUMBER=$((_max_num + 1))
+        elif [ "$HAS_GIT" = true ]; then
             # Check existing branches on remotes
             BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
         else
@@ -288,62 +305,79 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
 fi
 
-if [ "$HAS_GIT" = true ]; then
-    if ! git checkout -b "$BRANCH_NAME" 2>/dev/null; then
-        # Check if branch already exists
-        if git branch --list "$BRANCH_NAME" | grep -q .; then
-            if [ "$ALLOW_EXISTING" = true ]; then
-                # Switch to the existing branch instead of failing
-                if ! git checkout "$BRANCH_NAME" 2>/dev/null; then
-                    >&2 echo "Error: Failed to switch to existing branch '$BRANCH_NAME'. Please resolve any local changes or conflicts and try again."
+FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
+SPEC_FILE="$FEATURE_DIR/spec.md"
+
+if [ "$DRY_RUN" != true ]; then
+    if [ "$HAS_GIT" = true ]; then
+        if ! git checkout -b "$BRANCH_NAME" 2>/dev/null; then
+            # Check if branch already exists
+            if git branch --list "$BRANCH_NAME" | grep -q .; then
+                if [ "$ALLOW_EXISTING" = true ]; then
+                    # Switch to the existing branch instead of failing
+                    if ! git checkout "$BRANCH_NAME" 2>/dev/null; then
+                        >&2 echo "Error: Failed to switch to existing branch '$BRANCH_NAME'. Please resolve any local changes or conflicts and try again."
+                        exit 1
+                    fi
+                elif [ "$USE_TIMESTAMP" = true ]; then
+                    >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Rerun to get a new timestamp or use a different --short-name."
+                    exit 1
+                else
+                    >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Please use a different feature name or specify a different number with --number."
                     exit 1
                 fi
-            elif [ "$USE_TIMESTAMP" = true ]; then
-                >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Rerun to get a new timestamp or use a different --short-name."
-                exit 1
             else
-                >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Please use a different feature name or specify a different number with --number."
+                >&2 echo "Error: Failed to create git branch '$BRANCH_NAME'. Please check your git configuration and try again."
                 exit 1
             fi
+        fi
+    else
+        >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    fi
+
+    mkdir -p "$FEATURE_DIR"
+
+    if [ ! -f "$SPEC_FILE" ]; then
+        TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT") || true
+        if [ -n "$TEMPLATE" ] && [ -f "$TEMPLATE" ]; then
+            cp "$TEMPLATE" "$SPEC_FILE"
         else
-            >&2 echo "Error: Failed to create git branch '$BRANCH_NAME'. Please check your git configuration and try again."
-            exit 1
+            echo "Warning: Spec template not found; created empty spec file" >&2
+            touch "$SPEC_FILE"
         fi
     fi
-else
-    >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+
+    # Inform the user how to persist the feature variable in their own shell
+    printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
 fi
-
-FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
-mkdir -p "$FEATURE_DIR"
-
-SPEC_FILE="$FEATURE_DIR/spec.md"
-if [ ! -f "$SPEC_FILE" ]; then
-    TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT") || true
-    if [ -n "$TEMPLATE" ] && [ -f "$TEMPLATE" ]; then
-        cp "$TEMPLATE" "$SPEC_FILE"
-    else
-        echo "Warning: Spec template not found; created empty spec file" >&2
-        touch "$SPEC_FILE"
-    fi
-fi
-
-# Inform the user how to persist the feature variable in their own shell
-printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
 
 if $JSON_MODE; then
     if command -v jq >/dev/null 2>&1; then
-        jq -cn \
-            --arg branch_name "$BRANCH_NAME" \
-            --arg spec_file "$SPEC_FILE" \
-            --arg feature_num "$FEATURE_NUM" \
-            '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num}'
+        if [ "$DRY_RUN" = true ]; then
+            jq -cn \
+                --arg branch_name "$BRANCH_NAME" \
+                --arg spec_file "$SPEC_FILE" \
+                --arg feature_num "$FEATURE_NUM" \
+                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num,DRY_RUN:true}'
+        else
+            jq -cn \
+                --arg branch_name "$BRANCH_NAME" \
+                --arg spec_file "$SPEC_FILE" \
+                --arg feature_num "$FEATURE_NUM" \
+                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num}'
+        fi
     else
-        printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")"
+        if [ "$DRY_RUN" = true ]; then
+            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","DRY_RUN":true}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")"
+        else
+            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")"
+        fi
     fi
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
-    printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"
+    if [ "$DRY_RUN" != true ]; then
+        printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"
+    fi
 fi
