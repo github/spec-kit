@@ -281,6 +281,70 @@ claude
 
 The skill guides you through package creation, content authoring, and validation.
 
+## Upgrading MiniSpec
+
+When a new version of `minispec-cli` is released, there are two separate things to update:
+
+### 1. Update the CLI tool
+
+```bash
+uv tool upgrade minispec-cli
+```
+
+This updates the `minispec` binary itself. It does **not** touch any files in your project.
+
+### 2. Update the scaffolding in your project
+
+Run this from your project root (must have a `.minispec/` directory):
+
+```bash
+minispec upgrade
+```
+
+This downloads the latest release package and applies it to your project. The upgrade command is **safe to run on a dirty working tree** — it never silently overwrites things you care about.
+
+#### What gets updated — and how
+
+| File type | What happens |
+|-----------|-------------|
+| `specs/**`, `.minispec/memory/**`, `.minispec/knowledge/**` | **Never touched.** Your content, always. |
+| `.claude/settings.json`, `.vscode/settings.json` | Deep-merged — your custom keys are preserved. |
+| `minispec.*.md` command files | **Diff shown, you decide.** Accept or decline each change. |
+| `.minispec/templates/**` | **Diff shown, you decide.** Accept or decline each change. |
+| Scripts, hooks | Silently overwritten — these are infrastructure, not user content. |
+
+#### Reviewing changes with git
+
+After running `minispec upgrade`, always review what changed before committing:
+
+```bash
+# See everything that was modified
+git diff
+
+# Quick summary of which files changed
+git diff --stat
+
+# Selectively stage what you want
+git add -p
+
+# Restore a specific file if you change your mind
+git checkout -- .minispec/scripts/bash/common.sh
+
+# Commit when you're happy
+git commit -m "chore: upgrade minispec scaffolding to vX.Y.Z"
+```
+
+> **Tip:** The upgrade command tells you exactly which files were overwritten, merged, or skipped in the summary table. Cross-reference that with `git diff` to verify nothing unexpected changed.
+
+#### Flags
+
+```bash
+minispec upgrade --force        # Accept all command/template changes without prompting
+minispec upgrade --ai cursor    # Override auto-detected AI assistant
+minispec upgrade --script ps    # Override auto-detected script type (sh or ps)
+minispec upgrade --debug        # Show verbose diagnostic output
+```
+
 ## Project Structure
 
 ```text

@@ -61,9 +61,10 @@ class TestClassifyUpgradeFile:
         assert _classify_upgrade_file(".minispec/scripts/bash/common.sh") == "overwrite"
         assert _classify_upgrade_file(".minispec/scripts/powershell/setup-plan.ps1") == "overwrite"
 
-    def test_templates_are_overwrite(self):
-        assert _classify_upgrade_file(".minispec/templates/design-template.md") == "overwrite"
-        assert _classify_upgrade_file(".minispec/templates/knowledge/module-template.md") == "overwrite"
+    def test_templates_are_prompt(self):
+        # Templates may be customised by users, so they get interactive review
+        assert _classify_upgrade_file(".minispec/templates/design-template.md") == "prompt"
+        assert _classify_upgrade_file(".minispec/templates/knowledge/module-template.md") == "prompt"
 
     def test_hooks_are_overwrite(self):
         assert _classify_upgrade_file(".minispec/hooks/scripts/claude-protect-main.sh") == "overwrite"

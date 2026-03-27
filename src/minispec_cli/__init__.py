@@ -329,6 +329,10 @@ def _classify_upgrade_file(rel_path: str) -> str:
         if rel_path.startswith(cmd_prefix + "/") and "minispec." in rel_path:
             return "prompt"
 
+    # Prompt for document templates — users may have customised these
+    if parts[:2] == (".minispec", "templates"):
+        return "prompt"
+
     # Everything else: silent overwrite
     return "overwrite"
 
@@ -1576,6 +1580,17 @@ def upgrade(
 
     parts = [f"{v} {k}" for k, v in sorted(counts.items())]
     console.print(f"\n[green]Upgrade complete.[/green] {', '.join(parts)}.")
+
+    # Post-upgrade guidance: urge users to review changes
+    console.print()
+    console.print("[bold cyan]Next steps — review what changed:[/bold cyan]")
+    console.print("  [dim]1.[/dim] Run [bold]git diff[/bold] to see every file that was modified.")
+    console.print("  [dim]2.[/dim] Run [bold]git diff --stat[/bold] for a quick summary of changed files.")
+    console.print("  [dim]3.[/dim] If something looks wrong, [bold]git checkout -- <file>[/bold] restores your version.")
+    console.print("  [dim]4.[/dim] When you're happy, commit: [bold]git add -p && git commit -m \"chore: upgrade minispec scaffolding\"[/bold]")
+    console.print()
+    console.print("[dim]Your specs, knowledge base, and constitution were never touched.[/dim]")
+    console.print("[dim]Command and template changes you declined are also untouched.[/dim]")
 
 @app.command()
 def check():
