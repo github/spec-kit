@@ -589,6 +589,134 @@ class TestExtensionManager:
         with pytest.raises(ExtensionError, match="already installed"):
             manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
 
+    def test_install_rejects_extension_id_in_core_namespace(self, temp_dir, project_dir):
+        """Install should reject extension IDs that shadow core commands."""
+        import yaml
+
+        ext_dir = temp_dir / "analyze-ext"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "analyze",
+                "name": "Analyze Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.analyze.extra",
+                        "file": "commands/cmd.md",
+                    }
+                ]
+            },
+        }
+
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+        (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nBody")
+
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ValidationError, match="conflicts with core command namespace"):
+            manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+    def test_install_rejects_alias_without_extension_namespace(self, temp_dir, project_dir):
+        """Install should reject legacy short aliases that can shadow core commands."""
+        import yaml
+
+        ext_dir = temp_dir / "alias-shortcut"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "alias-shortcut",
+                "name": "Alias Shortcut",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.alias-shortcut.cmd",
+                        "file": "commands/cmd.md",
+                        "aliases": ["speckit.shortcut"],
+                    }
+                ]
+            },
+        }
+
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+        (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nBody")
+
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ValidationError, match="Invalid alias 'speckit.shortcut'"):
+            manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+    def test_install_rejects_command_collision_with_installed_extension(self, temp_dir, project_dir):
+        """Install should reject commands or aliases already claimed by another extension."""
+        import yaml
+
+        first_dir = temp_dir / "ext-one"
+        first_dir.mkdir()
+        (first_dir / "commands").mkdir()
+        first_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-one",
+                "name": "Extension One",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.ext-one.sync",
+                        "file": "commands/cmd.md",
+                    }
+                ]
+            },
+        }
+        (first_dir / "extension.yml").write_text(yaml.dump(first_manifest))
+        (first_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nBody")
+
+        second_dir = temp_dir / "ext-two"
+        second_dir.mkdir()
+        (second_dir / "commands").mkdir()
+        second_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-two",
+                "name": "Extension Two",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.ext-two.sync",
+                        "file": "commands/cmd.md",
+                        "aliases": ["speckit.ext-one.sync"],
+                    }
+                ]
+            },
+        }
+        (second_dir / "extension.yml").write_text(yaml.dump(second_manifest))
+        (second_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nBody")
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(first_dir, "0.1.0", register_commands=False)
+
+        with pytest.raises(ValidationError, match="already provided by extension 'ext-one'"):
+            manager.install_from_directory(second_dir, "0.1.0", register_commands=False)
+
     def test_remove_extension(self, extension_dir, project_dir):
         """Test removing an installed extension."""
         manager = ExtensionManager(project_dir)
@@ -887,7 +1015,7 @@ $ARGUMENTS
                     {
                         "name": "speckit.alias.cmd",
                         "file": "commands/cmd.md",
-                        "aliases": ["speckit.shortcut"],
+                        "aliases": ["speckit.alias.shortcut"],
                     }
                 ]
             },
@@ -908,9 +1036,9 @@ $ARGUMENTS
 
         assert len(registered) == 2
         assert "speckit.alias.cmd" in registered
-        assert "speckit.shortcut" in registered
+        assert "speckit.alias.shortcut" in registered
         assert (claude_dir / "speckit.alias.cmd.md").exists()
-        assert (claude_dir / "speckit.shortcut.md").exists()
+        assert (claude_dir / "speckit.alias.shortcut.md").exists()
 
     def test_unregister_commands_for_codex_skills_uses_mapped_names(self, project_dir):
         """Codex skill cleanup should use the same mapped names as registration."""
@@ -1053,7 +1181,7 @@ Agent __AGENT__
                     {
                         "name": "speckit.alias.cmd",
                         "file": "commands/cmd.md",
-                        "aliases": ["speckit.shortcut"],
+                        "aliases": ["speckit.alias.shortcut"],
                     }
                 ]
             },
@@ -1071,12 +1199,12 @@ Agent __AGENT__
         registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
 
         primary = skills_dir / "speckit-alias-cmd" / "SKILL.md"
-        alias = skills_dir / "speckit-shortcut" / "SKILL.md"
+        alias = skills_dir / "speckit-alias-shortcut" / "SKILL.md"
 
         assert primary.exists()
         assert alias.exists()
         assert "name: speckit-alias-cmd" in primary.read_text()
-        assert "name: speckit-shortcut" in alias.read_text()
+        assert "name: speckit-alias-shortcut" in alias.read_text()
 
     def test_codex_skill_registration_uses_fallback_script_variant_without_init_options(
         self, project_dir, temp_dir
@@ -1330,7 +1458,7 @@ Then {AGENT_SCRIPT}
                     {
                         "name": "speckit.alias-copilot.cmd",
                         "file": "commands/cmd.md",
-                        "aliases": ["speckit.shortcut-copilot"],
+                        "aliases": ["speckit.alias-copilot.shortcut"],
                     }
                 ]
             },
@@ -1358,7 +1486,7 @@ Then {AGENT_SCRIPT}
         # Both primary and alias get companion .prompt.md
         prompts_dir = project_dir / ".github" / "prompts"
         assert (prompts_dir / "speckit.alias-copilot.cmd.prompt.md").exists()
-        assert (prompts_dir / "speckit.shortcut-copilot.prompt.md").exists()
+        assert (prompts_dir / "speckit.alias-copilot.shortcut.prompt.md").exists()
 
     def test_non_copilot_agent_no_companion_file(self, extension_dir, project_dir):
         """Test that non-copilot agents do NOT create .prompt.md files."""

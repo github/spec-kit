@@ -223,7 +223,7 @@ provides:
     - name: "speckit.jira.specstoissues"
       file: "commands/specstoissues.md"
       description: "Create Jira hierarchy from spec and tasks"
-      aliases: ["speckit.specstoissues"]  # Alternate names
+      aliases: ["speckit.jira.sync"]  # Alternate names
 
     - name: "speckit.jira.discover-fields"
       file: "commands/discover-fields.md"
@@ -1525,7 +1525,7 @@ provides:
   commands:
     - name: "speckit.github.taskstoissues"
       file: "commands/taskstoissues.md"
-      aliases: ["speckit.taskstoissues"]  # Backward compatibility
+      aliases: ["speckit.github.sync-taskstoissues"]  # Backward compatibility
 ```
 
 AI agent registers both names, so old scripts work.

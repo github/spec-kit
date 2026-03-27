@@ -214,8 +214,8 @@ Extensions add commands that appear in your AI agent (Claude Code):
 # In Claude Code
 > /speckit.jira.specstoissues
 
-# Or use short alias (if provided)
-> /speckit.specstoissues
+# Or use a namespaced alias (if provided)
+> /speckit.jira.sync
 ```
 
 ### Extension Configuration

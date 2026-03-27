@@ -44,7 +44,7 @@ provides:
     - name: string       # Required, pattern: ^speckit\.[a-z0-9-]+\.[a-z0-9-]+$
       file: string       # Required, relative path to command file
       description: string # Required
-      aliases: [string]  # Optional, array of alternate names
+      aliases: [string]  # Optional, same pattern as name; must not shadow core commands
 
   config:                # Optional, array of config files
     - name: string       # Config file name
