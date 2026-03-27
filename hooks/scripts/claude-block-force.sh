@@ -29,17 +29,17 @@ DANGEROUS_PATTERNS=(
     "git restore ."
 )
 
-# Strip common wrappers (sudo, 'command' builtin, env VAR=val) from a subcommand
+# Strip common wrappers (sudo, 'command' builtin, env keyword, env VAR=val) from a subcommand
 strip_wrappers() {
     local cmd="$1"
     # Strip leading whitespace
     cmd="${cmd#"${cmd%%[! ]*}"}"
-    # Strip sudo/command prefixes (may repeat, e.g. sudo command git ...)
-    while [[ "$cmd" =~ ^(sudo|command)[[:space:]] ]]; do
+    # Strip sudo/command/env prefixes (may repeat, e.g. sudo env git ...)
+    while [[ "$cmd" =~ ^(sudo|command|env)[[:space:]] ]]; do
         cmd="${cmd#*[[:space:]]}"
         cmd="${cmd#"${cmd%%[! ]*}"}"
     done
-    # Strip env var assignments at start (VAR=val ...)
+    # Strip env var assignments at start (VAR=val ...) — handles 'env FOO=bar git ...'
     while [[ "$cmd" =~ ^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]] ]]; do
         cmd="${cmd#*[[:space:]]}"
         cmd="${cmd#"${cmd%%[! ]*}"}"
@@ -52,8 +52,11 @@ strip_wrappers() {
 while IFS= read -r subcommand; do
     subcommand=$(strip_wrappers "$subcommand")
     for pattern in "${DANGEROUS_PATTERNS[@]}"; do
-        # Match exactly the pattern or pattern followed by a space (e.g. with extra flags)
-        if [[ "$subcommand" == "$pattern" ]] || [[ "$subcommand" == "$pattern "* ]]; then
+        # Match: exact, pattern + space (extra args), or pattern + more flag chars
+        # (e.g. 'git clean -fd' and 'git clean -fxd' must match pattern 'git clean -f')
+        if [[ "$subcommand" == "$pattern" ]] || \
+           [[ "$subcommand" == "$pattern "* ]] || \
+           { [[ "$pattern" =~ [[:space:]]-[a-zA-Z]$ ]] && [[ "$subcommand" == "$pattern"[a-zA-Z]* ]]; }; then
             jq -n --arg cmd "$COMMAND" --arg pattern "$pattern" '{
                 hookSpecificOutput: {
                     hookEventName: "PreToolUse",
@@ -64,7 +67,7 @@ while IFS= read -r subcommand; do
             exit 0
         fi
     done
-done < <(echo "$COMMAND" | sed -E 's/(&&|\|\||;|\|)/\n/g')
+done < <(printf '%s\n' "$COMMAND" | sed -E 's/(&&|\|\||;|\|)/\n/g')
 
 # Allow the command
 echo '{}'

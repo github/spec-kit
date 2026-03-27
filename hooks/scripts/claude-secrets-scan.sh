@@ -25,17 +25,15 @@ if [[ ! "$COMMAND" =~ git[[:space:]]+(add|commit) ]]; then
     exit 0  # Allow non-git commands
 fi
 
-# Get staged files (or files being added)
+# Get files to scan.
+# For 'git add': ask git directly for modified tracked files plus all untracked
+# files (which covers wildcards, globs, and quoted/spaced paths without having
+# to parse the command string).
+# For 'git commit': check already-staged files only.
 if [[ "$COMMAND" =~ git[[:space:]]+add ]]; then
-    # Extract args after 'git add'
-    ARGS=$(echo "$COMMAND" | sed -E 's/^.*git[[:space:]]+add[[:space:]]*//')
-    # Wildcards or flags-only: resolve via git diff
-    if [[ "$ARGS" == "." ]] || [[ "$ARGS" == "-A" ]] || [[ "$ARGS" == "--all" ]] || [[ "$ARGS" =~ ^- ]]; then
-        FILES=$(git diff --name-only 2>/dev/null || echo "")
-    else
-        # Explicit file list: convert space-delimited args to newline-delimited
-        FILES=$(echo "$ARGS" | tr ' ' '\n')
-    fi
+    TRACKED=$(git diff --name-only 2>/dev/null || echo "")
+    UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null || echo "")
+    FILES=$(printf '%s\n%s\n' "$TRACKED" "$UNTRACKED" | sed '/^$/d' | sort -u)
 else
     # For commit, check already staged files
     FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || echo "")
