@@ -269,3 +269,137 @@ class TestE2EFlow:
         assert (git_repo / "specs" / branch).is_dir()
         val = source_and_call(f'check_feature_branch "{branch}" "true"')
         assert val.returncode == 0
+
+
+# ── Allow Existing Branch Tests ──────────────────────────────────────────────
+
+
+class TestAllowExistingBranch:
+    def test_allow_existing_switches_to_branch(self, git_repo: Path):
+        """T006: Pre-create branch, verify script switches to it."""
+        subprocess.run(
+            ["git", "checkout", "-b", "004-pre-exist"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        result = run_script(
+            git_repo, "--allow-existing-branch", "--short-name", "pre-exist",
+            "--number", "4", "Pre-existing feature",
+        )
+        assert result.returncode == 0, result.stderr
+        current = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=git_repo, capture_output=True, text=True,
+        ).stdout.strip()
+        assert current == "004-pre-exist", f"expected 004-pre-exist, got {current}"
+
+    def test_allow_existing_already_on_branch(self, git_repo: Path):
+        """T007: Verify success when already on the target branch."""
+        subprocess.run(
+            ["git", "checkout", "-b", "005-already-on"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        result = run_script(
+            git_repo, "--allow-existing-branch", "--short-name", "already-on",
+            "--number", "5", "Already on branch",
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_allow_existing_creates_spec_dir(self, git_repo: Path):
+        """T008: Verify spec directory created on existing branch."""
+        subprocess.run(
+            ["git", "checkout", "-b", "006-spec-dir"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        result = run_script(
+            git_repo, "--allow-existing-branch", "--short-name", "spec-dir",
+            "--number", "6", "Spec dir feature",
+        )
+        assert result.returncode == 0, result.stderr
+        assert (git_repo / "specs" / "006-spec-dir").is_dir()
+        assert (git_repo / "specs" / "006-spec-dir" / "spec.md").exists()
+
+    def test_without_flag_still_errors(self, git_repo: Path):
+        """T009: Verify backwards compatibility (error without flag)."""
+        subprocess.run(
+            ["git", "checkout", "-b", "007-no-flag"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        result = run_script(
+            git_repo, "--short-name", "no-flag", "--number", "7", "No flag feature",
+        )
+        assert result.returncode != 0, "should fail without --allow-existing-branch"
+        assert "already exists" in result.stderr
+
+    def test_allow_existing_no_overwrite_spec(self, git_repo: Path):
+        """T010: Pre-create spec.md with content, verify it is preserved."""
+        subprocess.run(
+            ["git", "checkout", "-b", "008-no-overwrite"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        spec_dir = git_repo / "specs" / "008-no-overwrite"
+        spec_dir.mkdir(parents=True)
+        spec_file = spec_dir / "spec.md"
+        spec_file.write_text("# My custom spec content\n")
+        subprocess.run(
+            ["git", "checkout", "-"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        result = run_script(
+            git_repo, "--allow-existing-branch", "--short-name", "no-overwrite",
+            "--number", "8", "No overwrite feature",
+        )
+        assert result.returncode == 0, result.stderr
+        assert spec_file.read_text() == "# My custom spec content\n"
+
+    def test_allow_existing_creates_branch_if_not_exists(self, git_repo: Path):
+        """T011: Verify normal creation when branch doesn't exist."""
+        result = run_script(
+            git_repo, "--allow-existing-branch", "--short-name", "new-branch",
+            "New branch feature",
+        )
+        assert result.returncode == 0, result.stderr
+        current = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=git_repo, capture_output=True, text=True,
+        ).stdout.strip()
+        assert "new-branch" in current
+
+    def test_allow_existing_with_json(self, git_repo: Path):
+        """T012: Verify JSON output is correct."""
+        import json
+
+        subprocess.run(
+            ["git", "checkout", "-b", "009-json-test"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        result = run_script(
+            git_repo, "--allow-existing-branch", "--json", "--short-name", "json-test",
+            "--number", "9", "JSON test",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "009-json-test"
+
+    def test_allow_existing_no_git(self, no_git_dir: Path):
+        """T013: Verify flag is silently ignored in non-git repos."""
+        result = run_script(
+            no_git_dir, "--allow-existing-branch", "--short-name", "no-git",
+            "No git feature",
+        )
+        assert result.returncode == 0, result.stderr
