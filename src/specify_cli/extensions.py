@@ -159,8 +159,12 @@ class ExtensionManifest:
 
         # Validate commands
         for cmd in commands:
+            if not isinstance(cmd, dict):
+                raise ValidationError("Each command entry must be a mapping")
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
+            if not isinstance(cmd["name"], str) or not isinstance(cmd["file"], str):
+                raise ValidationError("Command 'name' and 'file' must be strings")
 
             # Validate command name format
             if not re.match(r'^speckit\.[a-z0-9-]+\.[a-z0-9-]+$', cmd["name"]):
@@ -1042,7 +1046,10 @@ class ExtensionResolver:
             return ["commands"], [".md"]
         elif template_type == "script":
             return ["scripts"], [".sh", ".ps1"]
-        return [""], [".md"]
+        raise ValueError(
+            f"Invalid template type '{template_type}': "
+            "must be one of 'template', 'command', 'script'"
+        )
 
 
 def version_satisfies(current: str, required: str) -> bool:
