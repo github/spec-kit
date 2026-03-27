@@ -3666,8 +3666,14 @@ def extension_add(
         if reg_skills:
             console.print(f"\n[green]✓[/green] {len(reg_skills)} agent skill(s) auto-registered")
 
-        console.print("\n[yellow]⚠[/yellow]  Configuration may be required")
-        console.print(f"   Check: .specify/extensions/{manifest.id}/")
+        # Scaffold config templates automatically
+        deployed = manager.scaffold_config(manifest.id)
+        if deployed:
+            console.print("\n[bold cyan]Config scaffolded:[/bold cyan]")
+            for cfg in deployed:
+                console.print(f"  • .specify/{cfg}")
+        elif manifest.config:
+            console.print("\n[dim]Config files already exist (preserved).[/dim]")
 
     except ValidationError as e:
         console.print(f"\n[red]Validation Error:[/red] {e}")
@@ -4469,6 +4475,13 @@ def extension_enable(
         hook_executor.save_project_config(config)
 
     console.print(f"[green]✓[/green] Extension '{display_name}' enabled")
+
+    # Scaffold config templates on enable
+    deployed = manager.scaffold_config(extension_id)
+    if deployed:
+        console.print("\n[bold cyan]Config scaffolded:[/bold cyan]")
+        for cfg in deployed:
+            console.print(f"  • .specify/{cfg}")
 
 
 @extension_app.command("disable")

@@ -233,6 +233,11 @@ class ExtensionManifest:
         """Get hook definitions."""
         return self.data.get("hooks", {})
 
+    @property
+    def config(self) -> List[Dict[str, Any]]:
+        """Get list of provided config templates."""
+        return self.data.get("provides", {}).get("config", [])
+
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
         with open(self.path, 'rb') as f:
@@ -1124,6 +1129,48 @@ class ExtensionManager:
 
             # Install from extracted directory
             return self.install_from_directory(extension_dir, speckit_version, priority=priority)
+
+    def scaffold_config(self, extension_id: str) -> List[str]:
+        """Deploy config templates from an installed extension to the project.
+
+        Reads the extension's manifest provides.config section and copies
+        each config template to the project's .specify/ directory. Existing
+        config files are never overwritten (user customizations are preserved).
+
+        Args:
+            extension_id: ID of the installed extension
+
+        Returns:
+            List of deployed config file names (empty if all already existed)
+        """
+        ext_dir = self.extensions_dir / extension_id
+        manifest_path = ext_dir / "extension.yml"
+        if not manifest_path.exists():
+            return []
+
+        manifest = ExtensionManifest(manifest_path)
+        deployed = []
+
+        for config_entry in manifest.config:
+            template_name = config_entry.get("template", "")
+            target_name = config_entry.get("name", template_name)
+            if not template_name:
+                continue
+
+            template_path = ext_dir / template_name
+            if not template_path.exists():
+                continue
+
+            target_path = self.project_root / ".specify" / target_name
+            if target_path.exists():
+                # Never overwrite user-customized config
+                continue
+
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(template_path, target_path)
+            deployed.append(target_name)
+
+        return deployed
 
     def remove(self, extension_id: str, keep_config: bool = False) -> bool:
         """Remove an installed extension.
