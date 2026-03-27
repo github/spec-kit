@@ -3667,13 +3667,13 @@ def extension_add(
             console.print(f"\n[green]✓[/green] {len(reg_skills)} agent skill(s) auto-registered")
 
         # Scaffold config templates automatically
-        deployed = manager.scaffold_config(manifest.id)
+        deployed, skipped = manager.scaffold_config(manifest.id)
         if deployed:
             console.print("\n[bold cyan]Config scaffolded:[/bold cyan]")
             for cfg in deployed:
                 console.print(f"  • .specify/{cfg}")
-        elif manifest.config:
-            console.print("\n[dim]Config files already exist (preserved).[/dim]")
+        if skipped:
+            console.print(f"\n[dim]Config files already exist (preserved): {', '.join(skipped)}[/dim]")
 
     except ValidationError as e:
         console.print(f"\n[red]Validation Error:[/red] {e}")
@@ -4477,11 +4477,13 @@ def extension_enable(
     console.print(f"[green]✓[/green] Extension '{display_name}' enabled")
 
     # Scaffold config templates on enable
-    deployed = manager.scaffold_config(extension_id)
+    deployed, skipped = manager.scaffold_config(extension_id)
     if deployed:
         console.print("\n[bold cyan]Config scaffolded:[/bold cyan]")
         for cfg in deployed:
             console.print(f"  • .specify/{cfg}")
+    if skipped:
+        console.print(f"\n[dim]Config files already exist (preserved): {', '.join(skipped)}[/dim]")
 
 
 @extension_app.command("disable")

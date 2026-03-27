@@ -885,9 +885,10 @@ class TestExtensionConfigScaffolding:
         (ext_dir / "config-template.yml").write_text("setting: default")
 
         manager = ExtensionManager(project)
-        deployed = manager.scaffold_config("test-ext")
+        deployed, skipped = manager.scaffold_config("test-ext")
 
         assert deployed == ["test-config.yml"]
+        assert skipped == []
         assert (specify_dir / "test-config.yml").exists()
         assert (specify_dir / "test-config.yml").read_text() == "setting: default"
 
@@ -908,9 +909,10 @@ class TestExtensionConfigScaffolding:
         (ext_dir / "config-template.yml").write_text("setting: default")
 
         manager = ExtensionManager(project)
-        deployed = manager.scaffold_config("test-ext")
+        deployed, skipped = manager.scaffold_config("test-ext")
 
         assert deployed == []
+        assert skipped == ["test-config.yml"]
         assert (specify_dir / "test-config.yml").read_text() == "setting: custom"
 
     def test_scaffold_config_no_config_section(self, tmp_path):
@@ -923,9 +925,10 @@ class TestExtensionConfigScaffolding:
         self._make_extension(ext_dir)
 
         manager = ExtensionManager(project)
-        deployed = manager.scaffold_config("test-ext")
+        deployed, skipped = manager.scaffold_config("test-ext")
 
         assert deployed == []
+        assert skipped == []
 
     def test_scaffold_config_missing_template_file(self, tmp_path):
         """Missing template file should be silently skipped."""
@@ -941,9 +944,67 @@ class TestExtensionConfigScaffolding:
         }])
 
         manager = ExtensionManager(project)
-        deployed = manager.scaffold_config("test-ext")
+        deployed, skipped = manager.scaffold_config("test-ext")
 
         assert deployed == []
+        assert skipped == []
+
+    def test_scaffold_config_rejects_path_traversal(self, tmp_path):
+        """Config names with path traversal should be rejected."""
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        ext_dir = specify_dir / "extensions" / "test-ext"
+        self._make_extension(ext_dir, config_entries=[
+            {"name": "../etc/passwd", "template": "config.yml"},
+            {"name": "safe.yml", "template": "../../secrets.yml"},
+            {"name": "/absolute/path.yml", "template": "config.yml"},
+        ])
+        (ext_dir / "config.yml").write_text("safe: true")
+
+        manager = ExtensionManager(project)
+        deployed, skipped = manager.scaffold_config("test-ext")
+
+        assert deployed == []
+        assert skipped == []
+
+    def test_scaffold_config_rejects_directory_template(self, tmp_path):
+        """Directory templates should be rejected (must be regular files)."""
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        ext_dir = specify_dir / "extensions" / "test-ext"
+        self._make_extension(ext_dir, config_entries=[{
+            "name": "test-config.yml",
+            "template": "config-dir",
+        }])
+        (ext_dir / "config-dir").mkdir()
+
+        manager = ExtensionManager(project)
+        deployed, skipped = manager.scaffold_config("test-ext")
+
+        assert deployed == []
+
+    def test_scaffold_config_malformed_manifest(self, tmp_path):
+        """Malformed config sections should not crash."""
+        from specify_cli.extensions import ExtensionManifest
+        import yaml
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        ext_dir = specify_dir / "extensions" / "test-ext"
+        ext_dir.mkdir(parents=True)
+        manifest_data = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "provides": {"config": "not-a-list"},
+        }
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        assert manifest.config == []
 
 
 # ===== CommandRegistrar Tests =====
