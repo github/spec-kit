@@ -1,12 +1,12 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-27T08:22:30Z",
+  "updated_at": "2026-03-27T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
       "id": "aide",
-      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation.",
+      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants \u2014 from vision through implementation.",
       "author": "mnriem",
       "version": "1.0.0",
       "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/aide-v1.0.0/aide.zip",
@@ -170,7 +170,7 @@
     "cognitive-squad": {
       "name": "Cognitive Squad",
       "id": "cognitive-squad",
-      "description": "Multi-agent cognitive system with Triadic Model: understanding, internalization, application — with quality gates, backpropagation verification, and self-healing",
+      "description": "Multi-agent cognitive system with Triadic Model: understanding, internalization, application \u2014 with quality gates, backpropagation verification, and self-healing",
       "author": "Testimonial",
       "version": "0.1.0",
       "download_url": "https://github.com/Testimonial/cognitive-squad/archive/refs/tags/v0.1.0.zip",
@@ -379,7 +379,7 @@
     "iterate": {
       "name": "Iterate",
       "id": "iterate",
-      "description": "Iterate on spec documents with a two-phase define-and-apply workflow — refine specs mid-implementation and go straight back to building",
+      "description": "Iterate on spec documents with a two-phase define-and-apply workflow \u2014 refine specs mid-implementation and go straight back to building",
       "author": "Vianca Martinez",
       "version": "2.0.0",
       "download_url": "https://github.com/imviancagrace/spec-kit-iterate/archive/refs/tags/v2.0.0.zip",
@@ -436,6 +436,263 @@
       "stars": 0,
       "created_at": "2026-03-05T00:00:00Z",
       "updated_at": "2026-03-05T00:00:00Z"
+    },
+    "learn": {
+      "name": "Learning Extension",
+      "id": "learn",
+      "description": "Generate educational guides from implementations and enhance clarifications with mentoring context.",
+      "author": "Vianca Martinez",
+      "version": "1.0.0",
+      "download_url": "https://github.com/imviancagrace/spec-kit-learn/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/imviancagrace/spec-kit-learn",
+      "homepage": "https://github.com/imviancagrace/spec-kit-learn",
+      "documentation": "https://github.com/imviancagrace/spec-kit-learn/blob/main/README.md",
+      "changelog": "https://github.com/imviancagrace/spec-kit-learn/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 1
+      },
+      "tags": [
+        "learning",
+        "education",
+        "mentoring",
+        "knowledge-transfer"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-17T00:00:00Z",
+      "updated_at": "2026-03-17T00:00:00Z"
+    },
+    "maqa": {
+      "name": "MAQA \u2014 Multi-Agent & Quality Assurance",
+      "id": "maqa",
+      "description": "Coordinator \u2192 feature \u2192 QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins (Trello, Linear, GitHub Projects, Jira, Azure DevOps). Optional CI gate.",
+      "author": "GenieRobot",
+      "version": "0.1.3",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.1.3/maqa.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-ext",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-ext",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-ext/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-ext/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 1
+      },
+      "tags": [
+        "multi-agent",
+        "orchestration",
+        "quality-assurance",
+        "workflow",
+        "parallel",
+        "tdd"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-26T00:00:00Z",
+      "updated_at": "2026-03-27T00:00:00Z"
+    },
+    "maqa-azure-devops": {
+      "name": "MAQA Azure DevOps Integration",
+      "id": "maqa-azure-devops",
+      "description": "Azure DevOps Boards integration for the MAQA extension. Populates work items from specs, moves User Stories across columns as features progress, real-time Task child ticking.",
+      "author": "GenieRobot",
+      "version": "0.1.0",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-azure-devops/releases/download/maqa-azure-devops-v0.1.0/maqa-azure-devops.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-azure-devops",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-azure-devops",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-azure-devops/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-azure-devops/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "azure-devops",
+        "project-management",
+        "multi-agent",
+        "maqa",
+        "kanban"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-27T00:00:00Z",
+      "updated_at": "2026-03-27T00:00:00Z"
+    },
+    "maqa-ci": {
+      "name": "MAQA CI/CD Gate",
+      "id": "maqa-ci",
+      "description": "CI/CD pipeline gate for the MAQA extension. Auto-detects GitHub Actions, CircleCI, GitLab CI, and Bitbucket Pipelines. Blocks QA handoff until pipeline is green.",
+      "author": "GenieRobot",
+      "version": "0.1.0",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ci/releases/download/maqa-ci-v0.1.0/maqa-ci.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-ci",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-ci",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-ci/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-ci/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "ci-cd",
+        "github-actions",
+        "circleci",
+        "gitlab-ci",
+        "quality-gate",
+        "maqa"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-27T00:00:00Z",
+      "updated_at": "2026-03-27T00:00:00Z"
+    },
+    "maqa-github-projects": {
+      "name": "MAQA GitHub Projects Integration",
+      "id": "maqa-github-projects",
+      "description": "GitHub Projects v2 integration for the MAQA extension. Populates draft issues from specs, moves items across Status columns as features progress, real-time task list ticking.",
+      "author": "GenieRobot",
+      "version": "0.1.0",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-github-projects/releases/download/maqa-github-projects-v0.1.0/maqa-github-projects.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-github-projects",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-github-projects",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-github-projects/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-github-projects/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "github-projects",
+        "project-management",
+        "multi-agent",
+        "maqa",
+        "kanban"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-27T00:00:00Z",
+      "updated_at": "2026-03-27T00:00:00Z"
+    },
+    "maqa-jira": {
+      "name": "MAQA Jira Integration",
+      "id": "maqa-jira",
+      "description": "Jira integration for the MAQA extension. Populates Stories from specs, moves issues across board columns as features progress, real-time Subtask ticking.",
+      "author": "GenieRobot",
+      "version": "0.1.0",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-jira/releases/download/maqa-jira-v0.1.0/maqa-jira.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-jira",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-jira",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-jira/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-jira/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "jira",
+        "project-management",
+        "multi-agent",
+        "maqa",
+        "kanban"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-27T00:00:00Z",
+      "updated_at": "2026-03-27T00:00:00Z"
+    },
+    "maqa-linear": {
+      "name": "MAQA Linear Integration",
+      "id": "maqa-linear",
+      "description": "Linear integration for the MAQA extension. Populates issues from specs, moves items across workflow states as features progress, real-time sub-issue ticking.",
+      "author": "GenieRobot",
+      "version": "0.1.0",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-linear/releases/download/maqa-linear-v0.1.0/maqa-linear.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-linear",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-linear",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-linear/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-linear/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "linear",
+        "project-management",
+        "multi-agent",
+        "maqa",
+        "kanban"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-27T00:00:00Z",
+      "updated_at": "2026-03-27T00:00:00Z"
+    },
+    "maqa-trello": {
+      "name": "MAQA Trello Integration",
+      "id": "maqa-trello",
+      "description": "Trello board integration for the MAQA extension. Populates board from specs, moves cards between lists as features progress, real-time checklist ticking.",
+      "author": "GenieRobot",
+      "version": "0.1.1",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-trello/releases/download/maqa-trello-v0.1.1/maqa-trello.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-trello",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-trello",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-trello/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-trello/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "trello",
+        "project-management",
+        "multi-agent",
+        "maqa",
+        "kanban"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-26T00:00:00Z",
+      "updated_at": "2026-03-26T00:00:00Z"
     },
     "onboard": {
       "name": "Onboard",
@@ -702,6 +959,38 @@
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
     },
+    "status": {
+      "name": "Project Status",
+      "id": "status",
+      "description": "Show current SDD workflow progress \u2014 active feature, artifact status, task completion, workflow phase, and extensions summary.",
+      "author": "KhawarHabibKhan",
+      "version": "1.0.0",
+      "download_url": "https://github.com/KhawarHabibKhan/spec-kit-status/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/KhawarHabibKhan/spec-kit-status",
+      "homepage": "https://github.com/KhawarHabibKhan/spec-kit-status",
+      "documentation": "https://github.com/KhawarHabibKhan/spec-kit-status/blob/main/README.md",
+      "changelog": "https://github.com/KhawarHabibKhan/spec-kit-status/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "status",
+        "workflow",
+        "progress",
+        "feature-tracking",
+        "task-progress"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-16T00:00:00Z",
+      "updated_at": "2026-03-16T00:00:00Z"
+    },
     "sync": {
       "name": "Spec Sync",
       "id": "sync",
@@ -775,38 +1064,6 @@
       "created_at": "2026-03-07T00:00:00Z",
       "updated_at": "2026-03-07T00:00:00Z"
     },
-    "status": {
-      "name": "Project Status",
-      "id": "status",
-      "description": "Show current SDD workflow progress — active feature, artifact status, task completion, workflow phase, and extensions summary.",
-      "author": "KhawarHabibKhan",
-      "version": "1.0.0",
-      "download_url": "https://github.com/KhawarHabibKhan/spec-kit-status/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/KhawarHabibKhan/spec-kit-status",
-      "homepage": "https://github.com/KhawarHabibKhan/spec-kit-status",
-      "documentation": "https://github.com/KhawarHabibKhan/spec-kit-status/blob/main/README.md",
-      "changelog": "https://github.com/KhawarHabibKhan/spec-kit-status/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "commands": 1,
-        "hooks": 0
-      },
-      "tags": [
-        "status",
-        "workflow",
-        "progress",
-        "feature-tracking",
-        "task-progress"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-16T00:00:00Z",
-      "updated_at": "2026-03-16T00:00:00Z"
-    },
     "v-model": {
       "name": "V-Model Extension Pack",
       "id": "v-model",
@@ -838,37 +1095,6 @@
       "stars": 0,
       "created_at": "2026-02-20T00:00:00Z",
       "updated_at": "2026-02-22T00:00:00Z"
-    },
-    "learn": {
-      "name": "Learning Extension",
-      "id": "learn",
-      "description": "Generate educational guides from implementations and enhance clarifications with mentoring context.",
-      "author": "Vianca Martinez",
-      "version": "1.0.0",
-      "download_url": "https://github.com/imviancagrace/spec-kit-learn/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/imviancagrace/spec-kit-learn",
-      "homepage": "https://github.com/imviancagrace/spec-kit-learn",
-      "documentation": "https://github.com/imviancagrace/spec-kit-learn/blob/main/README.md",
-      "changelog": "https://github.com/imviancagrace/spec-kit-learn/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "commands": 2,
-        "hooks": 1
-      },
-      "tags": [
-        "learning",
-        "education",
-        "mentoring",
-        "knowledge-transfer"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-17T00:00:00Z",
-      "updated_at": "2026-03-17T00:00:00Z"
     },
     "verify": {
       "name": "Verify Extension",
