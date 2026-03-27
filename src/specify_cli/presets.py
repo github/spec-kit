@@ -1557,18 +1557,17 @@ class PresetResolver:
         else:
             subdirs = [""]
 
-        # Determine file extension based on template type
-        ext = ".md"
-        if template_type == "script":
-            ext = ".sh"  # scripts use .sh; callers can also check .ps1
+        # Determine file extensions based on template type
+        exts = [".sh", ".ps1"] if template_type == "script" else [".md"]
 
         # Priority 1: Project-local overrides
-        if template_type == "script":
-            override = self.overrides_dir / "scripts" / f"{template_name}{ext}"
-        else:
-            override = self.overrides_dir / f"{template_name}{ext}"
-        if override.exists():
-            return override
+        for file_ext in exts:
+            if template_type == "script":
+                override = self.overrides_dir / "scripts" / f"{template_name}{file_ext}"
+            else:
+                override = self.overrides_dir / f"{template_name}{file_ext}"
+            if override.exists():
+                return override
 
         # Priority 2: Installed presets (sorted by priority — lower number wins)
         if self.presets_dir.exists():
@@ -1576,12 +1575,13 @@ class PresetResolver:
             for pack_id, _metadata in registry.list_by_priority():
                 pack_dir = self.presets_dir / pack_id
                 for subdir in subdirs:
-                    if subdir:
-                        candidate = pack_dir / subdir / f"{template_name}{ext}"
-                    else:
-                        candidate = pack_dir / f"{template_name}{ext}"
-                    if candidate.exists():
-                        return candidate
+                    for file_ext in exts:
+                        if subdir:
+                            candidate = pack_dir / subdir / f"{template_name}{file_ext}"
+                        else:
+                            candidate = pack_dir / f"{template_name}{file_ext}"
+                        if candidate.exists():
+                            return candidate
 
         # Priority 3: Extension-provided templates (delegated to ExtensionResolver)
         ext_result = self._ext_resolver.resolve(template_name, template_type)
@@ -1598,9 +1598,10 @@ class PresetResolver:
             if core.exists():
                 return core
         elif template_type == "script":
-            core = self.templates_dir / "scripts" / f"{template_name}{ext}"
-            if core.exists():
-                return core
+            for file_ext in exts:
+                core = self.templates_dir / "scripts" / f"{template_name}{file_ext}"
+                if core.exists():
+                    return core
 
         return None
 

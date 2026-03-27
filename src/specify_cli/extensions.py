@@ -116,6 +116,8 @@ class ExtensionManifest:
 
         # Validate extension metadata
         ext = self.data["extension"]
+        if not isinstance(ext, dict):
+            raise ValidationError("'extension' must be a mapping")
         for field in ["id", "name", "version", "description"]:
             if field not in ext:
                 raise ValidationError(f"Missing extension.{field}")
@@ -135,11 +137,15 @@ class ExtensionManifest:
 
         # Validate requires section
         requires = self.data["requires"]
+        if not isinstance(requires, dict):
+            raise ValidationError("'requires' must be a mapping")
         if "speckit_version" not in requires:
             raise ValidationError("Missing requires.speckit_version")
 
         # Validate provides section
         provides = self.data["provides"]
+        if not isinstance(provides, dict):
+            raise ValidationError("'provides' must be a mapping")
         commands = provides.get("commands") or []
         scripts = provides.get("scripts") or []
         if not isinstance(commands, list):
@@ -165,8 +171,12 @@ class ExtensionManifest:
 
         # Validate scripts
         for script in scripts:
+            if not isinstance(script, dict):
+                raise ValidationError("Each script entry must be a mapping")
             if "name" not in script or "file" not in script:
                 raise ValidationError("Script missing 'name' or 'file'")
+            if not isinstance(script["name"], str) or not isinstance(script["file"], str):
+                raise ValidationError("Script 'name' and 'file' must be strings")
 
             # Validate script name format
             if not re.match(r'^[a-z0-9-]+$', script["name"]):
