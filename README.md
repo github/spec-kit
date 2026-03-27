@@ -162,9 +162,18 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 
 The following community-contributed extensions are available in [`catalog.community.json`](extensions/catalog.community.json):
 
-**Categories:** `docs` — reads, validates, or generates spec artifacts · `code` — reviews, validates, or modifies source code · `process` — orchestrates workflow across phases · `integration` — syncs with external platforms · `visibility` — reports on project health or progress
+**Categories:**
 
-**Effect:** `Read-only` — produces reports without modifying files · `Read+Write` — modifies files, creates artifacts, or updates specs
+- `docs` — reads, validates, or generates spec artifacts
+- `code` — reviews, validates, or modifies source code
+- `process` — orchestrates workflow across phases
+- `integration` — syncs with external platforms
+- `visibility` — reports on project health or progress
+
+**Effect:**
+
+- `Read-only` — produces reports without modifying files
+- `Read+Write` — modifies files, creates artifacts, or updates specs
 
 | Extension | Purpose | Category | Effect | URL |
 |-----------|---------|----------|--------|-----|
