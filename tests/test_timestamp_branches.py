@@ -600,8 +600,9 @@ def _has_pwsh() -> bool:
 
 
 def run_ps_script(cwd: Path, *args: str) -> subprocess.CompletedProcess:
-    """Run create-new-feature.ps1 with given args."""
-    cmd = ["pwsh", "-NoProfile", "-File", str(CREATE_FEATURE_PS), *args]
+    """Run create-new-feature.ps1 from the temp repo's scripts directory."""
+    script = cwd / "scripts" / "powershell" / "create-new-feature.ps1"
+    cmd = ["pwsh", "-NoProfile", "-File", str(script), *args]
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
 
 
