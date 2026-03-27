@@ -29,7 +29,7 @@ fi
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
 # Protected branches
-PROTECTED_BRANCHES=("main" "master" "develop" )
+PROTECTED_BRANCHES=("main" "master" "develop" "production")
 
 # Check if current branch is protected
 for branch in "${PROTECTED_BRANCHES[@]}"; do

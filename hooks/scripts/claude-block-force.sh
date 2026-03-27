@@ -29,21 +29,42 @@ DANGEROUS_PATTERNS=(
     "git restore ."
 )
 
-# Check if command matches any dangerous pattern at a command boundary
-# Matches at start of string or after command separators (&&, ||, ;, |)
-for pattern in "${DANGEROUS_PATTERNS[@]}"; do
-    if [[ "$COMMAND" =~ (^|&&|\|\||\||;)[[:space:]]*$pattern ]]; then
-        # Return deny decision as JSON
-        jq -n --arg cmd "$COMMAND" --arg pattern "$pattern" '{
-            hookSpecificOutput: {
-                hookEventName: "PreToolUse",
-                permissionDecision: "deny",
-                permissionDecisionReason: ("Destructive command blocked: " + $pattern + ". This can cause irreversible data loss. If you really need to run this, ask the user to run it manually.")
-            }
-        }'
-        exit 0
-    fi
-done
+# Strip common wrappers (sudo, 'command' builtin, env VAR=val) from a subcommand
+strip_wrappers() {
+    local cmd="$1"
+    # Strip leading whitespace
+    cmd="${cmd#"${cmd%%[! ]*}"}"
+    # Strip sudo/command prefixes (may repeat, e.g. sudo command git ...)
+    while [[ "$cmd" =~ ^(sudo|command)[[:space:]] ]]; do
+        cmd="${cmd#*[[:space:]]}"
+        cmd="${cmd#"${cmd%%[! ]*}"}"
+    done
+    # Strip env var assignments at start (VAR=val ...)
+    while [[ "$cmd" =~ ^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]] ]]; do
+        cmd="${cmd#*[[:space:]]}"
+        cmd="${cmd#"${cmd%%[! ]*}"}"
+    done
+    printf '%s' "$cmd"
+}
+
+# Split COMMAND on shell separators (&&, ||, ;, |) and check each subcommand
+# using literal string matching to avoid regex metacharacter false positives.
+while IFS= read -r subcommand; do
+    subcommand=$(strip_wrappers "$subcommand")
+    for pattern in "${DANGEROUS_PATTERNS[@]}"; do
+        # Match exactly the pattern or pattern followed by a space (e.g. with extra flags)
+        if [[ "$subcommand" == "$pattern" ]] || [[ "$subcommand" == "$pattern "* ]]; then
+            jq -n --arg cmd "$COMMAND" --arg pattern "$pattern" '{
+                hookSpecificOutput: {
+                    hookEventName: "PreToolUse",
+                    permissionDecision: "deny",
+                    permissionDecisionReason: ("Destructive command blocked: " + $pattern + ". This can cause irreversible data loss. If you really need to run this, ask the user to run it manually.")
+                }
+            }'
+            exit 0
+        fi
+    done
+done < <(echo "$COMMAND" | sed -E 's/(&&|\|\||;|\|)/\n/g')
 
 # Allow the command
 echo '{}'

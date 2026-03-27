@@ -27,11 +27,14 @@ fi
 
 # Get staged files (or files being added)
 if [[ "$COMMAND" =~ git[[:space:]]+add ]]; then
-    # Extract files from the add command
-    FILES=$(echo "$COMMAND" | sed 's/^git add //')
-    # If adding all, get staged files
-    if [[ "$FILES" == "." ]] || [[ "$FILES" == "-A" ]] || [[ "$FILES" == "--all" ]]; then
+    # Extract args after 'git add'
+    ARGS=$(echo "$COMMAND" | sed -E 's/^.*git[[:space:]]+add[[:space:]]*//')
+    # Wildcards or flags-only: resolve via git diff
+    if [[ "$ARGS" == "." ]] || [[ "$ARGS" == "-A" ]] || [[ "$ARGS" == "--all" ]] || [[ "$ARGS" =~ ^- ]]; then
         FILES=$(git diff --name-only 2>/dev/null || echo "")
+    else
+        # Explicit file list: convert space-delimited args to newline-delimited
+        FILES=$(echo "$ARGS" | tr ' ' '\n')
     fi
 else
     # For commit, check already staged files
@@ -45,9 +48,9 @@ fi
 
 # Secret patterns (simplified for grep -E)
 PATTERNS=(
-    'api[_-]?key[[:space:]]*[=:][[:space:]]*["\x27][^"\x27]{6,}["\x27]'
-    'secret[_-]?key[[:space:]]*[=:][[:space:]]*["\x27][^"\x27]{6,}["\x27]'
-    'password[[:space:]]*[=:][[:space:]]*["\x27][^"\x27]{4,}["\x27]'
+    $'api[_-]?key[[:space:]]*[=:][[:space:]]*["\'][^"\']{6,}["\']'
+    $'secret[_-]?key[[:space:]]*[=:][[:space:]]*["\'][^"\']{6,}["\']'
+    $'password[[:space:]]*[=:][[:space:]]*["\'][^"\']{4,}["\']'
     'AKIA[0-9A-Z]{16}'
     '-----BEGIN .* PRIVATE KEY-----'
 )
