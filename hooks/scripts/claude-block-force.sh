@@ -29,7 +29,9 @@ DANGEROUS_PATTERNS=(
     "git restore ."
 )
 
-# Strip common wrappers (sudo, 'command' builtin, env keyword, env VAR=val) from a subcommand
+# Strip common wrappers (sudo, 'command' builtin, env keyword, env VAR=val) from a subcommand.
+# Also handles option flags on wrappers (e.g. sudo -u root, env -i) by advancing past
+# any option tokens that follow a stripped keyword, using '##* git' to locate 'git'.
 strip_wrappers() {
     local cmd="$1"
     # Strip leading whitespace
@@ -44,6 +46,13 @@ strip_wrappers() {
         cmd="${cmd#*[[:space:]]}"
         cmd="${cmd#"${cmd%%[! ]*}"}"
     done
+    # If cmd still starts with option flags after keyword/assignment stripping
+    # (e.g. 'sudo -u root git ...' leaves '-u root git ...'), advance greedily
+    # to the last ' git' occurrence so wrapper options are skipped regardless of
+    # whether they take arguments (sudo -E, sudo -u user, env -i, etc.).
+    if [[ "$cmd" =~ ^- ]] && [[ "$cmd" =~ [[:space:]]git([[:space:]]|$) ]]; then
+        cmd="git${cmd##* git}"
+    fi
     printf '%s' "$cmd"
 }
 

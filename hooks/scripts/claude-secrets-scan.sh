@@ -26,17 +26,34 @@ if [[ ! "$COMMAND" =~ git[[:space:]]+(add|commit) ]]; then
 fi
 
 # Get files to scan.
-# For 'git add': ask git directly for modified tracked files plus all untracked
-# files (which covers wildcards, globs, and quoted/spaced paths without having
-# to parse the command string).
-# For 'git commit': check already-staged files only.
+# For 'git add': respect the pathspec from the command so that 'git add README.md'
+# doesn't trigger false positives from unrelated untracked files.
+#   - If the args are a wildcard/flag form (`.`, `-A`, `--all`, or any flag), ask git
+#     for all modified tracked + all untracked files.
+#   - Otherwise, pass the args as a pathspec to git so only the relevant files are
+#     returned.  (Git handles glob expansion; we avoid complex shell parsing.)
+# For 'git commit': scan the index blob (git show ":$file") so partially-staged
+# files are checked for what is actually staged, not the on-disk version.
+SCAN_FROM_INDEX=false
 if [[ "$COMMAND" =~ git[[:space:]]+add ]]; then
-    TRACKED=$(git diff --name-only 2>/dev/null || echo "")
-    UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null || echo "")
+    ARGS=$(printf '%s\n' "$COMMAND" | sed -E 's/.*git[[:space:]]+add[[:space:]]+(.*)/\1/' | head -1)
+    if [[ "$ARGS" == "." ]] || [[ "$ARGS" == "-A" ]] || [[ "$ARGS" == "--all" ]] || \
+       [[ "$ARGS" =~ ^- ]] || [[ -z "$ARGS" ]]; then
+        # Wildcard/flag-only: scan all modified tracked + all untracked
+        TRACKED=$(git diff --name-only 2>/dev/null || echo "")
+        UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null || echo "")
+    else
+        # Specific pathspec: let git resolve it (handles globs, paths, etc.)
+        # shellcheck disable=SC2086
+        TRACKED=$(git diff --name-only -- $ARGS 2>/dev/null || echo "")
+        # shellcheck disable=SC2086
+        UNTRACKED=$(git ls-files --others --exclude-standard -- $ARGS 2>/dev/null || echo "")
+    fi
     FILES=$(printf '%s\n%s\n' "$TRACKED" "$UNTRACKED" | sed '/^$/d' | sort -u)
 else
-    # For commit, check already staged files
+    # For commit, check already-staged files and scan from the index
     FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || echo "")
+    SCAN_FROM_INDEX=true
 fi
 
 if [[ -z "$FILES" ]]; then
@@ -55,20 +72,35 @@ PATTERNS=(
 
 FOUND_SECRETS=""
 
+# Message prefix depends on whether we're checking files-to-be-staged or already-staged content
+if [[ "$SCAN_FROM_INDEX" == true ]]; then
+    DENY_PREFIX="Potential secrets detected in staged files:"
+else
+    DENY_PREFIX="Potential secrets detected in files to be staged:"
+fi
+
 # Scan each file (read line-by-line to handle spaces in filenames)
 while IFS= read -r file; do
     [[ -z "$file" ]] && continue
-    if [[ ! -f "$file" ]]; then
-        continue
-    fi
 
     # Skip common non-secret files
     if [[ "$file" =~ \.(md|lock|sample|example)$ ]]; then
         continue
     fi
 
+    # Get content: from the index blob for commits (what is actually staged),
+    # or from disk for git add (what will be staged).
+    local_content=""
+    if [[ "$SCAN_FROM_INDEX" == true ]]; then
+        local_content=$(git show ":$file" 2>/dev/null || true)
+        [[ -z "$local_content" ]] && continue
+    else
+        [[ ! -f "$file" ]] && continue
+        local_content=$(cat "$file" 2>/dev/null || true)
+    fi
+
     for pattern in "${PATTERNS[@]}"; do
-        match=$(grep -nEi "$pattern" "$file" 2>/dev/null | head -1 || true)
+        match=$(printf '%s\n' "$local_content" | grep -nEi "$pattern" | head -1 || true)
         if [[ -n "$match" ]]; then
             FOUND_SECRETS="$FOUND_SECRETS\n- $file: $match"
         fi
@@ -77,11 +109,11 @@ done <<< "$FILES"
 
 if [[ -n "$FOUND_SECRETS" ]]; then
     # Return deny decision as JSON
-    jq -n --arg secrets "$FOUND_SECRETS" '{
+    jq -n --arg secrets "$FOUND_SECRETS" --arg prefix "$DENY_PREFIX" '{
         hookSpecificOutput: {
             hookEventName: "PreToolUse",
             permissionDecision: "deny",
-            permissionDecisionReason: ("Potential secrets detected in staged files:" + $secrets + "\n\nUse environment variables or .env files instead of hardcoding secrets.")
+            permissionDecisionReason: ($prefix + $secrets + "\n\nUse environment variables or .env files instead of hardcoding secrets.")
         }
     }'
     exit 0
