@@ -437,6 +437,39 @@
       "created_at": "2026-03-05T00:00:00Z",
       "updated_at": "2026-03-05T00:00:00Z"
     },
+    "onboard": {
+      "name": "Onboard",
+      "id": "onboard",
+      "description": "Contextual onboarding and progressive growth for developers new to spec-kit projects. Explains specs, maps dependencies, validates understanding, and guides the next step.",
+      "author": "Rafael Sales",
+      "version": "2.1.0",
+      "download_url": "https://github.com/dmux/spec-kit-onboard/archive/refs/tags/v2.1.0.zip",
+      "repository": "https://github.com/dmux/spec-kit-onboard",
+      "homepage": "https://github.com/dmux/spec-kit-onboard",
+      "documentation": "https://github.com/dmux/spec-kit-onboard/blob/main/README.md",
+      "changelog": "https://github.com/dmux/spec-kit-onboard/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 3
+      },
+      "tags": [
+        "onboarding",
+        "learning",
+        "mentoring",
+        "developer-experience",
+        "gamification",
+        "knowledge-transfer"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-26T00:00:00Z",
+      "updated_at": "2026-03-26T00:00:00Z"
+    },
     "plan-review-gate": {
       "name": "Plan Review Gate",
       "id": "plan-review-gate",
