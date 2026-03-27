@@ -230,6 +230,10 @@ create_openclaw_skills() {
     [[ -f "$template" ]] || continue
     local name
     name=$(basename "$template" .md)
+    # Skip root skill manifest (not a per-command template)
+    if [[ "$name" == "skill" ]]; then
+      continue
+    fi
     local skill_name="speckit-${name}"
     local skill_dir="${skills_dir}/${skill_name}"
     mkdir -p "$skill_dir"
