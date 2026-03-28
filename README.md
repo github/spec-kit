@@ -254,35 +254,61 @@ Community projects that extend, visualize, or build on Spec Kit:
 
 ## 🤖 Supported AI Agents
 
-| Agent                                                                                | Support | Notes                                                                                                                                     |
-| ------------------------------------------------------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| [Qoder CLI](https://qoder.com/cli)                                                   | ✅      |                                                                                                                                           |
-| [Kiro CLI](https://kiro.dev/docs/cli/)                                               | ✅      | Use `--ai kiro-cli` (alias: `--ai kiro`)                                                                                                 |
-| [Amp](https://ampcode.com/)                                                          | ✅      |                                                                                                                                           |
-| [Auggie CLI](https://docs.augmentcode.com/cli/overview)                              | ✅      |                                                                                                                                           |
-| [Claude Code](https://www.anthropic.com/claude-code)                                 | ✅      |                                                                                                                                           |
-| [CodeBuddy CLI](https://www.codebuddy.ai/cli)                                        | ✅      |                                                                                                                                           |
-| [Codex CLI](https://github.com/openai/codex)                                         | ✅      | Requires `--ai-skills`. Codex recommends [skills](https://developers.openai.com/codex/skills) and treats [custom prompts](https://developers.openai.com/codex/custom-prompts) as deprecated. Spec-kit installs Codex skills into `.agents/skills` and invokes them as `$speckit-<command>`. |
-| [Cursor](https://cursor.sh/)                                                         | ✅      |                                                                                                                                           |
-| [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | ✅      |                                                                                                                                           |
-| [GitHub Copilot](https://code.visualstudio.com/)                                     | ✅      |                                                                                                                                           |
-| [IBM Bob](https://www.ibm.com/products/bob)                                          | ✅      | IDE-based agent with slash command support                                                                                                |
-| [Jules](https://jules.google.com/)                                                   | ✅      |                                                                                                                                           |
-| [Kilo Code](https://github.com/Kilo-Org/kilocode)                                    | ✅      |                                                                                                                                           |
-| [opencode](https://opencode.ai/)                                                     | ✅      |                                                                                                                                           |
-| [Pi Coding Agent](https://pi.dev)                                                    | ✅      | Pi doesn't have MCP support out of the box, so `taskstoissues` won't work as intended. MCP support can be added via [extensions](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#extensions) |
-| [Qwen Code](https://github.com/QwenLM/qwen-code)                                     | ✅      |                                                                                                                                           |
-| [Roo Code](https://roocode.com/)                                                     | ✅      |                                                                                                                                           |
-| [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | ✅      |                                                                                                                                           |
-| [Tabnine CLI](https://docs.tabnine.com/main/getting-started/tabnine-cli)             | ✅      |                                                                                                                                           |
-| [Mistral Vibe](https://github.com/mistralai/mistral-vibe)                            | ✅      |                                                                                                                                           |
-| [Kimi Code](https://code.kimi.com/)                                                  | ✅      |                                                                                                                                           |
-| [iFlow CLI](https://docs.iflow.cn/en/cli/quickstart)                                 | ✅      |                                                                                                                                           |
-| [Windsurf](https://windsurf.com/)                                                    | ✅      |                                                                                                                                           |
-| [Junie](https://junie.jetbrains.com/)                                                | ✅      |                                                                                                                                           |
-| [Antigravity (agy)](https://antigravity.google/)                                     | ✅      | Requires `--ai-skills` |
-| [Trae](https://www.trae.ai/)                                                         | ✅      |                                                                                                                                           |
-| Generic                                                                              | ✅      | Bring your own agent — use `--ai generic --ai-commands-dir <path>` for unsupported agents                                                 |
+| Agent                                                                    | Support | Notes                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Qoder CLI](https://qoder.com/cli)                                       | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Kiro CLI](https://kiro.dev/docs/cli/)                                   | ✅       | Use `--ai kiro-cli` (alias: `--ai kiro`)                                                                                                                                                                                                                                                    |
+| [Amp](https://ampcode.com/)                                              | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Auggie CLI](https://docs.augmentcode.com/cli/overview)                  | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Claude Code](https://www.anthropic.com/claude-code)                     | ✅       |                                                                                                                                                                                                                                                                                             |
+| [CodeBuddy CLI](https://www.codebuddy.ai/cli)                            | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Codex CLI](https://github.com/openai/codex)                             | ✅       | Requires `--ai-skills`. Codex recommends [skills](https://developers.openai.com/codex/skills) and treats [custom prompts](https://developers.openai.com/codex/custom-prompts) as deprecated. Spec-kit installs Codex skills into `.agents/skills` and invokes them as `$speckit-<command>`. |
+| [Cursor](https://cursor.sh/)                                             | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli)                | ✅       |                                                                                                                                                                                                                                                                                             |
+| [GitHub Copilot](https://code.visualstudio.com/)                         | ✅       |                                                                                                                                                                                                                                                                                             |
+| [IBM Bob](https://www.ibm.com/products/bob)                              | ✅       | IDE-based agent with slash command support                                                                                                                                                                                                                                                  |
+| [Jules](https://jules.google.com/)                                       | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Kilo Code](https://github.com/Kilo-Org/kilocode)                        | ✅       |                                                                                                                                                                                                                                                                                             |
+| [opencode](https://opencode.ai/)                                         | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Pi Coding Agent](https://pi.dev)                                        | ✅       | Pi doesn't have MCP support out of the box, so `taskstoissues` won't work as intended. MCP support can be added via [extensions](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#extensions)                                                                            |
+| [Qwen Code](https://github.com/QwenLM/qwen-code)                         | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Roo Code](https://roocode.com/)                                         | ✅       |                                                                                                                                                                                                                                                                                             |
+| [SHAI (OVHcloud)](https://github.com/ovh/shai)                           | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Tabnine CLI](https://docs.tabnine.com/main/getting-started/tabnine-cli) | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Mistral Vibe](https://github.com/mistralai/mistral-vibe)                | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Kimi Code](https://code.kimi.com/)                                      | ✅       |                                                                                                                                                                                                                                                                                             |
+| [iFlow CLI](https://docs.iflow.cn/en/cli/quickstart)                     | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Windsurf](https://windsurf.com/)                                        | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Junie](https://junie.jetbrains.com/)                                    | ✅       |                                                                                                                                                                                                                                                                                             |
+| [Antigravity (agy)](https://antigravity.google/)                         | ✅       | Requires `--ai-skills`                                                                                                                                                                                                                                                                      |
+| [Trae](https://www.trae.ai/)                                             | ✅       |                                                                                                                                                                                                                                                                                             |
+| Generic                                                                  | ✅       | Bring your own agent — use `--ai generic --ai-commands-dir <path>` for unsupported agents                                                                                                                                                                                                   |
+
+## Available Slash Commands
+
+After running `specify init`, your AI coding agent will have access to these slash commands for structured development. If `--ai-skills` flag is indicated, agent skills are installed instead of slash-command prompt files.
+
+#### Core Commands
+
+Essential commands for the Spec-Driven Development workflow:
+
+| Command                 | Agent Skill             | Description                                                              |
+| ----------------------- | ----------------------- | ------------------------------------------------------------------------ |
+| `/speckit.constitution` | `$speckit-constitution` | Create or update project governing principles and development guidelines |
+| `/speckit.specify`      | `$speckit-plan`         | Define what you want to build (requirements and user stories)            |
+| `/speckit.plan`         | `$speckit-tasks`        | Create technical implementation plans with your chosen tech stack        |
+| `/speckit.tasks`        | `$speckit-tasks`        | Generate actionable task lists for implementation                        |
+| `/speckit.implement`    | `$speckit-implement`    | Execute all tasks to build the feature according to the plan             |
+
+#### Optional Commands
+
+Additional commands for enhanced quality and validation:
+
+| Command              | Description                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`)                                                |
+| `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`)                             |
+| `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 
 ## 🔧 Specify CLI Reference
 
@@ -402,34 +428,6 @@ specify init my-project --ai claude --branch-numbering timestamp
 # Check system requirements
 specify check
 ```
-
-### Available Slash Commands
-
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development.
-
-For Codex CLI, `--ai-skills` installs spec-kit as agent skills instead of slash-command prompt files. In Codex skills mode, invoke spec-kit as `$speckit-constitution`, `$speckit-specify`, `$speckit-plan`, `$speckit-tasks`, and `$speckit-implement`.
-
-#### Core Commands
-
-Essential commands for the Spec-Driven Development workflow:
-
-| Command                 | Description                                                              |
-| ----------------------- | ------------------------------------------------------------------------ |
-| `/speckit.constitution` | Create or update project governing principles and development guidelines |
-| `/speckit.specify`      | Define what you want to build (requirements and user stories)            |
-| `/speckit.plan`         | Create technical implementation plans with your chosen tech stack        |
-| `/speckit.tasks`        | Generate actionable task lists for implementation                        |
-| `/speckit.implement`    | Execute all tasks to build the feature according to the plan             |
-
-#### Optional Commands
-
-Additional commands for enhanced quality and validation:
-
-| Command              | Description                                                                                                                          |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`)                                                |
-| `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`)                             |
-| `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 
 ### Environment Variables
 
