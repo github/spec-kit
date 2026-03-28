@@ -302,6 +302,13 @@ AGENT_CONFIG = {
         "install_url": "https://docs.iflow.cn/en/cli/quickstart",
         "requires_cli": True,
     },
+    "goose": {
+        "name": "Goose",
+        "folder": ".goose/",
+        "commands_subdir": "recipes",
+        "install_url": "https://block.github.io/goose/docs/getting-started/installation",
+        "requires_cli": True,
+    },
     "generic": {
         "name": "Generic (bring your own agent)",
         "folder": None,  # Set dynamically via --ai-commands-dir
