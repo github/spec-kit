@@ -162,6 +162,12 @@ class CommandRegistrar:
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": ".md"
+        },
+        "goose": {
+            "dir": ".goose/recipes",
+            "format": "yaml",
+            "args": "{{args}}",
+            "extension": ".yaml"
         }
     }
 
