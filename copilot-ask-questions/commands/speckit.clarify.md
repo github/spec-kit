@@ -90,7 +90,7 @@ Execution steps:
    - Clarification would not materially change implementation or validation strategy
    - Information is better deferred to planning phase (note internally)
 
-3. Generate (internally) a prioritized queue of candidate clarification questions (maximum 5). Do NOT output them all at once. Apply these constraints:
+3. Generate (internally) a prioritized queue of candidate clarification questions (maximum 5). When the `vscode/askQuestions` tool is **not** available, do NOT output them all at once (they will be presented one at a time in step 4); when the tool **is** available, they will be batched in a single call in step 4. Apply these constraints:
     - Maximum of 5 total questions across the whole session.
     - Each question must be answerable with EITHER:
        - A short multiple‑choice selection (2–5 distinct, mutually exclusive options), OR

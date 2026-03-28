@@ -29,6 +29,31 @@
         "aide"
       ]
     },
+    "copilot-ask-questions": {
+      "name": "Copilot askQuestions Clarify",
+      "id": "copilot-ask-questions",
+      "version": "1.0.0",
+      "description": "Enhances the clarify command to use vscode/askQuestions for batched interactive questioning, reducing API request costs in GitHub Copilot.",
+      "author": "fdcastel",
+      "repository": "https://github.com/fdcastel/spec-kit",
+      "download_url": "https://github.com/fdcastel/spec-kit/releases/download/copilot-ask-questions-v1.0.0/copilot-ask-questions.zip",
+      "homepage": "https://github.com/fdcastel/spec-kit",
+      "documentation": "https://github.com/fdcastel/spec-kit/blob/main/copilot-ask-questions/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 1
+      },
+      "tags": [
+        "copilot",
+        "clarify",
+        "interactive",
+        "vscode"
+      ]
+    },
     "pirate": {
       "name": "Pirate Speak (Full)",
       "id": "pirate",

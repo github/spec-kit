@@ -19,11 +19,16 @@ All other behavior (ambiguity scanning, spec integration, validation, reporting)
 
 ## Installation
 
+### From the community catalog
+
+```bash
+specify preset add copilot-ask-questions
+```
+
 ### From a release URL
 
 ```bash
-# FIXME ?
-specify preset add --from https://github.com/github/spec-kit/releases/.../copilot-ask-questions.zip
+specify preset add --from https://github.com/fdcastel/spec-kit/releases/download/copilot-ask-questions-v1.0.0/copilot-ask-questions.zip
 ```
 
 ### From local directory (development)
