@@ -141,7 +141,7 @@ get_highest_from_remote_refs() {
 
     for remote in $(git remote 2>/dev/null); do
         local remote_highest
-        remote_highest=$(git ls-remote --heads "$remote" 2>/dev/null | sed 's|.*refs/heads/||' | _extract_highest_number)
+        remote_highest=$(GIT_TERMINAL_PROMPT=0 git ls-remote --heads "$remote" 2>/dev/null | sed 's|.*refs/heads/||' | _extract_highest_number)
         if [ "$remote_highest" -gt "$highest" ]; then
             highest=$remote_highest
         fi

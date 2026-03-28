@@ -606,6 +606,7 @@ class TestDryRun:
             capture_output=True,
             text=True,
         )
+        assert branches.returncode == 0, f"'git branch --list' failed: {branches.stderr}"
         assert branches.stdout.strip() == ""
 
     def test_dry_run_with_number(self, git_repo: Path):

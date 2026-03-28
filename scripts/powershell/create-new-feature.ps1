@@ -107,7 +107,9 @@ function Get-HighestNumberFromRemoteRefs {
         $remotes = git remote 2>$null
         if ($remotes) {
             foreach ($remote in $remotes) {
+                $env:GIT_TERMINAL_PROMPT = '0'
                 $refs = git ls-remote --heads $remote 2>$null
+                $env:GIT_TERMINAL_PROMPT = $null
                 if ($LASTEXITCODE -eq 0 -and $refs) {
                     $refNames = $refs | ForEach-Object {
                         if ($_ -match 'refs/heads/(.+)$') { $matches[1] }
