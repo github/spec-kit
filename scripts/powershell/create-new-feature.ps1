@@ -67,31 +67,38 @@ function Get-HighestNumberFromSpecs {
     return $highest
 }
 
+# Extract the highest sequential feature number from a list of branch/ref names.
+# Shared by Get-HighestNumberFromBranches and Get-HighestNumberFromRemoteRefs.
+function Get-HighestNumberFromNames {
+    param([string[]]$Names)
+
+    [long]$highest = 0
+    foreach ($name in $Names) {
+        if ($name -match '^(\d{3,})-' -and $name -notmatch '^\d{8}-\d{6}-') {
+            [long]$num = 0
+            if ([long]::TryParse($matches[1], [ref]$num) -and $num -gt $highest) {
+                $highest = $num
+            }
+        }
+    }
+    return $highest
+}
+
 function Get-HighestNumberFromBranches {
     param()
 
-    [long]$highest = 0
     try {
         $branches = git branch -a 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            foreach ($branch in $branches) {
-                # Clean branch name: remove leading markers and remote prefixes
-                $cleanBranch = $branch.Trim() -replace '^\*?\s+', '' -replace '^remotes/[^/]+/', ''
-
-                # Extract sequential feature number (>=3 digits), skip timestamp branches.
-                if ($cleanBranch -match '^(\d{3,})-' -and $cleanBranch -notmatch '^\d{8}-\d{6}-') {
-                    [long]$num = 0
-                    if ([long]::TryParse($matches[1], [ref]$num) -and $num -gt $highest) {
-                        $highest = $num
-                    }
-                }
+        if ($LASTEXITCODE -eq 0 -and $branches) {
+            $cleanNames = $branches | ForEach-Object {
+                $_.Trim() -replace '^\*?\s+', '' -replace '^remotes/[^/]+/', ''
             }
+            return Get-HighestNumberFromNames -Names $cleanNames
         }
     } catch {
-        # If git command fails, return 0
         Write-Verbose "Could not check Git branches: $_"
     }
-    return $highest
+    return 0
 }
 
 function Get-HighestNumberFromRemoteRefs {
@@ -102,18 +109,11 @@ function Get-HighestNumberFromRemoteRefs {
             foreach ($remote in $remotes) {
                 $refs = git ls-remote --heads $remote 2>$null
                 if ($LASTEXITCODE -eq 0 -and $refs) {
-                    foreach ($line in $refs) {
-                        # Extract branch name from refs/heads/branch-name
-                        if ($line -match 'refs/heads/(.+)$') {
-                            $ref = $matches[1]
-                            if ($ref -match '^(\d{3,})-' -and $ref -notmatch '^\d{8}-\d{6}-') {
-                                [long]$num = 0
-                                if ([long]::TryParse($matches[1], [ref]$num) -and $num -gt $highest) {
-                                    $highest = $num
-                                }
-                            }
-                        }
-                    }
+                    $refNames = $refs | ForEach-Object {
+                        if ($_ -match 'refs/heads/(.+)$') { $matches[1] }
+                    } | Where-Object { $_ }
+                    $remoteHighest = Get-HighestNumberFromNames -Names $refNames
+                    if ($remoteHighest -gt $highest) { $highest = $remoteHighest }
                 }
             }
         }
@@ -123,20 +123,28 @@ function Get-HighestNumberFromRemoteRefs {
     return $highest
 }
 
+# Return next available branch number. When SkipFetch is true, queries remotes
+# via ls-remote (read-only) instead of fetching.
 function Get-NextBranchNumber {
     param(
-        [string]$SpecsDir
+        [string]$SpecsDir,
+        [switch]$SkipFetch
     )
 
-    # Fetch all remotes to get latest branch info (suppress errors if no remotes)
-    try {
-        git fetch --all --prune 2>$null | Out-Null
-    } catch {
-        # Ignore fetch errors
+    if ($SkipFetch) {
+        # Side-effect-free: query remotes via ls-remote
+        $highestBranch = Get-HighestNumberFromBranches
+        $highestRemote = Get-HighestNumberFromRemoteRefs
+        $highestBranch = [Math]::Max($highestBranch, $highestRemote)
+    } else {
+        # Fetch all remotes to get latest branch info (suppress errors if no remotes)
+        try {
+            git fetch --all --prune 2>$null | Out-Null
+        } catch {
+            # Ignore fetch errors
+        }
+        $highestBranch = Get-HighestNumberFromBranches
     }
-
-    # Get highest number from ALL branches (not just matching short name)
-    $highestBranch = Get-HighestNumberFromBranches
 
     # Get highest number from ALL specs (not just matching short name)
     $highestSpec = Get-HighestNumberFromSpecs -SpecsDir $SpecsDir
@@ -236,16 +244,12 @@ if ($Timestamp) {
 } else {
     # Determine branch number
     if ($Number -eq 0) {
-        if ($DryRun) {
-            # Dry-run: query remote refs without fetching (side-effect-free)
-            $highestBranch = 0
-            if ($hasGit) {
-                $highestBranch = Get-HighestNumberFromBranches
-                $highestRemote = Get-HighestNumberFromRemoteRefs
-                $highestBranch = [Math]::Max($highestBranch, $highestRemote)
-            }
-            $highestSpec = Get-HighestNumberFromSpecs -SpecsDir $specsDir
-            $Number = [Math]::Max($highestBranch, $highestSpec) + 1
+        if ($DryRun -and $hasGit) {
+            # Dry-run: query remotes via ls-remote (side-effect-free, no fetch)
+            $Number = Get-NextBranchNumber -SpecsDir $specsDir -SkipFetch
+        } elseif ($DryRun) {
+            # Dry-run without git: local spec dirs only
+            $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
         } elseif ($hasGit) {
             # Check existing branches on remotes
             $Number = Get-NextBranchNumber -SpecsDir $specsDir

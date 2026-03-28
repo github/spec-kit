@@ -115,27 +115,23 @@ get_highest_from_specs() {
 
 # Function to get highest number from git branches
 get_highest_from_branches() {
+    git branch -a 2>/dev/null | sed 's/^[* ]*//; s|^remotes/[^/]*/||' | _extract_highest_number
+}
+
+# Extract the highest sequential feature number from a list of ref names (one per line).
+# Shared by get_highest_from_branches and get_highest_from_remote_refs.
+_extract_highest_number() {
     local highest=0
-    
-    # Get all branches (local and remote)
-    branches=$(git branch -a 2>/dev/null || echo "")
-    
-    if [ -n "$branches" ]; then
-        while IFS= read -r branch; do
-            # Clean branch name: remove leading markers and remote prefixes
-            clean_branch=$(echo "$branch" | sed 's/^[* ]*//; s|^remotes/[^/]*/||')
-            
-            # Extract sequential feature number (>=3 digits), skip timestamp branches.
-            if echo "$clean_branch" | grep -Eq '^[0-9]{3,}-' && ! echo "$clean_branch" | grep -Eq '^[0-9]{8}-[0-9]{6}-'; then
-                number=$(echo "$clean_branch" | grep -Eo '^[0-9]+' || echo "0")
-                number=$((10#$number))
-                if [ "$number" -gt "$highest" ]; then
-                    highest=$number
-                fi
+    while IFS= read -r name; do
+        [ -z "$name" ] && continue
+        if echo "$name" | grep -Eq '^[0-9]{3,}-' && ! echo "$name" | grep -Eq '^[0-9]{8}-[0-9]{6}-'; then
+            number=$(echo "$name" | grep -Eo '^[0-9]+' || echo "0")
+            number=$((10#$number))
+            if [ "$number" -gt "$highest" ]; then
+                highest=$number
             fi
-        done <<< "$branches"
-    fi
-    
+        fi
+    done
     echo "$highest"
 }
 
@@ -144,32 +140,34 @@ get_highest_from_remote_refs() {
     local highest=0
 
     for remote in $(git remote 2>/dev/null); do
-        while IFS= read -r line; do
-            [ -z "$line" ] && continue
-            # Extract ref name from ls-remote output (hash\trefs/heads/branch-name)
-            ref="${line##*/}"
-            if echo "$ref" | grep -Eq '^[0-9]{3,}-' && ! echo "$ref" | grep -Eq '^[0-9]{8}-[0-9]{6}-'; then
-                number=$(echo "$ref" | grep -Eo '^[0-9]+' || echo "0")
-                number=$((10#$number))
-                if [ "$number" -gt "$highest" ]; then
-                    highest=$number
-                fi
-            fi
-        done <<< "$(git ls-remote --heads "$remote" 2>/dev/null || echo "")"
+        local remote_highest
+        remote_highest=$(git ls-remote --heads "$remote" 2>/dev/null | sed 's|.*refs/heads/||' | _extract_highest_number)
+        if [ "$remote_highest" -gt "$highest" ]; then
+            highest=$remote_highest
+        fi
     done
 
     echo "$highest"
 }
 
-# Function to check existing branches (local and remote) and return next available number
+# Function to check existing branches (local and remote) and return next available number.
+# When skip_fetch is true, queries remotes via ls-remote (read-only) instead of fetching.
 check_existing_branches() {
     local specs_dir="$1"
+    local skip_fetch="${2:-false}"
 
-    # Fetch all remotes to get latest branch info (suppress errors if no remotes)
-    git fetch --all --prune >/dev/null 2>&1 || true
-
-    # Get highest number from ALL branches (not just matching short name)
-    local highest_branch=$(get_highest_from_branches)
+    if [ "$skip_fetch" = true ]; then
+        # Side-effect-free: query remotes via ls-remote
+        local highest_remote=$(get_highest_from_remote_refs)
+        local highest_branch=$(get_highest_from_branches)
+        if [ "$highest_remote" -gt "$highest_branch" ]; then
+            highest_branch=$highest_remote
+        fi
+    else
+        # Fetch all remotes to get latest branch info (suppress errors if no remotes)
+        git fetch --all --prune >/dev/null 2>&1 || true
+        local highest_branch=$(get_highest_from_branches)
+    fi
 
     # Get highest number from ALL specs (not just matching short name)
     local highest_spec=$(get_highest_from_specs "$specs_dir")
@@ -280,22 +278,13 @@ if [ "$USE_TIMESTAMP" = true ]; then
 else
     # Determine branch number
     if [ -z "$BRANCH_NUMBER" ]; then
-        if [ "$DRY_RUN" = true ]; then
-            # Dry-run: query remote refs without fetching (side-effect-free)
-            _highest_branch=0
-            if [ "$HAS_GIT" = true ]; then
-                _highest_branch=$(get_highest_from_branches)
-                _highest_remote=$(get_highest_from_remote_refs)
-                if [ "$_highest_remote" -gt "$_highest_branch" ]; then
-                    _highest_branch=$_highest_remote
-                fi
-            fi
-            _highest_spec=$(get_highest_from_specs "$SPECS_DIR")
-            _max_num=$_highest_branch
-            if [ "$_highest_spec" -gt "$_max_num" ]; then
-                _max_num=$_highest_spec
-            fi
-            BRANCH_NUMBER=$((_max_num + 1))
+        if [ "$DRY_RUN" = true ] && [ "$HAS_GIT" = true ]; then
+            # Dry-run: query remotes via ls-remote (side-effect-free, no fetch)
+            BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR" true)
+        elif [ "$DRY_RUN" = true ]; then
+            # Dry-run without git: local spec dirs only
+            HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
+            BRANCH_NUMBER=$((HIGHEST + 1))
         elif [ "$HAS_GIT" = true ]; then
             # Check existing branches on remotes
             BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
