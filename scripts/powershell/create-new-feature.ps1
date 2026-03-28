@@ -94,6 +94,35 @@ function Get-HighestNumberFromBranches {
     return $highest
 }
 
+function Get-HighestNumberFromRemoteRefs {
+    [long]$highest = 0
+    try {
+        $remotes = git remote 2>$null
+        if ($remotes) {
+            foreach ($remote in $remotes) {
+                $refs = git ls-remote --heads $remote 2>$null
+                if ($LASTEXITCODE -eq 0 -and $refs) {
+                    foreach ($line in $refs) {
+                        # Extract branch name from refs/heads/branch-name
+                        if ($line -match 'refs/heads/(.+)$') {
+                            $ref = $matches[1]
+                            if ($ref -match '^(\d{3,})-' -and $ref -notmatch '^\d{8}-\d{6}-') {
+                                [long]$num = 0
+                                if ([long]::TryParse($matches[1], [ref]$num) -and $num -gt $highest) {
+                                    $highest = $num
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } catch {
+        Write-Verbose "Could not query remote refs: $_"
+    }
+    return $highest
+}
+
 function Get-NextBranchNumber {
     param(
         [string]$SpecsDir
@@ -208,10 +237,12 @@ if ($Timestamp) {
     # Determine branch number
     if ($Number -eq 0) {
         if ($DryRun) {
-            # Dry-run: use locally available data only (skip git fetch)
+            # Dry-run: query remote refs without fetching (side-effect-free)
             $highestBranch = 0
             if ($hasGit) {
                 $highestBranch = Get-HighestNumberFromBranches
+                $highestRemote = Get-HighestNumberFromRemoteRefs
+                $highestBranch = [Math]::Max($highestBranch, $highestRemote)
             }
             $highestSpec = Get-HighestNumberFromSpecs -SpecsDir $specsDir
             $Number = [Math]::Max($highestBranch, $highestSpec) + 1

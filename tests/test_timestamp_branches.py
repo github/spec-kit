@@ -510,6 +510,60 @@ class TestDryRun:
                 real_branch = line.split(":", 1)[1].strip()
         assert dry_branch == real_branch, f"dry={dry_branch} != real={real_branch}"
 
+    def test_dry_run_accounts_for_remote_branches(self, git_repo: Path):
+        """Dry-run queries remote refs via ls-remote (no fetch) for accurate numbering."""
+        (git_repo / "specs" / "001-existing").mkdir(parents=True)
+
+        # Set up a bare remote and push
+        remote_dir = git_repo.parent / "remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote_dir)],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote_dir)],
+            check=True, cwd=git_repo, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "push", "-u", "origin", "HEAD"],
+            check=True, cwd=git_repo, capture_output=True,
+        )
+
+        # Clone into a second copy, create a higher-numbered branch, push it
+        second_clone = git_repo.parent / "second_clone"
+        subprocess.run(
+            ["git", "clone", str(remote_dir), str(second_clone)],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=second_clone, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"],
+            cwd=second_clone, check=True, capture_output=True,
+        )
+        # Create branch 005 on the remote (higher than local 001)
+        subprocess.run(
+            ["git", "checkout", "-b", "005-remote-only"],
+            cwd=second_clone, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "push", "origin", "005-remote-only"],
+            cwd=second_clone, check=True, capture_output=True,
+        )
+
+        # Primary repo: dry-run should see 005 via ls-remote and return 006
+        dry_result = run_script(
+            git_repo, "--dry-run", "--short-name", "remote-test", "Remote test"
+        )
+        assert dry_result.returncode == 0, dry_result.stderr
+        dry_branch = None
+        for line in dry_result.stdout.splitlines():
+            if line.startswith("BRANCH_NAME:"):
+                dry_branch = line.split(":", 1)[1].strip()
+        assert dry_branch == "006-remote-test", f"expected 006-remote-test, got: {dry_branch}"
+
     def test_dry_run_json_includes_field(self, git_repo: Path):
         """T015: JSON output includes DRY_RUN field when --dry-run is active."""
         import json
