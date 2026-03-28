@@ -441,21 +441,18 @@ specify check
 
 Spec Kit can be tailored to your needs through two complementary systems — **extensions** and **presets** — plus project-local overrides for one-off adjustments:
 
-```mermaid
-block-beta
-    columns 1
-    overrides["⬆ Highest priority\nProject-Local Overrides\n.specify/templates/overrides/"]
-    presets["Presets — Customize core & extensions\n.specify/presets/<preset-id>/templates/"]
-    extensions["Extensions — Add new capabilities\n.specify/extensions/<ext-id>/templates/"]
-    core["Spec Kit Core — Built-in SDD commands & templates\n.specify/templates/\n⬇ Lowest priority"]
+| Priority | Component Type                                    | Location                          |
+| -------: | ------------------------------------------------- | --------------------------------- |
+|      ⬆ 1 | Project-Local Overrides                           | `.specify/templates/overrides/`   |
+|        2 | Presets — Customize core & extensions             | `.specify/presets//templates/`    |
+|        3 | Extensions — Add new capabilities                 | `.specify/extensions//templates/` |
+|      ⬇ 4 | Spec Kit Core — Built-in SDD commands & templates | `.specify/templates/`             |
 
-    style overrides fill:transparent,stroke:#999
-    style presets fill:transparent,stroke:#4a9eda
-    style extensions fill:transparent,stroke:#4a9e4a
-    style core fill:transparent,stroke:#e6a817
-```
-
-**Templates** are resolved at **runtime** — Spec Kit walks the stack top-down and uses the first match. Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset. **Commands** are applied at **install time** — when you run `specify extension add` or `specify preset add`, command files are written into agent directories (e.g., `.claude/commands/`). If multiple presets or extensions provide the same command, the highest-priority version wins. On removal, the next-highest-priority version is restored automatically. If no overrides or customizations exist, Spec Kit uses its core defaults.
+- **Templates** are resolved at **runtime** — Spec Kit walks the stack top-down and uses the first match.
+- Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset.
+- **Extension/preset commands** are applied at **install time** — when you run `specify extension add` or `specify preset add`, command files are written into agent directories (e.g., `.claude/commands/`).
+- If multiple presets or extensions provide the same command, the highest-priority version wins. On removal, the next-highest-priority version is restored automatically.
+- If no overrides or customizations exist, Spec Kit uses its core defaults.
 
 ### Extensions — Add New Capabilities
 
