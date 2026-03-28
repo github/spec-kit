@@ -315,17 +315,19 @@ Additional commands for enhanced quality and validation:
 The `specify` tool is invoked as
 
 ```
-specify <COMMAND> <OPTIONS>
+specify <COMMAND> <SUBCOMMAND> <OPTIONS>
 ```
 
 and supports the following commands:
 
 ### Commands
 
-| Command | Description                                                                                                                                                                                                                                                                                                                                  |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init`  | Initialize a new Specify project from the latest template.                                                                                                                                                                                                                                                                                   |
-| `check` | Check for installed tools: `git` plus all CLI-based agents configured in `AGENT_CONFIG` (for example: `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `junie`, `qwen`, `opencode`, `codex`, `kiro-cli`, `shai`, `qodercli`, `vibe`, `kimi`, `iflow`, `pi`, etc.). This command does not have any additional options. |
+| Command     | Description                                                                                                                                                                                                                                                                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init`      | Initialize a new Specify project from the latest template.                                                                                                                                                                                                                                                                                   |
+| `check`     | Check for installed tools: `git` plus all CLI-based agents configured in `AGENT_CONFIG` (for example: `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `junie`, `qwen`, `opencode`, `codex`, `kiro-cli`, `shai`, `qodercli`, `vibe`, `kimi`, `iflow`, `pi`, etc.). This command does not have any additional options. |
+| `extension` | Manage extensions                                                                                                                                                                                                                                                                                                                            |
+| `preset`    | Manage presets                                                                                                                                                                                                                                                                                                                               |
 
 ### `specify init` Arguments & Options
 
