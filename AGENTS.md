@@ -48,6 +48,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Kimi Code**              | `.kimi/skills/`        | Markdown | `kimi`          | Kimi Code CLI (Moonshot AI) |
 | **Pi Coding Agent**        | `.pi/prompts/`         | Markdown | `pi`            | Pi terminal coding agent    |
 | **iFlow CLI**              | `.iflow/commands/`     | Markdown | `iflow`         | iFlow CLI (iflow-ai)        |
+| **Goose**                  | `.goose/recipes/`      | YAML | `goose`         | Block's open source AI agent with slash command support |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
 | **Trae**                   | `.trae/rules/`         | Markdown | N/A (IDE-based) | Trae IDE                    |
 | **Generic**                | User-specified via `--ai-commands-dir` | Markdown | N/A | Bring your own agent        |
@@ -328,6 +329,7 @@ Require a command-line tool to be installed:
 - **Tabnine CLI**: `tabnine` CLI
 - **Kimi Code**: `kimi` CLI
 - **Pi Coding Agent**: `pi` CLI
+- **Goose**: `goose` CLI
 
 ### IDE-Based Agents
 
