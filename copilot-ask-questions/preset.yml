@@ -1,0 +1,27 @@
+schema_version: "1.0"
+
+preset:
+  id: "copilot-ask-questions"
+  name: "Copilot askQuestions Clarify"
+  version: "1.0.0"
+  description: "Enhances the clarify command to use vscode/askQuestions for batched interactive questioning, reducing API request costs in GitHub Copilot."
+  author: "fdcastel"
+  repository: "https://github.com/fdcastel/spec-kit"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.1.0"
+
+provides:
+  templates:
+    - type: "command"
+      name: "speckit.clarify"
+      file: "commands/speckit.clarify.md"
+      description: "Clarify command with vscode/askQuestions batched questioning support"
+      replaces: "speckit.clarify"
+
+tags:
+  - "copilot"
+  - "clarify"
+  - "interactive"
+  - "vscode"
