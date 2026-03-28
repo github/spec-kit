@@ -514,8 +514,8 @@ class TestDryRun:
         """Dry-run queries remote refs via ls-remote (no fetch) for accurate numbering."""
         (git_repo / "specs" / "001-existing").mkdir(parents=True)
 
-        # Set up a bare remote and push
-        remote_dir = git_repo.parent / "remote.git"
+        # Set up a bare remote and push (use subdirs of git_repo for isolation)
+        remote_dir = git_repo / "test-remote.git"
         subprocess.run(
             ["git", "init", "--bare", str(remote_dir)],
             check=True, capture_output=True,
@@ -530,7 +530,7 @@ class TestDryRun:
         )
 
         # Clone into a second copy, create a higher-numbered branch, push it
-        second_clone = git_repo.parent / "second_clone"
+        second_clone = git_repo / "test-second-clone"
         subprocess.run(
             ["git", "clone", str(remote_dir), str(second_clone)],
             check=True, capture_output=True,
