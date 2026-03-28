@@ -137,7 +137,7 @@ approval_gates:
 ### Command not found
 ```bash
 # Make sure you're in the spec-kit project
-cd ~/Documents/Projects/spec-kit
+cd ~/spec-kit
 uv run specify approval
 ```
 
