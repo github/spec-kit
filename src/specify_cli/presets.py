@@ -1704,38 +1704,54 @@ class PresetResolver:
         else:  # script
             subdirs = ["scripts"]
 
-        def _name_matches_type(name: str) -> bool:
-            """Check if a file name matches the expected pattern for the template type.
+        _template_name_re = re.compile(r'^[a-z0-9-]+$')
+        _command_name_re = re.compile(r'^speckit\.[a-z0-9.-]+$')
 
-            Commands use dot notation (e.g. speckit.specify), templates use
-            hyphens only (e.g. spec-template). This prevents the shared
-            overrides directory from leaking commands into template listings
-            or vice versa. Scripts live in their own subdirectory so no
-            filtering is needed.
+        def _name_matches_type(name: str) -> bool:
+            """Check if a file name matches the expected naming rules for the template type.
+
+            Commands must start with speckit. and use dot notation.
+            Templates/scripts must be lowercase alphanumeric with hyphens only.
+            This prevents README.md, CHANGELOG.md, etc. from appearing as
+            templates, and keeps the shared overrides directory clean.
             """
             if template_type == "command":
-                return "." in name
+                return _command_name_re.match(name) is not None
             if template_type == "template":
-                return "." not in name
-            return True
+                return "." not in name and _template_name_re.match(name) is not None
+            # script
+            return _template_name_re.match(name) is not None
 
         def _collect(directory: Path, source: str):
             """Collect template files from a directory."""
             if not directory.is_dir():
                 return
-            for f in sorted(directory.iterdir()):
-                if f.is_file() and f.suffix in exts:
-                    name = f.stem
-                    if name in seen:
-                        continue
-                    if not _name_matches_type(name):
-                        continue
-                    seen.add(name)
-                    results.append({
-                        "name": name,
-                        "path": str(f),
-                        "source": source,
-                    })
+            if template_type == "script":
+                # For scripts, both .sh and .ps1 may exist for the same stem.
+                # Pick the one matching resolution order (exts list order).
+                candidates: dict[str, Path] = {}
+                for f in sorted(directory.iterdir()):
+                    if f.is_file() and f.suffix in exts:
+                        name = f.stem
+                        if not _name_matches_type(name):
+                            continue
+                        existing = candidates.get(name)
+                        if existing is None or exts.index(f.suffix) < exts.index(existing.suffix):
+                            candidates[name] = f
+                for name, f in sorted(candidates.items()):
+                    if name not in seen:
+                        seen.add(name)
+                        results.append({"name": name, "path": str(f), "source": source})
+            else:
+                for f in sorted(directory.iterdir()):
+                    if f.is_file() and f.suffix in exts:
+                        name = f.stem
+                        if name in seen:
+                            continue
+                        if not _name_matches_type(name):
+                            continue
+                        seen.add(name)
+                        results.append({"name": name, "path": str(f), "source": source})
 
         # Priority 1: Project-local overrides
         if template_type == "script":

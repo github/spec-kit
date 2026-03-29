@@ -121,6 +121,8 @@ class ExtensionManifest:
         for field in ["id", "name", "version", "description"]:
             if field not in ext:
                 raise ValidationError(f"Missing extension.{field}")
+            if not isinstance(ext[field], str):
+                raise ValidationError(f"extension.{field} must be a string")
 
         # Validate extension ID format
         if not re.match(r'^[a-z0-9-]+$', ext["id"]):
@@ -141,6 +143,8 @@ class ExtensionManifest:
             raise ValidationError("'requires' must be a mapping")
         if "speckit_version" not in requires:
             raise ValidationError("Missing requires.speckit_version")
+        if not isinstance(requires["speckit_version"], str):
+            raise ValidationError("requires.speckit_version must be a string")
 
         # Validate provides section
         provides = self.data["provides"]
@@ -1002,6 +1006,7 @@ class ExtensionResolver:
             List of dicts with 'name', 'path', and 'source' keys.
         """
         subdirs, exts = self._type_config(template_type)
+        name_re = self._name_re_for_type(template_type)
         results: List[Dict[str, str]] = []
         seen: set[str] = set()
 
@@ -1020,18 +1025,36 @@ class ExtensionResolver:
                 scan_dir = ext_dir / subdir if subdir else ext_dir
                 if not scan_dir.is_dir():
                     continue
-                for f in sorted(scan_dir.iterdir()):
-                    if f.is_file() and f.suffix in exts:
-                        name = f.stem
+
+                if template_type == "script":
+                    # Prefer .sh over .ps1 when both exist (matches resolve order)
+                    candidates: Dict[str, Path] = {}
+                    for f in sorted(scan_dir.iterdir()):
+                        if f.is_file() and f.suffix in exts and name_re.match(f.stem):
+                            existing = candidates.get(f.stem)
+                            if existing is None or exts.index(f.suffix) < exts.index(existing.suffix):
+                                candidates[f.stem] = f
+                    for name, f in sorted(candidates.items()):
                         if name not in seen:
                             seen.add(name)
-                            results.append({
-                                "name": name,
-                                "path": str(f),
-                                "source": source_label,
-                            })
+                            results.append({"name": name, "path": str(f), "source": source_label})
+                else:
+                    for f in sorted(scan_dir.iterdir()):
+                        if f.is_file() and f.suffix in exts:
+                            name = f.stem
+                            if name not in seen and name_re.match(name):
+                                seen.add(name)
+                                results.append({"name": name, "path": str(f), "source": source_label})
 
         return results
+
+    @staticmethod
+    def _name_re_for_type(template_type: str) -> re.Pattern:
+        """Return compiled regex for valid names of the given template type."""
+        if template_type == "command":
+            return re.compile(r'^speckit\.[a-z0-9.-]+$')
+        # template and script both use lowercase-alphanumeric-hyphen
+        return re.compile(r'^[a-z0-9-]+$')
 
     @staticmethod
     def _type_config(template_type: str) -> tuple:
