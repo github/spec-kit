@@ -130,6 +130,7 @@ class ExtensionManifest:
             ValidationError: If manifest is invalid
         """
         self.path = manifest_path
+        self.warnings: List[str] = []
         self.data = self._load_yaml(manifest_path)
         self._validate()
 
@@ -192,11 +193,40 @@ class ExtensionManifest:
                 raise ValidationError("Command missing 'name' or 'file'")
 
             # Validate command name format
-            if EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]) is None:
-                raise ValidationError(
-                    f"Invalid command name '{cmd['name']}': "
-                    "must follow pattern 'speckit.{extension}.{command}'"
-                )
+            if not EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]):
+                corrected = self._try_correct_command_name(cmd["name"], ext["id"])
+                if corrected:
+                    self.warnings.append(
+                        f"Command name '{cmd['name']}' does not follow the required pattern "
+                        f"'speckit.{{extension}}.{{command}}'. Registering as '{corrected}'. "
+                        f"The extension author should update the manifest to use this name."
+                    )
+                    cmd["name"] = corrected
+                else:
+                    raise ValidationError(
+                        f"Invalid command name '{cmd['name']}': "
+                        "must follow pattern 'speckit.{extension}.{command}'"
+                    )
+
+    @staticmethod
+    def _try_correct_command_name(name: str, ext_id: str) -> Optional[str]:
+        """Try to auto-correct a non-conforming command name to the required pattern.
+
+        Handles the two most common legacy formats used by community extensions:
+          - 'speckit.command'    → 'speckit.{ext_id}.command'
+          - 'extension.command'  → 'speckit.extension.command'
+
+        Returns the corrected name, or None if no safe correction is possible.
+        """
+        parts = name.split('.')
+        if len(parts) == 2:
+            if parts[0] == 'speckit':
+                candidate = f"speckit.{ext_id}.{parts[1]}"
+            else:
+                candidate = f"speckit.{parts[0]}.{parts[1]}"
+            if EXTENSION_COMMAND_NAME_PATTERN.match(candidate):
+                return candidate
+        return None
 
     @property
     def id(self) -> str:
