@@ -45,7 +45,7 @@ On [GitHub Codespaces](https://github.com/features/codespaces) it's even simpler
 1. Wait for your pull request to be reviewed and merged.
 
 For the detailed test workflow, command-selection prompt, and PR reporting template, see [`TESTING.md`](./TESTING.md).
-Install the CLI from your working tree (`uv pip install -e .` after `uv sync --extra test`) or otherwise ensure the shell uses the local `specify` binary before running the manual slash-command tests described below.
+Activate the project virtual environment (see the Setup block in [`TESTING.md`](./TESTING.md)), then install the CLI from your working tree (`uv pip install -e .` after `uv sync --extra test`) or otherwise ensure the shell uses the local `specify` binary before running the manual slash-command tests described below.
 
 Here are a few things you can do that will increase the likelihood of your pull request being accepted:
 
