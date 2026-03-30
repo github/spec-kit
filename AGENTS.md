@@ -30,7 +30,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Claude Code**            | `.claude/commands/`    | Markdown | `claude`        | Anthropic's Claude Code CLI |
 | **Gemini CLI**             | `.gemini/commands/`    | TOML     | `gemini`        | Google's Gemini CLI         |
 | **GitHub Copilot**         | `.github/agents/`      | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code   |
-| **Cursor**                 | `.cursor/commands/`    | Markdown | `cursor-agent`  | Cursor CLI                  |
+| **Cursor**                 | `.cursor/commands/`    | Markdown | N/A (IDE-based) | Cursor IDE                  |
 | **Qwen Code**              | `.qwen/commands/`      | Markdown | `qwen`          | Alibaba's Qwen Code CLI     |
 | **opencode**               | `.opencode/command/`   | Markdown | `opencode`      | opencode CLI                |
 | **Codex CLI**              | `.agents/skills/`      | Markdown | `codex`         | Codex CLI (skills)          |
@@ -50,7 +50,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **iFlow CLI**              | `.iflow/commands/`     | Markdown | `iflow`         | iFlow CLI (iflow-ai)        |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
 | **Trae**                   | `.trae/rules/`         | Markdown | N/A (IDE-based) | Trae IDE                    |
-| **Antigravity**            | `.agent/commands/`     | Markdown | N/A (IDE-based) | Antigravity IDE             |
+| **Antigravity**            | `.agent/skills/`       | Markdown | N/A (IDE-based) | Antigravity IDE (skills-based) |
 | **Mistral Vibe**           | `.vibe/prompts/`       | Markdown | `vibe`          | Mistral Vibe CLI            |
 | **Generic**                | User-specified via `--ai-commands-dir` | Markdown | N/A | Bring your own agent        |
 
@@ -389,6 +389,8 @@ Command content with {SCRIPT} and {{args}} placeholders.
 ## Directory Conventions
 
 - **CLI agents**: Usually `.<agent-name>/commands/`
+- **Singular command exception**:
+  - opencode: `.opencode/command/` (singular `command`, not `commands`)
 - **Skills-based exceptions**:
   - Codex: `.agents/skills/` (skills, invoked as `$speckit-<command>`)
   - Kimi Code: `.kimi/skills/` (skills, invoked as `/skill:speckit-<command>`)
@@ -403,7 +405,7 @@ Command content with {SCRIPT} and {{args}} placeholders.
   - Cursor: `.cursor/commands/`
   - Windsurf: `.windsurf/workflows/`
   - Kilo Code: `.kilocode/workflows/`
-  - Antigravity: `.agent/commands/`
+  - Antigravity: `.agent/skills/` (skills-based)
 
 ## Argument Patterns
 
