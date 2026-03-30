@@ -440,12 +440,12 @@ specify check
 
 Spec Kit can be tailored to your needs through two complementary systems — **extensions** and **presets** — plus project-local overrides for one-off adjustments:
 
-| Priority | Component Type                                    | Location                          |
-| -------: | ------------------------------------------------- | --------------------------------- |
-|      ⬆ 1 | Project-Local Overrides                           | `.specify/templates/overrides/`   |
-|        2 | Presets — Customize core & extensions             | `.specify/presets//templates/`    |
-|        3 | Extensions — Add new capabilities                 | `.specify/extensions//templates/` |
-|      ⬇ 4 | Spec Kit Core — Built-in SDD commands & templates | `.specify/templates/`             |
+| Priority | Component Type                                    | Location                         |
+| -------: | ------------------------------------------------- | -------------------------------- |
+|      ⬆ 1 | Project-Local Overrides                           | `.specify/templates/overrides/`  |
+|        2 | Presets — Customize core & extensions             | `.specify/presets/templates/`    |
+|        3 | Extensions — Add new capabilities                 | `.specify/extensions/templates/` |
+|      ⬇ 4 | Spec Kit Core — Built-in SDD commands & templates | `.specify/templates/`            |
 
 - **Templates** are resolved at **runtime** — Spec Kit walks the stack top-down and uses the first match.
 - Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset.
