@@ -177,13 +177,10 @@ function Generate-Commands {
             'yaml' {
                 # Generate Goose recipe format YAML
                 $title = (Get-Culture).TextInfo.ToTitleCase($name)
-                $escapedBody = $body -replace '"', '`"'
-                $escapedBody = $escapedBody -replace "`n", '\n'
                 $output = @"
 version: 1.0.0
 title: "$title"
 description: "$description"
-instructions: "$description"
 author:
   contact: "spec-kit"
 extensions:
@@ -192,8 +189,10 @@ extensions:
 activities:
   - "Spec-Driven Development"
 prompt: |
-$body
 "@
+                # Indent each line of body for proper YAML block scalar formatting
+                $indentedBody = $body -split "`n" | ForEach-Object { "  $_" } | Join-String -Separator "`n"
+                $output += "`n$indentedBody"
                 Set-Content -Path $outputFile -Value $output -NoNewline
             }
         }
