@@ -330,6 +330,9 @@ build_variant() {
     iflow)
       mkdir -p "$base_dir/.iflow/commands"
       generate_commands iflow md "\$ARGUMENTS" "$base_dir/.iflow/commands" "$script" ;;
+    forgecode)
+      mkdir -p "$base_dir/.forge/commands"
+      generate_commands forgecode md "{{parameters}}" "$base_dir/.forge/commands" "$script" ;;
     generic)
       mkdir -p "$base_dir/.speckit/commands"
       generate_commands generic md "\$ARGUMENTS" "$base_dir/.speckit/commands" "$script" ;;
@@ -339,7 +342,7 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf junie codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi trae pi iflow generic)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf junie codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi trae pi iflow forgecode generic)
 ALL_SCRIPTS=(sh ps)
 
 validate_subset() {

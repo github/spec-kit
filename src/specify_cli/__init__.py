@@ -71,7 +71,7 @@ def _github_auth_headers(cli_token: str | None = None) -> dict:
 def _parse_rate_limit_headers(headers: httpx.Headers) -> dict:
     """Extract and parse GitHub rate-limit headers."""
     info = {}
-    
+
     # Standard GitHub rate-limit headers
     if "X-RateLimit-Limit" in headers:
         info["limit"] = headers.get("X-RateLimit-Limit")
@@ -84,7 +84,7 @@ def _parse_rate_limit_headers(headers: httpx.Headers) -> dict:
             info["reset_epoch"] = reset_epoch
             info["reset_time"] = reset_time
             info["reset_local"] = reset_time.astimezone()
-    
+
     # Retry-After header (seconds or HTTP-date)
     if "Retry-After" in headers:
         retry_after = headers.get("Retry-After")
@@ -93,16 +93,16 @@ def _parse_rate_limit_headers(headers: httpx.Headers) -> dict:
         except ValueError:
             # HTTP-date format - not implemented, just store as string
             info["retry_after"] = retry_after
-    
+
     return info
 
 def _format_rate_limit_error(status_code: int, headers: httpx.Headers, url: str) -> str:
     """Format a user-friendly error message with rate-limit information."""
     rate_info = _parse_rate_limit_headers(headers)
-    
+
     lines = [f"GitHub API returned status {status_code} for {url}"]
     lines.append("")
-    
+
     if rate_info:
         lines.append("[bold]Rate Limit Information:[/bold]")
         if "limit" in rate_info:
@@ -115,14 +115,14 @@ def _format_rate_limit_error(status_code: int, headers: httpx.Headers, url: str)
         if "retry_after_seconds" in rate_info:
             lines.append(f"  • Retry after: {rate_info['retry_after_seconds']} seconds")
         lines.append("")
-    
+
     # Add troubleshooting guidance
     lines.append("[bold]Troubleshooting Tips:[/bold]")
     lines.append("  • If you're on a shared CI or corporate environment, you may be rate-limited.")
     lines.append("  • Consider using a GitHub token via --github-token or the GH_TOKEN/GITHUB_TOKEN")
     lines.append("    environment variable to increase rate limits.")
     lines.append("  • Authenticated requests have a limit of 5,000/hour vs 60/hour for unauthenticated.")
-    
+
     return "\n".join(lines)
 
 # Agent configuration with name, folder, install URL, CLI tool requirement, and commands subdirectory
@@ -302,6 +302,13 @@ AGENT_CONFIG = {
         "install_url": "https://docs.iflow.cn/en/cli/quickstart",
         "requires_cli": True,
     },
+    "forgecode": {
+        "name": "Forge",
+        "folder": ".forge/",
+        "commands_subdir": "commands",
+        "install_url": "https://forgecode.dev/docs/",
+        "requires_cli": True,
+    },
     "generic": {
         "name": "Generic (bring your own agent)",
         "folder": None,  # Set dynamically via --ai-commands-dir
@@ -350,10 +357,10 @@ CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".b
 BANNER = """
 ███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
 ██╔════╝██╔══██╗██╔════╝██╔════╝██║██╔════╝╚██╗ ██╔╝
-███████╗██████╔╝█████╗  ██║     ██║█████╗   ╚████╔╝ 
-╚════██║██╔═══╝ ██╔══╝  ██║     ██║██╔══╝    ╚██╔╝  
-███████║██║     ███████╗╚██████╗██║██║        ██║   
-╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝   
+███████╗██████╔╝█████╗  ██║     ██║█████╗   ╚████╔╝
+╚════██║██╔═══╝ ██╔══╝  ██║     ██║██╔══╝    ╚██╔╝
+███████║██║     ███████╗╚██████╗██║██║        ██║
+╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝
 """
 
 TAGLINE = "GitHub Spec Kit - Spec-Driven Development Toolkit"
@@ -465,12 +472,12 @@ def get_key():
 def select_with_arrows(options: dict, prompt_text: str = "Select an option", default_key: str = None) -> str:
     """
     Interactive selection using arrow keys with Rich Live display.
-    
+
     Args:
         options: Dict with keys as option keys and values as descriptions
         prompt_text: Text to show above the options
         default_key: Default option key to start with
-        
+
     Returns:
         Selected option key
     """
@@ -598,11 +605,11 @@ def run_command(cmd: list[str], check_return: bool = True, capture: bool = False
 
 def check_tool(tool: str, tracker: StepTracker = None) -> bool:
     """Check if a tool is installed. Optionally update tracker.
-    
+
     Args:
         tool: Name of the tool to check
         tracker: Optional StepTracker to update with results
-        
+
     Returns:
         True if tool is found, False otherwise
     """
@@ -618,27 +625,30 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
             if tracker:
                 tracker.complete(tool, "available")
             return True
-    
+
     if tool == "kiro-cli":
         # Kiro currently supports both executable names. Prefer kiro-cli and
         # accept kiro as a compatibility fallback.
         found = shutil.which("kiro-cli") is not None or shutil.which("kiro") is not None
+    elif tool == "forgecode":
+        # The forgecode agent key is 'forgecode' but the CLI binary is 'forge'.
+        found = shutil.which("forge") is not None
     else:
         found = shutil.which(tool) is not None
-    
+
     if tracker:
         if found:
             tracker.complete(tool, "available")
         else:
             tracker.error(tool, "not found")
-    
+
     return found
 
 def is_git_repo(path: Path = None) -> bool:
     """Check if the specified path is inside a git repository."""
     if path is None:
         path = Path.cwd()
-    
+
     if not path.is_dir():
         return False
 
@@ -656,11 +666,11 @@ def is_git_repo(path: Path = None) -> bool:
 
 def init_git_repo(project_path: Path, quiet: bool = False) -> Tuple[bool, Optional[str]]:
     """Initialize a git repository in the specified path.
-    
+
     Args:
         project_path: Path to initialize git repository in
         quiet: if True suppress console output (tracker handles status)
-    
+
     Returns:
         Tuple of (success: bool, error_message: Optional[str])
     """
@@ -682,7 +692,7 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> Tuple[bool, Option
             error_msg += f"\nError: {e.stderr.strip()}"
         elif e.stdout:
             error_msg += f"\nOutput: {e.stdout.strip()}"
-        
+
         if not quiet:
             console.print(f"[red]Error initializing git repository:[/red] {e}")
         return False, error_msg
@@ -1879,7 +1889,7 @@ def init(
         console.print("[yellow]Example:[/yellow] specify init --ai claude --here")
         console.print(f"[yellow]Available agents:[/yellow] {', '.join(AGENT_CONFIG.keys())}")
         raise typer.Exit(1)
-    
+
     if ai_commands_dir and ai_commands_dir.startswith("--"):
         console.print(f"[red]Error:[/red] Invalid value for --ai-commands-dir: '{ai_commands_dir}'")
         console.print("[yellow]Hint:[/yellow] Did you forget to provide a value for --ai-commands-dir?")
@@ -1949,8 +1959,8 @@ def init(
         # Create options dict for selection (agent_key: display_name)
         ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
         selected_ai = select_with_arrows(
-            ai_choices, 
-            "Choose your AI assistant:", 
+            ai_choices,
+            "Choose your AI assistant:",
             "copilot"
         )
 
@@ -2297,7 +2307,7 @@ def init(
 
     console.print(tracker.render())
     console.print("\n[bold green]Project ready.[/bold green]")
-    
+
     # Show git error details if initialization failed
     if git_error_message:
         console.print()
@@ -2432,9 +2442,9 @@ def version():
     """Display version and system information."""
     import platform
     import importlib.metadata
-    
+
     show_banner()
-    
+
     # Get CLI version from package metadata
     cli_version = "unknown"
     try:
@@ -2450,15 +2460,15 @@ def version():
                     cli_version = data.get("project", {}).get("version", "unknown")
         except Exception:
             pass
-    
+
     # Fetch latest template release version
     repo_owner = "github"
     repo_name = "spec-kit"
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
-    
+
     template_version = "unknown"
     release_date = "unknown"
-    
+
     try:
         response = client.get(
             api_url,

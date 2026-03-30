@@ -162,6 +162,12 @@ class CommandRegistrar:
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": ".md"
+        },
+        "forgecode": {
+            "dir": ".forge/commands",
+            "format": "markdown",
+            "args": "{{parameters}}",
+            "extension": ".md"
         }
     }
 
