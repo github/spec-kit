@@ -208,6 +208,24 @@ class ExtensionManifest:
                         "must follow pattern 'speckit.{extension}.{command}'"
                     )
 
+            # Validate and auto-correct alias name formats
+            aliases = cmd.get("aliases") or []
+            for i, alias in enumerate(aliases):
+                if not EXTENSION_COMMAND_NAME_PATTERN.match(alias):
+                    corrected = self._try_correct_command_name(alias, ext["id"])
+                    if corrected:
+                        self.warnings.append(
+                            f"Alias '{alias}' does not follow the required pattern "
+                            f"'speckit.{{extension}}.{{command}}'. Registering as '{corrected}'. "
+                            f"The extension author should update the manifest to use this name."
+                        )
+                        aliases[i] = corrected
+                    else:
+                        raise ValidationError(
+                            f"Invalid alias '{alias}': "
+                            "must follow pattern 'speckit.{extension}.{command}'"
+                        )
+
     @staticmethod
     def _try_correct_command_name(name: str, ext_id: str) -> Optional[str]:
         """Try to auto-correct a non-conforming command name to the required pattern.
