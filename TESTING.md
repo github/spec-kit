@@ -26,7 +26,7 @@ Run these before manual testing when your change affects packaging, scaffolding,
 ```bash
 cd <spec-kit-repo>
 uv sync --extra test
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate  # On Windows (CMD): .venv\Scripts\activate  |  (PowerShell): .venv\Scripts\Activate.ps1
 ```
 
 ### Generated package structure and content
@@ -67,7 +67,7 @@ Inspect `.genreleases/sdd-copilot-package-sh/` and the matching ZIP in `.genrele
 # Install the project and test dependencies from your local branch
 cd <spec-kit-repo>
 uv sync --extra test
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate  # On Windows (CMD): .venv\Scripts\activate  |  (PowerShell): .venv\Scripts\Activate.ps1
 uv pip install -e .
 # Ensure the `specify` binary in this environment points at your working tree so the agent runs the branch you're testing.
 
