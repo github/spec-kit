@@ -242,7 +242,7 @@ class TestExtensionManifest:
             ExtensionManifest(manifest_path)
 
     def test_invalid_command_name(self, temp_dir, valid_manifest_data):
-        """Test manifest with invalid command name format."""
+        """Test manifest with command name that cannot be auto-corrected raises ValidationError."""
         import yaml
 
         valid_manifest_data["provides"]["commands"][0]["name"] = "invalid-name"
@@ -253,6 +253,52 @@ class TestExtensionManifest:
 
         with pytest.raises(ValidationError, match="Invalid command name"):
             ExtensionManifest(manifest_path)
+
+    def test_command_name_autocorrect_speckit_prefix(self, temp_dir, valid_manifest_data):
+        """Test that 'speckit.command' is auto-corrected to 'speckit.{ext_id}.command'."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["name"] = "speckit.hello"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["name"] == "speckit.test-ext.hello"
+        assert len(manifest.warnings) == 1
+        assert "speckit.hello" in manifest.warnings[0]
+        assert "speckit.test-ext.hello" in manifest.warnings[0]
+
+    def test_command_name_autocorrect_no_speckit_prefix(self, temp_dir, valid_manifest_data):
+        """Test that 'extension.command' is auto-corrected to 'speckit.extension.command'."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["name"] = "docguard.guard"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["name"] == "speckit.docguard.guard"
+        assert len(manifest.warnings) == 1
+        assert "docguard.guard" in manifest.warnings[0]
+        assert "speckit.docguard.guard" in manifest.warnings[0]
+
+    def test_valid_command_name_has_no_warnings(self, temp_dir, valid_manifest_data):
+        """Test that a correctly-named command produces no warnings."""
+        import yaml
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.warnings == []
 
     def test_no_commands(self, temp_dir, valid_manifest_data):
         """Test manifest with no commands provided."""

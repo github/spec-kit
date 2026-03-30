@@ -3067,6 +3067,10 @@ def extension_add(
         console.print("\n[green]✓[/green] Extension installed successfully!")
         console.print(f"\n[bold]{manifest.name}[/bold] (v{manifest.version})")
         console.print(f"  {manifest.description}")
+
+        for warning in manifest.warnings:
+            console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {warning}")
+
         console.print("\n[bold cyan]Provided commands:[/bold cyan]")
         for cmd in manifest.commands:
             console.print(f"  • {cmd['name']} - {cmd.get('description', '')}")
