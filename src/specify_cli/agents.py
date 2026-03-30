@@ -167,7 +167,8 @@ class CommandRegistrar:
             "dir": ".forge/commands",
             "format": "markdown",
             "args": "{{parameters}}",
-            "extension": ".md"
+            "extension": ".md",
+            "strip_frontmatter_keys": ["handoffs"],
         }
     }
 
@@ -502,6 +503,9 @@ class CommandRegistrar:
             frontmatter, body = self.parse_frontmatter(content)
 
             frontmatter = self._adjust_script_paths(frontmatter)
+
+            for key in agent_config.get("strip_frontmatter_keys", []):
+                frontmatter.pop(key, None)
 
             body = self._convert_argument_placeholder(
                 body, "$ARGUMENTS", agent_config["args"]

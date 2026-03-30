@@ -57,7 +57,7 @@ rewrite_paths() {
 }
 
 generate_commands() {
-  local agent=$1 ext=$2 arg_format=$3 output_dir=$4 script_variant=$5
+  local agent=$1 ext=$2 arg_format=$3 output_dir=$4 script_variant=$5 extra_strip_key="${6:-}"
   mkdir -p "$output_dir"
   for template in templates/commands/*.md; do
     [[ -f "$template" ]] || continue
@@ -95,18 +95,19 @@ generate_commands() {
       body=$(printf '%s\n' "$body" | sed "s|{AGENT_SCRIPT}|${agent_script_command}|g")
     fi
 
-    # Remove the scripts: and agent_scripts: sections from frontmatter while preserving YAML structure
-    body=$(printf '%s\n' "$body" | awk '
+    # Remove the scripts:, agent_scripts:, and any extra key sections from frontmatter
+    body=$(printf '%s\n' "$body" | awk -v extra_key="$extra_strip_key" '
       /^---$/ { print; if (++dash_count == 1) in_frontmatter=1; else in_frontmatter=0; next }
       in_frontmatter && /^scripts:$/ { skip_scripts=1; next }
       in_frontmatter && /^agent_scripts:$/ { skip_scripts=1; next }
+      in_frontmatter && extra_key != "" && $0 ~ ("^"extra_key":") { skip_scripts=1; next }
       in_frontmatter && /^[a-zA-Z].*:/ && skip_scripts { skip_scripts=0 }
       in_frontmatter && skip_scripts && /^[[:space:]]/ { next }
       { print }
     ')
 
-    # Apply other substitutions
-    body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
+    # Apply other substitutions; also replace $ARGUMENTS with the agent-specific placeholder
+    body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed 's/\$ARGUMENTS/'"$arg_format"'/g' | sed "s/__AGENT__/$agent/g" | rewrite_paths)
 
     case $ext in
       toml)
@@ -332,7 +333,7 @@ build_variant() {
       generate_commands iflow md "\$ARGUMENTS" "$base_dir/.iflow/commands" "$script" ;;
     forgecode)
       mkdir -p "$base_dir/.forge/commands"
-      generate_commands forgecode md "{{parameters}}" "$base_dir/.forge/commands" "$script" ;;
+      generate_commands forgecode md "{{parameters}}" "$base_dir/.forge/commands" "$script" "handoffs" ;;
     generic)
       mkdir -p "$base_dir/.speckit/commands"
       generate_commands generic md "\$ARGUMENTS" "$base_dir/.speckit/commands" "$script" ;;
