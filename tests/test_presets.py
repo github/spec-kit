@@ -1179,6 +1179,16 @@ class TestPresetCatalog:
         catalog = PresetCatalog(project_dir)
         catalog.cache_dir.mkdir(parents=True, exist_ok=True)
 
+        # Restrict to default catalog only — prevents community catalog network calls
+        # which would add extra results and make the count assertions flaky.
+        (project_dir / ".specify" / "preset-catalogs.yml").write_text(
+            f"catalogs:\n"
+            f"  - url: \"{PresetCatalog.DEFAULT_CATALOG_URL}\"\n"
+            f"    name: default\n"
+            f"    priority: 1\n"
+            f"    install_allowed: true\n"
+        )
+
         catalog_data = {
             "schema_version": "1.0",
             "presets": {
