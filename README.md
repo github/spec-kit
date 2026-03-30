@@ -50,6 +50,8 @@ Spec-Driven Development **flips the script** on traditional software development
 
 Choose your preferred installation method:
 
+> **Important:** The only official, maintained packages for Spec Kit are published from this GitHub repository. Any packages with the same name on PyPI are **not** affiliated with this project and are not maintained by the Spec Kit maintainers. Always install directly from GitHub as shown below.
+
 #### Option 1: Persistent Installation (Recommended)
 
 Install once and use everywhere. Pin a specific release tag for stability (check [Releases](https://github.com/github/spec-kit/releases) for the latest):
@@ -62,7 +64,13 @@ uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
 ```
 
-Then use the tool directly:
+Then verify the correct version is installed:
+
+```bash
+specify version
+```
+
+And use the tool directly:
 
 ```bash
 # Create new project
