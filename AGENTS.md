@@ -50,6 +50,8 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **iFlow CLI**              | `.iflow/commands/`     | Markdown | `iflow`         | iFlow CLI (iflow-ai)        |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
 | **Trae**                   | `.trae/rules/`         | Markdown | N/A (IDE-based) | Trae IDE                    |
+| **Antigravity**            | `.agent/commands/`     | Markdown | N/A (IDE-based) | Antigravity IDE             |
+| **Mistral Vibe**           | `.vibe/prompts/`       | Markdown | `vibe`          | Mistral Vibe CLI            |
 | **Generic**                | User-specified via `--ai-commands-dir` | Markdown | N/A | Bring your own agent        |
 
 ### Step-by-Step Integration Guide
@@ -316,32 +318,40 @@ Require a command-line tool to be installed:
 
 - **Claude Code**: `claude` CLI
 - **Gemini CLI**: `gemini` CLI
-- **Cursor**: `cursor-agent` CLI
 - **Qwen Code**: `qwen` CLI
 - **opencode**: `opencode` CLI
+- **Codex CLI**: `codex` CLI
 - **Junie**: `junie` CLI
-- **Kiro CLI**: `kiro-cli` CLI
+- **Auggie CLI**: `auggie` CLI
 - **CodeBuddy CLI**: `codebuddy` CLI
 - **Qoder CLI**: `qodercli` CLI
+- **Kiro CLI**: `kiro-cli` CLI
 - **Amp**: `amp` CLI
 - **SHAI**: `shai` CLI
 - **Tabnine CLI**: `tabnine` CLI
 - **Kimi Code**: `kimi` CLI
+- **Mistral Vibe**: `vibe` CLI
 - **Pi Coding Agent**: `pi` CLI
+- **iFlow CLI**: `iflow` CLI
 
 ### IDE-Based Agents
 
 Work within integrated development environments:
 
 - **GitHub Copilot**: Built into VS Code/compatible editors
+- **Cursor**: Built into Cursor IDE
 - **Windsurf**: Built into Windsurf IDE
+- **Kilo Code**: Built into Kilo Code IDE
+- **Roo Code**: Built into Roo Code IDE
 - **IBM Bob**: Built into IBM Bob IDE
+- **Trae**: Built into Trae IDE
+- **Antigravity**: Built into Antigravity IDE
 
 ## Command File Formats
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Junie, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, Qwen, Pi
+Used by: Claude, Cursor, opencode, Windsurf, Junie, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, Qwen, Pi, Codex, Auggie, CodeBuddy, Qoder, Roo Code, Kilo Code, Trae, Antigravity, Mistral Vibe, iFlow
 
 **Standard format:**
 
@@ -381,13 +391,19 @@ Command content with {SCRIPT} and {{args}} placeholders.
 - **CLI agents**: Usually `.<agent-name>/commands/`
 - **Skills-based exceptions**:
   - Codex: `.agents/skills/` (skills, invoked as `$speckit-<command>`)
+  - Kimi Code: `.kimi/skills/` (skills, invoked as `/skill:speckit-<command>`)
 - **Prompt-based exceptions**:
   - Kiro CLI: `.kiro/prompts/`
   - Pi: `.pi/prompts/`
+  - Mistral Vibe: `.vibe/prompts/`
+- **Rules-based exceptions**:
+  - Trae: `.trae/rules/`
 - **IDE agents**: Follow IDE-specific patterns:
   - Copilot: `.github/agents/`
   - Cursor: `.cursor/commands/`
   - Windsurf: `.windsurf/workflows/`
+  - Kilo Code: `.kilocode/workflows/`
+  - Antigravity: `.agent/commands/`
 
 ## Argument Patterns
 
