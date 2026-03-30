@@ -17,3 +17,5 @@
   items:
     - name: Local Development
       href: local-development.md
+    - name: Wireframe Generation
+      href: wireframes.md
