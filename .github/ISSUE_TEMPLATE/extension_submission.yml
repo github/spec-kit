@@ -12,7 +12,7 @@ body:
         - Review the [Extension Publishing Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md)
         - Ensure your extension has a valid `extension.yml` manifest
         - Create a GitHub release with a version tag (e.g., v1.0.0)
-        - Test installation: `specify extension add --from <your-release-url>`
+        - Test installation: `specify extension add <extension-name> --from <your-release-url>`
 
   - type: input
     id: extension-id
@@ -229,7 +229,7 @@ body:
       placeholder: |
         ```bash
         # Install extension
-        specify extension add --from https://github.com/your-org/spec-kit-your-extension/archive/refs/tags/v1.0.0.zip
+        specify extension add <extension-name> --from https://github.com/your-org/spec-kit-your-extension/archive/refs/tags/v1.0.0.zip
         
         # Use a command
         /speckit.your-extension.command-name arg1 arg2
