@@ -330,7 +330,7 @@ and supports the following commands:
 
 ### `specify init` Arguments & Options
 
-```
+```bash
 specify init <PROJECT_NAME> <OPTIONS>
 ```
 
