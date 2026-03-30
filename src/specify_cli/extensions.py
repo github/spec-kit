@@ -76,6 +76,7 @@ class ExtensionManifest:
 
     SCHEMA_VERSION = "1.0"
     REQUIRED_FIELDS = ["schema_version", "extension", "requires", "provides"]
+    _COMMAND_NAME_RE = re.compile(r'^speckit\.[a-z0-9-]+\.[a-z0-9-]+$')
 
     def __init__(self, manifest_path: Path):
         """Load and validate extension manifest.
@@ -150,7 +151,7 @@ class ExtensionManifest:
                 raise ValidationError("Command missing 'name' or 'file'")
 
             # Validate command name format
-            if not re.match(r'^speckit\.[a-z0-9-]+\.[a-z0-9-]+$', cmd["name"]):
+            if not self._COMMAND_NAME_RE.match(cmd["name"]):
                 corrected = self._try_correct_command_name(cmd["name"], ext["id"])
                 if corrected:
                     self.warnings.append(
@@ -178,12 +179,10 @@ class ExtensionManifest:
         parts = name.split('.')
         if len(parts) == 2:
             if parts[0] == 'speckit':
-                # speckit.command → speckit.{ext_id}.command
                 candidate = f"speckit.{ext_id}.{parts[1]}"
             else:
-                # extension.command → speckit.extension.command
                 candidate = f"speckit.{parts[0]}.{parts[1]}"
-            if re.match(r'^speckit\.[a-z0-9-]+\.[a-z0-9-]+$', candidate):
+            if ExtensionManifest._COMMAND_NAME_RE.match(candidate):
                 return candidate
         return None
 
