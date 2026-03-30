@@ -335,6 +335,55 @@ class CommandRegistrar:
 
         return "\n".join(toml_lines)
 
+    def render_yaml_command(
+        self,
+        frontmatter: dict,
+        body: str,
+        source_id: str
+    ) -> str:
+        """Render command in YAML format for Goose recipes.
+
+        Args:
+            frontmatter: Command frontmatter
+            body: Command body content
+            source_id: Source identifier (extension or preset ID)
+
+        Returns:
+            Formatted YAML recipe file content
+        """
+        yaml_lines = []
+
+        # Get title from frontmatter or generate from name/description
+        title = frontmatter.get("title", "")
+        if not title and "name" in frontmatter:
+            # Generate title from command name
+            title = frontmatter["name"].replace("_", " ").replace("-", " ").title()
+
+        description = frontmatter.get("description", "")
+
+        # Build YAML structure following Goose recipe schema
+        yaml_lines.append("version: 1.0.0")
+        yaml_lines.append(f'title: "{title}"')
+        yaml_lines.append(f'description: "{description}"')
+        yaml_lines.append("author:")
+        yaml_lines.append('  contact: "spec-kit"')
+        yaml_lines.append("extensions:")
+        yaml_lines.append("  - type: builtin")
+        yaml_lines.append("    name: developer")
+        yaml_lines.append("activities:")
+        yaml_lines.append('  - "Spec-Driven Development"')
+        yaml_lines.append("prompt: |")
+
+        # Indent each line of body for proper YAML block scalar formatting
+        for line in body.split("\n"):
+            yaml_lines.append(f"  {line}")
+
+        # Add source comment at the end
+        yaml_lines.append("")
+        yaml_lines.append(f"# Source: {source_id}")
+
+        return "\n".join(yaml_lines)
+
     def render_skill_command(
         self,
         agent_name: str,
@@ -517,6 +566,8 @@ class CommandRegistrar:
                 output = self.render_markdown_command(frontmatter, body, source_id, context_note)
             elif agent_config["format"] == "toml":
                 output = self.render_toml_command(frontmatter, body, source_id)
+            elif agent_config["format"] == "yaml":
+                output = self.render_yaml_command(frontmatter, body, source_id)
             else:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
