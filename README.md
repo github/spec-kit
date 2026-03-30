@@ -285,7 +285,7 @@ Community projects that extend, visualize, or build on Spec Kit:
 
 ## Available Slash Commands
 
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development. If `--ai-skills` flag is indicated, agent skills are installed instead of slash-command prompt files.
+After running `specify init`, your AI coding agent will have access to these slash commands for structured development. If you pass `--ai-skills`, Spec Kit installs agent skills instead of slash-command prompt files.
 
 #### Core Commands
 
