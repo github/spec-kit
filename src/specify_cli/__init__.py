@@ -4571,6 +4571,302 @@ def extension_set_priority(
     console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
 
 
+@app.command()
+def doctor(
+    fix: bool = typer.Option(False, "--fix", help="Attempt to fix detected issues automatically"),
+    json_output: bool = typer.Option(False, "--json", help="Output results in JSON format"),
+):
+    """
+    Diagnose project health and detect common issues.
+
+    Runs a comprehensive set of checks against your spec-kit project to
+    identify configuration problems, missing files, permission issues,
+    and other common sources of trouble.
+
+    Use --fix to attempt automatic remediation of fixable issues.
+    Use --json for machine-readable output (useful in CI pipelines).
+
+    Examples:
+        specify doctor
+        specify doctor --fix
+        specify doctor --json
+    """
+    import platform
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+
+    if not json_output:
+        show_banner()
+        console.print("[bold cyan]Project Health Check[/bold cyan]\n")
+
+    issues: list[dict[str, Any]] = []  # {check, status, message, fixable}
+    fixes_applied: list[str] = []
+
+    def record(check: str, status: str, message: str, *, fixable: bool = False):
+        issues.append({"check": check, "status": status, "message": message, "fixable": fixable})
+
+    # ── 1. Project Structure ──────────────────────────────────────────
+    if specify_dir.is_dir():
+        record("project-structure", "pass", ".specify/ directory exists")
+    else:
+        record("project-structure", "fail", ".specify/ directory not found — run 'specify init --here' to initialize", fixable=False)
+        # Without .specify/ most other checks are meaningless
+        if json_output:
+            print(json.dumps({"checks": issues, "fixes_applied": fixes_applied}, indent=2))
+        else:
+            _doctor_render(issues, fixes_applied)
+        raise typer.Exit(1)
+
+    # ── 2. Init options ───────────────────────────────────────────────
+    init_opts = load_init_options(project_root)
+    if init_opts:
+        record("init-options", "pass", f"Init options found (agent: {init_opts.get('ai', 'unknown')}, script: {init_opts.get('script', 'unknown')})")
+    else:
+        record("init-options", "warn", "No .specify/init-options.json found — project may have been initialized with an older version of spec-kit")
+
+    # ── 3. Constitution ───────────────────────────────────────────────
+    constitution_path = specify_dir / "memory" / "constitution.md"
+    constitution_template = specify_dir / "templates" / "constitution-template.md"
+    if constitution_path.is_file():
+        record("constitution", "pass", "constitution.md exists in memory/")
+    elif constitution_template.is_file():
+        record("constitution", "warn", "constitution.md missing from memory/ but template exists", fixable=True)
+        if fix:
+            try:
+                constitution_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(constitution_template, constitution_path)
+                fixes_applied.append("Copied constitution from template to memory/")
+                record("constitution-fix", "fixed", "Constitution copied from template")
+            except Exception as e:
+                record("constitution-fix", "fail", f"Failed to copy constitution: {e}")
+    else:
+        record("constitution", "warn", "Neither constitution.md nor template found")
+
+    # ── 4. Scripts directory & permissions ─────────────────────────────
+    scripts_dir = specify_dir / "scripts"
+    if scripts_dir.is_dir():
+        sh_scripts = list(scripts_dir.rglob("*.sh"))
+        ps_scripts = list(scripts_dir.rglob("*.ps1"))
+        record("scripts", "pass", f"Scripts directory found ({len(sh_scripts)} bash, {len(ps_scripts)} PowerShell)")
+
+        # Check execute permissions on POSIX
+        if os.name != "nt" and sh_scripts:
+            non_exec = []
+            for script in sh_scripts:
+                if script.is_file() and not script.is_symlink():
+                    if not (script.stat().st_mode & 0o111):
+                        non_exec.append(str(script.relative_to(project_root)))
+            if non_exec:
+                record("script-permissions", "warn", f"{len(non_exec)} script(s) missing execute permission", fixable=True)
+                if fix:
+                    ensure_executable_scripts(project_root)
+                    fixes_applied.append(f"Fixed execute permissions on {len(non_exec)} script(s)")
+                    record("script-permissions-fix", "fixed", "Execute permissions restored")
+            else:
+                record("script-permissions", "pass", "All bash scripts are executable")
+    else:
+        record("scripts", "warn", "No .specify/scripts/ directory found")
+
+    # ── 5. Templates directory ────────────────────────────────────────
+    templates_dir = specify_dir / "templates"
+    if templates_dir.is_dir():
+        template_files = list(templates_dir.glob("*.md"))
+        record("templates", "pass", f"Templates directory found ({len(template_files)} template(s))")
+    else:
+        record("templates", "warn", "No .specify/templates/ directory found")
+
+    # ── 6. Agent configuration ────────────────────────────────────────
+    selected_ai = init_opts.get("ai", "")
+    if selected_ai and selected_ai in AGENT_CONFIG:
+        agent_cfg = AGENT_CONFIG[selected_ai]
+        agent_folder = agent_cfg.get("folder")
+        if agent_folder:
+            agent_path = project_root / agent_folder
+            if agent_path.is_dir():
+                record("agent-dir", "pass", f"Agent directory {agent_folder} exists for {agent_cfg['name']}")
+            else:
+                record("agent-dir", "warn", f"Agent directory {agent_folder} not found for {agent_cfg['name']}")
+
+        # Check if agent CLI is available
+        if agent_cfg.get("requires_cli"):
+            if check_tool(selected_ai):
+                record("agent-cli", "pass", f"{agent_cfg['name']} CLI is available")
+            else:
+                install_url = agent_cfg.get("install_url", "")
+                record("agent-cli", "warn", f"{agent_cfg['name']} CLI not found — install from {install_url}")
+    elif selected_ai:
+        record("agent-config", "warn", f"Agent '{selected_ai}' not recognized in AGENT_CONFIG")
+
+    # ── 7. Git repository ─────────────────────────────────────────────
+    if is_git_repo(project_root):
+        record("git", "pass", "Git repository detected")
+        # Check for uncommitted changes in .specify/
+        try:
+            result = subprocess.run(
+                ["git", "status", "--porcelain", ".specify/"],
+                capture_output=True, text=True, cwd=project_root,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                changed_count = len(result.stdout.strip().splitlines())
+                record("git-status", "info", f"{changed_count} uncommitted change(s) in .specify/")
+            else:
+                record("git-status", "pass", "No uncommitted changes in .specify/")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            record("git-status", "warn", "Could not check git status")
+    else:
+        record("git", "info", "Not a git repository — consider running 'git init'")
+
+    # ── 8. Feature branches — check for spec artifacts ────────────────
+    try:
+        branch_result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, cwd=project_root,
+        )
+        if branch_result.returncode == 0:
+            current_branch = branch_result.stdout.strip()
+            feature_dir = specify_dir / "features" / current_branch
+            if feature_dir.is_dir():
+                spec_file = feature_dir / "spec.md"
+                plan_file = feature_dir / "plan.md"
+                tasks_file = feature_dir / "tasks.md"
+                artifacts = []
+                if spec_file.is_file():
+                    artifacts.append("spec.md")
+                if plan_file.is_file():
+                    artifacts.append("plan.md")
+                if tasks_file.is_file():
+                    artifacts.append("tasks.md")
+                if artifacts:
+                    record("feature-artifacts", "pass", f"Feature branch '{current_branch}' has: {', '.join(artifacts)}")
+                else:
+                    record("feature-artifacts", "info", f"Feature directory exists for '{current_branch}' but no spec artifacts found yet")
+            else:
+                record("feature-artifacts", "info", f"No feature directory for current branch '{current_branch}' (normal if no feature started)")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass  # Not a git repo or git not available — already handled above
+
+    # ── 9. Extensions health ──────────────────────────────────────────
+    extensions_dir = specify_dir / "extensions"
+    if extensions_dir.is_dir():
+        registry_file = extensions_dir / "registry.json"
+        if registry_file.is_file():
+            try:
+                registry_data = json.loads(registry_file.read_text(encoding="utf-8"))
+                if isinstance(registry_data, dict):
+                    ext_count = len(registry_data)
+                    record("extensions", "pass", f"Extension registry found ({ext_count} extension(s))")
+                    # Validate each extension has its directory
+                    for ext_id, ext_meta in registry_data.items():
+                        ext_dir = extensions_dir / ext_id
+                        if not ext_dir.is_dir():
+                            record(f"ext-{ext_id}", "warn", f"Extension '{ext_id}' registered but directory missing", fixable=False)
+                else:
+                    record("extensions", "warn", "Extension registry is not a valid JSON object", fixable=False)
+            except (json.JSONDecodeError, OSError) as e:
+                record("extensions", "fail", f"Extension registry corrupted: {e}", fixable=False)
+        else:
+            record("extensions", "pass", "No extensions installed (registry absent)")
+    else:
+        record("extensions", "pass", "No extensions directory (none installed)")
+
+    # ── 10. Presets health ────────────────────────────────────────────
+    presets_dir = specify_dir / "presets"
+    if presets_dir.is_dir():
+        preset_registry = presets_dir / "registry.json"
+        if preset_registry.is_file():
+            try:
+                preset_data = json.loads(preset_registry.read_text(encoding="utf-8"))
+                if isinstance(preset_data, dict):
+                    preset_count = len(preset_data)
+                    record("presets", "pass", f"Preset registry found ({preset_count} preset(s))")
+                else:
+                    record("presets", "warn", "Preset registry is not a valid JSON object")
+            except (json.JSONDecodeError, OSError) as e:
+                record("presets", "fail", f"Preset registry corrupted: {e}")
+        else:
+            record("presets", "pass", "No presets installed (registry absent)")
+    else:
+        record("presets", "pass", "No presets directory (none installed)")
+
+    # ── 11. AI skills health ──────────────────────────────────────────
+    if init_opts.get("ai_skills") and selected_ai:
+        skills_dir = _get_skills_dir(project_root, selected_ai)
+        if skills_dir.is_dir():
+            skill_dirs = [d for d in skills_dir.iterdir() if d.is_dir() and d.name.startswith("speckit-")]
+            valid_skills = sum(1 for d in skill_dirs if (d / "SKILL.md").is_file())
+            record("ai-skills", "pass", f"{valid_skills} agent skill(s) installed in {skills_dir.relative_to(project_root)}")
+            missing_skill_md = [d.name for d in skill_dirs if not (d / "SKILL.md").is_file()]
+            if missing_skill_md:
+                record("ai-skills-integrity", "warn", f"{len(missing_skill_md)} skill dir(s) missing SKILL.md: {', '.join(missing_skill_md[:5])}")
+        else:
+            record("ai-skills", "warn", f"AI skills enabled but skills directory not found: {skills_dir.relative_to(project_root)}")
+
+    # ── Output ────────────────────────────────────────────────────────
+    if json_output:
+        print(json.dumps({"checks": issues, "fixes_applied": fixes_applied}, indent=2))
+    else:
+        _doctor_render(issues, fixes_applied)
+
+
+def _doctor_render(issues: list[dict[str, Any]], fixes_applied: list[str]) -> None:
+    """Render doctor results as a Rich tree."""
+    STATUS_SYMBOLS = {
+        "pass": "[green]●[/green]",
+        "fail": "[red]●[/red]",
+        "warn": "[yellow]●[/yellow]",
+        "info": "[blue]●[/blue]",
+        "fixed": "[green]●[/green]",
+    }
+
+    tree = Tree("[bold cyan]Diagnostic Results[/bold cyan]", guide_style="grey50")
+    pass_count = sum(1 for i in issues if i["status"] == "pass")
+    warn_count = sum(1 for i in issues if i["status"] == "warn")
+    fail_count = sum(1 for i in issues if i["status"] == "fail")
+    info_count = sum(1 for i in issues if i["status"] == "info")
+    fixed_count = sum(1 for i in issues if i["status"] == "fixed")
+
+    for issue in issues:
+        symbol = STATUS_SYMBOLS.get(issue["status"], " ")
+        label = issue["check"]
+        msg = issue["message"]
+        tree.add(f"{symbol} [white]{label}[/white] [bright_black]— {msg}[/bright_black]")
+
+    console.print(tree)
+    console.print()
+
+    # Summary
+    summary_parts = []
+    if pass_count:
+        summary_parts.append(f"[green]{pass_count} passed[/green]")
+    if warn_count:
+        summary_parts.append(f"[yellow]{warn_count} warning(s)[/yellow]")
+    if fail_count:
+        summary_parts.append(f"[red]{fail_count} failed[/red]")
+    if info_count:
+        summary_parts.append(f"[blue]{info_count} info[/blue]")
+    if fixed_count:
+        summary_parts.append(f"[green]{fixed_count} fixed[/green]")
+
+    console.print(f"[bold]Summary:[/bold] {' | '.join(summary_parts)}")
+
+    if fixes_applied:
+        console.print(f"\n[bold green]Fixes applied ({len(fixes_applied)}):[/bold green]")
+        for f in fixes_applied:
+            console.print(f"  [green]●[/green] {f}")
+
+    fixable = [i for i in issues if i["fixable"] and i["status"] != "fixed"]
+    if fixable:
+        console.print(f"\n[yellow]Tip:[/yellow] {len(fixable)} issue(s) can be auto-fixed with [cyan]specify doctor --fix[/cyan]")
+
+    if fail_count == 0 and warn_count == 0:
+        console.print("\n[bold green]Your project is healthy![/bold green]")
+    elif fail_count == 0:
+        console.print("\n[bold yellow]Project has minor warnings but is functional.[/bold yellow]")
+    else:
+        console.print("\n[bold red]Project has issues that need attention.[/bold red]")
+
+
 def main():
     app()
 
