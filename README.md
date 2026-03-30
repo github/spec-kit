@@ -313,8 +313,8 @@ Additional commands for enhanced quality and validation:
 
 The `specify` tool is invoked as
 
-```
-specify <COMMAND> <SUBCOMMAND> <OPTIONS>
+```bash
+specify <COMMAND> <OPTIONAL_SUBCOMMAND> <OPTIONS>
 ```
 
 and supports the following commands:
