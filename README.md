@@ -292,13 +292,13 @@ After running `specify init`, your AI coding agent will have access to these sla
 
 Essential commands for the Spec-Driven Development workflow:
 
-| Command                 | Agent Skill             | Description                                                              |
-| ----------------------- | ----------------------- | ------------------------------------------------------------------------ |
-| `/speckit.constitution` | `$speckit-constitution` | Create or update project governing principles and development guidelines |
-| `/speckit.specify`      | `$speckit-plan`         | Define what you want to build (requirements and user stories)            |
-| `/speckit.plan`         | `$speckit-tasks`        | Create technical implementation plans with your chosen tech stack        |
-| `/speckit.tasks`        | `$speckit-tasks`        | Generate actionable task lists for implementation                        |
-| `/speckit.implement`    | `$speckit-implement`    | Execute all tasks to build the feature according to the plan             |
+| Command                 | Agent Skill            | Description                                                              |
+| ----------------------- | ---------------------- | ------------------------------------------------------------------------ |
+| `/speckit.constitution` | `speckit-constitution` | Create or update project governing principles and development guidelines |
+| `/speckit.specify`      | `speckit-plan`         | Define what you want to build (requirements and user stories)            |
+| `/speckit.plan`         | `speckit-tasks`        | Create technical implementation plans with your chosen tech stack        |
+| `/speckit.tasks`        | `speckit-tasks`        | Generate actionable task lists for implementation                        |
+| `/speckit.implement`    | `speckit-implement`    | Execute all tasks to build the feature according to the plan             |
 
 #### Optional Commands
 
