@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-24T00:00:00Z",
+  "updated_at": "2026-03-30T02:43:48Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "aide-in-place": {
@@ -27,6 +27,30 @@
         "in-place",
         "brownfield",
         "aide"
+      ]
+    },
+    "canon-core": {
+      "name": "Canon Core",
+      "id": "canon-core",
+      "version": "0.1.0",
+      "description": "Adapts original Spec Kit workflow to work together with Canon extension.",
+      "author": "Maxim Stupakov",
+      "download_url": "https://github.com/maximiliamus/spec-kit-canon/releases/download/v0.1.0/spec-kit-canon-core-v0.1.0.zip",
+      "repository": "https://github.com/maximiliamus/spec-kit-canon/tree/master/preset",
+      "homepage": "https://github.com/maximiliamus/spec-kit-canon",
+      "documentation": "https://github.com/maximiliamus/spec-kit-canon/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.3"
+      },
+      "provides": {
+        "templates": 2,
+        "commands": 8
+      },
+      "tags": [
+        "baseline",
+        "canon",
+        "spec-first"
       ]
     },
     "pirate": {

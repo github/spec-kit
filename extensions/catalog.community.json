@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-27T08:22:30Z",
+  "updated_at": "2026-03-30T02:43:48Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -105,6 +105,41 @@
       "stars": 0,
       "created_at": "2026-03-03T00:00:00Z",
       "updated_at": "2026-03-03T00:00:00Z"
+    },
+    "canon": {
+      "name": "Canon",
+      "id": "canon",
+      "description": "Adds canon-driven (baseline-driven) workflows: spec-first, code-first, spec-drift. Requires Canon Core preset installation.",
+      "author": "Maxim Stupakov",
+      "version": "0.1.0",
+      "download_url": "https://github.com/maximiliamus/spec-kit-canon/releases/download/v0.1.0/spec-kit-canon-v0.1.0.zip",
+      "repository": "https://github.com/maximiliamus/spec-kit-canon/tree/master/extension",
+      "homepage": "https://github.com/maximiliamus/spec-kit-canon",
+      "documentation": "https://github.com/maximiliamus/spec-kit-canon/blob/main/README.md",
+      "changelog": "https://github.com/maximiliamus/spec-kit-canon/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.3"
+      },
+      "provides": {
+        "commands": 15,
+        "hooks": 0
+      },
+      "tags": [
+        "process",
+        "baseline",
+        "canon",
+        "drift",
+        "spec-first",
+        "code-first",
+        "spec-drift",
+        "vibecoding"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-29T00:00:00Z",
+      "updated_at": "2026-03-29T00:00:00Z"
     },
     "checkpoint": {
       "name": "Checkpoint Extension",
