@@ -413,3 +413,15 @@ class TestAllowExistingBranchPowerShell:
         assert "-AllowExistingBranch" in contents
         # Ensure the flag is referenced in script logic, not just declared
         assert "AllowExistingBranch" in contents.replace("-AllowExistingBranch", "")
+
+    def test_powershell_has_number_collision_validation(self):
+        """Static guard: PS script validates manual -Number against existing branches/specs."""
+        contents = CREATE_FEATURE_PS.read_text(encoding="utf-8")
+        # Must check specs directory for collision
+        assert "manualNumPadded" in contents
+        # Must check git branches for collision
+        assert "git fetch --all --prune" in contents
+        # Must warn and auto-detect on conflict
+        assert "conflicts with existing branch/spec" in contents
+        # Must skip validation when -AllowExistingBranch is set
+        assert "elseif (-not $AllowExistingBranch)" in contents
