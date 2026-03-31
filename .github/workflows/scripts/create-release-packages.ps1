@@ -498,8 +498,9 @@ function Build-Variant {
                 $cmdName = [System.IO.Path]::GetFileNameWithoutExtension($cmdFile.Name)
                 $content = Get-Content -Path $cmdFile.FullName -Raw
                 
-                # Inject name field after first ---
-                $content = $content -replace '(?m)^---$', "---`nname: $cmdName", 1
+                # Inject name field after first --- using .NET Regex.Replace with count limit
+                $regex = [regex]'(?m)^---$'
+                $content = $regex.Replace($content, "---`nname: $cmdName", 1)
                 
                 Set-Content -Path $cmdFile.FullName -Value $content -NoNewline
             }
