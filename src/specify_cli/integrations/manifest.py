@@ -175,7 +175,11 @@ class IntegrationManifest:
                 if not force and _sha256(path) != expected_hash:
                     skipped.append(path)
                     continue
-            path.unlink()
+            try:
+                path.unlink()
+            except OSError:
+                skipped.append(path)
+                continue
             removed.append(path)
             # Clean up empty parent directories up to project root
             parent = path.parent

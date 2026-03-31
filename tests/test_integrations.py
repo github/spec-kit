@@ -233,6 +233,16 @@ class TestManifestCheckModified:
         (tmp_path / "f.txt").unlink()
         assert m.check_modified() == []
 
+    def test_symlink_treated_as_modified(self, tmp_path):
+        """A tracked file replaced with a symlink is reported as modified."""
+        m = IntegrationManifest("test", tmp_path)
+        m.record_file("f.txt", "original")
+        target = tmp_path / "target.txt"
+        target.write_text("target", encoding="utf-8")
+        (tmp_path / "f.txt").unlink()
+        (tmp_path / "f.txt").symlink_to(target)
+        assert m.check_modified() == ["f.txt"]
+
 
 class TestManifestUninstall:
     def test_removes_unmodified(self, tmp_path):
@@ -309,6 +319,36 @@ class TestManifestUninstall:
         assert not (tmp_path / "a" / "b" / "tracked.txt").exists()
         assert (tmp_path / "a" / "b" / "other.txt").exists()
         assert (tmp_path / "a" / "b").is_dir()
+
+    def test_symlink_skipped_without_force(self, tmp_path):
+        """A tracked file replaced with a symlink is skipped unless force."""
+        m = IntegrationManifest("test", tmp_path)
+        m.record_file("f.txt", "original")
+        m.save()
+        target = tmp_path / "target.txt"
+        target.write_text("target", encoding="utf-8")
+        (tmp_path / "f.txt").unlink()
+        (tmp_path / "f.txt").symlink_to(target)
+
+        removed, skipped = m.uninstall()
+        assert removed == []
+        assert len(skipped) == 1
+        assert (tmp_path / "f.txt").is_symlink()  # still there
+
+    def test_symlink_removed_with_force(self, tmp_path):
+        """A tracked file replaced with a symlink is removed with force."""
+        m = IntegrationManifest("test", tmp_path)
+        m.record_file("f.txt", "original")
+        m.save()
+        target = tmp_path / "target.txt"
+        target.write_text("target", encoding="utf-8")
+        (tmp_path / "f.txt").unlink()
+        (tmp_path / "f.txt").symlink_to(target)
+
+        removed, skipped = m.uninstall(force=True)
+        assert len(removed) == 1
+        assert not (tmp_path / "f.txt").exists()
+        assert target.exists()  # target not deleted
 
 
 class TestManifestPersistence:

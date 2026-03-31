@@ -114,10 +114,15 @@ class IntegrationBase(ABC):
             return created
 
         if not self.config:
-            return created
+            raise ValueError(
+                f"{type(self).__name__}.config is not set; integration "
+                "subclasses must define a non-empty 'config' mapping."
+            )
         folder = self.config.get("folder")
         if not folder:
-            return created
+            raise ValueError(
+                f"{type(self).__name__}.config is missing required 'folder' entry."
+            )
 
         project_root_resolved = project_root.resolve()
         if manifest.project_root != project_root_resolved:
