@@ -249,6 +249,14 @@ if [ "$USE_TIMESTAMP" = true ]; then
     FEATURE_NUM=$(date +%Y%m%d-%H%M%S)
     BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
 else
+    # Validate --number input when provided
+    if [ -n "$BRANCH_NUMBER" ]; then
+        if ! echo "$BRANCH_NUMBER" | grep -q '^[0-9]\+$' || [ "$((10#$BRANCH_NUMBER))" -lt 1 ]; then
+            >&2 echo "Error: --number requires a positive integer, got '$BRANCH_NUMBER'"
+            exit 1
+        fi
+    fi
+
     # Determine branch number
     if [ -z "$BRANCH_NUMBER" ]; then
         # No manual number provided -- auto-detect
@@ -263,10 +271,6 @@ else
     elif [ "$ALLOW_EXISTING" = false ]; then
         # Manual number provided -- validate it is not already in use
         # (skip when --allow-existing-branch, as the caller intentionally targets an existing branch)
-        if ! echo "$BRANCH_NUMBER" | grep -q '^[0-9]\+$'; then
-            >&2 echo "Error: --number requires a positive integer, got '$BRANCH_NUMBER'"
-            exit 1
-        fi
         MANUAL_NUM=$((10#$BRANCH_NUMBER))
         MANUAL_NUM_PADDED=$(printf "%03d" "$MANUAL_NUM")
         NUMBER_IN_USE=false
