@@ -14,7 +14,7 @@
 
 .PARAMETER Agents
     Comma or space separated subset of agents to build (default: all)
-    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, junie, codex, kilocode, auggie, roo, codebuddy, amp, kiro-cli, bob, qodercli, shai, tabnine, agy, vibe, kimi, trae, pi, iflow, generic
+    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, junie, codex, kilocode, auggie, roo, codebuddy, amp, kiro-cli, bob, qodercli, shai, tabnine, agy, vibe, kimi, trae, pi, iflow, forge, generic
 
 .PARAMETER Scripts
     Comma or space separated subset of script types to build (default: both)
@@ -73,7 +73,8 @@ function Generate-Commands {
         [string]$Extension,
         [string]$ArgFormat,
         [string]$OutputDir,
-        [string]$ScriptVariant
+        [string]$ScriptVariant,
+        [string]$ExtraStripKey = ""
     )
 
     New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
@@ -137,7 +138,16 @@ function Generate-Commands {
             }
 
             if ($inFrontmatter) {
+                # Check for scripts/agent_scripts or extra strip key
+                $shouldSkip = $false
                 if ($line -match '^(scripts|agent_scripts):$') {
+                    $shouldSkip = $true
+                }
+                if (-not [string]::IsNullOrEmpty($ExtraStripKey) -and $line -match "^${ExtraStripKey}:") {
+                    $shouldSkip = $true
+                }
+                
+                if ($shouldSkip) {
                     $skipScripts = $true
                     continue
                 }
@@ -156,6 +166,7 @@ function Generate-Commands {
 
         # Apply other substitutions
         $body = $body -replace '\{ARGS\}', $ArgFormat
+        $body = $body -replace '\$ARGUMENTS', $ArgFormat
         $body = $body -replace '__AGENT__', $Agent
         $body = Rewrite-Paths -Content $body
 
@@ -477,6 +488,22 @@ function Build-Variant {
             $cmdDir = Join-Path $baseDir ".iflow/commands"
             Generate-Commands -Agent 'iflow' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
+        'forge' {
+            $cmdDir = Join-Path $baseDir ".forge/commands"
+            Generate-Commands -Agent 'forge' -Extension 'md' -ArgFormat '{{parameters}}' -OutputDir $cmdDir -ScriptVariant $Script -ExtraStripKey 'handoffs'
+            
+            # Inject name field into frontmatter (forge requires name + description)
+            $cmdFiles = Get-ChildItem -Path "$cmdDir/*.md" -File -ErrorAction SilentlyContinue
+            foreach ($cmdFile in $cmdFiles) {
+                $cmdName = [System.IO.Path]::GetFileNameWithoutExtension($cmdFile.Name)
+                $content = Get-Content -Path $cmdFile.FullName -Raw
+                
+                # Inject name field after first ---
+                $content = $content -replace '(?m)^---$', "---`nname: $cmdName", 1
+                
+                Set-Content -Path $cmdFile.FullName -Value $content -NoNewline
+            }
+        }
         'generic' {
             $cmdDir = Join-Path $baseDir ".speckit/commands"
             Generate-Commands -Agent 'generic' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
@@ -493,7 +520,7 @@ function Build-Variant {
 }
 
 # Define all agents and scripts
-$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'junie', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'kiro-cli', 'bob', 'qodercli', 'shai', 'tabnine', 'agy', 'vibe', 'kimi', 'trae', 'pi', 'iflow', 'generic')
+$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'junie', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'kiro-cli', 'bob', 'qodercli', 'shai', 'tabnine', 'agy', 'vibe', 'kimi', 'trae', 'pi', 'iflow', 'forge', 'generic')
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {

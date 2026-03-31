@@ -466,12 +466,12 @@ def test_markdown_has_frontmatter(agent, scaffolded_sh):
 
 def test_forge_name_field_in_frontmatter(scaffolded_sh):
     """Forge: every command file must have a 'name' field in frontmatter that matches the filename.
-    
+
     Forge requires both 'name' and 'description' fields in command frontmatter.
     This test ensures the release script's name injection is working correctly.
     """
     project = scaffolded_sh("forge")
-    
+
     cmd_dir = _expected_cmd_dir(project, "forge")
     for f in _list_command_files(cmd_dir, "forge"):
         content = f.read_text(encoding="utf-8")
@@ -482,13 +482,13 @@ def test_forge_name_field_in_frontmatter(scaffolded_sh):
         assert len(parts) >= 3, f"Incomplete frontmatter in '{f.name}'"
         fm = yaml.safe_load(parts[1])
         assert fm is not None, f"Empty frontmatter in '{f.name}'"
-        
+
         # Check that 'name' field exists
         assert "name" in fm, (
             f"'name' key missing from frontmatter in '{f.name}' - "
             f"Forge requires both 'name' and 'description' fields"
         )
-        
+
         # Check that name matches the filename (without extension)
         expected_name = f.name.removesuffix(".md")
         actual_name = fm["name"]
