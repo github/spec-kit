@@ -6,10 +6,14 @@
 #
 # NOTE: This script is not yet active. It will be activated in Stage 7
 # when the shared update-agent-context.ps1 replaces its switch statement
-# with integration.json-based dispatch.
+# with integration.json-based dispatch. The shared script must also be
+# refactored to support SPECKIT_SOURCE_ONLY (guard the Main call) before
+# dot-sourcing will work.
 #
-# Sources common.ps1 and the shared update-agent-context functions,
-# then calls Update-AgentFile with the copilot target path.
+# Prerequisites (Stage 7):
+# - update-agent-context.ps1 must guard its Main call behind
+#   if (-not $env:SPECKIT_SOURCE_ONLY) { Main }
+# - Functions must be importable without side effects
 
 $ErrorActionPreference = 'Stop'
 
@@ -25,9 +29,9 @@ $env:SPECKIT_SOURCE_ONLY = '1'
 . "$repoRoot/.specify/scripts/powershell/update-agent-context.ps1"
 
 # Gather feature paths and parse plan data
-$paths = Get-FeaturePaths
+$paths = Get-FeaturePathsEnv
 $implPlan = $paths.IMPL_PLAN
-Read-PlanData -PlanFile $implPlan
+Parse-PlanData -PlanFile $implPlan
 
 # Create or update the copilot instructions file
 $copilotFile = Join-Path $repoRoot '.github/copilot-instructions.md'

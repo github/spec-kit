@@ -7,7 +7,9 @@
 #
 # NOTE: This script is not yet active. It will be activated in Stage 7
 # when the shared update-agent-context.sh replaces its case statement
-# with integration.json-based dispatch.
+# with integration.json-based dispatch. The shared script must also be
+# refactored to support SPECKIT_SOURCE_ONLY (guard the main logic)
+# before sourcing will work.
 #
 # Sources common.sh and the shared update-agent-context functions,
 # then calls update_agent_file with the copilot target path.
