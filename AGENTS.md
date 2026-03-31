@@ -391,6 +391,8 @@ Command content with {SCRIPT} and {{args}} placeholders.
 - **CLI agents**: Usually `.<agent-name>/commands/`
 - **Singular command exception**:
   - opencode: `.opencode/command/` (singular `command`, not `commands`)
+- **Nested path exception**:
+  - Tabnine: `.tabnine/agent/commands/` (extra `agent/` segment)
 - **Skills-based exceptions**:
   - Codex: `.agents/skills/` (skills, invoked as `$speckit-<command>`)
   - Kimi Code: `.kimi/skills/` (skills, invoked as `/skill:speckit-<command>`)
