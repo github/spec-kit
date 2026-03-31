@@ -847,10 +847,10 @@ class TestInitIntegrationFlag:
         assert "update-context" in data["scripts"]
 
         # Shared infrastructure manifest
-        shared_manifest = project / ".specify" / "integrations" / "integration-shared.manifest.json"
+        shared_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
         assert shared_manifest.exists()
         shared_data = json.loads(shared_manifest.read_text(encoding="utf-8"))
-        assert shared_data["integration"] == "integration-shared"
+        assert shared_data["integration"] == "speckit"
         assert len(shared_data["files"]) > 0
 
     def test_ai_copilot_auto_promotes(self, tmp_path):

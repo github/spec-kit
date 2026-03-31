@@ -1212,7 +1212,7 @@ def _install_shared_infra(
     from .integrations.manifest import IntegrationManifest
 
     core = _locate_core_pack()
-    manifest = IntegrationManifest("integration-shared", project_path, version=get_speckit_version())
+    manifest = IntegrationManifest("speckit", project_path, version=get_speckit_version())
 
     # Scripts
     if core and (core / "scripts").is_dir():
