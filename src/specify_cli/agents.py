@@ -539,11 +539,30 @@ class CommandRegistrar:
 
             for alias in cmd_info.get("aliases", []):
                 alias_output_name = self._compute_output_name(agent_name, alias, agent_config)
-                alias_output = output
-                if agent_config["extension"] == "/SKILL.md":
-                    alias_output = self.render_skill_command(
-                        agent_name, alias_output_name, frontmatter, body, source_id, cmd_file, project_root
-                    )
+                
+                # For agents with inject_name, render with alias-specific frontmatter
+                if agent_config.get("inject_name"):
+                    alias_frontmatter = deepcopy(frontmatter)
+                    alias_frontmatter["name"] = alias
+                    
+                    if agent_config["extension"] == "/SKILL.md":
+                        alias_output = self.render_skill_command(
+                            agent_name, alias_output_name, alias_frontmatter, body, source_id, cmd_file, project_root
+                        )
+                    elif agent_config["format"] == "markdown":
+                        alias_output = self.render_markdown_command(alias_frontmatter, body, source_id, context_note)
+                    elif agent_config["format"] == "toml":
+                        alias_output = self.render_toml_command(alias_frontmatter, body, source_id)
+                    else:
+                        raise ValueError(f"Unsupported format: {agent_config['format']}")
+                else:
+                    # For other agents, reuse the primary output
+                    alias_output = output
+                    if agent_config["extension"] == "/SKILL.md":
+                        alias_output = self.render_skill_command(
+                            agent_name, alias_output_name, frontmatter, body, source_id, cmd_file, project_root
+                        )
+                
                 alias_file = commands_dir / f"{alias_output_name}{agent_config['extension']}"
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
                 alias_file.write_text(alias_output, encoding="utf-8")
