@@ -453,10 +453,11 @@ class TestAllowExistingBranchPowerShell:
         # Ensure the flag is referenced in script logic, not just declared
         assert "AllowExistingBranch" in contents.replace("-AllowExistingBranch", "")
 
-    def test_powershell_rejects_negative_number(self):
-        """Static guard: PS script validates -Number is not negative."""
+    def test_powershell_rejects_invalid_number(self):
+        """Static guard: PS script validates -Number using PSBoundParameters and rejects < 1."""
         contents = CREATE_FEATURE_PS.read_text(encoding="utf-8")
-        assert "Number -lt 0" in contents or re.search(r"\$Number\s+-lt\s+0", contents)
+        assert "PSBoundParameters.ContainsKey" in contents
+        assert "Number -lt 1" in contents or re.search(r"\$Number\s+-lt\s+1", contents)
         assert "positive integer" in contents
 
     def test_powershell_has_number_collision_validation(self):

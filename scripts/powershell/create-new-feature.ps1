@@ -201,8 +201,8 @@ if ($Timestamp) {
     $featureNum = Get-Date -Format 'yyyyMMdd-HHmmss'
     $branchName = "$featureNum-$branchSuffix"
 } else {
-    # Validate -Number input when provided
-    if ($Number -lt 0) {
+    # Validate -Number input when explicitly provided
+    if ($PSBoundParameters.ContainsKey('Number') -and $Number -lt 1) {
         Write-Error "-Number requires a positive integer, got $Number"
         exit 1
     }
