@@ -187,7 +187,8 @@ class ExtensionManifest:
         if "commands" not in provides or not provides["commands"]:
             raise ValidationError("Extension must provide at least one command")
 
-        # Validate commands
+        # Validate commands; track renames so hook references can be rewritten.
+        rename_map: Dict[str, str] = {}
         for cmd in provides["commands"]:
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
@@ -201,6 +202,7 @@ class ExtensionManifest:
                         f"'speckit.{{extension}}.{{command}}'. Registering as '{corrected}'. "
                         f"The extension author should update the manifest to use this name."
                     )
+                    rename_map[cmd["name"]] = corrected
                     cmd["name"] = corrected
                 else:
                     raise ValidationError(
@@ -209,8 +211,18 @@ class ExtensionManifest:
                     )
 
             # Validate and auto-correct alias name formats
-            aliases = cmd.get("aliases") or []
+            aliases = cmd.get("aliases")
+            if aliases is None:
+                aliases = []
+            if not isinstance(aliases, list):
+                raise ValidationError(
+                    f"Aliases for command '{cmd['name']}' must be a list"
+                )
             for i, alias in enumerate(aliases):
+                if not isinstance(alias, str):
+                    raise ValidationError(
+                        f"Aliases for command '{cmd['name']}' must be strings"
+                    )
                 if not EXTENSION_COMMAND_NAME_PATTERN.match(alias):
                     corrected = self._try_correct_command_name(alias, ext["id"])
                     if corrected:
@@ -219,6 +231,7 @@ class ExtensionManifest:
                             f"'speckit.{{extension}}.{{command}}'. Registering as '{corrected}'. "
                             f"The extension author should update the manifest to use this name."
                         )
+                        rename_map[alias] = corrected
                         aliases[i] = corrected
                     else:
                         raise ValidationError(
@@ -226,24 +239,37 @@ class ExtensionManifest:
                             "must follow pattern 'speckit.{extension}.{command}'"
                         )
 
+        # Rewrite any hook command references that pointed at a renamed command.
+        for hook_name, hook_data in self.data.get("hooks", {}).items():
+            if isinstance(hook_data, dict) and hook_data.get("command") in rename_map:
+                old_ref = hook_data["command"]
+                hook_data["command"] = rename_map[old_ref]
+                self.warnings.append(
+                    f"Hook '{hook_name}' referenced renamed command '{old_ref}'; "
+                    f"updated to '{rename_map[old_ref]}'. "
+                    f"The extension author should update the manifest."
+                )
+
     @staticmethod
     def _try_correct_command_name(name: str, ext_id: str) -> Optional[str]:
         """Try to auto-correct a non-conforming command name to the required pattern.
 
-        Handles the two most common legacy formats used by community extensions:
-          - 'speckit.command'    → 'speckit.{ext_id}.command'
-          - 'extension.command'  → 'speckit.extension.command'
+        Handles the two legacy formats used by community extensions:
+          - 'speckit.command'  → 'speckit.{ext_id}.command'
+          - '{ext_id}.command' → 'speckit.{ext_id}.command'
+
+        The 'X.Y' form is only corrected when X matches ext_id to ensure the
+        result passes the install-time namespace check. Any other prefix is
+        uncorrectable and will produce a ValidationError at the call site.
 
         Returns the corrected name, or None if no safe correction is possible.
         """
         parts = name.split('.')
         if len(parts) == 2:
-            if parts[0] == 'speckit':
+            if parts[0] == 'speckit' or parts[0] == ext_id:
                 candidate = f"speckit.{ext_id}.{parts[1]}"
-            else:
-                candidate = f"speckit.{parts[0]}.{parts[1]}"
-            if EXTENSION_COMMAND_NAME_PATTERN.match(candidate):
-                return candidate
+                if EXTENSION_COMMAND_NAME_PATTERN.match(candidate):
+                    return candidate
         return None
 
     @property
