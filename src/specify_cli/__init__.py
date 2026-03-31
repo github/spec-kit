@@ -1221,6 +1221,8 @@ def _install_shared_infra(
         repo_root = Path(__file__).parent.parent.parent
         scripts_src = repo_root / "scripts"
 
+    skipped_files: list[str] = []
+
     if scripts_src.is_dir():
         dest_scripts = project_path / ".specify" / "scripts"
         dest_scripts.mkdir(parents=True, exist_ok=True)
@@ -1234,7 +1236,9 @@ def _install_shared_infra(
                 if src_path.is_file():
                     rel_path = src_path.relative_to(variant_src)
                     dst_path = dest_variant / rel_path
-                    if not dst_path.exists():
+                    if dst_path.exists():
+                        skipped_files.append(str(dst_path.relative_to(project_path)))
+                    else:
                         dst_path.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(src_path, dst_path)
             for f in dest_variant.rglob("*"):
@@ -1255,10 +1259,19 @@ def _install_shared_infra(
         for f in templates_src.iterdir():
             if f.is_file() and f.name != "vscode-settings.json" and not f.name.startswith("."):
                 dst = dest_templates / f.name
-                if not dst.exists():
+                if dst.exists():
+                    skipped_files.append(str(dst.relative_to(project_path)))
+                else:
                     shutil.copy2(f, dst)
                 rel = dst.relative_to(project_path).as_posix()
                 manifest.record_existing(rel)
+
+    if skipped_files:
+        import logging
+        logging.getLogger(__name__).warning(
+            "The following shared files already exist and were not overwritten:\n%s",
+            "\n".join(f"  {f}" for f in skipped_files),
+        )
 
     manifest.save()
     return True
