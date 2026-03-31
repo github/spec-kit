@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(xargs grep:*)",
-      "Bash(python -m pytest tests/ -q --ignore=tests/test_core_pack_scaffold.py --ignore=tests/test_cursor_frontmatter.py --ignore=tests/test_timestamp_branches.py)"
-    ]
-  }
-}
