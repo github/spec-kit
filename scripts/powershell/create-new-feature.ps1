@@ -214,6 +214,10 @@ if ($Timestamp) {
     } elseif (-not $AllowExistingBranch) {
         # Manual number provided -- validate it is not already in use
         # (skip when -AllowExistingBranch, as the caller intentionally targets an existing branch)
+        if ($Number -lt 1) {
+            Write-Error "-Number requires a positive integer, got $Number"
+            exit 1
+        }
         $manualNumPadded = '{0:000}' -f $Number
         $numberInUse = $false
 

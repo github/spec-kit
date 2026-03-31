@@ -423,5 +423,7 @@ class TestAllowExistingBranchPowerShell:
         assert "git fetch --all --prune" in contents
         # Must warn and auto-detect on conflict
         assert "conflicts with existing branch/spec" in contents
-        # Must skip validation when -AllowExistingBranch is set
-        assert "elseif (-not $AllowExistingBranch)" in contents
+        # Must skip validation when -AllowExistingBranch is set; allow flexible whitespace
+        assert re.search(r"elseif\s*\(\s*-not\s+\$AllowExistingBranch\s*\)", contents), (
+            "Expected an elseif guard that negates $AllowExistingBranch"
+        )
