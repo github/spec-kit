@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-01T00:00:00Z",
+"updated_at": "2026-04-01T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -375,7 +375,7 @@
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
     },
-    "fix-findings": {
+"fix-findings": {
       "name": "Fix Findings",
       "id": "fix-findings",
       "description": "Automated analyze-fix-reanalyze loop that resolves spec findings until clean.",
@@ -392,7 +392,7 @@
       },
       "provides": {
         "commands": 1,
-        "hooks": 1
+"hooks": 1
       },
       "tags": [
         "code",
@@ -404,8 +404,39 @@
       "verified": false,
       "downloads": 0,
       "stars": 0,
-      "created_at": "2026-04-01T00:00:00Z",
+"created_at": "2026-04-01T00:00:00Z",
       "updated_at": "2026-04-01T00:00:00Z"
+    },
+    "fixit": {
+      "name": "FixIt Extension",
+      "id": "fixit",
+      "description": "Spec-aware bug fixing: maps bugs to spec artifacts, proposes a plan, applies minimal changes.",
+      "author": "ismaelJimenez",
+      "version": "1.0.0",
+      "download_url": "https://github.com/speckit-community/spec-kit-fixit/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/speckit-community/spec-kit-fixit",
+      "homepage": "https://github.com/speckit-community/spec-kit-fixit",
+      "documentation": "https://github.com/speckit-community/spec-kit-fixit/blob/main/README.md",
+      "changelog": "https://github.com/speckit-community/spec-kit-fixit/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "debugging",
+        "fixit",
+        "spec-alignment",
+        "post-implementation"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-30T00:00:00Z",
+      "updated_at": "2026-03-30T00:00:00Z"
     },
     "fleet": {
       "name": "Fleet Orchestrator",
