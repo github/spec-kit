@@ -411,7 +411,7 @@ Command content with {SCRIPT} and {{args}} placeholders.
   - Kilo Code: `.kilocode/workflows/`
   - Roo Code: `.roo/commands/`
   - IBM Bob: `.bob/commands/`
-  - Antigravity: `.agent/commands/` (default) → `.agent/skills/` with `--ai-skills` (required)
+  - Antigravity: `.agent/skills/` (`--ai-skills` required; `.agent/commands/` is deprecated)
 
 ## Argument Patterns
 
