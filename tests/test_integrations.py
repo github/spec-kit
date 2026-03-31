@@ -879,3 +879,85 @@ class TestInitIntegrationFlag:
         assert "--integration copilot" in result.output
         # Should still produce copilot files via integration path
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+
+    def test_complete_file_inventory(self, tmp_path):
+        """Every file produced by --integration copilot is accounted for."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "inventory-test"
+        project.mkdir()
+        import os
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here",
+                "--integration", "copilot",
+                "--script", "sh",
+                "--no-git",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        actual_files = sorted(
+            str(p.relative_to(project))
+            for p in project.rglob("*") if p.is_file()
+        )
+
+        expected_files = sorted([
+            # Copilot agent commands (9)
+            ".github/agents/speckit.analyze.agent.md",
+            ".github/agents/speckit.checklist.agent.md",
+            ".github/agents/speckit.clarify.agent.md",
+            ".github/agents/speckit.constitution.agent.md",
+            ".github/agents/speckit.implement.agent.md",
+            ".github/agents/speckit.plan.agent.md",
+            ".github/agents/speckit.specify.agent.md",
+            ".github/agents/speckit.tasks.agent.md",
+            ".github/agents/speckit.taskstoissues.agent.md",
+            # Companion prompts (9)
+            ".github/prompts/speckit.analyze.prompt.md",
+            ".github/prompts/speckit.checklist.prompt.md",
+            ".github/prompts/speckit.clarify.prompt.md",
+            ".github/prompts/speckit.constitution.prompt.md",
+            ".github/prompts/speckit.implement.prompt.md",
+            ".github/prompts/speckit.plan.prompt.md",
+            ".github/prompts/speckit.specify.prompt.md",
+            ".github/prompts/speckit.tasks.prompt.md",
+            ".github/prompts/speckit.taskstoissues.prompt.md",
+            # VS Code settings
+            ".vscode/settings.json",
+            # Integration metadata
+            ".specify/integration.json",
+            ".specify/init-options.json",
+            ".specify/integrations/copilot.manifest.json",
+            ".specify/integrations/speckit.manifest.json",
+            # Integration-specific scripts
+            ".specify/integrations/copilot/scripts/update-context.ps1",
+            ".specify/integrations/copilot/scripts/update-context.sh",
+            # Shared scripts (bash)
+            ".specify/scripts/bash/check-prerequisites.sh",
+            ".specify/scripts/bash/common.sh",
+            ".specify/scripts/bash/create-new-feature.sh",
+            ".specify/scripts/bash/setup-plan.sh",
+            ".specify/scripts/bash/update-agent-context.sh",
+            # Shared templates
+            ".specify/templates/agent-file-template.md",
+            ".specify/templates/checklist-template.md",
+            ".specify/templates/constitution-template.md",
+            ".specify/templates/plan-template.md",
+            ".specify/templates/spec-template.md",
+            ".specify/templates/tasks-template.md",
+            # Constitution (copied from template)
+            ".specify/memory/constitution.md",
+        ])
+
+        assert actual_files == expected_files, (
+            f"File inventory mismatch.\n"
+            f"Missing: {sorted(set(expected_files) - set(actual_files))}\n"
+            f"Extra: {sorted(set(actual_files) - set(expected_files))}"
+        )
