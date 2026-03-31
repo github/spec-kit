@@ -270,10 +270,12 @@ class TestExtensionManifest:
         assert "speckit.hello" in manifest.warnings[0]
         assert "speckit.test-ext.hello" in manifest.warnings[0]
 
-    def test_command_name_autocorrect_no_speckit_prefix(self, temp_dir, valid_manifest_data):
-        """Test that 'extension.command' is auto-corrected to 'speckit.extension.command'."""
+    def test_command_name_autocorrect_matching_ext_id_prefix(self, temp_dir, valid_manifest_data):
+        """Test that '{ext_id}.command' is auto-corrected to 'speckit.{ext_id}.command'."""
         import yaml
 
+        # Set ext_id to match the legacy namespace so correction is valid
+        valid_manifest_data["extension"]["id"] = "docguard"
         valid_manifest_data["provides"]["commands"][0]["name"] = "docguard.guard"
 
         manifest_path = temp_dir / "extension.yml"
@@ -286,6 +288,20 @@ class TestExtensionManifest:
         assert len(manifest.warnings) == 1
         assert "docguard.guard" in manifest.warnings[0]
         assert "speckit.docguard.guard" in manifest.warnings[0]
+
+    def test_command_name_mismatched_namespace_not_corrected(self, temp_dir, valid_manifest_data):
+        """Test that 'X.command' is NOT corrected when X doesn't match ext_id."""
+        import yaml
+
+        # ext_id is "test-ext" but command uses a different namespace
+        valid_manifest_data["provides"]["commands"][0]["name"] = "docguard.guard"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid command name"):
+            ExtensionManifest(manifest_path)
 
     def test_alias_autocorrect_speckit_prefix(self, temp_dir, valid_manifest_data):
         """Test that a legacy 'speckit.command' alias is auto-corrected."""
