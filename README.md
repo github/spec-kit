@@ -160,6 +160,8 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 
 ## 🧩 Community Extensions
 
+🔍 **Browse and search community extensions on the [Community Extensions website](https://speckit-community.github.io/extensions/).**
+
 The following community-contributed extensions are available in [`catalog.community.json`](extensions/catalog.community.json):
 
 **Categories:**
