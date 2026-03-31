@@ -351,7 +351,7 @@ _TEMPLATES_WITH_ARGS: frozenset[str] = frozenset(
 def test_argument_token_format(agent, scaffolded_sh):
     """For templates that carry an {ARGS} token:
     - TOML agents must emit {{args}}
-    - Forgecode must emit {{parameters}}
+    - Forge must emit {{parameters}}
     - Other Markdown agents must emit $ARGUMENTS
     Templates without {ARGS} (e.g. implement, plan) are skipped.
     """
@@ -375,10 +375,10 @@ def test_argument_token_format(agent, scaffolded_sh):
             assert "{{args}}" in content, (
                 f"TOML agent '{agent}': expected '{{{{args}}}}' in '{f.name}'"
             )
-        elif agent == "forgecode":
-            # Forgecode uses {{parameters}} instead of $ARGUMENTS
+        elif agent == "forge":
+            # Forge uses {{parameters}} instead of $ARGUMENTS
             assert "{{parameters}}" in content, (
-                f"Forgecode agent: expected '{{{{parameters}}}}' in '{f.name}'"
+                f"Forge agent: expected '{{{{parameters}}}}' in '{f.name}'"
             )
         else:
             assert "$ARGUMENTS" in content, (
@@ -461,6 +461,40 @@ def test_markdown_has_frontmatter(agent, scaffolded_sh):
         assert fm is not None, f"Empty frontmatter in '{f.name}'"
         assert "description" in fm, (
             f"'description' key missing from frontmatter in '{f.name}' for agent '{agent}'"
+        )
+
+
+def test_forge_name_field_in_frontmatter(scaffolded_sh):
+    """Forge: every command file must have a 'name' field in frontmatter that matches the filename.
+    
+    Forge requires both 'name' and 'description' fields in command frontmatter.
+    This test ensures the release script's name injection is working correctly.
+    """
+    project = scaffolded_sh("forge")
+    
+    cmd_dir = _expected_cmd_dir(project, "forge")
+    for f in _list_command_files(cmd_dir, "forge"):
+        content = f.read_text(encoding="utf-8")
+        assert content.startswith("---"), (
+            f"No YAML frontmatter in '{f.name}'"
+        )
+        parts = content.split("---", 2)
+        assert len(parts) >= 3, f"Incomplete frontmatter in '{f.name}'"
+        fm = yaml.safe_load(parts[1])
+        assert fm is not None, f"Empty frontmatter in '{f.name}'"
+        
+        # Check that 'name' field exists
+        assert "name" in fm, (
+            f"'name' key missing from frontmatter in '{f.name}' - "
+            f"Forge requires both 'name' and 'description' fields"
+        )
+        
+        # Check that name matches the filename (without extension)
+        expected_name = f.name.removesuffix(".md")
+        actual_name = fm["name"]
+        assert actual_name == expected_name, (
+            f"Frontmatter 'name' field ({actual_name}) does not match "
+            f"filename ({expected_name}) in '{f.name}'"
         )
 
 

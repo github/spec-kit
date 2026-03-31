@@ -331,10 +331,10 @@ build_variant() {
     iflow)
       mkdir -p "$base_dir/.iflow/commands"
       generate_commands iflow md "\$ARGUMENTS" "$base_dir/.iflow/commands" "$script" ;;
-    forgecode)
+    forge)
       mkdir -p "$base_dir/.forge/commands"
-      generate_commands forgecode md "{{parameters}}" "$base_dir/.forge/commands" "$script" "handoffs"
-      # Inject name field into frontmatter (forgecode requires name + description)
+      generate_commands forge md "{{parameters}}" "$base_dir/.forge/commands" "$script" "handoffs"
+      # Inject name field into frontmatter (forge requires name + description)
       for _cmd_file in "$base_dir/.forge/commands/"*.md; do
         [[ -f "$_cmd_file" ]] || continue
         _cmd_name=$(basename "$_cmd_file" .md)
@@ -351,7 +351,7 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf junie codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi trae pi iflow forgecode generic)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf junie codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi trae pi iflow forge generic)
 ALL_SCRIPTS=(sh ps)
 
 validate_subset() {

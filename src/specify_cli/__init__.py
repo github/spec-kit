@@ -302,13 +302,12 @@ AGENT_CONFIG = {
         "install_url": "https://docs.iflow.cn/en/cli/quickstart",
         "requires_cli": True,
     },
-    "forgecode": {
+    "forge": {
         "name": "Forge",
         "folder": ".forge/",
         "commands_subdir": "commands",
         "install_url": "https://forgecode.dev/docs/",
         "requires_cli": True,
-        "cli_binary": "forge",  # The actual executable users must install
     },
     "generic": {
         "name": "Generic (bring your own agent)",
@@ -604,20 +603,16 @@ def run_command(cmd: list[str], check_return: bool = True, capture: bool = False
             raise
         return None
 
-def check_tool(tool: str, tracker: StepTracker = None, display_key: str = None) -> bool:
+def check_tool(tool: str, tracker: StepTracker = None) -> bool:
     """Check if a tool is installed. Optionally update tracker.
 
     Args:
-        tool: Name of the tool to check (agent key from AGENT_CONFIG)
+        tool: Name of the tool to check
         tracker: Optional StepTracker to update with results
-        display_key: Optional key to use for tracker display (defaults to tool)
 
     Returns:
         True if tool is found, False otherwise
     """
-    # Use display_key for tracker if provided, otherwise use tool
-    tracker_key = display_key if display_key else tool
-    
     # Special handling for Claude CLI local installs
     # See: https://github.com/github/spec-kit/issues/123
     # See: https://github.com/github/spec-kit/issues/550
@@ -628,7 +623,7 @@ def check_tool(tool: str, tracker: StepTracker = None, display_key: str = None) 
     if tool == "claude":
         if CLAUDE_LOCAL_PATH.is_file() or CLAUDE_NPM_LOCAL_PATH.is_file():
             if tracker:
-                tracker.complete(tracker_key, "available")
+                tracker.complete(tool, "available")
             return True
 
     if tool == "kiro-cli":
@@ -636,17 +631,13 @@ def check_tool(tool: str, tracker: StepTracker = None, display_key: str = None) 
         # accept kiro as a compatibility fallback.
         found = shutil.which("kiro-cli") is not None or shutil.which("kiro") is not None
     else:
-        # Check if this tool has a custom cli_binary name in AGENT_CONFIG
-        cli_binary = tool
-        if tool in AGENT_CONFIG and "cli_binary" in AGENT_CONFIG[tool]:
-            cli_binary = AGENT_CONFIG[tool]["cli_binary"]
-        found = shutil.which(cli_binary) is not None
+        found = shutil.which(tool) is not None
 
     if tracker:
         if found:
-            tracker.complete(tracker_key, "available")
+            tracker.complete(tool, "available")
         else:
-            tracker.error(tracker_key, "not found")
+            tracker.error(tool, "not found")
 
     return found
 
@@ -2015,10 +2006,9 @@ def init(
         agent_config = AGENT_CONFIG.get(selected_ai)
         if agent_config and agent_config["requires_cli"]:
             install_url = agent_config["install_url"]
-            cli_binary = agent_config.get("cli_binary", selected_ai)
             if not check_tool(selected_ai):
                 error_panel = Panel(
-                    f"[cyan]{cli_binary}[/cyan] not found\n"
+                    f"[cyan]{selected_ai}[/cyan] not found\n"
                     f"Install from: [cyan]{install_url}[/cyan]\n"
                     f"{agent_config['name']} is required to continue with this project type.\n\n"
                     "Tip: Use [cyan]--ignore-agent-tools[/cyan] to skip this check",
@@ -2417,17 +2407,14 @@ def check():
             continue  # Generic is not a real agent to check
         agent_name = agent_config["name"]
         requires_cli = agent_config["requires_cli"]
-        
-        # Use cli_binary for display if specified, otherwise use agent_key
-        display_key = agent_config.get("cli_binary", agent_key)
 
-        tracker.add(display_key, agent_name)
+        tracker.add(agent_key, agent_name)
 
         if requires_cli:
-            agent_results[agent_key] = check_tool(agent_key, tracker=tracker, display_key=display_key)
+            agent_results[agent_key] = check_tool(agent_key, tracker=tracker)
         else:
             # IDE-based agent - skip CLI check and mark as optional
-            tracker.skip(display_key, "IDE-based, no CLI check")
+            tracker.skip(agent_key, "IDE-based, no CLI check")
             agent_results[agent_key] = False  # Don't count IDE agents as "found"
 
     # Check VS Code variants (not in agent config)
