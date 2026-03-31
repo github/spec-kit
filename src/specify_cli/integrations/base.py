@@ -87,8 +87,8 @@ class IntegrationBase(ABC):
     def templates_dir(self) -> Path:
         """Return the path to this integration's bundled templates.
 
-        By convention, templates live in a ``templates/`` subdirectory next
-        to the integration's ``__init__.py``.
+        By convention, templates live in a ``templates/`` subdirectory
+        next to the file where the integration class is defined.
         """
         import inspect
 

@@ -113,14 +113,15 @@ class IntegrationManifest:
         """Return relative paths of tracked files whose content changed on disk."""
         modified: list[str] = []
         for rel, expected_hash in self._files.items():
-            try:
-                abs_path = _validate_rel_path(Path(rel), self.project_root)
-            except ValueError:
+            rel_path = Path(rel)
+            # Skip paths that are absolute or attempt to escape the project root
+            if rel_path.is_absolute() or ".." in rel_path.parts:
                 continue
-            if not abs_path.exists():
+            abs_path = self.project_root / rel_path
+            if not abs_path.exists() and not abs_path.is_symlink():
                 continue
-            # Treat non-regular-files (directories, symlinks) as modified
-            if not abs_path.is_file():
+            # Treat symlinks and non-regular-files as modified
+            if abs_path.is_symlink() or not abs_path.is_file():
                 modified.append(rel)
                 continue
             if _sha256(abs_path) != expected_hash:
