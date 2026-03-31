@@ -407,6 +407,8 @@ Command content with {SCRIPT} and {{args}} placeholders.
   - Cursor: `.cursor/commands/`
   - Windsurf: `.windsurf/workflows/`
   - Kilo Code: `.kilocode/workflows/`
+  - Roo Code: `.roo/commands/`
+  - IBM Bob: `.bob/commands/`
   - Antigravity: `.agent/skills/` (requires `--ai-skills`; `.agent/commands/` is deprecated)
 
 ## Argument Patterns
