@@ -351,7 +351,7 @@ Work within integrated development environments:
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Junie, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, Qwen, Pi, Codex, Auggie, CodeBuddy, Qoder, Roo Code, Kilo Code, Trae, Antigravity, Mistral Vibe, iFlow
+Used by: Claude, Cursor, GitHub Copilot, opencode, Windsurf, Junie, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, Qwen, Pi, Codex, Auggie, CodeBuddy, Qoder, Roo Code, Kilo Code, Trae, Antigravity, Mistral Vibe, iFlow
 
 **Standard format:**
 
@@ -407,7 +407,7 @@ Command content with {SCRIPT} and {{args}} placeholders.
   - Cursor: `.cursor/commands/`
   - Windsurf: `.windsurf/workflows/`
   - Kilo Code: `.kilocode/workflows/`
-  - Antigravity: `.agent/commands/` (default) or `.agent/skills/` (with `--ai-skills`)
+  - Antigravity: `.agent/skills/` (requires `--ai-skills`; `.agent/commands/` is deprecated)
 
 ## Argument Patterns
 
