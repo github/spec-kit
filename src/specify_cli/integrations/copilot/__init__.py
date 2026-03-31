@@ -171,6 +171,13 @@ class CopilotIntegration(IntegrationBase):
 
         new_settings = json.loads(src.read_text(encoding="utf-8"))
 
+        if not isinstance(existing, dict) or not isinstance(new_settings, dict):
+            import logging
+            logging.getLogger(__name__).warning(
+                "Skipping settings merge: %s or template is not a JSON object.", dst
+            )
+            return
+
         for key, value in new_settings.items():
             if key not in existing:
                 existing[key] = value
