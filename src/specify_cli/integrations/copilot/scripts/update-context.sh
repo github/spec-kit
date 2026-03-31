@@ -5,6 +5,10 @@
 # Copilot instructions file. The shared dispatcher reads
 # .specify/integration.json and calls this script.
 #
+# NOTE: This script is not yet active. It will be activated in Stage 7
+# when the shared update-agent-context.sh replaces its case statement
+# with integration.json-based dispatch.
+#
 # Sources common.sh and the shared update-agent-context functions,
 # then calls update_agent_file with the copilot target path.
 
