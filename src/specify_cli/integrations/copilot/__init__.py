@@ -150,6 +150,11 @@ class CopilotIntegration(IntegrationBase):
         except (json.JSONDecodeError, OSError):
             # Cannot parse existing file (likely JSONC with comments).
             # Skip merge to preserve the user's settings.
+            import logging
+            logging.getLogger(__name__).warning(
+                "Could not parse %s (may contain JSONC comments). "
+                "Skipping settings merge to preserve existing file.", dst
+            )
             return
 
         new_settings = json.loads(src.read_text(encoding="utf-8"))
