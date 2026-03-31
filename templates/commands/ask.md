@@ -46,6 +46,7 @@ Before reading any file, classify the input into one of these categories (zero f
 
 | Category | Examples | Files to read |
 |---|---|---|
+| **direct** | "Reformulate this", "Give me a prompt for X", "Explain Y in simple terms", "Translate this" | none — answer directly, skip Phase 3 |
 | **workflow** | "What command do I run next?", "What is the order of commands?" | none — answer from knowledge |
 | **spec** | "Does my spec cover X?", "Is this user story complete?" | `spec.md` (relevant section only) |
 | **plan** | "Is this architecture decision correct?", "Should I use X or Y?" | `plan.md` (relevant section only) |
@@ -54,6 +55,8 @@ Before reading any file, classify the input into one of these categories (zero f
 | **feature-gap** | "How do I add X?", "We need a new behavior" | redirect → `/speckit.specify` immediately |
 | **consistency** | "Are spec and plan aligned?", "Is tasks.md up to date?" | `spec.md` + `plan.md` + `tasks.md` |
 | **open** | General question not fitting above | `constitution.md` + closest artifact |
+
+**If category = `direct`:** answer immediately with no structured header block (no QUESTION/CATEGORY/GROUNDED IN/CONFIDENCE labels), no Phase 1 file loading, and no Phase 3 routing. The reply is the answer itself — nothing more.
 
 **Fast redirects (do not proceed past Phase 0):**
 - If the question describes a broken behavior or an error → output redirect block and stop:
@@ -111,9 +114,13 @@ ANSWER
 
 ---
 
-## Phase 3 — Route
+## Phase 3 — Route (conditional)
 
-After the answer, produce a routing suggestion based on what the question revealed:
+Only produce a routing suggestion if the answer **explicitly reveals an actionable gap, inconsistency, or next step**. If the question was self-contained (a reformulation, a direct factual answer, a generated prompt, an explanation), **skip Phase 3 entirely — do not output a "SUGGESTED NEXT" block**.
+
+Ask yourself: "Did my answer uncover something that requires a follow-up command?" If no, stop after Phase 2.
+
+If routing is warranted, output:
 
 ```
 SUGGESTED NEXT
@@ -121,7 +128,7 @@ SUGGESTED NEXT
 [command]   [reason — what this command would do given what was just answered]
 ```
 
-Use this routing table:
+Use this routing table only when the answer reveals one of these conditions:
 
 | What the answer revealed | Suggested command |
 |---|---|
@@ -131,12 +138,11 @@ Use this routing table:
 | Artifacts are inconsistent with each other | `/speckit.analyze` |
 | A task is missing or mis-ordered | `/speckit.tasks` |
 | An error or broken behavior was surfaced | `/speckit.fix "[the error]"` |
-| Everything looks correct | No action needed — state this explicitly |
 | Tasks are ready to execute | `/speckit.implement` |
 | Edge cases should be tracked as issues | `/speckit.taskstoissues` |
 | Cross-feature impact is possible | `/speckit.analyze` (after the fix or change) |
 
-**Multiple suggestions are allowed** — rank them by urgency (most blocking first).
+**Never suggest a command for a question that was fully answered.** A complete, self-contained answer requires no routing.
 
 **Never suggest a command without a reason.** Each suggestion must say *why* that command is warranted given the answer.
 
