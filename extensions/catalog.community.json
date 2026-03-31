@@ -55,7 +55,13 @@
         "commands": 3,
         "hooks": 1
       },
-      "tags": ["agent", "automation", "implementation", "multi-agent", "task-routing"],
+      "tags": [
+        "agent",
+        "automation",
+        "implementation",
+        "multi-agent",
+        "task-routing"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
