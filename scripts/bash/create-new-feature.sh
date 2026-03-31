@@ -251,7 +251,7 @@ if [ "$USE_TIMESTAMP" = true ]; then
 else
     # Validate --number input when provided
     if [ -n "$BRANCH_NUMBER" ]; then
-        if ! echo "$BRANCH_NUMBER" | grep -q '^[0-9]\+$' || [ "$((10#$BRANCH_NUMBER))" -lt 1 ]; then
+        if ! echo "$BRANCH_NUMBER" | grep -Eq '^[0-9]+$' || [ "$((10#$BRANCH_NUMBER))" -lt 1 ]; then
             >&2 echo "Error: --number requires a positive integer, got '$BRANCH_NUMBER'"
             exit 1
         fi
@@ -287,8 +287,9 @@ else
             done
         fi
 
-        # Check git branches for collision
+        # Check git branches for collision (fetch to catch remote-only branches)
         if [ "$NUMBER_IN_USE" = false ] && [ "$HAS_GIT" = true ]; then
+            git fetch --all --prune 2>/dev/null || true
             branches=$(git branch -a 2>/dev/null || echo "")
             if [ -n "$branches" ]; then
                 while IFS= read -r branch; do

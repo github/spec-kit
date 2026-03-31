@@ -233,9 +233,10 @@ if ($Timestamp) {
             }
         }
 
-        # Check git branches for collision
+        # Check git branches for collision (fetch to catch remote-only branches)
         if (-not $numberInUse -and $hasGit) {
             try {
+                git fetch --all --prune 2>$null | Out-Null
                 $branches = git branch -a 2>$null
                 if ($LASTEXITCODE -eq 0 -and $branches) {
                     foreach ($branch in $branches) {
