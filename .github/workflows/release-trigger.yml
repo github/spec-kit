@@ -147,9 +147,13 @@ jobs:
           echo "dev_version=$NEXT_DEV" >> $GITHUB_OUTPUT
           sed -i "s/version = \".*\"/version = \"$NEXT_DEV\"/" pyproject.toml
           git add pyproject.toml
-          git commit -m "chore: begin $NEXT_DEV development"
-          git push origin "${{ env.branch }}"
-          echo "Bumped to dev version $NEXT_DEV"
+          if git diff --cached --quiet; then
+            echo "No dev version changes to commit"
+          else
+            git commit -m "chore: begin $NEXT_DEV development"
+            git push origin "${{ env.branch }}"
+            echo "Bumped to dev version $NEXT_DEV"
+          fi
 
       - name: Open pull request
         env:
