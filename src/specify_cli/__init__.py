@@ -1204,9 +1204,9 @@ def _install_shared_infra(
 ) -> bool:
     """Install shared infrastructure files into *project_path*.
 
-    Copies ``.specify/scripts/``, ``.specify/templates/``, and
-    ``.specify/memory/`` from the bundled core_pack or source checkout.
-    Tracks all installed files in ``_framework.manifest.json``.
+    Copies ``.specify/scripts/`` and ``.specify/templates/`` from the
+    bundled core_pack or source checkout.  Tracks all installed files
+    in ``speckit.manifest.json``.
     Returns ``True`` on success.
     """
     from .integrations.manifest import IntegrationManifest

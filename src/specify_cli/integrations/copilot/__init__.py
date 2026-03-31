@@ -141,11 +141,16 @@ class CopilotIntegration(IntegrationBase):
 
         Top-level keys from *src* are added only if missing in *dst*.
         For dict-valued keys, sub-keys are merged the same way.
+
+        If *dst* cannot be parsed (e.g. JSONC with comments), the merge
+        is skipped to avoid overwriting user settings.
         """
         try:
             existing = json.loads(dst.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
-            existing = {}
+            # Cannot parse existing file (likely JSONC with comments).
+            # Skip merge to preserve the user's settings.
+            return
 
         new_settings = json.loads(src.read_text(encoding="utf-8"))
 
