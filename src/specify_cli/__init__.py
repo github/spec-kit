@@ -1974,7 +1974,7 @@ def init(
         console.print("[yellow]Use:[/yellow] --integration for the new integration system, or --ai for the legacy path")
         raise typer.Exit(1)
 
-    # Auto-promote: --ai copilot → integration path with a nudge
+    # Auto-promote: --ai <key> → integration path with a nudge (if registered)
     use_integration = False
     if integration:
         from .integrations import INTEGRATION_REGISTRY, get_integration
@@ -1987,14 +1987,14 @@ def init(
         use_integration = True
         # Map integration key to the ai_assistant variable for downstream compatibility
         ai_assistant = integration
-    elif ai_assistant == "copilot":
+    elif ai_assistant:
         from .integrations import get_integration
-        resolved_integration = get_integration("copilot")
+        resolved_integration = get_integration(ai_assistant)
         if resolved_integration:
             use_integration = True
             console.print(
-                "[dim]Tip: Use [bold]--integration copilot[/bold] instead of "
-                "--ai copilot. The --ai flag will be deprecated in a future release.[/dim]"
+                f"[dim]Tip: Use [bold]--integration {ai_assistant}[/bold] instead of "
+                f"--ai {ai_assistant}. The --ai flag will be deprecated in a future release.[/dim]"
             )
 
     if project_name == ".":

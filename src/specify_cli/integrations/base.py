@@ -206,6 +206,53 @@ class IntegrationBase(ABC):
         manifest.record_existing(rel)
         return dest
 
+    def integration_scripts_dir(self) -> Path | None:
+        """Return path to this integration's bundled ``scripts/`` directory.
+
+        Looks for a ``scripts/`` sibling of the module that defines the
+        concrete subclass (not ``IntegrationBase`` itself).
+        Returns ``None`` if the directory doesn't exist.
+        """
+        import inspect
+
+        cls_file = inspect.getfile(type(self))
+        scripts = Path(cls_file).resolve().parent / "scripts"
+        return scripts if scripts.is_dir() else None
+
+    def install_scripts(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+    ) -> list[Path]:
+        """Copy integration-specific scripts into the project.
+
+        Copies files from this integration's ``scripts/`` directory to
+        ``.specify/integrations/<key>/scripts/`` in the project.  Shell
+        scripts are made executable.  All copied files are recorded in
+        *manifest*.
+
+        Returns the list of files created.
+        """
+        scripts_src = self.integration_scripts_dir()
+        if not scripts_src:
+            return []
+
+        created: list[Path] = []
+        scripts_dest = project_root / ".specify" / "integrations" / self.key / "scripts"
+        scripts_dest.mkdir(parents=True, exist_ok=True)
+
+        for src_script in sorted(scripts_src.iterdir()):
+            if not src_script.is_file():
+                continue
+            dst_script = scripts_dest / src_script.name
+            shutil.copy2(src_script, dst_script)
+            if dst_script.suffix == ".sh":
+                dst_script.chmod(dst_script.stat().st_mode | 0o111)
+            self.record_file_in_manifest(dst_script, project_root, manifest)
+            created.append(dst_script)
+
+        return created
+
     @staticmethod
     def process_template(
         content: str,
@@ -405,11 +452,51 @@ class MarkdownIntegration(IntegrationBase):
     Subclasses only need to set ``key``, ``config``, ``registrar_config``
     (and optionally ``context_file``).  Everything else is inherited.
 
-    The default ``setup()`` from ``IntegrationBase`` copies templates
-    into the agent's commands directory — which is correct for the
-    standard Markdown case.
+    ``setup()`` processes command templates (replacing ``{SCRIPT}``,
+    ``{ARGS}``, ``__AGENT__``, rewriting paths) and installs
+    integration-specific scripts (``update-context.sh`` / ``.ps1``).
     """
 
-    # MarkdownIntegration inherits IntegrationBase.setup() as-is.
-    # Future stages may add markdown-specific path rewriting here.
-    pass
+    def setup(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        parsed_options: dict[str, Any] | None = None,
+        **opts: Any,
+    ) -> list[Path]:
+        templates = self.list_command_templates()
+        if not templates:
+            return []
+
+        project_root_resolved = project_root.resolve()
+        if manifest.project_root != project_root_resolved:
+            raise ValueError(
+                f"manifest.project_root ({manifest.project_root}) does not match "
+                f"project_root ({project_root_resolved})"
+            )
+
+        dest = self.commands_dest(project_root).resolve()
+        try:
+            dest.relative_to(project_root_resolved)
+        except ValueError as exc:
+            raise ValueError(
+                f"Integration destination {dest} escapes "
+                f"project root {project_root_resolved}"
+            ) from exc
+        dest.mkdir(parents=True, exist_ok=True)
+
+        script_type = opts.get("script_type", "sh")
+        arg_placeholder = self.registrar_config.get("args", "$ARGUMENTS") if self.registrar_config else "$ARGUMENTS"
+        created: list[Path] = []
+
+        for src_file in templates:
+            raw = src_file.read_text(encoding="utf-8")
+            processed = self.process_template(raw, self.key, script_type, arg_placeholder)
+            dst_name = self.command_filename(src_file.stem)
+            dst_file = self.write_file_and_record(
+                processed, dest / dst_name, project_root, manifest
+            )
+            created.append(dst_file)
+
+        created.extend(self.install_scripts(project_root, manifest))
+        return created

@@ -42,5 +42,53 @@ def _register_builtins() -> None:
 
     _register(CopilotIntegration())
 
+    # Stage 3 — standard markdown integrations
+    from .claude import ClaudeIntegration
+    from .qwen import QwenIntegration
+    from .opencode import OpencodeIntegration
+    from .junie import JunieIntegration
+    from .kilocode import KilocodeIntegration
+    from .auggie import AuggieIntegration
+    from .roo import RooIntegration
+    from .codebuddy import CodebuddyIntegration
+    from .qodercli import QodercliIntegration
+    from .amp import AmpIntegration
+    from .shai import ShaiIntegration
+    from .bob import BobIntegration
+    from .trae import TraeIntegration
+    from .pi import PiIntegration
+    from .iflow import IflowIntegration
+
+    _register(ClaudeIntegration())
+    _register(QwenIntegration())
+    _register(OpencodeIntegration())
+    _register(JunieIntegration())
+    _register(KilocodeIntegration())
+    _register(AuggieIntegration())
+    _register(RooIntegration())
+    _register(CodebuddyIntegration())
+    _register(QodercliIntegration())
+    _register(AmpIntegration())
+    _register(ShaiIntegration())
+    _register(BobIntegration())
+    _register(TraeIntegration())
+    _register(PiIntegration())
+    _register(IflowIntegration())
+
+    # Hyphenated package names — use importlib for kiro-cli and cursor-agent
+    import importlib
+
+    kiro_mod = importlib.import_module(".kiro-cli", __package__)
+    _register(kiro_mod.KiroCliIntegration())
+
+    from .windsurf import WindsurfIntegration
+    from .vibe import VibeIntegration
+
+    _register(WindsurfIntegration())
+    _register(VibeIntegration())
+
+    cursor_mod = importlib.import_module(".cursor-agent", __package__)
+    _register(cursor_mod.CursorAgentIntegration())
+
 
 _register_builtins()

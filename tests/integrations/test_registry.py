@@ -1,4 +1,4 @@
-"""Tests for INTEGRATION_REGISTRY."""
+"""Tests for INTEGRATION_REGISTRY — mechanics, completeness, and registrar alignment."""
 
 import pytest
 
@@ -9,6 +9,16 @@ from specify_cli.integrations import (
 )
 from specify_cli.integrations.base import MarkdownIntegration
 from .conftest import StubIntegration
+
+
+# Every integration key that must be registered (Stage 2 + Stage 3).
+ALL_INTEGRATION_KEYS = [
+    "copilot",
+    # Stage 3 — standard markdown integrations
+    "claude", "qwen", "opencode", "junie", "kilocode", "auggie",
+    "roo", "codebuddy", "qodercli", "amp", "shai", "bob", "trae",
+    "pi", "iflow", "kiro-cli", "windsurf", "vibe", "cursor-agent",
+]
 
 
 class TestRegistry:
@@ -41,5 +51,24 @@ class TestRegistry:
         finally:
             INTEGRATION_REGISTRY.pop("stub", None)
 
-    def test_copilot_registered(self):
-        assert "copilot" in INTEGRATION_REGISTRY
+
+class TestRegistryCompleteness:
+    """Every expected integration must be registered."""
+
+    @pytest.mark.parametrize("key", ALL_INTEGRATION_KEYS)
+    def test_key_registered(self, key):
+        assert key in INTEGRATION_REGISTRY, f"{key} missing from registry"
+
+
+class TestRegistrarKeyAlignment:
+    """AGENT_CONFIGS keys must match integration keys (no mismatches)."""
+
+    def test_cursor_agent_key_in_registrar(self):
+        from specify_cli.agents import CommandRegistrar
+        assert "cursor-agent" in CommandRegistrar.AGENT_CONFIGS
+        assert "cursor" not in CommandRegistrar.AGENT_CONFIGS
+
+    def test_vibe_key_in_registrar(self):
+        from specify_cli.agents import CommandRegistrar
+        assert "vibe" in CommandRegistrar.AGENT_CONFIGS
+        assert CommandRegistrar.AGENT_CONFIGS["vibe"]["dir"] == ".vibe/prompts"
