@@ -9,6 +9,7 @@ Provides:
 
 from __future__ import annotations
 
+import re
 import shutil
 from abc import ABC
 from dataclasses import dataclass
@@ -84,35 +85,65 @@ class IntegrationBase(ABC):
         """Return options this integration accepts. Default: none."""
         return []
 
-    def templates_dir(self) -> Path:
-        """Return the path to this integration's bundled templates.
+    # -- Primitives — building blocks for setup() -------------------------
 
-        By convention, templates live in a ``templates/`` subdirectory
-        next to the file where the integration class is defined.
+    def shared_commands_dir(self) -> Path | None:
+        """Return path to the shared command templates directory.
+
+        Checks ``core_pack/commands/`` (wheel install) first, then
+        ``templates/commands/`` (source checkout).  Returns ``None``
+        if neither exists.
         """
         import inspect
 
-        module_file = inspect.getfile(type(self))
-        return Path(module_file).resolve().parent / "templates"
+        pkg_dir = Path(inspect.getfile(IntegrationBase)).resolve().parent.parent
+        for candidate in [
+            pkg_dir / "core_pack" / "commands",
+            pkg_dir.parent.parent / "templates" / "commands",
+        ]:
+            if candidate.is_dir():
+                return candidate
+        return None
 
-    def setup(
-        self,
-        project_root: Path,
-        manifest: IntegrationManifest,
-        parsed_options: dict[str, Any] | None = None,
-        **opts: Any,
-    ) -> list[Path]:
-        """Install integration files into *project_root*.
+    def shared_templates_dir(self) -> Path | None:
+        """Return path to the shared page templates directory.
 
-        Returns the list of files created.  The default implementation
-        copies every file from ``templates_dir()`` into the commands
-        directory derived from ``config``, recording each in *manifest*.
+        Contains ``vscode-settings.json``, ``spec-template.md``, etc.
+        Checks ``core_pack/templates/`` then ``templates/``.
         """
-        created: list[Path] = []
-        tpl_dir = self.templates_dir()
-        if not tpl_dir.is_dir():
-            return created
+        import inspect
 
+        pkg_dir = Path(inspect.getfile(IntegrationBase)).resolve().parent.parent
+        for candidate in [
+            pkg_dir / "core_pack" / "templates",
+            pkg_dir.parent.parent / "templates",
+        ]:
+            if candidate.is_dir():
+                return candidate
+        return None
+
+    def list_command_templates(self) -> list[Path]:
+        """Return sorted list of command template files from the shared directory."""
+        cmd_dir = self.shared_commands_dir()
+        if not cmd_dir or not cmd_dir.is_dir():
+            return []
+        return sorted(f for f in cmd_dir.iterdir() if f.is_file() and f.suffix == ".md")
+
+    def command_filename(self, template_name: str) -> str:
+        """Return the destination filename for a command template.
+
+        *template_name* is the stem of the source file (e.g. ``"plan"``).
+        Default: ``speckit.{template_name}.md``.  Subclasses override
+        to change the extension or naming convention.
+        """
+        return f"speckit.{template_name}.md"
+
+    def commands_dest(self, project_root: Path) -> Path:
+        """Return the absolute path to the commands output directory.
+
+        Derived from ``config["folder"]`` and ``config["commands_subdir"]``.
+        Raises ``ValueError`` if ``config`` or ``folder`` is missing.
+        """
         if not self.config:
             raise ValueError(
                 f"{type(self).__name__}.config is not set; integration "
@@ -123,6 +154,178 @@ class IntegrationBase(ABC):
             raise ValueError(
                 f"{type(self).__name__}.config is missing required 'folder' entry."
             )
+        subdir = self.config.get("commands_subdir", "commands")
+        return project_root / folder / subdir
+
+    # -- File operations — granular primitives for setup() ----------------
+
+    @staticmethod
+    def copy_command_to_directory(
+        src: Path,
+        dest_dir: Path,
+        filename: str,
+    ) -> Path:
+        """Copy a command template to *dest_dir* with the given *filename*.
+
+        Creates *dest_dir* if needed.  Returns the absolute path of the
+        written file.  The caller can post-process the file before
+        recording it in the manifest.
+        """
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dst = dest_dir / filename
+        shutil.copy2(src, dst)
+        return dst
+
+    @staticmethod
+    def record_file_in_manifest(
+        file_path: Path,
+        project_root: Path,
+        manifest: IntegrationManifest,
+    ) -> None:
+        """Hash *file_path* and record it in *manifest*.
+
+        *file_path* must be inside *project_root*.
+        """
+        rel = file_path.resolve().relative_to(project_root.resolve())
+        manifest.record_existing(rel)
+
+    @staticmethod
+    def write_file_and_record(
+        content: str,
+        dest: Path,
+        project_root: Path,
+        manifest: IntegrationManifest,
+    ) -> Path:
+        """Write *content* to *dest*, hash it, and record in *manifest*.
+
+        Creates parent directories as needed.  Returns *dest*.
+        """
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content, encoding="utf-8")
+        rel = dest.resolve().relative_to(project_root.resolve())
+        manifest.record_existing(rel)
+        return dest
+
+    @staticmethod
+    def process_template(
+        content: str,
+        agent_name: str,
+        script_type: str,
+        arg_placeholder: str = "$ARGUMENTS",
+    ) -> str:
+        """Process a raw command template into agent-ready content.
+
+        Performs the same transformations as the release script:
+        1. Extract ``scripts.<script_type>`` value from YAML frontmatter
+        2. Replace ``{SCRIPT}`` with the extracted script command
+        3. Extract ``agent_scripts.<script_type>`` and replace ``{AGENT_SCRIPT}``
+        4. Strip ``scripts:`` and ``agent_scripts:`` sections from frontmatter
+        5. Replace ``{ARGS}`` with *arg_placeholder*
+        6. Replace ``__AGENT__`` with *agent_name*
+        7. Rewrite paths: ``scripts/`` → ``.specify/scripts/`` etc.
+        """
+        # 1. Extract script command from frontmatter
+        script_command = ""
+        script_pattern = re.compile(
+            rf"^\s*{re.escape(script_type)}:\s*(.+)$", re.MULTILINE
+        )
+        # Find the scripts: block
+        in_scripts = False
+        for line in content.splitlines():
+            if line.strip() == "scripts:":
+                in_scripts = True
+                continue
+            if in_scripts and line and not line[0].isspace():
+                in_scripts = False
+            if in_scripts:
+                m = script_pattern.match(line)
+                if m:
+                    script_command = m.group(1).strip()
+                    break
+
+        # 2. Replace {SCRIPT}
+        if script_command:
+            content = content.replace("{SCRIPT}", script_command)
+
+        # 3. Extract agent_script command
+        agent_script_command = ""
+        in_agent_scripts = False
+        for line in content.splitlines():
+            if line.strip() == "agent_scripts:":
+                in_agent_scripts = True
+                continue
+            if in_agent_scripts and line and not line[0].isspace():
+                in_agent_scripts = False
+            if in_agent_scripts:
+                m = script_pattern.match(line)
+                if m:
+                    agent_script_command = m.group(1).strip()
+                    break
+
+        if agent_script_command:
+            content = content.replace("{AGENT_SCRIPT}", agent_script_command)
+
+        # 4. Strip scripts: and agent_scripts: sections from frontmatter
+        lines = content.splitlines(keepends=True)
+        output_lines: list[str] = []
+        in_frontmatter = False
+        skip_section = False
+        dash_count = 0
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 1:
+                    in_frontmatter = True
+                else:
+                    in_frontmatter = False
+                skip_section = False
+                output_lines.append(line)
+                continue
+            if in_frontmatter:
+                if stripped in ("scripts:", "agent_scripts:"):
+                    skip_section = True
+                    continue
+                if skip_section:
+                    if line[0:1].isspace():
+                        continue  # skip indented content under scripts/agent_scripts
+                    skip_section = False
+            output_lines.append(line)
+        content = "".join(output_lines)
+
+        # 5. Replace {ARGS}
+        content = content.replace("{ARGS}", arg_placeholder)
+
+        # 6. Replace __AGENT__
+        content = content.replace("__AGENT__", agent_name)
+
+        # 7. Rewrite paths
+        content = re.sub(r"(/?)memory/", r".specify/memory/", content)
+        content = re.sub(r"(/?)scripts/", r".specify/scripts/", content)
+        content = re.sub(r"(/?)templates/", r".specify/templates/", content)
+        # Fix double-prefix
+        content = content.replace(".specify.specify/", ".specify/")
+
+        return content
+
+    def setup(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        parsed_options: dict[str, Any] | None = None,
+        **opts: Any,
+    ) -> list[Path]:
+        """Install integration command files into *project_root*.
+
+        Returns the list of files created.  Uses the granular primitives
+        ``list_command_templates()``, ``commands_dest()``,
+        ``command_filename()``, ``copy_command_to_directory()``, and
+        ``record_file_in_manifest()`` — subclasses can override any of
+        these or replace ``setup()`` entirely for custom workflows.
+        """
+        templates = self.list_command_templates()
+        if not templates:
+            return []
 
         project_root_resolved = project_root.resolve()
         if manifest.project_root != project_root_resolved:
@@ -130,9 +333,8 @@ class IntegrationBase(ABC):
                 f"manifest.project_root ({manifest.project_root}) does not match "
                 f"project_root ({project_root_resolved})"
             )
-        subdir = self.config.get("commands_subdir", "commands")
-        dest = (project_root / folder / subdir).resolve()
-        # Ensure destination stays within the project root
+
+        dest = self.commands_dest(project_root).resolve()
         try:
             dest.relative_to(project_root_resolved)
         except ValueError as exc:
@@ -141,16 +343,13 @@ class IntegrationBase(ABC):
                 f"project root {project_root_resolved}"
             ) from exc
 
-        dest.mkdir(parents=True, exist_ok=True)
+        created: list[Path] = []
 
-        for src_file in sorted(tpl_dir.iterdir()):
-            if src_file.is_file():
-                dst_file = dest / src_file.name
-                dst_resolved = dst_file.resolve()
-                rel = dst_resolved.relative_to(project_root_resolved)
-                shutil.copy2(src_file, dst_file)
-                manifest.record_existing(rel)
-                created.append(dst_file)
+        for src_file in templates:
+            dst_name = self.command_filename(src_file.stem)
+            dst_file = self.copy_command_to_directory(src_file, dest, dst_name)
+            self.record_file_in_manifest(dst_file, project_root, manifest)
+            created.append(dst_file)
 
         return created
 

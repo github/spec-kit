@@ -32,3 +32,15 @@ def _register(integration: IntegrationBase) -> None:
 def get_integration(key: str) -> IntegrationBase | None:
     """Return the integration for *key*, or ``None`` if not registered."""
     return INTEGRATION_REGISTRY.get(key)
+
+
+# -- Register built-in integrations --------------------------------------
+
+def _register_builtins() -> None:
+    """Register all built-in integrations."""
+    from .copilot import CopilotIntegration
+
+    _register(CopilotIntegration())
+
+
+_register_builtins()

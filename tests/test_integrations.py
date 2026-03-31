@@ -94,30 +94,34 @@ class TestIntegrationBase:
     def test_options_default_empty(self):
         assert _StubIntegration.options() == []
 
-    def test_templates_dir(self):
+    def test_shared_commands_dir(self):
         i = _StubIntegration()
-        td = i.templates_dir()
-        # Should point to a templates/ dir next to this test module.
-        # It won't exist, but the path should be well-formed.
-        assert td.name == "templates"
+        cmd_dir = i.shared_commands_dir()
+        # Should find the shared templates/commands/ directory
+        assert cmd_dir is not None
+        assert cmd_dir.is_dir()
 
-    def test_setup_no_templates_returns_empty(self, tmp_path):
-        """setup() gracefully returns empty list when templates dir is missing."""
+    def test_setup_uses_shared_templates(self, tmp_path):
+        """setup() copies shared command templates into the agent's directory."""
         i = _StubIntegration()
         manifest = IntegrationManifest("stub", tmp_path)
         created = i.setup(tmp_path, manifest)
-        assert created == []
+        assert len(created) > 0
+        for f in created:
+            assert f.parent == tmp_path / ".stub" / "commands"
+            assert f.name.startswith("speckit.")
+            assert f.name.endswith(".md")
 
     def test_setup_copies_templates(self, tmp_path, monkeypatch):
         """setup() copies template files and records them in the manifest."""
-        # Create templates under tmp_path so we don't mutate the source tree
+        # Create custom templates under tmp_path
         tpl = tmp_path / "_templates"
         tpl.mkdir()
-        (tpl / "speckit.plan.md").write_text("plan content", encoding="utf-8")
-        (tpl / "speckit.specify.md").write_text("spec content", encoding="utf-8")
+        (tpl / "plan.md").write_text("plan content", encoding="utf-8")
+        (tpl / "specify.md").write_text("spec content", encoding="utf-8")
 
         i = _StubIntegration()
-        monkeypatch.setattr(type(i), "templates_dir", lambda self: tpl)
+        monkeypatch.setattr(type(i), "list_command_templates", lambda self: sorted(tpl.glob("*.md")))
 
         project = tmp_path / "project"
         project.mkdir()
@@ -130,7 +134,8 @@ class TestIntegrationBase:
         i = _StubIntegration()
         manifest = IntegrationManifest("stub", tmp_path)
         result = i.install(tmp_path, manifest)
-        assert result == []  # no templates dir → empty
+        # Uses shared templates, so should create files
+        assert len(result) > 0
 
     def test_uninstall_delegates_to_teardown(self, tmp_path):
         i = _StubIntegration()
@@ -458,3 +463,287 @@ class TestManifestLoadValidation:
         path.write_text("{not valid json", encoding="utf-8")
         with pytest.raises(ValueError, match="invalid JSON"):
             IntegrationManifest.load("bad", tmp_path)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Base class primitives
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestBasePrimitives:
+    def test_shared_commands_dir_returns_path(self):
+        i = _StubIntegration()
+        cmd_dir = i.shared_commands_dir()
+        assert cmd_dir is not None
+        assert cmd_dir.is_dir()
+
+    def test_shared_templates_dir_returns_path(self):
+        i = _StubIntegration()
+        tpl_dir = i.shared_templates_dir()
+        assert tpl_dir is not None
+        assert tpl_dir.is_dir()
+
+    def test_list_command_templates_returns_md_files(self):
+        i = _StubIntegration()
+        templates = i.list_command_templates()
+        assert len(templates) > 0
+        assert all(t.suffix == ".md" for t in templates)
+
+    def test_command_filename_default(self):
+        i = _StubIntegration()
+        assert i.command_filename("plan") == "speckit.plan.md"
+
+    def test_commands_dest(self, tmp_path):
+        i = _StubIntegration()
+        dest = i.commands_dest(tmp_path)
+        assert dest == tmp_path / ".stub" / "commands"
+
+    def test_commands_dest_no_config_raises(self, tmp_path):
+        class NoConfig(MarkdownIntegration):
+            key = "noconfig"
+        with pytest.raises(ValueError, match="config is not set"):
+            NoConfig().commands_dest(tmp_path)
+
+    def test_copy_command_to_directory(self, tmp_path):
+        src = tmp_path / "source.md"
+        src.write_text("content", encoding="utf-8")
+        dest_dir = tmp_path / "output"
+        result = IntegrationBase.copy_command_to_directory(src, dest_dir, "speckit.plan.md")
+        assert result == dest_dir / "speckit.plan.md"
+        assert result.read_text(encoding="utf-8") == "content"
+
+    def test_record_file_in_manifest(self, tmp_path):
+        f = tmp_path / "f.txt"
+        f.write_text("hello", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        IntegrationBase.record_file_in_manifest(f, tmp_path, m)
+        assert "f.txt" in m.files
+
+    def test_write_file_and_record(self, tmp_path):
+        m = IntegrationManifest("test", tmp_path)
+        dest = tmp_path / "sub" / "f.txt"
+        result = IntegrationBase.write_file_and_record("content", dest, tmp_path, m)
+        assert result == dest
+        assert dest.read_text(encoding="utf-8") == "content"
+        assert "sub/f.txt" in m.files
+
+    def test_setup_copies_shared_templates(self, tmp_path):
+        i = _StubIntegration()
+        m = IntegrationManifest("stub", tmp_path)
+        created = i.setup(tmp_path, m)
+        assert len(created) > 0
+        # All files should be in .stub/commands/ with speckit.*.md naming
+        for f in created:
+            assert f.parent.name == "commands"
+            assert f.name.startswith("speckit.")
+            assert f.name.endswith(".md")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CopilotIntegration
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestCopilotIntegration:
+    def test_copilot_registered(self):
+        assert "copilot" in INTEGRATION_REGISTRY
+
+    def test_copilot_key_and_config(self):
+        copilot = get_integration("copilot")
+        assert copilot is not None
+        assert copilot.key == "copilot"
+        assert copilot.config["folder"] == ".github/"
+        assert copilot.config["commands_subdir"] == "agents"
+        assert copilot.registrar_config["extension"] == ".agent.md"
+        assert copilot.context_file == ".github/copilot-instructions.md"
+
+    def test_command_filename_agent_md(self):
+        copilot = get_integration("copilot")
+        assert copilot.command_filename("plan") == "speckit.plan.agent.md"
+
+    def test_setup_creates_agent_md_files(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+        created = copilot.setup(tmp_path, m)
+        assert len(created) > 0
+
+        agent_files = [f for f in created if f.suffix == ".md" and ".agent." in f.name]
+        assert len(agent_files) > 0
+        for f in agent_files:
+            assert f.parent == tmp_path / ".github" / "agents"
+            assert f.name.startswith("speckit.")
+            assert f.name.endswith(".agent.md")
+
+    def test_setup_creates_companion_prompts(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+        created = copilot.setup(tmp_path, m)
+
+        prompt_files = [f for f in created if f.parent.name == "prompts"]
+        assert len(prompt_files) > 0
+        for f in prompt_files:
+            assert f.parent == tmp_path / ".github" / "prompts"
+            assert f.name.endswith(".prompt.md")
+            content = f.read_text(encoding="utf-8")
+            assert content.startswith("---\nagent: speckit.")
+            assert content.endswith("\n---\n")
+
+    def test_agent_and_prompt_counts_match(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+        created = copilot.setup(tmp_path, m)
+
+        agents = [f for f in created if ".agent.md" in f.name]
+        prompts = [f for f in created if ".prompt.md" in f.name]
+        assert len(agents) == len(prompts)
+
+    def test_setup_creates_vscode_settings_new(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+        created = copilot.setup(tmp_path, m)
+
+        settings = tmp_path / ".vscode" / "settings.json"
+        if copilot._vscode_settings_path():
+            assert settings.exists()
+            assert settings in created
+            # Should be tracked in manifest since it was newly created
+            assert any("settings.json" in k for k in m.files)
+
+    def test_setup_merges_existing_vscode_settings(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+
+        # Pre-create settings with user content
+        vscode_dir = tmp_path / ".vscode"
+        vscode_dir.mkdir(parents=True)
+        existing = {"editor.fontSize": 14, "custom.setting": True}
+        (vscode_dir / "settings.json").write_text(
+            json.dumps(existing, indent=4), encoding="utf-8"
+        )
+
+        m = IntegrationManifest("copilot", tmp_path)
+        created = copilot.setup(tmp_path, m)
+
+        settings = tmp_path / ".vscode" / "settings.json"
+        if copilot._vscode_settings_path():
+            data = json.loads(settings.read_text(encoding="utf-8"))
+            # User settings preserved
+            assert data["editor.fontSize"] == 14
+            assert data["custom.setting"] is True
+            # Merged settings should NOT be tracked (existing file)
+            assert settings not in created
+            assert not any("settings.json" in k for k in m.files)
+
+    def test_all_created_files_tracked_in_manifest(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+        created = copilot.setup(tmp_path, m)
+
+        for f in created:
+            rel = f.resolve().relative_to(tmp_path.resolve()).as_posix()
+            assert rel in m.files, f"Created file {rel} not tracked in manifest"
+
+    def test_install_uninstall_roundtrip(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+
+        created = copilot.install(tmp_path, m)
+        assert len(created) > 0
+        m.save()
+
+        # All created files exist
+        for f in created:
+            assert f.exists(), f"Missing after install: {f}"
+
+        # Uninstall removes them
+        removed, skipped = copilot.uninstall(tmp_path, m)
+        assert len(removed) == len(created)
+        assert skipped == []
+        for f in created:
+            assert not f.exists(), f"Still exists after uninstall: {f}"
+
+    def test_modified_file_survives_uninstall(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+
+        created = copilot.install(tmp_path, m)
+        m.save()
+
+        # Modify one file
+        modified_file = created[0]
+        modified_file.write_text("user modified this", encoding="utf-8")
+
+        removed, skipped = copilot.uninstall(tmp_path, m)
+        assert modified_file.exists()
+        assert modified_file in skipped
+
+    def test_directory_structure(self, tmp_path):
+        """Verify the complete directory structure matches copilot conventions."""
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+        copilot.setup(tmp_path, m)
+
+        # .github/agents/ must exist with .agent.md files
+        agents_dir = tmp_path / ".github" / "agents"
+        assert agents_dir.is_dir()
+        agent_files = sorted(agents_dir.glob("speckit.*.agent.md"))
+        assert len(agent_files) == 9  # 9 command templates
+
+        # Expected command names
+        expected_commands = {
+            "analyze", "checklist", "clarify", "constitution",
+            "implement", "plan", "specify", "tasks", "taskstoissues",
+        }
+        actual_commands = {f.name.removeprefix("speckit.").removesuffix(".agent.md") for f in agent_files}
+        assert actual_commands == expected_commands
+
+        # .github/prompts/ must exist with matching .prompt.md files
+        prompts_dir = tmp_path / ".github" / "prompts"
+        assert prompts_dir.is_dir()
+        prompt_files = sorted(prompts_dir.glob("speckit.*.prompt.md"))
+        assert len(prompt_files) == 9
+
+        # Each agent file must have a matching prompt file
+        for agent_file in agent_files:
+            cmd_name = agent_file.name.removesuffix(".agent.md")
+            prompt_file = prompts_dir / f"{cmd_name}.prompt.md"
+            assert prompt_file.exists(), f"Missing prompt for {cmd_name}"
+
+        # .vscode/settings.json should exist (new project)
+        settings = tmp_path / ".vscode" / "settings.json"
+        if copilot._vscode_settings_path():
+            assert settings.exists()
+            data = json.loads(settings.read_text(encoding="utf-8"))
+            assert "chat.promptFilesRecommendations" in data
+
+        # No other top-level directories created
+        top_dirs = {d.name for d in tmp_path.iterdir() if d.is_dir()}
+        assert top_dirs == {".github", ".vscode"} or top_dirs == {".github"}
+
+    def test_templates_are_processed(self, tmp_path):
+        """Verify raw placeholders are replaced in generated command files."""
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+        copilot.setup(tmp_path, m)
+
+        agents_dir = tmp_path / ".github" / "agents"
+        for agent_file in agents_dir.glob("speckit.*.agent.md"):
+            content = agent_file.read_text(encoding="utf-8")
+            # No raw placeholders should remain
+            assert "{SCRIPT}" not in content, f"{agent_file.name} has unprocessed {{SCRIPT}}"
+            assert "__AGENT__" not in content, f"{agent_file.name} has unprocessed __AGENT__"
+            assert "{ARGS}" not in content, f"{agent_file.name} has unprocessed {{ARGS}}"
+            # scripts: block should be stripped from frontmatter
+            assert "\nscripts:\n" not in content, f"{agent_file.name} has raw scripts: block"
+            assert "\nagent_scripts:\n" not in content, f"{agent_file.name} has raw agent_scripts: block"
+            # Paths should be rewritten
+            assert "scripts/bash/" not in content or ".specify/scripts/bash/" in content
