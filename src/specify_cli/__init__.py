@@ -1290,15 +1290,6 @@ def scaffold_from_core_pack(
                 if f.is_file():
                     shutil.copy2(f, tmpl_cmds / f.name)
 
-            # Copy compact command templates subdirectory
-            compact_cmds_src = commands_dir / "compact"
-            if compact_cmds_src.is_dir():
-                compact_cmds_dst = tmpl_cmds / "compact"
-                compact_cmds_dst.mkdir(parents=True, exist_ok=True)
-                for f in compact_cmds_src.iterdir():
-                    if f.is_file():
-                        shutil.copy2(f, compact_cmds_dst / f.name)
-
             # Page templates (needed for vscode-settings.json etc.)
             if templates_dir.is_dir():
                 tmpl_root = tmp / "templates"
