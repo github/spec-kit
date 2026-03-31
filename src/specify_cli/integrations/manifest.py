@@ -159,15 +159,22 @@ class IntegrationManifest:
                 normed.relative_to(root)
             except (ValueError, OSError):
                 continue
-            if not path.exists():
+            if not path.exists() and not path.is_symlink():
                 continue
             # Skip directories — manifest only tracks files
             if not path.is_file() and not path.is_symlink():
                 skipped.append(path)
                 continue
-            if not force and _sha256(path) != expected_hash:
-                skipped.append(path)
-                continue
+            # Never follow symlinks when comparing hashes. Only remove
+            # symlinks when forced, to avoid acting on tampered entries.
+            if path.is_symlink():
+                if not force:
+                    skipped.append(path)
+                    continue
+            else:
+                if not force and _sha256(path) != expected_hash:
+                    skipped.append(path)
+                    continue
             path.unlink()
             removed.append(path)
             # Clean up empty parent directories up to project root
