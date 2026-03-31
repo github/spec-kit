@@ -333,7 +333,15 @@ build_variant() {
       generate_commands iflow md "\$ARGUMENTS" "$base_dir/.iflow/commands" "$script" ;;
     forgecode)
       mkdir -p "$base_dir/.forge/commands"
-      generate_commands forgecode md "{{parameters}}" "$base_dir/.forge/commands" "$script" "handoffs" ;;
+      generate_commands forgecode md "{{parameters}}" "$base_dir/.forge/commands" "$script" "handoffs"
+      # Inject name field into frontmatter (forgecode requires name + description)
+      for _cmd_file in "$base_dir/.forge/commands/"*.md; do
+        [[ -f "$_cmd_file" ]] || continue
+        _cmd_name=$(basename "$_cmd_file" .md)
+        _tmp_file="${_cmd_file}.tmp"
+        awk -v name="$_cmd_name" 'NR==1 && /^---$/ { print; print "name: "name; next } { print }' "$_cmd_file" > "$_tmp_file"
+        mv "$_tmp_file" "$_cmd_file"
+      done ;;
     generic)
       mkdir -p "$base_dir/.speckit/commands"
       generate_commands generic md "\$ARGUMENTS" "$base_dir/.speckit/commands" "$script" ;;

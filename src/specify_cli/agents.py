@@ -169,6 +169,7 @@ class CommandRegistrar:
             "args": "{{parameters}}",
             "extension": ".md",
             "strip_frontmatter_keys": ["handoffs"],
+            "inject_name": True,
         }
     }
 
@@ -506,6 +507,9 @@ class CommandRegistrar:
 
             for key in agent_config.get("strip_frontmatter_keys", []):
                 frontmatter.pop(key, None)
+
+            if agent_config.get("inject_name") and not frontmatter.get("name"):
+                frontmatter["name"] = cmd_name
 
             body = self._convert_argument_placeholder(
                 body, "$ARGUMENTS", agent_config["args"]
