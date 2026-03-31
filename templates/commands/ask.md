@@ -132,6 +132,8 @@ Use this routing table:
 | A task is missing or mis-ordered | `/speckit.tasks` |
 | An error or broken behavior was surfaced | `/speckit.fix "[the error]"` |
 | Everything looks correct | No action needed — state this explicitly |
+| Tasks are ready to execute | `/speckit.implement` |
+| Edge cases should be tracked as issues | `/speckit.taskstoissues` |
 | Cross-feature impact is possible | `/speckit.analyze` (after the fix or change) |
 
 **Multiple suggestions are allowed** — rank them by urgency (most blocking first).

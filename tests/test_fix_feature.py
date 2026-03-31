@@ -478,3 +478,161 @@ class TestFixCommandBundleInclusion:
         assert fix_cmd.is_file(), (
             "templates/commands/fix.md must exist for scaffold loop inclusion"
         )
+
+
+# ---------------------------------------------------------------------------
+# 5. ask.md — grounded Q&A command
+# ---------------------------------------------------------------------------
+
+_ASK_CMD = _REPO_ROOT / "templates" / "commands" / "ask.md"
+
+
+class TestAskCommand:
+    """Validate the /speckit.ask command template."""
+
+    @pytest.fixture(scope="class")
+    def content(self) -> str:
+        return _ASK_CMD.read_text(encoding="utf-8")
+
+    @pytest.fixture(scope="class")
+    def frontmatter(self, content) -> dict:
+        fm, _ = _parse_frontmatter(content)
+        return fm
+
+    @pytest.fixture(scope="class")
+    def body(self, content) -> str:
+        _, b = _parse_frontmatter(content)
+        return b
+
+    # --- File & frontmatter ---
+
+    def test_file_exists(self):
+        assert _ASK_CMD.is_file(), "templates/commands/ask.md is missing"
+
+    def test_frontmatter_parseable(self, content):
+        assert content.startswith("---"), "ask.md must start with YAML frontmatter"
+        fm, _ = _parse_frontmatter(content)
+        assert isinstance(fm, dict)
+
+    def test_has_nonempty_description(self, frontmatter):
+        assert frontmatter.get("description"), "ask.md frontmatter must have a non-empty 'description'"
+
+    def test_has_scripts_sh_and_ps(self, frontmatter):
+        scripts = frontmatter.get("scripts", {}) or {}
+        assert "sh" in scripts, "ask.md frontmatter must have 'scripts.sh'"
+        assert "ps" in scripts, "ask.md frontmatter must have 'scripts.ps'"
+
+    def test_scripts_reference_check_prerequisites(self, frontmatter):
+        scripts = frontmatter.get("scripts", {}) or {}
+        assert "check-prerequisites.sh" in scripts.get("sh", "")
+        assert "check-prerequisites.ps1" in scripts.get("ps", "")
+
+    def test_has_arguments_placeholder(self, body):
+        assert "$ARGUMENTS" in body, "ask.md must contain $ARGUMENTS placeholder"
+
+    def test_no_toml_double_brace_leak(self, body):
+        assert "{{args}}" not in body
+
+    # --- Phase 0: question classification ---
+
+    def test_phase_zero_present(self, body):
+        assert "Phase 0" in body, "ask.md must contain Phase 0 (question classification)"
+
+    def test_classification_table_covers_workflow(self, body):
+        assert "workflow" in body, "ask.md Phase 0 must cover 'workflow' question category"
+
+    def test_classification_table_covers_spec(self, body):
+        assert "spec" in body.lower(), "ask.md Phase 0 must cover 'spec' question category"
+
+    def test_classification_table_covers_constitution(self, body):
+        assert "constitution" in body, "ask.md Phase 0 must cover 'constitution' question category"
+
+    def test_fast_redirect_to_fix(self, body):
+        """Error questions must be immediately redirected to /speckit.fix."""
+        assert "speckit.fix" in body, "ask.md must redirect error questions to /speckit.fix"
+
+    def test_fast_redirect_to_specify(self, body):
+        """Feature-gap questions must be immediately redirected to /speckit.specify."""
+        assert "speckit.specify" in body, "ask.md must redirect feature requests to /speckit.specify"
+
+    # --- Phase 2: structured answer block ---
+
+    def test_answer_block_has_question_field(self, body):
+        assert "QUESTION" in body, "ask.md Phase 2 answer block must contain QUESTION field"
+
+    def test_answer_block_has_category_field(self, body):
+        assert "CATEGORY" in body, "ask.md Phase 2 answer block must contain CATEGORY field"
+
+    def test_answer_block_has_grounded_in_field(self, body):
+        assert "GROUNDED IN" in body, "ask.md Phase 2 answer block must contain GROUNDED IN field"
+
+    def test_answer_block_has_confidence_field(self, body):
+        assert "CONFIDENCE" in body, "ask.md Phase 2 answer block must contain CONFIDENCE field"
+
+    def test_constitution_read_when_decision_touched(self, body):
+        """constitution.md must be loaded when the answer touches a project principle."""
+        assert "constitution" in body.lower(), (
+            "ask.md must instruct loading constitution.md when architectural decisions are involved"
+        )
+
+    # --- Phase 3: routing ---
+
+    def test_routing_section_present(self, body):
+        assert "SUGGESTED NEXT" in body or "Phase 3" in body, (
+            "ask.md must contain a routing phase (Phase 3 / SUGGESTED NEXT)"
+        )
+
+    def test_routing_covers_clarify(self, body):
+        assert "speckit.clarify" in body
+
+    def test_routing_covers_plan(self, body):
+        assert "speckit.plan" in body
+
+    def test_routing_covers_analyze(self, body):
+        assert "speckit.analyze" in body
+
+    def test_routing_covers_tasks(self, body):
+        assert "speckit.tasks" in body
+
+    def test_routing_covers_implement(self, body):
+        assert "speckit.implement" in body, (
+            "ask.md routing must include /speckit.implement for when tasks are ready to execute"
+        )
+
+    def test_routing_covers_taskstoissues(self, body):
+        assert "speckit.taskstoissues" in body, (
+            "ask.md routing must include /speckit.taskstoissues for edge-case tracking"
+        )
+
+    def test_routing_requires_reason_per_suggestion(self, body):
+        """Each routing suggestion must be accompanied by a reason (no blind suggestions)."""
+        assert "reason" in body.lower() or "why" in body.lower() or "warranted" in body.lower(), (
+            "ask.md must require that every routing suggestion includes a reason"
+        )
+
+    # --- Phase 4: confidence check ---
+
+    def test_low_confidence_triggers_clarification(self, body):
+        assert "low" in body.lower() and "CONFIDENCE" in body, (
+            "ask.md must handle low-confidence answers with a clarification block"
+        )
+
+    def test_max_two_clarifying_questions(self, body):
+        assert "2" in body or "two" in body.lower(), (
+            "ask.md must cap clarifying questions at 2 when confidence is low"
+        )
+
+    # --- Bundle inclusion ---
+
+    def test_ask_stem_in_commands_directory(self):
+        commands_dir = _REPO_ROOT / "templates" / "commands"
+        assert (commands_dir / "ask.md").is_file(), (
+            "templates/commands/ask.md must exist for scaffold loop inclusion"
+        )
+
+    def test_fix_command_map_includes_ask(self):
+        """fix.md command map must list speckit.ask so agents know it exists."""
+        fix_text = _FIX_CMD.read_text(encoding="utf-8")
+        assert "speckit.ask" in fix_text, (
+            "fix.md command map must reference /speckit.ask"
+        )

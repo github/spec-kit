@@ -29,6 +29,7 @@ You **MUST** consider the user input before proceeding (if not empty). This may 
 /speckit.implement     →  executes tasks
 /speckit.taskstoissues →  converts tasks into GitHub issues
 /speckit.fix           →  (you) post-implementation error correction
+/speckit.ask           →  ask any question, get a grounded answer and routing suggestion
 ```
 
 ---
