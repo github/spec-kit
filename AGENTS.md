@@ -50,7 +50,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **iFlow CLI**              | `.iflow/commands/`     | Markdown | `iflow`         | iFlow CLI (iflow-ai)        |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
 | **Trae**                   | `.trae/rules/`         | Markdown | N/A (IDE-based) | Trae IDE                    |
-| **Antigravity**            | `.agent/skills/`       | Markdown | N/A (IDE-based) | Antigravity IDE (`--ai agy --ai-skills`) |
+| **Antigravity**            | `.agent/commands/`     | Markdown | N/A (IDE-based) | Antigravity IDE (`--ai agy --ai-skills`) |
 | **Mistral Vibe**           | `.vibe/prompts/`       | Markdown | `vibe`          | Mistral Vibe CLI            |
 | **Generic**                | User-specified via `--ai-commands-dir` | Markdown | N/A | Bring your own agent        |
 
@@ -393,8 +393,10 @@ Command content with {SCRIPT} and {{args}} placeholders.
   - opencode: `.opencode/command/` (singular `command`, not `commands`)
 - **Nested path exception**:
   - Tabnine: `.tabnine/agent/commands/` (extra `agent/` segment)
+- **Shared `.agents/` folder**:
+  - Amp: `.agents/commands/` (shared folder, not `.amp/`)
+  - Codex: `.agents/skills/` (shared folder; requires `--ai-skills`; invoked as `$speckit-<command>`)
 - **Skills-based exceptions**:
-  - Codex: `.agents/skills/` (requires `--ai-skills`; invoked as `$speckit-<command>`)
   - Kimi Code: `.kimi/skills/` (skills, invoked as `/skill:speckit-<command>`)
 - **Prompt-based exceptions**:
   - Kiro CLI: `.kiro/prompts/`
@@ -409,7 +411,7 @@ Command content with {SCRIPT} and {{args}} placeholders.
   - Kilo Code: `.kilocode/workflows/`
   - Roo Code: `.roo/commands/`
   - IBM Bob: `.bob/commands/`
-  - Antigravity: `.agent/skills/` (requires `--ai-skills`; `.agent/commands/` is deprecated)
+  - Antigravity: `.agent/commands/` (default) → `.agent/skills/` with `--ai-skills` (required)
 
 ## Argument Patterns
 
