@@ -405,7 +405,7 @@ Command content with {SCRIPT} and {{args}} placeholders.
   - Cursor: `.cursor/commands/`
   - Windsurf: `.windsurf/workflows/`
   - Kilo Code: `.kilocode/workflows/`
-  - Antigravity: `.agent/skills/` (skills-based)
+  - Antigravity: `.agent/commands/` (default) or `.agent/skills/` (with `--ai-skills`)
 
 ## Argument Patterns
 
