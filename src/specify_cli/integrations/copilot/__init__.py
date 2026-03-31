@@ -149,11 +149,15 @@ class CopilotIntegration(IntegrationBase):
             existing = json.loads(dst.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             # Cannot parse existing file (likely JSONC with comments).
-            # Skip merge to preserve the user's settings.
+            # Skip merge to preserve the user's settings, but show
+            # what they should add manually.
             import logging
+            template_content = src.read_text(encoding="utf-8")
             logging.getLogger(__name__).warning(
                 "Could not parse %s (may contain JSONC comments). "
-                "Skipping settings merge to preserve existing file.", dst
+                "Skipping settings merge to preserve existing file.\n"
+                "Please add the following settings manually:\n%s",
+                dst, template_content,
             )
             return
 
