@@ -1977,11 +1977,12 @@ def init(
     # Auto-promote: --ai copilot → integration path with a nudge
     use_integration = False
     if integration:
-        from .integrations import get_integration
+        from .integrations import INTEGRATION_REGISTRY, get_integration
         resolved_integration = get_integration(integration)
         if not resolved_integration:
             console.print(f"[red]Error:[/red] Unknown integration: '{integration}'")
-            console.print("[yellow]Available integrations:[/yellow] copilot")
+            available = ", ".join(sorted(INTEGRATION_REGISTRY))
+            console.print(f"[yellow]Available integrations:[/yellow] {available}")
             raise typer.Exit(1)
         use_integration = True
         # Map integration key to the ai_assistant variable for downstream compatibility

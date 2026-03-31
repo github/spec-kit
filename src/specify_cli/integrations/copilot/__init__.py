@@ -178,13 +178,19 @@ class CopilotIntegration(IntegrationBase):
             )
             return
 
+        changed = False
         for key, value in new_settings.items():
             if key not in existing:
                 existing[key] = value
+                changed = True
             elif isinstance(existing[key], dict) and isinstance(value, dict):
                 for sub_key, sub_value in value.items():
                     if sub_key not in existing[key]:
                         existing[key][sub_key] = sub_value
+                        changed = True
+
+        if not changed:
+            return
 
         dst.write_text(
             json.dumps(existing, indent=4) + "\n", encoding="utf-8"

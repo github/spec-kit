@@ -11,25 +11,12 @@
 # refactored to support SPECKIT_SOURCE_ONLY (guard the main logic)
 # before sourcing will work.
 #
-# Sources common.sh and the shared update-agent-context functions,
-# then calls update_agent_file with the copilot target path.
+# Until then, this delegates to the shared script as a subprocess.
 
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
-# Source shared utilities
-source "$REPO_ROOT/.specify/scripts/bash/common.sh"
-
-# Source update-agent-context functions (parse_plan_data, update_agent_file, etc.)
-# SPECKIT_SOURCE_ONLY prevents the shared script from running its own main().
-export SPECKIT_SOURCE_ONLY=1
-source "$REPO_ROOT/.specify/scripts/bash/update-agent-context.sh"
-
-# Gather feature paths and parse plan data
-_paths_output=$(get_feature_paths) || exit 1
-eval "$_paths_output"
-parse_plan_data "$IMPL_PLAN"
-
-# Create or update the copilot instructions file
-update_agent_file "$REPO_ROOT/.github/copilot-instructions.md" "GitHub Copilot"
+# Invoke shared update-agent-context script as a separate process.
+# Sourcing is unsafe until that script guards its main logic.
+exec "$REPO_ROOT/.specify/scripts/bash/update-agent-context.sh" copilot
