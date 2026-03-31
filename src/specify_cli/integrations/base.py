@@ -120,6 +120,11 @@ class IntegrationBase(ABC):
             return created
 
         project_root_resolved = project_root.resolve()
+        if manifest.project_root != project_root_resolved:
+            raise ValueError(
+                f"manifest.project_root ({manifest.project_root}) does not match "
+                f"project_root ({project_root_resolved})"
+            )
         subdir = self.config.get("commands_subdir", "commands")
         dest = (project_root / folder / subdir).resolve()
         # Ensure destination stays within the project root

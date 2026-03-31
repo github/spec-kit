@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -147,10 +148,11 @@ class IntegrationManifest:
             # Use non-resolved path for deletion so symlinks themselves
             # are removed, not their targets.
             path = root / rel
-            # Validate containment via the resolved path
+            # Validate containment lexically (without following symlinks)
+            # by collapsing .. segments via Path resolution on the string parts.
             try:
-                resolved = path.resolve()
-                resolved.relative_to(root)
+                normed = Path(os.path.normpath(path))
+                normed.relative_to(root)
             except (ValueError, OSError):
                 continue
             if not path.exists():
