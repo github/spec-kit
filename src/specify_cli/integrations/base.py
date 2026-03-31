@@ -299,12 +299,13 @@ class IntegrationBase(ABC):
         # 6. Replace __AGENT__
         content = content.replace("__AGENT__", agent_name)
 
-        # 7. Rewrite paths
+        # 7. Rewrite paths (matches release script's rewrite_paths())
         content = re.sub(r"(/?)memory/", r".specify/memory/", content)
         content = re.sub(r"(/?)scripts/", r".specify/scripts/", content)
         content = re.sub(r"(/?)templates/", r".specify/templates/", content)
-        # Fix double-prefix
+        # Fix double-prefix (same as release script's .specify.specify/ fix)
         content = content.replace(".specify.specify/", ".specify/")
+        content = content.replace(".specify/.specify/", ".specify/")
 
         return content
 
