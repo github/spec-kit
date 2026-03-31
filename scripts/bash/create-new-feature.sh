@@ -287,9 +287,8 @@ else
             done
         fi
 
-        # Check git branches for collision (fetch first to catch remote-only branches)
+        # Check git branches for collision
         if [ "$NUMBER_IN_USE" = false ] && [ "$HAS_GIT" = true ]; then
-            git fetch --all --prune 2>/dev/null || true
             branches=$(git branch -a 2>/dev/null || echo "")
             if [ -n "$branches" ]; then
                 while IFS= read -r branch; do
