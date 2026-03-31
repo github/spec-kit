@@ -1229,13 +1229,14 @@ def _install_shared_infra(
         if variant_src.is_dir():
             dest_variant = dest_scripts / variant_dir
             dest_variant.mkdir(parents=True, exist_ok=True)
-            # Merge/overwrite files without deleting existing user-added files
+            # Merge without overwriting — only add files that don't exist yet
             for src_path in variant_src.rglob("*"):
                 if src_path.is_file():
                     rel_path = src_path.relative_to(variant_src)
                     dst_path = dest_variant / rel_path
-                    dst_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(src_path, dst_path)
+                    if not dst_path.exists():
+                        dst_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src_path, dst_path)
             for f in dest_variant.rglob("*"):
                 if f.is_file():
                     rel = f.relative_to(project_path).as_posix()
@@ -1254,7 +1255,8 @@ def _install_shared_infra(
         for f in templates_src.iterdir():
             if f.is_file() and f.name != "vscode-settings.json" and not f.name.startswith("."):
                 dst = dest_templates / f.name
-                shutil.copy2(f, dst)
+                if not dst.exists():
+                    shutil.copy2(f, dst)
                 rel = dst.relative_to(project_path).as_posix()
                 manifest.record_existing(rel)
 
