@@ -1,24 +1,12 @@
 ---
 description: Answer any question about the current feature, project, or Spec Kit workflow — grounded in the constitution, existing specs, and best practices — and route to the right next command.
 handoffs:
-  - label: Write a Spec
-    agent: speckit.specify
-    prompt: "Specify the following feature: "
-  - label: Clarify the Spec
-    agent: speckit.clarify
-    prompt: Clarify the current spec
-    send: true
-  - label: Build a Plan
-    agent: speckit.plan
-    prompt: Create a plan for the spec
-    send: true
   - label: Fix an Error
     agent: speckit.fix
     prompt: "Fix this error: "
-  - label: Analyze Consistency
-    agent: speckit.analyze
-    prompt: Analyze the current feature artifacts
-    send: true
+  - label: Write a Spec
+    agent: speckit.specify
+    prompt: "Specify the following feature: "
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --paths-only
   ps: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
@@ -44,19 +32,18 @@ Answer questions about the current Spec Kit project with grounded, actionable re
 
 Before reading any file, classify the input into one of these categories (zero file I/O):
 
-| Category | Examples | Files to read |
-|---|---|---|
-| **direct** | "Reformulate this", "Give me a prompt for X", "Explain Y in simple terms", "Translate this" | none — answer directly, skip Phase 3 |
-| **workflow** | "What command do I run next?", "What is the order of commands?" | none — answer from knowledge |
-| **spec** | "Does my spec cover X?", "Is this user story complete?" | `spec.md` (relevant section only) |
-| **plan** | "Is this architecture decision correct?", "Should I use X or Y?" | `plan.md` (relevant section only) |
-| **constitution** | "Does this violate a project principle?", "Is X allowed?" | `constitution.md` |
-| **error** | "Why is X failing?", "What is wrong with my code?" | redirect → `/speckit.fix` immediately |
-| **feature-gap** | "How do I add X?", "We need a new behavior" | redirect → `/speckit.specify` immediately |
-| **consistency** | "Are spec and plan aligned?", "Is tasks.md up to date?" | `spec.md` + `plan.md` + `tasks.md` |
-| **open** | General question not fitting above | `constitution.md` + closest artifact |
+| Category | Examples | Files to read | Format |
+|---|---|---|---|
+| **simple** | "Reformulate this", "Give me a prompt for X", "What command do I run next?", "Explain Y in simple terms", "What is the order of commands?" | none — answer from knowledge | plain reply, no structured block, skip Phase 3 |
+| **spec** | "Does my spec cover X?", "Is this user story complete?" | `spec.md` (relevant section only) | structured block |
+| **plan** | "Is this architecture decision correct?", "Should I use X or Y?" | `plan.md` (relevant section only) | structured block |
+| **constitution** | "Does this violate a project principle?", "Is X allowed?" | `constitution.md` | structured block |
+| **error** | "Why is X failing?", "What is wrong with my code?" | redirect → `/speckit.fix` immediately | redirect only |
+| **feature-gap** | "How do I add X?", "We need a new behavior" | redirect → `/speckit.specify` immediately | redirect only |
+| **consistency** | "Are spec and plan aligned?", "Is tasks.md up to date?" | `spec.md` + `plan.md` + `tasks.md` | structured block |
+| **open** | General question not fitting above | `constitution.md` only | structured block |
 
-**If category = `direct`:** answer immediately with no structured header block (no QUESTION/CATEGORY/GROUNDED IN/CONFIDENCE labels), no Phase 1 file loading, and no Phase 3 routing. The reply is the answer itself — nothing more.
+**If category = `simple`:** answer immediately with no structured header block (no QUESTION/CATEGORY/GROUNDED IN/CONFIDENCE labels), no Phase 1 file loading, and no Phase 3 routing. The reply is the answer itself — nothing more.
 
 **Fast redirects (do not proceed past Phase 0):**
 - If the question describes a broken behavior or an error → output redirect block and stop:
@@ -85,15 +72,19 @@ Load only the files identified in Phase 0 — and only the sections relevant to 
 
 **Never read `constitution.md` proactively** for pure workflow questions.
 
+**For category `open`:** load `constitution.md` only. Load additional artifacts only if `constitution.md` content explicitly points to them. Do not guess which artifact is "closest".
+
 ---
 
 ## Phase 2 — Answer
 
-Produce a structured response:
+**If category = `simple` (set in Phase 0):** skip this entire phase. Do not produce the structured block below. Write the answer directly as plain text and stop — do not proceed to Phase 3 or Phase 4.
+
+For all other categories, produce a structured response:
 
 ```
 QUESTION     : [restate the question in one line]
-CATEGORY     : [workflow | spec | plan | constitution | consistency | open]
+CATEGORY     : [spec | plan | constitution | consistency | open]
 GROUNDED IN  : [knowledge | constitution.md | spec.md | plan.md | tasks.md | multiple]
 CONFIDENCE   : [high — answer is unambiguous | medium — interpretation required | low — insufficient context]
 
@@ -150,7 +141,9 @@ Use this routing table only when the answer reveals one of these conditions:
 
 ## Phase 4 — Confidence check
 
-If `CONFIDENCE = low` was set in Phase 2, append:
+If `CONFIDENCE = low` was set in Phase 2:
+- **Suppress Phase 3 entirely** — do not output any `SUGGESTED NEXT` block. Missing context must be resolved before a command can be meaningfully suggested.
+- Append:
 
 ```
 BEFORE PROCEEDING
@@ -159,7 +152,7 @@ To answer this confidently, I need:
   1. [specific missing piece — e.g., "the full stack trace", "the spec.md of feature X", "which architecture was chosen in plan.md"]
   2. [optional second missing piece]
 
-You can provide this directly in the next message, or run the suggested command above to generate it.
+Provide this directly in your next message.
 ```
 
 Do not ask more than 2 clarifying questions. Do not ask for information that can be inferred from the artifacts already loaded.
