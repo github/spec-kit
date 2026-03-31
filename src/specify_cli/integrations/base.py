@@ -317,11 +317,11 @@ class IntegrationBase(ABC):
     ) -> list[Path]:
         """Install integration command files into *project_root*.
 
-        Returns the list of files created.  Uses the granular primitives
-        ``list_command_templates()``, ``commands_dest()``,
-        ``command_filename()``, ``copy_command_to_directory()``, and
-        ``record_file_in_manifest()`` — subclasses can override any of
-        these or replace ``setup()`` entirely for custom workflows.
+        Returns the list of files created.  Copies raw templates without
+        processing.  Integrations that need placeholder replacement
+        (e.g. ``{SCRIPT}``, ``__AGENT__``) should override ``setup()``
+        and call ``process_template()`` in their own loop — see
+        ``CopilotIntegration`` for an example.
         """
         templates = self.list_command_templates()
         if not templates:
