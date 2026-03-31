@@ -351,7 +351,8 @@ _TEMPLATES_WITH_ARGS: frozenset[str] = frozenset(
 def test_argument_token_format(agent, scaffolded_sh):
     """For templates that carry an {ARGS} token:
     - TOML agents must emit {{args}}
-    - Markdown agents must emit $ARGUMENTS
+    - Forgecode must emit {{parameters}}
+    - Other Markdown agents must emit $ARGUMENTS
     Templates without {ARGS} (e.g. implement, plan) are skipped.
     """
     project = scaffolded_sh(agent)
@@ -373,6 +374,11 @@ def test_argument_token_format(agent, scaffolded_sh):
         if agent in _TOML_AGENTS:
             assert "{{args}}" in content, (
                 f"TOML agent '{agent}': expected '{{{{args}}}}' in '{f.name}'"
+            )
+        elif agent == "forgecode":
+            # Forgecode uses {{parameters}} instead of $ARGUMENTS
+            assert "{{parameters}}" in content, (
+                f"Forgecode agent: expected '{{{{parameters}}}}' in '{f.name}'"
             )
         else:
             assert "$ARGUMENTS" in content, (
