@@ -1206,9 +1206,13 @@ def _install_shared_infra(
 
     Copies ``.specify/scripts/``, ``.specify/templates/``, and
     ``.specify/memory/`` from the bundled core_pack or source checkout.
+    Tracks all installed files in ``_framework.manifest.json``.
     Returns ``True`` on success.
     """
+    from .integrations.manifest import IntegrationManifest
+
     core = _locate_core_pack()
+    manifest = IntegrationManifest("integration-shared", project_path, version=get_speckit_version())
 
     # Scripts
     if core and (core / "scripts").is_dir():
@@ -1227,6 +1231,10 @@ def _install_shared_infra(
             if dest_variant.exists():
                 shutil.rmtree(dest_variant)
             shutil.copytree(variant_src, dest_variant)
+            for f in dest_variant.rglob("*"):
+                if f.is_file():
+                    rel = f.relative_to(project_path).as_posix()
+                    manifest.record_existing(rel)
 
     # Page templates (not command templates, not vscode-settings.json)
     if core and (core / "templates").is_dir():
@@ -1240,9 +1248,12 @@ def _install_shared_infra(
         dest_templates.mkdir(parents=True, exist_ok=True)
         for f in templates_src.iterdir():
             if f.is_file() and f.name != "vscode-settings.json" and not f.name.startswith("."):
-                # Skip command templates directory
-                shutil.copy2(f, dest_templates / f.name)
+                dst = dest_templates / f.name
+                shutil.copy2(f, dst)
+                rel = dst.relative_to(project_path).as_posix()
+                manifest.record_existing(rel)
 
+    manifest.save()
     return True
 
 
@@ -2186,12 +2197,16 @@ def init(
                 )
                 manifest.save()
 
-                # Write .specify/agent.json
-                agent_json = project_path / ".specify" / "agent.json"
-                agent_json.parent.mkdir(parents=True, exist_ok=True)
-                agent_json.write_text(json.dumps({
+                # Write .specify/integration.json
+                script_ext = "sh" if selected_script == "sh" else "ps1"
+                integration_json = project_path / ".specify" / "integration.json"
+                integration_json.parent.mkdir(parents=True, exist_ok=True)
+                integration_json.write_text(json.dumps({
                     "integration": resolved_integration.key,
                     "version": get_speckit_version(),
+                    "scripts": {
+                        "update-context": f".specify/integrations/{resolved_integration.key}/scripts/update-context.{script_ext}",
+                    },
                 }, indent=2) + "\n", encoding="utf-8")
 
                 tracker.complete("integration", resolved_integration.config.get("name", resolved_integration.key))

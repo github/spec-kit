@@ -109,6 +109,21 @@ class CopilotIntegration(IntegrationBase):
                 self.record_file_in_manifest(dst_settings, project_root, manifest)
                 created.append(dst_settings)
 
+        # 4. Install integration-specific update-context scripts
+        scripts_src = Path(__file__).resolve().parent / "scripts"
+        if scripts_src.is_dir():
+            scripts_dest = project_root / ".specify" / "integrations" / "copilot" / "scripts"
+            scripts_dest.mkdir(parents=True, exist_ok=True)
+            for src_script in sorted(scripts_src.iterdir()):
+                if src_script.is_file():
+                    dst_script = scripts_dest / src_script.name
+                    shutil.copy2(src_script, dst_script)
+                    # Make shell scripts executable
+                    if dst_script.suffix == ".sh":
+                        dst_script.chmod(dst_script.stat().st_mode | 0o111)
+                    self.record_file_in_manifest(dst_script, project_root, manifest)
+                    created.append(dst_script)
+
         return created
 
     def _vscode_settings_path(self) -> Path | None:

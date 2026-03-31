@@ -724,9 +724,10 @@ class TestCopilotIntegration:
             data = json.loads(settings.read_text(encoding="utf-8"))
             assert "chat.promptFilesRecommendations" in data
 
-        # No other top-level directories created
+        # Only expected top-level directories
         top_dirs = {d.name for d in tmp_path.iterdir() if d.is_dir()}
-        assert top_dirs == {".github", ".vscode"} or top_dirs == {".github"}
+        expected = {".github", ".vscode", ".specify"}
+        assert top_dirs.issubset(expected)
 
     def test_templates_are_processed(self, tmp_path):
         """Verify raw placeholders are replaced in generated command files."""
@@ -820,10 +821,10 @@ class TestInitIntegrationFlag:
         assert (project / ".specify" / "scripts" / "bash" / "common.sh").exists()
         assert (project / ".specify" / "templates" / "spec-template.md").exists()
 
-        # agent.json
-        agent_json = project / ".specify" / "agent.json"
-        assert agent_json.exists()
-        data = json.loads(agent_json.read_text(encoding="utf-8"))
+        # integration.json
+        integration_json = project / ".specify" / "integration.json"
+        assert integration_json.exists()
+        data = json.loads(integration_json.read_text(encoding="utf-8"))
         assert data["integration"] == "copilot"
 
         # init-options.json
@@ -836,6 +837,21 @@ class TestInitIntegrationFlag:
         # Manifest recorded
         manifest = project / ".specify" / "integrations" / "copilot.manifest.json"
         assert manifest.exists()
+
+        # Integration-specific scripts installed
+        update_script = project / ".specify" / "integrations" / "copilot" / "scripts" / "update-context.sh"
+        assert update_script.exists()
+
+        # integration.json has script paths
+        assert "scripts" in data
+        assert "update-context" in data["scripts"]
+
+        # Shared infrastructure manifest
+        shared_manifest = project / ".specify" / "integrations" / "integration-shared.manifest.json"
+        assert shared_manifest.exists()
+        shared_data = json.loads(shared_manifest.read_text(encoding="utf-8"))
+        assert shared_data["integration"] == "integration-shared"
+        assert len(shared_data["files"]) > 0
 
     def test_ai_copilot_auto_promotes(self, tmp_path):
         """--ai copilot should auto-promote to integration path with a nudge."""
