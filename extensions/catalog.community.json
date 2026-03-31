@@ -40,7 +40,7 @@
       "name": "Agent Assign",
       "id": "agent-assign",
       "description": "Assign specialized Claude Code agents to spec-kit tasks for targeted execution",
-      "author": "xuyangxy",
+      "author": "xuyang",
       "version": "1.0.0",
       "download_url": "https://github.com/xymelon/spec-kit-agent-assign/archive/refs/tags/v1.0.0.zip",
       "repository": "https://github.com/xymelon/spec-kit-agent-assign",
