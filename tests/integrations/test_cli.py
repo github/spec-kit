@@ -77,3 +77,46 @@ class TestInitIntegrationFlag:
         assert result.exit_code == 0
         assert "--integration copilot" in result.output
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+
+    def test_shared_infra_skips_existing_files(self, tmp_path):
+        """Pre-existing shared files are not overwritten by _install_shared_infra."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "skip-test"
+        project.mkdir()
+
+        # Pre-create a shared script with custom content
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        custom_content = "# user-modified common.sh\n"
+        (scripts_dir / "common.sh").write_text(custom_content, encoding="utf-8")
+
+        # Pre-create a shared template with custom content
+        templates_dir = project / ".specify" / "templates"
+        templates_dir.mkdir(parents=True)
+        custom_template = "# user-modified spec-template\n"
+        (templates_dir / "spec-template.md").write_text(custom_template, encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here", "--force",
+                "--integration", "copilot",
+                "--script", "sh",
+                "--no-git",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0
+
+        # User's files should be preserved
+        assert (scripts_dir / "common.sh").read_text(encoding="utf-8") == custom_content
+        assert (templates_dir / "spec-template.md").read_text(encoding="utf-8") == custom_template
+
+        # Other shared files should still be installed
+        assert (scripts_dir / "setup-plan.sh").exists()
+        assert (templates_dir / "plan-template.md").exists()
