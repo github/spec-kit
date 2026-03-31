@@ -66,6 +66,14 @@ class CopilotIntegration(IntegrationBase):
             return []
 
         dest = self.commands_dest(project_root)
+        dest_resolved = dest.resolve()
+        try:
+            dest_resolved.relative_to(project_root_resolved)
+        except ValueError as exc:
+            raise ValueError(
+                f"Integration destination {dest_resolved} escapes "
+                f"project root {project_root_resolved}"
+            ) from exc
         dest.mkdir(parents=True, exist_ok=True)
         created: list[Path] = []
 
@@ -82,10 +90,10 @@ class CopilotIntegration(IntegrationBase):
             )
             created.append(dst_file)
 
-        # 2. Generate companion .prompt.md files
+        # 2. Generate companion .prompt.md files from the templates we just wrote
         prompts_dir = project_root / ".github" / "prompts"
-        for agent_file in sorted(dest.glob("speckit.*.agent.md")):
-            cmd_name = agent_file.name.removesuffix(".agent.md")
+        for src_file in templates:
+            cmd_name = f"speckit.{src_file.stem}"
             prompt_content = f"---\nagent: {cmd_name}\n---\n"
             prompt_file = self.write_file_and_record(
                 prompt_content,

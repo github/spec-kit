@@ -1241,10 +1241,8 @@ def _install_shared_infra(
                     else:
                         dst_path.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(src_path, dst_path)
-            for f in dest_variant.rglob("*"):
-                if f.is_file():
-                    rel = f.relative_to(project_path).as_posix()
-                    manifest.record_existing(rel)
+                        rel = dst_path.relative_to(project_path).as_posix()
+                        manifest.record_existing(rel)
 
     # Page templates (not command templates, not vscode-settings.json)
     if core and (core / "templates").is_dir():
@@ -1263,8 +1261,8 @@ def _install_shared_infra(
                     skipped_files.append(str(dst.relative_to(project_path)))
                 else:
                     shutil.copy2(f, dst)
-                rel = dst.relative_to(project_path).as_posix()
-                manifest.record_existing(rel)
+                    rel = dst.relative_to(project_path).as_posix()
+                    manifest.record_existing(rel)
 
     if skipped_files:
         import logging

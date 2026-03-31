@@ -57,13 +57,13 @@ class TestCopilotIntegration:
     def test_setup_creates_vscode_settings_new(self, tmp_path):
         from specify_cli.integrations.copilot import CopilotIntegration
         copilot = CopilotIntegration()
+        assert copilot._vscode_settings_path() is not None
         m = IntegrationManifest("copilot", tmp_path)
         created = copilot.setup(tmp_path, m)
         settings = tmp_path / ".vscode" / "settings.json"
-        if copilot._vscode_settings_path():
-            assert settings.exists()
-            assert settings in created
-            assert any("settings.json" in k for k in m.files)
+        assert settings.exists()
+        assert settings in created
+        assert any("settings.json" in k for k in m.files)
 
     def test_setup_merges_existing_vscode_settings(self, tmp_path):
         from specify_cli.integrations.copilot import CopilotIntegration
@@ -75,12 +75,11 @@ class TestCopilotIntegration:
         m = IntegrationManifest("copilot", tmp_path)
         created = copilot.setup(tmp_path, m)
         settings = tmp_path / ".vscode" / "settings.json"
-        if copilot._vscode_settings_path():
-            data = json.loads(settings.read_text(encoding="utf-8"))
-            assert data["editor.fontSize"] == 14
-            assert data["custom.setting"] is True
-            assert settings not in created
-            assert not any("settings.json" in k for k in m.files)
+        data = json.loads(settings.read_text(encoding="utf-8"))
+        assert data["editor.fontSize"] == 14
+        assert data["custom.setting"] is True
+        assert settings not in created
+        assert not any("settings.json" in k for k in m.files)
 
     def test_all_created_files_tracked_in_manifest(self, tmp_path):
         from specify_cli.integrations.copilot import CopilotIntegration
@@ -161,7 +160,7 @@ class TestCopilotIntegration:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        actual = sorted(str(p.relative_to(project)) for p in project.rglob("*") if p.is_file())
+        actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file())
         expected = sorted([
             ".github/agents/speckit.analyze.agent.md",
             ".github/agents/speckit.checklist.agent.md",
@@ -221,7 +220,7 @@ class TestCopilotIntegration:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        actual = sorted(str(p.relative_to(project)) for p in project.rglob("*") if p.is_file())
+        actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file())
         expected = sorted([
             ".github/agents/speckit.analyze.agent.md",
             ".github/agents/speckit.checklist.agent.md",
