@@ -15,24 +15,6 @@ You **MUST** consider the user input before proceeding (if not empty). This may 
 
 ---
 
-## Identity & role
-
-You are a surgical correction agent operating inside a Spec Kit project. Your sole purpose: **receive errors (screenshots, logs, messages), diagnose them, and apply fixes directly** — in both `.md` spec files AND source code — without waiting for intermediate validation.
-
-You do not vibe-code. You read the plan before writing a single line.
-
----
-
-## Accepted triggers
-
-You are activated by:
-- A screenshot of an error (UI, terminal, browser, IDE)
-- A log block pasted directly in chat
-- An error message (`TypeError`, `500`, `FAILED`, `ModuleNotFoundError`, etc.)
-- A link or path to a broken file
-
----
-
 ## Interactions with other Spec Kit commands
 
 `/speckit.fix` does not work in isolation. It knows the role of every command in the workflow and knows exactly when to invoke or reference each one. Full map:
@@ -49,39 +31,92 @@ You are activated by:
 /speckit.fix           →  (you) post-implementation error correction
 ```
 
-### When `/speckit.fix` interacts with each command
+---
 
-| Command | `/speckit.fix` interacts when... | Action taken by `/speckit.fix` |
+## Data Path Quick Reference
+
+Every project has a data flow chain, but naming varies by framework and architecture.  
+**Step 1: identify the project's own chain from the stack trace paths and directory names.**  
+**Step 2: map the error to a functional role. Fix the role where the error *originates*, not where it *surfaces*.**
+
+### Step 1 — Infer the project's chain
+
+Look at the file paths in the stack trace (or the `FEATURE_DIR` structure). Match against the most common patterns:
+
+| Pattern | Typical chain | Common in |
 |---|---|---|
-| `constitution` | The fix violates or exceeds a governing principle | Flag the conflict, **do not fix** — this file is read-only |
-| `specify` | The error reveals unspecified behavior → new feature needed | Produce a ready-to-use `/speckit.specify` prompt (Phase 2b) |
-| `clarify` | The spec is ambiguous and multiple interpretations are possible | Recommend `/speckit.clarify` before proceeding |
-| `plan` | The fix requires revisiting an architectural decision | Update `plan.md` AND flag that `/speckit.plan` must be re-validated |
-| `analyze` | The fix touches multiple features or creates cross-artifact inconsistency | Recommend `/speckit.analyze` after applying the fix |
-| `tasks` | A task in `tasks.md` is missing, mis-ordered, or poorly defined | Update `tasks.md` directly; add any missing tasks |
-| `implement` | The fix corrects an incomplete implementation of an existing task | Fix the code AND mark the relevant task in `tasks.md` |
-| `taskstoissues` | After the fix, uncovered edge cases should be tracked as issues | Suggest `/speckit.taskstoissues` to open them |
+| `views/`, `serializers/`, `models/` | `urls → middleware → view → serializer → model → db` | Django, DRF |
+| `controllers/`, `services/`, `models/` | `router → middleware → controller → service → model → db` | Express, NestJS, Laravel, Rails |
+| `handlers/`, `usecases/`, `repositories/` | `handler → use case → repository → data source` | Clean Architecture, Hexagonal |
+| `resolvers/`, `schema/` | `query → resolver → data loader → db` | GraphQL (Apollo, Strawberry) |
+| `commands/`, `lib/`, `cli/` | `entrypoint → argument parser → command → lib` | CLI tools |
+| `consumers/`, `producers/`, `aggregates/` | `event bus → consumer → aggregate → event store` | Event-driven, CQRS |
+| `components/`, `hooks/`, `store/` | `component → hook/store → api client → backend` | React, Vue, Angular (frontend only) |
+| `functions/`, `triggers/` | `trigger → function → external service` | Serverless (Lambda, Azure Functions) |
 
-### Decision rules at a glance
+If the project does not match any pattern, derive the chain from the actual directory names present in the stack trace. Name each role yourself — do not force a known pattern.
 
-```
-error received
-  │
-  ├─ violates constitution.md?
-  │     └─ YES → STOP. Explain the conflict. No changes made.
-  │
-  ├─ behavior absent from all specs?
-  │     └─ YES → STOP. Phase 2b → propose /speckit.specify
-  │
-  └─ fix within current scope
-        ├─ purely technical             → fix code only
-        ├─ ambiguous spec               → fix + update spec.md
-        │                                 + recommend /speckit.clarify if doubt remains
-        ├─ incorrect technical plan     → fix + update plan.md
-        │                                 + flag re-validation via /speckit.plan
-        ├─ missing or broken task       → fix + update tasks.md
-        └─ cross-feature inconsistency  → fix + recommend /speckit.analyze
-```
+### Step 2 — Map the error signature to a functional role
+
+Use **functional role names** that map to the project's own naming:
+
+| Error signature | Functional role | Typical files (adapt to project) |
+|---|---|---|
+| `IntegrityError`, `OperationalError`, `ColumnNotFound`, `ForeignKeyViolation` | **data-access** | `models/`, `repositories/`, `entities/`, `dao/` |
+| `ValidationError`, `SchemaError`, `SerializerError`, `422 Unprocessable` | **validation** | `serializers/`, `schemas/`, `validators/`, `forms/` |
+| `AttributeError`, `TypeError`, `KeyError` inside a logic file | **business-logic** | `services/`, `usecases/`, `domain/`, `lib/` |
+| `500 Internal Server Error`, unhandled exception in entry point | **entry-point** | `views/`, `controllers/`, `handlers/`, `resolvers/` |
+| `401 Unauthorized`, `403 Forbidden`, `InvalidTokenError` | **guard** | `middleware/`, `auth/`, `guards/`, `interceptors/` |
+| `404 Not Found`, route/path not matched | **routing** | `urls.py`, `routes/`, `router.*`, `app.*` |
+| `ModuleNotFoundError`, `ImportError` | **config** | the importing file only |
+| `FAILED tests/test_<name>.*::test_<fn>` | **test** | `tests/test_<name>.*` + the file under test |
+| JS/TS `TypeError`, `Cannot read properties of undefined` | **ui** | `components/`, `pages/`, `views/` (frontend) |
+| `fetch failed`, `axios error`, `CORS`, network error on client | **api-bridge** | `services/api.*`, `client.*`, `middleware/cors.*` |
+
+**Rule: fix the functional role where the error *originates*, not where it *surfaces*.**  
+A `NullPointerException` at the entry point often originates in the data-access layer returning `None`.  
+An HTTP 500 in a view often originates in the business-logic layer throwing an uncaught exception.
+
+---
+
+## Phase 0 — Pre-flight
+
+Before any extraction or triage, run these four checks in order. Each one can short-circuit the full workflow.
+
+### 0.1 — Confidence threshold
+
+If the input is too incomplete to triage (truncated log, blurry screenshot, ambiguous description), **do not guess**. Ask exactly one targeted question:
+
+> "To diagnose this precisely, I need: [the one missing piece — full stack trace / the file path / the action that triggered the error]. Can you provide it?"
+
+Do not proceed until you have enough information to fill the TRIAGE block.
+
+### 0.2 — Multi-error input
+
+If the input contains more than one distinct error (multiple FAILED tests, multiple exceptions):
+1. List all errors found.
+2. Identify the **most blocking** one (the one that causes others downstream, or the first in the execution chain).
+3. Fix that one first. State explicitly: _"Fixing [error A] first. [Error B] and [Error C] are noted and will be addressed next if still present."_
+
+### 0.3 — Recurrent error check
+
+If `specs/[feature]/fix.md` exists, scan it (titles only — do not read full entries) before diagnosing:
+- If a previous `FIX-NNN` entry addresses the same error → read that entry's `ROOT CAUSE` and `Decisions` sections before building the TRIAGE.
+- If a previous fix was applied and the error recurred → the root cause was misidentified. Flag this explicitly in Phase 2: `RECURRENT: YES — previous fix FIX-NNN did not resolve the root cause`.
+
+### 0.4 — Trivial fast path
+
+If the error is trivially identifiable (one of the below), skip Phases 1–2 entirely and go directly to Phase 3:
+
+| Trivial error | Direct action |
+|---|---|
+| `SyntaxError` with file:line | Open the file, fix the syntax, done |
+| `ModuleNotFoundError: No module named 'x'` | Add the import or install the dependency |
+| `NameError: name 'x' is not defined` | Check for typo or missing import |
+| Typo in a config key (e.g. `DATABSE_URL`) | Fix the key name, done |
+| `IndentationError` | Fix indentation at the given line |
+
+For trivial fixes: write the `fix.md` entry with `SCOPE: 1 file`, skip Phase 4 invariants (write `not applicable — trivial fix`).
 
 ---
 
@@ -89,7 +124,7 @@ error received
 
 ### 1.1 Extract the error
 
-Run `{SCRIPT}` once from repo root and parse the JSON output. Derive `FEATURE_DIR` and `AVAILABLE_DOCS`.
+If `FEATURE_DIR` is not identifiable from the stack trace paths, run `{SCRIPT}` from repo root to derive it.
 
 If an image is provided, extract:
 - The **exact error message** (verbatim text)
@@ -101,20 +136,39 @@ If code or logs are pasted, identify:
 - The first abnormal line (the true entry point of the error)
 - The call chain that led to this state
 
-### 1.2 Read the plan and specs
+### 1.2 Triage — classify the error
 
-**Before any correction**, read in this order:
+**Before opening any file**, produce this block from the error message and stack trace alone (zero file I/O):
 
 ```
-1. .specify/memory/constitution.md          → project governing principles
-2. .specify/specs/<feature>/spec.md         → user stories and requirements
-3. .specify/specs/<feature>/plan.md         → technical plan
-4. .specify/specs/<feature>/tasks.md        → tasks, dependencies, status
+TRIAGE
+  Error type  : [ValueError | HTTP 500 | FAILED | TypeError | etc.]
+  Stack entry : [file:line — the exact line that threw]
+  Role        : [functional role in this project's chain — e.g. data-access | validation | business-logic | entry-point | guard | routing | ui | api-bridge | config | test]
+  Read set    : [2–5 files to open — derived from the Data Path Quick Reference — and nothing else]
 ```
 
-If multiple features exist, identify the one related to the error (module name, endpoint, component).
+Use **Step 1** of the Data Path Quick Reference to identify the project's own chain, then **Step 2** to map the error signature to a functional role. Open only the files listed in `Read set`.
 
-Ask yourself after reading:
+If multiple features exist, identify the one related to the error (module name, endpoint, component) before building the read set.
+
+**Third-party guard**: if `Stack entry` points to a file inside `node_modules/`, `site-packages/`, `vendor/`, or any external dependency directory, the bug is in your call site, not in the library. Shift `Stack entry` to the last in-project frame in the stack trace, and derive `Read set` from that frame instead.
+
+### 1.3 Selective spec read
+
+Read spec/plan/tasks **only if** one of these conditions holds after the triage — otherwise skip directly to Phase 2:
+
+| Condition | What to read |
+|---|---|
+| The fix would change a public API or data contract | `plan.md` — the relevant section only |
+| The expected behavior is unclear from the code alone | `spec.md` — the section relevant to the broken feature only |
+| A task is confirmed missing or wrongly sequenced | `tasks.md` only |
+| The fix may violate a project-wide constraint | `constitution.md` — if violated, **STOP** |
+| None of the above | **Read nothing.** Fix directly from the Read Set. |
+
+`constitution.md` is **never** read proactively — only as a guard when a fix might violate it.
+
+After reading (if applicable):
 - **Does the fix violate a principle in `constitution.md`?** → if yes, STOP
 - **Does the error come from a gap between the plan and the implementation?**
 - **Does the spec describe a different behavior from what is coded?**
@@ -125,14 +179,18 @@ Ask yourself after reading:
 
 ## Phase 2 — Structured diagnosis
 
-Produce a 4-point diagnosis before writing anything:
+Produce a layered diagnosis before writing anything:
 
 ```
-ROOT CAUSE   : [precise technical cause, 1 sentence]
-SPEC IMPACT  : [none / spec.md / plan.md / tasks.md / multiple artifacts]
+LAYER        : [functional role in this project — e.g. data-access | validation | business-logic | entry-point | guard | routing | ui | api-bridge | config | test]
+ROOT CAUSE   : [precise technical cause, 1 sentence, referencing file:line]
+CHAIN IMPACT : [does this error propagate to upstream roles? YES / NO — which ones?]
+SPEC IMPACT  : [none | spec.md | plan.md | tasks.md | multiple — only if triage triggered a read]
 NEW FEATURE  : [YES / NO — does a full resolution require behavior absent from all specs?]
-SCOPE        : [exhaustive list of files to modify — .md and/or code]
+SCOPE        : [2–5 files maximum — code files only unless spec read was triggered]
 ```
+
+**If `SCOPE` lists more than 5 files → this is not a fix, it is a refactoring. Stop. Recommend `/speckit.plan` to revisit the architecture before proceeding.**
 
 **If `NEW FEATURE = YES` → stop immediately and go to Phase 2b. Do not modify any file.**
 
@@ -210,6 +268,21 @@ Failure case: if no alternative action exists, the message states this clearly."
 
 ---
 
+### When `/speckit.fix` interacts with each command
+
+| Command | `/speckit.fix` interacts when... | Action taken by `/speckit.fix` |
+|---|---|---|
+| `constitution` | The fix violates or exceeds a governing principle | Flag the conflict, **do not fix** — this file is read-only |
+| `specify` | The error reveals unspecified behavior → new feature needed | Produce a ready-to-use `/speckit.specify` prompt (Phase 2b) |
+| `clarify` | The spec is ambiguous and multiple interpretations are possible | Recommend `/speckit.clarify` before proceeding |
+| `plan` | The fix requires revisiting an architectural decision | Update `plan.md` AND flag that `/speckit.plan` must be re-validated |
+| `analyze` | The fix touches multiple features or creates cross-artifact inconsistency | Recommend `/speckit.analyze` after applying the fix |
+| `tasks` | A task in `tasks.md` is missing, mis-ordered, or poorly defined | Update `tasks.md` directly; add any missing tasks |
+| `implement` | The fix corrects an incomplete implementation of an existing task | Fix the code AND mark the relevant task in `tasks.md` |
+| `taskstoissues` | After the fix, uncovered edge cases should be tracked as issues | Suggest `/speckit.taskstoissues` to open them |
+
+---
+
 ## Phase 3 — Applying corrections
 
 ### Absolute rules
@@ -273,6 +346,20 @@ Examples:
 
 For each edge case listed → evaluate whether a follow-up issue is warranted and suggest `/speckit.taskstoissues` if so.
 
+### Validation test (mandatory)
+
+Before moving to Phase 5, state how to verify the fix is effective:
+
+```
+VALIDATION : [exact command, scenario, or navigation path that confirms the error is gone
+              — e.g. "run pytest tests/test_payment.py::test_transfer",
+                     "POST /api/orders with missing field → expect 422 not 500",
+                     "navigate to /checkout as anonymous user → expect redirect to /login"]
+```
+
+If no automated test covers this scenario → flag it:
+`COVERAGE GAP: this fix has no automated test. Consider adding one via /speckit.tasks.`
+
 ---
 
 ## Phase 5 — Write to fix.md + final report
@@ -314,20 +401,6 @@ After writing to `fix.md`, display this summary in the conversation:
 
 **Edge cases not covered**:
 - [list — full honesty]
-
-**Suggested validation test**:
-- [how to reproduce the corrected scenario to verify the fix]
 ```
 
----
 
-## Forbidden behaviors
-
-- ❌ Modifying code without having read `constitution.md` and the specs
-- ❌ Fixing the implementation when the spec itself is wrong
-- ❌ Implementing a new feature without going through `/speckit.specify` — even if it "seems simple"
-- ❌ Modifying `constitution.md` — this file is **read-only** for `/speckit.fix`
-- ❌ Fixing "in the general direction" without identifying the exact root cause
-- ❌ Ignoring edge cases — list them explicitly even when not addressed
-- ❌ Refactoring healthy code under the pretense of proximity to the fix
-- ❌ Moving to Phase 3 without producing the complete Phase 2 diagnosis

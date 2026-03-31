@@ -190,6 +190,155 @@ class TestFixCommandBody:
 
 
 # ---------------------------------------------------------------------------
+# 2b. fix.md — triage and layered diagnosis (smart error localization)
+# ---------------------------------------------------------------------------
+
+class TestFixCommandTriage:
+    """Validate the triage step and layered diagnosis added for token-efficient diagnosis."""
+
+    @pytest.fixture(scope="class")
+    def body(self) -> str:
+        content = _FIX_CMD.read_text(encoding="utf-8")
+        _, b = _parse_frontmatter(content)
+        return b
+
+    def test_triage_block_present(self, body):
+        """Phase 1.2 must instruct the agent to produce a TRIAGE block before opening files."""
+        assert "TRIAGE" in body, (
+            "fix.md must contain a TRIAGE block in Phase 1.2 for zero-file-I/O error classification"
+        )
+
+    def test_triage_has_layer_field(self, body):
+        """TRIAGE block must include a Role field to identify the functional layer."""
+        assert "Role" in body, (
+            "fix.md TRIAGE block must include a 'Role' field (functional role in the project chain)"
+        )
+
+    def test_triage_has_read_set_field(self, body):
+        """TRIAGE block must include a Read set field listing the minimal files to open."""
+        assert "Read set" in body, (
+            "fix.md TRIAGE block must include a 'Read set' field (minimal files to open)"
+        )
+
+    def test_data_path_chain_present(self, body):
+        """Functional role names covering all major project types must be documented."""
+        for role in ("data-access", "business-logic", "entry-point", "guard", "routing", "validation"):
+            assert role in body, (
+                f"fix.md must document functional role '{role}' in the Data Path Quick Reference"
+            )
+
+    def test_architecture_pattern_detection(self, body):
+        """The command must instruct the agent to infer the project's own chain before mapping errors."""
+        # At least 3 distinct architecture patterns must be documented
+        patterns = ["Django", "Express", "GraphQL", "CLI", "Serverless", "Event-driven",
+                    "Clean Architecture", "NestJS", "Laravel", "React", "Vue"]
+        found = [p for p in patterns if p in body]
+        assert len(found) >= 3, (
+            f"fix.md must document at least 3 architecture patterns for chain inference — found: {found}"
+        )
+
+    def test_constitution_never_read_proactively(self, body):
+        """constitution.md must be documented as never read proactively."""
+        assert "never" in body.lower() and "proactively" in body.lower(), (
+            "fix.md must state that constitution.md is never read proactively"
+        )
+
+    def test_chain_impact_field_in_diagnosis(self, body):
+        """The layered diagnosis must include a CHAIN IMPACT field."""
+        assert "CHAIN IMPACT" in body, (
+            "fix.md diagnosis block must contain 'CHAIN IMPACT' to flag error propagation"
+        )
+
+    def test_layer_field_in_diagnosis(self, body):
+        """The layered diagnosis must include a LAYER field."""
+        assert "LAYER" in body, (
+            "fix.md diagnosis block must contain 'LAYER' to identify the data-path layer"
+        )
+
+    def test_third_party_guard_present(self, body):
+        """Phase 1.2 must instruct the agent to skip third-party frames in the stack trace."""
+        for dep_dir in ("node_modules", "site-packages", "vendor"):
+            assert dep_dir in body, (
+                f"fix.md must contain a third-party stack trace guard for '{dep_dir}' in Phase 1.2"
+            )
+
+    def test_scope_creep_guard_present(self, body):
+        """Phase 2 must stop execution when SCOPE exceeds 5 files (refactoring, not a fix)."""
+        assert "5 files" in body, (
+            "fix.md must contain a scope creep guard that stops at > 5 files in Phase 2"
+        )
+
+    def test_validation_test_in_phase_4(self, body):
+        """Phase 4 must require the agent to write a concrete VALIDATION block."""
+        assert "VALIDATION" in body, (
+            "fix.md Phase 4 must contain a mandatory 'VALIDATION' block before Phase 5"
+        )
+
+    def test_coverage_gap_flag_present(self, body):
+        """When no automated test covers the scenario the agent must flag COVERAGE GAP."""
+        assert "COVERAGE GAP" in body, (
+            "fix.md must contain a 'COVERAGE GAP' flag for fixes without automated tests"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 2c. fix.md — Phase 0 pre-flight checks
+# ---------------------------------------------------------------------------
+
+class TestFixCommandPhaseZero:
+    """Validate the Phase 0 pre-flight checks for token-efficient short-circuit workflows."""
+
+    @pytest.fixture(scope="class")
+    def body(self) -> str:
+        content = _FIX_CMD.read_text(encoding="utf-8")
+        _, b = _parse_frontmatter(content)
+        return b
+
+    def test_phase_zero_present(self, body):
+        assert "Phase 0" in body, "fix.md must contain a 'Phase 0' pre-flight section"
+
+    def test_confidence_threshold_present(self, body):
+        """0.1 — ambiguous input must trigger exactly one targeted question, not a guess."""
+        assert "Confidence threshold" in body or "0.1" in body, (
+            "fix.md Phase 0 must contain a confidence threshold check (0.1)"
+        )
+
+    def test_multi_error_handling_present(self, body):
+        """0.2 — multiple errors in one input must be ranked and fixed in priority order."""
+        assert "Multi-error" in body or "0.2" in body, (
+            "fix.md Phase 0 must contain multi-error input handling (0.2)"
+        )
+
+    def test_recurrent_error_check_present(self, body):
+        """0.3 — existing fix.md must be scanned for previous entries before diagnosing."""
+        assert "Recurrent error" in body or "0.3" in body, (
+            "fix.md Phase 0 must contain a recurrent error check (0.3)"
+        )
+
+    def test_trivial_fast_path_present(self, body):
+        """0.4 — trivially diagnosable errors must bypass Phases 1–2 entirely."""
+        assert "fast path" in body.lower() or "0.4" in body, (
+            "fix.md Phase 0 must contain a trivial fast path (0.4)"
+        )
+
+    def test_trivial_fast_path_covers_syntax_error(self, body):
+        assert "SyntaxError" in body, (
+            "fix.md trivial fast path must enumerate SyntaxError as a direct-fix case"
+        )
+
+    def test_trivial_fast_path_covers_module_not_found(self, body):
+        assert "ModuleNotFoundError" in body, (
+            "fix.md trivial fast path must enumerate ModuleNotFoundError as a direct-fix case"
+        )
+
+    def test_recurrent_flag_in_diagnosis(self, body):
+        """The RECURRENT flag must be documented for agents to use in Phase 2."""
+        assert "RECURRENT" in body, (
+            "fix.md must document a RECURRENT flag for errors that recur after a previous fix"
+        )
+
+
+# ---------------------------------------------------------------------------
 # 3. fix-template.md — log scaffold
 # ---------------------------------------------------------------------------
 
