@@ -13,7 +13,10 @@ import shutil
 from abc import ABC
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .manifest import IntegrationManifest
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +98,7 @@ class IntegrationBase(ABC):
     def setup(
         self,
         project_root: Path,
-        manifest: Any,
+        manifest: IntegrationManifest,
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
@@ -143,7 +146,7 @@ class IntegrationBase(ABC):
     def teardown(
         self,
         project_root: Path,
-        manifest: Any,
+        manifest: IntegrationManifest,
         *,
         force: bool = False,
     ) -> tuple[list[Path], list[Path]]:
@@ -161,7 +164,7 @@ class IntegrationBase(ABC):
     def install(
         self,
         project_root: Path,
-        manifest: Any,
+        manifest: IntegrationManifest,
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
@@ -173,7 +176,7 @@ class IntegrationBase(ABC):
     def uninstall(
         self,
         project_root: Path,
-        manifest: Any,
+        manifest: IntegrationManifest,
         *,
         force: bool = False,
     ) -> tuple[list[Path], list[Path]]:

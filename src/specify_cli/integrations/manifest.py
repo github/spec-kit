@@ -87,7 +87,8 @@ class IntegrationManifest:
             content = content.encode("utf-8")
         abs_path.write_bytes(content)
 
-        self._files[str(rel)] = hashlib.sha256(content).hexdigest()
+        normalized = abs_path.relative_to(self.project_root).as_posix()
+        self._files[normalized] = hashlib.sha256(content).hexdigest()
         return abs_path
 
     def record_existing(self, rel_path: str | Path) -> None:
@@ -97,7 +98,8 @@ class IntegrationManifest:
         """
         rel = Path(rel_path)
         abs_path = _validate_rel_path(rel, self.project_root)
-        self._files[str(rel)] = _sha256(abs_path)
+        normalized = abs_path.relative_to(self.project_root).as_posix()
+        self._files[normalized] = _sha256(abs_path)
 
     # -- Querying ---------------------------------------------------------
 
