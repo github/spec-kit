@@ -33,7 +33,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Cursor**                 | `.cursor/commands/`    | Markdown | N/A (IDE-based) | Cursor IDE (`--ai cursor-agent`) |
 | **Qwen Code**              | `.qwen/commands/`      | Markdown | `qwen`          | Alibaba's Qwen Code CLI     |
 | **opencode**               | `.opencode/command/`   | Markdown | `opencode`      | opencode CLI                |
-| **Codex CLI**              | `.agents/skills/`      | Markdown | `codex`         | Codex CLI (skills)          |
+| **Codex CLI**              | `.agents/skills/`      | Markdown | `codex`         | Codex CLI (`--ai codex --ai-skills`) |
 | **Windsurf**               | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | Windsurf IDE workflows      |
 | **Junie**                  | `.junie/commands/`     | Markdown | `junie`         | Junie by JetBrains          |
 | **Kilo Code**              | `.kilocode/workflows/` | Markdown | N/A (IDE-based) | Kilo Code IDE               |
@@ -320,7 +320,7 @@ Require a command-line tool to be installed:
 - **Gemini CLI**: `gemini` CLI
 - **Qwen Code**: `qwen` CLI
 - **opencode**: `opencode` CLI
-- **Codex CLI**: `codex` CLI
+- **Codex CLI**: `codex` CLI (requires `--ai-skills`)
 - **Junie**: `junie` CLI
 - **Auggie CLI**: `auggie` CLI
 - **CodeBuddy CLI**: `codebuddy` CLI
@@ -394,7 +394,7 @@ Command content with {SCRIPT} and {{args}} placeholders.
 - **Nested path exception**:
   - Tabnine: `.tabnine/agent/commands/` (extra `agent/` segment)
 - **Skills-based exceptions**:
-  - Codex: `.agents/skills/` (skills, invoked as `$speckit-<command>`)
+  - Codex: `.agents/skills/` (requires `--ai-skills`; invoked as `$speckit-<command>`)
   - Kimi Code: `.kimi/skills/` (skills, invoked as `/skill:speckit-<command>`)
 - **Prompt-based exceptions**:
   - Kiro CLI: `.kiro/prompts/`
