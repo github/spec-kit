@@ -119,6 +119,10 @@ class IntegrationManifest:
                 continue
             if not abs_path.exists():
                 continue
+            # Treat non-regular-files (directories, symlinks) as modified
+            if not abs_path.is_file():
+                modified.append(rel)
+                continue
             if _sha256(abs_path) != expected_hash:
                 modified.append(rel)
         return modified
@@ -156,6 +160,10 @@ class IntegrationManifest:
             except (ValueError, OSError):
                 continue
             if not path.exists():
+                continue
+            # Skip directories — manifest only tracks files
+            if not path.is_file() and not path.is_symlink():
+                skipped.append(path)
                 continue
             if not force and _sha256(path) != expected_hash:
                 skipped.append(path)
@@ -234,4 +242,12 @@ class IntegrationManifest:
         inst.version = data.get("version", "")
         inst._installed_at = data.get("installed_at", "")
         inst._files = files
+
+        stored_key = data.get("integration", "")
+        if stored_key and stored_key != key:
+            raise ValueError(
+                f"Manifest at {path} belongs to integration {stored_key!r}, "
+                f"not {key!r}"
+            )
+
         return inst
