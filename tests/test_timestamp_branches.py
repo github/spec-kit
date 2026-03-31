@@ -466,7 +466,7 @@ class TestAllowExistingBranchPowerShell:
         # Must check specs directory for collision
         assert "manualNumPadded" in contents
         # Must check git branches for collision
-        assert "git fetch --all --prune" in contents
+        assert "git branch -a" in contents
         # Must warn and auto-detect on conflict
         assert "conflicts with existing branch/spec" in contents
         # Must skip validation when -AllowExistingBranch is set; allow flexible whitespace
