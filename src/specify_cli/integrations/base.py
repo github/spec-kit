@@ -135,8 +135,9 @@ class IntegrationBase(ABC):
 
         for src_file in sorted(tpl_dir.iterdir()):
             if src_file.is_file():
-                dst_file = (dest / src_file.name).resolve()
-                rel = dst_file.relative_to(project_root_resolved)
+                dst_file = dest / src_file.name
+                dst_resolved = dst_file.resolve()
+                rel = dst_resolved.relative_to(project_root_resolved)
                 shutil.copy2(src_file, dst_file)
                 manifest.record_existing(rel)
                 created.append(dst_file)

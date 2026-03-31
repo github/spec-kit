@@ -411,3 +411,10 @@ class TestManifestLoadValidation:
         path.write_text(json.dumps({"files": {"a.txt": 123}}), encoding="utf-8")
         with pytest.raises(ValueError, match="mapping"):
             IntegrationManifest.load("bad", tmp_path)
+
+    def test_load_invalid_json_raises(self, tmp_path):
+        path = tmp_path / ".specify" / "integrations" / "bad.manifest.json"
+        path.parent.mkdir(parents=True)
+        path.write_text("{not valid json", encoding="utf-8")
+        with pytest.raises(ValueError, match="invalid JSON"):
+            IntegrationManifest.load("bad", tmp_path)

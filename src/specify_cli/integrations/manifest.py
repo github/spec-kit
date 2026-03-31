@@ -144,21 +144,24 @@ class IntegrationManifest:
         skipped: list[Path] = []
 
         for rel, expected_hash in self._files.items():
-            abs_path = (root / rel).resolve()
-            # Skip paths that escape the project root
+            # Use non-resolved path for deletion so symlinks themselves
+            # are removed, not their targets.
+            path = root / rel
+            # Validate containment via the resolved path
             try:
-                abs_path.relative_to(root)
-            except ValueError:
+                resolved = path.resolve()
+                resolved.relative_to(root)
+            except (ValueError, OSError):
                 continue
-            if not abs_path.exists():
+            if not path.exists():
                 continue
-            if not force and _sha256(abs_path) != expected_hash:
-                skipped.append(abs_path)
+            if not force and _sha256(path) != expected_hash:
+                skipped.append(path)
                 continue
-            abs_path.unlink()
-            removed.append(abs_path)
+            path.unlink()
+            removed.append(path)
             # Clean up empty parent directories up to project root
-            parent = abs_path.parent
+            parent = path.parent
             while parent != root:
                 try:
                     parent.rmdir()  # only succeeds if empty
@@ -204,7 +207,12 @@ class IntegrationManifest:
         """
         inst = cls(key, project_root)
         path = inst.manifest_path
-        data = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Integration manifest at {path} contains invalid JSON"
+            ) from exc
 
         if not isinstance(data, dict):
             raise ValueError(
