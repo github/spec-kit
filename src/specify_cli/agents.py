@@ -351,9 +351,7 @@ class CommandRegistrar:
         Returns:
             Formatted YAML recipe file content
         """
-        yaml_lines = []
-
-        # Get title from frontmatter or generate from name/description
+        # Get title from frontmatter or generate from command name
         title = frontmatter.get("title", "")
         if not title and "name" in frontmatter:
             # Generate title from command name
@@ -362,27 +360,36 @@ class CommandRegistrar:
         description = frontmatter.get("description", "")
 
         # Build YAML structure following Goose recipe schema
-        yaml_lines.append("version: 1.0.0")
-        yaml_lines.append(f'title: "{title}"')
-        yaml_lines.append(f'description: "{description}"')
-        yaml_lines.append("author:")
-        yaml_lines.append('  contact: "spec-kit"')
-        yaml_lines.append("extensions:")
-        yaml_lines.append("  - type: builtin")
-        yaml_lines.append("    name: developer")
-        yaml_lines.append("activities:")
-        yaml_lines.append('  - "Spec-Driven Development"')
-        yaml_lines.append("prompt: |")
+        # Use yaml.safe_dump() for proper escaping of title and description
+        header_dict = {
+            "version": "1.0.0",
+            "title": title,
+            "description": description,
+            "author": {"contact": "spec-kit"},
+            "extensions": [{"type": "builtin", "name": "developer"}],
+            "activities": ["Spec-Driven Development"],
+        }
+
+        # Dump header with proper escaping and consistent formatting
+        header_yaml = yaml.safe_dump(
+            header_dict,
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=False,
+        ).strip()
+
+        # Build the final YAML with literal block scalar for prompt
+        lines = [header_yaml, "prompt: |"]
 
         # Indent each line of body for proper YAML block scalar formatting
         for line in body.split("\n"):
-            yaml_lines.append(f"  {line}")
+            lines.append(f"  {line}")
 
         # Add source comment at the end
-        yaml_lines.append("")
-        yaml_lines.append(f"# Source: {source_id}")
+        lines.append("")
+        lines.append(f"# Source: {source_id}")
 
-        return "\n".join(yaml_lines)
+        return "\n".join(lines)
 
     def render_skill_command(
         self,

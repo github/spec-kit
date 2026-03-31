@@ -118,25 +118,15 @@ generate_commands() {
         echo "$body" > "$output_dir/speckit.$name.$ext" ;;
       yaml)
         # Generate Goose recipe format YAML
-        local title instructions
-        title=$(echo "$name" | sed 's/\b\(.\)/\u\1/g') # Convert to title case
-        instructions=$(printf '%s\n' "$body" | sed 's/"/\\"/g')
+        local title
+        # Use awk for reliable title casing (sed \b is not portable)
+        title=$(echo "$name" | tr '_-' '  ' | awk '{for (i=1; i<=NF; i++) $i=toupper(substr($i,1,1)) substr($i,2)}1')
         # Indent every line of body for valid YAML block scalar syntax
-        indented_body=$(printf '%s\n' "$instructions" | sed 's/^/  /')
+        indented_body=$(printf '%s\n' "$body" | sed 's/^/  /')
         cat > "$output_dir/speckit.$name.$ext" <<YAML_EOF
-      version: 1.0.0
-      title: "$title"
-      description: "$description"
-      author:
-        contact: "spec-kit"
-      extensions:
-        - type: builtin
-          name: developer
-      activities:
-        - "Spec-Driven Development"
-      prompt: |
-      ${indented_body}
-      YAML_EOF
+version: 1.0.0
+title: "$title"
+description: "$description"
 author:
   contact: "spec-kit"
 extensions:
@@ -145,7 +135,7 @@ extensions:
 activities:
   - "Spec-Driven Development"
 prompt: |
-$body
+${indented_body}
 YAML_EOF
         ;;
     esac
