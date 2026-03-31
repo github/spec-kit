@@ -747,3 +747,119 @@ class TestCopilotIntegration:
             assert "\nagent_scripts:\n" not in content, f"{agent_file.name} has raw agent_scripts: block"
             # Paths should be rewritten
             assert "scripts/bash/" not in content or ".specify/scripts/bash/" in content
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CLI --integration flag (Stage 2b)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestInitIntegrationFlag:
+    """Tests for the --integration flag on specify init."""
+
+    def test_integration_and_ai_mutually_exclusive(self):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "init", "test-project",
+            "--ai", "claude",
+            "--integration", "copilot",
+        ])
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output
+
+    def test_unknown_integration_rejected(self):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "init", "test-project",
+            "--integration", "nonexistent",
+        ])
+        assert result.exit_code != 0
+        assert "Unknown integration" in result.output
+
+    def test_integration_copilot_creates_files(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "init", "--here",
+            "--integration", "copilot",
+            "--script", "sh",
+            "--no-git",
+        ], catch_exceptions=False, env={"HOME": str(tmp_path)})
+        # The init command runs in CWD, which for CliRunner is OS cwd.
+        # Use a different approach: create project in a named dir
+        project = tmp_path / "int-test"
+        project.mkdir()
+        import os
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "init", "--here",
+                "--integration", "copilot",
+                "--script", "sh",
+                "--no-git",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        # Copilot-specific files
+        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+        assert (project / ".github" / "prompts" / "speckit.plan.prompt.md").exists()
+
+        # Shared infrastructure
+        assert (project / ".specify" / "scripts" / "bash" / "common.sh").exists()
+        assert (project / ".specify" / "templates" / "spec-template.md").exists()
+
+        # agent.json
+        agent_json = project / ".specify" / "agent.json"
+        assert agent_json.exists()
+        data = json.loads(agent_json.read_text(encoding="utf-8"))
+        assert data["integration"] == "copilot"
+
+        # init-options.json
+        init_opts = project / ".specify" / "init-options.json"
+        assert init_opts.exists()
+        opts = json.loads(init_opts.read_text(encoding="utf-8"))
+        assert opts["integration"] == "copilot"
+        assert opts["ai"] == "copilot"
+
+        # Manifest recorded
+        manifest = project / ".specify" / "integrations" / "copilot.manifest.json"
+        assert manifest.exists()
+
+    def test_ai_copilot_auto_promotes(self, tmp_path):
+        """--ai copilot should auto-promote to integration path with a nudge."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "promote-test"
+        project.mkdir()
+        import os
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here",
+                "--ai", "copilot",
+                "--script", "sh",
+                "--no-git",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+        # Should show the migration nudge
+        assert "--integration copilot" in result.output
+        # Should still produce copilot files via integration path
+        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()

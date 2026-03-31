@@ -1197,6 +1197,55 @@ def _locate_release_script() -> tuple[Path, str]:
     raise FileNotFoundError(f"Release script '{name}' not found in core_pack or source checkout")
 
 
+def _install_shared_infra(
+    project_path: Path,
+    script_type: str,
+    tracker: StepTracker | None = None,
+) -> bool:
+    """Install shared infrastructure files into *project_path*.
+
+    Copies ``.specify/scripts/``, ``.specify/templates/``, and
+    ``.specify/memory/`` from the bundled core_pack or source checkout.
+    Returns ``True`` on success.
+    """
+    core = _locate_core_pack()
+
+    # Scripts
+    if core and (core / "scripts").is_dir():
+        scripts_src = core / "scripts"
+    else:
+        repo_root = Path(__file__).parent.parent.parent
+        scripts_src = repo_root / "scripts"
+
+    if scripts_src.is_dir():
+        dest_scripts = project_path / ".specify" / "scripts"
+        dest_scripts.mkdir(parents=True, exist_ok=True)
+        variant_dir = "bash" if script_type == "sh" else "powershell"
+        variant_src = scripts_src / variant_dir
+        if variant_src.is_dir():
+            dest_variant = dest_scripts / variant_dir
+            if dest_variant.exists():
+                shutil.rmtree(dest_variant)
+            shutil.copytree(variant_src, dest_variant)
+
+    # Page templates (not command templates, not vscode-settings.json)
+    if core and (core / "templates").is_dir():
+        templates_src = core / "templates"
+    else:
+        repo_root = Path(__file__).parent.parent.parent
+        templates_src = repo_root / "templates"
+
+    if templates_src.is_dir():
+        dest_templates = project_path / ".specify" / "templates"
+        dest_templates.mkdir(parents=True, exist_ok=True)
+        for f in templates_src.iterdir():
+            if f.is_file() and f.name != "vscode-settings.json" and not f.name.startswith("."):
+                # Skip command templates directory
+                shutil.copy2(f, dest_templates / f.name)
+
+    return True
+
+
 def scaffold_from_core_pack(
     project_path: Path,
     ai_assistant: str,
@@ -1828,6 +1877,7 @@ def init(
     offline: bool = typer.Option(False, "--offline", help="Use assets bundled in the specify-cli package instead of downloading from GitHub (no network access required). Bundled assets will become the default in v0.6.0 and this flag will be removed."),
     preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
     branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, ...) or 'timestamp' (YYYYMMDD-HHMMSS)"),
+    integration: str = typer.Option(None, "--integration", help="Use the new integration system (e.g. --integration copilot). Mutually exclusive with --ai."),
 ):
     """
     Initialize a new Specify project.
@@ -1888,6 +1938,34 @@ def init(
 
     if ai_assistant:
         ai_assistant = AI_ASSISTANT_ALIASES.get(ai_assistant, ai_assistant)
+
+    # --integration and --ai are mutually exclusive
+    if integration and ai_assistant:
+        console.print("[red]Error:[/red] --integration and --ai are mutually exclusive")
+        console.print("[yellow]Use:[/yellow] --integration for the new integration system, or --ai for the legacy path")
+        raise typer.Exit(1)
+
+    # Auto-promote: --ai copilot → integration path with a nudge
+    use_integration = False
+    if integration:
+        from .integrations import get_integration
+        resolved_integration = get_integration(integration)
+        if not resolved_integration:
+            console.print(f"[red]Error:[/red] Unknown integration: '{integration}'")
+            console.print("[yellow]Available integrations:[/yellow] copilot")
+            raise typer.Exit(1)
+        use_integration = True
+        # Map integration key to the ai_assistant variable for downstream compatibility
+        ai_assistant = integration
+    elif ai_assistant == "copilot":
+        from .integrations import get_integration
+        resolved_integration = get_integration("copilot")
+        if resolved_integration:
+            use_integration = True
+            console.print(
+                "[dim]Tip: Use [bold]--integration copilot[/bold] instead of "
+                "--ai copilot. The --ai flag will be deprecated in a future release.[/dim]"
+            )
 
     if project_name == ".":
         here = True
@@ -2057,7 +2135,10 @@ def init(
             "This will become the default in v0.6.0."
         )
 
-    if use_github:
+    if use_integration:
+        tracker.add("integration", "Install integration")
+        tracker.add("shared-infra", "Install shared infrastructure")
+    elif use_github:
         for key, label in [
             ("fetch", "Fetch latest release"),
             ("download", "Download template"),
@@ -2092,7 +2173,35 @@ def init(
             verify = not skip_tls
             local_ssl_context = ssl_context if verify else False
 
-            if use_github:
+            if use_integration:
+                # Integration-based scaffolding (new path)
+                from .integrations.manifest import IntegrationManifest
+                tracker.start("integration")
+                manifest = IntegrationManifest(
+                    resolved_integration.key, project_path, version=get_speckit_version()
+                )
+                resolved_integration.setup(
+                    project_path, manifest,
+                    script_type=selected_script,
+                )
+                manifest.save()
+
+                # Write .specify/agent.json
+                agent_json = project_path / ".specify" / "agent.json"
+                agent_json.parent.mkdir(parents=True, exist_ok=True)
+                agent_json.write_text(json.dumps({
+                    "integration": resolved_integration.key,
+                    "version": get_speckit_version(),
+                }, indent=2) + "\n", encoding="utf-8")
+
+                tracker.complete("integration", resolved_integration.config.get("name", resolved_integration.key))
+
+                # Install shared infrastructure (scripts, templates)
+                tracker.start("shared-infra")
+                _install_shared_infra(project_path, selected_script, tracker=tracker)
+                tracker.complete("shared-infra", f"scripts ({selected_script}) + templates")
+
+            elif use_github:
                 with httpx.Client(verify=local_ssl_context) as local_client:
                     download_and_extract_template(
                         project_path,
@@ -2227,7 +2336,7 @@ def init(
             # Persist the CLI options so later operations (e.g. preset add)
             # can adapt their behaviour without re-scanning the filesystem.
             # Must be saved BEFORE preset install so _get_skills_dir() works.
-            save_init_options(project_path, {
+            init_opts = {
                 "ai": selected_ai,
                 "ai_skills": ai_skills,
                 "ai_commands_dir": ai_commands_dir,
@@ -2237,7 +2346,10 @@ def init(
                 "offline": offline,
                 "script": selected_script,
                 "speckit_version": get_speckit_version(),
-            })
+            }
+            if use_integration:
+                init_opts["integration"] = resolved_integration.key
+            save_init_options(project_path, init_opts)
 
             # Install preset if specified
             if preset:
