@@ -1290,12 +1290,30 @@ def scaffold_from_core_pack(
                 if f.is_file():
                     shutil.copy2(f, tmpl_cmds / f.name)
 
+            # Copy compact command templates subdirectory
+            compact_cmds_src = commands_dir / "compact"
+            if compact_cmds_src.is_dir():
+                compact_cmds_dst = tmpl_cmds / "compact"
+                compact_cmds_dst.mkdir(parents=True, exist_ok=True)
+                for f in compact_cmds_src.iterdir():
+                    if f.is_file():
+                        shutil.copy2(f, compact_cmds_dst / f.name)
+
             # Page templates (needed for vscode-settings.json etc.)
             if templates_dir.is_dir():
                 tmpl_root = tmp / "templates"
                 for f in templates_dir.iterdir():
                     if f.is_file():
                         shutil.copy2(f, tmpl_root / f.name)
+
+                # Copy compact templates subdirectory
+                compact_src = templates_dir / "compact"
+                if compact_src.is_dir():
+                    compact_dst = tmpl_root / "compact"
+                    compact_dst.mkdir(parents=True, exist_ok=True)
+                    for f in compact_src.iterdir():
+                        if f.is_file():
+                            shutil.copy2(f, compact_dst / f.name)
 
             # Scripts (bash/ and powershell/)
             for subdir in ("bash", "powershell"):
@@ -1428,7 +1446,17 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 def ensure_constitution_from_template(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Copy constitution template to memory if it doesn't exist (preserves existing constitution on reinitialization)."""
     memory_constitution = project_path / ".specify" / "memory" / "constitution.md"
-    template_constitution = project_path / ".specify" / "templates" / "constitution-template.md"
+
+    # Choose template based on format preference
+    init_opts = load_init_options(project_path)
+    fmt = init_opts.get("format", "markdown")
+    if fmt == "compact":
+        template_constitution = project_path / ".specify" / "templates" / "compact" / "constitution-template.md"
+        if not template_constitution.exists():
+            # Fallback to standard template
+            template_constitution = project_path / ".specify" / "templates" / "constitution-template.md"
+    else:
+        template_constitution = project_path / ".specify" / "templates" / "constitution-template.md"
 
     # If constitution already exists in memory, preserve it
     if memory_constitution.exists():
@@ -1459,6 +1487,23 @@ def ensure_constitution_from_template(project_path: Path, tracker: StepTracker |
             tracker.error("constitution", str(e))
         else:
             console.print(f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]")
+
+
+def resolve_template_path(project_path: Path, template_name: str) -> Path:
+    """Resolve a template file path based on the configured format preference.
+
+    When format is 'compact', looks for the template in the compact/ subdirectory
+    first. Falls back to the standard template if compact variant is not found.
+    """
+    init_opts = load_init_options(project_path)
+    fmt = init_opts.get("format", "markdown")
+
+    if fmt == "compact":
+        compact_path = project_path / ".specify" / "templates" / "compact" / template_name
+        if compact_path.exists():
+            return compact_path
+
+    return project_path / ".specify" / "templates" / template_name
 
 
 INIT_OPTIONS_FILE = ".specify/init-options.json"
@@ -1825,6 +1870,7 @@ def init(
     offline: bool = typer.Option(False, "--offline", help="Use assets bundled in the specify-cli package instead of downloading from GitHub (no network access required). Bundled assets will become the default in v0.6.0 and this flag will be removed."),
     preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
     branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, ...) or 'timestamp' (YYYYMMDD-HHMMSS)"),
+    template_format: str = typer.Option(None, "--format", help="Template format: 'markdown' (full verbose) or 'compact' (token-efficient minimal format)"),
 ):
     """
     Initialize a new Specify project.
@@ -1906,6 +1952,11 @@ def init(
     BRANCH_NUMBERING_CHOICES = {"sequential", "timestamp"}
     if branch_numbering and branch_numbering not in BRANCH_NUMBERING_CHOICES:
         console.print(f"[red]Error:[/red] Invalid --branch-numbering value '{branch_numbering}'. Choose from: {', '.join(sorted(BRANCH_NUMBERING_CHOICES))}")
+        raise typer.Exit(1)
+
+    TEMPLATE_FORMAT_CHOICES = {"markdown", "compact"}
+    if template_format and template_format not in TEMPLATE_FORMAT_CHOICES:
+        console.print(f"[red]Error:[/red] Invalid --format value '{template_format}'. Choose from: {', '.join(sorted(TEMPLATE_FORMAT_CHOICES))}")
         raise typer.Exit(1)
 
     if here:
@@ -2229,6 +2280,7 @@ def init(
                 "ai_skills": ai_skills,
                 "ai_commands_dir": ai_commands_dir,
                 "branch_numbering": branch_numbering or "sequential",
+                "format": template_format or "markdown",
                 "here": here,
                 "preset": preset,
                 "offline": offline,

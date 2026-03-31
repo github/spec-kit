@@ -166,6 +166,16 @@ class CommandRegistrar:
     }
 
     @staticmethod
+    def _get_template_format(project_root: Path) -> str:
+        """Read the template format preference from init-options.json."""
+        try:
+            from . import load_init_options
+        except ImportError:
+            return "markdown"
+        opts = load_init_options(project_root)
+        return opts.get("format", "markdown") if isinstance(opts, dict) else "markdown"
+
+    @staticmethod
     def parse_frontmatter(content: str) -> tuple[dict, str]:
         """Parse YAML frontmatter from Markdown content.
 
@@ -484,11 +494,20 @@ class CommandRegistrar:
 
         registered = []
 
+        # Determine template format preference from init options
+        template_format = self._get_template_format(project_root)
+
         for cmd_info in commands:
             cmd_name = cmd_info["name"]
             cmd_file = cmd_info["file"]
 
+            # Use compact command template if format is compact and compact variant exists
             source_file = source_dir / cmd_file
+            if template_format == "compact":
+                compact_file = source_dir / "compact" / cmd_file
+                if compact_file.exists():
+                    source_file = compact_file
+
             if not source_file.exists():
                 continue
 
