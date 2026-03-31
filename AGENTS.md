@@ -30,7 +30,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Claude Code**            | `.claude/commands/`    | Markdown | `claude`        | Anthropic's Claude Code CLI |
 | **Gemini CLI**             | `.gemini/commands/`    | TOML     | `gemini`        | Google's Gemini CLI         |
 | **GitHub Copilot**         | `.github/agents/`      | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code   |
-| **Cursor**                 | `.cursor/commands/`    | Markdown | N/A (IDE-based) | Cursor IDE                  |
+| **Cursor**                 | `.cursor/commands/`    | Markdown | N/A (IDE-based) | Cursor IDE (`--ai cursor-agent`) |
 | **Qwen Code**              | `.qwen/commands/`      | Markdown | `qwen`          | Alibaba's Qwen Code CLI     |
 | **opencode**               | `.opencode/command/`   | Markdown | `opencode`      | opencode CLI                |
 | **Codex CLI**              | `.agents/skills/`      | Markdown | `codex`         | Codex CLI (skills)          |
@@ -339,7 +339,7 @@ Require a command-line tool to be installed:
 Work within integrated development environments:
 
 - **GitHub Copilot**: Built into VS Code/compatible editors
-- **Cursor**: Built into Cursor IDE
+- **Cursor**: Built into Cursor IDE (`--ai cursor-agent`)
 - **Windsurf**: Built into Windsurf IDE
 - **Kilo Code**: Built into Kilo Code IDE
 - **Roo Code**: Built into Roo Code IDE
