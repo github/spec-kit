@@ -251,6 +251,7 @@ if [ "$USE_TIMESTAMP" = true ]; then
 else
     # Determine branch number
     if [ -z "$BRANCH_NUMBER" ]; then
+        # No manual number provided -- auto-detect
         if [ "$HAS_GIT" = true ]; then
             # Check existing branches on remotes
             BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
@@ -258,6 +259,49 @@ else
             # Fall back to local directory check
             HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
             BRANCH_NUMBER=$((HIGHEST + 1))
+        fi
+    elif [ "$ALLOW_EXISTING" = false ]; then
+        # Manual number provided -- validate it is not already in use
+        # (skip when --allow-existing-branch, as the caller intentionally targets an existing branch)
+        MANUAL_NUM=$((10#$BRANCH_NUMBER))
+        MANUAL_NUM_PADDED=$(printf "%03d" "$MANUAL_NUM")
+        NUMBER_IN_USE=false
+
+        # Check specs directory for collision
+        if [ -d "$SPECS_DIR" ]; then
+            for dir in "$SPECS_DIR"/*/; do
+                [ -d "$dir" ] || continue
+                dirname=$(basename "$dir")
+                if echo "$dirname" | grep -q "^${MANUAL_NUM_PADDED}-"; then
+                    NUMBER_IN_USE=true
+                    break
+                fi
+            done
+        fi
+
+        # Check git branches for collision (fetch first to catch remote-only branches)
+        if [ "$NUMBER_IN_USE" = false ] && [ "$HAS_GIT" = true ]; then
+            git fetch --all --prune 2>/dev/null || true
+            branches=$(git branch -a 2>/dev/null || echo "")
+            if [ -n "$branches" ]; then
+                while IFS= read -r branch; do
+                    clean_branch=$(echo "$branch" | sed 's/^[* ]*//; s|^remotes/[^/]*/||')
+                    if echo "$clean_branch" | grep -q "^${MANUAL_NUM_PADDED}-"; then
+                        NUMBER_IN_USE=true
+                        break
+                    fi
+                done <<< "$branches"
+            fi
+        fi
+
+        if [ "$NUMBER_IN_USE" = true ]; then
+            >&2 echo "Warning: --number $BRANCH_NUMBER conflicts with existing branch/spec (${MANUAL_NUM_PADDED}-*). Auto-detecting next available number."
+            if [ "$HAS_GIT" = true ]; then
+                BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
+            else
+                HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
+                BRANCH_NUMBER=$((HIGHEST + 1))
+            fi
         fi
     fi
 

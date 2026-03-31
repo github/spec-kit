@@ -326,8 +326,8 @@ class TestAllowExistingBranch:
         assert (git_repo / "specs" / "006-spec-dir").is_dir()
         assert (git_repo / "specs" / "006-spec-dir" / "spec.md").exists()
 
-    def test_without_flag_still_errors(self, git_repo: Path):
-        """T009: Verify backwards compatibility (error without flag)."""
+    def test_without_flag_auto_detects_on_collision(self, git_repo: Path):
+        """T009: Without --allow-existing-branch, a conflicting --number auto-detects next available."""
         subprocess.run(
             ["git", "checkout", "-b", "007-no-flag"],
             cwd=git_repo, check=True, capture_output=True,
@@ -339,8 +339,9 @@ class TestAllowExistingBranch:
         result = run_script(
             git_repo, "--short-name", "no-flag", "--number", "7", "No flag feature",
         )
-        assert result.returncode != 0, "should fail without --allow-existing-branch"
-        assert "already exists" in result.stderr
+        assert result.returncode == 0, result.stderr
+        assert "conflicts with existing branch/spec" in result.stderr
+        assert "008-no-flag" in result.stdout
 
     def test_allow_existing_no_overwrite_spec(self, git_repo: Path):
         """T010: Pre-create spec.md with content, verify it is preserved."""
