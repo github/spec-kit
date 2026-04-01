@@ -134,15 +134,7 @@ Use the **`/speckit.plan`** command to provide your tech stack and architecture 
 /speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
-### 5. Challenge the plan
-
-Use **`/speckit.critique`** to critically evaluate your spec and plan from both product strategy and engineering risk perspectives before committing to implementation.
-
-```bash
-/speckit.critique
-```
-
-### 6. Break down into tasks
+### 5. Break down into tasks
 
 Use **`/speckit.tasks`** to create an actionable task list from your implementation plan.
 
@@ -150,44 +142,12 @@ Use **`/speckit.tasks`** to create an actionable task list from your implementat
 /speckit.tasks
 ```
 
-### 7. Execute implementation
+### 6. Execute implementation
 
 Use **`/speckit.implement`** to execute all tasks and build your feature according to the plan.
 
 ```bash
 /speckit.implement
-```
-
-### 8. Review the code
-
-Use **`/speckit.review`** to perform a staff-level code review focused on correctness, security, performance, and spec compliance.
-
-```bash
-/speckit.review
-```
-
-### 9. Run QA testing
-
-Use **`/speckit.qa`** to systematically test the implemented feature against acceptance criteria, using browser-driven or CLI-based testing.
-
-```bash
-/speckit.qa
-```
-
-### 10. Ship it
-
-Use **`/speckit.ship`** to automate the release pipeline — pre-flight checks, branch sync, changelog generation, CI verification, and PR creation.
-
-```bash
-/speckit.ship
-```
-
-### 11. Retrospective
-
-Use **`/speckit.retro`** to reflect on the completed development cycle with metrics, learnings, and improvement suggestions for the next iteration.
-
-```bash
-/speckit.retro
 ```
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
