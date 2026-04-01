@@ -121,7 +121,10 @@ generate_commands() {
         local title
         # Use awk for reliable title casing (sed \b is not portable)
         title=$(echo "$name" | tr '_-' '  ' | awk '{for (i=1; i<=NF; i++) $i=toupper(substr($i,1,1)) substr($i,2)}1')
+        # Replace $ARGUMENTS placeholder with configured arg_format for Goose recipes
+        body=$(printf '%s\n' "$body" | sed "s/\\\$ARGUMENTS/$arg_format/g")
         # Indent every line of body for valid YAML block scalar syntax
+        local indented_body
         indented_body=$(printf '%s\n' "$body" | sed 's/^/  /')
         cat > "$output_dir/speckit.$name.$ext" <<YAML_EOF
 version: 1.0.0
