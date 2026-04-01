@@ -160,7 +160,7 @@ This will:
 
 ```bash
 # From GitHub release
-specify extension add --from https://github.com/org/spec-kit-ext/archive/refs/tags/v1.0.0.zip
+specify extension add <extension-name> --from https://github.com/org/spec-kit-ext/archive/refs/tags/v1.0.0.zip
 ```
 
 ### Install from Local Directory (Development)
@@ -737,7 +737,7 @@ You can still install extensions not in your catalog using `--from`:
 specify extension add jira
 
 # Direct URL (bypasses catalog)
-specify extension add --from https://github.com/someone/spec-kit-ext/archive/v1.0.0.zip
+specify extension add <extension-name> --from https://github.com/someone/spec-kit-ext/archive/v1.0.0.zip
 
 # Local development
 specify extension add --dev /path/to/extension
@@ -807,7 +807,7 @@ specify extension add --dev /path/to/extension
 2. Install older version of extension:
 
    ```bash
-   specify extension add --from https://github.com/org/ext/archive/v1.0.0.zip
+   specify extension add <extension-name> --from https://github.com/org/ext/archive/v1.0.0.zip
    ```
 
 ### MCP Tool Not Available

@@ -30,10 +30,10 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Claude Code**            | `.claude/commands/`    | Markdown | `claude`        | Anthropic's Claude Code CLI |
 | **Gemini CLI**             | `.gemini/commands/`    | TOML     | `gemini`        | Google's Gemini CLI         |
 | **GitHub Copilot**         | `.github/agents/`      | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code   |
-| **Cursor**                 | `.cursor/commands/`    | Markdown | `cursor-agent`  | Cursor CLI                  |
+| **Cursor**                 | `.cursor/commands/`    | Markdown | N/A (IDE-based) | Cursor IDE (`--ai cursor-agent`) |
 | **Qwen Code**              | `.qwen/commands/`      | Markdown | `qwen`          | Alibaba's Qwen Code CLI     |
 | **opencode**               | `.opencode/command/`   | Markdown | `opencode`      | opencode CLI                |
-| **Codex CLI**              | `.agents/skills/`      | Markdown | `codex`         | Codex CLI (skills)          |
+| **Codex CLI**              | `.agents/skills/`      | Markdown | `codex`         | Codex CLI (`--ai codex --ai-skills`) |
 | **Windsurf**               | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | Windsurf IDE workflows      |
 | **Junie**                  | `.junie/commands/`     | Markdown | `junie`         | Junie by JetBrains          |
 | **Kilo Code**              | `.kilocode/workflows/` | Markdown | N/A (IDE-based) | Kilo Code IDE               |
@@ -51,6 +51,8 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Goose**                  | `.goose/recipes/`      | YAML | `goose`         | Block's open source AI agent with slash command support |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
 | **Trae**                   | `.trae/rules/`         | Markdown | N/A (IDE-based) | Trae IDE                    |
+| **Antigravity**            | `.agent/commands/`     | Markdown | N/A (IDE-based) | Antigravity IDE (`--ai agy --ai-skills`) |
+| **Mistral Vibe**           | `.vibe/prompts/`       | Markdown | `vibe`          | Mistral Vibe CLI            |
 | **Generic**                | User-specified via `--ai-commands-dir` | Markdown | N/A | Bring your own agent        |
 
 ### Step-by-Step Integration Guide
@@ -317,18 +319,21 @@ Require a command-line tool to be installed:
 
 - **Claude Code**: `claude` CLI
 - **Gemini CLI**: `gemini` CLI
-- **Cursor**: `cursor-agent` CLI
 - **Qwen Code**: `qwen` CLI
 - **opencode**: `opencode` CLI
+- **Codex CLI**: `codex` CLI (requires `--ai-skills`)
 - **Junie**: `junie` CLI
-- **Kiro CLI**: `kiro-cli` CLI
+- **Auggie CLI**: `auggie` CLI
 - **CodeBuddy CLI**: `codebuddy` CLI
 - **Qoder CLI**: `qodercli` CLI
+- **Kiro CLI**: `kiro-cli` CLI
 - **Amp**: `amp` CLI
 - **SHAI**: `shai` CLI
 - **Tabnine CLI**: `tabnine` CLI
 - **Kimi Code**: `kimi` CLI
+- **Mistral Vibe**: `vibe` CLI
 - **Pi Coding Agent**: `pi` CLI
+- **iFlow CLI**: `iflow` CLI
 - **Goose**: `goose` CLI
 
 ### IDE-Based Agents
@@ -336,14 +341,19 @@ Require a command-line tool to be installed:
 Work within integrated development environments:
 
 - **GitHub Copilot**: Built into VS Code/compatible editors
+- **Cursor**: Built into Cursor IDE (`--ai cursor-agent`)
 - **Windsurf**: Built into Windsurf IDE
+- **Kilo Code**: Built into Kilo Code IDE
+- **Roo Code**: Built into Roo Code IDE
 - **IBM Bob**: Built into IBM Bob IDE
+- **Trae**: Built into Trae IDE
+- **Antigravity**: Built into Antigravity IDE (`--ai agy --ai-skills`)
 
 ## Command File Formats
 
 ### Markdown Format
 
-Used by: Claude, Cursor, opencode, Windsurf, Junie, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, Qwen, Pi
+Used by: Claude, Cursor, GitHub Copilot, opencode, Windsurf, Junie, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, Qwen, Pi, Codex, Auggie, CodeBuddy, Qoder, Roo Code, Kilo Code, Trae, Antigravity, Mistral Vibe, iFlow
 
 **Standard format:**
 
@@ -381,15 +391,29 @@ Command content with {SCRIPT} and {{args}} placeholders.
 ## Directory Conventions
 
 - **CLI agents**: Usually `.<agent-name>/commands/`
+- **Singular command exception**:
+  - opencode: `.opencode/command/` (singular `command`, not `commands`)
+- **Nested path exception**:
+  - Tabnine: `.tabnine/agent/commands/` (extra `agent/` segment)
+- **Shared `.agents/` folder**:
+  - Amp: `.agents/commands/` (shared folder, not `.amp/`)
+  - Codex: `.agents/skills/` (shared folder; requires `--ai-skills`; invoked as `$speckit-<command>`)
 - **Skills-based exceptions**:
-  - Codex: `.agents/skills/` (skills, invoked as `$speckit-<command>`)
+  - Kimi Code: `.kimi/skills/` (skills, invoked as `/skill:speckit-<command>`)
 - **Prompt-based exceptions**:
   - Kiro CLI: `.kiro/prompts/`
   - Pi: `.pi/prompts/`
+  - Mistral Vibe: `.vibe/prompts/`
+- **Rules-based exceptions**:
+  - Trae: `.trae/rules/`
 - **IDE agents**: Follow IDE-specific patterns:
   - Copilot: `.github/agents/`
   - Cursor: `.cursor/commands/`
   - Windsurf: `.windsurf/workflows/`
+  - Kilo Code: `.kilocode/workflows/`
+  - Roo Code: `.roo/commands/`
+  - IBM Bob: `.bob/commands/`
+  - Antigravity: `.agent/skills/` (`--ai-skills` required; `.agent/commands/` is deprecated)
 
 ## Argument Patterns
 
