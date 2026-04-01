@@ -284,7 +284,7 @@ Community projects that extend, visualize, or build on Spec Kit:
 | [Junie](https://junie.jetbrains.com/)                                                | ✅      |                                                                                                                                           |
 | [Antigravity (agy)](https://antigravity.google/)                                     | ✅      | Requires `--ai-skills` |
 | [Trae](https://www.trae.ai/)                                                         | ✅      |                                                                                                                                           |
-| [Goose](https://block.github.io/goose/)                                             | ✅      | Uses YAML recipe format in `.goose/recipes/` with slash command support                                                                                                                              |
+| [Goose](https://block.github.io/goose/)                                             | ✅      | Uses YAML recipe format in `.goose/recipes/` with slash command support |
 | Generic                                                                              | ✅      | Bring your own agent — use `--ai generic --ai-commands-dir <path>` for unsupported agents                                                 |
 
 ## 🔧 Specify CLI Reference
