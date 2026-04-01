@@ -743,7 +743,6 @@ class SkillsIntegration(IntegrationBase):
 
             # Parse frontmatter for description
             frontmatter: dict[str, Any] = {}
-            body = raw
             if raw.startswith("---"):
                 parts = raw.split("---", 2)
                 if len(parts) >= 3:
@@ -753,7 +752,6 @@ class SkillsIntegration(IntegrationBase):
                             frontmatter = fm
                     except Exception:
                         pass
-                    body = parts[2].strip()
 
             # Process body through the standard template pipeline
             processed_body = self.process_template(
