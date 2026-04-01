@@ -202,10 +202,12 @@ class IntegrationBase(ABC):
     ) -> Path:
         """Write *content* to *dest*, hash it, and record in *manifest*.
 
-        Creates parent directories as needed.  Returns *dest*.
+        Creates parent directories as needed.  Uses explicit LF newlines
+        (no CRLF translation) to keep output byte-for-byte identical
+        across platforms.  Returns *dest*.
         """
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(content, encoding="utf-8")
+        dest.write_bytes(content.encode("utf-8"))
         rel = dest.resolve().relative_to(project_root.resolve())
         manifest.record_existing(rel)
         return dest

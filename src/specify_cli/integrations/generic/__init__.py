@@ -68,6 +68,18 @@ class GenericIntegration(MarkdownIntegration):
     ) -> list[Path]:
         """Install commands to the user-provided commands directory."""
         parsed_options = parsed_options or {}
+
+        # If --commands-dir not in parsed_options, check raw_options
+        if "commands_dir" not in parsed_options:
+            raw = opts.get("raw_options")
+            if raw:
+                import shlex
+                tokens = shlex.split(raw)
+                for i, token in enumerate(tokens):
+                    if token == "--commands-dir" and i + 1 < len(tokens):
+                        parsed_options["commands_dir"] = tokens[i + 1]
+                        break
+
         commands_dir = parsed_options.get("commands_dir")
         if not commands_dir:
             raise ValueError(

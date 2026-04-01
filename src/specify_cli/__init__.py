@@ -1907,6 +1907,7 @@ def init(
     preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
     branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, ...) or 'timestamp' (YYYYMMDD-HHMMSS)"),
     integration: str = typer.Option(None, "--integration", help="Use the new integration system (e.g. --integration copilot). Mutually exclusive with --ai."),
+    integration_options: str = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
 ):
     """
     Initialize a new Specify project.
@@ -2013,8 +2014,8 @@ def init(
                 )
         if ai_commands_dir and resolved_integration.key != "generic":
             console.print(
-                "[dim]Note: --ai-commands-dir is only supported with the generic integration; "
-                "omit this flag unless you are using --integration generic (or --ai generic).[/dim]"
+                "[dim]Note: --ai-commands-dir is deprecated; "
+                'use [bold]--integration generic --integration-options="--commands-dir <dir>"[/bold] instead.[/dim]'
             )
 
     if project_name == ".":
@@ -2104,13 +2105,12 @@ def init(
             console.print(f"\n[yellow]Note:[/yellow] {AGENT_SKILLS_MIGRATIONS[selected_ai]['interactive_note']}")
 
     # Validate --ai-commands-dir usage.
-    # For 'generic', always validate even when auto-promoted to the integration
-    # path — avoids a late ValueError from GenericIntegration.setup() and
-    # preserves a clear CLI error with example usage.
-    if selected_ai == "generic":
+    # Skip validation when --integration-options is provided — the integration
+    # will validate its own options in setup().
+    if selected_ai == "generic" and not integration_options:
         if not ai_commands_dir:
             console.print("[red]Error:[/red] --ai-commands-dir is required when using --ai generic or --integration generic")
-            console.print("[dim]Example: specify init my-project --ai generic --ai-commands-dir .myagent/commands/[/dim]")
+            console.print("[dim]Example: specify init my-project --integration generic --integration-options=\"--commands-dir .myagent/commands/\"[/dim]")
             raise typer.Exit(1)
     elif ai_commands_dir and not use_integration:
         console.print(
@@ -2261,6 +2261,7 @@ def init(
                     project_path, manifest,
                     parsed_options=integration_parsed_options or None,
                     script_type=selected_script,
+                    raw_options=integration_options,
                 )
                 manifest.save()
 
