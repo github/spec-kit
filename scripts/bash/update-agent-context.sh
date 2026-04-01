@@ -86,7 +86,7 @@ VIBE_FILE="$REPO_ROOT/.vibe/agents/specify-agents.md"
 KIMI_FILE="$REPO_ROOT/KIMI.md"
 TRAE_FILE="$REPO_ROOT/.trae/rules/AGENTS.md"
 IFLOW_FILE="$REPO_ROOT/IFLOW.md"
-GOOSE_FILE="$REPO_ROOT/.goose/recipes/AGENTS.md"
+GOOSE_FILE="$REPO_ROOT/.goose/AGENTS.md"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
