@@ -123,7 +123,7 @@ Conduct a thorough, staff-engineer-level code review of all changes made during 
    - 🟢 **Suggestion**: Code clarity improvement, refactoring opportunity, documentation gap, minor style inconsistency. **Nice to fix but non-blocking.**
 
 10. **Generate Review Report**:
-    Create the review report at `FEATURE_DIR/reviews/review-{timestamp}.md` using the review report template. The report must include:
+    Create the review report in a new file at `FEATURE_DIR/reviews/review-{YYYYMMDD-HHMMSS}.md` using the `templates/review-template.md` review report template. Ensure the `FEATURE_DIR/reviews/` directory exists (create it if necessary). The report must include:
 
     - **Executive Summary**: Overall assessment (APPROVED / APPROVED WITH CONDITIONS / CHANGES REQUIRED)
     - **Findings Table**: All findings with ID, severity, file, line(s), description, recommendation
