@@ -981,7 +981,7 @@ $ARGUMENTS
             "Run scripts/bash/setup-plan.sh\n"
         )
 
-        rewritten = AgentCommandRegistrar._rewrite_project_relative_paths(body)
+        rewritten = AgentCommandRegistrar.rewrite_project_relative_paths(body)
 
         assert ".specify/extensions/test-ext/templates/spec.md" in rewritten
         assert ".specify/scripts/bash/setup-plan.sh" in rewritten

@@ -350,7 +350,7 @@ class IntegrationBase(ABC):
         #    CommandRegistrar so extension-local paths are preserved and
         #    boundary rules stay consistent across the codebase.
         from specify_cli.agents import CommandRegistrar
-        content = CommandRegistrar._rewrite_project_relative_paths(content)
+        content = CommandRegistrar.rewrite_project_relative_paths(content)
 
         return content
 
