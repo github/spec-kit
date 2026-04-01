@@ -83,7 +83,7 @@ function Get-CurrentBranch {
                     $latestTimestamp = $ts
                     $latestFeature = $_.Name
                 }
-            } elseif ($_.Name -match '^(\d{3})-') {
+            } elseif ($_.Name -match '^(\d{3,})-') {
                 $num = [int]$matches[1]
                 if ($num -gt $highest) {
                     $highest = $num
@@ -139,9 +139,11 @@ function Test-FeatureBranch {
         return $true
     }
     
-    if ($Branch -notmatch '^[0-9]{3}-' -and $Branch -notmatch '^\d{8}-\d{6}-') {
+    # Accept sequential prefix (3+ digits) but exclude malformed timestamps (digits-6digits pattern)
+    $isSequential = ($Branch -match '^[0-9]{3,}-') -and ($Branch -notmatch '^[0-9]+-[0-9]{6}-')
+    if (-not $isSequential -and $Branch -notmatch '^\d{8}-\d{6}-') {
         Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
-        Write-Output "Feature branches should be named like: 001-feature-name or 20260319-143022-feature-name"
+        Write-Output "Feature branches should be named like: 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name"
         return $false
     }
     return $true
