@@ -764,7 +764,8 @@ class SkillsIntegration(IntegrationBase):
             # the release packaging script output exactly (double-quoted
             # values, no yaml.safe_dump quoting differences).
             def _quote(v: str) -> str:
-                return f'"{v}"'
+                escaped = v.replace("\\", "\\\\").replace('"', '\\"')
+                return f'"{escaped}"'
 
             skill_content = (
                 f"---\n"

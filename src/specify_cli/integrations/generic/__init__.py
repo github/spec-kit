@@ -43,20 +43,44 @@ class GenericIntegration(MarkdownIntegration):
             ),
         ]
 
-    def commands_dest(self, project_root: Path) -> Path:
-        """Return the commands output directory from parsed options.
+    @staticmethod
+    def _resolve_commands_dir(
+        parsed_options: dict[str, Any] | None,
+        opts: dict[str, Any],
+    ) -> str:
+        """Extract ``--commands-dir`` from parsed options or raw_options.
 
-        Overrides the base implementation because ``config["folder"]``
-        is ``None`` — the path comes from ``--commands-dir`` instead.
-
-        Falls back to the value stored in ``_commands_dir`` which is set
-        by ``setup()`` from the parsed options.
+        Returns the directory string or raises ``ValueError``.
         """
-        if hasattr(self, "_commands_dir") and self._commands_dir:
-            return project_root / self._commands_dir
+        parsed_options = parsed_options or {}
+
+        commands_dir = parsed_options.get("commands_dir")
+        if commands_dir:
+            return commands_dir
+
+        # Fall back to raw_options (--integration-options="--commands-dir ...")
+        raw = opts.get("raw_options")
+        if raw:
+            import shlex
+            tokens = shlex.split(raw)
+            for i, token in enumerate(tokens):
+                if token == "--commands-dir" and i + 1 < len(tokens):
+                    return tokens[i + 1]
+
         raise ValueError(
-            "GenericIntegration requires --commands-dir; call setup() "
-            "with parsed_options={'commands_dir': '...'}"
+            "--commands-dir is required for the generic integration"
+        )
+
+    def commands_dest(self, project_root: Path) -> Path:
+        """Not supported for GenericIntegration — use setup() directly.
+
+        GenericIntegration is stateless; the output directory comes from
+        ``parsed_options`` or ``raw_options`` at call time, not from
+        instance state.
+        """
+        raise ValueError(
+            "GenericIntegration.commands_dest() cannot be called directly; "
+            "the output directory is resolved from parsed_options in setup()"
         )
 
     def setup(
@@ -67,25 +91,41 @@ class GenericIntegration(MarkdownIntegration):
         **opts: Any,
     ) -> list[Path]:
         """Install commands to the user-provided commands directory."""
-        parsed_options = parsed_options or {}
+        commands_dir = self._resolve_commands_dir(parsed_options, opts)
 
-        # If --commands-dir not in parsed_options, check raw_options
-        if "commands_dir" not in parsed_options:
-            raw = opts.get("raw_options")
-            if raw:
-                import shlex
-                tokens = shlex.split(raw)
-                for i, token in enumerate(tokens):
-                    if token == "--commands-dir" and i + 1 < len(tokens):
-                        parsed_options["commands_dir"] = tokens[i + 1]
-                        break
+        templates = self.list_command_templates()
+        if not templates:
+            return []
 
-        commands_dir = parsed_options.get("commands_dir")
-        if not commands_dir:
+        project_root_resolved = project_root.resolve()
+        if manifest.project_root != project_root_resolved:
             raise ValueError(
-                "--commands-dir is required for the generic integration"
+                f"manifest.project_root ({manifest.project_root}) does not match "
+                f"project_root ({project_root_resolved})"
             )
-        self._commands_dir = commands_dir
-        return super().setup(
-            project_root, manifest, parsed_options=parsed_options, **opts
-        )
+
+        dest = (project_root / commands_dir).resolve()
+        try:
+            dest.relative_to(project_root_resolved)
+        except ValueError as exc:
+            raise ValueError(
+                f"Integration destination {dest} escapes "
+                f"project root {project_root_resolved}"
+            ) from exc
+        dest.mkdir(parents=True, exist_ok=True)
+
+        script_type = opts.get("script_type", "sh")
+        arg_placeholder = "$ARGUMENTS"
+        created: list[Path] = []
+
+        for src_file in templates:
+            raw = src_file.read_text(encoding="utf-8")
+            processed = self.process_template(raw, self.key, script_type, arg_placeholder)
+            dst_name = self.command_filename(src_file.stem)
+            dst_file = self.write_file_and_record(
+                processed, dest / dst_name, project_root, manifest
+            )
+            created.append(dst_file)
+
+        created.extend(self.install_scripts(project_root, manifest))
+        return created
