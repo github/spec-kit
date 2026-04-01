@@ -201,14 +201,64 @@ if ($Timestamp) {
     $featureNum = Get-Date -Format 'yyyyMMdd-HHmmss'
     $branchName = "$featureNum-$branchSuffix"
 } else {
+    # Validate -Number input when explicitly provided
+    if ($PSBoundParameters.ContainsKey('Number') -and $Number -lt 1) {
+        Write-Error "-Number requires a positive integer, got $Number"
+        exit 1
+    }
+
     # Determine branch number
     if ($Number -eq 0) {
+        # No manual number provided -- auto-detect
         if ($hasGit) {
             # Check existing branches on remotes
             $Number = Get-NextBranchNumber -SpecsDir $specsDir
         } else {
             # Fall back to local directory check
             $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
+        }
+    } elseif (-not $AllowExistingBranch) {
+        # Manual number provided -- validate it is not already in use
+        # (skip when -AllowExistingBranch, as the caller intentionally targets an existing branch)
+        $manualNumPadded = '{0:000}' -f $Number
+        $numberInUse = $false
+
+        # Check specs directory for collision
+        if (Test-Path $specsDir) {
+            foreach ($dir in (Get-ChildItem -Path $specsDir -Directory)) {
+                if ($dir.Name -match "^$manualNumPadded-") {
+                    $numberInUse = $true
+                    break
+                }
+            }
+        }
+
+        # Check git branches for collision (fetch to catch remote-only branches)
+        if (-not $numberInUse -and $hasGit) {
+            try {
+                git fetch --all --prune 2>$null | Out-Null
+                $branches = git branch -a 2>$null
+                if ($LASTEXITCODE -eq 0 -and $branches) {
+                    foreach ($branch in $branches) {
+                        $cleanBranch = $branch.Trim() -replace '^\*?\s*', '' -replace '^remotes/[^/]+/', ''
+                        if ($cleanBranch -match "^$manualNumPadded-") {
+                            $numberInUse = $true
+                            break
+                        }
+                    }
+                }
+            } catch {
+                Write-Verbose "Could not check Git branches: $_"
+            }
+        }
+
+        if ($numberInUse) {
+            Write-Warning "-Number $Number conflicts with existing branch/spec ($manualNumPadded-*). Auto-detecting next available number."
+            if ($hasGit) {
+                $Number = Get-NextBranchNumber -SpecsDir $specsDir
+            } else {
+                $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
+            }
         }
     }
 

@@ -326,8 +326,8 @@ class TestAllowExistingBranch:
         assert (git_repo / "specs" / "006-spec-dir").is_dir()
         assert (git_repo / "specs" / "006-spec-dir" / "spec.md").exists()
 
-    def test_without_flag_still_errors(self, git_repo: Path):
-        """T009: Verify backwards compatibility (error without flag)."""
+    def test_without_flag_auto_detects_on_collision(self, git_repo: Path):
+        """T009: Without --allow-existing-branch, a conflicting --number auto-detects next available."""
         subprocess.run(
             ["git", "checkout", "-b", "007-no-flag"],
             cwd=git_repo, check=True, capture_output=True,
@@ -339,8 +339,9 @@ class TestAllowExistingBranch:
         result = run_script(
             git_repo, "--short-name", "no-flag", "--number", "7", "No flag feature",
         )
-        assert result.returncode != 0, "should fail without --allow-existing-branch"
-        assert "already exists" in result.stderr
+        assert result.returncode == 0, result.stderr
+        assert "conflicts with existing branch/spec" in result.stderr
+        assert "008-no-flag" in result.stdout
 
     def test_allow_existing_no_overwrite_spec(self, git_repo: Path):
         """T010: Pre-create spec.md with content, verify it is preserved."""
@@ -405,6 +406,45 @@ class TestAllowExistingBranch:
         assert result.returncode == 0, result.stderr
 
 
+class TestNumberInputValidation:
+    """Tests for --number input validation and spec-directory collision detection."""
+
+    def test_rejects_zero(self, git_repo: Path):
+        result = run_script(git_repo, "--short-name", "zero", "--number", "0", "Zero test")
+        assert result.returncode != 0
+        assert "positive integer" in result.stderr
+
+    def test_rejects_non_numeric(self, git_repo: Path):
+        result = run_script(git_repo, "--short-name", "abc", "--number", "abc", "Non-numeric test")
+        assert result.returncode != 0
+        assert "positive integer" in result.stderr
+
+    def test_rejects_negative(self, git_repo: Path):
+        result = run_script(git_repo, "--short-name", "neg", "--number", "-5", "Negative test")
+        assert result.returncode != 0
+        assert "positive integer" in result.stderr
+
+    def test_collision_detected_via_specs_directory(self, git_repo: Path):
+        """Collision detected from specs dir even when no matching branch exists."""
+        spec_dir = git_repo / "specs" / "003-existing-spec"
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "spec.md").write_text("# Existing\n")
+        result = run_script(
+            git_repo, "--short-name", "new-feature", "--number", "3", "Spec collision test",
+        )
+        assert result.returncode == 0
+        assert "conflicts with existing branch/spec" in result.stderr
+        assert "003-new-feature" not in result.stdout
+
+    def test_unused_number_accepted(self, git_repo: Path):
+        """A manual --number that doesn't collide is accepted as-is."""
+        result = run_script(
+            git_repo, "--short-name", "free", "--number", "50", "Free number test",
+        )
+        assert result.returncode == 0, result.stderr
+        assert "050-free" in result.stdout
+
+
 class TestAllowExistingBranchPowerShell:
     def test_powershell_supports_allow_existing_branch_flag(self):
         """Static guard: PS script exposes and uses -AllowExistingBranch."""
@@ -412,3 +452,24 @@ class TestAllowExistingBranchPowerShell:
         assert "-AllowExistingBranch" in contents
         # Ensure the flag is referenced in script logic, not just declared
         assert "AllowExistingBranch" in contents.replace("-AllowExistingBranch", "")
+
+    def test_powershell_rejects_invalid_number(self):
+        """Static guard: PS script validates -Number using PSBoundParameters and rejects < 1."""
+        contents = CREATE_FEATURE_PS.read_text(encoding="utf-8")
+        assert "PSBoundParameters.ContainsKey" in contents
+        assert "Number -lt 1" in contents or re.search(r"\$Number\s+-lt\s+1", contents)
+        assert "positive integer" in contents
+
+    def test_powershell_has_number_collision_validation(self):
+        """Static guard: PS script validates manual -Number against existing branches/specs."""
+        contents = CREATE_FEATURE_PS.read_text(encoding="utf-8")
+        # Must check specs directory for collision
+        assert "manualNumPadded" in contents
+        # Must check git branches for collision
+        assert "git fetch --all --prune" in contents
+        # Must warn and auto-detect on conflict
+        assert "conflicts with existing branch/spec" in contents
+        # Must skip validation when -AllowExistingBranch is set; allow flexible whitespace
+        assert re.search(r"elseif\s*\(\s*-not\s+\$AllowExistingBranch\s*\)", contents), (
+            "Expected an elseif guard that negates $AllowExistingBranch"
+        )
