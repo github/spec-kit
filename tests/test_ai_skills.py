@@ -10,7 +10,6 @@ Tests cover:
 - CLI validation: --ai-skills requires --ai
 """
 
-import re
 import zipfile
 import pytest
 import tempfile
@@ -21,6 +20,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import specify_cli
+from tests.conftest import strip_ansi
 
 from specify_cli import (
     _get_skills_dir,
@@ -923,7 +923,7 @@ class TestCliValidation:
         runner = CliRunner()
         result = runner.invoke(app, ["init", "--help"])
 
-        plain = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+        plain = strip_ansi(result.output)
         assert "--ai-skills" in plain
         assert "agent skills" in plain.lower()
 

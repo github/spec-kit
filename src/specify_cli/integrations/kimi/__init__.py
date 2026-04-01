@@ -63,14 +63,19 @@ class KimiIntegration(SkillsIntegration):
     ) -> list[Path]:
         """Install skills with optional legacy dotted-name migration."""
         parsed_options = parsed_options or {}
+
+        # Run base setup first so hyphenated targets (speckit-*) exist,
+        # then migrate/clean legacy dotted dirs without risking user content loss.
+        created = super().setup(
+            project_root, manifest, parsed_options=parsed_options, **opts
+        )
+
         if parsed_options.get("migrate_legacy", False):
             skills_dir = self.skills_dest(project_root)
             if skills_dir.is_dir():
                 _migrate_legacy_kimi_dotted_skills(skills_dir)
 
-        return super().setup(
-            project_root, manifest, parsed_options=parsed_options, **opts
-        )
+        return created
 
 
 def _migrate_legacy_kimi_dotted_skills(skills_dir: Path) -> tuple[int, int]:
