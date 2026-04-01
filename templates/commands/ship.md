@@ -53,7 +53,10 @@ Automate the complete release engineering workflow: verify readiness, synchroniz
 
 ## Operating Constraints
 
-**SAFE BY DEFAULT**: Every destructive operation (force push, branch delete, PR creation) requires explicit user confirmation. Default to dry-run mode for destructive git operations.
+**SAFE BY DEFAULT**: Every destructive or potentially destructive operation (e.g., rebase/merge during branch sync, push/force push, branch delete, PR creation) requires explicit user confirmation.
+- For the branch sync flow, add a required confirmation prompt **immediately before** performing any rebase/merge, with the default answer set to **no**.
+- Add a separate required confirmation prompt **immediately before** performing any push (including force push) to the remote, with the default answer set to **no**.
+- Default to dry-run mode for destructive git operations wherever possible.
 
 **TRACEABILITY**: The PR description and changelog must link back to spec, plan, tasks, review, and QA artifacts for full audit trail.
 
@@ -102,22 +105,24 @@ Automate the complete release engineering workflow: verify readiness, synchroniz
    - If `gh` is not available, generate the PR description as a markdown file for manual creation
 
 4. **Branch Synchronization**:
-   - Fetch latest from remote: `git fetch origin`
+   - Fetch latest from remote: `git fetch {remote_name}`
    - Check if feature branch is behind target branch:
      ```bash
-     git rev-list --count HEAD..origin/{target_branch}
+     git rev-list --count HEAD..{remote_name}/{target_branch}
      ```
    - If behind, offer to rebase or merge:
-     - **Rebase** (recommended for clean history): `git rebase origin/{target_branch}`
-     - **Merge**: `git merge origin/{target_branch}`
+     - Prompt the user for explicit confirmation **before** performing the rebase/merge (default **no**)
+     - **Rebase** (recommended for clean history): `git rebase {remote_name}/{target_branch}`
+     - **Merge**: `git merge {remote_name}/{target_branch}`
    - If conflicts arise: **STOP** and provide conflict resolution guidance
-   - After sync, push the updated feature branch: `git push origin {feature_branch}`
+   - After sync, prompt the user for explicit confirmation **before** pushing (default **no**):
+     `git push {remote_name} {feature_branch}`
 
 5. **Changelog Generation**:
    - Collect changelog inputs:
      - Feature summary from `spec.md` (overview section)
      - Implementation highlights from completed tasks in `tasks.md`
-     - Git commit messages: `git log origin/{target_branch}..HEAD --oneline`
+     - Git commit messages: `git log {remote_name}/{target_branch}..HEAD --oneline`
    - Generate a structured changelog entry:
      ```markdown
      ## [Feature Name] - {date}
@@ -183,10 +188,12 @@ Automate the complete release engineering workflow: verify readiness, synchroniz
 
 8. **Create Pull Request**:
    - If GitHub CLI (`gh`) is available:
+     - Prompt the user for explicit confirmation **right before** creating the PR (default **no**):
      ```bash
      gh pr create --base {target_branch} --head {feature_branch} --title "{PR title}" --body-file {pr_description_file}
      ```
    - If `gh` is not available:
+     - Prompt the user for explicit confirmation **before** writing the PR description file (default **no**)
      - Save the PR description to `FEATURE_DIR/releases/pr-description-{timestamp}.md`
      - Provide instructions for manual PR creation
      - Output the PR title and description for copy-paste
