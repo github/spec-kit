@@ -218,6 +218,83 @@ create_skills() {
   done
 }
 
+# Create OpenClaw skills in .openclaw/skills/<name>/SKILL.md format.
+# OpenClaw discovers skills as directories containing a SKILL.md file,
+# invoked as speckit-<name> (e.g. speckit-specify).
+create_openclaw_skills() {
+  local skills_dir="$1"
+  local script_variant="$2"
+
+  for template in templates/commands/*.md; do
+    [[ -f "$template" ]] || continue
+    local name
+    name=$(basename "$template" .md)
+    # Skip root skill manifest (not a per-command template)
+    if [[ "$name" == "skill" ]]; then
+      continue
+    fi
+    local skill_name="speckit-${name}"
+    local skill_dir="${skills_dir}/${skill_name}"
+    mkdir -p "$skill_dir"
+
+    local file_content
+    file_content=$(tr -d '\r' < "$template")
+
+    # Extract description from frontmatter
+    local description
+    description=$(printf '%s\n' "$file_content" | awk '/^description:/ {sub(/^description:[[:space:]]*/, ""); print; exit}')
+    [[ -z "$description" ]] && description="Spec Kit: ${name} workflow"
+
+    # Extract script command
+    local script_command
+    script_command=$(printf '%s\n' "$file_content" | awk -v sv="$script_variant" '/^[[:space:]]*'"$script_variant"':[[:space:]]*/ {sub(/^[[:space:]]*'"$script_variant"':[[:space:]]*/, ""); print; exit}')
+    [[ -z "$script_command" ]] && script_command="(Missing script command for $script_variant)"
+
+    # Extract agent_script command from frontmatter if present
+    local agent_script_command
+    agent_script_command=$(printf '%s\n' "$file_content" | awk '
+      /^agent_scripts:$/ { in_agent_scripts=1; next }
+      in_agent_scripts && /^[[:space:]]*'"$script_variant"':[[:space:]]*/ {
+        sub(/^[[:space:]]*'"$script_variant"':[[:space:]]*/, "")
+        print
+        exit
+      }
+      in_agent_scripts && /^[a-zA-Z]/ { in_agent_scripts=0 }
+    ')
+
+    # Build body: replace placeholders, strip scripts sections, rewrite paths
+    local body
+    body=$(printf '%s\n' "$file_content" | sed "s|{SCRIPT}|${script_command}|g")
+    if [[ -n $agent_script_command ]]; then
+      body=$(printf '%s\n' "$body" | sed "s|{AGENT_SCRIPT}|${agent_script_command}|g")
+    fi
+    body=$(printf '%s\n' "$body" | awk '
+      /^---$/ { print; if (++dash_count == 1) in_frontmatter=1; else in_frontmatter=0; next }
+      in_frontmatter && /^scripts:$/ { skip_scripts=1; next }
+      in_frontmatter && /^agent_scripts:$/ { skip_scripts=1; next }
+      in_frontmatter && /^[a-zA-Z].*:/ && skip_scripts { skip_scripts=0 }
+      in_frontmatter && skip_scripts && /^[[:space:]]/ { next }
+      { print }
+    ')
+    body=$(printf '%s\n' "$body" | sed 's/{ARGS}/\$ARGUMENTS/g' | sed 's/__AGENT__/openclaw/g' | rewrite_paths)
+
+    # Strip existing frontmatter and prepend OpenClaw SKILL.md frontmatter
+    local template_body
+    template_body=$(printf '%s\n' "$body" | awk '/^---/{p++; if(p==2){found=1; next}} found')
+
+    {
+      printf -- '---\n'
+      printf 'name: "%s"\n' "$skill_name"
+      printf 'description: "%s"\n' "$description"
+      printf 'metadata:\n'
+      printf '  author: "github-spec-kit"\n'
+      printf '  source: "templates/commands/%s.md"\n' "$name"
+      printf -- '---\n\n'
+      printf '%s\n' "$template_body"
+    } > "$skill_dir/SKILL.md"
+  done
+}
+
 build_variant() {
   local agent=$1 script=$2
   local base_dir="$GENRELEASES_DIR/sdd-${agent}-package-${script}"
