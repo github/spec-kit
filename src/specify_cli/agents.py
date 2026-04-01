@@ -162,6 +162,12 @@ class CommandRegistrar:
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": ".md"
+        },
+        "goose": {
+            "dir": ".goose/recipes",
+            "format": "yaml",
+            "args": "{{args}}",
+            "extension": ".yaml"
         }
     }
 
@@ -328,6 +334,87 @@ class CommandRegistrar:
             toml_lines.append(f'prompt = "{escaped_body}"')
 
         return "\n".join(toml_lines)
+
+    def render_yaml_command(
+        self,
+        frontmatter: dict,
+        body: str,
+        source_id: str,
+        cmd_name: str = ""
+    ) -> str:
+        """Render command in YAML format for Goose recipes.
+
+        Args:
+            frontmatter: Command frontmatter
+            body: Command body content
+            source_id: Source identifier (extension or preset ID)
+            cmd_name: Command name used as title fallback
+
+        Returns:
+            Formatted YAML recipe file content
+        """
+        def _human_title_from_identifier(identifier: Any) -> str:
+            text = str(identifier)
+            if text.startswith("speckit."):
+                text = text[len("speckit."):]
+            return text.replace(".", " ").replace("-", " ").replace("_", " ").title()
+
+        # Get title from frontmatter or generate from available identifiers
+        title = frontmatter.get("title", "")
+
+        # Prefer explicit name if title is missing
+        if not title and "name" in frontmatter and frontmatter["name"]:
+            title = _human_title_from_identifier(frontmatter["name"])
+
+        # Fallback to cmd_name passed from register_commands()
+        if not title and cmd_name:
+            title = _human_title_from_identifier(cmd_name)
+
+        # Final fallback: derive a title from source_id
+        if not title and source_id:
+            source_stem = Path(str(source_id)).stem
+            title = (
+                _human_title_from_identifier(source_stem)
+                if source_stem
+                else _human_title_from_identifier(source_id)
+            )
+
+        if not title:
+            title = "Command"
+
+        description = frontmatter.get("description", "")
+
+        # Build YAML structure following Goose recipe schema
+        # Use yaml.safe_dump() for proper escaping of title and description
+        header_dict = {
+            "version": "1.0.0",
+            "title": title,
+            "description": description,
+            "author": {"contact": "spec-kit"},
+            "extensions": [{"type": "builtin", "name": "developer"}],
+            "activities": ["Spec-Driven Development"],
+        }
+
+        # Dump header with proper escaping and consistent formatting
+        header_yaml = yaml.safe_dump(
+            header_dict,
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=False,
+        ).strip()
+
+        # Build the final YAML with literal block scalar for prompt
+        lines = [header_yaml, "prompt: |"]
+
+        # Indent each line of body for proper YAML block scalar formatting
+        for line in body.split("\n"):
+            lines.append(f"  {line}")
+
+        # Add source comment at the end
+        lines.append("")
+        lines.append(f"# Source: {source_id}")
+
+        return "\n".join(lines)
 
     def render_skill_command(
         self,
@@ -511,6 +598,8 @@ class CommandRegistrar:
                 output = self.render_markdown_command(frontmatter, body, source_id, context_note)
             elif agent_config["format"] == "toml":
                 output = self.render_toml_command(frontmatter, body, source_id)
+            elif agent_config["format"] == "yaml":
+                output = self.render_yaml_command(frontmatter, body, source_id, cmd_name)
             else:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 

@@ -14,7 +14,7 @@
 
 .PARAMETER Agents
     Comma or space separated subset of agents to build (default: all)
-    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, junie, codex, kilocode, auggie, roo, codebuddy, amp, kiro-cli, bob, qodercli, shai, tabnine, agy, vibe, kimi, trae, pi, iflow, generic
+    Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, junie, codex, kilocode, auggie, roo, codebuddy, amp, kiro-cli, bob, qodercli, shai, tabnine, agy, vibe, kimi, trae, pi, iflow, goose, generic
 
 .PARAMETER Scripts
     Comma or space separated subset of script types to build (default: both)
@@ -173,6 +173,29 @@ function Generate-Commands {
             }
             'agent.md' {
                 Set-Content -Path $outputFile -Value $body -NoNewline
+            }
+            'yaml' {
+                # Generate Goose recipe format YAML
+                $title = (Get-Culture).TextInfo.ToTitleCase($name)
+                $output = @"
+version: 1.0.0
+title: "$title"
+description: "$description"
+author:
+  contact: "spec-kit"
+extensions:
+  - type: builtin
+    name: developer
+activities:
+  - "Spec-Driven Development"
+prompt: |
+"@
+                # Replace $ARGUMENTS placeholder with configured ArgFormat for Goose YAML recipes
+                $bodyWithArgs = $body.Replace('$ARGUMENTS', $ArgFormat)
+                # Indent each line of body for proper YAML block scalar formatting
+                $indentedBody = $bodyWithArgs -split "`n" | ForEach-Object { "  $_" } | Join-String -Separator "`n"
+                $output += "`n$indentedBody"
+                Set-Content -Path $outputFile -Value $output -NoNewline
             }
         }
     }
@@ -477,6 +500,10 @@ function Build-Variant {
             $cmdDir = Join-Path $baseDir ".iflow/commands"
             Generate-Commands -Agent 'iflow' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
         }
+        'goose' {
+            $cmdDir = Join-Path $baseDir ".goose/recipes"
+            Generate-Commands -Agent 'goose' -Extension 'yaml' -ArgFormat '{{args}}' -OutputDir $cmdDir -ScriptVariant $Script
+        }
         'generic' {
             $cmdDir = Join-Path $baseDir ".speckit/commands"
             Generate-Commands -Agent 'generic' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
@@ -493,7 +520,7 @@ function Build-Variant {
 }
 
 # Define all agents and scripts
-$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'junie', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'kiro-cli', 'bob', 'qodercli', 'shai', 'tabnine', 'agy', 'vibe', 'kimi', 'trae', 'pi', 'iflow', 'generic')
+$AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'junie', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'kiro-cli', 'bob', 'qodercli', 'shai', 'tabnine', 'agy', 'vibe', 'kimi', 'trae', 'pi', 'iflow', 'goose', 'generic')
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {

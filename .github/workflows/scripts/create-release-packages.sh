@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage: .github/workflows/scripts/create-release-packages.sh <version>
 #   Version argument should include leading 'v'.
 #   Optionally set AGENTS and/or SCRIPTS env vars to limit what gets built.
-#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf junie codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi trae pi iflow generic (default: all)
+#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf junie codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi trae pi iflow goose generic (default: all)
 #     SCRIPTS : space or comma separated subset of: sh ps (default: both)
 #   Examples:
 #     AGENTS=claude SCRIPTS=sh $0 v0.2.0
@@ -116,6 +116,31 @@ generate_commands() {
         echo "$body" > "$output_dir/speckit.$name.$ext" ;;
       agent.md)
         echo "$body" > "$output_dir/speckit.$name.$ext" ;;
+      yaml)
+        # Generate Goose recipe format YAML
+        local title
+        # Use awk for reliable title casing (sed \b is not portable)
+        title=$(echo "$name" | tr '_-' '  ' | awk '{for (i=1; i<=NF; i++) $i=toupper(substr($i,1,1)) substr($i,2)}1')
+        # Replace $ARGUMENTS placeholder with configured arg_format for Goose recipes
+        body=$(printf '%s\n' "$body" | sed "s/\\\$ARGUMENTS/$arg_format/g")
+        # Indent every line of body for valid YAML block scalar syntax
+        local indented_body
+        indented_body=$(printf '%s\n' "$body" | sed 's/^/  /')
+        cat > "$output_dir/speckit.$name.$ext" <<YAML_EOF
+version: 1.0.0
+title: "$title"
+description: "$description"
+author:
+  contact: "spec-kit"
+extensions:
+  - type: builtin
+    name: developer
+activities:
+  - "Spec-Driven Development"
+prompt: |
+${indented_body}
+YAML_EOF
+        ;;
     esac
   done
 }
@@ -330,6 +355,9 @@ build_variant() {
     iflow)
       mkdir -p "$base_dir/.iflow/commands"
       generate_commands iflow md "\$ARGUMENTS" "$base_dir/.iflow/commands" "$script" ;;
+    goose)
+      mkdir -p "$base_dir/.goose/recipes"
+      generate_commands goose yaml "{{args}}" "$base_dir/.goose/recipes" "$script" ;;
     generic)
       mkdir -p "$base_dir/.speckit/commands"
       generate_commands generic md "\$ARGUMENTS" "$base_dir/.speckit/commands" "$script" ;;
@@ -339,7 +367,7 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf junie codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi trae pi iflow generic)
+ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf junie codex kilocode auggie roo codebuddy amp shai tabnine kiro-cli agy bob vibe qodercli kimi trae pi iflow goose generic)
 ALL_SCRIPTS=(sh ps)
 
 validate_subset() {
