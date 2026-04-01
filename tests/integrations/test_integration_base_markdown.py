@@ -78,6 +78,13 @@ class MarkdownIntegrationTests:
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
         expected_dir = i.commands_dest(tmp_path)
+        assert expected_dir.exists(), f"Expected directory {expected_dir} was not created"
+        cmd_files = [f for f in created if "scripts" not in f.parts]
+        assert len(cmd_files) > 0, "No command files were created"
+        for f in cmd_files:
+            assert f.resolve().parent == expected_dir.resolve(), (
+                f"{f} is not under {expected_dir}"
+            )
 
     def test_templates_are_processed(self, tmp_path):
         """Command files must have placeholders replaced, not raw templates."""
