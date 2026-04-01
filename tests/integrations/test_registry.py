@@ -11,13 +11,17 @@ from specify_cli.integrations.base import MarkdownIntegration
 from .conftest import StubIntegration
 
 
-# Every integration key that must be registered (Stage 2 + Stage 3).
+# Every integration key that must be registered (Stage 2 + Stage 3 + Stage 4 + Stage 5).
 ALL_INTEGRATION_KEYS = [
     "copilot",
     # Stage 3 — standard markdown integrations
     "claude", "qwen", "opencode", "junie", "kilocode", "auggie",
     "roo", "codebuddy", "qodercli", "amp", "shai", "bob", "trae",
     "pi", "iflow", "kiro-cli", "windsurf", "vibe", "cursor-agent",
+    # Stage 4 — TOML integrations
+    "gemini", "tabnine",
+    # Stage 5 — skills, generic & option-driven integrations
+    "codex", "kimi", "agy", "generic",
 ]
 
 
@@ -61,9 +65,18 @@ class TestRegistryCompleteness:
 
 
 class TestRegistrarKeyAlignment:
-    """Every integration key must have a matching AGENT_CONFIGS entry."""
+    """Every integration key must have a matching AGENT_CONFIGS entry.
 
-    @pytest.mark.parametrize("key", ALL_INTEGRATION_KEYS)
+    ``generic`` is excluded because it has no fixed directory — its
+    output path comes from ``--commands-dir`` at runtime.
+    """
+
+    _REGISTRAR_EXEMPT = {"generic"}
+
+    @pytest.mark.parametrize(
+        "key",
+        [k for k in ALL_INTEGRATION_KEYS if k != "generic"],
+    )
     def test_integration_key_in_registrar(self, key):
         from specify_cli.agents import CommandRegistrar
         assert key in CommandRegistrar.AGENT_CONFIGS, (

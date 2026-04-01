@@ -3126,11 +3126,13 @@ class TestExtensionListCLI:
             result = runner.invoke(app, ["extension", "list"])
 
         assert result.exit_code == 0, result.output
+        import re as _re
+        plain = _re.sub(r'\x1b\[[0-9;]*m', '', result.output)
         # Verify the extension ID is shown in the output
-        assert "test-ext" in result.output
+        assert "test-ext" in plain
         # Verify name and version are also shown
-        assert "Test Extension" in result.output
-        assert "1.0.0" in result.output
+        assert "Test Extension" in plain
+        assert "1.0.0" in plain
 
 
 class TestExtensionPriority:
@@ -3360,7 +3362,9 @@ class TestExtensionPriorityCLI:
             result = runner.invoke(app, ["extension", "list"])
 
         assert result.exit_code == 0, result.output
-        assert "Priority: 7" in result.output
+        import re as _re
+        plain = _re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+        assert "Priority: 7" in plain
 
     def test_set_priority_changes_priority(self, extension_dir, project_dir):
         """Test set-priority command changes extension priority."""
@@ -3381,7 +3385,9 @@ class TestExtensionPriorityCLI:
             result = runner.invoke(app, ["extension", "set-priority", "test-ext", "5"])
 
         assert result.exit_code == 0, result.output
-        assert "priority changed: 10 → 5" in result.output
+        import re as _re
+        plain = _re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+        assert "priority changed: 10 → 5" in plain
 
         # Reload registry to see updated value
         manager2 = ExtensionManager(project_dir)
@@ -3403,7 +3409,9 @@ class TestExtensionPriorityCLI:
             result = runner.invoke(app, ["extension", "set-priority", "test-ext", "5"])
 
         assert result.exit_code == 0, result.output
-        assert "already has priority 5" in result.output
+        import re as _re
+        plain = _re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+        assert "already has priority 5" in plain
 
     def test_set_priority_invalid_value(self, extension_dir, project_dir):
         """Test set-priority rejects invalid priority values."""

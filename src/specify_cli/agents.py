@@ -168,6 +168,12 @@ class CommandRegistrar:
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": ".md"
+        },
+        "agy": {
+            "dir": ".agent/skills",
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": "/SKILL.md",
         }
     }
 
