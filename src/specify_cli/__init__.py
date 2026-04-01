@@ -2000,11 +2000,18 @@ def init(
     # Deprecation warnings for --ai-skills and --ai-commands-dir when using integration path
     if use_integration:
         if ai_skills:
-            console.print(
-                "[dim]Note: --ai-skills is not needed with --integration; "
-                "skills are the default for this integration.[/dim]"
-            )
-        if ai_commands_dir:
+            from .integrations.base import SkillsIntegration as _SkillsCheck
+            if isinstance(resolved_integration, _SkillsCheck):
+                console.print(
+                    "[dim]Note: --ai-skills is not needed with --integration; "
+                    "skills are the default for this integration.[/dim]"
+                )
+            else:
+                console.print(
+                    "[dim]Note: --ai-skills has no effect with --integration "
+                    f"{resolved_integration.key}; this integration uses commands, not skills.[/dim]"
+                )
+        if ai_commands_dir and resolved_integration.key != "generic":
             console.print(
                 "[dim]Note: --ai-commands-dir is deprecated with --integration; "
                 "use --integration generic with parsed options instead.[/dim]"
@@ -2096,16 +2103,18 @@ def init(
             ai_skills = True
             console.print(f"\n[yellow]Note:[/yellow] {AGENT_SKILLS_MIGRATIONS[selected_ai]['interactive_note']}")
 
-    # Validate --ai-commands-dir usage (legacy path only)
-    if not use_integration:
-        if selected_ai == "generic":
-            if not ai_commands_dir:
-                console.print("[red]Error:[/red] --ai-commands-dir is required when using --ai generic")
-                console.print("[dim]Example: specify init my-project --ai generic --ai-commands-dir .myagent/commands/[/dim]")
-                raise typer.Exit(1)
-        elif ai_commands_dir:
-            console.print(f"[red]Error:[/red] --ai-commands-dir can only be used with --ai generic (not '{selected_ai}')")
+    # Validate --ai-commands-dir usage.
+    # For 'generic', always validate even when auto-promoted to the integration
+    # path — avoids a late ValueError from GenericIntegration.setup() and
+    # preserves a clear CLI error with example usage.
+    if selected_ai == "generic":
+        if not ai_commands_dir:
+            console.print("[red]Error:[/red] --ai-commands-dir is required when using --ai generic")
+            console.print("[dim]Example: specify init my-project --ai generic --ai-commands-dir .myagent/commands/[/dim]")
             raise typer.Exit(1)
+    elif ai_commands_dir and not use_integration:
+        console.print(f"[red]Error:[/red] --ai-commands-dir can only be used with --ai generic (not '{selected_ai}')")
+        raise typer.Exit(1)
 
     current_dir = Path.cwd()
 
