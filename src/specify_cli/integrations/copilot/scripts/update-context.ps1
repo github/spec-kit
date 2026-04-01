@@ -17,9 +17,12 @@ $ErrorActionPreference = 'Stop'
 # Derive repo root from script location (walks up to find .specify/)
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $repoRoot = git rev-parse --show-toplevel 2>$null
-if (-not $repoRoot) {
+# If git did not return a repo root, or the git root does not contain .specify,
+# fall back to walking up from the script directory to find the initialized project root.
+if (-not $repoRoot -or -not (Test-Path (Join-Path $repoRoot '.specify'))) {
     $repoRoot = $scriptDir
-    while ($repoRoot -ne [System.IO.Path]::GetPathRoot($repoRoot) -and -not (Test-Path (Join-Path $repoRoot '.specify'))) {
+    $fsRoot = [System.IO.Path]::GetPathRoot($repoRoot)
+    while ($repoRoot -and $repoRoot -ne $fsRoot -and -not (Test-Path (Join-Path $repoRoot '.specify'))) {
         $repoRoot = Split-Path -Parent $repoRoot
     }
 }
