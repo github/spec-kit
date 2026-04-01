@@ -1,7 +1,5 @@
 """Tests for KimiIntegration — skills integration with legacy migration."""
 
-import shutil
-
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.kimi import _migrate_legacy_kimi_dotted_skills
 from specify_cli.integrations.manifest import IntegrationManifest

@@ -71,8 +71,6 @@ class TestRegistrarKeyAlignment:
     output path comes from ``--commands-dir`` at runtime.
     """
 
-    _REGISTRAR_EXEMPT = {"generic"}
-
     @pytest.mark.parametrize(
         "key",
         [k for k in ALL_INTEGRATION_KEYS if k != "generic"],

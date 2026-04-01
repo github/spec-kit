@@ -2013,8 +2013,8 @@ def init(
                 )
         if ai_commands_dir and resolved_integration.key != "generic":
             console.print(
-                "[dim]Note: --ai-commands-dir is deprecated with --integration; "
-                "use --integration generic with parsed options instead.[/dim]"
+                "[dim]Note: --ai-commands-dir is only supported with the generic integration; "
+                "omit this flag unless you are using --integration generic (or --ai generic).[/dim]"
             )
 
     if project_name == ".":
@@ -2109,11 +2109,15 @@ def init(
     # preserves a clear CLI error with example usage.
     if selected_ai == "generic":
         if not ai_commands_dir:
-            console.print("[red]Error:[/red] --ai-commands-dir is required when using --ai generic")
+            console.print("[red]Error:[/red] --ai-commands-dir is required when using --ai generic or --integration generic")
             console.print("[dim]Example: specify init my-project --ai generic --ai-commands-dir .myagent/commands/[/dim]")
             raise typer.Exit(1)
     elif ai_commands_dir and not use_integration:
-        console.print(f"[red]Error:[/red] --ai-commands-dir can only be used with --ai generic (not '{selected_ai}')")
+        console.print(
+            f"[red]Error:[/red] --ai-commands-dir can only be used with the "
+            f"'generic' integration via --ai generic or --integration generic "
+            f"(not '{selected_ai}')"
+        )
         raise typer.Exit(1)
 
     current_dir = Path.cwd()

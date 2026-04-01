@@ -641,20 +641,6 @@ class TomlIntegration(IntegrationBase):
 # SkillsIntegration — skills-format agents (Codex, Kimi, Agy)
 # ---------------------------------------------------------------------------
 
-# Enhanced descriptions for each spec-kit command skill.
-# Shared by all SkillsIntegration subclasses.
-SKILL_DESCRIPTIONS: dict[str, str] = {
-    "specify": "Create or update feature specifications from natural language descriptions. Use when starting new features or refining requirements. Generates spec.md with user stories, functional requirements, and acceptance criteria following spec-driven development methodology.",
-    "plan": "Generate technical implementation plans from feature specifications. Use after creating a spec to define architecture, tech stack, and implementation phases. Creates plan.md with detailed technical design.",
-    "tasks": "Break down implementation plans into actionable task lists. Use after planning to create a structured task breakdown. Generates tasks.md with ordered, dependency-aware tasks.",
-    "implement": "Execute all tasks from the task breakdown to build the feature. Use after task generation to systematically implement the planned solution following TDD approach where applicable.",
-    "analyze": "Perform cross-artifact consistency analysis across spec.md, plan.md, and tasks.md. Use after task generation to identify gaps, duplications, and inconsistencies before implementation.",
-    "clarify": "Structured clarification workflow for underspecified requirements. Use before planning to resolve ambiguities through coverage-based questioning. Records answers in spec clarifications section.",
-    "constitution": "Create or update project governing principles and development guidelines. Use at project start to establish code quality, testing standards, and architectural constraints that guide all development.",
-    "checklist": "Generate custom quality checklists for validating requirements completeness and clarity. Use to create unit tests for English that ensure spec quality before implementation.",
-    "taskstoissues": "Convert tasks from tasks.md into GitHub issues. Use after task breakdown to track work items in GitHub project management.",
-}
-
 
 class SkillsIntegration(IntegrationBase):
     """Concrete base for integrations that install commands as agent skills.
@@ -750,7 +736,7 @@ class SkillsIntegration(IntegrationBase):
                         fm = yaml.safe_load(parts[1])
                         if isinstance(fm, dict):
                             frontmatter = fm
-                    except Exception:
+                    except yaml.YAMLError:
                         pass
 
             # Process body through the standard template pipeline
