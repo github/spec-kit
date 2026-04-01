@@ -2248,7 +2248,9 @@ def init(
                     resolved_integration.key, project_path, version=get_speckit_version()
                 )
 
-                # Build parsed_options from legacy CLI flags for Stage 5 integrations
+                # Forward all legacy CLI flags to the integration as parsed_options.
+                # Integrations receive every option and decide what to use;
+                # irrelevant keys are simply ignored by the integration's setup().
                 integration_parsed_options: dict[str, Any] = {}
                 if ai_commands_dir:
                     integration_parsed_options["commands_dir"] = ai_commands_dir

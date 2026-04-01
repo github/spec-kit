@@ -3,8 +3,6 @@
 import json
 import os
 
-import pytest
-
 
 class TestInitIntegrationFlag:
     def test_integration_and_ai_mutually_exclusive(self, tmp_path):

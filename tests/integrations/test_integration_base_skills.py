@@ -97,7 +97,6 @@ class SkillsIntegrationTests:
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
-        skills_dir = i.skills_dest(tmp_path)
         skill_files = [f for f in created if "scripts" not in f.parts]
 
         expected_commands = {
@@ -223,7 +222,7 @@ class SkillsIntegrationTests:
     def test_setup_installs_update_context_scripts(self, tmp_path):
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
-        created = i.setup(tmp_path, m)
+        i.setup(tmp_path, m)
         scripts_dir = tmp_path / ".specify" / "integrations" / self.KEY / "scripts"
         assert scripts_dir.is_dir(), f"Scripts directory not created for {self.KEY}"
         assert (scripts_dir / "update-context.sh").exists()

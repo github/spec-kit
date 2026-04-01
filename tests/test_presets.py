@@ -11,6 +11,7 @@ Tests cover:
 """
 
 import pytest
+import re
 import json
 import tempfile
 import shutil
@@ -33,6 +34,11 @@ from specify_cli.presets import (
     VALID_PRESET_TEMPLATE_TYPES,
 )
 from specify_cli.extensions import ExtensionRegistry
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from Rich-formatted CLI output."""
+    return re.sub(r'\x1b\[[0-9;]*m', '', text)
 
 
 # ===== Fixtures =====
@@ -2441,8 +2447,7 @@ class TestPresetSetPriority:
             result = runner.invoke(app, ["preset", "set-priority", "test-pack", "5"])
 
         assert result.exit_code == 0, result.output
-        import re as _re
-        plain = _re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+        plain = _strip_ansi(result.output)
         assert "priority changed: 10 → 5" in plain
 
         # Reload registry to see updated value
@@ -2465,8 +2470,7 @@ class TestPresetSetPriority:
             result = runner.invoke(app, ["preset", "set-priority", "test-pack", "5"])
 
         assert result.exit_code == 0, result.output
-        import re as _re
-        plain = _re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+        plain = _strip_ansi(result.output)
         assert "already has priority 5" in plain
 
     def test_set_priority_invalid_value(self, project_dir, pack_dir):
