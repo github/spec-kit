@@ -2,6 +2,17 @@
 
 <!-- insert new changelog below this comment -->
 
+## [Unreleased]
+
+### Added
+
+- feat: Add `/speckit.critique` command — dual-lens strategic and technical review (product + engineering perspectives) before implementation
+- feat: Add `/speckit.review` command — staff-level code review focused on correctness, security, performance, and spec compliance
+- feat: Add `/speckit.qa` command — systematic QA testing with browser-driven and CLI-based modes, validating acceptance criteria
+- feat: Add `/speckit.ship` command — release engineering automation (pre-flight checks, branch sync, changelog, CI verification, PR creation)
+- feat: Add `/speckit.retro` command — sprint retrospective with metrics, learnings, and improvement suggestions
+- feat: Add output templates for review, QA, ship, retro, and critique reports
+
 ## [0.4.3] - 2026-03-26
 
 ### Changed
