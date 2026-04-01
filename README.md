@@ -161,7 +161,7 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 ## 🧩 Community Extensions
 
 > [!NOTE]
-> Community extensions are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. The Community Extensions website is also a third-party resource. Review extension source code before installation and use at your own discretion.
+> Community extensions are independently created and maintained by their respective authors. GitHub and the Spec Kit maintainers may review pull requests that add entries to the community catalog for formatting, catalog structure, or policy compliance, but they do **not review, audit, endorse, or support the extension code itself**. The Community Extensions website is also a third-party resource. Review extension source code before installation and use at your own discretion.
 
 🔍 **Browse and search community extensions on the [Community Extensions website](https://speckit-community.github.io/extensions/).**
 
@@ -229,7 +229,7 @@ To submit your own extension, see the [Extension Publishing Guide](extensions/EX
 ## 🎨 Community Presets
 
 > [!NOTE]
-> Community presets are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. Review preset source code before installation and use at your own discretion.
+> Community presets are independently created and maintained by their respective authors. GitHub and the Spec Kit maintainers may review pull requests that add entries to the community catalog for formatting, catalog structure, or policy compliance, but they do **not review, audit, endorse, or support the preset code itself**. Review preset source code before installation and use at your own discretion.
 
 The following community-contributed presets customize how Spec Kit behaves — overriding templates, commands, and terminology without changing any tooling. Presets are available in [`catalog.community.json`](presets/catalog.community.json):
 
@@ -243,7 +243,7 @@ To build and publish your own preset, see the [Presets Publishing Guide](presets
 ## 🚶 Community Walkthroughs
 
 > [!NOTE]
-> Community walkthroughs are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**.
+> Community walkthroughs are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. Review their content before following along and use at your own discretion.
 
 See Spec-Driven Development in action across different scenarios with these community-contributed walkthroughs:
 
@@ -264,7 +264,7 @@ See Spec-Driven Development in action across different scenarios with these comm
 ## 🛠️ Community Friends
 
 > [!NOTE]
-> Community projects listed here are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**.
+> Community projects listed here are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. Review their source code before installation and use at your own discretion.
 
 Community projects that extend, visualize, or build on Spec Kit:
 

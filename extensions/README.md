@@ -25,7 +25,7 @@ specify extension search  # Now uses your organization's catalog instead of the 
 ### Community Reference Catalog (`catalog.community.json`)
 
 > [!NOTE]
-> Community extensions are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. Review extension source code before installation and use at your own discretion.
+> Community extensions are independently created and maintained by their respective authors. GitHub and the Spec Kit maintainers may review pull requests that add entries to the community catalog for formatting, catalog structure, or policy compliance, but they do **not review, audit, endorse, or support the extension code itself**. Review extension source code before installation and use at your own discretion.
 
 - **Purpose**: Browse available community-contributed extensions
 - **Status**: Active - contains extensions submitted by the community
@@ -72,7 +72,7 @@ specify extension add <extension-name> --from https://github.com/org/spec-kit-ex
 ## Available Community Extensions
 
 > [!NOTE]
-> Community extensions are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. The Community Extensions website is also a third-party resource. Review extension source code before installation and use at your own discretion.
+> Community extensions are independently created and maintained by their respective authors. GitHub and the Spec Kit maintainers may review pull requests that add entries to the community catalog for formatting, catalog structure, or policy compliance, but they do **not review, audit, endorse, or support the extension code itself**. The Community Extensions website is also a third-party resource. Review extension source code before installation and use at your own discretion.
 
 🔍 **Browse and search community extensions on the [Community Extensions website](https://speckit-community.github.io/extensions/).**
 

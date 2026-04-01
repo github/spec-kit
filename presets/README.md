@@ -68,7 +68,7 @@ Presets **override**, they don't merge. If two presets both provide `spec-templa
 Presets are discovered through catalogs. By default, Spec Kit uses the official and community catalogs:
 
 > [!NOTE]
-> Community presets are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. Review preset source code before installation and use at your own discretion.
+> Community presets are independently created and maintained by their respective authors. GitHub and the Spec Kit maintainers may review pull requests that add entries to the community catalog for formatting, catalog structure, or policy compliance, but they do **not review, audit, endorse, or support the preset code itself**. Review preset source code before installation and use at your own discretion.
 
 ```bash
 # List active catalogs
