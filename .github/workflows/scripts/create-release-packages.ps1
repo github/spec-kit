@@ -3,18 +3,22 @@
 
 <#
 .SYNOPSIS
-    Build Spec Kit template release archives for each supported AI assistant and script type.
+    Build InfraKit template release archives for each supported AI assistant, IaC tool, and script type.
 
 .DESCRIPTION
     create-release-packages.ps1 (workflow-local)
-    Build Spec Kit template release archives for each supported AI assistant and script type.
-    
+    Build InfraKit template release archives for each supported AI assistant, IaC tool, and script type.
+
 .PARAMETER Version
     Version string with leading 'v' (e.g., v0.2.0)
 
 .PARAMETER Agents
     Comma or space separated subset of agents to build (default: all)
     Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, codex, kilocode, auggie, roo, codebuddy, amp, q, bob, qodercli, shai, agy, generic
+
+.PARAMETER Iac
+    Comma or space separated subset of IaC tools to build (default: all)
+    Valid IaC tools: crossplane
 
 .PARAMETER Scripts
     Comma or space separated subset of script types to build (default: both)
@@ -33,10 +37,13 @@
 param(
     [Parameter(Mandatory=$true, Position=0)]
     [string]$Version,
-    
+
     [Parameter(Mandatory=$false)]
     [string]$Agents = "",
-    
+
+    [Parameter(Mandatory=$false)]
+    [string]$Iac = "",
+
     [Parameter(Mandatory=$false)]
     [string]$Scripts = ""
 )
@@ -60,10 +67,10 @@ New-Item -ItemType Directory -Path $GenReleasesDir -Force | Out-Null
 
 function Rewrite-Paths {
     param([string]$Content)
-    
-    $Content = $Content -replace '(/?)\bmemory/', '.specify/memory/'
-    $Content = $Content -replace '(/?)\bscripts/', '.specify/scripts/'
-    $Content = $Content -replace '(/?)\btemplates/', '.specify/templates/'
+
+    $Content = $Content -replace '(/?)\bmemory/', '.infrakit/memory/'
+    $Content = $Content -replace '(/?)\bscripts/', '.infrakit/scripts/'
+    $Content = $Content -replace '(/?)\btemplates/', '.infrakit/templates/'
     return $Content
 }
 
@@ -73,12 +80,13 @@ function Generate-Commands {
         [string]$Extension,
         [string]$ArgFormat,
         [string]$OutputDir,
-        [string]$ScriptVariant
+        [string]$ScriptVariant,
+        [string]$TemplatesDir = "templates/commands"
     )
-    
+
     New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
-    
-    $templates = Get-ChildItem -Path "templates/commands/*.md" -File -ErrorAction SilentlyContinue
+
+    $templates = Get-ChildItem -Path "$TemplatesDir/*.md" -File -ErrorAction SilentlyContinue
     
     foreach ($template in $templates) {
         $name = [System.IO.Path]::GetFileNameWithoutExtension($template.Name)
@@ -160,7 +168,7 @@ function Generate-Commands {
         $body = Rewrite-Paths -Content $body
         
         # Generate output file based on extension
-        $outputFile = Join-Path $OutputDir "speckit.$name.$Extension"
+        $outputFile = Join-Path $OutputDir "infrakit:$name.$Extension"
         
         switch ($Extension) {
             'toml' {
@@ -186,7 +194,7 @@ function Generate-CopilotPrompts {
     
     New-Item -ItemType Directory -Path $PromptsDir -Force | Out-Null
     
-    $agentFiles = Get-ChildItem -Path "$AgentsDir/speckit.*.agent.md" -File -ErrorAction SilentlyContinue
+    $agentFiles = Get-ChildItem -Path "$AgentsDir/infrakit:*.agent.md" -File -ErrorAction SilentlyContinue
     
     foreach ($agentFile in $agentFiles) {
         $basename = $agentFile.Name -replace '\.agent\.md$', ''

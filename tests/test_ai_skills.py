@@ -264,7 +264,7 @@ class TestInstallAiSkills:
         parts = content.split("---", 2)
         parsed = yaml.safe_load(parts[1])
 
-        if "specify" in SKILL_DESCRIPTIONS:
+        if "specify_composition" in SKILL_DESCRIPTIONS:
             assert parsed["description"] == SKILL_DESCRIPTIONS["specify"]
 
     def test_template_without_frontmatter(self, project_dir, templates_dir):
