@@ -14,24 +14,24 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📝 Specification
-Requirements:      [total] total, [fulfilled] fulfilled, [partial] partial
-Spec Accuracy:     [accuracy]%
+Requirements:      [req_total] total, [req_fulfilled] fulfilled, [req_partial] partial
+Spec Accuracy:     [spec_accuracy]%
 
 📋 Planning
-Tasks:             [total] total, [completed] completed
-Added during impl: [unplanned_count]
+Tasks:             [tasks_total] total, [tasks_completed] completed
+Added during impl: [tasks_unplanned]
 Plan Score:        [EXCELLENT / GOOD / ADEQUATE / NEEDS IMPROVEMENT]
 
 💻 Implementation
-Commits:           [count]
-Files changed:     [count]
-Lines:             +[additions] / -[deletions]
-Test/Code ratio:   [ratio]
+Commits:           [commit_count]
+Files changed:     [files_changed]
+Lines:             +[lines_added] / -[lines_deleted]
+Test/Code ratio:   [test_code_ratio]
 
 🔍 Quality
-Review findings:   🔴[blockers] 🟡[warnings] 🟢[suggestions]
+Review findings:   🔴[review_blockers] 🟡[review_warnings] 🟢[review_suggestions]
 QA pass rate:      [qa_pass_rate]%
-Quality Score:     [score]
+Quality Score:     [quality_score]
 ```
 
 ---

@@ -67,7 +67,7 @@ Conduct a structured retrospective analysis of the completed development cycle �
    Load all available artifacts from the development cycle:
    - **REQUIRED**: Read `spec.md` — original specification and requirements
    - **REQUIRED**: Read `tasks.md` — task breakdown and completion status
-   - **IF EXISTS**: Read `plan.md` — technical plan and architecture decisions
+   - **REQUIRED**: Read `plan.md` — technical plan and architecture decisions
    - **IF EXISTS**: Read review reports in FEATURE_DIR/reviews/ — code review findings
    - **IF EXISTS**: Read QA reports in FEATURE_DIR/qa/ — testing results
    - **IF EXISTS**: Read release artifacts in FEATURE_DIR/releases/ — shipping data
@@ -79,21 +79,31 @@ Conduct a structured retrospective analysis of the completed development cycle �
    Gather quantitative data from the git history:
 
    ```bash
+   # Determine the base ref for this feature once per repo.
+   # Preferred: use the upstream branch (e.g., origin/main, origin/develop):
+   #   BASE_REF="$(git rev-parse --abbrev-ref --symbolic-full-name @{upstream})"
+   #
+   # Or set it explicitly if there is no upstream configured:
+   #   BASE_REF=main
+   #   BASE_REF=develop
+   #
+   : "${BASE_REF:?Set BASE_REF to the base branch/ref for this feature (e.g., main, develop, or an upstream ref)}"
+
    # Commit count for the feature
-   git rev-list --count origin/{target_branch}..HEAD
+   git rev-list --count "$BASE_REF"..HEAD
 
    # Files changed
-   git diff --stat origin/{target_branch}..HEAD
+   git diff --stat "$BASE_REF"..HEAD
 
    # Lines added/removed
-   git diff --shortstat origin/{target_branch}..HEAD
+   git diff --shortstat "$BASE_REF"..HEAD
 
    # Number of authors
-   git log origin/{target_branch}..HEAD --format='%an' | sort -u | wc -l
+   git log "$BASE_REF"..HEAD --format='%an' | sort -u | wc -l
 
    # Date range (first commit to last)
-   git log origin/{target_branch}..HEAD --format='%ai' | tail -1
-   git log origin/{target_branch}..HEAD --format='%ai' | head -1
+   git log "$BASE_REF"..HEAD --format='%ai' | tail -1
+   git log "$BASE_REF"..HEAD --format='%ai' | head -1
    ```
 
    If git data is not available (e.g., already merged), use artifact timestamps and content analysis as fallback.
@@ -199,7 +209,9 @@ Conduct a structured retrospective analysis of the completed development cycle �
     - Output a trend summary table
 
 12. **Generate Retrospective Report**:
-    Create the retro report at `FEATURE_DIR/retros/retro-{timestamp}.md` using the retrospective report template.
+    - Load the retrospective report template from `templates/retro-template.md`. If the template file does not exist or cannot be read, continue using a reasonable fallback structure based on the sections above.
+    - Ensure the `FEATURE_DIR/retros/` directory exists. If it does not exist, create it before writing any files.
+    - Generate the retro report at `FEATURE_DIR/retros/retro-{timestamp}.md`, using the loaded retrospective report template and filling it with the metrics, findings, and improvement suggestions from the previous steps.
 
 13. **Offer Constitution Update**:
     Based on the retrospective findings, offer to update `/memory/constitution.md` with new learnings:
