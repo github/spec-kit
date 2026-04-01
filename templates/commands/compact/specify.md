@@ -31,7 +31,7 @@ Check `.specify/extensions.yml` for `hooks.before_specify`. For enabled hooks: r
 
 2. **Create feature branch**: Run script with `--short-name` and `--json`. Check `.specify/init-options.json` for `branch_numbering` - add `--timestamp` if "timestamp". Never pass `--number`. Run script only once. Parse BRANCH_NAME and SPEC_FILE from JSON output.
 
-3. **Load** `templates/spec-template.md` for structure.
+3. **Load** `templates/compact/spec-template.md` for structure.
 
 4. **Generate spec**:
    - Parse feature description, extract actors/actions/data/constraints
