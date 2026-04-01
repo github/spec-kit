@@ -346,13 +346,11 @@ class IntegrationBase(ABC):
         # 6. Replace __AGENT__
         content = content.replace("__AGENT__", agent_name)
 
-        # 7. Rewrite paths (matches release script's rewrite_paths())
-        content = re.sub(r"(/?)memory/", r".specify/memory/", content)
-        content = re.sub(r"(/?)scripts/", r".specify/scripts/", content)
-        content = re.sub(r"(/?)templates/", r".specify/templates/", content)
-        # Fix double-prefix (same as release script's .specify.specify/ fix)
-        content = content.replace(".specify.specify/", ".specify/")
-        content = content.replace(".specify/.specify/", ".specify/")
+        # 7. Rewrite paths — delegate to the shared implementation in
+        #    CommandRegistrar so extension-local paths are preserved and
+        #    boundary rules stay consistent across the codebase.
+        from specify_cli.agents import CommandRegistrar
+        content = CommandRegistrar._rewrite_project_relative_paths(content)
 
         return content
 
