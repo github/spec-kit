@@ -186,6 +186,11 @@ class TestCheckFeatureBranch:
         result = source_and_call('check_feature_branch "main" "true"')
         assert result.returncode != 0
 
+    def test_accepts_four_digit_sequential_branch(self):
+        """check_feature_branch accepts 4+ digit sequential branch."""
+        result = source_and_call('check_feature_branch "1234-feat" "true"')
+        assert result.returncode == 0
+
     def test_rejects_partial_timestamp(self):
         """Test 9: check_feature_branch rejects 7-digit date."""
         result = source_and_call('check_feature_branch "2026031-143022-feat" "true"')
@@ -213,6 +218,15 @@ class TestFindFeatureDirByPrefix:
         )
         assert result.returncode == 0
         assert result.stdout.strip() == f"{tmp_path}/specs/20260319-143022-original-feat"
+
+    def test_four_digit_sequential_prefix(self, tmp_path: Path):
+        """find_feature_dir_by_prefix resolves 4+ digit sequential prefix."""
+        (tmp_path / "specs" / "1000-original-feat").mkdir(parents=True)
+        result = source_and_call(
+            f'find_feature_dir_by_prefix "{tmp_path}" "1000-different-name"'
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == f"{tmp_path}/specs/1000-original-feat"
 
 
 # ── get_current_branch Tests ─────────────────────────────────────────────────
