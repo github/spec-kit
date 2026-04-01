@@ -73,13 +73,13 @@ Automate the complete release engineering workflow: verify readiness, synchroniz
 
    **Review Status** (if FEATURE_DIR/reviews/ exists):
    - Read the most recent review report
-   - If verdict is ❌ CHANGES REQUIRED: **STOP** and warn. Recommend running `/speckit.review` after fixes.
+   - If verdict is ❌ CHANGES REQUIRED: **STOP** and warn. Recommend running `/speckit.review` after fixes (if available).
    - If verdict is ⚠️ APPROVED WITH CONDITIONS: Warn but allow proceeding with confirmation.
 
    **QA Status** (if FEATURE_DIR/qa/ exists):
    - Read the most recent QA report
-   - If verdict is ❌ QA FAILED: **STOP** and warn. Recommend running `/speckit.qa` after fixes.
-   - If verdict is ⚠️ QA PASSED WITH NOTES: Warn but allow proceeding with confirmation.
+   - If verdict is ❌ FAILURES FOUND: **STOP** and warn. Recommend running `/speckit.qa` after fixes (if available).
+   - If verdict is ⚠️ PARTIAL PASS: Warn but allow proceeding with confirmation.
 
    **Working Tree**:
    - Run `git status` to check for uncommitted changes
@@ -90,7 +90,7 @@ Automate the complete release engineering workflow: verify readiness, synchroniz
    Ship Readiness Check:
    ✅ Tasks: 12/12 complete
    ✅ Review: APPROVED
-   ⚠️ QA: PASSED WITH NOTES (2 non-critical items)
+   ⚠️ QA: PARTIAL PASS (2 non-critical items)
    ✅ Working tree: Clean
    
    Overall: READY TO SHIP (with notes)
@@ -99,7 +99,7 @@ Automate the complete release engineering workflow: verify readiness, synchroniz
 
 3. **Determine Shipping Configuration**:
    - Detect the current feature branch: `git branch --show-current`
-   - Determine the target branch (default: `main`; override via user input or `.specify/config.yml`)
+   - Determine the target branch (default: `main`; allow override via user input/prompt)
    - Detect remote name (default: `origin`; check `git remote -v`)
    - Check if GitHub CLI (`gh`) is available for PR creation
    - If `gh` is not available, generate the PR description as a markdown file for manual creation
@@ -187,14 +187,13 @@ Automate the complete release engineering workflow: verify readiness, synchroniz
    ```
 
 8. **Create Pull Request**:
+   - Write the PR description to `FEATURE_DIR/releases/pr-description-{timestamp}.md`
    - If GitHub CLI (`gh`) is available:
      - Prompt the user for explicit confirmation **right before** creating the PR (default **no**):
      ```bash
-     gh pr create --base {target_branch} --head {feature_branch} --title "{PR title}" --body-file {pr_description_file}
+     gh pr create --base {target_branch} --head {feature_branch} --title "{PR title}" --body-file FEATURE_DIR/releases/pr-description-{timestamp}.md
      ```
    - If `gh` is not available:
-     - Prompt the user for explicit confirmation **before** writing the PR description file (default **no**)
-     - Save the PR description to `FEATURE_DIR/releases/pr-description-{timestamp}.md`
      - Provide instructions for manual PR creation
      - Output the PR title and description for copy-paste
 
@@ -221,7 +220,7 @@ Automate the complete release engineering workflow: verify readiness, synchroniz
     
     Next steps:
     - Review the PR at {pr_url}
-    - After merge, run `/speckit.retro` for a retrospective
+    - After merge, consider running `/speckit.retro` for a retrospective (if available)
     ```
 
 **Check for extension hooks (after ship)**:
