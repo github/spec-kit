@@ -375,7 +375,7 @@
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
     },
-"fix-findings": {
+    "fix-findings": {
       "name": "Fix Findings",
       "id": "fix-findings",
       "description": "Automated analyze-fix-reanalyze loop that resolves spec findings until clean.",
@@ -392,7 +392,7 @@
       },
       "provides": {
         "commands": 1,
-"hooks": 1
+        "hooks": 1
       },
       "tags": [
         "code",
@@ -404,7 +404,7 @@
       "verified": false,
       "downloads": 0,
       "stars": 0,
-"created_at": "2026-04-01T00:00:00Z",
+      "created_at": "2026-04-01T00:00:00Z",
       "updated_at": "2026-04-01T00:00:00Z"
     },
     "fixit": {
