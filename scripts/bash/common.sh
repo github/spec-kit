@@ -124,9 +124,9 @@ check_feature_branch() {
         return 0
     fi
 
-    # Accept sequential prefix (3+ digits) but exclude malformed timestamps (digits-6digits pattern)
+    # Accept sequential prefix (3+ digits) but exclude malformed timestamps (7-digit date + 6-digit time)
     local is_sequential=false
-    if [[ "$branch" =~ ^[0-9]{3,}- ]] && [[ ! "$branch" =~ ^[0-9]+-[0-9]{6}- ]]; then
+    if [[ "$branch" =~ ^[0-9]{3,}- ]] && [[ ! "$branch" =~ ^[0-9]{7}-[0-9]{6}- ]]; then
         is_sequential=true
     fi
     if [[ "$is_sequential" != "true" ]] && [[ ! "$branch" =~ ^[0-9]{8}-[0-9]{6}- ]]; then
