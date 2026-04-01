@@ -36,7 +36,7 @@ Check `.specify/extensions.yml` for `hooks.before_tasks`. Run mandatory hooks, s
    - Extract tech stack/structure from plan.md, user stories (P1,P2,P3) from spec.md
    - Map entities from data-model.md and contracts to user stories
    - Organize by user story for independent implementation/testing
-   - Use `templates/tasks-template.md` structure
+   - Use `templates/compact/tasks-template.md` structure
 
 4. **Write tasks.md** with phases:
    - Phase 1: Setup | Phase 2: Foundation (blocks all stories)
