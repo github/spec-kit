@@ -190,8 +190,10 @@ activities:
   - "Spec-Driven Development"
 prompt: |
 "@
+                # Replace $ARGUMENTS placeholder with configured ArgFormat for Goose YAML recipes
+                $bodyWithArgs = $body.Replace('$ARGUMENTS', $ArgFormat)
                 # Indent each line of body for proper YAML block scalar formatting
-                $indentedBody = $body -split "`n" | ForEach-Object { "  $_" } | Join-String -Separator "`n"
+                $indentedBody = $bodyWithArgs -split "`n" | ForEach-Object { "  $_" } | Join-String -Separator "`n"
                 $output += "`n$indentedBody"
                 Set-Content -Path $outputFile -Value $output -NoNewline
             }
