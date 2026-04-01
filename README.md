@@ -160,6 +160,9 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 
 ## 🧩 Community Extensions
 
+> [!NOTE]
+> Community extensions are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. The Community Extensions website is also a third-party resource. Review extension source code before installation and use at your own discretion.
+
 🔍 **Browse and search community extensions on the [Community Extensions website](https://speckit-community.github.io/extensions/).**
 
 The following community-contributed extensions are available in [`catalog.community.json`](extensions/catalog.community.json):
@@ -225,6 +228,9 @@ To submit your own extension, see the [Extension Publishing Guide](extensions/EX
 
 ## 🎨 Community Presets
 
+> [!NOTE]
+> Community presets are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. Review preset source code before installation and use at your own discretion.
+
 The following community-contributed presets customize how Spec Kit behaves — overriding templates, commands, and terminology without changing any tooling. Presets are available in [`catalog.community.json`](presets/catalog.community.json):
 
 | Preset | Purpose | Provides | Requires | URL |
@@ -235,6 +241,9 @@ The following community-contributed presets customize how Spec Kit behaves — o
 To build and publish your own preset, see the [Presets Publishing Guide](presets/PUBLISHING.md).
 
 ## 🚶 Community Walkthroughs
+
+> [!NOTE]
+> Community walkthroughs are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**.
 
 See Spec-Driven Development in action across different scenarios with these community-contributed walkthroughs:
 
@@ -253,6 +262,9 @@ See Spec-Driven Development in action across different scenarios with these comm
 - **[Greenfield Spring Boot + React with a custom extension](https://github.com/mnriem/spec-kit-aide-extension-demo)** — Walks through the **AIDE extension**, a community extension that adds an alternative spec-driven workflow to spec-kit with high-level specs (vision) and low-level specs (work items) organized in a 7-step iterative lifecycle: vision → roadmap → progress tracking → work queue → work items → execution → feedback loops. Uses a family trading platform (Spring Boot 4, React 19, PostgreSQL, Docker Compose) as the scenario to illustrate how the extension mechanism lets you plug in a different style of spec-driven development without changing any core tooling — truly utilizing the "Kit" in Spec Kit.
 
 ## 🛠️ Community Friends
+
+> [!NOTE]
+> Community projects listed here are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**.
 
 Community projects that extend, visualize, or build on Spec Kit:
 
