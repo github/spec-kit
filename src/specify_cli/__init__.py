@@ -1993,6 +1993,7 @@ def init(
 
     # Auto-promote: --ai <key> → integration path with a nudge (if registered)
     use_integration = False
+    resolved_integration = None
     if integration:
         from .integrations import INTEGRATION_REGISTRY, get_integration
         resolved_integration = get_integration(integration)
@@ -2078,6 +2079,13 @@ def init(
             "Choose your AI assistant:", 
             "copilot"
         )
+
+    if not use_integration:
+        from .integrations import get_integration
+
+        resolved_integration = get_integration(selected_ai)
+        if resolved_integration:
+            use_integration = True
 
     # Agents that have moved from explicit commands/prompts to agent skills.
     if selected_ai in AGENT_SKILLS_MIGRATIONS and not ai_skills:

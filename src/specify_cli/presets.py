@@ -714,7 +714,10 @@ class PresetManager:
         selected_ai = init_opts.get("ai")
         if not isinstance(selected_ai, str):
             return []
+        ai_skills_enabled = bool(init_opts.get("ai_skills"))
         registrar = CommandRegistrar()
+        agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
+        create_missing_skills = ai_skills_enabled and agent_config.get("extension") != "/SKILL.md"
 
         written: List[str] = []
 
@@ -741,6 +744,10 @@ class PresetManager:
                 target_skill_names.append(skill_name)
             if legacy_skill_name != skill_name and (skills_dir / legacy_skill_name).is_dir():
                 target_skill_names.append(legacy_skill_name)
+            if not target_skill_names and create_missing_skills:
+                missing_skill_dir = skills_dir / skill_name
+                if not missing_skill_dir.exists():
+                    target_skill_names.append(skill_name)
             if not target_skill_names:
                 continue
 
@@ -760,6 +767,10 @@ class PresetManager:
             )
 
             for target_skill_name in target_skill_names:
+                skill_subdir = skills_dir / target_skill_name
+                if skill_subdir.exists() and not skill_subdir.is_dir():
+                    continue
+                skill_subdir.mkdir(parents=True, exist_ok=True)
                 frontmatter_data = {
                     "name": target_skill_name,
                     "description": enhanced_desc,
@@ -778,7 +789,7 @@ class PresetManager:
                     f"{body}\n"
                 )
 
-                skill_file = skills_dir / target_skill_name / "SKILL.md"
+                skill_file = skill_subdir / "SKILL.md"
                 skill_file.write_text(skill_content, encoding="utf-8")
                 written.append(target_skill_name)
 
