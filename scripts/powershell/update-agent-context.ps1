@@ -67,7 +67,7 @@ $VIBE_FILE     = Join-Path $REPO_ROOT '.vibe/agents/specify-agents.md'
 $KIMI_FILE     = Join-Path $REPO_ROOT 'KIMI.md'
 $TRAE_FILE     = Join-Path $REPO_ROOT '.trae/rules/AGENTS.md'
 $IFLOW_FILE    = Join-Path $REPO_ROOT 'IFLOW.md'
-$GOOSE_FILE    = Join-Path $REPO_ROOT '.goose/recipes/AGENTS.md'
+$GOOSE_FILE    = Join-Path $REPO_ROOT '.goose/AGENTS.md'
 
 $TEMPLATE_FILE = Join-Path $REPO_ROOT '.specify/templates/agent-file-template.md'
 
