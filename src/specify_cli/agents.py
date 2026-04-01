@@ -339,7 +339,8 @@ class CommandRegistrar:
         self,
         frontmatter: dict,
         body: str,
-        source_id: str
+        source_id: str,
+        cmd_name: str = ""
     ) -> str:
         """Render command in YAML format for Goose recipes.
 
@@ -347,15 +348,38 @@ class CommandRegistrar:
             frontmatter: Command frontmatter
             body: Command body content
             source_id: Source identifier (extension or preset ID)
+            cmd_name: Command name used as title fallback
 
         Returns:
             Formatted YAML recipe file content
         """
-        # Get title from frontmatter or generate from command name
+        # Get title from frontmatter or generate from available identifiers
         title = frontmatter.get("title", "")
-        if not title and "name" in frontmatter:
-            # Generate title from command name
-            title = frontmatter["name"].replace("_", " ").replace("-", " ").title()
+
+        # Prefer explicit name if title is missing
+        if not title and "name" in frontmatter and frontmatter["name"]:
+            title = (
+                str(frontmatter["name"])
+                .replace("_", " ")
+                .replace("-", " ")
+                .title()
+            )
+
+        # Fallback to cmd_name passed from register_commands()
+        if not title and cmd_name:
+            title = cmd_name.replace("_", " ").replace("-", " ").title()
+
+        # Final fallback: derive a title from source_id
+        if not title and source_id:
+            source_stem = Path(str(source_id)).stem
+            title = (
+                source_stem.replace("_", " ").replace("-", " ").title()
+                if source_stem
+                else source_id
+            )
+
+        if not title:
+            title = "Command"
 
         description = frontmatter.get("description", "")
 
@@ -574,7 +598,7 @@ class CommandRegistrar:
             elif agent_config["format"] == "toml":
                 output = self.render_toml_command(frontmatter, body, source_id)
             elif agent_config["format"] == "yaml":
-                output = self.render_yaml_command(frontmatter, body, source_id)
+                output = self.render_yaml_command(frontmatter, body, source_id, cmd_name)
             else:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
