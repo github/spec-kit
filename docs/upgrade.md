@@ -76,7 +76,7 @@ Run this inside your project directory:
 specify init --here --force --ai <your-tool>
 ```
 
-Replace `<your-agent>` with your AI assistant. Refer to this list of [Supported AI Tools](../README.md#-supported-ai-tools)
+Replace `<your-tool>` with your AI tool. Refer to this list of [Supported AI Tools](../README.md#-supported-ai-tools)
 
 **Example:**
 
