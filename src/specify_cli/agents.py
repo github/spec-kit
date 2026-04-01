@@ -170,6 +170,7 @@ class CommandRegistrar:
             "extension": ".md",
             "strip_frontmatter_keys": ["handoffs"],
             "inject_name": True,
+        },
         "vibe": {
             "dir": ".vibe/prompts",
             "format": "markdown",
