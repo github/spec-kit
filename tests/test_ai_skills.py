@@ -1237,24 +1237,22 @@ class TestCliValidation:
         assert "agent skills" in plain.lower()
 
     def test_kiro_alias_normalized_to_kiro_cli(self, tmp_path):
-        """--ai kiro should normalize to canonical kiro-cli agent key."""
+        """--ai kiro should normalize to canonical kiro-cli and auto-promote to integration path."""
+        import os
         from typer.testing import CliRunner
 
         runner = CliRunner()
         target = tmp_path / "kiro-alias-proj"
+        target.mkdir()
 
-        with patch("specify_cli.download_and_extract_template") as mock_download, \
-             patch("specify_cli.scaffold_from_core_pack", create=True) as mock_scaffold, \
-             patch("specify_cli.ensure_executable_scripts"), \
-             patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.is_git_repo", return_value=False), \
-             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
-            mock_scaffold.return_value = True
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(target)
             result = runner.invoke(
                 app,
                 [
                     "init",
-                    str(target),
+                    "--here",
                     "--ai",
                     "kiro",
                     "--ignore-agent-tools",
@@ -1262,17 +1260,16 @@ class TestCliValidation:
                     "sh",
                     "--no-git",
                 ],
+                catch_exceptions=False,
             )
+        finally:
+            os.chdir(old_cwd)
 
         assert result.exit_code == 0
-        # Without --offline, the download path should be taken.
-        assert mock_download.called, (
-            "Expected download_and_extract_template to be called (default non-offline path)"
-        )
-        assert mock_download.call_args.args[1] == "kiro-cli"
-        assert not mock_scaffold.called, (
-            "scaffold_from_core_pack should not be called without --offline"
-        )
+        # kiro alias should auto-promote to integration path with nudge
+        assert "--integration kiro-cli" in result.output
+        # Command files should be created via integration path
+        assert (target / ".kiro" / "prompts" / "speckit.plan.md").exists()
 
     def test_q_removed_from_agent_config(self):
         """Amazon Q legacy key should not remain in AGENT_CONFIG."""

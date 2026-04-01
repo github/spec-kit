@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.4.4] - 2026-04-01
+
+### Changed
+
+- Stage 2: Copilot integration — proof of concept with shared template primitives (#2035)
+- docs: sync AGENTS.md with AGENT_CONFIG for missing agents (#2025)
+- docs: ensure manual tests use local specify (#2020)
+- Stage 1: Integration foundation — base classes, manifest system, and registry (#1925)
+- fix: harden GitHub Actions workflows (#2021)
+- chore: use PEP 440 .dev0 versions on main after releases (#2032)
+- feat: add superpowers bridge extension to community catalog (#2023)
+- feat: add product-forge extension to community catalog (#2012)
+- feat(scripts): add --allow-existing-branch flag to create-new-feature (#1999)
+- fix(scripts): add correct path for copilot-instructions.md (#1997)
+- Update README.md (#1995)
+- fix: prevent extension command shadowing (#1994)
+- Fix Claude Code CLI detection for npm-local installs (#1978)
+- fix(scripts): honor PowerShell agent and script filters (#1969)
+- feat: add MAQA extension suite (7 extensions) to community catalog (#1981)
+- feat: add spec-kit-onboard extension to community catalog (#1991)
+- Add plan-review-gate to community catalog (#1993)
+- chore(deps): bump actions/deploy-pages from 4 to 5 (#1990)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action from 19 to 23 (#1989)
+- chore: bump version to 0.4.3 (#1986)
+
 ## [0.4.3] - 2026-03-26
 
 ### Changed
