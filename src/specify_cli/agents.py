@@ -353,29 +353,30 @@ class CommandRegistrar:
         Returns:
             Formatted YAML recipe file content
         """
+        def _human_title_from_identifier(identifier: Any) -> str:
+            text = str(identifier)
+            if text.startswith("speckit."):
+                text = text[len("speckit."):]
+            return text.replace(".", " ").replace("-", " ").replace("_", " ").title()
+
         # Get title from frontmatter or generate from available identifiers
         title = frontmatter.get("title", "")
 
         # Prefer explicit name if title is missing
         if not title and "name" in frontmatter and frontmatter["name"]:
-            title = (
-                str(frontmatter["name"])
-                .replace("_", " ")
-                .replace("-", " ")
-                .title()
-            )
+            title = _human_title_from_identifier(frontmatter["name"])
 
         # Fallback to cmd_name passed from register_commands()
         if not title and cmd_name:
-            title = cmd_name.replace("_", " ").replace("-", " ").title()
+            title = _human_title_from_identifier(cmd_name)
 
         # Final fallback: derive a title from source_id
         if not title and source_id:
             source_stem = Path(str(source_id)).stem
             title = (
-                source_stem.replace("_", " ").replace("-", " ").title()
+                _human_title_from_identifier(source_stem)
                 if source_stem
-                else source_id
+                else _human_title_from_identifier(source_id)
             )
 
         if not title:
