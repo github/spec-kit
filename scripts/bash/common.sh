@@ -14,9 +14,9 @@ get_repo_root() {
 
 # Get current branch, with fallback for non-git repositories
 get_current_branch() {
-    # First check if SPECIFY_FEATURE environment variable is set
-    if [[ -n "${SPECIFY_FEATURE:-}" ]]; then
-        echo "$SPECIFY_FEATURE"
+    # First check if INFRAKIT_RESOURCE environment variable is set
+    if [[ -n "${INFRAKIT_RESOURCE:-}" ]]; then
+        echo "$INFRAKIT_RESOURCE"
         return
     fi
 

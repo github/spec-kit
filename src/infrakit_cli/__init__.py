@@ -532,7 +532,7 @@ def merge_json_files(existing_path: Path, new_content: dict, verbose: bool = Fal
 
     return merged
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
+def download_template_from_github(ai_assistant: str, download_dir: Path, *, iac_tool: str = "crossplane", script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
     repo_owner = "github"
     repo_name = "infrakit"
     if client is None:
@@ -566,7 +566,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         raise typer.Exit(1)
 
     assets = release_data.get("assets", [])
-    pattern = f"infrakit-template-{ai_assistant}-{script_type}"
+    pattern = f"infrakit-template-{ai_assistant}-{iac_tool}-{script_type}"
     matching_assets = [
         asset for asset in assets
         if pattern in asset["name"] and asset["name"].endswith(".zip")
@@ -646,7 +646,7 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
     }
     return zip_path, metadata
 
-def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
+def download_and_extract_template(project_path: Path, ai_assistant: str, script_type: str, is_current_dir: bool = False, *, iac_tool: str = "crossplane", verbose: bool = True, tracker: StepTracker | None = None, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Path:
     """Download the latest release and extract it to create a new project.
     Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
     """
@@ -658,6 +658,7 @@ def download_and_extract_template(project_path: Path, ai_assistant: str, script_
         zip_path, meta = download_template_from_github(
             ai_assistant,
             current_dir,
+            iac_tool=iac_tool,
             script_type=script_type,
             verbose=verbose and tracker is None,
             show_progress=(tracker is None),
@@ -890,14 +891,16 @@ DEFAULT_SKILLS_DIR = ".agents/skills"
 
 # Enhanced descriptions for each infrakit command skill
 SKILL_DESCRIPTIONS = {
-    "specify": "Create or update feature specifications from natural language descriptions. Use when starting new features or refining requirements. Generates spec.md with user stories, functional requirements, and acceptance criteria following constraint-driven development methodology.",
-    "plan": "Generate technical implementation plans from feature specifications. Use after creating a spec to define architecture, tech stack, and implementation phases. Creates plan.md with detailed technical design.",
-    "tasks": "Break down implementation plans into actionable task lists. Use after planning to create a structured task breakdown. Generates tasks.md with ordered, dependency-aware tasks.",
-    "implement": "Execute all tasks from the task breakdown to build the feature. Use after task generation to systematically implement the planned solution following TDD approach where applicable.",
-    "analyze": "Perform cross-artifact consistency analysis across spec.md, plan.md, and tasks.md. Use after task generation to identify gaps, duplications, and inconsistencies before implementation.",
-    "clarify": "Structured clarification workflow for underspecified requirements. Use before planning to resolve ambiguities through coverage-based questioning. Records answers in spec clarifications section.",
-    "constitution": "Create or update project governing principles and development guidelines. Use at project start to establish code quality, testing standards, and architectural constraints that guide all development.",
-    "checklist": "Generate custom quality checklists for validating requirements completeness and clarity. Use to create unit tests for English that ensure spec quality before implementation.",
+    "specify_composition": "Create or update infrastructure resource specifications from natural language descriptions. Use when starting new Crossplane compositions. Generates a structured spec following constraint-driven development methodology.",
+    "plan_composition": "Generate architecture review and implementation plans for Crossplane compositions. Use after creating a spec to define the XRD, Composition, and Claim structure. Produces a detailed plan before any YAML is written.",
+    "implement_composition": "Generate XRD, Composition, and example Claim YAML from an approved plan. Use after planning to produce production-ready Crossplane manifests.",
+    "review_composition": "Review generated Crossplane YAML against best practices and project coding standards. Checks Pipeline mode usage, patch paths, providerConfigRef patterns, and tagging requirements.",
+    "validate_composition": "Run crossplane render validation against generated Composition and Claim manifests. Use to verify the output is syntactically and structurally correct.",
+    "tasks": "Break down infrastructure resource plans into actionable task lists. Generates tasks.md with ordered, dependency-aware implementation steps.",
+    "analyze": "Perform cross-artifact consistency analysis across spec, plan, and implementation artifacts. Use to identify gaps or inconsistencies before or after implementation.",
+    "clarify": "Structured clarification workflow for underspecified infrastructure requirements. Use before planning to resolve ambiguities through targeted questioning.",
+    "constitution": "Create or update infrastructure governing principles and standards. Use at project start to establish encryption policies, tagging requirements, network topology standards, and compliance rules.",
+    "checklist": "Generate quality checklists for validating infrastructure resource completeness and Crossplane best-practice compliance.",
     "taskstoissues": "Convert tasks from tasks.md into GitHub issues. Use after task breakdown to track work items in GitHub project management.",
 }
 
@@ -1465,7 +1468,7 @@ def init(
             local_ssl_context = ssl_context if verify else False
             local_client = httpx.Client(verify=local_ssl_context)
 
-            download_and_extract_template(project_path, selected_ai, selected_script, here, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
+            download_and_extract_template(project_path, selected_ai, selected_script, here, iac_tool=selected_iac, verbose=False, tracker=tracker, client=local_client, debug=debug, github_token=github_token)
 
             # For generic agent, rename placeholder directory to user-specified path
             if selected_ai == "generic" and ai_commands_dir:
@@ -1474,7 +1477,7 @@ def init(
                 if placeholder_dir.is_dir():
                     target_dir.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(placeholder_dir), str(target_dir))
-                    # Clean up empty .speckit dir if it's now empty
+                    # Clean up empty .infrakit dir if it's now empty
                     infrakit_dir = project_path / ".infrakit"
                     if infrakit_dir.is_dir() and not any(infrakit_dir.iterdir()):
                         infrakit_dir.rmdir()

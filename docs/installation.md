@@ -15,26 +15,26 @@
 The easiest way to get started is to initialize a new project:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
+uvx --from git+https://github.com/github/infrakit.git infrakit init <PROJECT_NAME> --iac crossplane
 ```
 
 Or initialize in the current directory:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init .
+uvx --from git+https://github.com/github/infrakit.git infrakit init . --iac crossplane
 # or use the --here flag
-uvx --from git+https://github.com/github/spec-kit.git specify init --here
+uvx --from git+https://github.com/github/infrakit.git infrakit init --here --iac crossplane
 ```
 
-### Specify AI Agent
+### Choose your AI Agent
 
 You can proactively specify your AI agent during initialization:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai claude
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai gemini
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai copilot
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai codebuddy
+uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --ai claude --iac crossplane
+uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --ai gemini --iac crossplane
+uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --ai copilot --iac crossplane
+uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --ai codebuddy --iac crossplane
 ```
 
 ### Specify Script Type (Shell vs PowerShell)
@@ -50,8 +50,8 @@ Auto behavior:
 Force a specific script type:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script sh
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script ps
+uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --iac crossplane --script sh
+uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --iac crossplane --script ps
 ```
 
 ### Ignore Agent Tools Check
@@ -59,18 +59,18 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <project_name
 If you prefer to get the templates without checking for the right tools:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai claude --ignore-agent-tools
+uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --ai claude --iac crossplane --ignore-agent-tools
 ```
 
 ## Verification
 
 After initialization, you should see the following commands available in your AI agent:
 
-- `/speckit.specify` - Create specifications
-- `/speckit.plan` - Generate implementation plans  
-- `/speckit.tasks` - Break down into actionable tasks
+- `/infrakit:specify` - Create specifications
+- `/infrakit:plan` - Generate implementation plans
+- `/infrakit:tasks` - Break down into actionable tasks
 
-The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
+The `.infrakit/scripts` directory will contain both `.sh` and `.ps1` scripts.
 
 ## Troubleshooting
 

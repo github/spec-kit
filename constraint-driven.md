@@ -72,84 +72,78 @@ The key is treating specifications as the source of truth, with code as the gene
 
 ## Streamlining CDD with Commands
 
-The CDD methodology is significantly enhanced through three powerful commands that automate the specification → planning → tasking workflow:
+The CDD methodology is significantly enhanced through InfraKit's infrastructure-native commands that automate the specification → planning → implementation → review → validation workflow:
 
-### The `/speckit.specify` Command
+### The `/infrakit:specify_composition` Command
 
-This command transforms a simple feature description (the user-prompt) into a complete, structured specification with automatic repository management:
+This command transforms a natural language infrastructure description into a complete, structured resource specification:
 
-1. **Automatic Feature Numbering**: Scans existing specs to determine the next feature number (e.g., 001, 002, 003)
-2. **Branch Creation**: Generates a semantic branch name from your description and creates it automatically
-3. **Template-Based Generation**: Copies and customizes the feature specification template with your requirements
-4. **Directory Structure**: Creates the proper `specs/[branch-name]/` structure for all related documents
+1. **Resource Track Creation**: Creates a timestamped track directory under `.infrakit_tracks/` for the resource
+2. **Constraint Capture**: Documents environment policies, sizing tiers, security requirements, and tagging rules
+3. **Template-Based Generation**: Produces a structured `spec.md` capturing what the resource must do before any YAML is written
+4. **Constitution Alignment**: Ensures the spec complies with the project's governing infrastructure principles
 
-### The `/speckit.plan` Command
+### The `/infrakit:plan_composition` Command
 
-Once a feature specification exists, this command creates a comprehensive implementation plan:
+Once a specification exists, this command creates a Crossplane architecture plan:
 
-1. **Specification Analysis**: Reads and understands the feature requirements, user stories, and acceptance criteria
-2. **Constitutional Compliance**: Ensures alignment with project constitution and architectural principles
-3. **Technical Translation**: Converts business requirements into technical architecture and implementation details
-4. **Detailed Documentation**: Generates supporting documents for data models, API contracts, and test scenarios
-5. **Quickstart Validation**: Produces a quickstart guide capturing key validation scenarios
+1. **Specification Analysis**: Reads and understands the resource requirements and constraints
+2. **Schema Verification**: Validates apiVersions, field names, and patch paths against provider documentation
+3. **XRD Design**: Defines the composite resource schema (parameters, status fields, connection details)
+4. **Composition Architecture**: Plans the Pipeline mode Composition with steps, patches, and transforms
+5. **Claim Design**: Specifies the developer-facing Claim manifest with required fields
 
-### The `/speckit.tasks` Command
+### The `/infrakit:tasks` Command
 
-After a plan is created, this command analyzes the plan and related design documents to generate an executable task list:
+After a plan is approved, this command breaks the implementation into an executable task list:
 
-1. **Inputs**: Reads `plan.md` (required) and, if present, `data-model.md`, `contracts/`, and `research.md`
-2. **Task Derivation**: Converts contracts, entities, and scenarios into specific tasks
+1. **Inputs**: Reads the plan and any existing provider schema notes
+2. **Task Derivation**: Converts XRD fields, patches, and transforms into specific implementation steps
 3. **Parallelization**: Marks independent tasks `[P]` and outlines safe parallel groups
-4. **Output**: Writes `tasks.md` in the feature directory, ready for execution by a Task agent
+4. **Output**: Writes `tasks.md` in the track directory, ready for the Crossplane Engineer agent
 
-### Example: Building a Chat Feature
+### Example: Building a PostgreSQL Database Composition
 
-Here's how these commands transform the traditional development workflow:
+Here's how these commands transform traditional IaC authoring:
 
 **Traditional Approach:**
 
 ```text
-1. Write a PRD in a document (2-3 hours)
-2. Create design documents (2-3 hours)
-3. Set up project structure manually (30 minutes)
-4. Write technical specifications (3-4 hours)
-5. Create test plans (2 hours)
-Total: ~12 hours of documentation work
+1. Search Crossplane provider docs for RDS apiVersion (1-2 hours)
+2. Write XRD YAML by hand (2-3 hours)
+3. Write Pipeline Composition with patches (3-4 hours)
+4. Debug patch paths and transforms (2-3 hours)
+5. Write Claim and test render (1-2 hours)
+Total: ~13 hours of YAML authoring
 ```
 
-**CDD with Commands Approach:**
+**CDD with InfraKit Commands Approach:**
 
 ```bash
-# Step 1: Create the feature specification (5 minutes)
-/speckit.specify Real-time chat system with message history and user presence
+# Step 1: Create the resource specification (5 minutes)
+/infrakit:specify_composition I need a managed PostgreSQL database with dev and prod sizing, encryption at rest, and connection details exposed as a Kubernetes secret.
 
-# This automatically:
-# - Creates branch "003-chat-system"
-# - Generates specs/003-chat-system/spec.md
-# - Populates it with structured requirements
+# Step 2: Architecture review + plan (5 minutes)
+/infrakit:plan_composition
 
-# Step 2: Generate implementation plan (5 minutes)
-/speckit.plan WebSocket for real-time messaging, PostgreSQL for history, Redis for presence
+# Step 3: Generate executable tasks (2 minutes)
+/infrakit:tasks
 
-# Step 3: Generate executable tasks (5 minutes)
-/speckit.tasks
+# Step 4: Generate Crossplane YAML
+/infrakit:implement_composition
 
-# This automatically creates:
-# - specs/003-chat-system/plan.md
-# - specs/003-chat-system/research.md (WebSocket library comparisons)
-# - specs/003-chat-system/data-model.md (Message and User schemas)
-# - specs/003-chat-system/contracts/ (WebSocket events, REST endpoints)
-# - specs/003-chat-system/quickstart.md (Key validation scenarios)
-# - specs/003-chat-system/tasks.md (Task list derived from the plan)
+# Step 5: Review and validate
+/infrakit:review_composition
+/infrakit:validate_composition
 ```
 
-In 15 minutes, you have:
+In 30 minutes, you have:
 
-- A complete feature specification with user stories and acceptance criteria
-- A detailed implementation plan with technology choices and rationale
-- API contracts and data models ready for code generation
-- Comprehensive test scenarios for both automated and manual testing
-- All documents properly versioned in a feature branch
+- A complete resource specification with environment policies and tagging requirements
+- A detailed Crossplane architecture plan with XRD, Composition, and Claim design
+- Generated, reviewed, and validated XRD + Pipeline Composition + example Claim YAML
+- Rendering verified against the Crossplane render tool
+- All artifacts versioned in a resource track directory
 
 ### The Power of Structured Automation
 
@@ -284,7 +278,7 @@ The constitution defines nine articles that shape every aspect of the developmen
 Every feature must begin as a standalone library—no exceptions. This forces modular design from the start:
 
 ```text
-Every feature in Specify MUST begin its existence as a standalone library.
+Every resource in InfraKit MUST begin its existence as a standalone library.
 No feature shall be implemented directly within application code without
 first being abstracted into a reusable library component.
 ```
