@@ -2,7 +2,7 @@
 
 # Consolidated prerequisite checking script (PowerShell)
 #
-# This script provides unified prerequisite checking for Spec-Driven Development workflow.
+# This script provides unified prerequisite checking for Constraint-Driven Development workflow.
 # It replaces the functionality previously spread across multiple scripts.
 #
 # Usage: ./check-prerequisites.ps1 [OPTIONS]
@@ -30,7 +30,7 @@ if ($Help) {
     Write-Output @"
 Usage: check-prerequisites.ps1 [OPTIONS]
 
-Consolidated prerequisite checking for Spec-Driven Development workflow.
+Consolidated prerequisite checking for Constraint-Driven Development workflow.
 
 OPTIONS:
   -Json               Output in JSON format

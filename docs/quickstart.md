@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-This guide will help you get started with Spec-Driven Development using Spec Kit.
+This guide will help you get started with Constraint-Driven Development using Spec Kit.
 
 > [!NOTE]
 > All automation scripts now provide both Bash (`.sh`) and PowerShell (`.ps1`) variants. The `specify` CLI auto-selects based on OS unless you pass `--script sh|ps`.
@@ -173,6 +173,6 @@ Finally, implement the solution:
 
 ## Next Steps
 
-- Read the [complete methodology](../spec-driven.md) for in-depth guidance
+- Read the [complete methodology](../constraint-driven.md) for in-depth guidance
 - Check out [more examples](../templates) in the repository
 - Explore the [source code on GitHub](https://github.com/github/spec-kit)

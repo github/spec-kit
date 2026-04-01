@@ -1,5 +1,5 @@
 """
-Agent configurations for specify-cli.
+Agent configurations for infrakit-cli.
 Shared between CLI initialization and the extension system.
 """
 

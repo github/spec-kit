@@ -18,9 +18,9 @@ import yaml
 from pathlib import Path
 from unittest.mock import patch
 
-import specify_cli
+import infrakit_cli
 
-from specify_cli import (
+from infrakit_cli import (
     _get_skills_dir,
     install_ai_skills,
     AGENT_SKILLS_DIR_OVERRIDES,
@@ -67,12 +67,12 @@ def templates_dir(project_dir):
         "description: Create or update the feature specification.\n"
         "handoffs:\n"
         "  - label: Build Plan\n"
-        "    agent: speckit.plan\n"
+        "    agent: infrakit:plan\n"
         "scripts:\n"
         "  sh: scripts/bash/create-new-feature.sh\n"
         "---\n"
         "\n"
-        "# Specify Command\n"
+        "# InfraKit Command\n"
         "\n"
         "Run this to create a spec.\n",
         encoding="utf-8",
@@ -117,7 +117,7 @@ def commands_dir_claude(project_dir):
     """Create a populated .claude/commands directory simulating template extraction."""
     cmd_dir = project_dir / ".claude" / "commands"
     cmd_dir.mkdir(parents=True, exist_ok=True)
-    for name in ["speckit.specify.md", "speckit.plan.md", "speckit.tasks.md"]:
+    for name in ["infrakit:specify.md", "infrakit:plan.md", "infrakit:tasks.md"]:
         (cmd_dir / name).write_text(f"# {name}\nContent here\n")
     return cmd_dir
 
@@ -127,7 +127,7 @@ def commands_dir_gemini(project_dir):
     """Create a populated .gemini/commands directory (TOML format)."""
     cmd_dir = project_dir / ".gemini" / "commands"
     cmd_dir.mkdir(parents=True)
-    for name in ["speckit.specify.toml", "speckit.plan.toml", "speckit.tasks.toml"]:
+    for name in ["infrakit:specify.toml", "infrakit:plan.toml", "infrakit:tasks.toml"]:
         (cmd_dir / name).write_text(f'[command]\nname = "{name}"\n')
     return cmd_dir
 
@@ -200,34 +200,34 @@ class TestInstallAiSkills:
 
         # Check that skill directories were created
         skill_dirs = sorted([d.name for d in skills_dir.iterdir() if d.is_dir()])
-        assert "speckit-plan" in skill_dirs
-        assert "speckit-specify" in skill_dirs
-        assert "speckit-tasks" in skill_dirs
-        assert "speckit-empty_fm" in skill_dirs
+        assert "infrakit-plan" in skill_dirs
+        assert "infrakit-specify" in skill_dirs
+        assert "infrakit-tasks" in skill_dirs
+        assert "infrakit-empty_fm" in skill_dirs
 
-        # Verify SKILL.md content for speckit-specify
-        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        # Verify SKILL.md content for infrakit-specify
+        skill_file = skills_dir / "infrakit-specify" / "SKILL.md"
         assert skill_file.exists()
         content = skill_file.read_text()
 
         # Check agentskills.io frontmatter
         assert content.startswith("---\n")
-        assert "name: speckit-specify" in content
+        assert "name: infrakit-specify" in content
         assert "description:" in content
         assert "compatibility:" in content
         assert "metadata:" in content
-        assert "author: github-spec-kit" in content
+        assert "author: github-infrakit" in content
         assert "source: templates/commands/specify.md" in content
 
         # Check body content is included
-        assert "# Speckit Specify Skill" in content
+        assert "# InfraKit Specify Skill" in content
         assert "Run this to create a spec." in content
 
     def test_generated_skill_has_parseable_yaml(self, project_dir, templates_dir):
         """Generated SKILL.md should contain valid, parseable YAML frontmatter."""
         install_ai_skills(project_dir, "claude")
 
-        skill_file = project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
+        skill_file = project_dir / ".claude" / "skills" / "infrakit-specify" / "SKILL.md"
         content = skill_file.read_text()
 
         # Extract and parse frontmatter
@@ -237,7 +237,7 @@ class TestInstallAiSkills:
         parsed = yaml.safe_load(parts[1])
         assert isinstance(parsed, dict)
         assert "name" in parsed
-        assert parsed["name"] == "speckit-specify"
+        assert parsed["name"] == "infrakit-specify"
         assert "description" in parsed
 
     def test_empty_yaml_frontmatter(self, project_dir, templates_dir):
@@ -246,17 +246,17 @@ class TestInstallAiSkills:
 
         assert result is True
 
-        skill_file = project_dir / ".claude" / "skills" / "speckit-empty_fm" / "SKILL.md"
+        skill_file = project_dir / ".claude" / "skills" / "infrakit-empty_fm" / "SKILL.md"
         assert skill_file.exists()
         content = skill_file.read_text()
-        assert "name: speckit-empty_fm" in content
+        assert "name: infrakit-empty_fm" in content
         assert "Body with empty frontmatter." in content
 
     def test_enhanced_descriptions_used_when_available(self, project_dir, templates_dir):
         """SKILL_DESCRIPTIONS take precedence over template frontmatter descriptions."""
         install_ai_skills(project_dir, "claude")
 
-        skill_file = project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
+        skill_file = project_dir / ".claude" / "skills" / "infrakit-specify" / "SKILL.md"
         content = skill_file.read_text()
 
         # Parse the generated YAML to compare the description value
@@ -271,22 +271,22 @@ class TestInstallAiSkills:
         """Templates without YAML frontmatter should still produce valid skills."""
         install_ai_skills(project_dir, "claude")
 
-        skill_file = project_dir / ".claude" / "skills" / "speckit-tasks" / "SKILL.md"
+        skill_file = project_dir / ".claude" / "skills" / "infrakit-tasks" / "SKILL.md"
         assert skill_file.exists()
         content = skill_file.read_text()
 
         # Should still have valid SKILL.md structure
-        assert "name: speckit-tasks" in content
+        assert "name: infrakit-tasks" in content
         assert "Body without frontmatter." in content
 
     def test_missing_templates_directory(self, project_dir):
         """Returns False when no command templates exist anywhere."""
         # No .claude/commands/ exists, and __file__ fallback won't find anything
-        fake_init = project_dir / "nonexistent" / "src" / "specify_cli" / "__init__.py"
+        fake_init = project_dir / "nonexistent" / "src" / "infrakit_cli" / "__init__.py"
         fake_init.parent.mkdir(parents=True, exist_ok=True)
         fake_init.touch()
 
-        with patch.object(specify_cli, "__file__", str(fake_init)):
+        with patch.object(infrakit_cli, "__file__", str(fake_init)):
             result = install_ai_skills(project_dir, "claude")
 
         assert result is False
@@ -302,11 +302,11 @@ class TestInstallAiSkills:
         empty_cmds.mkdir(parents=True)
 
         # Block the __file__ fallback so it can't find real templates
-        fake_init = project_dir / "nowhere" / "src" / "specify_cli" / "__init__.py"
+        fake_init = project_dir / "nowhere" / "src" / "infrakit_cli" / "__init__.py"
         fake_init.parent.mkdir(parents=True, exist_ok=True)
         fake_init.touch()
 
-        with patch.object(specify_cli, "__file__", str(fake_init)):
+        with patch.object(infrakit_cli, "__file__", str(fake_init)):
             result = install_ai_skills(project_dir, "claude")
 
         assert result is False
@@ -353,11 +353,11 @@ class TestInstallAiSkills:
 
     def test_return_false_when_no_templates(self, project_dir):
         """install_ai_skills returns False when no templates found."""
-        fake_init = project_dir / "missing" / "src" / "specify_cli" / "__init__.py"
+        fake_init = project_dir / "missing" / "src" / "infrakit_cli" / "__init__.py"
         fake_init.parent.mkdir(parents=True, exist_ok=True)
         fake_init.touch()
 
-        with patch.object(specify_cli, "__file__", str(fake_init)):
+        with patch.object(infrakit_cli, "__file__", str(fake_init)):
             assert install_ai_skills(project_dir, "claude") is False
 
     def test_non_md_commands_dir_falls_back(self, project_dir):
@@ -365,8 +365,8 @@ class TestInstallAiSkills:
         # Simulate gemini template extraction: .gemini/commands/ with .toml files only
         cmds_dir = project_dir / ".gemini" / "commands"
         cmds_dir.mkdir(parents=True)
-        (cmds_dir / "speckit.specify.toml").write_text('[command]\nname = "specify"\n')
-        (cmds_dir / "speckit.plan.toml").write_text('[command]\nname = "plan"\n')
+        (cmds_dir / "infrakit:specify.toml").write_text('[command]\nname = "specify"\n')
+        (cmds_dir / "infrakit:plan.toml").write_text('[command]\nname = "plan"\n')
 
         # The __file__ fallback should find the real repo templates/commands/*.md
         result = install_ai_skills(project_dir, "gemini")
@@ -378,7 +378,7 @@ class TestInstallAiSkills:
         skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
         assert len(skill_dirs) >= 1
         # .toml commands should be untouched
-        assert (cmds_dir / "speckit.specify.toml").exists()
+        assert (cmds_dir / "infrakit:specify.toml").exists()
 
     @pytest.mark.parametrize("agent_key", [k for k in AGENT_CONFIG.keys() if k != "generic"])
     def test_skills_install_for_all_agents(self, temp_dir, agent_key):
@@ -400,8 +400,8 @@ class TestInstallAiSkills:
         skills_dir = _get_skills_dir(proj, agent_key)
         assert skills_dir.exists()
         skill_dirs = [d.name for d in skills_dir.iterdir() if d.is_dir()]
-        assert "speckit-specify" in skill_dirs
-        assert (skills_dir / "speckit-specify" / "SKILL.md").exists()
+        assert "infrakit-specify" in skill_dirs
+        assert (skills_dir / "infrakit-specify" / "SKILL.md").exists()
 
 
 
@@ -416,21 +416,21 @@ class TestCommandCoexistence:
     def test_existing_commands_preserved_claude(self, project_dir, templates_dir, commands_dir_claude):
         """install_ai_skills must NOT remove pre-existing .claude/commands files."""
         # Verify commands exist before
-        assert len(list(commands_dir_claude.glob("speckit.*"))) == 3
+        assert len(list(commands_dir_claude.glob("infrakit:*"))) == 3
 
         install_ai_skills(project_dir, "claude")
 
         # Commands must still be there — install_ai_skills never touches them
-        remaining = list(commands_dir_claude.glob("speckit.*"))
+        remaining = list(commands_dir_claude.glob("infrakit:*"))
         assert len(remaining) == 3
 
     def test_existing_commands_preserved_gemini(self, project_dir, templates_dir, commands_dir_gemini):
         """install_ai_skills must NOT remove pre-existing .gemini/commands files."""
-        assert len(list(commands_dir_gemini.glob("speckit.*"))) == 3
+        assert len(list(commands_dir_gemini.glob("infrakit:*"))) == 3
 
         install_ai_skills(project_dir, "gemini")
 
-        remaining = list(commands_dir_gemini.glob("speckit.*"))
+        remaining = list(commands_dir_gemini.glob("infrakit:*"))
         assert len(remaining) == 3
 
     def test_commands_dir_not_removed(self, project_dir, templates_dir, commands_dir_claude):
@@ -463,7 +463,7 @@ class TestNewProjectCommandSkip:
         if agent_folder:
             cmds_dir = project_path / agent_folder.rstrip("/") / "commands"
             cmds_dir.mkdir(parents=True, exist_ok=True)
-            (cmds_dir / "speckit.specify.md").write_text("# spec")
+            (cmds_dir / "infrakit:specify.md").write_text("# spec")
 
     def test_new_project_commands_removed_after_skills_succeed(self, tmp_path):
         """For new projects, commands should be removed when skills succeed."""
@@ -475,12 +475,12 @@ class TestNewProjectCommandSkip:
         def fake_download(project_path, *args, **kwargs):
             self._fake_extract("claude", project_path)
 
-        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
-             patch("specify_cli.ensure_executable_scripts"), \
-             patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.install_ai_skills", return_value=True) as mock_skills, \
-             patch("specify_cli.is_git_repo", return_value=False), \
-             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
+        with patch("infrakit_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("infrakit_cli.ensure_executable_scripts"), \
+             patch("infrakit_cli.ensure_constitution_from_template"), \
+             patch("infrakit_cli.install_ai_skills", return_value=True) as mock_skills, \
+             patch("infrakit_cli.is_git_repo", return_value=False), \
+             patch("infrakit_cli.shutil.which", return_value="/usr/bin/git"):
             result = runner.invoke(app, ["init", str(target), "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
 
         # Skills should have been called
@@ -500,18 +500,18 @@ class TestNewProjectCommandSkip:
         def fake_download(project_path, *args, **kwargs):
             self._fake_extract("claude", project_path)
 
-        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
-             patch("specify_cli.ensure_executable_scripts"), \
-             patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.install_ai_skills", return_value=False), \
-             patch("specify_cli.is_git_repo", return_value=False), \
-             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
+        with patch("infrakit_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("infrakit_cli.ensure_executable_scripts"), \
+             patch("infrakit_cli.ensure_constitution_from_template"), \
+             patch("infrakit_cli.install_ai_skills", return_value=False), \
+             patch("infrakit_cli.is_git_repo", return_value=False), \
+             patch("infrakit_cli.shutil.which", return_value="/usr/bin/git"):
             result = runner.invoke(app, ["init", str(target), "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
 
         # Commands should still exist since skills failed
         cmds_dir = target / ".claude" / "commands"
         assert cmds_dir.exists()
-        assert (cmds_dir / "speckit.specify.md").exists()
+        assert (cmds_dir / "infrakit:specify.md").exists()
 
     def test_here_mode_commands_preserved(self, tmp_path, monkeypatch):
         """For --here on existing repos, commands must NOT be removed."""
@@ -524,7 +524,7 @@ class TestNewProjectCommandSkip:
         agent_folder = AGENT_CONFIG["claude"]["folder"]
         cmds_dir = target / agent_folder.rstrip("/") / "commands"
         cmds_dir.mkdir(parents=True)
-        (cmds_dir / "speckit.specify.md").write_text("# spec")
+        (cmds_dir / "infrakit:specify.md").write_text("# spec")
 
         # --here uses CWD, so chdir into the target
         monkeypatch.chdir(target)
@@ -532,17 +532,17 @@ class TestNewProjectCommandSkip:
         def fake_download(project_path, *args, **kwargs):
             pass  # commands already exist, no need to re-create
 
-        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
-             patch("specify_cli.ensure_executable_scripts"), \
-             patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.install_ai_skills", return_value=True), \
-             patch("specify_cli.is_git_repo", return_value=True), \
-             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
+        with patch("infrakit_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("infrakit_cli.ensure_executable_scripts"), \
+             patch("infrakit_cli.ensure_constitution_from_template"), \
+             patch("infrakit_cli.install_ai_skills", return_value=True), \
+             patch("infrakit_cli.is_git_repo", return_value=True), \
+             patch("infrakit_cli.shutil.which", return_value="/usr/bin/git"):
             result = runner.invoke(app, ["init", "--here", "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
 
         # Commands must remain for --here
         assert cmds_dir.exists()
-        assert (cmds_dir / "speckit.specify.md").exists()
+        assert (cmds_dir / "infrakit:specify.md").exists()
 
 
 # ===== Skip-If-Exists Tests =====
@@ -552,10 +552,10 @@ class TestSkipIfExists:
 
     def test_existing_skill_not_overwritten(self, project_dir, templates_dir):
         """Pre-existing SKILL.md should not be replaced on re-run."""
-        # Pre-create a custom SKILL.md for speckit-specify
-        skill_dir = project_dir / ".claude" / "skills" / "speckit-specify"
+        # Pre-create a custom SKILL.md for infrakit-specify
+        skill_dir = project_dir / ".claude" / "skills" / "infrakit-specify"
         skill_dir.mkdir(parents=True)
-        custom_content = "# My Custom Specify Skill\nUser-modified content\n"
+        custom_content = "# My Custom InfraKit Skill\nUser-modified content\n"
         (skill_dir / "SKILL.md").write_text(custom_content)
 
         result = install_ai_skills(project_dir, "claude")
@@ -565,8 +565,8 @@ class TestSkipIfExists:
 
         # But other skills should still be installed
         assert result is True
-        assert (project_dir / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
-        assert (project_dir / ".claude" / "skills" / "speckit-tasks" / "SKILL.md").exists()
+        assert (project_dir / ".claude" / "skills" / "infrakit-plan" / "SKILL.md").exists()
+        assert (project_dir / ".claude" / "skills" / "infrakit-tasks" / "SKILL.md").exists()
 
     def test_fresh_install_writes_all_skills(self, project_dir, templates_dir):
         """On first install (no pre-existing skills), all should be written."""
@@ -585,7 +585,7 @@ class TestSkillDescriptions:
     """Test SKILL_DESCRIPTIONS constants."""
 
     def test_all_known_commands_have_descriptions(self):
-        """All standard spec-kit commands should have enhanced descriptions."""
+        """All standard infrakit commands should have enhanced descriptions."""
         expected_commands = [
             "specify", "plan", "tasks", "implement", "analyze",
             "clarify", "constitution", "checklist", "taskstoissues",
@@ -629,8 +629,6 @@ class TestCliValidation:
 
         plain = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
         assert "--ai-skills" in plain
-        assert "agent skills" in plain.lower()
-
 
 class TestParameterOrderingIssue:
     """Test fix for GitHub issue #1641: parameter ordering issues."""

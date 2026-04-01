@@ -2,7 +2,7 @@
 
 # Consolidated prerequisite checking script
 #
-# This script provides unified prerequisite checking for Spec-Driven Development workflow.
+# This script provides unified prerequisite checking for Constraint-Driven Development workflow.
 # It replaces the functionality previously spread across multiple scripts.
 #
 # Usage: ./check-prerequisites.sh [OPTIONS]
@@ -45,7 +45,7 @@ for arg in "$@"; do
             cat << 'EOF'
 Usage: check-prerequisites.sh [OPTIONS]
 
-Consolidated prerequisite checking for Spec-Driven Development workflow.
+Consolidated prerequisite checking for Constraint-Driven Development workflow.
 
 OPTIONS:
   --json              Output in JSON format
