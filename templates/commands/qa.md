@@ -145,7 +145,7 @@ Perform systematic quality assurance testing of the implemented feature by valid
    - Flag any pre-existing test failures vs. new failures from implementation changes
 
 9. **Generate QA Report**:
-   Create the QA report at `FEATURE_DIR/qa/qa-{timestamp}.md` using the QA report template. The report must include:
+   Create the QA report at `FEATURE_DIR/qa/qa-{timestamp}.md` using the canonical QA report template at `templates/qa-template.md`, following it verbatim (do not add, remove, or reorder sections). The report must include:
 
    - **QA Summary**: Overall verdict (✅ ALL PASSED / ⚠️ PARTIAL PASS / ❌ FAILURES FOUND)
    - **Test Results Table**: Each scenario with ID, description, mode, result, evidence link
@@ -157,16 +157,16 @@ Perform systematic quality assurance testing of the implemented feature by valid
 
 10. **Provide QA Verdict**:
     Based on results, provide one of:
-    - ✅ **QA PASSED**: All critical scenarios pass, no blockers. Safe to proceed to `/speckit.ship`
-    - ⚠️ **QA PASSED WITH NOTES**: Critical paths pass but some edge cases or non-critical scenarios failed. List items.
-    - ❌ **QA FAILED**: Critical user flows or acceptance criteria are not met. Must fix and re-test.
+    - ✅ **ALL PASSED**: All critical scenarios pass, no blockers. Safe to proceed to `/speckit.ship`
+    - ⚠️ **PARTIAL PASS**: Critical paths pass but some edge cases or non-critical scenarios failed. List items.
+    - ❌ **FAILURES FOUND**: Critical user flows or acceptance criteria are not met. Must fix and re-test.
 
 ## Post-QA Actions
 
 Suggest next steps based on verdict:
-- If QA PASSED: "Run `/speckit.ship` to prepare the release"
-- If QA PASSED WITH NOTES: "Address noted items if possible, then run `/speckit.ship`"
-- If QA FAILED: "Fix failing scenarios, then run `/speckit.qa` again to re-test"
+- If ALL PASSED: "Run `/speckit.ship` to prepare the release"
+- If PARTIAL PASS: "Address noted items if possible, then run `/speckit.ship`"
+- If FAILURES FOUND: "Fix failing scenarios, then run `/speckit.qa` again to re-test"
 
 **Check for extension hooks (after QA)**:
 - Check if `.specify/extensions.yml` exists in the project root.
