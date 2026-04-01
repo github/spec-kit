@@ -53,6 +53,7 @@ def _register_builtins() -> None:
     from .codebuddy import CodebuddyIntegration
     from .copilot import CopilotIntegration
     from .cursor_agent import CursorAgentIntegration
+    from .gemini import GeminiIntegration
     from .iflow import IflowIntegration
     from .junie import JunieIntegration
     from .kilocode import KilocodeIntegration
@@ -63,6 +64,7 @@ def _register_builtins() -> None:
     from .qwen import QwenIntegration
     from .roo import RooIntegration
     from .shai import ShaiIntegration
+    from .tabnine import TabnineIntegration
     from .trae import TraeIntegration
     from .vibe import VibeIntegration
     from .windsurf import WindsurfIntegration
@@ -75,6 +77,7 @@ def _register_builtins() -> None:
     _register(CodebuddyIntegration())
     _register(CopilotIntegration())
     _register(CursorAgentIntegration())
+    _register(GeminiIntegration())
     _register(IflowIntegration())
     _register(JunieIntegration())
     _register(KilocodeIntegration())
@@ -85,6 +88,7 @@ def _register_builtins() -> None:
     _register(QwenIntegration())
     _register(RooIntegration())
     _register(ShaiIntegration())
+    _register(TabnineIntegration())
     _register(TraeIntegration())
     _register(VibeIntegration())
     _register(WindsurfIntegration())
