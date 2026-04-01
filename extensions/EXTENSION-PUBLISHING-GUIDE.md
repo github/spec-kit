@@ -122,7 +122,7 @@ Test that users can install from your release:
 specify extension add --dev /path/to/your-extension
 
 # Test from GitHub archive
-specify extension add --from https://github.com/your-org/spec-kit-your-extension/archive/refs/tags/v1.0.0.zip
+specify extension add <extension-name> --from https://github.com/your-org/spec-kit-your-extension/archive/refs/tags/v1.0.0.zip
 ```
 
 ---

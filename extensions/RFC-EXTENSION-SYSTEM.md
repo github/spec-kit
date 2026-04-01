@@ -223,7 +223,7 @@ provides:
     - name: "speckit.jira.specstoissues"
       file: "commands/specstoissues.md"
       description: "Create Jira hierarchy from spec and tasks"
-      aliases: ["speckit.specstoissues"]  # Alternate names
+      aliases: ["speckit.jira.sync"]  # Alternate names
 
     - name: "speckit.jira.discover-fields"
       file: "commands/discover-fields.md"
@@ -1517,7 +1517,7 @@ specify extension add github-projects
 /speckit.github.taskstoissues
 ```
 
-**Compatibility shim** (if needed):
+**Migration alias** (if needed):
 
 ```yaml
 # extension.yml
@@ -1525,10 +1525,10 @@ provides:
   commands:
     - name: "speckit.github.taskstoissues"
       file: "commands/taskstoissues.md"
-      aliases: ["speckit.taskstoissues"]  # Backward compatibility
+      aliases: ["speckit.github.sync-taskstoissues"]  # Alternate namespaced entry point
 ```
 
-AI agent registers both names, so old scripts work.
+AI agents register both names, so callers can migrate to the alternate alias without relying on deprecated global shortcuts like `/speckit.taskstoissues`.
 
 ---
 

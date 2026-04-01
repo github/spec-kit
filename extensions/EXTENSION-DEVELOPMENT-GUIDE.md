@@ -41,7 +41,7 @@ provides:
     - name: "speckit.my-ext.hello"      # Must follow pattern: speckit.{ext-id}.{cmd}
       file: "commands/hello.md"
       description: "Say hello"
-      aliases: ["speckit.hello"]        # Optional aliases
+      aliases: ["speckit.my-ext.hi"]    # Optional aliases, same pattern
 
   config:                               # Optional: Config files
     - name: "my-ext-config.yml"
@@ -186,7 +186,7 @@ What the extension provides.
 - `name`: Command name (must match `speckit.{ext-id}.{command}`)
 - `file`: Path to command file (relative to extension root)
 - `description`: Command description (optional)
-- `aliases`: Alternative command names (optional, array)
+- `aliases`: Alternative command names (optional, array; each must match `speckit.{ext-id}.{command}`)
 
 ### Optional Fields
 
@@ -514,7 +514,7 @@ zip -r spec-kit-my-ext-1.0.0.zip extension.yml commands/ scripts/ docs/
 Users install with:
 
 ```bash
-specify extension add --from https://github.com/.../spec-kit-my-ext-1.0.0.zip
+specify extension add <extension-name> --from https://github.com/.../spec-kit-my-ext-1.0.0.zip
 ```
 
 ### Option 3: Community Reference Catalog

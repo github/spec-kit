@@ -43,7 +43,7 @@ class CommandRegistrar:
             "args": "$ARGUMENTS",
             "extension": ".agent.md"
         },
-        "cursor": {
+        "cursor-agent": {
             "dir": ".cursor/commands",
             "format": "markdown",
             "args": "$ARGUMENTS",
@@ -162,6 +162,12 @@ class CommandRegistrar:
             "format": "markdown",
             "args": "$ARGUMENTS",
             "extension": ".md"
+        },
+        "vibe": {
+            "dir": ".vibe/prompts",
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md"
         }
     }
 
@@ -245,11 +251,11 @@ class CommandRegistrar:
 
             for key, script_path in scripts.items():
                 if isinstance(script_path, str):
-                    scripts[key] = self._rewrite_project_relative_paths(script_path)
+                    scripts[key] = self.rewrite_project_relative_paths(script_path)
         return frontmatter
 
     @staticmethod
-    def _rewrite_project_relative_paths(text: str) -> str:
+    def rewrite_project_relative_paths(text: str) -> str:
         """Rewrite repo-relative paths to their generated project locations."""
         if not isinstance(text, str) or not text:
             return text
@@ -432,7 +438,7 @@ class CommandRegistrar:
             body = body.replace("{AGENT_SCRIPT}", agent_script_command)
 
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
-        return CommandRegistrar._rewrite_project_relative_paths(body)
+        return CommandRegistrar.rewrite_project_relative_paths(body)
 
     def _convert_argument_placeholder(self, content: str, from_placeholder: str, to_placeholder: str) -> str:
         """Convert argument placeholder format.

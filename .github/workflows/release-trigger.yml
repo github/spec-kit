@@ -139,6 +139,22 @@ jobs:
           git push origin "${{ steps.version.outputs.tag }}"
           echo "Branch ${{ env.branch }} and tag ${{ steps.version.outputs.tag }} pushed"
 
+      - name: Bump to dev version
+        id: dev_version
+        run: |
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${{ steps.version.outputs.version }}"
+          NEXT_DEV="$MAJOR.$MINOR.$((PATCH + 1)).dev0"
+          echo "dev_version=$NEXT_DEV" >> $GITHUB_OUTPUT
+          sed -i "s/version = \".*\"/version = \"$NEXT_DEV\"/" pyproject.toml
+          git add pyproject.toml
+          if git diff --cached --quiet; then
+            echo "No dev version changes to commit"
+          else
+            git commit -m "chore: begin $NEXT_DEV development"
+            git push origin "${{ env.branch }}"
+            echo "Bumped to dev version $NEXT_DEV"
+          fi
+
       - name: Open pull request
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
@@ -146,16 +162,17 @@ jobs:
           gh pr create \
             --base main \
             --head "${{ env.branch }}" \
-            --title "chore: bump version to ${{ steps.version.outputs.version }}" \
-            --body "Automated version bump to ${{ steps.version.outputs.version }}.
+            --title "chore: release ${{ steps.version.outputs.version }}, begin ${{ steps.dev_version.outputs.dev_version }} development" \
+            --body "Automated release of ${{ steps.version.outputs.version }}.
 
           This PR was created by the Release Trigger workflow. The git tag \`${{ steps.version.outputs.tag }}\` has already been pushed and the release artifacts are being built.
 
-          Merge this PR to record the version bump and changelog update on \`main\`."
+          Merging this PR will set \`main\` to \`${{ steps.dev_version.outputs.dev_version }}\` so that development installs are clearly marked as pre-release."
 
       - name: Summary
         run: |
           echo "✅ Version bumped to ${{ steps.version.outputs.version }}"
           echo "✅ Tag ${{ steps.version.outputs.tag }} created and pushed"
+          echo "✅ Dev version set to ${{ steps.dev_version.outputs.dev_version }}"
           echo "✅ PR opened to merge version bump into main"
           echo "🚀 Release workflow is building artifacts from the tag"

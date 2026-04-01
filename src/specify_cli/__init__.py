@@ -345,6 +345,7 @@ AI_ASSISTANT_HELP = _build_ai_assistant_help()
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
+CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".bin" / "claude"
 
 BANNER = """
 ███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
@@ -605,13 +606,15 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
     Returns:
         True if tool is found, False otherwise
     """
-    # Special handling for Claude CLI after `claude migrate-installer`
+    # Special handling for Claude CLI local installs
     # See: https://github.com/github/spec-kit/issues/123
-    # The migrate-installer command REMOVES the original executable from PATH
-    # and creates an alias at ~/.claude/local/claude instead
-    # This path should be prioritized over other claude executables in PATH
+    # See: https://github.com/github/spec-kit/issues/550
+    # Claude Code can be installed in two local paths:
+    #   1. ~/.claude/local/claude          (after `claude migrate-installer`)
+    #   2. ~/.claude/local/node_modules/.bin/claude  (npm-local install, e.g. via nvm)
+    # Neither path may be on the system PATH, so we check them explicitly.
     if tool == "claude":
-        if CLAUDE_LOCAL_PATH.exists() and CLAUDE_LOCAL_PATH.is_file():
+        if CLAUDE_LOCAL_PATH.is_file() or CLAUDE_NPM_LOCAL_PATH.is_file():
             if tracker:
                 tracker.complete(tool, "available")
             return True
@@ -1192,6 +1195,84 @@ def _locate_release_script() -> tuple[Path, str]:
         return candidate, shell
 
     raise FileNotFoundError(f"Release script '{name}' not found in core_pack or source checkout")
+
+
+def _install_shared_infra(
+    project_path: Path,
+    script_type: str,
+    tracker: StepTracker | None = None,
+) -> bool:
+    """Install shared infrastructure files into *project_path*.
+
+    Copies ``.specify/scripts/`` and ``.specify/templates/`` from the
+    bundled core_pack or source checkout.  Tracks all installed files
+    in ``speckit.manifest.json``.
+    Returns ``True`` on success.
+    """
+    from .integrations.manifest import IntegrationManifest
+
+    core = _locate_core_pack()
+    manifest = IntegrationManifest("speckit", project_path, version=get_speckit_version())
+
+    # Scripts
+    if core and (core / "scripts").is_dir():
+        scripts_src = core / "scripts"
+    else:
+        repo_root = Path(__file__).parent.parent.parent
+        scripts_src = repo_root / "scripts"
+
+    skipped_files: list[str] = []
+
+    if scripts_src.is_dir():
+        dest_scripts = project_path / ".specify" / "scripts"
+        dest_scripts.mkdir(parents=True, exist_ok=True)
+        variant_dir = "bash" if script_type == "sh" else "powershell"
+        variant_src = scripts_src / variant_dir
+        if variant_src.is_dir():
+            dest_variant = dest_scripts / variant_dir
+            dest_variant.mkdir(parents=True, exist_ok=True)
+            # Merge without overwriting — only add files that don't exist yet
+            for src_path in variant_src.rglob("*"):
+                if src_path.is_file():
+                    rel_path = src_path.relative_to(variant_src)
+                    dst_path = dest_variant / rel_path
+                    if dst_path.exists():
+                        skipped_files.append(str(dst_path.relative_to(project_path)))
+                    else:
+                        dst_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src_path, dst_path)
+                        rel = dst_path.relative_to(project_path).as_posix()
+                        manifest.record_existing(rel)
+
+    # Page templates (not command templates, not vscode-settings.json)
+    if core and (core / "templates").is_dir():
+        templates_src = core / "templates"
+    else:
+        repo_root = Path(__file__).parent.parent.parent
+        templates_src = repo_root / "templates"
+
+    if templates_src.is_dir():
+        dest_templates = project_path / ".specify" / "templates"
+        dest_templates.mkdir(parents=True, exist_ok=True)
+        for f in templates_src.iterdir():
+            if f.is_file() and f.name != "vscode-settings.json" and not f.name.startswith("."):
+                dst = dest_templates / f.name
+                if dst.exists():
+                    skipped_files.append(str(dst.relative_to(project_path)))
+                else:
+                    shutil.copy2(f, dst)
+                    rel = dst.relative_to(project_path).as_posix()
+                    manifest.record_existing(rel)
+
+    if skipped_files:
+        import logging
+        logging.getLogger(__name__).warning(
+            "The following shared files already exist and were not overwritten:\n%s",
+            "\n".join(f"  {f}" for f in skipped_files),
+        )
+
+    manifest.save()
+    return True
 
 
 def scaffold_from_core_pack(
@@ -1862,6 +1943,7 @@ def init(
     preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
     branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, ...) or 'timestamp' (YYYYMMDD-HHMMSS)"),
     template_format: str = typer.Option(None, "--format", help="Template format: 'markdown' (full verbose) or 'compact' (token-efficient minimal format)"),
+    integration: str = typer.Option(None, "--integration", help="Use the new integration system (e.g. --integration copilot). Mutually exclusive with --ai."),
 ):
     """
     Initialize a new Specify project.
@@ -1922,6 +2004,35 @@ def init(
 
     if ai_assistant:
         ai_assistant = AI_ASSISTANT_ALIASES.get(ai_assistant, ai_assistant)
+
+    # --integration and --ai are mutually exclusive
+    if integration and ai_assistant:
+        console.print("[red]Error:[/red] --integration and --ai are mutually exclusive")
+        console.print("[yellow]Use:[/yellow] --integration for the new integration system, or --ai for the legacy path")
+        raise typer.Exit(1)
+
+    # Auto-promote: --ai <key> → integration path with a nudge (if registered)
+    use_integration = False
+    if integration:
+        from .integrations import INTEGRATION_REGISTRY, get_integration
+        resolved_integration = get_integration(integration)
+        if not resolved_integration:
+            console.print(f"[red]Error:[/red] Unknown integration: '{integration}'")
+            available = ", ".join(sorted(INTEGRATION_REGISTRY))
+            console.print(f"[yellow]Available integrations:[/yellow] {available}")
+            raise typer.Exit(1)
+        use_integration = True
+        # Map integration key to the ai_assistant variable for downstream compatibility
+        ai_assistant = integration
+    elif ai_assistant:
+        from .integrations import get_integration
+        resolved_integration = get_integration(ai_assistant)
+        if resolved_integration:
+            use_integration = True
+            console.print(
+                f"[dim]Tip: Use [bold]--integration {ai_assistant}[/bold] instead of "
+                f"--ai {ai_assistant}. The --ai flag will be deprecated in a future release.[/dim]"
+            )
 
     if project_name == ".":
         here = True
@@ -2096,7 +2207,10 @@ def init(
             "This will become the default in v0.6.0."
         )
 
-    if use_github:
+    if use_integration:
+        tracker.add("integration", "Install integration")
+        tracker.add("shared-infra", "Install shared infrastructure")
+    elif use_github:
         for key, label in [
             ("fetch", "Fetch latest release"),
             ("download", "Download template"),
@@ -2131,7 +2245,39 @@ def init(
             verify = not skip_tls
             local_ssl_context = ssl_context if verify else False
 
-            if use_github:
+            if use_integration:
+                # Integration-based scaffolding (new path)
+                from .integrations.manifest import IntegrationManifest
+                tracker.start("integration")
+                manifest = IntegrationManifest(
+                    resolved_integration.key, project_path, version=get_speckit_version()
+                )
+                resolved_integration.setup(
+                    project_path, manifest,
+                    script_type=selected_script,
+                )
+                manifest.save()
+
+                # Write .specify/integration.json
+                script_ext = "sh" if selected_script == "sh" else "ps1"
+                integration_json = project_path / ".specify" / "integration.json"
+                integration_json.parent.mkdir(parents=True, exist_ok=True)
+                integration_json.write_text(json.dumps({
+                    "integration": resolved_integration.key,
+                    "version": get_speckit_version(),
+                    "scripts": {
+                        "update-context": f".specify/integrations/{resolved_integration.key}/scripts/update-context.{script_ext}",
+                    },
+                }, indent=2) + "\n", encoding="utf-8")
+
+                tracker.complete("integration", resolved_integration.config.get("name", resolved_integration.key))
+
+                # Install shared infrastructure (scripts, templates)
+                tracker.start("shared-infra")
+                _install_shared_infra(project_path, selected_script, tracker=tracker)
+                tracker.complete("shared-infra", f"scripts ({selected_script}) + templates")
+
+            elif use_github:
                 with httpx.Client(verify=local_ssl_context) as local_client:
                     download_and_extract_template(
                         project_path,
@@ -2266,7 +2412,7 @@ def init(
             # Persist the CLI options so later operations (e.g. preset add)
             # can adapt their behaviour without re-scanning the filesystem.
             # Must be saved BEFORE preset install so _get_skills_dir() works.
-            save_init_options(project_path, {
+            init_opts = {
                 "ai": selected_ai,
                 "ai_skills": ai_skills,
                 "ai_commands_dir": ai_commands_dir,
@@ -2277,7 +2423,10 @@ def init(
                 "offline": offline,
                 "script": selected_script,
                 "speckit_version": get_speckit_version(),
-            })
+            }
+            if use_integration:
+                init_opts["integration"] = resolved_integration.key
+            save_init_options(project_path, init_opts)
 
             # Install preset if specified
             if preset:

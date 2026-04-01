@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-19T12:08:20Z",
+  "updated_at": "2026-04-01T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -241,8 +241,38 @@
       "created_at": "2026-03-19T12:08:20Z",
       "updated_at": "2026-03-19T12:08:20Z"
     },
+    "critique": {
+      "name": "Spec Critique Extension",
+      "id": "critique",
+      "description": "Dual-lens critical review of spec and plan from product strategy and engineering risk perspectives.",
+      "author": "arunt14",
+      "version": "1.0.0",
+      "download_url": "https://github.com/arunt14/spec-kit-critique/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/arunt14/spec-kit-critique",
+      "homepage": "https://github.com/arunt14/spec-kit-critique",
+      "documentation": "https://github.com/arunt14/spec-kit-critique/blob/main/README.md",
+      "changelog": "https://github.com/arunt14/spec-kit-critique/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "docs",
+        "review",
+        "planning"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
+    },
     "docguard": {
-      "name": "DocGuard \u2014 CDD Enforcement",
+      "name": "DocGuard — CDD Enforcement",
       "id": "docguard",
       "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. Zero NPM runtime dependencies.",
       "author": "raccioly",
@@ -345,6 +375,38 @@
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
     },
+    "fix-findings": {
+      "name": "Fix Findings",
+      "id": "fix-findings",
+      "description": "Automated analyze-fix-reanalyze loop that resolves spec findings until clean.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-fix-findings/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-fix-findings",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-fix-findings",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-fix-findings/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-fix-findings/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "code",
+        "analysis",
+        "quality",
+        "automation",
+        "findings"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
+    },
     "fleet": {
       "name": "Fleet Orchestrator",
       "id": "fleet",
@@ -437,6 +499,327 @@
       "created_at": "2026-03-05T00:00:00Z",
       "updated_at": "2026-03-05T00:00:00Z"
     },
+    "learn": {
+      "name": "Learning Extension",
+      "id": "learn",
+      "description": "Generate educational guides from implementations and enhance clarifications with mentoring context.",
+      "author": "Vianca Martinez",
+      "version": "1.0.0",
+      "download_url": "https://github.com/imviancagrace/spec-kit-learn/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/imviancagrace/spec-kit-learn",
+      "homepage": "https://github.com/imviancagrace/spec-kit-learn",
+      "documentation": "https://github.com/imviancagrace/spec-kit-learn/blob/main/README.md",
+      "changelog": "https://github.com/imviancagrace/spec-kit-learn/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 1
+      },
+      "tags": [
+        "learning",
+        "education",
+        "mentoring",
+        "knowledge-transfer"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-17T00:00:00Z",
+      "updated_at": "2026-03-17T00:00:00Z"
+    },
+    "maqa": {
+      "name": "MAQA — Multi-Agent & Quality Assurance",
+      "id": "maqa",
+      "description": "Coordinator → feature → QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins (Trello, Linear, GitHub Projects, Jira, Azure DevOps). Optional CI gate.",
+      "author": "GenieRobot",
+      "version": "0.1.3",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.1.3/maqa.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-ext",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-ext",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-ext/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-ext/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 1
+      },
+      "tags": [
+        "multi-agent",
+        "orchestration",
+        "quality-assurance",
+        "workflow",
+        "parallel",
+        "tdd"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-26T00:00:00Z",
+      "updated_at": "2026-03-27T00:00:00Z"
+    },
+    "maqa-azure-devops": {
+      "name": "MAQA Azure DevOps Integration",
+      "id": "maqa-azure-devops",
+      "description": "Azure DevOps Boards integration for the MAQA extension. Populates work items from specs, moves User Stories across columns as features progress, real-time Task child ticking.",
+      "author": "GenieRobot",
+      "version": "0.1.0",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-azure-devops/releases/download/maqa-azure-devops-v0.1.0/maqa-azure-devops.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-azure-devops",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-azure-devops",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-azure-devops/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-azure-devops/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "azure-devops",
+        "project-management",
+        "multi-agent",
+        "maqa",
+        "kanban"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-27T00:00:00Z",
+      "updated_at": "2026-03-27T00:00:00Z"
+    },
+    "maqa-ci": {
+      "name": "MAQA CI/CD Gate",
+      "id": "maqa-ci",
+      "description": "CI/CD pipeline gate for the MAQA extension. Auto-detects GitHub Actions, CircleCI, GitLab CI, and Bitbucket Pipelines. Blocks QA handoff until pipeline is green.",
+      "author": "GenieRobot",
+      "version": "0.1.0",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ci/releases/download/maqa-ci-v0.1.0/maqa-ci.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-ci",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-ci",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-ci/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-ci/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "ci-cd",
+        "github-actions",
+        "circleci",
+        "gitlab-ci",
+        "quality-gate",
+        "maqa"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-27T00:00:00Z",
+      "updated_at": "2026-03-27T00:00:00Z"
+    },
+    "maqa-github-projects": {
+      "name": "MAQA GitHub Projects Integration",
+      "id": "maqa-github-projects",
+      "description": "GitHub Projects v2 integration for the MAQA extension. Populates draft issues from specs, moves items across Status columns as features progress, real-time task list ticking.",
+      "author": "GenieRobot",
+      "version": "0.1.0",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-github-projects/releases/download/maqa-github-projects-v0.1.0/maqa-github-projects.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-github-projects",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-github-projects",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-github-projects/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-github-projects/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "github-projects",
+        "project-management",
+        "multi-agent",
+        "maqa",
+        "kanban"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-27T00:00:00Z",
+      "updated_at": "2026-03-27T00:00:00Z"
+    },
+    "maqa-jira": {
+      "name": "MAQA Jira Integration",
+      "id": "maqa-jira",
+      "description": "Jira integration for the MAQA extension. Populates Stories from specs, moves issues across board columns as features progress, real-time Subtask ticking.",
+      "author": "GenieRobot",
+      "version": "0.1.0",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-jira/releases/download/maqa-jira-v0.1.0/maqa-jira.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-jira",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-jira",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-jira/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-jira/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "jira",
+        "project-management",
+        "multi-agent",
+        "maqa",
+        "kanban"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-27T00:00:00Z",
+      "updated_at": "2026-03-27T00:00:00Z"
+    },
+    "maqa-linear": {
+      "name": "MAQA Linear Integration",
+      "id": "maqa-linear",
+      "description": "Linear integration for the MAQA extension. Populates issues from specs, moves items across workflow states as features progress, real-time sub-issue ticking.",
+      "author": "GenieRobot",
+      "version": "0.1.0",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-linear/releases/download/maqa-linear-v0.1.0/maqa-linear.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-linear",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-linear",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-linear/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-linear/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "linear",
+        "project-management",
+        "multi-agent",
+        "maqa",
+        "kanban"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-27T00:00:00Z",
+      "updated_at": "2026-03-27T00:00:00Z"
+    },
+    "maqa-trello": {
+      "name": "MAQA Trello Integration",
+      "id": "maqa-trello",
+      "description": "Trello board integration for the MAQA extension. Populates board from specs, moves cards between lists as features progress, real-time checklist ticking.",
+      "author": "GenieRobot",
+      "version": "0.1.1",
+      "download_url": "https://github.com/GenieRobot/spec-kit-maqa-trello/releases/download/maqa-trello-v0.1.1/maqa-trello.zip",
+      "repository": "https://github.com/GenieRobot/spec-kit-maqa-trello",
+      "homepage": "https://github.com/GenieRobot/spec-kit-maqa-trello",
+      "documentation": "https://github.com/GenieRobot/spec-kit-maqa-trello/blob/main/README.md",
+      "changelog": "https://github.com/GenieRobot/spec-kit-maqa-trello/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "trello",
+        "project-management",
+        "multi-agent",
+        "maqa",
+        "kanban"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-26T00:00:00Z",
+      "updated_at": "2026-03-26T00:00:00Z"
+    },
+    "onboard": {
+      "name": "Onboard",
+      "id": "onboard",
+      "description": "Contextual onboarding and progressive growth for developers new to spec-kit projects. Explains specs, maps dependencies, validates understanding, and guides the next step.",
+      "author": "Rafael Sales",
+      "version": "2.1.0",
+      "download_url": "https://github.com/dmux/spec-kit-onboard/archive/refs/tags/v2.1.0.zip",
+      "repository": "https://github.com/dmux/spec-kit-onboard",
+      "homepage": "https://github.com/dmux/spec-kit-onboard",
+      "documentation": "https://github.com/dmux/spec-kit-onboard/blob/main/README.md",
+      "changelog": "https://github.com/dmux/spec-kit-onboard/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 3
+      },
+      "tags": [
+        "onboarding",
+        "learning",
+        "mentoring",
+        "developer-experience",
+        "gamification",
+        "knowledge-transfer"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-26T00:00:00Z",
+      "updated_at": "2026-03-26T00:00:00Z"
+    },
+    "plan-review-gate": {
+      "name": "Plan Review Gate",
+      "id": "plan-review-gate",
+      "description": "Require spec.md and plan.md to be merged via MR/PR before allowing task generation",
+      "author": "luno",
+      "version": "1.0.0",
+      "download_url": "https://github.com/luno/spec-kit-plan-review-gate/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/luno/spec-kit-plan-review-gate",
+      "homepage": "https://github.com/luno/spec-kit-plan-review-gate",
+      "documentation": "https://github.com/luno/spec-kit-plan-review-gate/blob/main/README.md",
+      "changelog": "https://github.com/luno/spec-kit-plan-review-gate/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "review",
+        "quality",
+        "workflow",
+        "gate"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-27T08:22:30Z",
+      "updated_at": "2026-03-27T08:22:30Z"
+    },
     "presetify": {
       "name": "Presetify",
       "id": "presetify",
@@ -467,6 +850,68 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "product-forge": {
+      "name": "Product Forge",
+      "id": "product-forge",
+      "description": "Full product lifecycle: research → product spec → SpecKit → implement → verify → test",
+      "author": "VaiYav",
+      "version": "1.1.1",
+      "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.1.1.zip",
+      "repository": "https://github.com/VaiYav/speckit-product-forge",
+      "homepage": "https://github.com/VaiYav/speckit-product-forge",
+      "documentation": "https://github.com/VaiYav/speckit-product-forge/blob/main/README.md",
+      "changelog": "https://github.com/VaiYav/speckit-product-forge/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 10,
+        "hooks": 0
+      },
+      "tags": [
+        "process",
+        "research",
+        "product-spec",
+        "lifecycle",
+        "testing"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-28T00:00:00Z",
+      "updated_at": "2026-03-28T00:00:00Z"
+    },
+    "qa": {
+      "name": "QA Testing Extension",
+      "id": "qa",
+      "description": "Systematic QA testing with browser-driven or CLI-based validation of acceptance criteria from spec.",
+      "author": "arunt14",
+      "version": "1.0.0",
+      "download_url": "https://github.com/arunt14/spec-kit-qa/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/arunt14/spec-kit-qa",
+      "homepage": "https://github.com/arunt14/spec-kit-qa",
+      "documentation": "https://github.com/arunt14/spec-kit-qa/blob/main/README.md",
+      "changelog": "https://github.com/arunt14/spec-kit-qa/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "code",
+        "testing",
+        "qa"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
     },
     "ralph": {
       "name": "Ralph Loop",
@@ -540,6 +985,36 @@
       "created_at": "2026-03-14T00:00:00Z",
       "updated_at": "2026-03-14T00:00:00Z"
     },
+    "retro": {
+      "name": "Retro Extension",
+      "id": "retro",
+      "description": "Sprint retrospective analysis with metrics, spec accuracy assessment, and improvement suggestions.",
+      "author": "arunt14",
+      "version": "1.0.0",
+      "download_url": "https://github.com/arunt14/spec-kit-retro/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/arunt14/spec-kit-retro",
+      "homepage": "https://github.com/arunt14/spec-kit-retro",
+      "documentation": "https://github.com/arunt14/spec-kit-retro/blob/main/README.md",
+      "changelog": "https://github.com/arunt14/spec-kit-retro/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "process",
+        "retrospective",
+        "metrics"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
+    },
     "retrospective": {
       "name": "Retrospective Extension",
       "id": "retrospective",
@@ -606,6 +1081,36 @@
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-03-06T00:00:00Z"
     },
+    "ship": {
+      "name": "Ship Release Extension",
+      "id": "ship",
+      "description": "Automates release pipeline: pre-flight checks, branch sync, changelog generation, CI verification, and PR creation.",
+      "author": "arunt14",
+      "version": "1.0.0",
+      "download_url": "https://github.com/arunt14/spec-kit-ship/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/arunt14/spec-kit-ship",
+      "homepage": "https://github.com/arunt14/spec-kit-ship",
+      "documentation": "https://github.com/arunt14/spec-kit-ship/blob/main/README.md",
+      "changelog": "https://github.com/arunt14/spec-kit-ship/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "process",
+        "release",
+        "automation"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
+    },
     "speckit-utils": {
       "name": "SDD Utilities",
       "id": "speckit-utils",
@@ -637,6 +1142,111 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "staff-review": {
+      "name": "Staff Review Extension",
+      "id": "staff-review",
+      "description": "Staff-engineer-level code review that validates implementation against spec, checks security, performance, and test coverage.",
+      "author": "arunt14",
+      "version": "1.0.0",
+      "download_url": "https://github.com/arunt14/spec-kit-staff-review/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/arunt14/spec-kit-staff-review",
+      "homepage": "https://github.com/arunt14/spec-kit-staff-review",
+      "documentation": "https://github.com/arunt14/spec-kit-staff-review/blob/main/README.md",
+      "changelog": "https://github.com/arunt14/spec-kit-staff-review/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "code",
+        "review",
+        "quality"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
+    },
+    "status": {
+      "name": "Project Status",
+      "id": "status",
+      "description": "Show current SDD workflow progress — active feature, artifact status, task completion, workflow phase, and extensions summary.",
+      "author": "KhawarHabibKhan",
+      "version": "1.0.0",
+      "download_url": "https://github.com/KhawarHabibKhan/spec-kit-status/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/KhawarHabibKhan/spec-kit-status",
+      "homepage": "https://github.com/KhawarHabibKhan/spec-kit-status",
+      "documentation": "https://github.com/KhawarHabibKhan/spec-kit-status/blob/main/README.md",
+      "changelog": "https://github.com/KhawarHabibKhan/spec-kit-status/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "status",
+        "workflow",
+        "progress",
+        "feature-tracking",
+        "task-progress"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-16T00:00:00Z",
+      "updated_at": "2026-03-16T00:00:00Z"
+    },
+    "superb": {
+      "name": "Superpowers Bridge",
+      "id": "superb",
+      "description": "Orchestrates obra/superpowers skills within the spec-kit SDD workflow. Thin bridge commands delegate to superpowers' authoritative SKILL.md files at runtime (with graceful fallback), while bridge-original commands provide spec-kit-native value. Eight commands cover the full lifecycle: intent clarification, TDD enforcement, task review, verification, critique, systematic debugging, branch completion, and review response. Hook-bound commands fire automatically; standalone commands are invoked when needed.",
+      "author": "rbbtsn0w",
+      "version": "1.0.0",
+      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/superpowers-bridge-v1.0.0/superpowers-bridge.zip",
+      "repository": "https://github.com/RbBtSn0w/spec-kit-extensions",
+      "homepage": "https://github.com/RbBtSn0w/spec-kit-extensions",
+      "documentation": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/superpowers-bridge/README.md",
+      "changelog": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/superpowers-bridge/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.3",
+        "tools": [
+          {
+            "name": "superpowers",
+            "version": ">=5.0.0",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 8,
+        "hooks": 4
+      },
+      "tags": [
+        "methodology",
+        "tdd",
+        "code-review",
+        "workflow",
+        "superpowers",
+        "brainstorming",
+        "verification",
+        "debugging",
+        "branch-management"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-30T00:00:00Z",
+      "updated_at": "2026-03-30T00:00:00Z"
     },
     "sync": {
       "name": "Spec Sync",
@@ -673,7 +1283,7 @@
     "understanding": {
       "name": "Understanding",
       "id": "understanding",
-      "description": "Automated requirements quality analysis \u2014 validates specs against IEEE/ISO standards using 31 deterministic metrics. Catches ambiguity, missing testability, and structural issues before they reach implementation. Includes experimental energy-based ambiguity detection using local LM token perplexity.",
+      "description": "Automated requirements quality analysis — validates specs against IEEE/ISO standards using 31 deterministic metrics. Catches ambiguity, missing testability, and structural issues before they reach implementation. Includes experimental energy-based ambiguity detection using local LM token perplexity.",
       "author": "Ladislav Bihari",
       "version": "3.4.0",
       "download_url": "https://github.com/Testimonial/understanding/archive/refs/tags/v3.4.0.zip",
@@ -711,38 +1321,6 @@
       "created_at": "2026-03-07T00:00:00Z",
       "updated_at": "2026-03-07T00:00:00Z"
     },
-    "status": {
-      "name": "Project Status",
-      "id": "status",
-      "description": "Show current SDD workflow progress — active feature, artifact status, task completion, workflow phase, and extensions summary.",
-      "author": "KhawarHabibKhan",
-      "version": "1.0.0",
-      "download_url": "https://github.com/KhawarHabibKhan/spec-kit-status/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/KhawarHabibKhan/spec-kit-status",
-      "homepage": "https://github.com/KhawarHabibKhan/spec-kit-status",
-      "documentation": "https://github.com/KhawarHabibKhan/spec-kit-status/blob/main/README.md",
-      "changelog": "https://github.com/KhawarHabibKhan/spec-kit-status/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "commands": 1,
-        "hooks": 0
-      },
-      "tags": [
-        "status",
-        "workflow",
-        "progress",
-        "feature-tracking",
-        "task-progress"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-16T00:00:00Z",
-      "updated_at": "2026-03-16T00:00:00Z"
-    },
     "v-model": {
       "name": "V-Model Extension Pack",
       "id": "v-model",
@@ -774,37 +1352,6 @@
       "stars": 0,
       "created_at": "2026-02-20T00:00:00Z",
       "updated_at": "2026-02-22T00:00:00Z"
-    },
-    "learn": {
-      "name": "Learning Extension",
-      "id": "learn",
-      "description": "Generate educational guides from implementations and enhance clarifications with mentoring context.",
-      "author": "Vianca Martinez",
-      "version": "1.0.0",
-      "download_url": "https://github.com/imviancagrace/spec-kit-learn/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/imviancagrace/spec-kit-learn",
-      "homepage": "https://github.com/imviancagrace/spec-kit-learn",
-      "documentation": "https://github.com/imviancagrace/spec-kit-learn/blob/main/README.md",
-      "changelog": "https://github.com/imviancagrace/spec-kit-learn/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "commands": 2,
-        "hooks": 1
-      },
-      "tags": [
-        "learning",
-        "education",
-        "mentoring",
-        "knowledge-transfer"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-17T00:00:00Z",
-      "updated_at": "2026-03-17T00:00:00Z"
     },
     "verify": {
       "name": "Verify Extension",

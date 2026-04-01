@@ -36,13 +36,16 @@ On [GitHub Codespaces](https://github.com/features/codespaces) it's even simpler
 > If your pull request introduces a large change that materially impacts the work of the CLI or the rest of the repository (e.g., you're introducing new templates, arguments, or otherwise major changes), make sure that it was **discussed and agreed upon** by the project maintainers. Pull requests with large changes that did not have a prior conversation and agreement will be closed.
 
 1. Fork and clone the repository
-1. Configure and install the dependencies: `uv sync`
+1. Configure and install the dependencies: `uv sync --extra test`
 1. Make sure the CLI works on your machine: `uv run specify --help`
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change, add tests, and make sure everything still works
 1. Test the CLI functionality with a sample project if relevant
 1. Push to your fork and submit a pull request
 1. Wait for your pull request to be reviewed and merged.
+
+For the detailed test workflow, command-selection prompt, and PR reporting template, see [`TESTING.md`](./TESTING.md).
+Activate the project virtual environment (see the Setup block in [`TESTING.md`](./TESTING.md)), then install the CLI from your working tree (`uv pip install -e .` after `uv sync --extra test`) or otherwise ensure the shell uses the local `specify` binary before running the manual slash-command tests described below.
 
 Here are a few things you can do that will increase the likelihood of your pull request being accepted:
 
@@ -61,6 +64,14 @@ When working on spec-kit:
 2. Verify templates are working correctly in `templates/` directory
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
+
+### Recommended validation flow
+
+For the smoothest review experience, validate changes in this order:
+
+1. **Run focused automated checks first** — use the quick verification commands in [`TESTING.md`](./TESTING.md) to catch packaging, scaffolding, and configuration regressions early.
+2. **Run manual workflow tests second** — if your change affects slash commands or the developer workflow, follow [`TESTING.md`](./TESTING.md) to choose the right commands, run them in an agent, and capture results for your PR.
+3. **Use local release packages when debugging packaged output** — if you need to inspect the exact files CI-style packaging produces, generate local release packages as described below.
 
 ### Testing template and command changes locally
 
@@ -84,6 +95,8 @@ To test your templates, commands, and other changes locally, follow these steps:
 3. **Open and test the agent**
 
    Navigate to your test project folder and open the agent to verify your implementation.
+
+If you only need to validate generated file structure and content before doing manual agent testing, start with the focused automated checks in [`TESTING.md`](./TESTING.md). Keep this section for the cases where you need to inspect the exact packaged output locally.
 
 ## AI contributions in Spec Kit
 

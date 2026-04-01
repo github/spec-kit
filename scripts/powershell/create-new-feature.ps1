@@ -3,6 +3,7 @@
 [CmdletBinding()]
 param(
     [switch]$Json,
+    [switch]$AllowExistingBranch,
     [string]$ShortName,
     [Parameter()]
     [long]$Number = 0,
@@ -15,10 +16,11 @@ $ErrorActionPreference = 'Stop'
 
 # Show help if requested
 if ($Help) {
-    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
+    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Json               Output in JSON format"
+    Write-Host "  -AllowExistingBranch  Switch to branch if it already exists instead of failing"
     Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
     Write-Host "  -Number N           Specify branch number manually (overrides auto-detection)"
     Write-Host "  -Timestamp          Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
@@ -33,7 +35,7 @@ if ($Help) {
 
 # Check if feature description provided
 if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
-    Write-Error "Usage: ./create-new-feature.ps1 [-Json] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
+    Write-Error "Usage: ./create-new-feature.ps1 [-Json] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
     exit 1
 }
 
@@ -251,12 +253,20 @@ if ($hasGit) {
         # Check if branch already exists
         $existingBranch = git branch --list $branchName 2>$null
         if ($existingBranch) {
-            if ($Timestamp) {
+            if ($AllowExistingBranch) {
+                # Switch to the existing branch instead of failing
+                git checkout -q $branchName 2>$null | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Error "Error: Branch '$branchName' exists but could not be checked out. Resolve any uncommitted changes or conflicts and try again."
+                    exit 1
+                }
+            } elseif ($Timestamp) {
                 Write-Error "Error: Branch '$branchName' already exists. Rerun to get a new timestamp or use a different -ShortName."
+                exit 1
             } else {
                 Write-Error "Error: Branch '$branchName' already exists. Please use a different feature name or specify a different number with -Number."
+                exit 1
             }
-            exit 1
         } else {
             Write-Error "Error: Failed to create git branch '$branchName'. Please check your git configuration and try again."
             exit 1
@@ -269,12 +279,14 @@ if ($hasGit) {
 $featureDir = Join-Path $specsDir $branchName
 New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
 
-$template = Resolve-Template -TemplateName 'spec-template' -RepoRoot $repoRoot
 $specFile = Join-Path $featureDir 'spec.md'
-if ($template -and (Test-Path $template)) { 
-    Copy-Item $template $specFile -Force 
-} else { 
-    New-Item -ItemType File -Path $specFile | Out-Null 
+if (-not (Test-Path -PathType Leaf $specFile)) {
+    $template = Resolve-Template -TemplateName 'spec-template' -RepoRoot $repoRoot
+    if ($template -and (Test-Path $template)) {
+        Copy-Item $template $specFile -Force
+    } else {
+        New-Item -ItemType File -Path $specFile | Out-Null
+    }
 }
 
 # Set the SPECIFY_FEATURE environment variable for the current session
