@@ -1,8 +1,8 @@
 ---
 description: Perform a dual-lens critical review of the specification and plan from both product strategy and engineering risk perspectives before implementation.
 scripts:
-  sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
+  sh: scripts/bash/check-prerequisites.sh --json --include-tasks
+  ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
 ---
 
 ## User Input
@@ -53,7 +53,7 @@ Challenge the specification and implementation plan through two distinct expert 
 
 ## Operating Constraints
 
-**STRICTLY READ-ONLY**: Do **not** modify `spec.md`, `plan.md`, or any other files. Output a structured critique report. Offer to apply approved changes only after the user reviews findings.
+**STRICTLY READ-ONLY FOR EXISTING ARTIFACTS**: During this command, do **not** directly modify existing project files such as `spec.md`, `plan.md`, or other source/docs. You **may** create a new critique report under `FEATURE_DIR/critiques/critique-{timestamp}.md`. Propose, but do not apply, edits to `spec.md`/`plan.md`; applying any changes requires explicit user approval in a follow-up step or command after the user reviews the findings.
 
 **CONSTRUCTIVE CHALLENGE**: The goal is to strengthen the spec and plan, not to block progress. Every critique item must include a constructive suggestion for improvement.
 
@@ -172,7 +172,7 @@ Challenge the specification and implementation plan through two distinct expert 
    - 🤔 **Question**: Ambiguity or assumption that needs stakeholder input. Cannot be resolved by the development team alone.
 
 7. **Generate Critique Report**:
-   Create the critique report at `FEATURE_DIR/critiques/critique-{timestamp}.md` using the critique report template. The report must include:
+   Ensure the directory `FEATURE_DIR/critiques/` exists (create it if necessary), then create the critique report at `FEATURE_DIR/critiques/critique-{timestamp}.md` using `templates/critique-template.md` as the required structure. The report must include:
 
    - **Executive Summary**: Overall assessment and readiness to proceed
    - **Product Lens Findings**: Organized by subcategory (3a-3e)

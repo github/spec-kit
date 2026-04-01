@@ -104,6 +104,14 @@ Items where both product and engineering perspectives converge:
 
 ---
 
+## Consolidated Findings Table
+
+| ID | Lens | Severity | Category | Finding | Suggestion |
+|----|------|----------|----------|---------|------------|
+| [ID] | [Product / Engineering / Cross-lens] | 🎯/💡/🤔 | [category] | [finding] | [suggestion] |
+
+---
+
 ## Recommended Actions
 
 ### 🎯 Must-Address (Before Proceeding)
