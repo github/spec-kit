@@ -61,14 +61,16 @@ class TestRegistryCompleteness:
 
 
 class TestRegistrarKeyAlignment:
-    """AGENT_CONFIGS keys must match integration keys (no mismatches)."""
+    """Every integration key must have a matching AGENT_CONFIGS entry."""
 
-    def test_cursor_agent_key_in_registrar(self):
+    @pytest.mark.parametrize("key", ALL_INTEGRATION_KEYS)
+    def test_integration_key_in_registrar(self, key):
         from specify_cli.agents import CommandRegistrar
-        assert "cursor-agent" in CommandRegistrar.AGENT_CONFIGS
+        assert key in CommandRegistrar.AGENT_CONFIGS, (
+            f"Integration '{key}' is registered but has no AGENT_CONFIGS entry"
+        )
+
+    def test_no_stale_cursor_shorthand(self):
+        """The old 'cursor' shorthand must not appear in AGENT_CONFIGS."""
+        from specify_cli.agents import CommandRegistrar
         assert "cursor" not in CommandRegistrar.AGENT_CONFIGS
-
-    def test_vibe_key_in_registrar(self):
-        from specify_cli.agents import CommandRegistrar
-        assert "vibe" in CommandRegistrar.AGENT_CONFIGS
-        assert CommandRegistrar.AGENT_CONFIGS["vibe"]["dir"] == ".vibe/prompts"
