@@ -1859,6 +1859,23 @@ def _migrate_legacy_kimi_dotted_skills(skills_dir: Path) -> tuple[int, int]:
 
 
 AGENT_SKILLS_MIGRATIONS = {
+    "claude": {
+        "error": (
+            "Claude Code now installs spec-kit as agent skills; "
+            "legacy .claude/commands projects are kept for backwards compatibility."
+        ),
+        "usage": "specify init <project> --ai claude",
+        "interactive_note": (
+            "'claude' was selected interactively; enabling [cyan]--ai-skills[/cyan] "
+            "automatically so spec-kit is installed to [cyan].claude/skills[/cyan]."
+        ),
+        "explicit_note": (
+            "'claude' now installs spec-kit as agent skills; enabling "
+            "[cyan]--ai-skills[/cyan] automatically so commands are written to "
+            "[cyan].claude/skills[/cyan]."
+        ),
+        "auto_enable_explicit": True,
+    },
     "agy": {
         "error": "Explicit command support was deprecated in Antigravity version 1.20.5.",
         "usage": "specify init <project> --ai agy --ai-skills",
@@ -1942,7 +1959,7 @@ def init(
         specify init --here --ai vibe      # Initialize with Mistral Vibe support
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
-        specify init my-project --ai claude --ai-skills   # Install agent skills
+        specify init my-project --ai claude   # Claude installs skills by default
         specify init --here --ai gemini --ai-skills
         specify init my-project --ai generic --ai-commands-dir .myagent/commands/  # Unsupported agent
         specify init my-project --offline  # Use bundled assets (no network access)
@@ -2064,14 +2081,16 @@ def init(
 
     # Agents that have moved from explicit commands/prompts to agent skills.
     if selected_ai in AGENT_SKILLS_MIGRATIONS and not ai_skills:
+        migration = AGENT_SKILLS_MIGRATIONS[selected_ai]
         # If selected interactively (no --ai provided), automatically enable
         # ai_skills so the agent remains usable without requiring an extra flag.
         # Preserve fail-fast behavior only for explicit '--ai <agent>' without skills.
-        if ai_assistant:
+        if ai_assistant and not migration.get("auto_enable_explicit", False):
             _handle_agent_skills_migration(console, selected_ai)
         else:
             ai_skills = True
-            console.print(f"\n[yellow]Note:[/yellow] {AGENT_SKILLS_MIGRATIONS[selected_ai]['interactive_note']}")
+            note_key = "explicit_note" if ai_assistant else "interactive_note"
+            console.print(f"\n[yellow]Note:[/yellow] {migration[note_key]}")
 
     # Validate --ai-commands-dir usage
     if selected_ai == "generic":
@@ -2489,13 +2508,16 @@ def init(
         step_num += 1
 
     codex_skill_mode = selected_ai == "codex" and ai_skills
+    claude_skill_mode = selected_ai == "claude" and ai_skills
     kimi_skill_mode = selected_ai == "kimi"
-    native_skill_mode = codex_skill_mode or kimi_skill_mode
+    native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode
     usage_label = "skills" if native_skill_mode else "slash commands"
 
     def _display_cmd(name: str) -> str:
         if codex_skill_mode:
             return f"$speckit-{name}"
+        if claude_skill_mode:
+            return f"/speckit-{name}"
         if kimi_skill_mode:
             return f"/skill:speckit-{name}"
         return f"/speckit.{name}"

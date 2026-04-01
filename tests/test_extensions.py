@@ -3546,6 +3546,28 @@ class TestExtensionPriorityBackwardsCompatibility:
 class TestHookInvocationRendering:
     """Test hook invocation formatting for different agent modes."""
 
+    def test_claude_hooks_render_skill_invocation(self, project_dir):
+        """Claude skills projects should render /speckit-* invocations."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "claude", "ai_skills": True}))
+
+        hook_executor = HookExecutor(project_dir)
+        message = hook_executor.format_hook_message(
+            "before_plan",
+            [
+                {
+                    "extension": "test-ext",
+                    "command": "speckit.plan",
+                    "optional": False,
+                }
+            ],
+        )
+
+        assert "Executing: `/speckit-plan`" in message
+        assert "EXECUTE_COMMAND: speckit.plan" in message
+        assert "EXECUTE_COMMAND_INVOCATION: /speckit-plan" in message
+
     def test_kimi_hooks_render_skill_invocation(self, project_dir):
         """Kimi projects should render /skill:speckit-* invocations."""
         init_options = project_dir / ".specify" / "init-options.json"

@@ -948,18 +948,14 @@ class TestNewProjectCommandSkip:
 
         assert not (tmp_path / "evil.txt").exists()
 
-    def test_commands_preserved_when_skills_fail(self, tmp_path):
-        """If skills fail, commands should NOT be removed (safety net)."""
+    def test_claude_integration_remains_usable_when_converter_fails(self, tmp_path):
+        """Claude init should still succeed when the post-install converter is redundant and fails."""
         from typer.testing import CliRunner
 
         runner = CliRunner()
         target = tmp_path / "fail-proj"
 
-        def fake_download(project_path, *args, **kwargs):
-            self._fake_extract("claude", project_path)
-
-        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
-             patch("specify_cli.ensure_executable_scripts"), \
+        with patch("specify_cli.ensure_executable_scripts"), \
              patch("specify_cli.ensure_constitution_from_template"), \
              patch("specify_cli.install_ai_skills", return_value=False), \
              patch("specify_cli.is_git_repo", return_value=False), \
@@ -967,10 +963,8 @@ class TestNewProjectCommandSkip:
             result = runner.invoke(app, ["init", str(target), "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
 
         assert result.exit_code == 0
-        # Commands should still exist since skills failed
-        cmds_dir = target / ".claude" / "commands"
-        assert cmds_dir.exists()
-        assert (cmds_dir / "speckit.specify.md").exists()
+        assert (target / ".claude" / "skills" / "speckit-specify" / "SKILL.md").exists()
+        assert not (target / ".claude" / "commands").exists()
 
     def test_here_mode_commands_preserved(self, tmp_path, monkeypatch):
         """For --here on existing repos, commands must NOT be removed."""
@@ -1234,7 +1228,7 @@ class TestCliValidation:
 
         plain = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
         assert "--ai-skills" in plain
-        assert "agent skills" in plain.lower()
+        assert "skills" in plain.lower()
 
     def test_kiro_alias_normalized_to_kiro_cli(self, tmp_path):
         """--ai kiro should normalize to canonical kiro-cli and auto-promote to integration path."""
