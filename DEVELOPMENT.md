@@ -4,7 +4,7 @@ This document is the primary entry point for people modifying Spec Kit itself. U
 
 ## Maintainer Orientation
 
-Spec Kit is a toolkit for spec-driven development. It provides the workflow, scaffolding assets, and supporting integrations that turn an idea into a specification, an implementation plan, task breakdowns, and executable project work. From a maintainer perspective, the repository is not just documentation and not just code. It is a coordinated system whose templates, scripts, CLI, agent integrations, extensions, presets, and documentation must remain aligned.
+Spec Kit is a toolkit for spec-driven development. At its core, it is a coordinated set of prompts, templates, scripts, and CLI/integration assets that define and deliver a spec-driven workflow for AI coding agents. The tables below summarize the essential project documents and main repository surfaces for developers.
 
 **Essential project documents:**
 
@@ -27,50 +27,6 @@ Spec Kit is a toolkit for spec-driven development. It provides the workflow, sca
 | `src/specify_cli/` | Python source for the `specify` CLI, including agent-specific assets. |
 | `extensions/` | Extension-related docs, catalogs, and supporting assets. |
 | `presets/` | Preset-related docs, catalogs, and supporting assets. |
-
-These documents and repository surfaces form the minimum context needed to reason about changes safely. Maintaining Spec Kit means preserving coherence across those surfaces. A change in one layer often affects documentation, validation expectations, and user-visible workflow behavior in other layers.
-
-## System Mental Model
-
-### Core User Workflow
-
-At a high level, Spec Kit supports a staged workflow in which a user moves through structured project definition and execution steps. The exact implementation details may vary by agent or integration surface, but the core conceptual flow is consistent:
-
-1. establish or refine governing project principles,
-2. define a concrete specification,
-3. derive an implementation plan,
-4. derive an actionable task breakdown,
-5. execute implementation against the defined artifacts.
-
-When changing Spec Kit, first identify which part of that lifecycle your change affects.
-
-### Source Assets vs Generated Project Assets
-
-A useful distinction for maintainers is the difference between:
-
-- **source assets in this repository**, and
-- **artifacts that users consume in their own repositories or agent sessions**.
-
-Source assets in this repository define behavior, structure, wording, conventions, and scaffolding rules. Generated or installed assets are the user-facing outputs of those source assets.
-
-When editing repository files, think in terms of downstream consequences:
-
-- What will change in the user-visible workflow?
-- What will change in generated project content?
-- What must be revalidated manually in a real end-to-end flow?
-
-### Main System Surfaces
-
-Most changes fall into one or more of these surfaces:
-
-- **Templates**: define workflow artifacts, prompts, scaffolding content, and generated project structure.
-- **Scripts and automation**: support local generation, packaging, installation, or validation flows.
-- **CLI and bootstrap behavior**: define how users initialize, install, or execute Spec Kit workflows.
-- **Agent integration surfaces**: adapt the kit to specific agent environments without changing the underlying workflow intent.
-- **Extensions and presets**: package additional reusable behavior or opinionated configurations.
-- **Documentation**: explain the intended model, workflow, usage, and maintenance practices.
-
-A contributor should be able to identify which surface they are editing before making a change.
 
 ## Repository Anatomy
 
@@ -150,19 +106,6 @@ Edit `presets/` when you are:
 - updating preset publishing or maintenance logic.
 
 Presets should remain understandable as opinionated selections layered on top of the core workflow, not as silent redefinitions of that workflow.
-
-### Documentation Surface
-
-Top-level and subsystem documentation explains the user model, maintainer model, testing expectations, and publishing flows.
-
-Edit documentation whenever code, templates, scripts, or workflow semantics change in a way that affects:
-
-- user understanding,
-- contributor understanding,
-- validation expectations,
-- extension or preset author behavior.
-
-Do not treat docs as an afterthought. In Spec Kit, documentation is part of the product surface.
 
 ## Change Map: If You Want to Change X, Edit Y
 
