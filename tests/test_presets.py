@@ -1772,19 +1772,19 @@ class TestSelfTestPreset:
         assert "preset:self-test" in content
 
     def test_self_test_registers_commands_for_claude(self, project_dir):
-        """Test that installing self-test registers commands in .claude/commands/."""
-        # Create Claude agent directory to simulate Claude being set up
-        claude_dir = project_dir / ".claude" / "commands"
+        """Test that installing self-test registers skills in .claude/skills/."""
+        # Create Claude skills directory to simulate Claude being set up
+        claude_dir = project_dir / ".claude" / "skills"
         claude_dir.mkdir(parents=True)
 
         manager = PresetManager(project_dir)
         manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
 
-        # Check the command was registered
-        cmd_file = claude_dir / "speckit.specify.md"
-        assert cmd_file.exists(), "Command not registered in .claude/commands/"
+        # Check the skill was registered
+        cmd_file = claude_dir / "speckit-specify" / "SKILL.md"
+        assert cmd_file.exists(), "Skill not registered in .claude/skills/"
         content = cmd_file.read_text()
-        assert "preset:self-test" in content
+        assert "self-test" in content
 
     def test_self_test_registers_commands_for_gemini(self, project_dir):
         """Test that installing self-test registers commands in .gemini/commands/ as TOML."""
@@ -1804,13 +1804,13 @@ class TestSelfTestPreset:
 
     def test_self_test_unregisters_commands_on_remove(self, project_dir):
         """Test that removing self-test cleans up registered commands."""
-        claude_dir = project_dir / ".claude" / "commands"
+        claude_dir = project_dir / ".claude" / "skills"
         claude_dir.mkdir(parents=True)
 
         manager = PresetManager(project_dir)
         manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
 
-        cmd_file = claude_dir / "speckit.specify.md"
+        cmd_file = claude_dir / "speckit-specify" / "SKILL.md"
         assert cmd_file.exists()
 
         manager.remove("self-test")
@@ -1826,7 +1826,7 @@ class TestSelfTestPreset:
 
     def test_extension_command_skipped_when_extension_missing(self, project_dir, temp_dir):
         """Test that extension command overrides are skipped if the extension isn't installed."""
-        claude_dir = project_dir / ".claude" / "commands"
+        claude_dir = project_dir / ".claude" / "skills"
         claude_dir.mkdir(parents=True)
 
         preset_dir = temp_dir / "ext-override-preset"
@@ -1869,7 +1869,7 @@ class TestSelfTestPreset:
 
     def test_extension_command_registered_when_extension_present(self, project_dir, temp_dir):
         """Test that extension command overrides ARE registered when the extension is installed."""
-        claude_dir = project_dir / ".claude" / "commands"
+        claude_dir = project_dir / ".claude" / "skills"
         claude_dir.mkdir(parents=True)
         (project_dir / ".specify" / "extensions" / "fakeext").mkdir(parents=True)
 
@@ -1964,7 +1964,7 @@ class TestPresetSkills:
         self._create_skill(skills_dir, "speckit-specify")
 
         # Also create the claude commands dir so commands get registered
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
 
         # Install self-test preset (has a command override for speckit.specify)
         manager = PresetManager(project_dir)
@@ -1987,7 +1987,7 @@ class TestPresetSkills:
         skills_dir = project_dir / ".claude" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
@@ -2022,7 +2022,7 @@ class TestPresetSkills:
         skills_dir = project_dir / ".claude" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
@@ -2038,7 +2038,7 @@ class TestPresetSkills:
         skills_dir = project_dir / ".claude" / "skills"
         self._create_skill(skills_dir, "speckit-specify")
 
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
 
         # Set up core command template in the project so restoration works
         core_cmds = project_dir / ".specify" / "templates" / "commands"
@@ -2068,7 +2068,7 @@ class TestPresetSkills:
         self._write_init_options(project_dir, ai="claude", ai_skills=True, script="sh")
         skills_dir = project_dir / ".claude" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="old")
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
 
         core_cmds = project_dir / ".specify" / "templates" / "commands"
         core_cmds.mkdir(parents=True, exist_ok=True)
@@ -2099,7 +2099,7 @@ class TestPresetSkills:
         skills_dir.mkdir(parents=True, exist_ok=True)
         (skills_dir / "speckit-specify").write_text("not-a-directory")
 
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
@@ -2114,7 +2114,7 @@ class TestPresetSkills:
         self._write_init_options(project_dir, ai="claude")
         # Don't create skills dir — simulate --ai-skills never created them
 
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
@@ -2518,7 +2518,7 @@ class TestPresetSkills:
 
         skills_dir = project_dir / ".claude" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         self_test_dir = Path(__file__).parent.parent / "presets" / "self-test"

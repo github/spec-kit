@@ -81,9 +81,9 @@ class TestInitIntegrationFlag:
 
         project = tmp_path / "claude-here-existing"
         project.mkdir()
-        commands_dir = project / ".claude" / "commands"
+        commands_dir = project / ".claude" / "skills"
         commands_dir.mkdir(parents=True)
-        command_file = commands_dir / "speckit.specify.md"
+        command_file = commands_dir / "speckit-specify" / "SKILL.md"
         command_file.write_text("# preexisting command\n", encoding="utf-8")
 
         old_cwd = os.getcwd()

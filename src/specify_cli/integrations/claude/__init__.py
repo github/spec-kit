@@ -22,13 +22,11 @@ class ClaudeIntegration(SkillsIntegration):
         "install_url": "https://docs.anthropic.com/en/docs/claude-code/setup",
         "requires_cli": True,
     }
-    # registrar_config reflects where extensions/presets write command
-    # overrides — still .claude/commands even though init installs skills.
     registrar_config = {
-        "dir": ".claude/commands",
+        "dir": ".claude/skills",
         "format": "markdown",
         "args": "$ARGUMENTS",
-        "extension": ".md",
+        "extension": "/SKILL.md",
     }
     context_file = "CLAUDE.md"
 

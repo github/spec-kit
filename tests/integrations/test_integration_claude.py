@@ -26,11 +26,10 @@ class TestClaudeIntegration:
 
     def test_registrar_config_uses_skill_layout(self):
         integration = get_integration("claude")
-        # registrar_config reflects where extensions/presets write overrides
-        assert integration.registrar_config["dir"] == ".claude/commands"
+        assert integration.registrar_config["dir"] == ".claude/skills"
         assert integration.registrar_config["format"] == "markdown"
         assert integration.registrar_config["args"] == "$ARGUMENTS"
-        assert integration.registrar_config["extension"] == ".md"
+        assert integration.registrar_config["extension"] == "/SKILL.md"
 
     def test_context_file(self):
         integration = get_integration("claude")
