@@ -717,6 +717,10 @@ class PresetManager:
         ai_skills_enabled = bool(init_opts.get("ai_skills"))
         registrar = CommandRegistrar()
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
+        # Native skill agents (e.g. codex/kimi/agy) materialize brand-new
+        # preset skills in _register_commands() because their detected agent
+        # directory is already the skills directory. This flag is only for
+        # command-backed agents that also mirror commands into skills.
         create_missing_skills = ai_skills_enabled and agent_config.get("extension") != "/SKILL.md"
 
         written: List[str] = []
@@ -1042,14 +1046,15 @@ class PresetManager:
         if registered_skills:
             self._unregister_skills(registered_skills, pack_dir)
             try:
-                from . import NATIVE_SKILLS_AGENTS
+                from .agents import CommandRegistrar
             except ImportError:
-                NATIVE_SKILLS_AGENTS = set()
-            registered_commands = {
-                agent_name: cmd_names
-                for agent_name, cmd_names in registered_commands.items()
-                if agent_name not in NATIVE_SKILLS_AGENTS
-            }
+                CommandRegistrar = None
+            if CommandRegistrar is not None:
+                registered_commands = {
+                    agent_name: cmd_names
+                    for agent_name, cmd_names in registered_commands.items()
+                    if CommandRegistrar.AGENT_CONFIGS.get(agent_name, {}).get("extension") != "/SKILL.md"
+                }
 
         # Unregister non-skill command files from AI agents.
         if registered_commands:

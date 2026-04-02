@@ -71,7 +71,7 @@ class ClaudeIntegration(SkillsIntegration):
                 f"project_root ({project_root_resolved})"
             )
 
-        dest = self.commands_dest(project_root).resolve()
+        dest = self.skills_dest(project_root).resolve()
         try:
             dest.relative_to(project_root_resolved)
         except ValueError as exc:
