@@ -26,7 +26,7 @@
 - [🎨 Community Presets](#-community-presets)
 - [🚶 Community Walkthroughs](#-community-walkthroughs)
 - [🛠️ Community Friends](#️-community-friends)
-- [🤖 Supported AI Agents](#-supported-ai-agents)
+- [🤖 Supported AI Tools](#-supported-ai-tools)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [🧩 Making Spec Kit Your Own: Extensions & Presets](#-making-spec-kit-your-own-extensions--presets)
 - [📚 Core Philosophy](#-core-philosophy)
@@ -272,9 +272,9 @@ Community projects that extend, visualize, or build on Spec Kit:
 
 - **[Spec Kit Assistant](https://marketplace.visualstudio.com/items?itemName=rfsales.speckit-assistant)** — A VS Code extension that provides a visual orchestrator for the full SDD workflow (constitution → specification → planning → tasks → implementation) with phase status visualization, an interactive task checklist, DAG visualization, and support for Claude, Gemini, GitHub Copilot, and OpenAI backends. Requires the `specify` CLI in your PATH.
 
-## 🤖 Supported AI Agents
+## 🤖 Supported AI Tools
 
-| Agent                                                                                | Support | Notes                                                                                                                                     |
+| Tool                                                                                 | Support | Notes                                                                                                                                     |
 | ------------------------------------------------------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | [Qoder CLI](https://qoder.com/cli)                                                   | ✅      |                                                                                                                                           |
 | [Kiro CLI](https://kiro.dev/docs/cli/)                                               | ✅      | Use `--ai kiro-cli` (alias: `--ai kiro`)                                                                                                 |
@@ -555,7 +555,7 @@ Our research and experimentation focus on:
 ## 🔧 Prerequisites
 
 - **Linux/macOS/Windows**
-- [Supported](#-supported-ai-agents) AI coding agent.
+- [Supported](#-supported-ai-tools) AI coding tool.
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)

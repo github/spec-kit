@@ -9,7 +9,7 @@
 | What to Upgrade | Command | When to Use |
 |----------------|---------|-------------|
 | **CLI Tool Only** | `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@vX.Y.Z` | Get latest CLI features without touching project files |
-| **Project Files** | `specify init --here --force --ai <your-agent>` | Update slash commands, templates, and scripts in your project |
+| **Project Files** | `specify init --here --force --ai <your-tool>` | Update slash commands, templates, and scripts in your project |
 | **Both** | Run CLI upgrade, then project update | Recommended for major version updates |
 
 ---
@@ -73,10 +73,10 @@ The `specs/` directory is completely excluded from template packages and will ne
 Run this inside your project directory:
 
 ```bash
-specify init --here --force --ai <your-agent>
+specify init --here --force --ai <your-tool>
 ```
 
-Replace `<your-agent>` with your AI assistant. Refer to this list of [Supported AI Agents](../README.md#-supported-ai-agents)
+Replace `<your-tool>` with your AI tool. Refer to this list of [Supported AI Tools](../README.md#-supported-ai-tools)
 
 **Example:**
 
