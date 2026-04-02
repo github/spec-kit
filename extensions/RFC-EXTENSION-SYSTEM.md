@@ -609,7 +609,7 @@ hierarchy:
 
 defaults:
   epic:
-    labels: ["spec-driven", "typescript"]
+    labels: ["constraint-driven", "typescript"]
 ```
 
 ```yaml

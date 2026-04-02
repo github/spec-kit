@@ -1,12 +1,12 @@
-# Spec Kit
+# InfraKit
 
 *Build high-quality software faster.*
 
-**An effort to allow organizations to focus on product scenarios rather than writing undifferentiated code with the help of Spec-Driven Development.**
+**An effort to allow organizations to focus on product scenarios rather than writing undifferentiated code with the help of Constraint-Driven Development.**
 
-## What is Spec-Driven Development?
+## What is Constraint-Driven Development?
 
-Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
+Constraint-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Constraint-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
 
 ## Getting Started
 
@@ -17,7 +17,7 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ## Core Philosophy
 
-Spec-Driven Development is a structured process that emphasizes:
+Constraint-Driven Development is a structured process that emphasizes:
 
 - **Intent-driven development** where specifications define the "*what*" before the "*how*"
 - **Rich specification creation** using guardrails and organizational principles
@@ -39,7 +39,7 @@ Our research and experimentation focus on:
 ### Technology Independence
 
 - Create applications using diverse technology stacks
-- Validate the hypothesis that Spec-Driven Development is a process not tied to specific technologies, programming languages, or frameworks
+- Validate the hypothesis that Constraint-Driven Development is a process not tied to specific technologies, programming languages, or frameworks
 
 ### Enterprise Constraints
 
@@ -60,8 +60,8 @@ Our research and experimentation focus on:
 
 ## Contributing
 
-Please see our [Contributing Guide](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md) for information on how to contribute to this project.
+Please see our [Contributing Guide](https://github.com/github/infrakit/blob/main/CONTRIBUTING.md) for information on how to contribute to this project.
 
 ## Support
 
-For support, please check our [Support Guide](https://github.com/github/spec-kit/blob/main/SUPPORT.md) or open an issue on GitHub.
+For support, please check our [Support Guide](https://github.com/github/infrakit/blob/main/SUPPORT.md) or open an issue on GitHub.

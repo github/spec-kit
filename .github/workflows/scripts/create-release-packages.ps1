@@ -3,18 +3,22 @@
 
 <#
 .SYNOPSIS
-    Build Spec Kit template release archives for each supported AI assistant and script type.
+    Build InfraKit template release archives for each supported AI assistant, IaC tool, and script type.
 
 .DESCRIPTION
     create-release-packages.ps1 (workflow-local)
-    Build Spec Kit template release archives for each supported AI assistant and script type.
-    
+    Build InfraKit template release archives for each supported AI assistant, IaC tool, and script type.
+
 .PARAMETER Version
     Version string with leading 'v' (e.g., v0.2.0)
 
 .PARAMETER Agents
     Comma or space separated subset of agents to build (default: all)
     Valid agents: claude, gemini, copilot, cursor-agent, qwen, opencode, windsurf, codex, kilocode, auggie, roo, codebuddy, amp, q, bob, qodercli, shai, agy, generic
+
+.PARAMETER Iac
+    Comma or space separated subset of IaC tools to build (default: all)
+    Valid IaC tools: crossplane
 
 .PARAMETER Scripts
     Comma or space separated subset of script types to build (default: both)
@@ -33,10 +37,13 @@
 param(
     [Parameter(Mandatory=$true, Position=0)]
     [string]$Version,
-    
+
     [Parameter(Mandatory=$false)]
     [string]$Agents = "",
-    
+
+    [Parameter(Mandatory=$false)]
+    [string]$Iac = "",
+
     [Parameter(Mandatory=$false)]
     [string]$Scripts = ""
 )
@@ -60,10 +67,10 @@ New-Item -ItemType Directory -Path $GenReleasesDir -Force | Out-Null
 
 function Rewrite-Paths {
     param([string]$Content)
-    
-    $Content = $Content -replace '(/?)\bmemory/', '.specify/memory/'
-    $Content = $Content -replace '(/?)\bscripts/', '.specify/scripts/'
-    $Content = $Content -replace '(/?)\btemplates/', '.specify/templates/'
+
+    $Content = $Content -replace '(/?)\bmemory/', '.infrakit/memory/'
+    $Content = $Content -replace '(/?)\bscripts/', '.infrakit/scripts/'
+    $Content = $Content -replace '(/?)\btemplates/', '.infrakit/templates/'
     return $Content
 }
 
@@ -73,12 +80,13 @@ function Generate-Commands {
         [string]$Extension,
         [string]$ArgFormat,
         [string]$OutputDir,
-        [string]$ScriptVariant
+        [string]$ScriptVariant,
+        [string]$TemplatesDir = "templates/commands"
     )
-    
+
     New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
-    
-    $templates = Get-ChildItem -Path "templates/commands/*.md" -File -ErrorAction SilentlyContinue
+
+    $templates = Get-ChildItem -Path "$TemplatesDir/*.md" -File -ErrorAction SilentlyContinue
     
     foreach ($template in $templates) {
         $name = [System.IO.Path]::GetFileNameWithoutExtension($template.Name)
@@ -160,7 +168,7 @@ function Generate-Commands {
         $body = Rewrite-Paths -Content $body
         
         # Generate output file based on extension
-        $outputFile = Join-Path $OutputDir "speckit.$name.$Extension"
+        $outputFile = Join-Path $OutputDir "infrakit:$name.$Extension"
         
         switch ($Extension) {
             'toml' {
@@ -186,7 +194,7 @@ function Generate-CopilotPrompts {
     
     New-Item -ItemType Directory -Path $PromptsDir -Force | Out-Null
     
-    $agentFiles = Get-ChildItem -Path "$AgentsDir/speckit.*.agent.md" -File -ErrorAction SilentlyContinue
+    $agentFiles = Get-ChildItem -Path "$AgentsDir/infrakit:*.agent.md" -File -ErrorAction SilentlyContinue
     
     foreach ($agentFile in $agentFiles) {
         $basename = $agentFile.Name -replace '\.agent\.md$', ''
@@ -204,56 +212,59 @@ agent: $basename
 function Build-Variant {
     param(
         [string]$Agent,
+        [string]$IacTool,
         [string]$Script
     )
-    
-    $baseDir = Join-Path $GenReleasesDir "sdd-${Agent}-package-${Script}"
-    Write-Host "Building $Agent ($Script) package..."
+
+    $baseDir = Join-Path $GenReleasesDir "infrakit-${Agent}-${IacTool}-package-${Script}"
+    Write-Host "Building $Agent / $IacTool ($Script) package..."
     New-Item -ItemType Directory -Path $baseDir -Force | Out-Null
-    
+
     # Copy base structure but filter scripts by variant
-    $specDir = Join-Path $baseDir ".specify"
+    $specDir = Join-Path $baseDir ".infrakit"
     New-Item -ItemType Directory -Path $specDir -Force | Out-Null
-    
+
     # Copy memory directory
     if (Test-Path "memory") {
         Copy-Item -Path "memory" -Destination $specDir -Recurse -Force
-        Write-Host "Copied memory -> .specify"
+        Write-Host "Copied memory -> .infrakit"
     }
-    
+
     # Only copy the relevant script variant directory
     if (Test-Path "scripts") {
         $scriptsDestDir = Join-Path $specDir "scripts"
         New-Item -ItemType Directory -Path $scriptsDestDir -Force | Out-Null
-        
+
         switch ($Script) {
             'sh' {
                 if (Test-Path "scripts/bash") {
                     Copy-Item -Path "scripts/bash" -Destination $scriptsDestDir -Recurse -Force
-                    Write-Host "Copied scripts/bash -> .specify/scripts"
+                    Write-Host "Copied scripts/bash -> .infrakit/scripts"
                 }
             }
             'ps' {
                 if (Test-Path "scripts/powershell") {
                     Copy-Item -Path "scripts/powershell" -Destination $scriptsDestDir -Recurse -Force
-                    Write-Host "Copied scripts/powershell -> .specify/scripts"
+                    Write-Host "Copied scripts/powershell -> .infrakit/scripts"
                 }
             }
         }
-        
+
         # Copy any script files that aren't in variant-specific directories
         Get-ChildItem -Path "scripts" -File -ErrorAction SilentlyContinue | ForEach-Object {
             Copy-Item -Path $_.FullName -Destination $scriptsDestDir -Force
         }
     }
-    
-    # Copy templates (excluding commands directory and vscode-settings.json)
+
+    # Copy templates (excluding commands, iac, and vscode-settings.json)
     if (Test-Path "templates") {
         $templatesDestDir = Join-Path $specDir "templates"
         New-Item -ItemType Directory -Path $templatesDestDir -Force | Out-Null
-        
+
         Get-ChildItem -Path "templates" -Recurse -File | Where-Object {
-            $_.FullName -notmatch 'templates[/\\]commands[/\\]' -and $_.Name -ne 'vscode-settings.json'
+            $_.FullName -notmatch 'templates[/\\]commands[/\\]' -and
+            $_.FullName -notmatch 'templates[/\\]iac[/\\]' -and
+            $_.Name -ne 'vscode-settings.json'
         } | ForEach-Object {
             $relativePath = $_.FullName.Substring((Resolve-Path "templates").Path.Length + 1)
             $destFile = Join-Path $templatesDestDir $relativePath
@@ -261,18 +272,22 @@ function Build-Variant {
             New-Item -ItemType Directory -Path $destFileDir -Force | Out-Null
             Copy-Item -Path $_.FullName -Destination $destFile -Force
         }
-        Write-Host "Copied templates -> .specify/templates"
+        Write-Host "Copied templates -> .infrakit/templates"
     }
-    
-    # Generate agent-specific command files
+
+    $iacTemplatesDir = "templates/iac/$IacTool/commands"
+
+    # Generate agent-specific command files (generic + IaC-specific)
     switch ($Agent) {
         'claude' {
             $cmdDir = Join-Path $baseDir ".claude/commands"
             Generate-Commands -Agent 'claude' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'claude' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
         'gemini' {
             $cmdDir = Join-Path $baseDir ".gemini/commands"
             Generate-Commands -Agent 'gemini' -Extension 'toml' -ArgFormat '{{args}}' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'gemini' -Extension 'toml' -ArgFormat '{{args}}' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
             if (Test-Path "agent_templates/gemini/GEMINI.md") {
                 Copy-Item -Path "agent_templates/gemini/GEMINI.md" -Destination (Join-Path $baseDir "GEMINI.md")
             }
@@ -280,11 +295,12 @@ function Build-Variant {
         'copilot' {
             $agentsDir = Join-Path $baseDir ".github/agents"
             Generate-Commands -Agent 'copilot' -Extension 'agent.md' -ArgFormat '$ARGUMENTS' -OutputDir $agentsDir -ScriptVariant $Script
-            
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'copilot' -Extension 'agent.md' -ArgFormat '$ARGUMENTS' -OutputDir $agentsDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
+
             # Generate companion prompt files
             $promptsDir = Join-Path $baseDir ".github/prompts"
             Generate-CopilotPrompts -AgentsDir $agentsDir -PromptsDir $promptsDir
-            
+
             # Create VS Code workspace settings
             $vscodeDir = Join-Path $baseDir ".vscode"
             New-Item -ItemType Directory -Path $vscodeDir -Force | Out-Null
@@ -295,10 +311,12 @@ function Build-Variant {
         'cursor-agent' {
             $cmdDir = Join-Path $baseDir ".cursor/commands"
             Generate-Commands -Agent 'cursor-agent' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'cursor-agent' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
         'qwen' {
             $cmdDir = Join-Path $baseDir ".qwen/commands"
             Generate-Commands -Agent 'qwen' -Extension 'toml' -ArgFormat '{{args}}' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'qwen' -Extension 'toml' -ArgFormat '{{args}}' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
             if (Test-Path "agent_templates/qwen/QWEN.md") {
                 Copy-Item -Path "agent_templates/qwen/QWEN.md" -Destination (Join-Path $baseDir "QWEN.md")
             }
@@ -306,61 +324,74 @@ function Build-Variant {
         'opencode' {
             $cmdDir = Join-Path $baseDir ".opencode/command"
             Generate-Commands -Agent 'opencode' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'opencode' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
         'windsurf' {
             $cmdDir = Join-Path $baseDir ".windsurf/workflows"
             Generate-Commands -Agent 'windsurf' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'windsurf' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
         'codex' {
             $cmdDir = Join-Path $baseDir ".codex/prompts"
             Generate-Commands -Agent 'codex' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'codex' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
         'kilocode' {
             $cmdDir = Join-Path $baseDir ".kilocode/workflows"
             Generate-Commands -Agent 'kilocode' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'kilocode' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
         'auggie' {
             $cmdDir = Join-Path $baseDir ".augment/commands"
             Generate-Commands -Agent 'auggie' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'auggie' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
         'roo' {
             $cmdDir = Join-Path $baseDir ".roo/commands"
             Generate-Commands -Agent 'roo' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'roo' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
         'codebuddy' {
             $cmdDir = Join-Path $baseDir ".codebuddy/commands"
             Generate-Commands -Agent 'codebuddy' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'codebuddy' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
         'amp' {
             $cmdDir = Join-Path $baseDir ".agents/commands"
             Generate-Commands -Agent 'amp' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'amp' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
         'q' {
             $cmdDir = Join-Path $baseDir ".amazonq/prompts"
             Generate-Commands -Agent 'q' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'q' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
         'bob' {
             $cmdDir = Join-Path $baseDir ".bob/commands"
             Generate-Commands -Agent 'bob' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'bob' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
         'qodercli' {
             $cmdDir = Join-Path $baseDir ".qoder/commands"
             Generate-Commands -Agent 'qodercli' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'qodercli' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
         'generic' {
-            $cmdDir = Join-Path $baseDir ".speckit/commands"
+            $cmdDir = Join-Path $baseDir ".infrakit/commands"
             Generate-Commands -Agent 'generic' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script
+            if (Test-Path $iacTemplatesDir) { Generate-Commands -Agent 'generic' -Extension 'md' -ArgFormat '$ARGUMENTS' -OutputDir $cmdDir -ScriptVariant $Script -TemplatesDir $iacTemplatesDir }
         }
     }
-    
+
     # Create zip archive
-    $zipFile = Join-Path $GenReleasesDir "spec-kit-template-${Agent}-${Script}-${Version}.zip"
+    $zipFile = Join-Path $GenReleasesDir "infrakit-template-${Agent}-${IacTool}-${Script}-${Version}.zip"
     Compress-Archive -Path "$baseDir/*" -DestinationPath $zipFile -Force
     Write-Host "Created $zipFile"
 }
 
-# Define all agents and scripts
+# Define all agents, IaC tools, and scripts
 $AllAgents = @('claude', 'gemini', 'copilot', 'cursor-agent', 'qwen', 'opencode', 'windsurf', 'codex', 'kilocode', 'auggie', 'roo', 'codebuddy', 'amp', 'q', 'bob', 'qodercli', 'shai', 'agy', 'generic')
+$AllIac    = @('crossplane')
 $AllScripts = @('sh', 'ps')
 
 function Normalize-List {
@@ -395,34 +426,41 @@ function Validate-Subset {
 # Determine agent list
 if (-not [string]::IsNullOrEmpty($Agents)) {
     $AgentList = Normalize-List -Input $Agents
-    if (-not (Validate-Subset -Type 'agent' -Allowed $AllAgents -Items $AgentList)) {
-        exit 1
-    }
+    if (-not (Validate-Subset -Type 'agent' -Allowed $AllAgents -Items $AgentList)) { exit 1 }
 } else {
     $AgentList = $AllAgents
+}
+
+# Determine IaC list
+if (-not [string]::IsNullOrEmpty($Iac)) {
+    $IacList = Normalize-List -Input $Iac
+    if (-not (Validate-Subset -Type 'iac' -Allowed $AllIac -Items $IacList)) { exit 1 }
+} else {
+    $IacList = $AllIac
 }
 
 # Determine script list
 if (-not [string]::IsNullOrEmpty($Scripts)) {
     $ScriptList = Normalize-List -Input $Scripts
-    if (-not (Validate-Subset -Type 'script' -Allowed $AllScripts -Items $ScriptList)) {
-        exit 1
-    }
+    if (-not (Validate-Subset -Type 'script' -Allowed $AllScripts -Items $ScriptList)) { exit 1 }
 } else {
     $ScriptList = $AllScripts
 }
 
 Write-Host "Agents: $($AgentList -join ', ')"
+Write-Host "IaC tools: $($IacList -join ', ')"
 Write-Host "Scripts: $($ScriptList -join ', ')"
 
 # Build all variants
 foreach ($agent in $AgentList) {
-    foreach ($script in $ScriptList) {
-        Build-Variant -Agent $agent -Script $script
+    foreach ($iac in $IacList) {
+        foreach ($script in $ScriptList) {
+            Build-Variant -Agent $agent -IacTool $iac -Script $script
+        }
     }
 }
 
 Write-Host "`nArchives in ${GenReleasesDir}:"
-Get-ChildItem -Path $GenReleasesDir -Filter "spec-kit-template-*-${Version}.zip" | ForEach-Object {
+Get-ChildItem -Path $GenReleasesDir -Filter "infrakit-template-*-${Version}.zip" | ForEach-Object {
     Write-Host "  $($_.Name)"
 }

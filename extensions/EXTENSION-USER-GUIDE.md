@@ -354,7 +354,7 @@ project:
 
 defaults:
   epic:
-    labels: ["spec-driven"]
+    labels: ["constraint-driven"]
 ```
 
 **Local override** (`.specify/extensions/jira/jira-config.local.yml`):

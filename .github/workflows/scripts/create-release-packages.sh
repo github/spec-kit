@@ -2,14 +2,15 @@
 set -euo pipefail
 
 # create-release-packages.sh (workflow-local)
-# Build Spec Kit template release archives for each supported AI assistant and script type.
+# Build InfraKit template release archives for each supported AI assistant, IaC tool, and script type.
 # Usage: .github/workflows/scripts/create-release-packages.sh <version>
 #   Version argument should include leading 'v'.
-#   Optionally set AGENTS and/or SCRIPTS env vars to limit what gets built.
+#   Optionally set AGENTS, SCRIPTS, and/or IAC env vars to limit what gets built.
 #     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf codex amp shai bob generic (default: all)
 #     SCRIPTS : space or comma separated subset of: sh ps (default: both)
+#     IAC     : space or comma separated subset of: crossplane (default: all)
 #   Examples:
-#     AGENTS=claude SCRIPTS=sh $0 v0.2.0
+#     AGENTS=claude SCRIPTS=sh IAC=crossplane $0 v0.2.0
 #     AGENTS="copilot,gemini" $0 v0.2.0
 #     SCRIPTS=ps $0 v0.2.0
 
@@ -32,16 +33,16 @@ rm -rf "$GENRELEASES_DIR"/* || true
 
 rewrite_paths() {
   sed -E \
-    -e 's@(/?)memory/@.specify/memory/@g' \
-    -e 's@(/?)scripts/@.specify/scripts/@g' \
-    -e 's@(/?)templates/@.specify/templates/@g' \
-    -e 's@\.specify\.specify/@.specify/@g'
+    -e 's@(/?)memory/@.infrakit/memory/@g' \
+    -e 's@(/?)scripts/@.infrakit/scripts/@g' \
+    -e 's@(/?)templates/@.infrakit/templates/@g' \
+    -e 's@\.infrakit\.infrakit/@.infrakit/@g'
 }
 
 generate_commands() {
-  local agent=$1 ext=$2 arg_format=$3 output_dir=$4 script_variant=$5
+  local agent=$1 ext=$2 arg_format=$3 output_dir=$4 script_variant=$5 templates_dir=${6:-templates/commands}
   mkdir -p "$output_dir"
-  for template in templates/commands/*.md; do
+  for template in "$templates_dir"/*.md; do
     [[ -f "$template" ]] || continue
     local name description script_command agent_script_command body
     name=$(basename "$template" .md)
@@ -93,11 +94,11 @@ generate_commands() {
     case $ext in
       toml)
         body=$(printf '%s\n' "$body" | sed 's/\\/\\\\/g')
-        { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/speckit.$name.$ext" ;;
+        { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/infrakit:$name.$ext" ;;
       md)
-        echo "$body" > "$output_dir/speckit.$name.$ext" ;;
+        echo "$body" > "$output_dir/infrakit:$name.$ext" ;;
       agent.md)
-        echo "$body" > "$output_dir/speckit.$name.$ext" ;;
+        echo "$body" > "$output_dir/infrakit:$name.$ext" ;;
     esac
   done
 }
@@ -107,9 +108,9 @@ generate_copilot_prompts() {
   mkdir -p "$prompts_dir"
   
   # Generate a .prompt.md file for each .agent.md file
-  for agent_file in "$agents_dir"/speckit.*.agent.md; do
+  for agent_file in "$agents_dir"/infrakit:*.agent.md; do
     [[ -f "$agent_file" ]] || continue
-    
+
     local basename=$(basename "$agent_file" .agent.md)
     local prompt_file="$prompts_dir/${basename}.prompt.md"
     
@@ -123,52 +124,57 @@ EOF
 }
 
 build_variant() {
-  local agent=$1 script=$2
-  local base_dir="$GENRELEASES_DIR/sdd-${agent}-package-${script}"
-  echo "Building $agent ($script) package..."
+  local agent=$1 iac=$2 script=$3
+  local base_dir="$GENRELEASES_DIR/infrakit-${agent}-${iac}-package-${script}"
+  echo "Building $agent / $iac ($script) package..."
   mkdir -p "$base_dir"
-  
+
   # Copy base structure but filter scripts by variant
-  SPEC_DIR="$base_dir/.specify"
+  SPEC_DIR="$base_dir/.infrakit"
   mkdir -p "$SPEC_DIR"
-  
-  [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .specify"; }
-  
+
+  [[ -d memory ]] && { cp -r memory "$SPEC_DIR/"; echo "Copied memory -> .infrakit"; }
+
   # Only copy the relevant script variant directory
   if [[ -d scripts ]]; then
     mkdir -p "$SPEC_DIR/scripts"
     case $script in
       sh)
-        [[ -d scripts/bash ]] && { cp -r scripts/bash "$SPEC_DIR/scripts/"; echo "Copied scripts/bash -> .specify/scripts"; }
+        [[ -d scripts/bash ]] && { cp -r scripts/bash "$SPEC_DIR/scripts/"; echo "Copied scripts/bash -> .infrakit/scripts"; }
         # Copy any script files that aren't in variant-specific directories
         find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
         ;;
       ps)
-        [[ -d scripts/powershell ]] && { cp -r scripts/powershell "$SPEC_DIR/scripts/"; echo "Copied scripts/powershell -> .specify/scripts"; }
+        [[ -d scripts/powershell ]] && { cp -r scripts/powershell "$SPEC_DIR/scripts/"; echo "Copied scripts/powershell -> .infrakit/scripts"; }
         # Copy any script files that aren't in variant-specific directories
         find scripts -maxdepth 1 -type f -exec cp {} "$SPEC_DIR/scripts/" \; 2>/dev/null || true
         ;;
     esac
   fi
-  
-  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -not -name "vscode-settings.json" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .specify/templates"; }
+
+  [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -not -path "templates/iac/*" -not -name "vscode-settings.json" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .infrakit/templates"; }
   
   # NOTE: We substitute {ARGS} internally. Outward tokens differ intentionally:
   #   * Markdown/prompt (claude, copilot, cursor-agent, opencode): $ARGUMENTS
   #   * TOML (gemini, qwen): {{args}}
   # This keeps formats readable without extra abstraction.
 
+  local iac_templates_dir="templates/iac/${iac}/commands"
+
   case $agent in
     claude)
       mkdir -p "$base_dir/.claude/commands"
-      generate_commands claude md "\$ARGUMENTS" "$base_dir/.claude/commands" "$script" ;;
+      generate_commands claude md "\$ARGUMENTS" "$base_dir/.claude/commands" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands claude md "\$ARGUMENTS" "$base_dir/.claude/commands" "$script" "$iac_templates_dir" ;;
     gemini)
       mkdir -p "$base_dir/.gemini/commands"
       generate_commands gemini toml "{{args}}" "$base_dir/.gemini/commands" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands gemini toml "{{args}}" "$base_dir/.gemini/commands" "$script" "$iac_templates_dir"
       [[ -f agent_templates/gemini/GEMINI.md ]] && cp agent_templates/gemini/GEMINI.md "$base_dir/GEMINI.md" ;;
     copilot)
       mkdir -p "$base_dir/.github/agents"
       generate_commands copilot agent.md "\$ARGUMENTS" "$base_dir/.github/agents" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands copilot agent.md "\$ARGUMENTS" "$base_dir/.github/agents" "$script" "$iac_templates_dir"
       # Generate companion prompt files
       generate_copilot_prompts "$base_dir/.github/agents" "$base_dir/.github/prompts"
       # Create VS Code workspace settings
@@ -177,60 +183,77 @@ build_variant() {
       ;;
     cursor-agent)
       mkdir -p "$base_dir/.cursor/commands"
-      generate_commands cursor-agent md "\$ARGUMENTS" "$base_dir/.cursor/commands" "$script" ;;
+      generate_commands cursor-agent md "\$ARGUMENTS" "$base_dir/.cursor/commands" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands cursor-agent md "\$ARGUMENTS" "$base_dir/.cursor/commands" "$script" "$iac_templates_dir" ;;
     qwen)
       mkdir -p "$base_dir/.qwen/commands"
       generate_commands qwen toml "{{args}}" "$base_dir/.qwen/commands" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands qwen toml "{{args}}" "$base_dir/.qwen/commands" "$script" "$iac_templates_dir"
       [[ -f agent_templates/qwen/QWEN.md ]] && cp agent_templates/qwen/QWEN.md "$base_dir/QWEN.md" ;;
     opencode)
       mkdir -p "$base_dir/.opencode/command"
-      generate_commands opencode md "\$ARGUMENTS" "$base_dir/.opencode/command" "$script" ;;
+      generate_commands opencode md "\$ARGUMENTS" "$base_dir/.opencode/command" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands opencode md "\$ARGUMENTS" "$base_dir/.opencode/command" "$script" "$iac_templates_dir" ;;
     windsurf)
       mkdir -p "$base_dir/.windsurf/workflows"
-      generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
+      generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" "$iac_templates_dir" ;;
     codex)
       mkdir -p "$base_dir/.codex/prompts"
-      generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/prompts" "$script" ;;
+      generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/prompts" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands codex md "\$ARGUMENTS" "$base_dir/.codex/prompts" "$script" "$iac_templates_dir" ;;
     kilocode)
       mkdir -p "$base_dir/.kilocode/workflows"
-      generate_commands kilocode md "\$ARGUMENTS" "$base_dir/.kilocode/workflows" "$script" ;;
+      generate_commands kilocode md "\$ARGUMENTS" "$base_dir/.kilocode/workflows" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands kilocode md "\$ARGUMENTS" "$base_dir/.kilocode/workflows" "$script" "$iac_templates_dir" ;;
     auggie)
       mkdir -p "$base_dir/.augment/commands"
-      generate_commands auggie md "\$ARGUMENTS" "$base_dir/.augment/commands" "$script" ;;
+      generate_commands auggie md "\$ARGUMENTS" "$base_dir/.augment/commands" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands auggie md "\$ARGUMENTS" "$base_dir/.augment/commands" "$script" "$iac_templates_dir" ;;
     roo)
       mkdir -p "$base_dir/.roo/commands"
-      generate_commands roo md "\$ARGUMENTS" "$base_dir/.roo/commands" "$script" ;;
+      generate_commands roo md "\$ARGUMENTS" "$base_dir/.roo/commands" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands roo md "\$ARGUMENTS" "$base_dir/.roo/commands" "$script" "$iac_templates_dir" ;;
     codebuddy)
       mkdir -p "$base_dir/.codebuddy/commands"
-      generate_commands codebuddy md "\$ARGUMENTS" "$base_dir/.codebuddy/commands" "$script" ;;
+      generate_commands codebuddy md "\$ARGUMENTS" "$base_dir/.codebuddy/commands" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands codebuddy md "\$ARGUMENTS" "$base_dir/.codebuddy/commands" "$script" "$iac_templates_dir" ;;
     qodercli)
       mkdir -p "$base_dir/.qoder/commands"
-      generate_commands qodercli md "\$ARGUMENTS" "$base_dir/.qoder/commands" "$script" ;;
+      generate_commands qodercli md "\$ARGUMENTS" "$base_dir/.qoder/commands" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands qodercli md "\$ARGUMENTS" "$base_dir/.qoder/commands" "$script" "$iac_templates_dir" ;;
     amp)
       mkdir -p "$base_dir/.agents/commands"
-      generate_commands amp md "\$ARGUMENTS" "$base_dir/.agents/commands" "$script" ;;
+      generate_commands amp md "\$ARGUMENTS" "$base_dir/.agents/commands" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands amp md "\$ARGUMENTS" "$base_dir/.agents/commands" "$script" "$iac_templates_dir" ;;
     shai)
       mkdir -p "$base_dir/.shai/commands"
-      generate_commands shai md "\$ARGUMENTS" "$base_dir/.shai/commands" "$script" ;;
+      generate_commands shai md "\$ARGUMENTS" "$base_dir/.shai/commands" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands shai md "\$ARGUMENTS" "$base_dir/.shai/commands" "$script" "$iac_templates_dir" ;;
     q)
       mkdir -p "$base_dir/.amazonq/prompts"
-      generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script" ;;
+      generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands q md "\$ARGUMENTS" "$base_dir/.amazonq/prompts" "$script" "$iac_templates_dir" ;;
     agy)
       mkdir -p "$base_dir/.agent/workflows"
-      generate_commands agy md "\$ARGUMENTS" "$base_dir/.agent/workflows" "$script" ;;
+      generate_commands agy md "\$ARGUMENTS" "$base_dir/.agent/workflows" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands agy md "\$ARGUMENTS" "$base_dir/.agent/workflows" "$script" "$iac_templates_dir" ;;
     bob)
       mkdir -p "$base_dir/.bob/commands"
-      generate_commands bob md "\$ARGUMENTS" "$base_dir/.bob/commands" "$script" ;;
+      generate_commands bob md "\$ARGUMENTS" "$base_dir/.bob/commands" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands bob md "\$ARGUMENTS" "$base_dir/.bob/commands" "$script" "$iac_templates_dir" ;;
     generic)
-      mkdir -p "$base_dir/.speckit/commands"
-      generate_commands generic md "\$ARGUMENTS" "$base_dir/.speckit/commands" "$script" ;;
+      mkdir -p "$base_dir/.infrakit/commands"
+      generate_commands generic md "\$ARGUMENTS" "$base_dir/.infrakit/commands" "$script"
+      [[ -d "$iac_templates_dir" ]] && generate_commands generic md "\$ARGUMENTS" "$base_dir/.infrakit/commands" "$script" "$iac_templates_dir" ;;
   esac
-  ( cd "$base_dir" && zip -r "../spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip" . )
-  echo "Created $GENRELEASES_DIR/spec-kit-template-${agent}-${script}-${NEW_VERSION}.zip"
+  ( cd "$base_dir" && zip -r "../infrakit-template-${agent}-${iac}-${script}-${NEW_VERSION}.zip" . )
+  echo "Created $GENRELEASES_DIR/infrakit-template-${agent}-${iac}-${script}-${NEW_VERSION}.zip"
 }
 
-# Determine agent list
+# Determine agent, IaC, and script lists
 ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q agy bob qodercli generic)
+ALL_IAC=(crossplane)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
@@ -259,6 +282,13 @@ else
   AGENT_LIST=("${ALL_AGENTS[@]}")
 fi
 
+if [[ -n ${IAC:-} ]]; then
+  mapfile -t IAC_LIST < <(printf '%s' "$IAC" | norm_list)
+  validate_subset iac ALL_IAC "${IAC_LIST[@]}" || exit 1
+else
+  IAC_LIST=("${ALL_IAC[@]}")
+fi
+
 if [[ -n ${SCRIPTS:-} ]]; then
   mapfile -t SCRIPT_LIST < <(printf '%s' "$SCRIPTS" | norm_list)
   validate_subset script ALL_SCRIPTS "${SCRIPT_LIST[@]}" || exit 1
@@ -267,14 +297,17 @@ else
 fi
 
 echo "Agents: ${AGENT_LIST[*]}"
+echo "IaC tools: ${IAC_LIST[*]}"
 echo "Scripts: ${SCRIPT_LIST[*]}"
 
 for agent in "${AGENT_LIST[@]}"; do
-  for script in "${SCRIPT_LIST[@]}"; do
-    build_variant "$agent" "$script"
+  for iac in "${IAC_LIST[@]}"; do
+    for script in "${SCRIPT_LIST[@]}"; do
+      build_variant "$agent" "$iac" "$script"
+    done
   done
 done
 
 echo "Archives in $GENRELEASES_DIR:"
-ls -1 "$GENRELEASES_DIR"/spec-kit-template-*-"${NEW_VERSION}".zip
+ls -1 "$GENRELEASES_DIR"/infrakit-template-*-"${NEW_VERSION}".zip
 

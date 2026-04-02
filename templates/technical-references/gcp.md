@@ -1,0 +1,132 @@
+# GCP Cloud Context
+
+GCP documentation and Crossplane provider context.
+
+---
+
+## MCP Tools
+
+### Lookup Flow (Prioritized)
+
+GCP does not have a dedicated provider MCP server. Follow this fallback chain:
+
+1. **DeepWiki MCP** (Primary)
+2. **search_web** (Final fallback)
+
+### 1. Primary: DeepWiki MCP
+
+Use DeepWiki as the primary tool for GCP documentation:
+
+```
+deepwiki_fetch(
+  "https://cloud.google.com/<service>/docs/",
+  mode: "crawl",
+  maxDepth: 2
+)
+
+Examples:
+- deepwiki_fetch("https://cloud.google.com/sql/docs/", "crawl", 2)
+- deepwiki_fetch("https://cloud.google.com/storage/docs/", "single", 1)
+- deepwiki_fetch("https://cloud.google.com/kubernetes-engine/docs/", "crawl", 2)
+```
+
+**Best Practices:**
+- Use targeted URLs (specific service documentation pages)
+- Start with `mode: "single"` for specific topics
+- Use `mode: "crawl"` with `maxDepth: 2` for broader exploration
+- Avoid deep crawls to prevent rate limiting
+
+### 2. Final Fallback: search_web
+
+Use ONLY when all MCP tools fail or are unavailable:
+
+```
+search_web("site:cloud.google.com <service> <topic>")
+search_web("site:marketplace.upbound.io provider-gcp-<family> <Resource> apiVersion")
+
+Examples:
+- search_web("site:cloud.google.com Cloud SQL PostgreSQL configuration")
+- search_web("site:marketplace.upbound.io provider-gcp-sql DatabaseInstance apiVersion")
+```
+
+---
+
+## Documentation URLs
+
+| Source | URL Pattern |
+|--------|-------------|
+| GCP Docs | `https://cloud.google.com/docs` |
+| Upbound Marketplace | `https://marketplace.upbound.io/providers/upbound/provider-gcp-<family>` |
+| GitHub Provider | `https://github.com/upbound/provider-gcp` |
+| CRD Docs | `https://doc.crds.dev/github.com/upbound/provider-gcp` |
+
+---
+
+## Provider Packages
+
+GCP uses family providers:
+
+| Family | Package | Common Resources |
+|--------|---------|------------------|
+| Storage | `provider-gcp-storage` | Bucket, BucketIAMMember |
+| SQL | `provider-gcp-sql` | DatabaseInstance, Database, User |
+| Container | `provider-gcp-container` | Cluster, NodePool |
+| Compute | `provider-gcp-compute` | Network, Subnetwork, Firewall, Instance |
+| Redis | `provider-gcp-redis` | Instance |
+| PubSub | `provider-gcp-pubsub` | Topic, Subscription |
+| BigQuery | `provider-gcp-bigquery` | Dataset, Table |
+
+---
+
+## API Patterns
+
+### API Version Format
+
+```
+<family>.gcp.upbound.io/v1beta1
+```
+
+**Examples**:
+- `storage.gcp.upbound.io/v1beta1`
+- `sql.gcp.upbound.io/v1beta1`
+- `container.gcp.upbound.io/v1beta1`
+
+### Common forProvider Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `project` | string | GCP project ID |
+| `region` | string | GCP region (e.g., `us-central1`) |
+| `location` | string | Location (some resources use this instead) |
+| `labels` | map | Resource labels |
+
+### Cross-Resource References
+
+```yaml
+# Selector (preferred in compositions)
+networkSelector:
+  matchControllerRef: true
+
+# Direct reference
+networkRef:
+  name: my-network
+```
+
+---
+
+## Provider Configuration
+
+```yaml
+apiVersion: gcp.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: default
+spec:
+  projectID: my-gcp-project
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: gcp-secret
+      key: creds
+```
