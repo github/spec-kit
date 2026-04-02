@@ -154,6 +154,25 @@ function Generate-Commands {
 
         $body = $outputLines -join "`n"
 
+        # Inject argument-hint for Claude Code commands (Claude-specific frontmatter)
+        if ($Agent -eq 'claude') {
+            $hint = switch ($name) {
+                'specify'       { 'Describe the feature you want to specify' }
+                'plan'          { 'Optional guidance for the planning phase' }
+                'tasks'         { 'Optional task generation constraints' }
+                'implement'     { 'Optional implementation guidance or task filter' }
+                'analyze'       { 'Optional focus areas for analysis' }
+                'clarify'       { 'Optional areas to clarify in the spec' }
+                'constitution'  { 'Principles or values for the project constitution' }
+                'checklist'     { 'Domain or focus area for the checklist' }
+                'taskstoissues' { 'Optional filter or label for GitHub issues' }
+                default         { '' }
+            }
+            if (-not [string]::IsNullOrEmpty($hint)) {
+                $body = $body -replace '(?m)^(description:.*)$', "`$1`nargument-hint: $hint"
+            }
+        }
+
         # Apply other substitutions
         $body = $body -replace '\{ARGS\}', $ArgFormat
         $body = $body -replace '__AGENT__', $Agent

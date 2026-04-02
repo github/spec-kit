@@ -105,6 +105,28 @@ generate_commands() {
       { print }
     ')
 
+    # Inject argument-hint for Claude Code commands (Claude-specific frontmatter)
+    if [[ "$agent" == "claude" ]]; then
+      local hint=""
+      case "$name" in
+        specify)       hint="Describe the feature you want to specify" ;;
+        plan)          hint="Optional guidance for the planning phase" ;;
+        tasks)         hint="Optional task generation constraints" ;;
+        implement)     hint="Optional implementation guidance or task filter" ;;
+        analyze)       hint="Optional focus areas for analysis" ;;
+        clarify)       hint="Optional areas to clarify in the spec" ;;
+        constitution)  hint="Principles or values for the project constitution" ;;
+        checklist)     hint="Domain or focus area for the checklist" ;;
+        taskstoissues) hint="Optional filter or label for GitHub issues" ;;
+      esac
+      if [[ -n "$hint" ]]; then
+        body=$(printf '%s\n' "$body" | awk -v hint="$hint" '
+          /^description:/ { print; print "argument-hint: " hint; next }
+          { print }
+        ')
+      fi
+    fi
+
     # Apply other substitutions
     body=$(printf '%s\n' "$body" | sed "s/{ARGS}/$arg_format/g" | sed "s/__AGENT__/$agent/g" | rewrite_paths)
 
