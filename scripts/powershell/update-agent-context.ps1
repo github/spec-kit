@@ -461,9 +461,6 @@ function Update-AllExistingAgents {
     if (-not (Update-IfNew -FilePath $CURSOR_FILE   -AgentName 'Cursor IDE')) { $ok = $false }
     if (-not (Update-IfNew -FilePath $QWEN_FILE     -AgentName 'Qwen Code')) { $ok = $false }
     if (-not (Update-IfNew -FilePath $AGENTS_FILE   -AgentName 'Codex/opencode/Amp/Kiro/Bob/Pi/Forge')) { $ok = $false }
-    if (-not (Update-IfNew -FilePath $AMP_FILE      -AgentName 'Amp')) { $ok = $false }
-    if (-not (Update-IfNew -FilePath $KIRO_FILE     -AgentName 'Kiro CLI')) { $ok = $false }
-    if (-not (Update-IfNew -FilePath $BOB_FILE      -AgentName 'IBM Bob')) { $ok = $false }
     if (-not (Update-IfNew -FilePath $WINDSURF_FILE -AgentName 'Windsurf')) { $ok = $false }
     if (-not (Update-IfNew -FilePath $JUNIE_FILE    -AgentName 'Junie')) { $ok = $false }
     if (-not (Update-IfNew -FilePath $KILOCODE_FILE -AgentName 'Kilo Code')) { $ok = $false }
@@ -478,7 +475,6 @@ function Update-AllExistingAgents {
     if (-not (Update-IfNew -FilePath $KIMI_FILE     -AgentName 'Kimi Code')) { $ok = $false }
     if (-not (Update-IfNew -FilePath $TRAE_FILE     -AgentName 'Trae')) { $ok = $false }
     if (-not (Update-IfNew -FilePath $IFLOW_FILE    -AgentName 'iFlow CLI')) { $ok = $false }
-    if (-not (Update-IfNew -FilePath $FORGE_FILE    -AgentName 'Forge')) { $ok = $false }
     
     if (-not $found) {
         Write-Info 'No existing agent files found, creating default Claude file...'

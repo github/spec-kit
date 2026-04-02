@@ -20,6 +20,10 @@
     Comma or space separated subset of script types to build (default: both)
     Valid scripts: sh, ps
 
+.PARAMETER GenReleasesDir
+    Output directory for build artifacts (default: .genreleases in current directory)
+    Can also be set via GENRELEASES_DIR environment variable
+
 .EXAMPLE
     .\create-release-packages.ps1 -Version v0.2.0
 
@@ -28,6 +32,12 @@
 
 .EXAMPLE
     .\create-release-packages.ps1 -Version v0.2.0 -Agents claude -Scripts ps
+
+.EXAMPLE
+    $env:GENRELEASES_DIR = "$env:TEMP/releases"; .\create-release-packages.ps1 -Version v0.2.0
+
+.EXAMPLE
+    .\create-release-packages.ps1 -Version v0.2.0 -GenReleasesDir "$env:TEMP/releases"
 #>
 
 param(
@@ -38,7 +48,10 @@ param(
     [string]$Agents = "",
 
     [Parameter(Mandatory=$false)]
-    [string]$Scripts = ""
+    [string]$Scripts = "",
+
+    [Parameter(Mandatory=$false)]
+    [string]$GenReleasesDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,8 +64,49 @@ if ($Version -notmatch '^v\d+\.\d+\.\d+$') {
 
 Write-Host "Building release packages for $Version"
 
-# Create and use .genreleases directory for all build artifacts
-$GenReleasesDir = ".genreleases"
+# Resolve output directory: parameter > env var > default
+if ([string]::IsNullOrEmpty($GenReleasesDir)) {
+    $GenReleasesDir = if ($env:GENRELEASES_DIR) { $env:GENRELEASES_DIR } else { ".genreleases" }
+}
+
+# Safety check: refuse empty output directory
+if ([string]::IsNullOrWhiteSpace($GenReleasesDir)) {
+    Write-Error "Output directory must not be empty"
+    exit 1
+}
+
+# Safety check: refuse paths containing '..' segments (path traversal)
+if ($GenReleasesDir -match '\.\.') {
+    Write-Error "Refusing to use output directory containing '..' path segments: $GenReleasesDir"
+    exit 1
+}
+
+# Convert to absolute path for safety checks
+$GenReleasesDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($GenReleasesDir)
+
+# Safety check: refuse to delete critical paths
+$repoRoot = (Resolve-Path ".").Path
+$forbiddenPaths = @(
+    $repoRoot,
+    (Join-Path $repoRoot ".git"),
+    (Join-Path $repoRoot "scripts"),
+    (Join-Path $repoRoot "templates"),
+    (Join-Path $repoRoot "src"),
+    $HOME,
+    [System.IO.Path]::GetTempPath().TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar),
+    [System.IO.Path]::GetPathRoot($repoRoot)  # Root directory (e.g., C:\ or /)
+)
+
+foreach ($forbidden in $forbiddenPaths) {
+    if ($GenReleasesDir -eq $forbidden) {
+        Write-Error "Refusing to use '$GenReleasesDir' as output directory (safety check failed)"
+        exit 1
+    }
+}
+
+Write-Host "Output directory: $GenReleasesDir"
+
+# Create and clean output directory
 if (Test-Path $GenReleasesDir) {
     Remove-Item -Path $GenReleasesDir -Recurse -Force -ErrorAction SilentlyContinue
 }

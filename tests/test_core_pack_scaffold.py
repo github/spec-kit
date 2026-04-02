@@ -15,7 +15,7 @@ Per-agent invariants verified
   • File count matches the number of source templates
   • Extension is correct: .toml (TOML agents), .agent.md (copilot), .md (rest)
   • No unresolved placeholders remain ({SCRIPT}, {ARGS}, __AGENT__)
-  • Argument token is correct: {{args}} for TOML agents, $ARGUMENTS for others
+  • Argument token is correct: {{args}} for TOML agents, {{parameters}} for Forge, $ARGUMENTS for other non-TOML agents
   • Path rewrites applied: scripts/ → .specify/scripts/ etc.
   • TOML files have "description" and "prompt" fields
   • Markdown files have parseable YAML frontmatter
