@@ -20,15 +20,13 @@ Use this guide when you need to understand how the repository fits together, whe
 
 **Inspect the repository layout:**
 
-| Directory | Role |
-| --- | --- |
-| `templates/` | Core templates, prompt assets, and scaffold content that define the workflow surface. |
-| `scripts/` | Supporting scripts used by the generated workflow and repository tooling. |
-| `src/specify_cli/` | Python source for the `specify` CLI. |
-| `extensions/` | Extension-related docs, catalogs, and supporting assets. |
-| `presets/` | Preset-related docs, catalogs, and supporting assets. |
-
-**Trace a representative end-to-end workflow** to connect the repository's source assets to the user-visible behavior they produce.
+| Directory          | Role                                                                  |
+| ------------------ | --------------------------------------------------------------------- |
+| `templates/`       | Prompt assets and templates that define the workflow surface.         |
+| `scripts/`         | Supporting scripts used by the generated workflow.                    |
+| `src/specify_cli/` | Python source for the `specify` CLI, including agent-specific assets. |
+| `extensions/`      | Extension-related docs, catalogs, and supporting assets.              |
+| `presets/`         | Preset-related docs, catalogs, and supporting assets.                 |
 
 ## What Spec Kit Is, from a Maintainer Perspective
 
