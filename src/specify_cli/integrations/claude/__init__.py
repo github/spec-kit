@@ -76,8 +76,13 @@ class ClaudeIntegration(MarkdownIntegration):
                 continue
             if in_fm and not injected and stripped.startswith("description:"):
                 out.append(line)
-                # Preserve the line-ending style of the file
-                eol = "\n" if line.endswith("\n") else ""
+                # Preserve the exact line-ending style (\r\n vs \n)
+                if line.endswith("\r\n"):
+                    eol = "\r\n"
+                elif line.endswith("\n"):
+                    eol = "\n"
+                else:
+                    eol = ""
                 out.append(f"argument-hint: {hint}{eol}")
                 injected = True
                 continue
@@ -91,45 +96,34 @@ class ClaudeIntegration(MarkdownIntegration):
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
-        templates = self.list_command_templates()
-        if not templates:
-            return []
+        """Run standard MarkdownIntegration setup, then inject argument-hint."""
+        created = super().setup(project_root, manifest, parsed_options, **opts)
 
-        project_root_resolved = project_root.resolve()
-        if manifest.project_root != project_root_resolved:
-            raise ValueError(
-                f"manifest.project_root ({manifest.project_root}) does not match "
-                f"project_root ({project_root_resolved})"
-            )
+        # Post-process generated command files to add argument-hint
+        commands_dest = self.commands_dest(project_root).resolve()
+        ext = self.registrar_config.get("extension", ".md") if self.registrar_config else ".md"
 
-        dest = self.commands_dest(project_root).resolve()
-        try:
-            dest.relative_to(project_root_resolved)
-        except ValueError as exc:
-            raise ValueError(
-                f"Integration destination {dest} escapes "
-                f"project root {project_root_resolved}"
-            ) from exc
-        dest.mkdir(parents=True, exist_ok=True)
+        for path in created:
+            # Only touch command files, not scripts
+            try:
+                path.resolve().relative_to(commands_dest)
+            except ValueError:
+                continue
+            if path.suffix != ext:
+                continue
 
-        script_type = opts.get("script_type", "sh")
-        arg_placeholder = self.registrar_config.get("args", "$ARGUMENTS") if self.registrar_config else "$ARGUMENTS"
-        created: list[Path] = []
+            # Extract template stem: speckit.plan.md -> plan
+            stem = path.stem  # speckit.plan
+            if stem.startswith("speckit."):
+                stem = stem[len("speckit."):]
 
-        for src_file in templates:
-            raw = src_file.read_text(encoding="utf-8")
-            processed = self.process_template(raw, self.key, script_type, arg_placeholder)
+            hint = ARGUMENT_HINTS.get(stem, "")
+            if not hint:
+                continue
 
-            # Inject argument-hint for Claude Code commands
-            hint = ARGUMENT_HINTS.get(src_file.stem, "")
-            if hint:
-                processed = self.inject_argument_hint(processed, hint)
+            content = path.read_text(encoding="utf-8")
+            updated = self.inject_argument_hint(content, hint)
+            if updated != content:
+                path.write_text(updated, encoding="utf-8")
 
-            dst_name = self.command_filename(src_file.stem)
-            dst_file = self.write_file_and_record(
-                processed, dest / dst_name, project_root, manifest
-            )
-            created.append(dst_file)
-
-        created.extend(self.install_scripts(project_root, manifest))
         return created
