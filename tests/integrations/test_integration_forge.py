@@ -89,12 +89,16 @@ class TestForgeIntegration:
         forge.setup(tmp_path, m)
         commands_dir = tmp_path / ".forge" / "commands"
         assert commands_dir.is_dir()
+
+        # Derive expected command names from the Forge command templates so the test
+        # stays in sync if templates are added/removed.
+        templates = forge.list_command_templates()
+        expected_commands = {t.stem for t in templates}
+        assert len(expected_commands) > 0, "No command templates found"
+
+        # Check generated files match templates
         command_files = sorted(commands_dir.glob("speckit.*.md"))
-        assert len(command_files) == 9
-        expected_commands = {
-            "analyze", "checklist", "clarify", "constitution",
-            "implement", "plan", "specify", "tasks", "taskstoissues",
-        }
+        assert len(command_files) == len(expected_commands)
         actual_commands = {f.name.removeprefix("speckit.").removesuffix(".md") for f in command_files}
         assert actual_commands == expected_commands
 
