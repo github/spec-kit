@@ -29,7 +29,9 @@ from specify_cli import (
     DEFAULT_SKILLS_DIR,
     SKILL_DESCRIPTIONS,
     AGENT_CONFIG,
+    StepTracker,
     app,
+    ensure_claude_md,
 )
 
 
@@ -692,6 +694,62 @@ class TestNewProjectCommandSkip:
     These tests run init() end-to-end via CliRunner with
     download_and_extract_template patched to create local fixtures.
     """
+
+    def test_init_claude_creates_root_CLAUDE_md(self, tmp_path):
+        from typer.testing import CliRunner
+
+        runner = CliRunner()
+        target = tmp_path / "claude-proj"
+
+        def fake_download(project_path, *args, **kwargs):
+            # Minimal scaffold required for ensure_constitution_from_template()
+            # and ensure_claude_md() to succeed deterministically.
+            templates_dir = project_path / ".specify" / "templates"
+            templates_dir.mkdir(parents=True, exist_ok=True)
+            (templates_dir / "constitution-template.md").write_text(
+                "# Constitution\n\nNon-negotiable rules.\n",
+                encoding="utf-8",
+            )
+
+        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
+             patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
+            result = runner.invoke(
+                app,
+                [
+                    "init",
+                    str(target),
+                    "--ai",
+                    "claude",
+                    "--ignore-agent-tools",
+                    "--no-git",
+                    "--script",
+                    "sh",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+
+        claude_file = target / "CLAUDE.md"
+        assert claude_file.exists()
+
+        content = claude_file.read_text(encoding="utf-8")
+        assert "## Claude's Role" in content
+        assert "`.specify/memory/constitution.md`" in content
+        assert "/speckit.plan" in content
+
+    def test_ensure_claude_md_skips_when_constitution_missing(self, tmp_path):
+        project = tmp_path / "proj"
+        project.mkdir()
+
+        tracker = StepTracker("t")
+        ensure_claude_md(project, tracker=tracker)
+
+        assert not (project / "CLAUDE.md").exists()
+        step = next(s for s in tracker.steps if s["key"] == "claude-md")
+        assert step["status"] == "skipped"
+        assert "constitution missing" in step["detail"]
 
     def _fake_extract(self, agent, project_path, **_kwargs):
         """Simulate template extraction: create agent commands dir."""
