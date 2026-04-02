@@ -775,7 +775,8 @@ class TestLegacyDownloadPath:
         def fake_download(project_path, *args, **kwargs):
             pass  # commands already exist, no need to re-create
 
-        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
+        with patch("specify_cli.integrations.get_integration", return_value=None), \
+             patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
              patch("specify_cli.ensure_executable_scripts"), \
              patch("specify_cli.ensure_constitution_from_template"), \
              patch("specify_cli.install_ai_skills", return_value=True), \
