@@ -269,6 +269,7 @@ class TestExtensionSkillRegistration:
         assert isinstance(parsed, dict)
         assert parsed["name"] == "speckit-test-ext-hello"
         assert "description" in parsed
+        assert parsed["disable-model-invocation"] is True
 
     def test_no_skills_when_ai_skills_disabled(self, no_skills_project, extension_dir):
         """No skills should be created when ai_skills is false."""

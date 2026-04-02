@@ -46,17 +46,21 @@ def _register_builtins() -> None:
     users install and invoke.
     """
     # -- Imports (alphabetical) -------------------------------------------
+    from .agy import AgyIntegration
     from .amp import AmpIntegration
     from .auggie import AuggieIntegration
     from .bob import BobIntegration
     from .claude import ClaudeIntegration
+    from .codex import CodexIntegration
     from .codebuddy import CodebuddyIntegration
     from .copilot import CopilotIntegration
     from .cursor_agent import CursorAgentIntegration
     from .gemini import GeminiIntegration
+    from .generic import GenericIntegration
     from .iflow import IflowIntegration
     from .junie import JunieIntegration
     from .kilocode import KilocodeIntegration
+    from .kimi import KimiIntegration
     from .kiro_cli import KiroCliIntegration
     from .opencode import OpencodeIntegration
     from .pi import PiIntegration
@@ -70,17 +74,21 @@ def _register_builtins() -> None:
     from .windsurf import WindsurfIntegration
 
     # -- Registration (alphabetical) --------------------------------------
+    _register(AgyIntegration())
     _register(AmpIntegration())
     _register(AuggieIntegration())
     _register(BobIntegration())
     _register(ClaudeIntegration())
+    _register(CodexIntegration())
     _register(CodebuddyIntegration())
     _register(CopilotIntegration())
     _register(CursorAgentIntegration())
     _register(GeminiIntegration())
+    _register(GenericIntegration())
     _register(IflowIntegration())
     _register(JunieIntegration())
     _register(KilocodeIntegration())
+    _register(KimiIntegration())
     _register(KiroCliIntegration())
     _register(OpencodeIntegration())
     _register(PiIntegration())

@@ -1640,6 +1640,8 @@ def install_ai_skills(
         ``True`` if at least one skill was installed or all skills were
         already present (idempotent re-run), ``False`` otherwise.
     """
+    from .agents import CommandRegistrar
+
     # Locate command templates in the agent's extracted commands directory.
     # download_and_extract_template() already placed the .md files here.
     agent_config = AGENT_CONFIG.get(selected_ai, {})
@@ -1741,15 +1743,12 @@ def install_ai_skills(
             if source_name.endswith(".agent.md"):
                 source_name = source_name[:-len(".agent.md")] + ".md"
 
-            frontmatter_data = {
-                "name": skill_name,
-                "description": enhanced_desc,
-                "compatibility": "Requires spec-kit project structure with .specify/ directory",
-                "metadata": {
-                    "author": "github-spec-kit",
-                    "source": f"templates/commands/{source_name}",
-                },
-            }
+            frontmatter_data = CommandRegistrar.build_skill_frontmatter(
+                selected_ai,
+                skill_name,
+                enhanced_desc,
+                f"templates/commands/{source_name}",
+            )
             frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
             skill_content = (
                 f"---\n"
@@ -1859,6 +1858,23 @@ def _migrate_legacy_kimi_dotted_skills(skills_dir: Path) -> tuple[int, int]:
 
 
 AGENT_SKILLS_MIGRATIONS = {
+    "claude": {
+        "error": (
+            "Claude Code now installs spec-kit as agent skills; "
+            "legacy .claude/commands projects are kept for backwards compatibility."
+        ),
+        "usage": "specify init <project> --ai claude",
+        "interactive_note": (
+            "'claude' was selected interactively; enabling [cyan]--ai-skills[/cyan] "
+            "automatically so spec-kit is installed to [cyan].claude/skills[/cyan]."
+        ),
+        "explicit_note": (
+            "'claude' now installs spec-kit as agent skills; enabling "
+            "[cyan]--ai-skills[/cyan] automatically so commands are written to "
+            "[cyan].claude/skills[/cyan]."
+        ),
+        "auto_enable_explicit": True,
+    },
     "agy": {
         "error": "Explicit command support was deprecated in Antigravity version 1.20.5.",
         "usage": "specify init <project> --ai agy --ai-skills",
@@ -1907,6 +1923,7 @@ def init(
     preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
     branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, ...) or 'timestamp' (YYYYMMDD-HHMMSS)"),
     integration: str = typer.Option(None, "--integration", help="Use the new integration system (e.g. --integration copilot). Mutually exclusive with --ai."),
+    integration_options: str = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
 ):
     """
     Initialize a new Specify project.
@@ -1942,7 +1959,7 @@ def init(
         specify init --here --ai vibe      # Initialize with Mistral Vibe support
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
-        specify init my-project --ai claude --ai-skills   # Install agent skills
+        specify init my-project --ai claude   # Claude installs skills by default
         specify init --here --ai gemini --ai-skills
         specify init my-project --ai generic --ai-commands-dir .myagent/commands/  # Unsupported agent
         specify init my-project --offline  # Use bundled assets (no network access)
@@ -1976,6 +1993,7 @@ def init(
 
     # Auto-promote: --ai <key> → integration path with a nudge (if registered)
     use_integration = False
+    resolved_integration = None
     if integration:
         from .integrations import INTEGRATION_REGISTRY, get_integration
         resolved_integration = get_integration(integration)
@@ -1995,6 +2013,26 @@ def init(
             console.print(
                 f"[dim]Tip: Use [bold]--integration {ai_assistant}[/bold] instead of "
                 f"--ai {ai_assistant}. The --ai flag will be deprecated in a future release.[/dim]"
+            )
+
+    # Deprecation warnings for --ai-skills and --ai-commands-dir when using integration path
+    if use_integration:
+        if ai_skills:
+            from .integrations.base import SkillsIntegration as _SkillsCheck
+            if isinstance(resolved_integration, _SkillsCheck):
+                console.print(
+                    "[dim]Note: --ai-skills is not needed with --integration; "
+                    "skills are the default for this integration.[/dim]"
+                )
+            else:
+                console.print(
+                    "[dim]Note: --ai-skills has no effect with --integration "
+                    f"{resolved_integration.key}; this integration uses commands, not skills.[/dim]"
+                )
+        if ai_commands_dir and resolved_integration.key != "generic":
+            console.print(
+                "[dim]Note: --ai-commands-dir is deprecated; "
+                'use [bold]--integration generic --integration-options="--commands-dir <dir>"[/bold] instead.[/dim]'
             )
 
     if project_name == ".":
@@ -2062,25 +2100,43 @@ def init(
             "copilot"
         )
 
+    # Auto-promote interactively selected agents to the integration path
+    # when a matching integration is registered (same behavior as --ai).
+    if not use_integration:
+        from .integrations import get_integration as _get_int
+        _resolved = _get_int(selected_ai)
+        if _resolved:
+            use_integration = True
+            resolved_integration = _resolved
+
     # Agents that have moved from explicit commands/prompts to agent skills.
-    if selected_ai in AGENT_SKILLS_MIGRATIONS and not ai_skills:
+    # Skip this check when using the integration path — skills are the default.
+    if not use_integration and selected_ai in AGENT_SKILLS_MIGRATIONS and not ai_skills:
         # If selected interactively (no --ai provided), automatically enable
         # ai_skills so the agent remains usable without requiring an extra flag.
         # Preserve fail-fast behavior only for explicit '--ai <agent>' without skills.
-        if ai_assistant:
+        migration = AGENT_SKILLS_MIGRATIONS[selected_ai]
+        if ai_assistant and not migration.get("auto_enable_explicit", False):
             _handle_agent_skills_migration(console, selected_ai)
         else:
             ai_skills = True
-            console.print(f"\n[yellow]Note:[/yellow] {AGENT_SKILLS_MIGRATIONS[selected_ai]['interactive_note']}")
+            note_key = "explicit_note" if ai_assistant else "interactive_note"
+            console.print(f"\n[yellow]Note:[/yellow] {migration[note_key]}")
 
-    # Validate --ai-commands-dir usage
-    if selected_ai == "generic":
+    # Validate --ai-commands-dir usage.
+    # Skip validation when --integration-options is provided — the integration
+    # will validate its own options in setup().
+    if selected_ai == "generic" and not integration_options:
         if not ai_commands_dir:
-            console.print("[red]Error:[/red] --ai-commands-dir is required when using --ai generic")
-            console.print("[dim]Example: specify init my-project --ai generic --ai-commands-dir .myagent/commands/[/dim]")
+            console.print("[red]Error:[/red] --ai-commands-dir is required when using --ai generic or --integration generic")
+            console.print("[dim]Example: specify init my-project --integration generic --integration-options=\"--commands-dir .myagent/commands/\"[/dim]")
             raise typer.Exit(1)
-    elif ai_commands_dir:
-        console.print(f"[red]Error:[/red] --ai-commands-dir can only be used with --ai generic (not '{selected_ai}')")
+    elif ai_commands_dir and not use_integration:
+        console.print(
+            f"[red]Error:[/red] --ai-commands-dir can only be used with the "
+            f"'generic' integration via --ai generic or --integration generic "
+            f"(not '{selected_ai}')"
+        )
         raise typer.Exit(1)
 
     current_dir = Path.cwd()
@@ -2210,9 +2266,21 @@ def init(
                 manifest = IntegrationManifest(
                     resolved_integration.key, project_path, version=get_speckit_version()
                 )
+
+                # Forward all legacy CLI flags to the integration as parsed_options.
+                # Integrations receive every option and decide what to use;
+                # irrelevant keys are simply ignored by the integration's setup().
+                integration_parsed_options: dict[str, Any] = {}
+                if ai_commands_dir:
+                    integration_parsed_options["commands_dir"] = ai_commands_dir
+                if ai_skills:
+                    integration_parsed_options["skills"] = True
+
                 resolved_integration.setup(
                     project_path, manifest,
+                    parsed_options=integration_parsed_options or None,
                     script_type=selected_script,
+                    raw_options=integration_options,
                 )
                 manifest.save()
 
@@ -2268,7 +2336,7 @@ def init(
                         shutil.rmtree(project_path)
                     raise typer.Exit(1)
             # For generic agent, rename placeholder directory to user-specified path
-            if selected_ai == "generic" and ai_commands_dir:
+            if not use_integration and selected_ai == "generic" and ai_commands_dir:
                 placeholder_dir = project_path / ".speckit" / "commands"
                 target_dir = project_path / ai_commands_dir
                 if placeholder_dir.is_dir():
@@ -2284,10 +2352,11 @@ def init(
             ensure_constitution_from_template(project_path, tracker=tracker)
 
             # Determine skills directory and migrate any legacy Kimi dotted skills.
+            # (Legacy path only — integration path handles skills in setup().)
             migrated_legacy_kimi_skills = 0
             removed_legacy_kimi_skills = 0
             skills_dir: Optional[Path] = None
-            if selected_ai in NATIVE_SKILLS_AGENTS:
+            if not use_integration and selected_ai in NATIVE_SKILLS_AGENTS:
                 skills_dir = _get_skills_dir(project_path, selected_ai)
                 if selected_ai == "kimi" and skills_dir.is_dir():
                     (
@@ -2295,7 +2364,7 @@ def init(
                         removed_legacy_kimi_skills,
                     ) = _migrate_legacy_kimi_dotted_skills(skills_dir)
 
-            if ai_skills:
+            if not use_integration and ai_skills:
                 if selected_ai in NATIVE_SKILLS_AGENTS:
                     bundled_found = _has_bundled_skills(project_path, selected_ai)
                     if bundled_found:
@@ -2383,6 +2452,11 @@ def init(
             }
             if use_integration:
                 init_opts["integration"] = resolved_integration.key
+                # Ensure ai_skills is set for SkillsIntegration so downstream
+                # tools (extensions, presets) emit SKILL.md overrides correctly.
+                from .integrations.base import SkillsIntegration as _SkillsPersist
+                if isinstance(resolved_integration, _SkillsPersist):
+                    init_opts["ai_skills"] = True
             save_init_options(project_path, init_opts)
 
             # Install preset if specified
@@ -2484,18 +2558,34 @@ def init(
         steps_lines.append("1. You're already in the project directory!")
         step_num = 2
 
-    if selected_ai == "codex" and ai_skills:
+    # Determine skill display mode for the next-steps panel.
+    # Skills integrations (codex, claude, kimi, agy) should show skill
+    # invocation syntax regardless of whether --ai-skills was explicitly passed.
+    _is_skills_integration = False
+    if use_integration:
+        from .integrations.base import SkillsIntegration as _SkillsInt
+        _is_skills_integration = isinstance(resolved_integration, _SkillsInt)
+
+    codex_skill_mode = selected_ai == "codex" and (ai_skills or _is_skills_integration)
+    claude_skill_mode = selected_ai == "claude" and (ai_skills or _is_skills_integration)
+    kimi_skill_mode = selected_ai == "kimi"
+    agy_skill_mode = selected_ai == "agy" and _is_skills_integration
+    native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode
+
+    if codex_skill_mode and not ai_skills:
+        # Integration path installed skills; show the helpful notice
         steps_lines.append(f"{step_num}. Start Codex in this project directory; spec-kit skills were installed to [cyan].agents/skills[/cyan]")
         step_num += 1
-
-    codex_skill_mode = selected_ai == "codex" and ai_skills
-    kimi_skill_mode = selected_ai == "kimi"
-    native_skill_mode = codex_skill_mode or kimi_skill_mode
+    if claude_skill_mode and not ai_skills:
+        steps_lines.append(f"{step_num}. Start Claude in this project directory; spec-kit skills were installed to [cyan].claude/skills[/cyan]")
+        step_num += 1
     usage_label = "skills" if native_skill_mode else "slash commands"
 
     def _display_cmd(name: str) -> str:
-        if codex_skill_mode:
+        if codex_skill_mode or agy_skill_mode:
             return f"$speckit-{name}"
+        if claude_skill_mode:
+            return f"/speckit-{name}"
         if kimi_skill_mode:
             return f"/skill:speckit-{name}"
         return f"/speckit.{name}"

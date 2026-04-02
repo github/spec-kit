@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import Any
 
-from ..base import MarkdownIntegration
-
-if TYPE_CHECKING:
-    from ..manifest import IntegrationManifest
+from ..base import SkillsIntegration
+from ..manifest import IntegrationManifest
 
 # Mapping of command template stem → argument-hint text shown inline
 # when a user invokes the slash command in Claude Code.
@@ -25,20 +23,22 @@ ARGUMENT_HINTS: dict[str, str] = {
 }
 
 
-class ClaudeIntegration(MarkdownIntegration):
+class ClaudeIntegration(SkillsIntegration):
+    """Integration for Claude Code skills."""
+
     key = "claude"
     config = {
         "name": "Claude Code",
         "folder": ".claude/",
-        "commands_subdir": "commands",
+        "commands_subdir": "skills",
         "install_url": "https://docs.anthropic.com/en/docs/claude-code/setup",
         "requires_cli": True,
     }
     registrar_config = {
-        "dir": ".claude/commands",
+        "dir": ".claude/skills",
         "format": "markdown",
         "args": "$ARGUMENTS",
-        "extension": ".md",
+        "extension": "/SKILL.md",
     }
     context_file = "CLAUDE.md"
 
@@ -96,26 +96,26 @@ class ClaudeIntegration(MarkdownIntegration):
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
-        """Run standard MarkdownIntegration setup, then inject argument-hint."""
+        """Install Claude skills, then inject argument-hint into each SKILL.md."""
         created = super().setup(project_root, manifest, parsed_options, **opts)
 
-        # Post-process generated command files to add argument-hint
-        commands_dest = self.commands_dest(project_root).resolve()
-        ext = self.registrar_config.get("extension", ".md") if self.registrar_config else ".md"
+        # Post-process generated skill files to add argument-hint
+        skills_dir = self.skills_dest(project_root).resolve()
 
         for path in created:
-            # Only touch command files, not scripts
+            # Only touch SKILL.md files under the skills directory
             try:
-                path.resolve().relative_to(commands_dest)
+                path.resolve().relative_to(skills_dir)
             except ValueError:
                 continue
-            if path.suffix != ext:
+            if path.name != "SKILL.md":
                 continue
 
-            # Extract template stem: speckit.plan.md -> plan
-            stem = path.stem  # speckit.plan
-            if stem.startswith("speckit."):
-                stem = stem[len("speckit."):]
+            # Extract template stem from skill dir name: speckit-plan -> plan
+            skill_dir_name = path.parent.name  # e.g. "speckit-plan"
+            stem = skill_dir_name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
 
             hint = ARGUMENT_HINTS.get(stem, "")
             if not hint:
