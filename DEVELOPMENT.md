@@ -6,27 +6,29 @@ Use this guide when you need to understand how the repository fits together, whe
 
 ## Maintainer Onboarding
 
-**Read the essential project documents**:
+**Read the essential project documents:**
 
-| Document                                                     | Focus                                                                                                                         |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| [README.md](./README.md)                                     | Primary user-facing entry point and high-level overview of what Spec Kit is, how it is used, and what workflow it supports.   |
-| [DEVELOPMENT.md](./DEVELOPMENT.md)                           | Primary maintainer-facing entry point for contributors changing Spec Kit itself.                                              |
-| [spec-driven.md](./spec-driven.md)                           | Full conceptual and procedural walkthrough of the Spec-Driven Development workflow supported by Spec Kit.                     |
-| [RELEASE-PROCESS.md](./.github/workflows/RELEASE-PROCESS.md) | Release workflow, versioning model, changelog generation, and release-process invariants.                                     |
-| [docs/index.md](./docs/index.md)                             | Entry point to the documentation under `docs/`, including installation, quick start, upgrade, and local development guidance. |
-| [CONTRIBUTING.md](./CONTRIBUTING.md)                         | Contribution mechanics, review expectations, and required development practices.                                              |
-| [TESTING.md](./TESTING.md)                                   | Validation strategy and testing procedures.                                                                                   |
+| Document | Role |
+| --- | --- |
+| [README.md](./README.md) | Primary user-facing overview of Spec Kit, its purpose, and its workflow. |
+| [DEVELOPMENT.md](./DEVELOPMENT.md) | Primary maintainer-facing guide to modifying Spec Kit itself. |
+| [spec-driven.md](./spec-driven.md) | End-to-end explanation of the Spec-Driven Development model supported by Spec Kit. |
+| [RELEASE-PROCESS.md](./.github/workflows/RELEASE-PROCESS.md) | Release workflow, versioning rules, and changelog generation process. |
+| [docs/index.md](./docs/index.md) | Entry point to the `docs/` documentation set. |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | Contribution process, review expectations, and required development practices. |
+| [TESTING.md](./TESTING.md) | Validation strategy and testing procedures. |
 
-**Inspect the repository layout**:
+**Inspect the repository layout:**
 
-| Directory          | Role                                                                   |
-| ------------------ | ---------------------------------------------------------------------- |
-| `templates/`       | Core project framework, LLM templated prompts and associated templates |
-| `scripts/`         | Deterministic component of the project framework.                      |
-| `src/specify_cli/` | Python sources of `specify` CLI.                                       |
-| `extensions/`      | Documentation and associated files for the `extensions` feature.       |
-| `presets/`         | Documentation and associated files for the `presets` feature.          |
+| Directory | Role |
+| --- | --- |
+| `templates/` | Core templates, prompt assets, and scaffold content that define the workflow surface. |
+| `scripts/` | Supporting scripts used by the generated workflow and repository tooling. |
+| `src/specify_cli/` | Python source for the `specify` CLI. |
+| `extensions/` | Extension-related docs, catalogs, and supporting assets. |
+| `presets/` | Preset-related docs, catalogs, and supporting assets. |
+
+**Trace a representative end-to-end workflow** to connect the repository's source assets to the user-visible behavior they produce.
 
 ## What Spec Kit Is, from a Maintainer Perspective
 
