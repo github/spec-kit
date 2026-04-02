@@ -17,7 +17,7 @@ from ..manifest import IntegrationManifest
 
 class ForgeIntegration(MarkdownIntegration):
     """Integration for Forge (forgecode.dev).
-    
+
     Extends MarkdownIntegration to add Forge-specific processing:
     - Replaces $ARGUMENTS with {{parameters}}
     - Strips 'handoffs' frontmatter key
@@ -83,14 +83,14 @@ class ForgeIntegration(MarkdownIntegration):
             raw = src_file.read_text(encoding="utf-8")
             # Process template with standard MarkdownIntegration logic
             processed = self.process_template(raw, self.key, script_type, arg_placeholder)
-            
+
             # FORGE-SPECIFIC: Ensure any remaining $ARGUMENTS placeholders are
             # converted to {{parameters}}
             processed = processed.replace("$ARGUMENTS", arg_placeholder)
-            
+
             # FORGE-SPECIFIC: Apply frontmatter transformations
             processed = self._apply_forge_transformations(processed, src_file.stem)
-            
+
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
                 processed, dest / dst_name, project_root, manifest
@@ -136,11 +136,11 @@ class ForgeIntegration(MarkdownIntegration):
                     continue
                 else:
                     skip_until_outdent = False
-            
+
             if line.strip().startswith('handoffs:'):
                 skip_until_outdent = True
                 continue
-            
+
             filtered_frontmatter.append(line)
 
         # 2. Inject 'name' field if missing
