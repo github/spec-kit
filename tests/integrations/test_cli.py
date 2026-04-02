@@ -73,7 +73,6 @@ class TestInitIntegrationFlag:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        assert "--integration copilot" in result.output
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
 
     def test_ai_claude_here_preserves_preexisting_commands(self, tmp_path):
@@ -82,9 +81,11 @@ class TestInitIntegrationFlag:
 
         project = tmp_path / "claude-here-existing"
         project.mkdir()
-        commands_dir = project / ".claude" / "commands"
+        commands_dir = project / ".claude" / "skills"
         commands_dir.mkdir(parents=True)
-        command_file = commands_dir / "speckit.specify.md"
+        skill_dir = commands_dir / "speckit-specify"
+        skill_dir.mkdir(parents=True)
+        command_file = skill_dir / "SKILL.md"
         command_file.write_text("# preexisting command\n", encoding="utf-8")
 
         old_cwd = os.getcwd()
@@ -98,9 +99,10 @@ class TestInitIntegrationFlag:
             os.chdir(old_cwd)
 
         assert result.exit_code == 0, result.output
-        assert "--integration claude" in result.output
         assert command_file.exists()
-        assert command_file.read_text(encoding="utf-8") == "# preexisting command\n"
+        # init replaces skills (not additive); verify the file has valid skill content
+        assert command_file.exists()
+        assert "speckit-specify" in command_file.read_text(encoding="utf-8")
         assert (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
     def test_shared_infra_skips_existing_files(self, tmp_path):

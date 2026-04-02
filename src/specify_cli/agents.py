@@ -15,6 +15,18 @@ from copy import deepcopy
 import yaml
 
 
+def _build_agent_configs() -> dict[str, Any]:
+    """Derive CommandRegistrar.AGENT_CONFIGS from INTEGRATION_REGISTRY."""
+    from specify_cli.integrations import INTEGRATION_REGISTRY
+    configs: dict[str, dict[str, Any]] = {}
+    for key, integration in INTEGRATION_REGISTRY.items():
+        if key == "generic":
+            continue
+        if integration.registrar_config:
+            configs[key] = dict(integration.registrar_config)
+    return configs
+
+
 class CommandRegistrar:
     """Handles registration of commands with AI agents.
 
@@ -23,159 +35,26 @@ class CommandRegistrar:
     and companion files (e.g. Copilot .prompt.md).
     """
 
-    # Agent configurations with directory, format, and argument placeholder
-    AGENT_CONFIGS = {
-        "claude": {
-            "dir": ".claude/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "gemini": {
-            "dir": ".gemini/commands",
-            "format": "toml",
-            "args": "{{args}}",
-            "extension": ".toml"
-        },
-        "copilot": {
-            "dir": ".github/agents",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".agent.md"
-        },
-        "cursor-agent": {
-            "dir": ".cursor/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "qwen": {
-            "dir": ".qwen/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "opencode": {
-            "dir": ".opencode/command",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "codex": {
-            "dir": ".agents/skills",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": "/SKILL.md",
-        },
-        "windsurf": {
-            "dir": ".windsurf/workflows",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "junie": {
-            "dir": ".junie/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "kilocode": {
-            "dir": ".kilocode/workflows",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "auggie": {
-            "dir": ".augment/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "roo": {
-            "dir": ".roo/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "codebuddy": {
-            "dir": ".codebuddy/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "qodercli": {
-            "dir": ".qoder/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "kiro-cli": {
-            "dir": ".kiro/prompts",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "pi": {
-            "dir": ".pi/prompts",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "amp": {
-            "dir": ".agents/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "shai": {
-            "dir": ".shai/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "tabnine": {
-            "dir": ".tabnine/agent/commands",
-            "format": "toml",
-            "args": "{{args}}",
-            "extension": ".toml"
-        },
-        "bob": {
-            "dir": ".bob/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "kimi": {
-            "dir": ".kimi/skills",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": "/SKILL.md",
-        },
-        "trae": {
-            "dir": ".trae/rules",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "iflow": {
-            "dir": ".iflow/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "vibe": {
-            "dir": ".vibe/prompts",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "agy": {
-            "dir": ".agent/skills",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": "/SKILL.md",
-        }
-    }
+    # Derived from INTEGRATION_REGISTRY — single source of truth.
+    # Populated lazily via _ensure_configs() on first use.
+    AGENT_CONFIGS: dict[str, dict[str, Any]] = {}
+    _configs_loaded: bool = False
+
+    def __init__(self) -> None:
+        self._ensure_configs()
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        cls._ensure_configs()
+
+    @classmethod
+    def _ensure_configs(cls) -> None:
+        if not cls._configs_loaded:
+            try:
+                cls.AGENT_CONFIGS = _build_agent_configs()
+                cls._configs_loaded = True
+            except ImportError:
+                pass  # Circular import during module init; retry on next access
 
     @staticmethod
     def parse_frontmatter(content: str) -> tuple[dict, str]:
@@ -506,6 +385,7 @@ class CommandRegistrar:
         Raises:
             ValueError: If agent is not supported
         """
+        self._ensure_configs()
         if agent_name not in self.AGENT_CONFIGS:
             raise ValueError(f"Unsupported agent: {agent_name}")
 
@@ -605,6 +485,7 @@ class CommandRegistrar:
         """
         results = {}
 
+        self._ensure_configs()
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
             agent_dir = project_root / agent_config["dir"]
 
@@ -632,6 +513,7 @@ class CommandRegistrar:
             registered_commands: Dict mapping agent names to command name lists
             project_root: Path to project root
         """
+        self._ensure_configs()
         for agent_name, cmd_names in registered_commands.items():
             if agent_name not in self.AGENT_CONFIGS:
                 continue
@@ -649,3 +531,13 @@ class CommandRegistrar:
                     prompt_file = project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
                     if prompt_file.exists():
                         prompt_file.unlink()
+
+
+# Populate AGENT_CONFIGS after class definition.
+# Catches ImportError from circular imports during module loading;
+# _configs_loaded stays False so the next explicit access retries.
+try:
+    CommandRegistrar._ensure_configs()
+except ImportError:
+    pass
+

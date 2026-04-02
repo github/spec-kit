@@ -2,6 +2,25 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.4.5] - 2026-04-02
+
+### Changed
+
+- Stage 6: Complete migration — remove legacy scaffold path (#1924) (#2063)
+- Install Claude Code as native skills and align preset/integration flows (#2051)
+- Add repoindex 0402 (#2062)
+- Stage 5: Skills, Generic & Option-Driven Integrations (#1924) (#2052)
+- feat(scripts): add --dry-run flag to create-new-feature (#1998)
+- fix: support feature branch numbers with 4+ digits (#2040)
+- Add community content disclaimers (#2058)
+- docs: add community extensions website link to README and extensions docs (#2014)
+- docs: remove dead Cognitive Squad and Understanding extension links and from extensions/catalog.community.json (#2057)
+- Add fix-findings extension to community catalog (#2039)
+- Stage 4: TOML integrations — gemini and tabnine migrated to plugin architecture (#2050)
+- feat: add 5 lifecycle extensions to community catalog (#2049)
+- Stage 3: Standard markdown integrations — 19 agents migrated to plugin architecture (#2038)
+- chore: release 0.4.4, begin 0.4.5.dev0 development (#2048)
+
 ## [0.4.4] - 2026-04-01
 
 ### Changed

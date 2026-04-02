@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from ..base import SkillsIntegration
 from ..manifest import IntegrationManifest
 
@@ -88,6 +90,25 @@ class ClaudeIntegration(SkillsIntegration):
                 continue
             out.append(line)
         return "".join(out)
+
+    def _render_skill(self, template_name: str, frontmatter: dict[str, Any], body: str) -> str:
+        """Render a processed command template as a Claude skill."""
+        skill_name = f"speckit-{template_name.replace('.', '-')}"
+        description = frontmatter.get(
+            "description",
+            f"Spec-kit workflow command: {template_name}",
+        )
+        skill_frontmatter = self._build_skill_fm(
+            skill_name, description, f"templates/commands/{template_name}.md"
+        )
+        frontmatter_text = yaml.safe_dump(skill_frontmatter, sort_keys=False).strip()
+        return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
+
+    def _build_skill_fm(self, name: str, description: str, source: str) -> dict:
+        from specify_cli.agents import CommandRegistrar
+        return CommandRegistrar.build_skill_frontmatter(
+            self.key, name, description, source
+        )
 
     def setup(
         self,
