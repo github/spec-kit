@@ -339,7 +339,15 @@ build_variant() {
         [[ -f "$_cmd_file" ]] || continue
         _cmd_name=$(basename "$_cmd_file" .md)
         _tmp_file="${_cmd_file}.tmp"
-        awk -v name="$_cmd_name" 'NR==1 && /^---$/ { print; print "name: "name; next } { print }' "$_cmd_file" > "$_tmp_file"
+        # Only inject name if frontmatter doesn't already have one
+        awk -v name="$_cmd_name" '
+          BEGIN { in_frontmatter=0; has_name=0; first_dash_seen=0 }
+          NR==1 && /^---$/ { in_frontmatter=1; first_dash_seen=1; print; next }
+          in_frontmatter && /^---$/ { in_frontmatter=0 }
+          in_frontmatter && /^[ \t]*name[ \t]*:/ { has_name=1 }
+          first_dash_seen && !has_name && NR==2 && in_frontmatter { print "name: "name }
+          { print }
+        ' "$_cmd_file" > "$_tmp_file"
         mv "$_tmp_file" "$_cmd_file"
       done ;;
     generic)

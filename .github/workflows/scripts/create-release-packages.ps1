@@ -491,17 +491,49 @@ function Build-Variant {
         'forge' {
             $cmdDir = Join-Path $baseDir ".forge/commands"
             Generate-Commands -Agent 'forge' -Extension 'md' -ArgFormat '{{parameters}}' -OutputDir $cmdDir -ScriptVariant $Script -ExtraStripKey 'handoffs'
-            
+
             # Inject name field into frontmatter (forge requires name + description)
             $cmdFiles = Get-ChildItem -Path "$cmdDir/*.md" -File -ErrorAction SilentlyContinue
             foreach ($cmdFile in $cmdFiles) {
                 $cmdName = [System.IO.Path]::GetFileNameWithoutExtension($cmdFile.Name)
                 $content = Get-Content -Path $cmdFile.FullName -Raw
-                
+
+                # Determine whether the first frontmatter block already contains a name field
+                $hasNameInFrontmatter = $false
+                $lines = $content -split "`n"
+                $frontmatterStart = $null
+                $frontmatterEnd = $null
+
+                for ($i = 0; $i -lt $lines.Length; $i++) {
+                    if ($lines[$i] -match '^\s*---\s*$') {
+                        if ($null -eq $frontmatterStart) {
+                            $frontmatterStart = $i
+                        } elseif ($null -eq $frontmatterEnd) {
+                            $frontmatterEnd = $i
+                            break
+                        }
+                    }
+                }
+
+                if ($null -ne $frontmatterStart) {
+                    if ($null -eq $frontmatterEnd) {
+                        $frontmatterEnd = $lines.Length
+                    }
+
+                    for ($j = $frontmatterStart + 1; $j -lt $frontmatterEnd; $j++) {
+                        if ($lines[$j] -match '^[ \t]*name\s*:') {
+                            $hasNameInFrontmatter = $true
+                            break
+                        }
+                    }
+                }
+
                 # Inject name field after first --- using .NET Regex.Replace with count limit
-                $regex = [regex]'(?m)^---$'
-                $content = $regex.Replace($content, "---`nname: $cmdName", 1)
-                
+                if (-not $hasNameInFrontmatter) {
+                    $regex = [regex]'(?m)^---$'
+                    $content = $regex.Replace($content, "---`nname: $cmdName", 1)
+                }
+
                 Set-Content -Path $cmdFile.FullName -Value $content -NoNewline
             }
         }

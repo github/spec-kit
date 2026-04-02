@@ -74,7 +74,7 @@ AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
 ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
 CODEBUDDY_FILE="$REPO_ROOT/CODEBUDDY.md"
 QODER_FILE="$REPO_ROOT/QODER.md"
-# Amp, Kiro CLI, IBM Bob, and Pi all share AGENTS.md — use AGENTS_FILE to avoid
+# Amp, Kiro CLI, IBM Bob, Pi, and Forge all share AGENTS.md — use AGENTS_FILE to avoid
 # updating the same file multiple times.
 AMP_FILE="$AGENTS_FILE"
 SHAI_FILE="$REPO_ROOT/SHAI.md"
@@ -86,6 +86,7 @@ VIBE_FILE="$REPO_ROOT/.vibe/agents/specify-agents.md"
 KIMI_FILE="$REPO_ROOT/KIMI.md"
 TRAE_FILE="$REPO_ROOT/.trae/rules/AGENTS.md"
 IFLOW_FILE="$REPO_ROOT/IFLOW.md"
+FORGE_FILE="$AGENTS_FILE"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
