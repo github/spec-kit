@@ -121,7 +121,14 @@ generate_commands() {
       esac
       if [[ -n "$hint" ]]; then
         body=$(printf '%s\n' "$body" | awk -v hint="$hint" '
-          /^description:/ { print; print "argument-hint: " hint; next }
+          /^---$/ {
+            print
+            if (++dash_count == 1) { in_fm = 1 } else { in_fm = 0 }
+            next
+          }
+          in_fm && !injected && /^description:/ {
+            print; print "argument-hint: " hint; injected = 1; next
+          }
           { print }
         ')
       fi

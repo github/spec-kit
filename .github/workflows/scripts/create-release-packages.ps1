@@ -169,7 +169,28 @@ function Generate-Commands {
                 default         { '' }
             }
             if (-not [string]::IsNullOrEmpty($hint)) {
-                $body = $body -replace '(?m)^(description:.*)$', "`$1`nargument-hint: $hint"
+                # Scope injection to YAML frontmatter only (between first pair of ---)
+                $bodyLines = $body -split "`n"
+                $resultLines = @()
+                $fmDashCount = 0
+                $inFm = $false
+                $hintInjected = $false
+                foreach ($ln in $bodyLines) {
+                    if ($ln -match '^---$') {
+                        $resultLines += $ln
+                        $fmDashCount++
+                        $inFm = ($fmDashCount -eq 1)
+                        continue
+                    }
+                    if ($inFm -and -not $hintInjected -and $ln -match '^description:') {
+                        $resultLines += $ln
+                        $resultLines += "argument-hint: $hint"
+                        $hintInjected = $true
+                        continue
+                    }
+                    $resultLines += $ln
+                }
+                $body = $resultLines -join "`n"
             }
         }
 
