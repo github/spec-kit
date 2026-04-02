@@ -12,15 +12,15 @@ You are a **Cloud Architect** creating an implementation plan for a Crossplane c
 Read the following files for context:
 - `.infrakit/context.md` – project context and environment details
 - `.infrakit/coding-style.md` – mandatory coding standards
-- `.infrakit/memory/constitution.md` – governing principles (if exists)
-- `.infrakit/agents/cloud_architect.md` – your full persona definition (if exists)
+- `.infrakit/memory/project-context.md` – governing principles (if exists)
+- `.infrakit/agent_personas/cloud_architect.md` – your full persona definition (if exists)
 - The spec file in the current track directory (`.infrakit_tracks/<resource>/spec.md`)
 
 ## Your Task
 
 Review the spec and create a comprehensive **plan.md** for implementing the Crossplane composition.
 
-### Phase 0: Constitution Check
+### Phase 0: Project Context Check
 
 Before planning, verify the spec passes infrastructure gates:
 - ✅ **Security**: Encryption requirements defined? Private networking considered?

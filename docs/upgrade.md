@@ -101,28 +101,28 @@ With `--force`, it skips the confirmation and proceeds immediately.
 
 ## ⚠️ Important Warnings
 
-### 1. Constitution file will be overwritten
+### 1. Project Context file will be overwritten
 
-**Known issue:** `infrakit init --here --force` currently overwrites `.infrakit/memory/constitution.md` with the default template, erasing any customizations you made.
+**Known issue:** `infrakit init --here --force` currently overwrites `.infrakit/memory/project-context.md` with the default template, erasing any customizations you made.
 
 **Workaround:**
 
 ```bash
-# 1. Back up your constitution before upgrading
-cp .infrakit/memory/constitution.md .infrakit/memory/constitution-backup.md
+# 1. Back up your project context before upgrading
+cp .infrakit/memory/project-context.md .infrakit/memory/project context-backup.md
 
 # 2. Run the upgrade
 infrakit init --here --force --ai copilot --iac crossplane
 
-# 3. Restore your customized constitution
-mv .infrakit/memory/constitution-backup.md .infrakit/memory/constitution.md
+# 3. Restore your customized project context
+mv .infrakit/memory/project context-backup.md .infrakit/memory/project-context.md
 ```
 
 Or use git to restore it:
 
 ```bash
 # After upgrade, restore from git history
-git restore .infrakit/memory/constitution.md
+git restore .infrakit/memory/project-context.md
 ```
 
 ### 2. Custom template modifications
@@ -171,15 +171,15 @@ uv tool install infrakit-cli --force --from git+https://github.com/github/infrak
 # Update project files to get new commands
 infrakit init --here --force --ai copilot --iac crossplane
 
-# Restore your constitution if customized
-git restore .infrakit/memory/constitution.md
+# Restore your project context if customized
+git restore .infrakit/memory/project-context.md
 ```
 
-### Scenario 2: "I customized templates and constitution"
+### Scenario 2: "I customized templates and project context"
 
 ```bash
 # 1. Back up customizations
-cp .infrakit/memory/constitution.md /tmp/constitution-backup.md
+cp .infrakit/memory/project-context.md /tmp/project context-backup.md
 cp -r .infrakit/templates /tmp/templates-backup
 
 # 2. Upgrade CLI
@@ -189,7 +189,7 @@ uv tool install infrakit-cli --force --from git+https://github.com/github/infrak
 infrakit init --here --force --ai copilot --iac crossplane
 
 # 4. Restore customizations
-mv /tmp/constitution-backup.md .infrakit/memory/constitution.md
+mv /tmp/project context-backup.md .infrakit/memory/project-context.md
 # Manually merge template changes if needed
 ```
 
@@ -216,13 +216,13 @@ If you initialized your project with `--no-git`, you can still upgrade:
 
 ```bash
 # Manually back up files you customized
-cp .infrakit/memory/constitution.md /tmp/constitution-backup.md
+cp .infrakit/memory/project-context.md /tmp/project context-backup.md
 
 # Run upgrade
 infrakit init --here --force --ai copilot --iac crossplane --no-git
 
 # Restore customizations
-mv /tmp/constitution-backup.md .infrakit/memory/constitution.md
+mv /tmp/project context-backup.md .infrakit/memory/project-context.md
 ```
 
 The `--no-git` flag skips git initialization but doesn't affect file updates.
@@ -298,19 +298,19 @@ This tells InfraKit which feature directory to use when creating specs, plans, a
    - Codex requires `CODEX_HOME` environment variable
    - Some agents need workspace restart or cache clearing
 
-### "I lost my constitution customizations"
+### "I lost my project context customizations"
 
 **Fix:** Restore from git or backup:
 
 ```bash
 # If you committed before upgrading
-git restore .infrakit/memory/constitution.md
+git restore .infrakit/memory/project-context.md
 
 # If you backed up manually
-cp /tmp/constitution-backup.md .infrakit/memory/constitution.md
+cp /tmp/project context-backup.md .infrakit/memory/project-context.md
 ```
 
-**Prevention:** Always commit or back up `constitution.md` before upgrading.
+**Prevention:** Always commit or back up `project-context.md` before upgrading.
 
 ### "Warning: Current directory is not empty"
 
@@ -337,7 +337,7 @@ Only InfraKit infrastructure files:
 - Agent command files (`.claude/commands/`, `.github/prompts/`, etc.)
 - Scripts in `.infrakit/scripts/`
 - Templates in `.infrakit/templates/`
-- Memory files in `.infrakit/memory/` (including constitution)
+- Memory files in `.infrakit/memory/` (including project context)
 
 **What stays untouched:**
 
@@ -362,7 +362,7 @@ Only InfraKit infrastructure files:
 - ✅ **Expected** when adding InfraKit to an existing codebase
 - ⚠️ **Unexpected** if you thought you were creating a new project in an empty directory
 
-**Prevention tip:** Before upgrading, commit or back up your `.infrakit/memory/constitution.md` if you customized it.
+**Prevention tip:** Before upgrading, commit or back up your `.infrakit/memory/project-context.md` if you customized it.
 
 ### "CLI upgrade doesn't seem to work"
 
@@ -439,7 +439,7 @@ InfraKit follows semantic versioning for major releases. The CLI and project fil
 
 After upgrading:
 
-- **Test new slash commands:** Run `/infrakit:constitution` or another command to verify everything works
+- **Test new slash commands:** Run `/infrakit:project_context` or another command to verify everything works
 - **Review release notes:** Check [GitHub Releases](https://github.com/github/infrakit/releases) for new features and breaking changes
 - **Update workflows:** If new commands were added, update your team's development workflows
 - **Check documentation:** Visit [github.io/infrakit](https://github.github.io/infrakit/) for updated guides

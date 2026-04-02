@@ -154,12 +154,25 @@ build_variant() {
 
   [[ -d templates ]] && { mkdir -p "$SPEC_DIR/templates"; find templates -type f -not -path "templates/commands/*" -not -path "templates/iac/*" -not -name "vscode-settings.json" -exec cp --parents {} "$SPEC_DIR"/ \; ; echo "Copied templates -> .infrakit/templates"; }
   
+  # Copy generic agent personas to .infrakit/agent_personas
+  if [[ -d templates/agent_personas ]]; then
+    mkdir -p "$SPEC_DIR/agent_personas"
+    cp -r templates/agent_personas/* "$SPEC_DIR/agent_personas/"
+  fi
+
   # NOTE: We substitute {ARGS} internally. Outward tokens differ intentionally:
   #   * Markdown/prompt (claude, copilot, cursor-agent, opencode): $ARGUMENTS
   #   * TOML (gemini, qwen): {{args}}
   # This keeps formats readable without extra abstraction.
 
   local iac_templates_dir="templates/iac/${iac}/commands"
+  local iac_personas_dir="templates/iac/${iac}/agent_personas"
+
+  # Copy IaC-specific agent personas to .infrakit/agent_personas
+  if [[ -d "$iac_personas_dir" ]]; then
+    mkdir -p "$SPEC_DIR/agent_personas"
+    cp -r "$iac_personas_dir"/* "$SPEC_DIR/agent_personas/"
+  fi
 
   case $agent in
     claude)

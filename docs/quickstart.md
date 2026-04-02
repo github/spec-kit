@@ -29,13 +29,21 @@ uvx --from git+https://github.com/github/infrakit.git infrakit init <PROJECT_NAM
 uvx --from git+https://github.com/github/infrakit.git infrakit init <PROJECT_NAME> --iac crossplane --script sh  # Force POSIX shell
 ```
 
-### Step 2: Define Your Constitution
+### Step 2: Define Your Project Context
 
-**In your AI Agent's chat interface**, use the `/infrakit:constitution` slash command to establish the core rules and principles for your project. You should provide your project's specific principles as arguments.
+**In your AI Agent's chat interface**, use the `/infrakit:project_context` slash command to establish the core rules and principles for your project. You should provide your project's specific principles as arguments.
 
 ```markdown
-/infrakit:constitution This project follows a "Library-First" approach. All features must be implemented as standalone libraries first. We use TDD strictly. We prefer functional programming patterns.
+/infrakit:project_context This project follows a "Library-First" approach. All features must be implemented as standalone libraries first. We use TDD strictly. We prefer functional programming patterns.
 ```
+
+Additionally, establish project-wide conventions using the `/infrakit:coding_style` and `/infrakit:tagging` commands.
+
+```markdown
+/infrakit:coding_style All code must be strongly typed. Functions should not exceed 50 lines.
+/infrakit:tagging Ensure all infrastructure resources have owner and environment metadata tags.
+```
+
 
 ### Step 3: Create the Spec
 
@@ -88,12 +96,12 @@ Then, use the `/infrakit:implement` slash command to execute the plan.
 
 Here's a complete example of building a team productivity platform:
 
-### Step 1: Define Constitution
+### Step 1: Define Project Context
 
-Initialize the project's constitution to set ground rules:
+Initialize the project's project context to set ground rules:
 
 ```markdown
-/infrakit:constitution Taskify is a "Security-First" application. All user inputs must be validated. We use a microservices architecture. Code must be fully documented.
+/infrakit:project_context Taskify is a "Security-First" application. All user inputs must be validated. We use a microservices architecture. Code must be fully documented.
 ```
 
 ### Step 2: Define Requirements with `/infrakit:specify`

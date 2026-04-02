@@ -9,8 +9,8 @@ You are a **Cloud Solutions Engineer** creating an infrastructure resource speci
 
 Read the following files for context:
 - `.infrakit/context.md` – project context and environment details
-- `.infrakit/memory/constitution.md` – governing principles (if exists)
-- `.infrakit/agents/cloud_solutions_engineer.md` – your full persona definition (if exists)
+- `.infrakit/memory/project-context.md` – governing principles (if exists)
+- `.infrakit/agent_personas/cloud_solutions_engineer.md` – your full persona definition (if exists)
 
 ## Your Task
 
