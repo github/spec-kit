@@ -314,7 +314,7 @@ class TestClaudeArgumentHints:
                 f"No expected hint defined for skill '{stem}'"
             )
             content = f.read_text(encoding="utf-8")
-            assert f"argument-hint: {expected_hint}" in content, (
+            assert f'argument-hint: "{expected_hint}"' in content, (
                 f"{f.parent.name}/SKILL.md: expected hint '{expected_hint}' not found"
             )
 
@@ -386,7 +386,7 @@ class TestClaudeArgumentHints:
         content = (
             "---\n"
             "description: My command\n"
-            "argument-hint: Existing hint\n"
+            'argument-hint: "Existing hint"\n'
             "---\n"
             "\n"
             "Body text\n"

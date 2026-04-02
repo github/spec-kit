@@ -85,7 +85,8 @@ class ClaudeIntegration(SkillsIntegration):
                     eol = "\n"
                 else:
                     eol = ""
-                out.append(f"argument-hint: {hint}{eol}")
+                escaped = hint.replace("\\", "\\\\").replace('"', '\\"')
+                out.append(f'argument-hint: "{escaped}"{eol}')
                 injected = True
                 continue
             out.append(line)
@@ -147,5 +148,7 @@ class ClaudeIntegration(SkillsIntegration):
             updated = self.inject_argument_hint(content, hint)
             if updated != content:
                 path.write_bytes(updated.encode("utf-8"))
+                # Re-record hash so manifest stays in sync for uninstall
+                self.record_file_in_manifest(path, project_root, manifest)
 
         return created
