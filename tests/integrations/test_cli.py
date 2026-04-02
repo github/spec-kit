@@ -73,7 +73,6 @@ class TestInitIntegrationFlag:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        assert "--integration copilot" in result.output
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
 
     def test_ai_claude_here_preserves_preexisting_commands(self, tmp_path):

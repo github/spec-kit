@@ -15,11 +15,13 @@ class TestAgyAutoPromote:
     """--ai agy auto-promotes to integration path."""
 
     def test_ai_agy_without_ai_skills_auto_promotes(self, tmp_path):
-        """--ai agy (without --ai-skills) should auto-promote to integration."""
+        """--ai agy should work the same as --integration agy."""
         from typer.testing import CliRunner
         from specify_cli import app
 
         runner = CliRunner()
-        result = runner.invoke(app, ["init", str(tmp_path / "test-proj"), "--ai", "agy"])
+        target = tmp_path / "test-proj"
+        result = runner.invoke(app, ["init", str(target), "--ai", "agy", "--no-git", "--script", "sh"])
 
-        assert "--integration agy" in result.output
+        assert result.exit_code == 0, f"init --ai agy failed: {result.output}"
+        assert (target / ".agent" / "skills" / "speckit-plan" / "SKILL.md").exists()

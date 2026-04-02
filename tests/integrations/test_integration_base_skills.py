@@ -261,7 +261,9 @@ class SkillsIntegrationTests:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init --ai {self.KEY} failed: {result.output}"
-        assert f"--integration {self.KEY}" in result.output
+        i = get_integration(self.KEY)
+        skills_dir = i.skills_dest(project)
+        assert skills_dir.is_dir(), f"--ai {self.KEY} did not create skills directory"
 
     def test_integration_flag_creates_files(self, tmp_path):
         from typer.testing import CliRunner

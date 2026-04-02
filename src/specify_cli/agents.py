@@ -23,159 +23,21 @@ class CommandRegistrar:
     and companion files (e.g. Copilot .prompt.md).
     """
 
-    # Agent configurations with directory, format, and argument placeholder
-    AGENT_CONFIGS = {
-        "claude": {
-            "dir": ".claude/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "gemini": {
-            "dir": ".gemini/commands",
-            "format": "toml",
-            "args": "{{args}}",
-            "extension": ".toml"
-        },
-        "copilot": {
-            "dir": ".github/agents",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".agent.md"
-        },
-        "cursor-agent": {
-            "dir": ".cursor/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "qwen": {
-            "dir": ".qwen/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "opencode": {
-            "dir": ".opencode/command",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "codex": {
-            "dir": ".agents/skills",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": "/SKILL.md",
-        },
-        "windsurf": {
-            "dir": ".windsurf/workflows",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "junie": {
-            "dir": ".junie/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "kilocode": {
-            "dir": ".kilocode/workflows",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "auggie": {
-            "dir": ".augment/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "roo": {
-            "dir": ".roo/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "codebuddy": {
-            "dir": ".codebuddy/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "qodercli": {
-            "dir": ".qoder/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "kiro-cli": {
-            "dir": ".kiro/prompts",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "pi": {
-            "dir": ".pi/prompts",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "amp": {
-            "dir": ".agents/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "shai": {
-            "dir": ".shai/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "tabnine": {
-            "dir": ".tabnine/agent/commands",
-            "format": "toml",
-            "args": "{{args}}",
-            "extension": ".toml"
-        },
-        "bob": {
-            "dir": ".bob/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "kimi": {
-            "dir": ".kimi/skills",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": "/SKILL.md",
-        },
-        "trae": {
-            "dir": ".trae/rules",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "iflow": {
-            "dir": ".iflow/commands",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "vibe": {
-            "dir": ".vibe/prompts",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": ".md"
-        },
-        "agy": {
-            "dir": ".agent/skills",
-            "format": "markdown",
-            "args": "$ARGUMENTS",
-            "extension": "/SKILL.md",
-        }
-    }
+    # Derived from INTEGRATION_REGISTRY — single source of truth.
+    # Each integration's ``registrar_config`` provides dir, format, args, extension.
+    @staticmethod
+    def _build_agent_configs() -> dict[str, dict[str, Any]]:
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+        configs: dict[str, dict[str, Any]] = {}
+        for key, integration in INTEGRATION_REGISTRY.items():
+            # Skip generic — it has no fixed directory (set at runtime).
+            if key == "generic":
+                continue
+            if integration.registrar_config:
+                configs[key] = dict(integration.registrar_config)
+        return configs
+
+    AGENT_CONFIGS = _build_agent_configs()
 
     @staticmethod
     def parse_frontmatter(content: str) -> tuple[dict, str]:

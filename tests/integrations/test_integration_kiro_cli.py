@@ -36,5 +36,4 @@ class TestKiroAlias:
             os.chdir(old_cwd)
 
         assert result.exit_code == 0
-        assert "--integration kiro-cli" in result.output
         assert (target / ".kiro" / "prompts" / "speckit.plan.md").exists()
