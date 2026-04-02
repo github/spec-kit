@@ -1,48 +1,34 @@
 # Development Guide
 
-This document is the primary entry point for people modifying Spec Kit itself.
+This document is the primary entry point for people modifying Spec Kit itself. Use this guide when you need to understand how the repository fits together, where different kinds of changes belong, how to validate them, and which deeper documents to read next. This document is intentionally focused on system understanding, repository navigation, and change workflows.
 
-Use this guide when you need to understand how the repository fits together, where different kinds of changes belong, how to validate them, and which deeper documents to read next. This document is intentionally focused on system understanding, repository navigation, and change workflows.
+## Maintainer Orientation
 
-## Maintainer Onboarding
+Spec Kit is a toolkit for spec-driven development. It provides the workflow, scaffolding assets, and supporting integrations that turn an idea into a specification, an implementation plan, task breakdowns, and executable project work. From a maintainer perspective, the repository is not just documentation and not just code. It is a coordinated system whose templates, scripts, CLI, agent integrations, extensions, presets, and documentation must remain aligned.
 
-**Read the essential project documents:**
+**Essential project documents:**
 
 | Document | Role |
 | --- | --- |
-| [README.md](./README.md) | Primary user-facing overview of Spec Kit, its purpose, and its workflow. |
+| [README.md](./README.md) | Primary user-facing overview of Spec Kit and its workflow. |
 | [DEVELOPMENT.md](./DEVELOPMENT.md) | Primary maintainer-facing guide to modifying Spec Kit itself. |
-| [spec-driven.md](./spec-driven.md) | End-to-end explanation of the Spec-Driven Development model supported by Spec Kit. |
+| [spec-driven.md](./spec-driven.md) | End-to-end explanation of the Spec-Driven Development workflow supported by Spec Kit. |
 | [RELEASE-PROCESS.md](./.github/workflows/RELEASE-PROCESS.md) | Release workflow, versioning rules, and changelog generation process. |
 | [docs/index.md](./docs/index.md) | Entry point to the `docs/` documentation set. |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | Contribution process, review expectations, and required development practices. |
 | [TESTING.md](./TESTING.md) | Validation strategy and testing procedures. |
 
-**Inspect the repository layout:**
+**Main repository surfaces:**
 
-| Directory          | Role                                                                  |
-| ------------------ | --------------------------------------------------------------------- |
-| `templates/`       | Prompt assets and templates that define the workflow surface.         |
-| `scripts/`         | Supporting scripts used by the generated workflow.                    |
+| Directory | Role |
+| --- | --- |
+| `templates/` | Prompt assets and templates that define the core workflow behavior and generated artifacts. |
+| `scripts/` | Supporting scripts used by the workflow, setup, and repository tooling. |
 | `src/specify_cli/` | Python source for the `specify` CLI, including agent-specific assets. |
-| `extensions/`      | Extension-related docs, catalogs, and supporting assets.              |
-| `presets/`         | Preset-related docs, catalogs, and supporting assets.                 |
+| `extensions/` | Extension-related docs, catalogs, and supporting assets. |
+| `presets/` | Preset-related docs, catalogs, and supporting assets. |
 
-## What Spec Kit Is, from a Maintainer Perspective
-
-Spec Kit is a toolkit for spec-driven development. It provides a structured workflow, scaffolding assets, and supporting integrations that help users move from an idea to a defined specification, an implementation plan, task breakdowns, and executable project work.
-
-From a maintainer perspective, the repository is not just "documentation" and not just "code". It is a coordinated system composed of several interacting surfaces:
-
-- workflow-defining templates,
-- command and scaffolding assets,
-- scripts and automation helpers,
-- CLI and installation behavior,
-- agent-specific integration surfaces,
-- extension and preset publishing assets,
-- documentation that explains and stabilizes the user and developer model.
-
-Maintaining Spec Kit means preserving coherence across those surfaces. A change in one layer often affects documentation, validation expectations, and user-visible workflow behavior in other layers.
+These documents and repository surfaces form the minimum context needed to reason about changes safely. Maintaining Spec Kit means preserving coherence across those surfaces. A change in one layer often affects documentation, validation expectations, and user-visible workflow behavior in other layers.
 
 ## System Mental Model
 
