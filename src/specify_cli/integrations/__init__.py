@@ -53,6 +53,7 @@ def _register_builtins() -> None:
     from .codebuddy import CodebuddyIntegration
     from .copilot import CopilotIntegration
     from .cursor_agent import CursorAgentIntegration
+    from .forge import ForgeIntegration
     from .iflow import IflowIntegration
     from .junie import JunieIntegration
     from .kilocode import KilocodeIntegration
@@ -75,6 +76,7 @@ def _register_builtins() -> None:
     _register(CodebuddyIntegration())
     _register(CopilotIntegration())
     _register(CursorAgentIntegration())
+    _register(ForgeIntegration())
     _register(IflowIntegration())
     _register(JunieIntegration())
     _register(KilocodeIntegration())

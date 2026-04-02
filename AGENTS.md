@@ -48,6 +48,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | **Kimi Code**              | `.kimi/skills/`        | Markdown | `kimi`          | Kimi Code CLI (Moonshot AI) |
 | **Pi Coding Agent**        | `.pi/prompts/`         | Markdown | `pi`            | Pi terminal coding agent    |
 | **iFlow CLI**              | `.iflow/commands/`     | Markdown | `iflow`         | iFlow CLI (iflow-ai)        |
+| **Forge**                  | `.forge/commands/`     | Markdown | `forge`         | Forge CLI (forgecode.dev)   |
 | **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
 | **Trae**                   | `.trae/rules/`         | Markdown | N/A (IDE-based) | Trae IDE                    |
 | **Antigravity**            | `.agent/commands/`     | Markdown | N/A (IDE-based) | Antigravity IDE (`--ai agy --ai-skills`) |
@@ -333,6 +334,7 @@ Require a command-line tool to be installed:
 - **Mistral Vibe**: `vibe` CLI
 - **Pi Coding Agent**: `pi` CLI
 - **iFlow CLI**: `iflow` CLI
+- **Forge**: `forge` CLI
 
 ### IDE-Based Agents
 
@@ -351,7 +353,7 @@ Work within integrated development environments:
 
 ### Markdown Format
 
-Used by: Claude, Cursor, GitHub Copilot, opencode, Windsurf, Junie, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, Qwen, Pi, Codex, Auggie, CodeBuddy, Qoder, Roo Code, Kilo Code, Trae, Antigravity, Mistral Vibe, iFlow
+Used by: Claude, Cursor, GitHub Copilot, opencode, Windsurf, Junie, Kiro CLI, Amp, SHAI, IBM Bob, Kimi Code, Qwen, Pi, Codex, Auggie, CodeBuddy, Qoder, Roo Code, Kilo Code, Trae, Antigravity, Mistral Vibe, iFlow, Forge
 
 **Standard format:**
 
@@ -419,8 +421,46 @@ Different agents use different argument placeholders:
 
 - **Markdown/prompt-based**: `$ARGUMENTS`
 - **TOML-based**: `{{args}}`
+- **Forge-specific**: `{{parameters}}` (uses custom parameter syntax)
 - **Script placeholders**: `{SCRIPT}` (replaced with actual script path)
 - **Agent placeholders**: `__AGENT__` (replaced with agent name)
+
+## Special Processing Requirements
+
+Some agents require custom processing beyond the standard template transformations:
+
+### Copilot Integration
+
+GitHub Copilot has unique requirements:
+- Commands use `.agent.md` extension (not `.md`)
+- Each command gets a companion `.prompt.md` file in `.github/prompts/`
+- Installs `.vscode/settings.json` with prompt file recommendations
+- Context file lives at `.github/copilot-instructions.md`
+
+Implementation: Extends `IntegrationBase` with custom `setup()` method that:
+1. Processes templates with `process_template()`
+2. Generates companion `.prompt.md` files
+3. Merges VS Code settings
+
+### Forge Integration
+
+Forge has special frontmatter and argument requirements:
+- Uses `{{parameters}}` instead of `$ARGUMENTS`
+- Strips `handoffs` frontmatter key (Forge-specific collaboration feature)
+- Injects `name` field into frontmatter when missing
+
+Implementation: Extends `IntegrationBase` with custom `setup()` method that:
+1. Processes templates with `process_template()` using `{{parameters}}`
+2. Applies Forge-specific transformations via `_apply_forge_transformations()`
+3. Strips unwanted frontmatter keys
+4. Injects missing `name` fields
+
+### Standard Markdown Agents
+
+Most agents (Bob, Claude, Windsurf, etc.) use `MarkdownIntegration`:
+- Simple subclass with just `key`, `config`, `registrar_config` set
+- Inherits standard processing from `MarkdownIntegration.setup()`
+- No custom processing needed
 
 ## Testing New Agent Integration
 
