@@ -2433,6 +2433,11 @@ def init(
             }
             if use_integration:
                 init_opts["integration"] = resolved_integration.key
+                # Ensure ai_skills is set for SkillsIntegration so downstream
+                # tools (extensions, presets) emit SKILL.md overrides correctly.
+                from .integrations.base import SkillsIntegration as _SkillsPersist
+                if isinstance(resolved_integration, _SkillsPersist):
+                    init_opts["ai_skills"] = True
             save_init_options(project_path, init_opts)
 
             # Install preset if specified

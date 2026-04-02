@@ -202,12 +202,14 @@ class IntegrationBase(ABC):
     ) -> Path:
         """Write *content* to *dest*, hash it, and record in *manifest*.
 
-        Creates parent directories as needed.  Uses explicit LF newlines
-        (no CRLF translation) to keep output byte-for-byte identical
-        across platforms.  Returns *dest*.
+        Creates parent directories as needed.  Writes bytes directly to
+        avoid platform newline translation (CRLF on Windows).  Any
+        ``\r\n`` sequences in *content* are normalised to ``\n`` before
+        writing.  Returns *dest*.
         """
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(content.encode("utf-8"))
+        normalized = content.replace("\r\n", "\n")
+        dest.write_bytes(normalized.encode("utf-8"))
         rel = dest.resolve().relative_to(project_root.resolve())
         manifest.record_existing(rel)
         return dest

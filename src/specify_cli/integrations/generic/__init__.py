@@ -66,6 +66,8 @@ class GenericIntegration(MarkdownIntegration):
             for i, token in enumerate(tokens):
                 if token == "--commands-dir" and i + 1 < len(tokens):
                     return tokens[i + 1]
+                if token.startswith("--commands-dir="):
+                    return token.split("=", 1)[1]
 
         raise ValueError(
             "--commands-dir is required for the generic integration"
