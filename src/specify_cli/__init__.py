@@ -3156,6 +3156,7 @@ def extension_update(
                         shutil.copy2(cfg_file, backup_config_dir / cfg_file.name)
 
                 # 3. Backup command files for all agents
+                from .agents import CommandRegistrar as _AgentReg
                 registered_commands = backup_registry_entry.get("registered_commands", {})
                 for agent_name, cmd_names in registered_commands.items():
                     if agent_name not in registrar.AGENT_CONFIGS:
@@ -3164,7 +3165,8 @@ def extension_update(
                     commands_dir = project_root / agent_config["dir"]
 
                     for cmd_name in cmd_names:
-                        cmd_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
+                        output_name = _AgentReg._compute_output_name(agent_name, cmd_name, agent_config)
+                        cmd_file = commands_dir / f"{output_name}{agent_config['extension']}"
                         if cmd_file.exists():
                             backup_cmd_path = backup_commands_dir / agent_name / cmd_file.name
                             backup_cmd_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3318,7 +3320,8 @@ def extension_update(
                             commands_dir = project_root / agent_config["dir"]
 
                             for cmd_name in cmd_names:
-                                cmd_file = commands_dir / f"{cmd_name}{agent_config['extension']}"
+                                output_name = _AgentReg._compute_output_name(agent_name, cmd_name, agent_config)
+                                cmd_file = commands_dir / f"{output_name}{agent_config['extension']}"
                                 # Delete if it exists and wasn't in our backup
                                 if cmd_file.exists() and str(cmd_file) not in backed_up_command_files:
                                     cmd_file.unlink()

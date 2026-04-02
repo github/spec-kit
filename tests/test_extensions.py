@@ -1088,8 +1088,8 @@ $ARGUMENTS
         assert len(registered) == 2
         assert "speckit.ext-alias.cmd" in registered
         assert "speckit.ext-alias.shortcut" in registered
-        assert (claude_dir / "speckit.ext-alias.cmd.md").exists()
-        assert (claude_dir / "speckit.ext-alias.shortcut.md").exists()
+        assert (claude_dir / "speckit-ext-alias-cmd" / "SKILL.md").exists()
+        assert (claude_dir / "speckit-ext-alias-shortcut" / "SKILL.md").exists()
 
     def test_unregister_commands_for_codex_skills_uses_mapped_names(self, project_dir):
         """Codex skill cleanup should use the same mapped names as registration."""
@@ -1610,7 +1610,7 @@ class TestIntegration:
         assert installed[0]["id"] == "test-ext"
 
         # Verify command registered
-        cmd_file = project_dir / ".claude" / "skills" / "speckit-test-ext.hello" / "SKILL.md"
+        cmd_file = project_dir / ".claude" / "skills" / "speckit-test-ext-hello" / "SKILL.md"
         assert cmd_file.exists()
 
         # Verify registry has registered commands (now a dict keyed by agent)
@@ -3068,14 +3068,16 @@ class TestExtensionUpdateCLI:
 
         registered_commands = backup_registry_entry.get("registered_commands", {})
         command_files = []
-        registrar = CommandRegistrar()
+        from specify_cli.agents import CommandRegistrar as AgentRegistrar
+        agent_registrar = AgentRegistrar()
         for agent_name, cmd_names in registered_commands.items():
-            if agent_name not in registrar.AGENT_CONFIGS:
+            if agent_name not in agent_registrar.AGENT_CONFIGS:
                 continue
-            agent_cfg = registrar.AGENT_CONFIGS[agent_name]
+            agent_cfg = agent_registrar.AGENT_CONFIGS[agent_name]
             commands_dir = project_dir / agent_cfg["dir"]
             for cmd_name in cmd_names:
-                cmd_path = commands_dir / f"{cmd_name}{agent_cfg['extension']}"
+                output_name = AgentRegistrar._compute_output_name(agent_name, cmd_name, agent_cfg)
+                cmd_path = commands_dir / f"{output_name}{agent_cfg['extension']}"
                 command_files.append(cmd_path)
 
         assert command_files, "Expected at least one registered command file"
