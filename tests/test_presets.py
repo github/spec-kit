@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 
 import yaml
 
+from tests.conftest import strip_ansi
 from specify_cli.presets import (
     PresetManifest,
     PresetRegistry,
@@ -2443,7 +2444,8 @@ class TestPresetSetPriority:
             result = runner.invoke(app, ["preset", "set-priority", "test-pack", "5"])
 
         assert result.exit_code == 0, result.output
-        assert "priority changed: 10 → 5" in result.output
+        plain = strip_ansi(result.output)
+        assert "priority changed: 10 → 5" in plain
 
         # Reload registry to see updated value
         manager2 = PresetManager(project_dir)
@@ -2465,7 +2467,8 @@ class TestPresetSetPriority:
             result = runner.invoke(app, ["preset", "set-priority", "test-pack", "5"])
 
         assert result.exit_code == 0, result.output
-        assert "already has priority 5" in result.output
+        plain = strip_ansi(result.output)
+        assert "already has priority 5" in plain
 
     def test_set_priority_invalid_value(self, project_dir, pack_dir):
         """Test set-priority rejects invalid priority values."""

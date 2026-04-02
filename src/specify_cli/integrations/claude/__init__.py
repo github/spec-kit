@@ -8,11 +8,11 @@ from typing import Any
 import yaml
 
 from ...agents import CommandRegistrar
-from ..base import IntegrationBase
+from ..base import SkillsIntegration
 from ..manifest import IntegrationManifest
 
 
-class ClaudeIntegration(IntegrationBase):
+class ClaudeIntegration(SkillsIntegration):
     """Integration for Claude Code skills."""
 
     key = "claude"

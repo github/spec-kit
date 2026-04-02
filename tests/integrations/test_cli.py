@@ -3,26 +3,24 @@
 import json
 import os
 
-import pytest
-
 
 class TestInitIntegrationFlag:
-    def test_integration_and_ai_mutually_exclusive(self):
+    def test_integration_and_ai_mutually_exclusive(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
         runner = CliRunner()
         result = runner.invoke(app, [
-            "init", "test-project", "--ai", "claude", "--integration", "copilot",
+            "init", str(tmp_path / "test-project"), "--ai", "claude", "--integration", "copilot",
         ])
         assert result.exit_code != 0
         assert "mutually exclusive" in result.output
 
-    def test_unknown_integration_rejected(self):
+    def test_unknown_integration_rejected(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
         runner = CliRunner()
         result = runner.invoke(app, [
-            "init", "test-project", "--integration", "nonexistent",
+            "init", str(tmp_path / "test-project"), "--integration", "nonexistent",
         ])
         assert result.exit_code != 0
         assert "Unknown integration" in result.output

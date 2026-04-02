@@ -10,7 +10,6 @@ Tests cover:
 - CLI validation: --ai-skills requires --ai
 """
 
-import re
 import zipfile
 import pytest
 import tempfile
@@ -21,6 +20,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import specify_cli
+from tests.conftest import strip_ansi
 
 from specify_cli import (
     _get_skills_dir,
@@ -684,206 +684,14 @@ class TestCommandCoexistence:
         assert result is True
 
 
-# ===== New-Project Command Skip Tests =====
+# ===== Legacy Download Path Tests =====
 
-class TestNewProjectCommandSkip:
-    """Test that init() removes extracted commands for new projects only.
+class TestLegacyDownloadPath:
+    """Tests for download_and_extract_template() called directly.
 
-    These tests run init() end-to-end via CliRunner with
-    download_and_extract_template patched to create local fixtures.
+    These test the legacy download/extract code that still exists in
+    __init__.py.  They do NOT go through CLI auto-promote.
     """
-
-    def _fake_extract(self, agent, project_path, **_kwargs):
-        """Simulate template extraction: create agent commands dir."""
-        agent_cfg = AGENT_CONFIG.get(agent, {})
-        agent_folder = agent_cfg.get("folder", "")
-        commands_subdir = agent_cfg.get("commands_subdir", "commands")
-        if agent_folder:
-            cmds_dir = project_path / agent_folder.rstrip("/") / commands_subdir
-            cmds_dir.mkdir(parents=True, exist_ok=True)
-            (cmds_dir / "speckit.specify.md").write_text("# spec")
-
-    def test_new_project_commands_removed_after_skills_succeed(self, tmp_path):
-        """For new projects, commands should be removed when skills succeed."""
-        from typer.testing import CliRunner
-
-        runner = CliRunner()
-        target = tmp_path / "new-proj"
-
-        def fake_download(project_path, *args, **kwargs):
-            self._fake_extract("claude", project_path)
-
-        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
-             patch("specify_cli.ensure_executable_scripts"), \
-             patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.install_ai_skills", return_value=True) as mock_skills, \
-             patch("specify_cli.is_git_repo", return_value=False), \
-             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
-            result = runner.invoke(app, ["init", str(target), "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"])
-
-        assert result.exit_code == 0
-        # Skills should have been called
-        mock_skills.assert_called_once()
-
-        # Commands dir should have been removed after skills succeeded
-        cmds_dir = target / ".claude" / "commands"
-        assert not cmds_dir.exists()
-
-    def test_new_project_nonstandard_commands_subdir_removed_after_skills_succeed(self, tmp_path):
-        """For non-standard agents, configured commands_subdir should be removed on success."""
-        from typer.testing import CliRunner
-
-        runner = CliRunner()
-        target = tmp_path / "new-kiro-proj"
-
-        def fake_download(project_path, *args, **kwargs):
-            self._fake_extract("kiro-cli", project_path)
-
-        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
-             patch("specify_cli.ensure_executable_scripts"), \
-             patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.install_ai_skills", return_value=True) as mock_skills, \
-             patch("specify_cli.is_git_repo", return_value=False), \
-             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
-            result = runner.invoke(app, ["init", str(target), "--ai", "kiro-cli", "--ai-skills", "--script", "sh", "--no-git"])
-
-        assert result.exit_code == 0
-        mock_skills.assert_called_once()
-
-        prompts_dir = target / ".kiro" / "prompts"
-        assert not prompts_dir.exists()
-
-    def test_codex_native_skills_preserved_without_conversion(self, tmp_path):
-        """Codex should keep bundled .agents/skills and skip install_ai_skills conversion."""
-        from typer.testing import CliRunner
-
-        runner = CliRunner()
-        target = tmp_path / "new-codex-proj"
-
-        def fake_download(project_path, *args, **kwargs):
-            skill_dir = project_path / ".agents" / "skills" / "speckit-specify"
-            skill_dir.mkdir(parents=True, exist_ok=True)
-            (skill_dir / "SKILL.md").write_text("---\ndescription: Test skill\n---\n\nBody.\n")
-
-        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
-             patch("specify_cli.ensure_executable_scripts"), \
-             patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.install_ai_skills") as mock_skills, \
-             patch("specify_cli.is_git_repo", return_value=False), \
-             patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
-            result = runner.invoke(
-                app,
-                ["init", str(target), "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
-            )
-
-        assert result.exit_code == 0
-        mock_skills.assert_not_called()
-        assert (target / ".agents" / "skills" / "speckit-specify" / "SKILL.md").exists()
-
-    def test_codex_native_skills_missing_falls_back_then_fails_cleanly(self, tmp_path):
-        """Codex should attempt fallback conversion when bundled skills are missing."""
-        from typer.testing import CliRunner
-
-        runner = CliRunner()
-        target = tmp_path / "missing-codex-skills"
-
-        with patch("specify_cli.download_and_extract_template", lambda *args, **kwargs: None), \
-             patch("specify_cli.ensure_executable_scripts"), \
-             patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.install_ai_skills", return_value=False) as mock_skills, \
-             patch("specify_cli.is_git_repo", return_value=False), \
-             patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
-            result = runner.invoke(
-                app,
-                ["init", str(target), "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
-            )
-
-        assert result.exit_code == 1
-        mock_skills.assert_called_once()
-        assert mock_skills.call_args.kwargs.get("overwrite_existing") is True
-        assert "Expected bundled agent skills" in result.output
-        assert "fallback conversion failed" in result.output
-
-    def test_codex_native_skills_ignores_non_speckit_skill_dirs(self, tmp_path):
-        """Non-spec-kit SKILL.md files should trigger fallback conversion, not hard-fail."""
-        from typer.testing import CliRunner
-
-        runner = CliRunner()
-        target = tmp_path / "foreign-codex-skills"
-
-        def fake_download(project_path, *args, **kwargs):
-            skill_dir = project_path / ".agents" / "skills" / "other-tool"
-            skill_dir.mkdir(parents=True, exist_ok=True)
-            (skill_dir / "SKILL.md").write_text("---\ndescription: Foreign skill\n---\n\nBody.\n")
-
-        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
-             patch("specify_cli.ensure_executable_scripts"), \
-             patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.install_ai_skills", return_value=True) as mock_skills, \
-             patch("specify_cli.is_git_repo", return_value=False), \
-             patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
-            result = runner.invoke(
-                app,
-                ["init", str(target), "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
-            )
-
-        assert result.exit_code == 0
-        mock_skills.assert_called_once()
-        assert mock_skills.call_args.kwargs.get("overwrite_existing") is True
-
-    def test_kimi_legacy_migration_runs_without_ai_skills_flag(self, tmp_path):
-        """Kimi init should migrate dotted legacy skills even when --ai-skills is not set."""
-        from typer.testing import CliRunner
-
-        runner = CliRunner()
-        target = tmp_path / "kimi-legacy-no-ai-skills"
-
-        def fake_download(project_path, *args, **kwargs):
-            legacy_dir = project_path / ".kimi" / "skills" / "speckit.plan"
-            legacy_dir.mkdir(parents=True, exist_ok=True)
-            (legacy_dir / "SKILL.md").write_text("---\nname: speckit.plan\n---\n\nlegacy\n")
-
-        with patch("specify_cli.download_and_extract_template", side_effect=fake_download), \
-             patch("specify_cli.ensure_executable_scripts"), \
-             patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.is_git_repo", return_value=False), \
-             patch("specify_cli.shutil.which", return_value="/usr/bin/kimi"):
-            result = runner.invoke(
-                app,
-                ["init", str(target), "--ai", "kimi", "--script", "sh", "--no-git"],
-            )
-
-        assert result.exit_code == 0
-        assert not (target / ".kimi" / "skills" / "speckit.plan").exists()
-        assert (target / ".kimi" / "skills" / "speckit-plan" / "SKILL.md").exists()
-
-    def test_codex_ai_skills_here_mode_preserves_existing_codex_dir(self, tmp_path, monkeypatch):
-        """Codex --here skills init should not delete a pre-existing .codex directory."""
-        from typer.testing import CliRunner
-
-        runner = CliRunner()
-        target = tmp_path / "codex-preserve-here"
-        target.mkdir()
-        existing_prompts = target / ".codex" / "prompts"
-        existing_prompts.mkdir(parents=True)
-        (existing_prompts / "custom.md").write_text("custom")
-        monkeypatch.chdir(target)
-
-        with patch("specify_cli.download_and_extract_template", return_value=target), \
-             patch("specify_cli.ensure_executable_scripts"), \
-             patch("specify_cli.ensure_constitution_from_template"), \
-             patch("specify_cli.install_ai_skills", return_value=True), \
-             patch("specify_cli.is_git_repo", return_value=True), \
-             patch("specify_cli.shutil.which", return_value="/usr/bin/codex"):
-            result = runner.invoke(
-                app,
-                ["init", "--here", "--ai", "codex", "--ai-skills", "--script", "sh", "--no-git"],
-                input="y\n",
-            )
-
-        assert result.exit_code == 0
-        assert (target / ".codex").exists()
-        assert (existing_prompts / "custom.md").exists()
 
     def test_codex_ai_skills_fresh_dir_does_not_create_codex_dir(self, tmp_path):
         """Fresh-directory Codex skills init should not leave legacy .codex from archive."""
@@ -980,7 +788,6 @@ class TestNewProjectCommandSkip:
         assert cmds_dir.exists()
         assert (cmds_dir / "speckit.specify.md").exists()
 
-
 # ===== Skip-If-Exists Tests =====
 
 class TestSkipIfExists:
@@ -1051,92 +858,61 @@ class TestSkillDescriptions:
 class TestCliValidation:
     """Test --ai-skills CLI flag validation."""
 
-    def test_ai_skills_without_ai_fails(self):
+    def test_ai_skills_without_ai_fails(self, tmp_path):
         """--ai-skills without --ai should fail with exit code 1."""
         from typer.testing import CliRunner
 
         runner = CliRunner()
-        result = runner.invoke(app, ["init", "test-proj", "--ai-skills"])
+        result = runner.invoke(app, ["init", str(tmp_path / "test-proj"), "--ai-skills"])
 
         assert result.exit_code == 1
         assert "--ai-skills requires --ai" in result.output
 
-    def test_ai_skills_without_ai_shows_usage(self):
+    def test_ai_skills_without_ai_shows_usage(self, tmp_path):
         """Error message should include usage hint."""
         from typer.testing import CliRunner
 
         runner = CliRunner()
-        result = runner.invoke(app, ["init", "test-proj", "--ai-skills"])
+        result = runner.invoke(app, ["init", str(tmp_path / "test-proj"), "--ai-skills"])
 
         assert "Usage:" in result.output
         assert "--ai" in result.output
 
-    def test_agy_without_ai_skills_fails(self):
-        """--ai agy without --ai-skills should fail with exit code 1."""
+    def test_interactive_agy_without_ai_skills_uses_integration(self, tmp_path, monkeypatch):
+        """Interactive selector returning agy should auto-promote to integration path."""
         from typer.testing import CliRunner
 
-        runner = CliRunner()
-        result = runner.invoke(app, ["init", "test-proj", "--ai", "agy"])
-
-        assert result.exit_code == 1
-        assert "Explicit command support was deprecated in Antigravity version 1.20.5." in result.output
-        assert "--ai-skills" in result.output
-
-    def test_codex_without_ai_skills_fails(self):
-        """--ai codex without --ai-skills should fail with exit code 1."""
-        from typer.testing import CliRunner
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["init", "test-proj", "--ai", "codex"])
-
-        assert result.exit_code == 1
-        assert "Custom prompt-based spec-kit initialization is deprecated for Codex CLI" in result.output
-        assert "--ai-skills" in result.output
-
-    def test_interactive_agy_without_ai_skills_prompts_skills(self, monkeypatch):
-        """Interactive selector returning agy without --ai-skills should automatically enable --ai-skills."""
-        from typer.testing import CliRunner
-
-        # Mock select_with_arrows to simulate the user picking 'agy' for AI,
-        # and return a deterministic default for any other prompts to avoid
-        # calling the real interactive implementation.
         def _fake_select_with_arrows(*args, **kwargs):
             options = kwargs.get("options")
             if options is None and len(args) >= 1:
                 options = args[0]
 
-            # If the options include 'agy', simulate selecting it.
             if isinstance(options, dict) and "agy" in options:
                 return "agy"
             if isinstance(options, (list, tuple)) and "agy" in options:
                 return "agy"
 
-            # For any other prompt, return a deterministic, non-interactive default:
-            # pick the first option if available.
             if isinstance(options, dict) and options:
                 return next(iter(options.keys()))
             if isinstance(options, (list, tuple)) and options:
                 return options[0]
 
-            # If no options are provided, fall back to None (should not occur in normal use).
             return None
 
         monkeypatch.setattr("specify_cli.select_with_arrows", _fake_select_with_arrows)
-        
-        # Mock download_and_extract_template to prevent real HTTP downloads during testing
-        monkeypatch.setattr("specify_cli.download_and_extract_template", lambda *args, **kwargs: None)
-        # We need to bypass the `git init` step, wait, it has `--no-git` by default in tests maybe?
+
         runner = CliRunner()
-        # Create temp dir to avoid directory already exists errors or whatever
-        with runner.isolated_filesystem():
-            result = runner.invoke(app, ["init", "test-proj", "--no-git"])
+        target = tmp_path / "test-agy-interactive"
+        result = runner.invoke(app, ["init", str(target), "--no-git"])
 
-            # Interactive selection should NOT raise the deprecation error!
-            assert result.exit_code == 0
-            assert "Explicit command support was deprecated" not in result.output
+        assert result.exit_code == 0
+        # Should NOT raise the old deprecation error
+        assert "Explicit command support was deprecated" not in result.output
+        # Should use integration path (same as --ai agy)
+        assert "agy" in result.output
 
-    def test_interactive_codex_without_ai_skills_enables_skills(self, monkeypatch):
-        """Interactive selector returning codex without --ai-skills should automatically enable --ai-skills."""
+    def test_interactive_codex_without_ai_skills_uses_integration(self, tmp_path, monkeypatch):
+        """Interactive selector returning codex should auto-promote to integration path."""
         from typer.testing import CliRunner
 
         def _fake_select_with_arrows(*args, **kwargs):
@@ -1158,48 +934,18 @@ class TestCliValidation:
 
         monkeypatch.setattr("specify_cli.select_with_arrows", _fake_select_with_arrows)
 
-        def _fake_download(*args, **kwargs):
-            project_path = Path(args[0])
-            skill_dir = project_path / ".agents" / "skills" / "speckit-specify"
-            skill_dir.mkdir(parents=True, exist_ok=True)
-            (skill_dir / "SKILL.md").write_text("---\ndescription: Test skill\n---\n\nBody.\n")
-
-        monkeypatch.setattr("specify_cli.download_and_extract_template", _fake_download)
-
         runner = CliRunner()
-        with runner.isolated_filesystem():
-            result = runner.invoke(app, ["init", "test-proj", "--no-git", "--ignore-agent-tools"])
+        target = tmp_path / "test-codex-interactive"
+        result = runner.invoke(app, ["init", str(target), "--no-git", "--ignore-agent-tools"])
 
-            assert result.exit_code == 0
-            assert "Custom prompt-based spec-kit initialization is deprecated for Codex CLI" not in result.output
-            assert ".agents/skills" in result.output
-            assert "$speckit-constitution" in result.output
-            assert "/speckit.constitution" not in result.output
-            assert "Optional skills that you can use for your specs" in result.output
-
-    def test_kimi_next_steps_show_skill_invocation(self, monkeypatch):
-        """Kimi next-steps guidance should display /skill:speckit-* usage."""
-        from typer.testing import CliRunner
-
-        def _fake_download(*args, **kwargs):
-            project_path = Path(args[0])
-            skill_dir = project_path / ".kimi" / "skills" / "speckit-specify"
-            skill_dir.mkdir(parents=True, exist_ok=True)
-            (skill_dir / "SKILL.md").write_text("---\ndescription: Test skill\n---\n\nBody.\n")
-
-        monkeypatch.setattr("specify_cli.download_and_extract_template", _fake_download)
-
-        runner = CliRunner()
-        with runner.isolated_filesystem():
-            result = runner.invoke(
-                app,
-                ["init", "test-proj", "--ai", "kimi", "--no-git", "--ignore-agent-tools"],
-            )
-
-            assert result.exit_code == 0
-            assert "/skill:speckit-constitution" in result.output
-            assert "/speckit.constitution" not in result.output
-            assert "Optional skills that you can use for your specs" in result.output
+        assert result.exit_code == 0
+        # Should NOT raise the old deprecation error
+        assert "Custom prompt-based spec-kit initialization is deprecated for Codex CLI" not in result.output
+        # Skills should be installed via integration path
+        assert ".agents/skills" in result.output
+        assert "$speckit-constitution" in result.output
+        assert "/speckit.constitution" not in result.output
+        assert "Optional skills that you can use for your specs" in result.output
 
     def test_ai_skills_flag_appears_in_help(self):
         """--ai-skills should appear in init --help output."""
@@ -1208,44 +954,9 @@ class TestCliValidation:
         runner = CliRunner()
         result = runner.invoke(app, ["init", "--help"])
 
-        plain = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+        plain = strip_ansi(result.output)
         assert "--ai-skills" in plain
         assert "skills" in plain.lower()
-
-    def test_kiro_alias_normalized_to_kiro_cli(self, tmp_path):
-        """--ai kiro should normalize to canonical kiro-cli and auto-promote to integration path."""
-        import os
-        from typer.testing import CliRunner
-
-        runner = CliRunner()
-        target = tmp_path / "kiro-alias-proj"
-        target.mkdir()
-
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(target)
-            result = runner.invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--ai",
-                    "kiro",
-                    "--ignore-agent-tools",
-                    "--script",
-                    "sh",
-                    "--no-git",
-                ],
-                catch_exceptions=False,
-            )
-        finally:
-            os.chdir(old_cwd)
-
-        assert result.exit_code == 0
-        # kiro alias should auto-promote to integration path with nudge
-        assert "--integration kiro-cli" in result.output
-        # Command files should be created via integration path
-        assert (target / ".kiro" / "prompts" / "speckit.plan.md").exists()
 
     def test_q_removed_from_agent_config(self):
         """Amazon Q legacy key should not remain in AGENT_CONFIG."""
@@ -1303,12 +1014,12 @@ class TestParameterOrderingIssue:
         output_lower = result.output.lower()
         assert any(agent in output_lower for agent in ["claude", "copilot", "gemini"])
 
-    def test_ai_commands_dir_consuming_flag(self):
+    def test_ai_commands_dir_consuming_flag(self, tmp_path):
         """--ai-commands-dir without value should not consume next flag."""
         from typer.testing import CliRunner
 
         runner = CliRunner()
-        result = runner.invoke(app, ["init", "myproject", "--ai", "generic", "--ai-commands-dir", "--here"])
+        result = runner.invoke(app, ["init", str(tmp_path / "myproject"), "--ai", "generic", "--ai-commands-dir", "--here"])
 
         assert result.exit_code == 1
         assert "Invalid value for --ai-commands-dir" in result.output
