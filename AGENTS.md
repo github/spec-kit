@@ -455,6 +455,7 @@ Implementation: Extends `MarkdownIntegration` with custom `setup()` method that:
 3. Applies Forge-specific transformations via `_apply_forge_transformations()`
 4. Strips `handoffs` frontmatter key
 5. Injects missing `name` fields
+6. Ensures the shared `update-agent-context.*` scripts include a `forge` case that maps context updates to `AGENTS.md` (similar to `opencode`/`codex`/`pi`) and lists `forge` in their usage/help text
 
 ### Standard Markdown Agents
 
