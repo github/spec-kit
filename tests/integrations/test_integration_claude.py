@@ -284,6 +284,7 @@ class TestClaudeIntegration:
         content = skill_file.read_text(encoding="utf-8")
         assert "preset:claude-skill-command" in content
         assert "name: speckit-research" in content
+        assert "disable-model-invocation: true" in content
 
         metadata = manager.registry.get("claude-skill-command")
         assert "speckit-research" in metadata.get("registered_skills", [])

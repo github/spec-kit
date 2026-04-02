@@ -43,17 +43,12 @@ class ClaudeIntegration(IntegrationBase):
             "description",
             f"Spec-kit workflow command: {template_name}",
         )
-        skill_frontmatter = {
-            "name": skill_name,
-            "description": description,
-            # Spec-kit workflows should only run when explicitly invoked.
-            "disable-model-invocation": True,
-            "compatibility": "Requires spec-kit project structure with .specify/ directory",
-            "metadata": {
-                "author": "github-spec-kit",
-                "source": f"templates/commands/{template_name}.md",
-            },
-        }
+        skill_frontmatter = CommandRegistrar.build_skill_frontmatter(
+            self.key,
+            skill_name,
+            description,
+            f"templates/commands/{template_name}.md",
+        )
         frontmatter_text = yaml.safe_dump(skill_frontmatter, sort_keys=False).strip()
         return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
 

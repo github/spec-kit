@@ -1640,6 +1640,8 @@ def install_ai_skills(
         ``True`` if at least one skill was installed or all skills were
         already present (idempotent re-run), ``False`` otherwise.
     """
+    from .agents import CommandRegistrar
+
     # Locate command templates in the agent's extracted commands directory.
     # download_and_extract_template() already placed the .md files here.
     agent_config = AGENT_CONFIG.get(selected_ai, {})
@@ -1741,15 +1743,12 @@ def install_ai_skills(
             if source_name.endswith(".agent.md"):
                 source_name = source_name[:-len(".agent.md")] + ".md"
 
-            frontmatter_data = {
-                "name": skill_name,
-                "description": enhanced_desc,
-                "compatibility": "Requires spec-kit project structure with .specify/ directory",
-                "metadata": {
-                    "author": "github-spec-kit",
-                    "source": f"templates/commands/{source_name}",
-                },
-            }
+            frontmatter_data = CommandRegistrar.build_skill_frontmatter(
+                selected_ai,
+                skill_name,
+                enhanced_desc,
+                f"templates/commands/{source_name}",
+            )
             frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
             skill_content = (
                 f"---\n"

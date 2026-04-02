@@ -364,16 +364,35 @@ class CommandRegistrar:
             body = self.resolve_skill_placeholders(agent_name, frontmatter, body, project_root)
 
         description = frontmatter.get("description", f"Spec-kit workflow command: {skill_name}")
+        skill_frontmatter = self.build_skill_frontmatter(
+            agent_name,
+            skill_name,
+            description,
+            f"{source_id}:{source_file}",
+        )
+        return self.render_frontmatter(skill_frontmatter) + "\n" + body
+
+    @staticmethod
+    def build_skill_frontmatter(
+        agent_name: str,
+        skill_name: str,
+        description: str,
+        source: str,
+    ) -> dict:
+        """Build consistent SKILL.md frontmatter across all skill generators."""
         skill_frontmatter = {
             "name": skill_name,
             "description": description,
             "compatibility": "Requires spec-kit project structure with .specify/ directory",
             "metadata": {
                 "author": "github-spec-kit",
-                "source": f"{source_id}:{source_file}",
+                "source": source,
             },
         }
-        return self.render_frontmatter(skill_frontmatter) + "\n" + body
+        if agent_name == "claude":
+            # Claude skills should only run when explicitly invoked.
+            skill_frontmatter["disable-model-invocation"] = True
+        return skill_frontmatter
 
     @staticmethod
     def resolve_skill_placeholders(agent_name: str, frontmatter: dict, body: str, project_root: Path) -> str:

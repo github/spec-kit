@@ -771,15 +771,12 @@ class PresetManager:
                 if skill_subdir.exists() and not skill_subdir.is_dir():
                     continue
                 skill_subdir.mkdir(parents=True, exist_ok=True)
-                frontmatter_data = {
-                    "name": target_skill_name,
-                    "description": enhanced_desc,
-                    "compatibility": "Requires spec-kit project structure with .specify/ directory",
-                    "metadata": {
-                        "author": "github-spec-kit",
-                        "source": f"preset:{manifest.id}",
-                    },
-                }
+                frontmatter_data = registrar.build_skill_frontmatter(
+                    selected_ai,
+                    target_skill_name,
+                    enhanced_desc,
+                    f"preset:{manifest.id}",
+                )
                 frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
                 skill_content = (
                     f"---\n"
@@ -861,15 +858,12 @@ class PresetManager:
                     original_desc or f"Spec-kit workflow command: {short_name}",
                 )
 
-                frontmatter_data = {
-                    "name": skill_name,
-                    "description": enhanced_desc,
-                    "compatibility": "Requires spec-kit project structure with .specify/ directory",
-                    "metadata": {
-                        "author": "github-spec-kit",
-                        "source": f"templates/commands/{short_name}.md",
-                    },
-                }
+                frontmatter_data = registrar.build_skill_frontmatter(
+                    selected_ai if isinstance(selected_ai, str) else "",
+                    skill_name,
+                    enhanced_desc,
+                    f"templates/commands/{short_name}.md",
+                )
                 frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
                 skill_title = self._skill_title_from_command(short_name)
                 skill_content = (
@@ -894,15 +888,12 @@ class PresetManager:
                 command_name = extension_restore["command_name"]
                 title_name = self._skill_title_from_command(command_name)
 
-                frontmatter_data = {
-                    "name": skill_name,
-                    "description": frontmatter.get("description", f"Extension command: {command_name}"),
-                    "compatibility": "Requires spec-kit project structure with .specify/ directory",
-                    "metadata": {
-                        "author": "github-spec-kit",
-                        "source": extension_restore["source"],
-                    },
-                }
+                frontmatter_data = registrar.build_skill_frontmatter(
+                    selected_ai if isinstance(selected_ai, str) else "",
+                    skill_name,
+                    frontmatter.get("description", f"Extension command: {command_name}"),
+                    extension_restore["source"],
+                )
                 frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
                 skill_content = (
                     f"---\n"
