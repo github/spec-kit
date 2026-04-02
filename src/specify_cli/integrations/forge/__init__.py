@@ -2,7 +2,7 @@
 
 Forge has several unique behaviors compared to standard markdown agents:
 - Uses `{{parameters}}` instead of `$ARGUMENTS` for argument passing
-- Strips `handoffs` frontmatter key (Forge-specific collaboration feature)
+- Strips `handoffs` frontmatter key (Claude Code feature that causes Forge to hang)
 - Injects `name` field into frontmatter when missing
 """
 
@@ -20,7 +20,7 @@ class ForgeIntegration(MarkdownIntegration):
 
     Extends MarkdownIntegration to add Forge-specific processing:
     - Replaces $ARGUMENTS with {{parameters}}
-    - Strips 'handoffs' frontmatter key
+    - Strips 'handoffs' frontmatter key (incompatible with Forge)
     - Injects 'name' field into frontmatter when missing
     """
 
@@ -105,7 +105,7 @@ class ForgeIntegration(MarkdownIntegration):
     def _apply_forge_transformations(self, content: str, template_name: str) -> str:
         """Apply Forge-specific transformations to processed content.
 
-        1. Strip 'handoffs' frontmatter key
+        1. Strip 'handoffs' frontmatter key (from Claude Code templates; incompatible with Forge)
         2. Inject 'name' field if missing
         """
         # Parse frontmatter
