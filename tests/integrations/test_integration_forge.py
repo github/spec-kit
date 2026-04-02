@@ -110,8 +110,8 @@ class TestForgeIntegration:
             assert "{SCRIPT}" not in content, f"{cmd_file.name} has unprocessed {{SCRIPT}}"
             assert "__AGENT__" not in content, f"{cmd_file.name} has unprocessed __AGENT__"
             assert "{ARGS}" not in content, f"{cmd_file.name} has unprocessed {{ARGS}}"
-            # Note: $ARGUMENTS may appear in template content (examples, instructions)
-            # The placeholder that gets replaced is {ARGS}, not $ARGUMENTS
+            # Check Forge-specific: $ARGUMENTS should be replaced with {{parameters}}
+            assert "$ARGUMENTS" not in content, f"{cmd_file.name} has unprocessed $ARGUMENTS"
             # Frontmatter sections should be stripped
             assert "\nscripts:\n" not in content
             assert "\nagent_scripts:\n" not in content
@@ -134,11 +134,33 @@ class TestForgeIntegration:
             assert "\nhandoffs:" not in content, f"{cmd_file.name} has unstripped 'handoffs' key"
 
     def test_uses_parameters_placeholder(self, tmp_path):
-        """Verify Forge config specifies {{parameters}} as the args placeholder."""
+        """Verify Forge replaces $ARGUMENTS with {{parameters}} in generated files."""
         from specify_cli.integrations.forge import ForgeIntegration
         forge = ForgeIntegration()
+        
         # The registrar_config should specify {{parameters}}
         assert forge.registrar_config["args"] == "{{parameters}}"
         
-        # When process_template is called, it should replace {ARGS} with {{parameters}}
-        # Note: $ARGUMENTS in template content is intentional (examples/instructions)
+        # Generate files and verify $ARGUMENTS is replaced with {{parameters}}
+        from specify_cli.integrations.manifest import IntegrationManifest
+        m = IntegrationManifest("forge", tmp_path)
+        forge.setup(tmp_path, m)
+        commands_dir = tmp_path / ".forge" / "commands"
+        
+        # Check all generated command files
+        for cmd_file in commands_dir.glob("speckit.*.md"):
+            content = cmd_file.read_text(encoding="utf-8")
+            # $ARGUMENTS should be replaced with {{parameters}}
+            assert "$ARGUMENTS" not in content, (
+                f"{cmd_file.name} still contains $ARGUMENTS - it should be replaced with {{{{parameters}}}}"
+            )
+            # At least some files should have {{parameters}} (those with user input sections)
+            # We'll check the checklist file specifically as it has a User Input section
+        
+        # Verify checklist specifically has {{parameters}} in the User Input section
+        checklist = commands_dir / "speckit.checklist.md"
+        if checklist.exists():
+            content = checklist.read_text(encoding="utf-8")
+            assert "{{parameters}}" in content, (
+                "checklist should contain {{parameters}} in User Input section"
+            )

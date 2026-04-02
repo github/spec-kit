@@ -82,6 +82,10 @@ class ForgeIntegration(IntegrationBase):
             # Process template with Forge-specific argument placeholder
             processed = self.process_template(raw, self.key, script_type, arg_placeholder)
             
+            # Ensure any remaining $ARGUMENTS placeholders are converted to the
+            # Forge argument placeholder ({{parameters}} by default)
+            processed = processed.replace("$ARGUMENTS", arg_placeholder)
+            
             # Apply Forge-specific transformations
             processed = self._apply_forge_transformations(processed, src_file.stem)
             
@@ -102,8 +106,6 @@ class ForgeIntegration(IntegrationBase):
         1. Strip 'handoffs' frontmatter key
         2. Inject 'name' field if missing
         """
-        import re
-
         # Parse frontmatter
         lines = content.split('\n')
         if not lines or lines[0].strip() != '---':
