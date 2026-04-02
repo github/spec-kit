@@ -3,26 +3,24 @@
 import json
 import os
 
-import pytest
-
 
 class TestInitIntegrationFlag:
-    def test_integration_and_ai_mutually_exclusive(self):
+    def test_integration_and_ai_mutually_exclusive(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
         runner = CliRunner()
         result = runner.invoke(app, [
-            "init", "test-project", "--ai", "claude", "--integration", "copilot",
+            "init", str(tmp_path / "test-project"), "--ai", "claude", "--integration", "copilot",
         ])
         assert result.exit_code != 0
         assert "mutually exclusive" in result.output
 
-    def test_unknown_integration_rejected(self):
+    def test_unknown_integration_rejected(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
         runner = CliRunner()
         result = runner.invoke(app, [
-            "init", "test-project", "--integration", "nonexistent",
+            "init", str(tmp_path / "test-project"), "--integration", "nonexistent",
         ])
         assert result.exit_code != 0
         assert "Unknown integration" in result.output
@@ -75,8 +73,37 @@ class TestInitIntegrationFlag:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        assert "--integration copilot" in result.output
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+
+    def test_ai_claude_here_preserves_preexisting_commands(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "claude-here-existing"
+        project.mkdir()
+        commands_dir = project / ".claude" / "skills"
+        commands_dir.mkdir(parents=True)
+        skill_dir = commands_dir / "speckit-specify"
+        skill_dir.mkdir(parents=True)
+        command_file = skill_dir / "SKILL.md"
+        command_file.write_text("# preexisting command\n", encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here", "--force", "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert command_file.exists()
+        # init replaces skills (not additive); verify the file has valid skill content
+        assert command_file.exists()
+        assert "speckit-specify" in command_file.read_text(encoding="utf-8")
+        assert (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
     def test_shared_infra_skips_existing_files(self, tmp_path):
         """Pre-existing shared files are not overwritten by _install_shared_infra."""

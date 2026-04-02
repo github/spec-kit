@@ -1,30 +1,32 @@
-"""Reusable test mixin for standard TomlIntegration subclasses.
+"""Reusable test mixin for standard SkillsIntegration subclasses.
 
 Each per-agent test file sets ``KEY``, ``FOLDER``, ``COMMANDS_SUBDIR``,
 ``REGISTRAR_DIR``, and ``CONTEXT_FILE``, then inherits all verification
-logic from ``TomlIntegrationTests``.
+logic from ``SkillsIntegrationTests``.
 
-Mirrors ``MarkdownIntegrationTests`` closely — same test structure,
-adapted for TOML output format.
+Mirrors ``MarkdownIntegrationTests`` / ``TomlIntegrationTests`` closely,
+adapted for the ``speckit-<name>/SKILL.md`` skills layout.
 """
 
 import os
 
+import yaml
+
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
-from specify_cli.integrations.base import TomlIntegration
+from specify_cli.integrations.base import SkillsIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
 
 
-class TomlIntegrationTests:
+class SkillsIntegrationTests:
     """Mixin — set class-level constants and inherit these tests.
 
     Required class attrs on subclass::
 
         KEY: str              — integration registry key
-        FOLDER: str           — e.g. ".gemini/"
-        COMMANDS_SUBDIR: str  — e.g. "commands"
-        REGISTRAR_DIR: str    — e.g. ".gemini/commands"
-        CONTEXT_FILE: str     — e.g. "GEMINI.md"
+        FOLDER: str           — e.g. ".agents/"
+        COMMANDS_SUBDIR: str  — e.g. "skills"
+        REGISTRAR_DIR: str    — e.g. ".agents/skills"
+        CONTEXT_FILE: str     — e.g. "AGENTS.md"
     """
 
     KEY: str
@@ -39,8 +41,8 @@ class TomlIntegrationTests:
         assert self.KEY in INTEGRATION_REGISTRY
         assert get_integration(self.KEY) is not None
 
-    def test_is_toml_integration(self):
-        assert isinstance(get_integration(self.KEY), TomlIntegration)
+    def test_is_skills_integration(self):
+        assert isinstance(get_integration(self.KEY), SkillsIntegration)
 
     # -- Config -----------------------------------------------------------
 
@@ -55,9 +57,9 @@ class TomlIntegrationTests:
     def test_registrar_config(self):
         i = get_integration(self.KEY)
         assert i.registrar_config["dir"] == self.REGISTRAR_DIR
-        assert i.registrar_config["format"] == "toml"
-        assert i.registrar_config["args"] == "{{args}}"
-        assert i.registrar_config["extension"] == ".toml"
+        assert i.registrar_config["format"] == "markdown"
+        assert i.registrar_config["args"] == "$ARGUMENTS"
+        assert i.registrar_config["extension"] == "/SKILL.md"
 
     def test_context_file(self):
         i = get_integration(self.KEY)
@@ -70,86 +72,106 @@ class TomlIntegrationTests:
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
         assert len(created) > 0
-        cmd_files = [f for f in created if "scripts" not in f.parts]
-        for f in cmd_files:
+        skill_files = [f for f in created if "scripts" not in f.parts]
+        for f in skill_files:
             assert f.exists()
-            assert f.name.startswith("speckit.")
-            assert f.name.endswith(".toml")
+            assert f.name == "SKILL.md"
+            assert f.parent.name.startswith("speckit-")
 
     def test_setup_writes_to_correct_directory(self, tmp_path):
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
-        expected_dir = i.commands_dest(tmp_path)
+        expected_dir = i.skills_dest(tmp_path)
         assert expected_dir.exists(), f"Expected directory {expected_dir} was not created"
-        cmd_files = [f for f in created if "scripts" not in f.parts]
-        assert len(cmd_files) > 0, "No command files were created"
-        for f in cmd_files:
-            assert f.resolve().parent == expected_dir.resolve(), (
+        skill_files = [f for f in created if "scripts" not in f.parts]
+        assert len(skill_files) > 0, "No skill files were created"
+        for f in skill_files:
+            # Each SKILL.md is in speckit-<name>/ under the skills directory
+            assert f.resolve().parent.parent == expected_dir.resolve(), (
                 f"{f} is not under {expected_dir}"
             )
 
-    def test_templates_are_processed(self, tmp_path):
-        """Command files must have placeholders replaced and be valid TOML."""
+    def test_skill_directory_structure(self, tmp_path):
+        """Each command produces speckit-<name>/SKILL.md."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
-        cmd_files = [f for f in created if "scripts" not in f.parts]
-        assert len(cmd_files) > 0
-        for f in cmd_files:
+        skill_files = [f for f in created if "scripts" not in f.parts]
+
+        expected_commands = {
+            "analyze", "checklist", "clarify", "constitution",
+            "implement", "plan", "specify", "tasks", "taskstoissues",
+        }
+
+        # Derive command names from the skill directory names
+        actual_commands = set()
+        for f in skill_files:
+            skill_dir_name = f.parent.name  # e.g. "speckit-plan"
+            assert skill_dir_name.startswith("speckit-")
+            actual_commands.add(skill_dir_name.removeprefix("speckit-"))
+
+        assert actual_commands == expected_commands
+
+    def test_skill_frontmatter_structure(self, tmp_path):
+        """SKILL.md must have name, description, compatibility, metadata."""
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        skill_files = [f for f in created if "scripts" not in f.parts]
+
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            assert content.startswith("---\n"), f"{f} missing frontmatter"
+            parts = content.split("---", 2)
+            fm = yaml.safe_load(parts[1])
+            assert "name" in fm, f"{f} frontmatter missing 'name'"
+            assert "description" in fm, f"{f} frontmatter missing 'description'"
+            assert "compatibility" in fm, f"{f} frontmatter missing 'compatibility'"
+            assert "metadata" in fm, f"{f} frontmatter missing 'metadata'"
+            assert fm["metadata"]["author"] == "github-spec-kit"
+            assert "source" in fm["metadata"]
+
+    def test_skill_uses_template_descriptions(self, tmp_path):
+        """SKILL.md should use the original template description for ZIP parity."""
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        skill_files = [f for f in created if "scripts" not in f.parts]
+
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            parts = content.split("---", 2)
+            fm = yaml.safe_load(parts[1])
+            # Description must be a non-empty string (from the template)
+            assert isinstance(fm["description"], str)
+            assert len(fm["description"]) > 0, f"{f} has empty description"
+
+    def test_templates_are_processed(self, tmp_path):
+        """Skill body must have placeholders replaced, not raw templates."""
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        skill_files = [f for f in created if "scripts" not in f.parts]
+        assert len(skill_files) > 0
+        for f in skill_files:
             content = f.read_text(encoding="utf-8")
             assert "{SCRIPT}" not in content, f"{f.name} has unprocessed {{SCRIPT}}"
             assert "__AGENT__" not in content, f"{f.name} has unprocessed __AGENT__"
             assert "{ARGS}" not in content, f"{f.name} has unprocessed {{ARGS}}"
 
-    def test_toml_has_description(self, tmp_path):
-        """Every TOML command file should have a description key."""
+    def test_skill_body_has_content(self, tmp_path):
+        """Each SKILL.md body should contain template content after the frontmatter."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
-        cmd_files = [f for f in created if "scripts" not in f.parts]
-        for f in cmd_files:
+        skill_files = [f for f in created if "scripts" not in f.parts]
+        for f in skill_files:
             content = f.read_text(encoding="utf-8")
-            assert 'description = "' in content, f"{f.name} missing description key"
-
-    def test_toml_has_prompt(self, tmp_path):
-        """Every TOML command file should have a prompt key."""
-        i = get_integration(self.KEY)
-        m = IntegrationManifest(self.KEY, tmp_path)
-        created = i.setup(tmp_path, m)
-        cmd_files = [f for f in created if "scripts" not in f.parts]
-        for f in cmd_files:
-            content = f.read_text(encoding="utf-8")
-            assert "prompt = " in content, f"{f.name} missing prompt key"
-
-    def test_toml_uses_correct_arg_placeholder(self, tmp_path):
-        """TOML commands must use {{args}} (from {ARGS} replacement)."""
-        i = get_integration(self.KEY)
-        m = IntegrationManifest(self.KEY, tmp_path)
-        created = i.setup(tmp_path, m)
-        cmd_files = [f for f in created if "scripts" not in f.parts]
-        # At least one file should contain {{args}} from the {ARGS} placeholder
-        has_args = any("{{args}}" in f.read_text(encoding="utf-8") for f in cmd_files)
-        assert has_args, "No TOML command file contains {{args}} placeholder"
-
-    def test_toml_is_valid(self, tmp_path):
-        """Every generated TOML file must parse without errors."""
-        try:
-            import tomllib
-        except ModuleNotFoundError:
-            import tomli as tomllib  # type: ignore[no-redef]
-
-        i = get_integration(self.KEY)
-        m = IntegrationManifest(self.KEY, tmp_path)
-        created = i.setup(tmp_path, m)
-        cmd_files = [f for f in created if "scripts" not in f.parts]
-        for f in cmd_files:
-            raw = f.read_bytes()
-            try:
-                parsed = tomllib.loads(raw.decode("utf-8"))
-            except Exception as exc:
-                raise AssertionError(f"{f.name} is not valid TOML: {exc}") from exc
-            assert "prompt" in parsed, f"{f.name} parsed TOML has no 'prompt' key"
+            # Body is everything after the second ---
+            parts = content.split("---", 2)
+            body = parts[2].strip() if len(parts) >= 3 else ""
+            assert len(body) > 0, f"{f} has empty body"
 
     def test_all_files_tracked_in_manifest(self, tmp_path):
         i = get_integration(self.KEY)
@@ -182,12 +204,25 @@ class TomlIntegrationTests:
         assert modified_file.exists()
         assert modified_file in skipped
 
+    def test_pre_existing_skills_not_removed(self, tmp_path):
+        """Pre-existing non-speckit skills should be left untouched."""
+        i = get_integration(self.KEY)
+        skills_dir = i.skills_dest(tmp_path)
+        foreign_dir = skills_dir / "other-tool"
+        foreign_dir.mkdir(parents=True)
+        (foreign_dir / "SKILL.md").write_text("# Foreign skill\n")
+
+        m = IntegrationManifest(self.KEY, tmp_path)
+        i.setup(tmp_path, m)
+
+        assert (foreign_dir / "SKILL.md").exists(), "Foreign skill was removed"
+
     # -- Scripts ----------------------------------------------------------
 
     def test_setup_installs_update_context_scripts(self, tmp_path):
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
-        created = i.setup(tmp_path, m)
+        i.setup(tmp_path, m)
         scripts_dir = tmp_path / ".specify" / "integrations" / self.KEY / "scripts"
         assert scripts_dir.is_dir(), f"Scripts directory not created for {self.KEY}"
         assert (scripts_dir / "update-context.sh").exists()
@@ -227,8 +262,8 @@ class TomlIntegrationTests:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init --ai {self.KEY} failed: {result.output}"
         i = get_integration(self.KEY)
-        cmd_dir = i.commands_dest(project)
-        assert cmd_dir.is_dir(), f"--ai {self.KEY} did not create commands directory"
+        skills_dir = i.skills_dest(project)
+        assert skills_dir.is_dir(), f"--ai {self.KEY} did not create skills directory"
 
     def test_integration_flag_creates_files(self, tmp_path):
         from typer.testing import CliRunner
@@ -248,53 +283,70 @@ class TomlIntegrationTests:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init --integration {self.KEY} failed: {result.output}"
         i = get_integration(self.KEY)
-        cmd_dir = i.commands_dest(project)
-        assert cmd_dir.is_dir(), f"Commands directory {cmd_dir} not created"
-        commands = sorted(cmd_dir.glob("speckit.*.toml"))
-        assert len(commands) > 0, f"No command files in {cmd_dir}"
+        skills_dir = i.skills_dest(project)
+        assert skills_dir.is_dir(), f"Skills directory {skills_dir} not created"
+
+    # -- IntegrationOption ------------------------------------------------
+
+    def test_options_include_skills_flag(self):
+        i = get_integration(self.KEY)
+        opts = i.options()
+        skills_opts = [o for o in opts if o.name == "--skills"]
+        assert len(skills_opts) == 1
+        assert skills_opts[0].is_flag is True
 
     # -- Complete file inventory ------------------------------------------
 
-    COMMAND_STEMS = [
+    _SKILL_COMMANDS = [
         "analyze", "checklist", "clarify", "constitution",
         "implement", "plan", "specify", "tasks", "taskstoissues",
     ]
 
     def _expected_files(self, script_variant: str) -> list[str]:
-        """Build the expected file list for this integration + script variant."""
+        """Build the full expected file list for a given script variant."""
         i = get_integration(self.KEY)
-        cmd_dir = i.registrar_config["dir"]
+        skills_prefix = i.config["folder"].rstrip("/") + "/" + i.config.get("commands_subdir", "skills")
+
         files = []
-
-        # Command files (.toml)
-        for stem in self.COMMAND_STEMS:
-            files.append(f"{cmd_dir}/speckit.{stem}.toml")
-
-        # Integration scripts
-        files.append(f".specify/integrations/{self.KEY}/scripts/update-context.ps1")
-        files.append(f".specify/integrations/{self.KEY}/scripts/update-context.sh")
-
-        # Framework files
-        files.append(f".specify/integration.json")
-        files.append(f".specify/init-options.json")
-        files.append(f".specify/integrations/{self.KEY}.manifest.json")
-        files.append(f".specify/integrations/speckit.manifest.json")
-
+        # Skill files
+        for cmd in self._SKILL_COMMANDS:
+            files.append(f"{skills_prefix}/speckit-{cmd}/SKILL.md")
+        # Integration metadata
+        files += [
+            ".specify/init-options.json",
+            ".specify/integration.json",
+            f".specify/integrations/{self.KEY}.manifest.json",
+            f".specify/integrations/{self.KEY}/scripts/update-context.ps1",
+            f".specify/integrations/{self.KEY}/scripts/update-context.sh",
+            ".specify/integrations/speckit.manifest.json",
+            ".specify/memory/constitution.md",
+        ]
+        # Script variant
         if script_variant == "sh":
-            for name in ["check-prerequisites.sh", "common.sh", "create-new-feature.sh",
-                         "setup-plan.sh", "update-agent-context.sh"]:
-                files.append(f".specify/scripts/bash/{name}")
+            files += [
+                ".specify/scripts/bash/check-prerequisites.sh",
+                ".specify/scripts/bash/common.sh",
+                ".specify/scripts/bash/create-new-feature.sh",
+                ".specify/scripts/bash/setup-plan.sh",
+                ".specify/scripts/bash/update-agent-context.sh",
+            ]
         else:
-            for name in ["check-prerequisites.ps1", "common.ps1", "create-new-feature.ps1",
-                         "setup-plan.ps1", "update-agent-context.ps1"]:
-                files.append(f".specify/scripts/powershell/{name}")
-
-        for name in ["agent-file-template.md", "checklist-template.md",
-                     "constitution-template.md", "plan-template.md",
-                     "spec-template.md", "tasks-template.md"]:
-            files.append(f".specify/templates/{name}")
-
-        files.append(".specify/memory/constitution.md")
+            files += [
+                ".specify/scripts/powershell/check-prerequisites.ps1",
+                ".specify/scripts/powershell/common.ps1",
+                ".specify/scripts/powershell/create-new-feature.ps1",
+                ".specify/scripts/powershell/setup-plan.ps1",
+                ".specify/scripts/powershell/update-agent-context.ps1",
+            ]
+        # Templates
+        files += [
+            ".specify/templates/agent-file-template.md",
+            ".specify/templates/checklist-template.md",
+            ".specify/templates/constitution-template.md",
+            ".specify/templates/plan-template.md",
+            ".specify/templates/spec-template.md",
+            ".specify/templates/tasks-template.md",
+        ]
         return sorted(files)
 
     def test_complete_file_inventory_sh(self, tmp_path):
@@ -308,14 +360,16 @@ class TomlIntegrationTests:
         try:
             os.chdir(project)
             result = CliRunner().invoke(app, [
-                "init", "--here", "--integration", self.KEY, "--script", "sh",
-                "--no-git", "--ignore-agent-tools",
+                "init", "--here", "--integration", self.KEY,
+                "--script", "sh", "--no-git", "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
-        actual = sorted(p.relative_to(project).as_posix()
-                        for p in project.rglob("*") if p.is_file())
+        actual = sorted(
+            p.relative_to(project).as_posix()
+            for p in project.rglob("*") if p.is_file()
+        )
         expected = self._expected_files("sh")
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
@@ -333,14 +387,16 @@ class TomlIntegrationTests:
         try:
             os.chdir(project)
             result = CliRunner().invoke(app, [
-                "init", "--here", "--integration", self.KEY, "--script", "ps",
-                "--no-git", "--ignore-agent-tools",
+                "init", "--here", "--integration", self.KEY,
+                "--script", "ps", "--no-git", "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
-        actual = sorted(p.relative_to(project).as_posix()
-                        for p in project.rglob("*") if p.is_file())
+        actual = sorted(
+            p.relative_to(project).as_posix()
+            for p in project.rglob("*") if p.is_file()
+        )
         expected = self._expected_files("ps")
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"

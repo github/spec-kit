@@ -41,14 +41,14 @@ def _create_init_options(project_root: Path, ai: str = "claude", ai_skills: bool
 def _create_skills_dir(project_root: Path, ai: str = "claude") -> Path:
     """Create and return the expected skills directory for the given agent."""
     # Match the logic in _get_skills_dir() from specify_cli
-    from specify_cli import AGENT_CONFIG, DEFAULT_SKILLS_DIR
+    from specify_cli import AGENT_CONFIG
 
     agent_config = AGENT_CONFIG.get(ai, {})
     agent_folder = agent_config.get("folder", "")
     if agent_folder:
         skills_dir = project_root / agent_folder.rstrip("/") / "skills"
     else:
-        skills_dir = project_root / DEFAULT_SKILLS_DIR
+        skills_dir = project_root / ".agents" / "skills"
 
     skills_dir.mkdir(parents=True, exist_ok=True)
     return skills_dir
@@ -269,6 +269,7 @@ class TestExtensionSkillRegistration:
         assert isinstance(parsed, dict)
         assert parsed["name"] == "speckit-test-ext-hello"
         assert "description" in parsed
+        assert parsed["disable-model-invocation"] is True
 
     def test_no_skills_when_ai_skills_disabled(self, no_skills_project, extension_dir):
         """No skills should be created when ai_skills is false."""

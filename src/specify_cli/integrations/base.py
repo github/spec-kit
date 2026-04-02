@@ -7,6 +7,8 @@ Provides:
   integrations (the common case — subclass, set three class attrs, done).
 - ``TomlIntegration`` — concrete base for TOML-format integrations
   (Gemini, Tabnine — subclass, set three class attrs, done).
+- ``SkillsIntegration`` — concrete base for integrations that install
+  commands as agent skills (``speckit-<name>/SKILL.md`` layout).
 """
 
 from __future__ import annotations
@@ -200,10 +202,14 @@ class IntegrationBase(ABC):
     ) -> Path:
         """Write *content* to *dest*, hash it, and record in *manifest*.
 
-        Creates parent directories as needed.  Returns *dest*.
+        Creates parent directories as needed.  Writes bytes directly to
+        avoid platform newline translation (CRLF on Windows).  Any
+        ``\r\n`` sequences in *content* are normalised to ``\n`` before
+        writing.  Returns *dest*.
         """
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(content, encoding="utf-8")
+        normalized = content.replace("\r\n", "\n")
+        dest.write_bytes(normalized.encode("utf-8"))
         rel = dest.resolve().relative_to(project_root.resolve())
         manifest.record_existing(rel)
         return dest
@@ -630,6 +636,158 @@ class TomlIntegration(IntegrationBase):
                 toml_content, dest / dst_name, project_root, manifest
             )
             created.append(dst_file)
+
+        created.extend(self.install_scripts(project_root, manifest))
+        return created
+
+
+# ---------------------------------------------------------------------------
+# SkillsIntegration — skills-format agents (Codex, Kimi, Agy)
+# ---------------------------------------------------------------------------
+
+
+class SkillsIntegration(IntegrationBase):
+    """Concrete base for integrations that install commands as agent skills.
+
+    Skills use the ``speckit-<name>/SKILL.md`` directory layout following
+    the `agentskills.io <https://agentskills.io/specification>`_ spec.
+
+    Subclasses set ``key``, ``config``, ``registrar_config`` (and
+    optionally ``context_file``) like any integration.  They may also
+    override ``options()`` to declare additional CLI flags (e.g.
+    ``--skills``, ``--migrate-legacy``).
+
+    ``setup()`` processes each shared command template into a
+    ``speckit-<name>/SKILL.md`` file with skills-oriented frontmatter.
+    """
+
+    def skills_dest(self, project_root: Path) -> Path:
+        """Return the absolute path to the skills output directory.
+
+        Derived from ``config["folder"]`` and the configured
+        ``commands_subdir`` (defaults to ``"skills"``).
+
+        Raises ``ValueError`` when ``config`` or ``folder`` is missing.
+        """
+        if not self.config:
+            raise ValueError(
+                f"{type(self).__name__}.config is not set."
+            )
+        folder = self.config.get("folder")
+        if not folder:
+            raise ValueError(
+                f"{type(self).__name__}.config is missing required 'folder' entry."
+            )
+        subdir = self.config.get("commands_subdir", "skills")
+        return project_root / folder / subdir
+
+    def setup(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        parsed_options: dict[str, Any] | None = None,
+        **opts: Any,
+    ) -> list[Path]:
+        """Install command templates as agent skills.
+
+        Creates ``speckit-<name>/SKILL.md`` for each shared command
+        template.  Each SKILL.md has normalised frontmatter containing
+        ``name``, ``description``, ``compatibility``, and ``metadata``.
+        """
+        import yaml
+
+        templates = self.list_command_templates()
+        if not templates:
+            return []
+
+        project_root_resolved = project_root.resolve()
+        if manifest.project_root != project_root_resolved:
+            raise ValueError(
+                f"manifest.project_root ({manifest.project_root}) does not match "
+                f"project_root ({project_root_resolved})"
+            )
+
+        skills_dir = self.skills_dest(project_root).resolve()
+        try:
+            skills_dir.relative_to(project_root_resolved)
+        except ValueError as exc:
+            raise ValueError(
+                f"Skills destination {skills_dir} escapes "
+                f"project root {project_root_resolved}"
+            ) from exc
+
+        script_type = opts.get("script_type", "sh")
+        arg_placeholder = (
+            self.registrar_config.get("args", "$ARGUMENTS")
+            if self.registrar_config
+            else "$ARGUMENTS"
+        )
+        created: list[Path] = []
+
+        for src_file in templates:
+            raw = src_file.read_text(encoding="utf-8")
+
+            # Derive the skill name from the template stem
+            command_name = src_file.stem  # e.g. "plan"
+            skill_name = f"speckit-{command_name.replace('.', '-')}"
+
+            # Parse frontmatter for description
+            frontmatter: dict[str, Any] = {}
+            if raw.startswith("---"):
+                parts = raw.split("---", 2)
+                if len(parts) >= 3:
+                    try:
+                        fm = yaml.safe_load(parts[1])
+                        if isinstance(fm, dict):
+                            frontmatter = fm
+                    except yaml.YAMLError:
+                        pass
+
+            # Process body through the standard template pipeline
+            processed_body = self.process_template(
+                raw, self.key, script_type, arg_placeholder
+            )
+            # Strip the processed frontmatter — we rebuild it for skills.
+            # Preserve leading whitespace in the body to match release ZIP
+            # output byte-for-byte (the template body starts with \n after
+            # the closing ---).
+            if processed_body.startswith("---"):
+                parts = processed_body.split("---", 2)
+                if len(parts) >= 3:
+                    processed_body = parts[2]
+
+            # Select description — use the original template description
+            # to stay byte-for-byte identical with release ZIP output.
+            description = frontmatter.get("description", "")
+            if not description:
+                description = f"Spec Kit: {command_name} workflow"
+
+            # Build SKILL.md with manually formatted frontmatter to match
+            # the release packaging script output exactly (double-quoted
+            # values, no yaml.safe_dump quoting differences).
+            def _quote(v: str) -> str:
+                escaped = v.replace("\\", "\\\\").replace('"', '\\"')
+                return f'"{escaped}"'
+
+            skill_content = (
+                f"---\n"
+                f"name: {_quote(skill_name)}\n"
+                f"description: {_quote(description)}\n"
+                f"compatibility: {_quote('Requires spec-kit project structure with .specify/ directory')}\n"
+                f"metadata:\n"
+                f"  author: {_quote('github-spec-kit')}\n"
+                f"  source: {_quote('templates/commands/' + src_file.name)}\n"
+                f"---\n"
+                f"{processed_body}"
+            )
+
+            # Write speckit-<name>/SKILL.md
+            skill_dir = skills_dir / skill_name
+            skill_file = skill_dir / "SKILL.md"
+            dst = self.write_file_and_record(
+                skill_content, skill_file, project_root, manifest
+            )
+            created.append(dst)
 
         created.extend(self.install_scripts(project_root, manifest))
         return created

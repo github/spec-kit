@@ -176,7 +176,9 @@ class MarkdownIntegrationTests:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init --ai {self.KEY} failed: {result.output}"
-        assert f"--integration {self.KEY}" in result.output
+        i = get_integration(self.KEY)
+        cmd_dir = i.commands_dest(project)
+        assert cmd_dir.is_dir(), f"--ai {self.KEY} did not create commands directory"
 
     def test_integration_flag_creates_files(self, tmp_path):
         from typer.testing import CliRunner
