@@ -2120,55 +2120,6 @@ class TestPresetSkills:
         metadata = manager.registry.get("self-test")
         assert metadata.get("registered_skills", []) == []
 
-    def test_new_preset_command_creates_claude_skill_without_commands_dir(self, project_dir, temp_dir):
-        """Claude skills projects should materialize brand-new preset commands as skills."""
-        self._write_init_options(project_dir, ai="claude", ai_skills=True)
-        skills_dir = project_dir / ".claude" / "skills"
-        skills_dir.mkdir(parents=True, exist_ok=True)
-
-        preset_dir = temp_dir / "claude-skill-command"
-        preset_dir.mkdir()
-        (preset_dir / "commands").mkdir()
-        (preset_dir / "commands" / "speckit.research.md").write_text(
-            "---\n"
-            "description: Research workflow\n"
-            "---\n\n"
-            "preset:claude-skill-command\n"
-        )
-        manifest_data = {
-            "schema_version": "1.0",
-            "preset": {
-                "id": "claude-skill-command",
-                "name": "Claude Skill Command",
-                "version": "1.0.0",
-                "description": "Test",
-            },
-            "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {
-                "templates": [
-                    {
-                        "type": "command",
-                        "name": "speckit.research",
-                        "file": "commands/speckit.research.md",
-                    }
-                ]
-            },
-        }
-        with open(preset_dir / "preset.yml", "w") as f:
-            yaml.dump(manifest_data, f)
-
-        manager = PresetManager(project_dir)
-        manager.install_from_directory(preset_dir, "0.1.5")
-
-        skill_file = skills_dir / "speckit-research" / "SKILL.md"
-        assert skill_file.exists()
-        content = skill_file.read_text(encoding="utf-8")
-        assert "preset:claude-skill-command" in content
-        assert "name: speckit-research" in content
-
-        metadata = manager.registry.get("claude-skill-command")
-        assert "speckit-research" in metadata.get("registered_skills", [])
-
     def test_extension_skill_override_matches_hyphenated_multisegment_name(self, project_dir, temp_dir):
         """Preset overrides for speckit.<ext>.<cmd> should target speckit-<ext>-<cmd> skills."""
         self._write_init_options(project_dir, ai="codex")

@@ -187,3 +187,103 @@ class TestClaudeIntegration:
         assert init_options["ai"] == "claude"
         assert init_options["ai_skills"] is True
         assert init_options["integration"] == "claude"
+
+    def test_claude_init_remains_usable_when_converter_fails(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        target = tmp_path / "fail-proj"
+
+        with patch("specify_cli.ensure_executable_scripts"), \
+             patch("specify_cli.ensure_constitution_from_template"), \
+             patch("specify_cli.install_ai_skills", return_value=False), \
+             patch("specify_cli.is_git_repo", return_value=False), \
+             patch("specify_cli.shutil.which", return_value="/usr/bin/git"):
+            result = runner.invoke(
+                app,
+                ["init", str(target), "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git"],
+            )
+
+        assert result.exit_code == 0
+        assert (target / ".claude" / "skills" / "speckit-specify" / "SKILL.md").exists()
+        assert not (target / ".claude" / "commands").exists()
+
+    def test_claude_hooks_render_skill_invocation(self, tmp_path):
+        from specify_cli.extensions import HookExecutor
+
+        project = tmp_path / "claude-hooks"
+        project.mkdir()
+        init_options = project / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "claude", "ai_skills": True}))
+
+        hook_executor = HookExecutor(project)
+        message = hook_executor.format_hook_message(
+            "before_plan",
+            [
+                {
+                    "extension": "test-ext",
+                    "command": "speckit.plan",
+                    "optional": False,
+                }
+            ],
+        )
+
+        assert "Executing: `/speckit-plan`" in message
+        assert "EXECUTE_COMMAND: speckit.plan" in message
+        assert "EXECUTE_COMMAND_INVOCATION: /speckit-plan" in message
+
+    def test_claude_preset_creates_new_skill_without_commands_dir(self, tmp_path):
+        from specify_cli import save_init_options
+        from specify_cli.presets import PresetManager
+
+        project = tmp_path / "claude-preset-skill"
+        project.mkdir()
+        save_init_options(project, {"ai": "claude", "ai_skills": True, "script": "sh"})
+
+        skills_dir = project / ".claude" / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+
+        preset_dir = tmp_path / "claude-skill-command"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.research.md").write_text(
+            "---\n"
+            "description: Research workflow\n"
+            "---\n\n"
+            "preset:claude-skill-command\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "claude-skill-command",
+                "name": "Claude Skill Command",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.research",
+                        "file": "commands/speckit.research.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-research" / "SKILL.md"
+        assert skill_file.exists()
+        content = skill_file.read_text(encoding="utf-8")
+        assert "preset:claude-skill-command" in content
+        assert "name: speckit-research" in content
+
+        metadata = manager.registry.get("claude-skill-command")
+        assert "speckit-research" in metadata.get("registered_skills", [])
