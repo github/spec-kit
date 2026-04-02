@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-30T00:00:00Z",
+  "updated_at": "2026-04-01T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -167,50 +167,6 @@
       "created_at": "2026-02-22T00:00:00Z",
       "updated_at": "2026-02-22T00:00:00Z"
     },
-    "cognitive-squad": {
-      "name": "Cognitive Squad",
-      "id": "cognitive-squad",
-      "description": "Multi-agent cognitive system with Triadic Model: understanding, internalization, application — with quality gates, backpropagation verification, and self-healing",
-      "author": "Testimonial",
-      "version": "0.1.0",
-      "download_url": "https://github.com/Testimonial/cognitive-squad/archive/refs/tags/v0.1.0.zip",
-      "repository": "https://github.com/Testimonial/cognitive-squad",
-      "homepage": "https://github.com/Testimonial/cognitive-squad",
-      "documentation": "https://github.com/Testimonial/cognitive-squad/blob/main/README.md",
-      "changelog": "https://github.com/Testimonial/cognitive-squad/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.3.0",
-        "tools": [
-          {
-            "name": "understanding",
-            "version": ">=3.4.0",
-            "required": false
-          },
-          {
-            "name": "spec-kit-reverse-eng",
-            "version": ">=1.0.0",
-            "required": false
-          }
-        ]
-      },
-      "provides": {
-        "commands": 10,
-        "hooks": 1
-      },
-      "tags": [
-        "ai-agents",
-        "cognitive",
-        "full-lifecycle",
-        "verification",
-        "multi-agent"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-16T00:00:00Z",
-      "updated_at": "2026-03-18T00:00:00Z"
-    },
     "conduct": {
       "name": "Conduct Extension",
       "id": "conduct",
@@ -240,6 +196,36 @@
       "stars": 0,
       "created_at": "2026-03-19T12:08:20Z",
       "updated_at": "2026-03-19T12:08:20Z"
+    },
+    "critique": {
+      "name": "Spec Critique Extension",
+      "id": "critique",
+      "description": "Dual-lens critical review of spec and plan from product strategy and engineering risk perspectives.",
+      "author": "arunt14",
+      "version": "1.0.0",
+      "download_url": "https://github.com/arunt14/spec-kit-critique/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/arunt14/spec-kit-critique",
+      "homepage": "https://github.com/arunt14/spec-kit-critique",
+      "documentation": "https://github.com/arunt14/spec-kit-critique/blob/main/README.md",
+      "changelog": "https://github.com/arunt14/spec-kit-critique/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "docs",
+        "review",
+        "planning"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
     },
     "docguard": {
       "name": "DocGuard — CDD Enforcement",
@@ -344,6 +330,38 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "fix-findings": {
+      "name": "Fix Findings",
+      "id": "fix-findings",
+      "description": "Automated analyze-fix-reanalyze loop that resolves spec findings until clean.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-fix-findings/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-fix-findings",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-fix-findings",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-fix-findings/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-fix-findings/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "code",
+        "analysis",
+        "quality",
+        "automation",
+        "findings"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
     },
     "fleet": {
       "name": "Fleet Orchestrator",
@@ -792,7 +810,7 @@
     "product-forge": {
       "name": "Product Forge",
       "id": "product-forge",
-      "description": "Full product lifecycle: research \u2192 product spec \u2192 SpecKit \u2192 implement \u2192 verify \u2192 test",
+      "description": "Full product lifecycle: research → product spec → SpecKit → implement → verify → test",
       "author": "VaiYav",
       "version": "1.1.1",
       "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.1.1.zip",
@@ -820,6 +838,36 @@
       "stars": 0,
       "created_at": "2026-03-28T00:00:00Z",
       "updated_at": "2026-03-28T00:00:00Z"
+    },
+    "qa": {
+      "name": "QA Testing Extension",
+      "id": "qa",
+      "description": "Systematic QA testing with browser-driven or CLI-based validation of acceptance criteria from spec.",
+      "author": "arunt14",
+      "version": "1.0.0",
+      "download_url": "https://github.com/arunt14/spec-kit-qa/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/arunt14/spec-kit-qa",
+      "homepage": "https://github.com/arunt14/spec-kit-qa",
+      "documentation": "https://github.com/arunt14/spec-kit-qa/blob/main/README.md",
+      "changelog": "https://github.com/arunt14/spec-kit-qa/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "code",
+        "testing",
+        "qa"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
     },
     "ralph": {
       "name": "Ralph Loop",
@@ -893,6 +941,36 @@
       "created_at": "2026-03-14T00:00:00Z",
       "updated_at": "2026-03-14T00:00:00Z"
     },
+    "retro": {
+      "name": "Retro Extension",
+      "id": "retro",
+      "description": "Sprint retrospective analysis with metrics, spec accuracy assessment, and improvement suggestions.",
+      "author": "arunt14",
+      "version": "1.0.0",
+      "download_url": "https://github.com/arunt14/spec-kit-retro/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/arunt14/spec-kit-retro",
+      "homepage": "https://github.com/arunt14/spec-kit-retro",
+      "documentation": "https://github.com/arunt14/spec-kit-retro/blob/main/README.md",
+      "changelog": "https://github.com/arunt14/spec-kit-retro/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "process",
+        "retrospective",
+        "metrics"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
+    },
     "retrospective": {
       "name": "Retrospective Extension",
       "id": "retrospective",
@@ -959,6 +1037,36 @@
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-03-06T00:00:00Z"
     },
+    "ship": {
+      "name": "Ship Release Extension",
+      "id": "ship",
+      "description": "Automates release pipeline: pre-flight checks, branch sync, changelog generation, CI verification, and PR creation.",
+      "author": "arunt14",
+      "version": "1.0.0",
+      "download_url": "https://github.com/arunt14/spec-kit-ship/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/arunt14/spec-kit-ship",
+      "homepage": "https://github.com/arunt14/spec-kit-ship",
+      "documentation": "https://github.com/arunt14/spec-kit-ship/blob/main/README.md",
+      "changelog": "https://github.com/arunt14/spec-kit-ship/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "process",
+        "release",
+        "automation"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
+    },
     "speckit-utils": {
       "name": "SDD Utilities",
       "id": "speckit-utils",
@@ -990,6 +1098,36 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "staff-review": {
+      "name": "Staff Review Extension",
+      "id": "staff-review",
+      "description": "Staff-engineer-level code review that validates implementation against spec, checks security, performance, and test coverage.",
+      "author": "arunt14",
+      "version": "1.0.0",
+      "download_url": "https://github.com/arunt14/spec-kit-staff-review/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/arunt14/spec-kit-staff-review",
+      "homepage": "https://github.com/arunt14/spec-kit-staff-review",
+      "documentation": "https://github.com/arunt14/spec-kit-staff-review/blob/main/README.md",
+      "changelog": "https://github.com/arunt14/spec-kit-staff-review/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "code",
+        "review",
+        "quality"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
     },
     "status": {
       "name": "Project Status",
@@ -1097,47 +1235,6 @@
       "stars": 0,
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
-    },
-    "understanding": {
-      "name": "Understanding",
-      "id": "understanding",
-      "description": "Automated requirements quality analysis — validates specs against IEEE/ISO standards using 31 deterministic metrics. Catches ambiguity, missing testability, and structural issues before they reach implementation. Includes experimental energy-based ambiguity detection using local LM token perplexity.",
-      "author": "Ladislav Bihari",
-      "version": "3.4.0",
-      "download_url": "https://github.com/Testimonial/understanding/archive/refs/tags/v3.4.0.zip",
-      "repository": "https://github.com/Testimonial/understanding",
-      "homepage": "https://github.com/Testimonial/understanding",
-      "documentation": "https://github.com/Testimonial/understanding/blob/main/extension/README.md",
-      "changelog": "https://github.com/Testimonial/understanding/blob/main/extension/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0",
-        "tools": [
-          {
-            "name": "understanding",
-            "version": ">=3.4.0",
-            "required": true
-          }
-        ]
-      },
-      "provides": {
-        "commands": 3,
-        "hooks": 1
-      },
-      "tags": [
-        "quality",
-        "metrics",
-        "requirements",
-        "validation",
-        "readability",
-        "IEEE-830",
-        "ISO-29148"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-07T00:00:00Z",
-      "updated_at": "2026-03-07T00:00:00Z"
     },
     "v-model": {
       "name": "V-Model Extension Pack",

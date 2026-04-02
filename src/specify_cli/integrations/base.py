@@ -5,6 +5,8 @@ Provides:
 - ``IntegrationBase`` — abstract base every integration must implement.
 - ``MarkdownIntegration`` — concrete base for standard Markdown-format
   integrations (the common case — subclass, set three class attrs, done).
+- ``TomlIntegration`` — concrete base for TOML-format integrations
+  (Gemini, Tabnine — subclass, set three class attrs, done).
 """
 
 from __future__ import annotations
@@ -493,6 +495,139 @@ class MarkdownIntegration(IntegrationBase):
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
                 processed, dest / dst_name, project_root, manifest
+            )
+            created.append(dst_file)
+
+        created.extend(self.install_scripts(project_root, manifest))
+        return created
+
+
+# ---------------------------------------------------------------------------
+# TomlIntegration — TOML-format agents (Gemini, Tabnine)
+# ---------------------------------------------------------------------------
+
+class TomlIntegration(IntegrationBase):
+    """Concrete base for integrations that use TOML command format.
+
+    Mirrors ``MarkdownIntegration`` closely: subclasses only need to set
+    ``key``, ``config``, ``registrar_config`` (and optionally
+    ``context_file``).  Everything else is inherited.
+
+    ``setup()`` processes command templates through the same placeholder
+    pipeline as ``MarkdownIntegration``, then converts the result to
+    TOML format (``description`` key + ``prompt`` multiline string).
+    """
+
+    def command_filename(self, template_name: str) -> str:
+        """TOML commands use ``.toml`` extension."""
+        return f"speckit.{template_name}.toml"
+
+    @staticmethod
+    def _extract_description(content: str) -> str:
+        """Extract the ``description`` value from YAML frontmatter.
+
+        Scans lines between the first pair of ``---`` delimiters for a
+        top-level ``description:`` key.  Returns the value (with
+        surrounding quotes stripped) or an empty string if not found.
+        """
+        in_frontmatter = False
+        for line in content.splitlines():
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                if not in_frontmatter:
+                    in_frontmatter = True
+                    continue
+                break  # second ---
+            if in_frontmatter and stripped.startswith("description:"):
+                _, _, value = stripped.partition(":")
+                return value.strip().strip('"').strip("'")
+        return ""
+
+    @staticmethod
+    def _render_toml(description: str, body: str) -> str:
+        """Render a TOML command file from description and body.
+
+        Uses multiline basic strings (``\"\"\"``) with backslashes
+        escaped, matching the output of the release script.  Falls back
+        to multiline literal strings (``'''``) if the body contains
+        ``\"\"\"``, then to an escaped basic string as a last resort.
+
+        The body is rstrip'd so the closing delimiter appears on the line
+        immediately after the last content line — matching the release
+        script's ``echo "$body"; echo '\"\"\"'`` pattern.
+        """
+        toml_lines: list[str] = []
+
+        if description:
+            desc = description.replace('"', '\\"')
+            toml_lines.append(f'description = "{desc}"')
+            toml_lines.append("")
+
+        body = body.rstrip("\n")
+
+        # Escape backslashes for basic multiline strings.
+        escaped = body.replace("\\", "\\\\")
+
+        if '"""' not in escaped:
+            toml_lines.append('prompt = """')
+            toml_lines.append(escaped)
+            toml_lines.append('"""')
+        elif "'''" not in body:
+            toml_lines.append("prompt = '''")
+            toml_lines.append(body)
+            toml_lines.append("'''")
+        else:
+            escaped_body = (
+                body.replace("\\", "\\\\")
+                .replace('"', '\\"')
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+            )
+            toml_lines.append(f'prompt = "{escaped_body}"')
+
+        return "\n".join(toml_lines) + "\n"
+
+    def setup(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        parsed_options: dict[str, Any] | None = None,
+        **opts: Any,
+    ) -> list[Path]:
+        templates = self.list_command_templates()
+        if not templates:
+            return []
+
+        project_root_resolved = project_root.resolve()
+        if manifest.project_root != project_root_resolved:
+            raise ValueError(
+                f"manifest.project_root ({manifest.project_root}) does not match "
+                f"project_root ({project_root_resolved})"
+            )
+
+        dest = self.commands_dest(project_root).resolve()
+        try:
+            dest.relative_to(project_root_resolved)
+        except ValueError as exc:
+            raise ValueError(
+                f"Integration destination {dest} escapes "
+                f"project root {project_root_resolved}"
+            ) from exc
+        dest.mkdir(parents=True, exist_ok=True)
+
+        script_type = opts.get("script_type", "sh")
+        arg_placeholder = self.registrar_config.get("args", "{{args}}") if self.registrar_config else "{{args}}"
+        created: list[Path] = []
+
+        for src_file in templates:
+            raw = src_file.read_text(encoding="utf-8")
+            description = self._extract_description(raw)
+            processed = self.process_template(raw, self.key, script_type, arg_placeholder)
+            toml_content = self._render_toml(description, processed)
+            dst_name = self.command_filename(src_file.stem)
+            dst_file = self.write_file_and_record(
+                toml_content, dest / dst_name, project_root, manifest
             )
             created.append(dst_file)
 
