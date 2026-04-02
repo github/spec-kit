@@ -142,9 +142,10 @@ class ClaudeIntegration(SkillsIntegration):
             if not hint:
                 continue
 
-            content = path.read_text(encoding="utf-8")
+            content_bytes = path.read_bytes()
+            content = content_bytes.decode("utf-8")
             updated = self.inject_argument_hint(content, hint)
             if updated != content:
-                path.write_text(updated, encoding="utf-8")
+                path.write_bytes(updated.encode("utf-8"))
 
         return created
