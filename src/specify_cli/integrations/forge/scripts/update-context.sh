@@ -25,4 +25,26 @@ if [ -z "${REPO_ROOT:-}" ]; then
   fi
 fi
 
-exec "$REPO_ROOT/.specify/scripts/bash/update-agent-context.sh" forge
+shared_script="$REPO_ROOT/.specify/scripts/bash/update-agent-context.sh"
+# If the shared dispatcher already knows about "forge", delegate to it.
+if grep -q 'forge)' "$shared_script" 2>/dev/null; then
+  exec "$shared_script" forge
+fi
+
+# Forge-specific handling: update or create AGENTS.md directly until the shared
+# dispatcher script supports "forge".
+agents_file="$REPO_ROOT/AGENTS.md"
+if [ -f "$agents_file" ]; then
+  # Only add a Forge entry if one does not already exist.
+  if ! grep -q '\bForge\b' "$agents_file"; then
+    printf '\n## Forge\n- Forge integration agent context\n' >> "$agents_file"
+  fi
+else
+  cat > "$agents_file" << 'EOF'
+# Agents
+
+## Forge
+- Forge integration agent context
+EOF
+fi
+exit 0

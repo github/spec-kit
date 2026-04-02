@@ -20,4 +20,31 @@ if (-not $repoRoot -or -not (Test-Path (Join-Path $repoRoot '.specify'))) {
     }
 }
 
-& "$repoRoot/.specify/scripts/powershell/update-agent-context.ps1" -AgentType forge
+$sharedScript = "$repoRoot/.specify/scripts/powershell/update-agent-context.ps1"
+# If the shared dispatcher already knows about "forge", delegate to it.
+if ((Test-Path $sharedScript) -and (Select-String -Path $sharedScript -Pattern "'forge'|`"forge`"" -Quiet)) {
+    & $sharedScript -AgentType forge
+    exit $LASTEXITCODE
+}
+
+# Forge-specific handling: update or create AGENTS.md directly until the shared
+# dispatcher script supports -AgentType forge.
+$agentsFile = Join-Path $repoRoot 'AGENTS.md'
+if (Test-Path $agentsFile) {
+    $agentsContent = Get-Content -Path $agentsFile -ErrorAction Stop
+    # Only add a Forge entry if one does not already exist.
+    if (-not ($agentsContent | Where-Object { $_ -match '\bForge\b' })) {
+        Add-Content -Path $agentsFile -Value ''
+        Add-Content -Path $agentsFile -Value '## Forge'
+        Add-Content -Path $agentsFile -Value '- Forge integration agent context'
+    }
+} else {
+    $newContent = @(
+        '# Agents'
+        ''
+        '## Forge'
+        '- Forge integration agent context'
+    )
+    $newContent | Set-Content -Path $agentsFile -Encoding UTF8
+}
+exit 0
