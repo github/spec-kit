@@ -53,7 +53,7 @@ from typer.core import TyperGroup
 import readchar
 import ssl
 import truststore
-from datetime import datetime, timezone
+from datetime import datetime
 
 ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 client = httpx.Client(verify=ssl_context)
