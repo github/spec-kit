@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -45,8 +44,25 @@ class ClaudeIntegration(MarkdownIntegration):
 
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:
-        """Insert ``argument-hint`` after the first ``description:`` in YAML frontmatter."""
+        """Insert ``argument-hint`` after the first ``description:`` in YAML frontmatter.
+
+        Skips injection if ``argument-hint:`` already exists in the
+        frontmatter to avoid duplicate keys.
+        """
         lines = content.splitlines(keepends=True)
+
+        # Pre-scan: bail out if argument-hint already present in frontmatter
+        dash_count = 0
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith("argument-hint:"):
+                return content  # already present
+
         out: list[str] = []
         in_fm = False
         dash_count = 0

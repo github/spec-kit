@@ -77,8 +77,10 @@ class TestClaudeArgumentHints:
         for f in cmd_files:
             content = f.read_text(encoding="utf-8")
             lines = content.splitlines()
+            found_description = False
             for idx, line in enumerate(lines):
                 if line.startswith("description:"):
+                    found_description = True
                     assert idx + 1 < len(lines), (
                         f"{f.name}: description is last line"
                     )
@@ -86,6 +88,9 @@ class TestClaudeArgumentHints:
                         f"{f.name}: argument-hint does not follow description"
                     )
                     break
+            assert found_description, (
+                f"{f.name}: no description: line found in output"
+            )
 
     def test_inject_argument_hint_only_in_frontmatter(self):
         """inject_argument_hint must not modify description: lines in the body."""
@@ -100,7 +105,25 @@ class TestClaudeArgumentHints:
         )
         result = ClaudeIntegration.inject_argument_hint(content, "Test hint")
         lines = result.splitlines()
-        hint_count = sum(1 for l in lines if l.startswith("argument-hint:"))
+        hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
         assert hint_count == 1, (
             f"Expected exactly 1 argument-hint line, found {hint_count}"
         )
+
+    def test_inject_argument_hint_skips_if_already_present(self):
+        """inject_argument_hint must not duplicate if argument-hint already exists."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        content = (
+            "---\n"
+            "description: My command\n"
+            "argument-hint: Existing hint\n"
+            "---\n"
+            "\n"
+            "Body text\n"
+        )
+        result = ClaudeIntegration.inject_argument_hint(content, "New hint")
+        assert result == content, "Content should be unchanged when hint already exists"
+        lines = result.splitlines()
+        hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
+        assert hint_count == 1
