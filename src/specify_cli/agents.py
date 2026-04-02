@@ -50,8 +50,11 @@ class CommandRegistrar:
     @classmethod
     def _ensure_configs(cls) -> None:
         if not cls._configs_loaded:
-            cls._configs_loaded = True
-            cls.AGENT_CONFIGS = _build_agent_configs()
+            try:
+                cls.AGENT_CONFIGS = _build_agent_configs()
+                cls._configs_loaded = True
+            except ImportError:
+                pass  # Circular import during module init; retry on next access
 
     @staticmethod
     def parse_frontmatter(content: str) -> tuple[dict, str]:
@@ -510,8 +513,8 @@ class CommandRegistrar:
             registered_commands: Dict mapping agent names to command name lists
             project_root: Path to project root
         """
+        self._ensure_configs()
         for agent_name, cmd_names in registered_commands.items():
-            self._ensure_configs()
             if agent_name not in self.AGENT_CONFIGS:
                 continue
 
@@ -531,9 +534,10 @@ class CommandRegistrar:
 
 
 # Populate AGENT_CONFIGS after class definition.
-# The deferred import avoids circular import issues during module loading.
+# Catches ImportError from circular imports during module loading;
+# _configs_loaded stays False so the next explicit access retries.
 try:
     CommandRegistrar._ensure_configs()
-except Exception:
-    pass  # Silently defer to first explicit access
+except ImportError:
+    pass
 

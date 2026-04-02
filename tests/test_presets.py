@@ -1785,6 +1785,7 @@ class TestSelfTestPreset:
         assert cmd_file.exists(), "Skill not registered in .claude/skills/"
         content = cmd_file.read_text()
         assert "self-test" in content
+        assert "source:" in content  # skill frontmatter includes metadata.source
 
     def test_self_test_registers_commands_for_gemini(self, project_dir):
         """Test that installing self-test registers commands in .gemini/commands/ as TOML."""

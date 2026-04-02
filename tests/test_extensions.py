@@ -1040,7 +1040,6 @@ $ARGUMENTS
         content = cmd_file.read_text()
         assert "description: Test hello command" in content
         assert "test-ext" in content
-        assert "test-ext" in content or True  # skill format uses metadata.source instead
 
     def test_command_with_aliases(self, project_dir, temp_dir):
         """Test registering a command with aliases."""
