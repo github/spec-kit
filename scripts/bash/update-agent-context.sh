@@ -743,10 +743,7 @@ update_all_existing_agents() {
     _update_if_new "$COPILOT_FILE" "GitHub Copilot"        || _all_ok=false
     _update_if_new "$CURSOR_FILE" "Cursor IDE"             || _all_ok=false
     _update_if_new "$QWEN_FILE" "Qwen Code"                || _all_ok=false
-    _update_if_new "$AGENTS_FILE" "Codex/opencode"         || _all_ok=false
-    _update_if_new "$AMP_FILE" "Amp"                       || _all_ok=false
-    _update_if_new "$KIRO_FILE" "Kiro CLI"                 || _all_ok=false
-    _update_if_new "$BOB_FILE" "IBM Bob"                   || _all_ok=false
+    _update_if_new "$AGENTS_FILE" "Codex/opencode/Amp/Kiro/Bob/Pi/Forge" || _all_ok=false
     _update_if_new "$WINDSURF_FILE" "Windsurf"             || _all_ok=false
     _update_if_new "$JUNIE_FILE" "Junie"                || _all_ok=false
     _update_if_new "$KILOCODE_FILE" "Kilo Code"            || _all_ok=false
@@ -761,7 +758,6 @@ update_all_existing_agents() {
     _update_if_new "$KIMI_FILE" "Kimi Code"                || _all_ok=false
     _update_if_new "$TRAE_FILE" "Trae"                     || _all_ok=false
     _update_if_new "$IFLOW_FILE" "iFlow CLI"               || _all_ok=false
-    _update_if_new "$FORGE_FILE" "Forge"                   || _all_ok=false
 
     # If no agent files exist, create a default Claude file
     if [[ "$_found_agent" == false ]]; then

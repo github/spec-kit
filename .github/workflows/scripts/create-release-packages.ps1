@@ -64,6 +64,7 @@ function Rewrite-Paths {
     $Content = $Content -replace '(/?)\bmemory/', '.specify/memory/'
     $Content = $Content -replace '(/?)\bscripts/', '.specify/scripts/'
     $Content = $Content -replace '(/?)\btemplates/', '.specify/templates/'
+    $Content = $Content -replace '(?:\.specify/){2,}', '.specify/'
     return $Content
 }
 
