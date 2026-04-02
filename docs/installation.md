@@ -66,9 +66,12 @@ uvx --from git+https://github.com/github/infrakit.git infrakit init <project_nam
 
 After initialization, you should see the following commands available in your AI agent:
 
-- `/infrakit:specify` - Create specifications
-- `/infrakit:plan` - Generate implementation plans
-- `/infrakit:tasks` - Break down into actionable tasks
+- `/infrakit:project_context` - Define infrastructure principles and standards
+- `/infrakit:specify_composition` - Create infrastructure resource specification
+- `/infrakit:plan_composition` - Architecture review + implementation plan
+- `/infrakit:implement_composition` - Generate XRD, Composition, and Claim YAML
+- `/infrakit:coding_style` - Specify and update the project coding style standards
+- `/infrakit:tagging` - Update project tagging requirements
 
 The `.infrakit/scripts` directory will contain both `.sh` and `.ps1` scripts.
 

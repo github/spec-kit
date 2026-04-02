@@ -477,7 +477,7 @@ class TestNewProjectCommandSkip:
 
         with patch("infrakit_cli.download_and_extract_template", side_effect=fake_download), \
              patch("infrakit_cli.ensure_executable_scripts"), \
-             patch("infrakit_cli.ensure_constitution_from_template"), \
+             patch("infrakit_cli.ensure_project_context_from_template"), \
              patch("infrakit_cli.install_ai_skills", return_value=True) as mock_skills, \
              patch("infrakit_cli.is_git_repo", return_value=False), \
              patch("infrakit_cli.shutil.which", return_value="/usr/bin/git"):
@@ -502,7 +502,7 @@ class TestNewProjectCommandSkip:
 
         with patch("infrakit_cli.download_and_extract_template", side_effect=fake_download), \
              patch("infrakit_cli.ensure_executable_scripts"), \
-             patch("infrakit_cli.ensure_constitution_from_template"), \
+             patch("infrakit_cli.ensure_project_context_from_template"), \
              patch("infrakit_cli.install_ai_skills", return_value=False), \
              patch("infrakit_cli.is_git_repo", return_value=False), \
              patch("infrakit_cli.shutil.which", return_value="/usr/bin/git"):
@@ -534,7 +534,7 @@ class TestNewProjectCommandSkip:
 
         with patch("infrakit_cli.download_and_extract_template", side_effect=fake_download), \
              patch("infrakit_cli.ensure_executable_scripts"), \
-             patch("infrakit_cli.ensure_constitution_from_template"), \
+             patch("infrakit_cli.ensure_project_context_from_template"), \
              patch("infrakit_cli.install_ai_skills", return_value=True), \
              patch("infrakit_cli.is_git_repo", return_value=True), \
              patch("infrakit_cli.shutil.which", return_value="/usr/bin/git"):
@@ -588,7 +588,7 @@ class TestSkillDescriptions:
         """All standard infrakit commands should have enhanced descriptions."""
         expected_commands = [
             "specify", "plan", "tasks", "implement", "analyze",
-            "clarify", "constitution", "checklist", "taskstoissues",
+            "clarify", "project_context", "checklist", "taskstoissues",
         ]
         for cmd in expected_commands:
             assert cmd in SKILL_DESCRIPTIONS, f"Missing description for '{cmd}'"

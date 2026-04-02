@@ -74,12 +74,19 @@ uv tool install infrakit-cli --force --from git+https://github.com/github/infrak
 uvx --from git+https://github.com/github/infrakit.git infrakit init my-infra --iac crossplane
 ```
 
-### 2. Establish infrastructure principles
+### 2. Establish infrastructure principles and standards
 
-Launch your AI assistant in the project directory. Use **`/infrakit:constitution`** to define your project's governing infrastructure principles — security standards, tagging requirements, environment policies, and compliance rules that guide all subsequent resources.
+Launch your AI assistant in the project directory. Use **`/infrakit:project_context`** to define your project's governing infrastructure principles — security standards, environment policies, and compliance rules that guide all subsequent resources.
 
 ```bash
-/infrakit:constitution Create principles for a production AWS environment with mandatory encryption, private networking, multi-AZ for production, and required cost-center tagging.
+/infrakit:project_context Create principles for a production AWS environment with mandatory encryption, private networking, and multi-AZ for production.
+```
+
+Define project-specific coding standards using **`/infrakit:coding_style`** and resource tagging requirements using **`/infrakit:tagging`**.
+
+```bash
+/infrakit:coding_style Set our standard practice to use specific AWS API versions and always include our custom composition labels.
+/infrakit:tagging Establish our standard required tags: cost-center, owner, and environment.
 ```
 
 ### 3. Specify a resource
@@ -233,11 +240,13 @@ After running `infrakit init`, your AI coding agent will have access to these sl
 
 | Command                   | Description                                                       |
 | ------------------------- | ----------------------------------------------------------------- |
-| `/infrakit:constitution`  | Define infrastructure principles and standards                    |
+| `/infrakit:project_context`  | Define infrastructure principles and standards                    |
 | `/infrakit:clarify`       | Resolve ambiguities before planning                               |
 | `/infrakit:tasks`         | Generate actionable task breakdown                                |
 | `/infrakit:analyze`       | Cross-artifact consistency check                                  |
 | `/infrakit:checklist`     | Quality validation checklist                                      |
+| `/infrakit:coding_style`  | Specify and update the project coding style standards             |
+| `/infrakit:tagging`       | Update project tagging requirements                               |
 
 ### Environment Variables
 

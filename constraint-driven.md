@@ -81,7 +81,7 @@ This command transforms a natural language infrastructure description into a com
 1. **Resource Track Creation**: Creates a timestamped track directory under `.infrakit_tracks/` for the resource
 2. **Constraint Capture**: Documents environment policies, sizing tiers, security requirements, and tagging rules
 3. **Template-Based Generation**: Produces a structured `spec.md` capturing what the resource must do before any YAML is written
-4. **Constitution Alignment**: Ensures the spec complies with the project's governing infrastructure principles
+4. **Project Context Alignment**: Ensures the spec complies with the project's governing infrastructure principles
 
 ### The `/infrakit:plan_composition` Command
 
@@ -197,7 +197,7 @@ The templates include comprehensive checklists that act as "unit tests" for the 
 
 These checklists force the LLM to self-review its output systematically, catching gaps that might otherwise slip through. It's like giving the LLM a quality assurance framework.
 
-#### 4. **Constitutional Compliance Through Gates**
+#### 4. **Project Contextal Compliance Through Gates**
 
 The implementation plan template enforces architectural principles through phase gates:
 
@@ -265,13 +265,13 @@ These constraints work together to produce specifications that are:
 
 The templates transform the LLM from a creative writer into a disciplined specification engineer, channeling its capabilities toward producing consistently high-quality, executable specifications that truly drive development.
 
-## The Constitutional Foundation: Enforcing Architectural Discipline
+## The Project Contextal Foundation: Enforcing Architectural Discipline
 
-At the heart of CDD lies a constitution—a set of immutable principles that govern how specifications become code. The constitution (`memory/constitution.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
+At the heart of CDD lies a project context—a set of immutable principles that govern how specifications become code. The project context (`memory/project-context.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
 
 ### The Nine Articles of Development
 
-The constitution defines nine articles that shape every aspect of the development process:
+The project context defines nine articles that shape every aspect of the development process:
 
 #### Article I: Library-First Principle
 
@@ -340,7 +340,7 @@ Tests MUST use realistic environments:
 
 This ensures generated code works in practice, not just in theory.
 
-### Constitutional Enforcement Through Templates
+### Project Contextal Enforcement Through Templates
 
 The implementation plan template operationalizes these articles through concrete checkpoints:
 
@@ -367,37 +367,37 @@ These gates act as compile-time checks for architectural principles. The LLM can
 
 ### The Power of Immutable Principles
 
-The constitution's power lies in its immutability. While implementation details can evolve, the core principles remain constant. This provides:
+The project context's power lies in its immutability. While implementation details can evolve, the core principles remain constant. This provides:
 
 1. **Consistency Across Time**: Code generated today follows the same principles as code generated next year
 2. **Consistency Across LLMs**: Different AI models produce architecturally compatible code
 3. **Architectural Integrity**: Every feature reinforces rather than undermines the system design
 4. **Quality Guarantees**: Test-first, library-first, and simplicity principles ensure maintainable code
 
-### Constitutional Evolution
+### Project Contextal Evolution
 
 While principles are immutable, their application can evolve:
 
 ```text
 Section 4.2: Amendment Process
-Modifications to this constitution require:
+Modifications to this project context require:
 - Explicit documentation of the rationale for change
 - Review and approval by project maintainers
 - Backwards compatibility assessment
 ```
 
-This allows the methodology to learn and improve while maintaining stability. The constitution shows its own evolution with dated amendments, demonstrating how principles can be refined based on real-world experience.
+This allows the methodology to learn and improve while maintaining stability. The project context shows its own evolution with dated amendments, demonstrating how principles can be refined based on real-world experience.
 
 ### Beyond Rules: A Development Philosophy
 
-The constitution isn't just a rulebook—it's a philosophy that shapes how LLMs think about code generation:
+The project context isn't just a rulebook—it's a philosophy that shapes how LLMs think about code generation:
 
 - **Observability Over Opacity**: Everything must be inspectable through CLI interfaces
 - **Simplicity Over Cleverness**: Start simple, add complexity only when proven necessary
 - **Integration Over Isolation**: Test in real environments, not artificial ones
 - **Modularity Over Monoliths**: Every feature is a library with clear boundaries
 
-By embedding these principles into the specification and planning process, CDD ensures that generated code isn't just functional—it's maintainable, testable, and architecturally sound. The constitution transforms AI from a code generator into an architectural partner that respects and reinforces system design principles.
+By embedding these principles into the specification and planning process, CDD ensures that generated code isn't just functional—it's maintainable, testable, and architecturally sound. The project context transforms AI from a code generator into an architectural partner that respects and reinforces system design principles.
 
 ## The Transformation
 

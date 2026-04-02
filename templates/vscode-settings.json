@@ -1,6 +1,6 @@
 {
     "chat.promptFilesRecommendations": {
-        "infrakit:constitution": true,
+        "infrakit:project_context": true,
         "infrakit:specify_composition": true,
         "infrakit:plan_composition": true,
         "infrakit:tasks": true,

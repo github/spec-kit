@@ -845,40 +845,40 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             for f in failures:
                 console.print(f"  - {f}")
 
-def ensure_constitution_from_template(project_path: Path, tracker: StepTracker | None = None) -> None:
-    """Copy constitution template to memory if it doesn't exist (preserves existing constitution on reinitialization)."""
-    memory_constitution = project_path / ".infrakit" / "memory" / "constitution.md"
-    template_constitution = project_path / ".infrakit" / "templates" / "constitution-template.md"
+def ensure_project_context_from_template(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Copy project context template to memory if it doesn't exist (preserves existing project context on reinitialization)."""
+    memory_context = project_path / ".infrakit" / "memory" / "project-context.md"
+    template_context = project_path / ".infrakit" / "templates" / "project-context-template.md"
 
-    # If constitution already exists in memory, preserve it
-    if memory_constitution.exists():
+    # If project context already exists in memory, preserve it
+    if memory_context.exists():
         if tracker:
-            tracker.add("constitution", "Constitution setup")
-            tracker.skip("constitution", "existing file preserved")
+            tracker.add("project_context", "Project Context setup")
+            tracker.skip("project_context", "existing file preserved")
         return
 
     # If template doesn't exist, something went wrong with extraction
-    if not template_constitution.exists():
+    if not template_context.exists():
         if tracker:
-            tracker.add("constitution", "Constitution setup")
-            tracker.error("constitution", "template not found")
+            tracker.add("project_context", "Project Context setup")
+            tracker.error("project_context", "template not found")
         return
 
     # Copy template to memory directory
     try:
-        memory_constitution.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(template_constitution, memory_constitution)
+        memory_context.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(template_context, memory_context)
         if tracker:
-            tracker.add("constitution", "Constitution setup")
-            tracker.complete("constitution", "copied from template")
+            tracker.add("project_context", "Project Context setup")
+            tracker.complete("project_context", "copied from template")
         else:
-            console.print("[cyan]Initialized constitution from template[/cyan]")
+            console.print("[cyan]Initialized project context from template[/cyan]")
     except Exception as e:
         if tracker:
-            tracker.add("constitution", "Constitution setup")
-            tracker.error("constitution", str(e))
+            tracker.add("project_context", "Project Context setup")
+            tracker.error("project_context", str(e))
         else:
-            console.print(f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]")
+            console.print(f"[yellow]Warning: Could not initialize project context: {e}[/yellow]")
 
 # Agent-specific skill directory overrides for agents whose skills directory
 # doesn't follow the standard <agent_folder>/skills/ pattern
@@ -899,9 +899,11 @@ SKILL_DESCRIPTIONS = {
     "tasks": "Break down infrastructure resource plans into actionable task lists. Generates tasks.md with ordered, dependency-aware implementation steps.",
     "analyze": "Perform cross-artifact consistency analysis across spec, plan, and implementation artifacts. Use to identify gaps or inconsistencies before or after implementation.",
     "clarify": "Structured clarification workflow for underspecified infrastructure requirements. Use before planning to resolve ambiguities through targeted questioning.",
-    "constitution": "Create or update infrastructure governing principles and standards. Use at project start to establish encryption policies, tagging requirements, network topology standards, and compliance rules.",
+    "project_context": "Create or update project context and standards. Use at project start to establish encryption policies, tagging requirements, network topology standards, and compliance rules.",
     "checklist": "Generate quality checklists for validating infrastructure resource completeness and Crossplane best-practice compliance.",
     "taskstoissues": "Convert tasks from tasks.md into GitHub issues. Use after task breakdown to track work items in GitHub project management.",
+    "coding_style": "Specify and update the project coding style standards using the coding-style-template.md.",
+    "tagging": "Update project tagging requirements using the tagging-constraint-template.md.",
 }
 
 
@@ -1088,7 +1090,7 @@ def initialize_iac_config(project_path: Path, iac_tool: str, ai_assistant: str, 
     - .infrakit/context.md — project context template
     - .infrakit/coding-style.md — default coding standards
     - .infrakit/tracks.md — master resource registry
-    - .infrakit/agents/ — IaC-specific agent definitions
+    - .infrakit/agent_personas/ — IaC-specific agent definitions
     - .infrakit_tracks/ — track directories
     - technical-docs/ — provider and tool documentation
     - IaC-native commands in the agent's commands directory
@@ -1105,9 +1107,12 @@ def initialize_iac_config(project_path: Path, iac_tool: str, ai_assistant: str, 
     iac_templates_dir = script_dir / "templates" / "iac" / iac_tool
 
     if not iac_templates_dir.is_dir():
+        # When installed via pip, templates are not included in the package.
+        # This is expected because the GitHub release ZIP already contains the extracted templates.
+        # We only log a debug message and continue so configuration like config.yaml is generated.
         if tracker:
-            tracker.error("iac-config", f"IaC templates not found: {iac_templates_dir}")
-        return
+            tracker.add("iac-config-assets", "Check IaC templates")
+            tracker.skip("iac-config-assets", f"No local template dir, rely on downloaded ZIP")
 
     # --- 1. Create .infrakit/ configuration directory ---
     if tracker:
@@ -1147,7 +1152,7 @@ def initialize_iac_config(project_path: Path, iac_tool: str, ai_assistant: str, 
             encoding="utf-8",
         )
 
-    # memory directory (for constitution)
+    # memory directory (for project context)
     (infrakit_dir / "memory").mkdir(parents=True, exist_ok=True)
 
     # .infrakit_tracks/ directory
@@ -1155,11 +1160,21 @@ def initialize_iac_config(project_path: Path, iac_tool: str, ai_assistant: str, 
     tracks_dir.mkdir(parents=True, exist_ok=True)
 
     # Copy IaC-specific agents
-    agents_src = iac_templates_dir / "agents"
-    agents_dest = infrakit_dir / "agents"
+    agents_src = iac_templates_dir / "agent_personas"
+    agents_dest = infrakit_dir / "agent_personas"
     if agents_src.is_dir():
         agents_dest.mkdir(parents=True, exist_ok=True)
         for agent_file in agents_src.iterdir():
+            if agent_file.is_file():
+                dest = agents_dest / agent_file.name
+                if not dest.exists():
+                    shutil.copy2(agent_file, dest)
+
+    # Copy generic agents
+    generic_agents_src = script_dir / "templates" / "agent_personas"
+    if generic_agents_src.is_dir():
+        agents_dest.mkdir(parents=True, exist_ok=True)
+        for agent_file in generic_agents_src.iterdir():
             if agent_file.is_file():
                 dest = agents_dest / agent_file.name
                 if not dest.exists():
@@ -1443,7 +1458,7 @@ def init(
         ("zip-list", "Archive contents"),
         ("extracted-summary", "Extraction summary"),
         ("chmod", "Ensure scripts executable"),
-        ("constitution", "Constitution setup"),
+        ("project_context", "Project Context setup"),
         ("iac-config", "IaC configuration"),
         ("iac-commands", "IaC-native commands"),
         ("iac-docs", "Technical documentation"),
@@ -1484,7 +1499,7 @@ def init(
 
             ensure_executable_scripts(project_path, tracker=tracker)
 
-            ensure_constitution_from_template(project_path, tracker=tracker)
+            ensure_project_context_from_template(project_path, tracker=tracker)
 
             # IaC-specific setup
             initialize_iac_config(project_path, selected_iac, selected_ai, tracker=tracker)
@@ -1607,7 +1622,7 @@ def init(
     iac_cfg = IAC_CONFIG.get(selected_iac, {})
     resource_term = iac_cfg.get("resource_term", "composition")
 
-    steps_lines.append(f"   2.1 [cyan]/infrakit:constitution[/] - Establish infrastructure principles")
+    steps_lines.append(f"   2.1 [cyan]/infrakit:project_context[/] - Establish infrastructure principles")
     steps_lines.append(f"   2.2 [cyan]/infrakit:new_composition[/] - Create a new resource with multi-agent workflow")
     steps_lines.append(f"   2.3 [cyan]/infrakit:update_composition[/] - Update an existing resource")
     steps_lines.append(f"   2.4 [cyan]/infrakit:status[/] - Track progress of all tracks")
