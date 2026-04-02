@@ -1,0 +1,47 @@
+schema_version: "1.0"
+
+extension:
+  id: git
+  name: "Git Branching Workflow"
+  version: "1.0.0"
+  description: "Feature branch creation, numbering (sequential/timestamp), validation, and Git remote detection"
+  author: spec-kit-core
+  repository: https://github.com/github/spec-kit
+  license: MIT
+
+requires:
+  speckit_version: ">=0.2.0"
+  tools:
+    - name: git
+      required: false
+
+provides:
+  commands:
+    - name: speckit.git.feature
+      file: commands/speckit.git.feature.md
+      description: "Create a feature branch with sequential or timestamp numbering"
+    - name: speckit.git.validate
+      file: commands/speckit.git.validate.md
+      description: "Validate current branch follows feature branch naming conventions"
+    - name: speckit.git.remote
+      file: commands/speckit.git.remote.md
+      description: "Detect Git remote URL for GitHub integration"
+
+hooks:
+  before_specify:
+    command: speckit.git.feature
+    optional: false
+    description: "Create feature branch before specification"
+  after_implement:
+    command: speckit.git.validate
+    optional: true
+    prompt: "Verify feature branch naming?"
+    description: "Validate branch naming after implementation"
+
+tags:
+  - "git"
+  - "branching"
+  - "workflow"
+
+defaults:
+  branch_numbering: sequential

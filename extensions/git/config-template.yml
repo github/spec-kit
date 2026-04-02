@@ -1,0 +1,5 @@
+# Git Branching Workflow Extension Configuration
+# Copy this file to .specify/extensions/git/git-config.yml to customize
+
+# Branch numbering strategy: "sequential" (001, 002, ...) or "timestamp" (YYYYMMDD-HHMMSS)
+branch_numbering: sequential
