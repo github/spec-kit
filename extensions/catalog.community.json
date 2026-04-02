@@ -950,7 +950,7 @@
       "download_url": "https://github.com/liuyiyu/spec-kit-repoindex/archive/refs/tags/v1.0.0.zip",
       "repository": "https://github.com/liuyiyu/spec-kit-repoindex",
       "homepage": "https://github.com/liuyiyu/spec-kit-repoindex",
-      "documentation": "https://github.com/liuyiyu/spec-kit-repoindex/blob/main/docs/",
+      "documentation": "https://github.com/liuyiyu/spec-kit-repoindex/tree/main/docs",
       "changelog": "https://github.com/liuyiyu/spec-kit-repoindex/blob/main/CHANGELOG.md",
       "license": "MIT",
       "requires": {
