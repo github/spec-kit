@@ -123,13 +123,13 @@ class TestForgeIntegration:
         m = IntegrationManifest("forge", tmp_path)
         forge.setup(tmp_path, m)
         commands_dir = tmp_path / ".forge" / "commands"
-        
+
         for cmd_file in commands_dir.glob("speckit.*.md"):
             content = cmd_file.read_text(encoding="utf-8")
-            
+
             # Check that name field is injected in frontmatter
             assert "\nname: " in content, f"{cmd_file.name} missing injected 'name' field"
-            
+
             # Check that handoffs frontmatter key is stripped
             assert "\nhandoffs:" not in content, f"{cmd_file.name} has unstripped 'handoffs' key"
 
@@ -137,16 +137,16 @@ class TestForgeIntegration:
         """Verify Forge replaces $ARGUMENTS with {{parameters}} in generated files."""
         from specify_cli.integrations.forge import ForgeIntegration
         forge = ForgeIntegration()
-        
+
         # The registrar_config should specify {{parameters}}
         assert forge.registrar_config["args"] == "{{parameters}}"
-        
+
         # Generate files and verify $ARGUMENTS is replaced with {{parameters}}
         from specify_cli.integrations.manifest import IntegrationManifest
         m = IntegrationManifest("forge", tmp_path)
         forge.setup(tmp_path, m)
         commands_dir = tmp_path / ".forge" / "commands"
-        
+
         # Check all generated command files
         for cmd_file in commands_dir.glob("speckit.*.md"):
             content = cmd_file.read_text(encoding="utf-8")
@@ -156,7 +156,7 @@ class TestForgeIntegration:
             )
             # At least some files should have {{parameters}} (those with user input sections)
             # We'll check the checklist file specifically as it has a User Input section
-        
+
         # Verify checklist specifically has {{parameters}} in the User Input section
         checklist = commands_dir / "speckit.checklist.md"
         if checklist.exists():
