@@ -1,186 +1,186 @@
 # Quick Start Guide
 
-This guide will help you get started with Constraint-Driven Development using InfraKit.
+This guide walks you through creating a production-ready Crossplane composition using InfraKit's full workflow.
 
-> [!NOTE]
-> All automation scripts now provide both Bash (`.sh`) and PowerShell (`.ps1`) variants. The `infrakit` CLI auto-selects based on OS unless you pass `--script sh|ps`.
+---
 
-## The 6-Step Process
+## Prerequisites
 
-> [!TIP]
-> **Context Awareness**: InfraKit commands automatically detect the active feature based on your current Git branch (e.g., `001-feature-name`). To switch between different specifications, simply switch Git branches.
+- InfraKit CLI installed and project initialized (`infrakit init`)
+- `/infrakit:setup` has been run to configure project context
 
-### Step 1: Install InfraKit
+---
 
-**In your terminal**, run the `infrakit` CLI command to initialize your project:
+## The Workflow
 
-```bash
-# Create a new project directory
-uvx --from git+https://github.com/github/infrakit.git infrakit init <PROJECT_NAME> --iac crossplane
-
-# OR initialize in the current directory
-uvx --from git+https://github.com/github/infrakit.git infrakit init . --iac crossplane
+```
+setup → new_composition → plan → tasks → implement → review
 ```
 
-Pick script type explicitly (optional):
+Each step builds on the last, and every artifact lives in `.infrakit/tracks/<track-name>/`.
 
-```bash
-uvx --from git+https://github.com/github/infrakit.git infrakit init <PROJECT_NAME> --iac crossplane --script ps  # Force PowerShell
-uvx --from git+https://github.com/github/infrakit.git infrakit init <PROJECT_NAME> --iac crossplane --script sh  # Force POSIX shell
+---
+
+## Step 1: Configure Project Standards
+
+Run `/infrakit:setup` once per project to define your infrastructure standards:
+
+```
+/infrakit:setup
 ```
 
-### Step 2: Define Your Project Context
+You will be guided through:
+- Cloud provider and base API group
+- Naming conventions (XRD kinds, claim kinds, composition names)
+- Environment policy (dev / staging / prod)
+- Security defaults (encryption at rest, private networking, TLS)
+- Required tags
 
-**In your AI Agent's chat interface**, use the `/infrakit:project_context` slash command to establish the core rules and principles for your project. You should provide your project's specific principles as arguments.
+This creates three files that every other command reads:
+- `.infrakit/context.md` — project standards
+- `.infrakit/coding-style.md` — coding standards
+- `.infrakit/tagging.md` — tagging requirements
 
-```markdown
-/infrakit:project_context This project follows a "Library-First" approach. All features must be implemented as standalone libraries first. We use TDD strictly. We prefer functional programming patterns.
+---
+
+## Step 2: Create a Resource Specification
+
+Use `/infrakit:new_composition` to start the multi-persona solutioning workflow:
+
+```
+/infrakit:new_composition
 ```
 
-Additionally, establish project-wide conventions using the `/infrakit:coding_style` and `/infrakit:tagging` commands.
+You will be asked for:
+1. Resource name (e.g., `postgres-database`)
+2. Target directory (e.g., `./resources/postgres`)
+3. Resource description, cloud provider, environment, security requirements, parameters, and outputs
 
-```markdown
-/infrakit:coding_style All code must be strongly typed. Functions should not exceed 50 lines.
-/infrakit:tagging Ensure all infrastructure resources have owner and environment metadata tags.
+The **Cloud Solutions Engineer** gathers your requirements and writes `spec.md`.
+
+Next, the **Cloud Architect** reviews the spec for architecture correctness, reliability, and cost. Then the **Cloud Security Engineer** audits against your chosen compliance frameworks (SOC2, HIPAA, ISO 27001, etc.).
+
+You review the combined findings and decide which recommendations to apply before confirming the final spec.
+
+The track is registered in `.infrakit/tracks.md` with status `spec-generated`.
+
+---
+
+## Step 3: Generate the Implementation Plan
+
+```
+/infrakit:plan <track-name>
 ```
 
+Example: `/infrakit:plan postgres-database-20260401-120000`
 
-### Step 3: Create the Spec
+The **Crossplane Engineer** generates a detailed plan covering:
+- XRD schema design (parameters → OpenAPI v3 fields, status fields)
+- Managed resources with verified `apiVersion` values (looked up from doc.crds.dev)
+- Patch mappings: input parameters → `spec.forProvider`, status outputs → `status.atProvider`
+- Required tag patches (per your `tagging.md`)
 
-**In the chat**, use the `/infrakit:specify` slash command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+Run `/infrakit:analyze <track-name>` after planning to verify spec/plan consistency.
 
-```markdown
-/infrakit:specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
+---
+
+## Step 4: Generate the Task List
+
+```
+/infrakit:tasks <track-name>
 ```
 
-### Step 4: Refine the Spec
+This breaks the plan into ordered, executable tasks across 5 phases:
+1. XRD definition (`definition.yaml`)
+2. Composition with all patches and tags (`composition.yaml`)
+3. Example claim (`claim.yaml`)
+4. Documentation (`README.md`)
+5. Validation (`crossplane render`)
 
-**In the chat**, use the `/infrakit:clarify` slash command to identify and resolve ambiguities in your specification. You can provide specific focus areas as arguments.
+---
 
-```bash
-/infrakit:clarify Focus on security and performance requirements.
+## Step 5: Implement
+
+```
+/infrakit:implement <track-name>
 ```
 
-### Step 5: Create a Technical Implementation Plan
+The Crossplane Engineer works through each task in order, marking `- [ ]` → `- [x]` as it goes. All generated YAML follows your `coding-style.md` and `tagging.md` exactly.
 
-**In the chat**, use the `/infrakit:plan` slash command to provide your tech stack and architecture choices.
+After all tasks complete, it hands off automatically to the code review step.
 
-```markdown
-/infrakit:plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+---
+
+## Step 6: Review
+
+```
+/infrakit:review <resource-directory>
 ```
 
-### Step 6: Break Down and Implement
+Example: `/infrakit:review ./resources/postgres`
 
-**In the chat**, use the `/infrakit:tasks` slash command to create an actionable task list.
+The Crossplane Engineer reviews the generated files against:
+- Pipeline mode requirement
+- Required tags on every managed resource
+- `providerConfigRef` on every managed resource
+- No hardcoded secrets
+- XRD naming conventions
+- All parameters patched
+- All status fields patched
 
-```markdown
-/infrakit:tasks
+The review report shows findings by severity (CRITICAL / HIGH / MEDIUM / LOW) and offers to apply fixes.
+
+---
+
+## Complete Example: PostgreSQL Database
+
+```
+# Step 1 (done once per project)
+/infrakit:setup
+
+# Step 2: Create spec
+/infrakit:new_composition
+> Resource name: postgres-database
+> Directory: ./resources/postgres
+> Description: A managed PostgreSQL database with encryption at rest and connection secret
+
+# Step 3: Plan
+/infrakit:plan postgres-database-20260401-120000
+
+# Step 4: Tasks
+/infrakit:tasks postgres-database-20260401-120000
+
+# Step 5: Implement
+/infrakit:implement postgres-database-20260401-120000
+
+# Step 6: Review
+/infrakit:review ./resources/postgres
 ```
 
-Optionally, validate the plan with `/infrakit:analyze`:
+---
 
-```markdown
-/infrakit:analyze
+## Track Status
+
+Check the status of all tracks at any time:
+
+```
+/infrakit:status
 ```
 
-Then, use the `/infrakit:implement` slash command to execute the plan.
+| Status | Meaning |
+|--------|---------|
+| 🔵 `initializing` | Track created, spec in progress |
+| 📝 `spec-generated` | Spec confirmed, ready for plan |
+| 📋 `planned` | Plan generated, ready for implementation |
+| ⚙️ `in-progress` | Implementation underway |
+| ✅ `done` | Implementation complete and reviewed |
+| ❌ `blocked` | Blocked, needs attention |
 
-```markdown
-/infrakit:implement
-```
-
-> [!TIP]
-> **Phased Implementation**: For complex projects, implement in phases to avoid overwhelming the agent's context. Start with core functionality, validate it works, then add features incrementally.
-
-## Detailed Example: Building Taskify
-
-Here's a complete example of building a team productivity platform:
-
-### Step 1: Define Project Context
-
-Initialize the project's project context to set ground rules:
-
-```markdown
-/infrakit:project_context Taskify is a "Security-First" application. All user inputs must be validated. We use a microservices architecture. Code must be fully documented.
-```
-
-### Step 2: Define Requirements with `/infrakit:specify`
-
-```text
-Develop Taskify, a team productivity platform. It should allow users to create projects, add team members,
-assign tasks, comment and move tasks between boards in Kanban style. In this initial phase for this feature,
-let's call it "Create Taskify," let's have multiple users but the users will be declared ahead of time, predefined.
-I want five users in two different categories, one product manager and four engineers. Let's create three
-different sample projects. Let's have the standard Kanban columns for the status of each task, such as "To Do,"
-"In Progress," "In Review," and "Done." There will be no login for this application as this is just the very
-first testing thing to ensure that our basic features are set up.
-```
-
-### Step 3: Refine the Specification
-
-Use the `/infrakit:clarify` command to interactively resolve any ambiguities in your specification. You can also provide specific details you want to ensure are included.
-
-```bash
-/infrakit:clarify I want to clarify the task card details. For each task in the UI for a task card, you should be able to change the current status of the task between the different columns in the Kanban work board. You should be able to leave an unlimited number of comments for a particular card. You should be able to, from that task card, assign one of the valid users.
-```
-
-You can continue to refine the spec with more details using `/infrakit:clarify`:
-
-```bash
-/infrakit:clarify When you first launch Taskify, it's going to give you a list of the five users to pick from. There will be no password required. When you click on a user, you go into the main view, which displays the list of projects. When you click on a project, you open the Kanban board for that project. You're going to see the columns. You'll be able to drag and drop cards back and forth between different columns. You will see any cards that are assigned to you, the currently logged in user, in a different color from all the other ones, so you can quickly see yours. You can edit any comments that you make, but you can't edit comments that other people made. You can delete any comments that you made, but you can't delete comments anybody else made.
-```
-
-### Step 4: Validate the Spec
-
-Validate the specification checklist using the `/infrakit:checklist` command:
-
-```bash
-/infrakit:checklist
-```
-
-### Step 5: Generate Technical Plan with `/infrakit:plan`
-
-Be specific about your tech stack and technical requirements:
-
-```bash
-/infrakit:plan We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API, tasks API, and a notifications API.
-```
-
-### Step 6: Define Tasks
-
-Generate an actionable task list using the `/infrakit:tasks` command:
-
-```bash
-/infrakit:tasks
-```
-
-### Step 7: Validate and Implement
-
-Have your AI agent audit the implementation plan using `/infrakit:analyze`:
-
-```bash
-/infrakit:analyze
-```
-
-Finally, implement the solution:
-
-```bash
-/infrakit:implement
-```
-
-> [!TIP]
-> **Phased Implementation**: For large projects like Taskify, consider implementing in phases (e.g., Phase 1: Basic project/task structure, Phase 2: Kanban functionality, Phase 3: Comments and assignments). This prevents context saturation and allows for validation at each stage.
+---
 
 ## Key Principles
 
-- **Be explicit** about what you're building and why
-- **Don't focus on tech stack** during specification phase
-- **Iterate and refine** your specifications before implementation
-- **Validate** the plan before coding begins
-- **Let the AI agent handle** the implementation details
-
-## Next Steps
-
-- Read the [complete methodology](../constraint-driven.md) for in-depth guidance
-- Check out [more examples](../templates) in the repository
-- Explore the [source code on GitHub](https://github.com/github/infrakit)
+- **Never skip the spec** — the spec is the source of truth; the plan and tasks derive from it
+- **One question at a time** — every command prompts interactively and waits for your response
+- **Reviewer personas are read-only** — architect-review and security-review never modify files without your explicit approval
+- **Standards are non-negotiable** — the Crossplane Engineer will flag any conflict with coding-style.md before writing code

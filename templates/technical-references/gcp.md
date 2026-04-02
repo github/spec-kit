@@ -8,45 +8,21 @@ GCP documentation and Crossplane provider context.
 
 ### Lookup Flow (Prioritized)
 
-GCP does not have a dedicated provider MCP server. Follow this fallback chain:
+GCP does not have a dedicated provider MCP server. Use `search_web` as the primary tool:
 
-1. **DeepWiki MCP** (Primary)
-2. **search_web** (Final fallback)
+1. **search_web** (Primary)
 
-### 1. Primary: DeepWiki MCP
-
-Use DeepWiki as the primary tool for GCP documentation:
-
-```
-deepwiki_fetch(
-  "https://cloud.google.com/<service>/docs/",
-  mode: "crawl",
-  maxDepth: 2
-)
-
-Examples:
-- deepwiki_fetch("https://cloud.google.com/sql/docs/", "crawl", 2)
-- deepwiki_fetch("https://cloud.google.com/storage/docs/", "single", 1)
-- deepwiki_fetch("https://cloud.google.com/kubernetes-engine/docs/", "crawl", 2)
-```
-
-**Best Practices:**
-- Use targeted URLs (specific service documentation pages)
-- Start with `mode: "single"` for specific topics
-- Use `mode: "crawl"` with `maxDepth: 2` for broader exploration
-- Avoid deep crawls to prevent rate limiting
-
-### 2. Final Fallback: search_web
-
-Use ONLY when all MCP tools fail or are unavailable:
+### 1. Primary: search_web
 
 ```
 search_web("site:cloud.google.com <service> <topic>")
 search_web("site:marketplace.upbound.io provider-gcp-<family> <Resource> apiVersion")
+search_web("site:doc.crds.dev provider-gcp-<family> <Resource> v1beta1")
 
 Examples:
 - search_web("site:cloud.google.com Cloud SQL PostgreSQL configuration")
 - search_web("site:marketplace.upbound.io provider-gcp-sql DatabaseInstance apiVersion")
+- search_web("site:doc.crds.dev upbound provider-gcp DatabaseInstance v1beta1")
 ```
 
 ---

@@ -1,8 +1,11 @@
 ---
-description: Perform a non-destructive cross-artifact consistency and quality analysis across spec.md, plan.md, and tasks.md after task generation.
-scripts:
-  sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
+description: "Analyze a track's spec and plan for consistency, gaps, and alignment. Uses the Cloud Solutions Engineer persona."
+argument-hint: "<track-name>"
+handoffs:
+  - label: "Generate Tasks"
+    agent: "infrakit:tasks"
+  - label: "Implement Track"
+    agent: "infrakit:implement"
 ---
 
 ## User Input
@@ -11,177 +14,223 @@ scripts:
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+You **MUST** parse the track name from `$ARGUMENTS`. If not provided, ask:
 
-## Goal
+> "Which track would you like to analyze?
+> Example: `sql-instance-20260101-120000`"
 
-Identify inconsistencies, duplications, ambiguities, and underspecified items across the three core artifacts (`spec.md`, `plan.md`, `tasks.md`) before implementation. This command MUST run only after `/infrakit:tasks` has successfully produced a complete `tasks.md`.
+**WAIT** for response before continuing.
 
-## Operating Constraints
+---
 
-**STRICTLY READ-ONLY**: Do **not** modify any files. Output a structured analysis report. Offer an optional remediation plan (user must explicitly approve before any follow-up editing commands would be invoked manually).
+## System Directive
 
-**Project Context Authority**: The project project context (`/memory/project-context.md`) is **non-negotiable** within this analysis scope. Project Context conflicts are automatically CRITICAL and require adjustment of the spec, plan, or tasks—not dilution, reinterpretation, or silent ignoring of the principle. If a principle itself needs to change, that must occur in a separate, explicit project context update outside `/infrakit:analyze`.
+You are the **Cloud Solutions Engineer** performing a cross-artifact consistency analysis for an infrastructure track. You are verifying that the spec and plan are internally consistent, complete, and aligned with the project context.
 
-## Execution Steps
+**This command is READ-ONLY. Do not modify any files.**
 
-### 1. Initialize Analysis Context
+Read `.infrakit/agent_personas/cloud_solutions_engineer.md` for detailed persona behavior.
 
-Run `{SCRIPT}` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS. Derive absolute paths:
+---
 
-- SPEC = FEATURE_DIR/spec.md
-- PLAN = FEATURE_DIR/plan.md
-- TASKS = FEATURE_DIR/tasks.md
+## Step 1: Setup Check
 
-Abort with an error message if any required file is missing (instruct the user to run missing prerequisite command).
-For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+Verify required files exist:
 
-### 2. Load Artifacts (Progressive Disclosure)
+| File | Path | Required |
+|------|------|----------|
+| Project Context | `.infrakit/context.md` | ✅ Yes |
+| Spec | `.infrakit/tracks/<track-name>/spec.md` | ✅ Yes |
+| Plan | `.infrakit/tracks/<track-name>/plan.md` | ✅ Yes |
+| Tasks | `.infrakit/tracks/<track-name>/tasks.md` | ⚠️ Optional |
 
-Load only the minimal necessary context from each artifact:
+**If context.md is missing:**
+> "❌ Project context not found. Run `/infrakit:setup` first."
+**HALT**
 
-**From spec.md:**
+**If spec.md is missing:**
+> "❌ `spec.md` not found in `.infrakit/tracks/<track-name>/`. Run `/infrakit:new_composition <track-name>` to create the spec."
+**HALT**
 
-- Overview/Context
-- Functional Requirements
-- Non-Functional Requirements
-- User Stories
-- Edge Cases (if present)
+**If plan.md is missing:**
+> "❌ `plan.md` not found in `.infrakit/tracks/<track-name>/`. Run `/infrakit:plan <track-name>` to generate the plan."
+**HALT**
 
-**From plan.md:**
+---
 
-- Architecture/stack choices
-- Data Model references
-- Phases
-- Technical constraints
+## Step 2: Load Artifacts
 
-**From tasks.md:**
+Read the following files:
 
-- Task IDs
-- Descriptions
-- Phase grouping
-- Parallel markers [P]
-- Referenced file paths
+1. `.infrakit/context.md` — Project standards (naming, API groups, security requirements)
+2. `.infrakit/tracks/<track-name>/spec.md` — What the resource should do
+3. `.infrakit/tracks/<track-name>/plan.md` — How it will be implemented
+4. `.infrakit/tracks/<track-name>/tasks.md` — Task list (if present)
 
-**From project context:**
+---
 
-- Load `/memory/project-context.md` for principle validation
+## Step 3: Build Semantic Model
 
-### 3. Build Semantic Models
+Create internal representations:
 
-Create internal representations (do not include raw artifacts in output):
+- **Requirements inventory**: Every functional requirement from spec.md with a stable key
+- **Parameters inventory**: All user inputs defined in spec.md
+- **Outputs inventory**: All status fields defined in spec.md
+- **Plan task inventory**: Every task in plan.md with its purpose
+- **Task coverage mapping**: Which spec requirements are covered by which plan tasks
+- **Context rule set**: Extract MUST/SHOULD rules from context.md
 
-- **Requirements inventory**: Each functional + non-functional requirement with a stable key (derive slug based on imperative phrase; e.g., "User can upload file" → `user-can-upload-file`)
-- **User story/action inventory**: Discrete user actions with acceptance criteria
-- **Task coverage mapping**: Map each task to one or more requirements or stories (inference by keyword / explicit reference patterns like IDs or key phrases)
-- **Project Context rule set**: Extract principle names and MUST/SHOULD normative statements
+---
 
-### 4. Detection Passes (Token-Efficient Analysis)
+## Step 4: Run Analysis Passes
 
-Focus on high-signal findings. Limit to 50 findings total; aggregate remainder in overflow summary.
+### A. Spec ↔ Plan Alignment
 
-#### A. Duplication Detection
+For each section in spec.md, verify plan.md addresses it:
 
-- Identify near-duplicate requirements
-- Mark lower-quality phrasing for consolidation
+| Spec Section | Covered in Plan? | Notes |
+|--------------|-----------------|-------|
+| User Inputs (Parameters) | ✅/❌ | |
+| Expected Outputs (Status) | ✅/❌ | |
+| Connection Secret Keys | ✅/❌ | |
+| Security Requirements | ✅/❌ | |
+| Configuration Constraints | ✅/❌ | |
+| Acceptance Criteria | ✅/❌ | |
 
-#### B. Ambiguity Detection
+### B. Plan Completeness
 
-- Flag vague adjectives (fast, scalable, secure, intuitive, robust) lacking measurable criteria
-- Flag unresolved placeholders (TODO, TKTK, ???, `<placeholder>`, etc.)
+Check plan.md for:
+- XRD definition task (definition.yaml)
+- Composition task (composition.yaml)
+- Example claim task (claim.yaml)
+- README/documentation task
+- Validation task
 
-#### C. Underspecification
+### C. Context Alignment
 
-- Requirements with verbs but missing object or measurable outcome
-- User stories missing acceptance criteria alignment
-- Tasks referencing files or components not defined in spec/plan
+Verify spec and plan follow project standards:
+- API group matches context.md
+- Naming conventions followed
+- Security requirements satisfied
+- Provider matches context.md defaults
 
-#### D. Project Context Alignment
+### D. Parameter Coverage
 
-- Any requirement or plan element conflicting with a MUST principle
-- Missing mandated sections or quality gates from project context
+For every parameter in spec.md:
+- Does plan.md include a patch mapping for it?
+- Is the XRD schema field defined?
 
-#### E. Coverage Gaps
+### E. Output Coverage
 
-- Requirements with zero associated tasks
-- Tasks with no mapped requirement/story
-- Non-functional requirements not reflected in tasks (e.g., performance, security)
+For every status field in spec.md:
+- Does plan.md include a `ToCompositeFieldPath` patch for it?
 
-#### F. Inconsistency
+### F. Ambiguity and Gaps
 
-- Terminology drift (same concept named differently across files)
-- Data entities referenced in plan but absent in spec (or vice versa)
-- Task ordering contradictions (e.g., integration tasks before foundational setup tasks without dependency note)
-- Conflicting requirements (e.g., one requires Next.js while other specifies Vue)
+- Vague requirements without measurable criteria
+- Missing acceptance criteria
+- Unresolved TODOs or placeholders
 
-### 5. Severity Assignment
+---
 
-Use this heuristic to prioritize findings:
+## Step 5: Severity Assignment
 
-- **CRITICAL**: Violates project context MUST, missing core spec artifact, or requirement with zero coverage that blocks baseline functionality
-- **HIGH**: Duplicate or conflicting requirement, ambiguous security/performance attribute, untestable acceptance criterion
-- **MEDIUM**: Terminology drift, missing non-functional task coverage, underspecified edge case
-- **LOW**: Style/wording improvements, minor redundancy not affecting execution order
+| Severity | Meaning |
+|----------|---------|
+| 🔴 CRITICAL | Spec and plan directly contradict, or a required section is missing entirely |
+| 🟡 HIGH | Required parameter or output has no implementation mapping |
+| 🟠 MEDIUM | Naming or convention violation, incomplete coverage |
+| 🟢 LOW | Minor gaps, documentation improvements, suggestions |
 
-### 6. Produce Compact Analysis Report
+---
 
-Output a Markdown report (no file writes) with the following structure:
+## Step 6: Output Analysis Report
 
-## Specification Analysis Report
+```
+# Track Analysis Report: <track-name>
 
-| ID | Category | Severity | Location(s) | Summary | Recommendation |
-|----|----------|----------|-------------|---------|----------------|
-| A1 | Duplication | HIGH | spec.md:L120-134 | Two similar requirements ... | Merge phrasing; keep clearer version |
+**Date**: <YYYY-MM-DD>
+**Spec**: .infrakit/tracks/<track-name>/spec.md
+**Plan**: .infrakit/tracks/<track-name>/plan.md
 
-(Add one row per finding; generate stable IDs prefixed by category initial.)
+---
 
-**Coverage Summary Table:**
+## Summary
 
-| Requirement Key | Has Task? | Task IDs | Notes |
-|-----------------|-----------|----------|-------|
+| Metric | Value |
+|--------|-------|
+| Total Requirements | N |
+| Requirements Covered in Plan | N (X%) |
+| Parameters with Patch Mappings | N/N |
+| Outputs with Patch Mappings | N/N |
+| Critical Issues | N |
+| High Issues | N |
+| Medium Issues | N |
+| Low Issues | N |
 
-**Project Context Alignment Issues:** (if any)
+---
 
-**Unmapped Tasks:** (if any)
+## Overall Verdict
 
-**Metrics:**
+✅ ALIGNED — Ready for implementation
+⚠️ MINOR GAPS — Can proceed, see recommendations
+❌ NOT ALIGNED — Resolve issues before implementing
 
-- Total Requirements
-- Total Tasks
-- Coverage % (requirements with >=1 task)
-- Ambiguity Count
-- Duplication Count
-- Critical Issues Count
+---
 
-### 7. Provide Next Actions
+## Findings
 
-At end of report, output a concise Next Actions block:
+| ID | Severity | Category | Location | Issue | Recommendation |
+|----|----------|----------|----------|-------|----------------|
+| A1 | 🔴 CRITICAL | Spec-Plan Gap | spec.md | ... | ... |
+| A2 | 🟡 HIGH | Missing Patch | plan.md | ... | ... |
+| A3 | 🟢 LOW | Naming | spec.md | ... | ... |
 
-- If CRITICAL issues exist: Recommend resolving before `/infrakit:implement`
-- If only LOW/MEDIUM: User may proceed, but provide improvement suggestions
-- Provide explicit command suggestions: e.g., "Run /infrakit:specify with refinement", "Run /infrakit:plan to adjust architecture", "Manually edit tasks.md to add coverage for 'performance-metrics'"
+---
 
-### 8. Offer Remediation
+## Parameter Coverage
 
-Ask the user: "Would you like me to suggest concrete remediation edits for the top N issues?" (Do NOT apply them automatically.)
+| Parameter | In Spec | In Plan (Patch) | XRD Field |
+|-----------|---------|-----------------|-----------|
+| <param> | ✅ | ✅/❌ | ✅/❌ |
 
-## Operating Principles
+---
 
-### Context Efficiency
+## Output Coverage
 
-- **Minimal high-signal tokens**: Focus on actionable findings, not exhaustive documentation
-- **Progressive disclosure**: Load artifacts incrementally; don't dump all content into analysis
-- **Token-efficient output**: Limit findings table to 50 rows; summarize overflow
-- **Deterministic results**: Rerunning without changes should produce consistent IDs and counts
+| Status Field | In Spec | In Plan (Patch) |
+|--------------|---------|-----------------|
+| <field> | ✅ | ✅/❌ |
 
-### Analysis Guidelines
+---
 
-- **NEVER modify files** (this is read-only analysis)
-- **NEVER hallucinate missing sections** (if absent, report them accurately)
-- **Prioritize project context violations** (these are always CRITICAL)
-- **Use examples over exhaustive rules** (cite specific instances, not generic patterns)
-- **Report zero issues gracefully** (emit success report with coverage statistics)
+## Context Alignment
 
-## Context
+| Check | Status | Notes |
+|-------|--------|-------|
+| API group matches context.md | ✅/❌ | |
+| Naming conventions followed | ✅/❌ | |
+| Security requirements addressed | ✅/❌ | |
+```
 
-{ARGS}
+---
+
+## Step 7: Offer Remediation
+
+After presenting the report:
+
+> "Would you like me to suggest concrete fixes for the top issues? (yes/no)
+>
+> Note: I will NOT apply any changes automatically — you must approve each fix."
+
+**WAIT** for response. If yes, suggest specific changes per finding.
+
+---
+
+## Step 8: Next Actions
+
+Provide clear next steps based on verdict:
+
+- **ALIGNED**: "Run `/infrakit:tasks <track-name>` to generate the task list"
+- **MINOR GAPS**: "Consider fixing HIGH/MEDIUM issues, then run `/infrakit:tasks <track-name>`"
+- **NOT ALIGNED**: "Resolve CRITICAL issues before proceeding. Update spec or plan, then re-run `/infrakit:analyze <track-name>`"

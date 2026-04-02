@@ -1,8 +1,11 @@
 ---
-description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
-scripts:
-  sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
+description: "Execute the implementation plan for a track by working through all tasks in tasks.md."
+argument-hint: "<track-name>"
+handoffs:
+  - label: "Review Implementation"
+    agent: "infrakit:review"
+  - label: "Check Status"
+    agent: "infrakit:status"
 ---
 
 ## User Input
@@ -11,128 +14,226 @@ scripts:
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+You **MUST** parse the track name from `$ARGUMENTS`. If not provided, ask:
 
-## Outline
+> "Which track would you like to implement?
+> Example: `sql-instance-20260101-120000`"
 
-1. Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+**WAIT** for response before continuing.
 
-2. **Check checklists status** (if FEATURE_DIR/checklists/ exists):
-   - Scan all checklist files in the checklists/ directory
-   - For each checklist, count:
-     - Total items: All lines matching `- [ ]` or `- [X]` or `- [x]`
-     - Completed items: Lines matching `- [X]` or `- [x]`
-     - Incomplete items: Lines matching `- [ ]`
-   - Create a status table:
+---
 
-     ```text
-     | Checklist | Total | Completed | Incomplete | Status |
-     |-----------|-------|-----------|------------|--------|
-     | ux.md     | 12    | 12        | 0          | ✓ PASS |
-     | test.md   | 8     | 5         | 3          | ✗ FAIL |
-     | security.md | 6   | 6         | 0          | ✓ PASS |
-     ```
+## System Directive
 
-   - Calculate overall status:
-     - **PASS**: All checklists have 0 incomplete items
-     - **FAIL**: One or more checklists have incomplete items
+You are executing the implementation for an infrastructure track. You will adopt the appropriate engineering persona based on the IaC tool configured for this project, then work through the tasks in `tasks.md` one by one, marking each complete as you go.
 
-   - **If any checklist is incomplete**:
-     - Display the table with incomplete item counts
-     - **STOP** and ask: "Some checklists are incomplete. Do you want to proceed with implementation anyway? (yes/no)"
-     - Wait for user response before continuing
-     - If user says "no" or "wait" or "stop", halt execution
-     - If user says "yes" or "proceed" or "continue", proceed to step 3
+---
 
-   - **If all checklists are complete**:
-     - Display the table showing all checklists passed
-     - Automatically proceed to step 3
+## Step 1: Setup Check
 
-3. Load and analyze the implementation context:
-   - **REQUIRED**: Read tasks.md for the complete task list and execution plan
-   - **REQUIRED**: Read plan.md for tech stack, architecture, and file structure
-   - **IF EXISTS**: Read data-model.md for entities and relationships
-   - **IF EXISTS**: Read contracts/ for API specifications and test requirements
-   - **IF EXISTS**: Read research.md for technical decisions and constraints
-   - **IF EXISTS**: Read quickstart.md for integration scenarios
+Verify required configuration files exist:
 
-4. **Project Setup Verification**:
-   - **REQUIRED**: Create/verify ignore files based on actual project setup:
+| File | Path | Required |
+|------|------|----------|
+| Project Context | `.infrakit/context.md` | ✅ Yes |
+| Coding Style | `.infrakit/coding-style.md` | ✅ Yes |
+| Tagging | `.infrakit/tagging.md` | ✅ Yes |
+| IaC Config | `.infrakit/config.yaml` | ✅ Yes |
 
-   **Detection & Creation Logic**:
-   - Check if the following command succeeds to determine if the repository is a git repo (create/verify .gitignore if so):
+**If any setup file is missing:**
+> "❌ Project not fully initialized. Run `/infrakit:setup` first."
+**HALT**
 
-     ```sh
-     git rev-parse --git-dir 2>/dev/null
-     ```
+---
 
-   - Check if Dockerfile* exists or Docker in plan.md → create/verify .dockerignore
-   - Check if .eslintrc* exists → create/verify .eslintignore
-   - Check if eslint.config.* exists → ensure the config's `ignores` entries cover required patterns
-   - Check if .prettierrc* exists → create/verify .prettierignore
-   - Check if .npmrc or package.json exists → create/verify .npmignore (if publishing)
-   - Check if terraform files (*.tf) exist → create/verify .terraformignore
-   - Check if .helmignore needed (helm charts present) → create/verify .helmignore
+## Step 2: Verify Track Files
 
-   **If ignore file already exists**: Verify it contains essential patterns, append missing critical patterns only
-   **If ignore file missing**: Create with full pattern set for detected technology
+Verify the track has all required artifacts:
 
-   **Common Patterns by Technology** (from plan.md tech stack):
-   - **Node.js/JavaScript/TypeScript**: `node_modules/`, `dist/`, `build/`, `*.log`, `.env*`
-   - **Python**: `__pycache__/`, `*.pyc`, `.venv/`, `venv/`, `dist/`, `*.egg-info/`
-   - **Java**: `target/`, `*.class`, `*.jar`, `.gradle/`, `build/`
-   - **C#/.NET**: `bin/`, `obj/`, `*.user`, `*.suo`, `packages/`
-   - **Go**: `*.exe`, `*.test`, `vendor/`, `*.out`
-   - **Ruby**: `.bundle/`, `log/`, `tmp/`, `*.gem`, `vendor/bundle/`
-   - **PHP**: `vendor/`, `*.log`, `*.cache`, `*.env`
-   - **Rust**: `target/`, `debug/`, `release/`, `*.rs.bk`, `*.rlib`, `*.prof*`, `.idea/`, `*.log`, `.env*`
-   - **Kotlin**: `build/`, `out/`, `.gradle/`, `.idea/`, `*.class`, `*.jar`, `*.iml`, `*.log`, `.env*`
-   - **C++**: `build/`, `bin/`, `obj/`, `out/`, `*.o`, `*.so`, `*.a`, `*.exe`, `*.dll`, `.idea/`, `*.log`, `.env*`
-   - **C**: `build/`, `bin/`, `obj/`, `out/`, `*.o`, `*.a`, `*.so`, `*.exe`, `Makefile`, `config.log`, `.idea/`, `*.log`, `.env*`
-   - **Swift**: `.build/`, `DerivedData/`, `*.swiftpm/`, `Packages/`
-   - **R**: `.Rproj.user/`, `.Rhistory`, `.RData`, `.Ruserdata`, `*.Rproj`, `packrat/`, `renv/`
-   - **Universal**: `.DS_Store`, `Thumbs.db`, `*.tmp`, `*.swp`, `.vscode/`, `.idea/`
+| File | Path | Required |
+|------|------|----------|
+| Spec | `.infrakit/tracks/<track-name>/spec.md` | ✅ Yes |
+| Plan | `.infrakit/tracks/<track-name>/plan.md` | ✅ Yes |
+| Tasks | `.infrakit/tracks/<track-name>/tasks.md` | ✅ Yes |
 
-   **Tool-Specific Patterns**:
-   - **Docker**: `node_modules/`, `.git/`, `Dockerfile*`, `.dockerignore`, `*.log*`, `.env*`, `coverage/`
-   - **ESLint**: `node_modules/`, `dist/`, `build/`, `coverage/`, `*.min.js`
-   - **Prettier**: `node_modules/`, `dist/`, `build/`, `coverage/`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`
-   - **Terraform**: `.terraform/`, `*.tfstate*`, `*.tfvars`, `.terraform.lock.hcl`
-   - **Kubernetes/k8s**: `*.secret.yaml`, `secrets/`, `.kube/`, `kubeconfig*`, `*.key`, `*.crt`
+**If spec.md is missing:**
+> "❌ `spec.md` not found. Run `/infrakit:new_composition <track-name>` first."
+**HALT**
 
-5. Parse tasks.md structure and extract:
-   - **Task phases**: Setup, Tests, Core, Integration, Polish
-   - **Task dependencies**: Sequential vs parallel execution rules
-   - **Task details**: ID, description, file paths, parallel markers [P]
-   - **Execution flow**: Order and dependency requirements
+**If plan.md is missing:**
+> "❌ `plan.md` not found. Run `/infrakit:plan <track-name>` first."
+**HALT**
 
-6. Execute implementation following the task plan:
-   - **Phase-by-phase execution**: Complete each phase before moving to the next
-   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together  
-   - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
-   - **File-based coordination**: Tasks affecting the same files must run sequentially
-   - **Validation checkpoints**: Verify each phase completion before proceeding
+**If tasks.md is missing:**
+> "❌ `tasks.md` not found. Run `/infrakit:tasks <track-name>` first."
+**HALT**
 
-7. Implementation execution rules:
-   - **Setup first**: Initialize project structure, dependencies, configuration
-   - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios
-   - **Core development**: Implement models, services, CLI commands, endpoints
-   - **Integration work**: Database connections, middleware, logging, external services
-   - **Polish and validation**: Unit tests, performance optimization, documentation
+---
 
-8. Progress tracking and error handling:
-   - Report progress after each completed task
-   - Halt execution if any non-parallel task fails
-   - For parallel tasks [P], continue with successful tasks, report failed ones
-   - Provide clear error messages with context for debugging
-   - Suggest next steps if implementation cannot proceed
-   - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
+## Step 3: Detect IaC Tool and Adopt Persona
 
-9. Completion validation:
-   - Verify all required tasks are completed
-   - Check that implemented features match the original specification
-   - Validate that tests pass and coverage meets requirements
-   - Confirm the implementation follows the technical plan
-   - Report final status with summary of completed work
+Read `.infrakit/config.yaml` to detect the IaC tool.
 
-Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/infrakit:tasks` first to regenerate the task list.
+**If `iac_tool: crossplane`:**
+
+> "Adopting the **Crossplane Engineer** persona for implementation."
+
+Read these files before writing any code:
+- `.infrakit/coding-style.md` — **MANDATORY**: all code must follow these standards exactly
+- `.infrakit/tagging.md` — **MANDATORY**: all managed resources must include required tags
+- `.infrakit/agent_personas/crossplane_engineer.md` — detailed persona behavior (if present)
+
+**If IaC tool is not recognized:**
+> "⚠️ Unknown IaC tool in `.infrakit/config.yaml`. Proceeding in generic mode."
+
+---
+
+## Step 4: Load Track Artifacts
+
+Read all track files:
+
+1. `.infrakit/context.md` — Project standards
+2. `.infrakit/tracks/<track-name>/spec.md` — What to build
+3. `.infrakit/tracks/<track-name>/plan.md` — Architecture and file structure
+4. `.infrakit/tracks/<track-name>/tasks.md` — Ordered task list
+
+---
+
+## Step 5: Present Task Summary
+
+Before starting, display the task summary:
+
+> "**Starting implementation for track**: `<track-name>`
+>
+> | Metric | Value |
+> |--------|-------|
+> | Total Tasks | N |
+> | Already Completed | N |
+> | Remaining | N |
+>
+> Beginning implementation..."
+
+---
+
+## Step 6: Execute Tasks
+
+**For each incomplete task (lines matching `- [ ]`) in tasks.md:**
+
+1. Read the task description carefully
+2. Execute the task — create or edit the required files
+3. After completing, mark it done in tasks.md: change `- [ ]` to `- [x]`
+4. Report: "✅ Task `<ID>` complete: `<task description>`"
+
+**Task execution rules:**
+
+- Execute tasks **in order** unless marked `[P]` (parallel-safe)
+- `[P]` tasks touch different files and can run together
+- If a task fails: report the error clearly, HALT, and ask the user how to proceed
+- Do not skip tasks without explicit user approval
+
+---
+
+## Step 7: Coding Standards Enforcement
+
+**MANDATORY** — apply to every file written:
+
+- Follow all patterns in `.infrakit/coding-style.md` exactly
+- Apply all required tags from `.infrakit/tagging.md` to every managed resource
+- Use Pipeline mode for all Crossplane compositions — never Resources mode
+- Add `providerConfigRef` to every managed resource
+- Never hardcode secrets, passwords, or API keys
+
+If a task appears to conflict with coding standards, flag it **before** writing:
+
+> "⚠️ This task conflicts with coding-style.md: `<explain conflict>`. How would you like to proceed?"
+
+**WAIT** for response before continuing.
+
+---
+
+## Step 8: Post-Implementation Review
+
+After all tasks are marked `[x]`:
+
+> "✅ All tasks complete for track `<track-name>`.
+>
+> Proceeding to implementation review..."
+
+**For Crossplane projects**: Hand off to `/infrakit:review <resource-directory>` for code review.
+
+**For other IaC tools**: Hand off to `/infrakit:architect-review <track-name>` for review.
+
+---
+
+## Step 9: Generate .infrakit_context.md
+
+After the review is approved, generate or update `.infrakit_context.md` in the resource directory:
+
+```markdown
+# InfraKit Context: <resource-name>
+
+## Track
+- **Track Name**: <track-name>
+- **Type**: new_composition / update_composition
+- **Completed**: <YYYY-MM-DD>
+
+## What Was Built
+<Brief description of what was implemented>
+
+## Files
+
+| File | Description |
+|------|-------------|
+| `definition.yaml` | XRD: <brief description> |
+| `composition.yaml` | Composition: <brief description> |
+| `claim.yaml` | Example claim |
+| `README.md` | Usage documentation |
+
+## Key Design Decisions
+- <decision 1>
+- <decision 2>
+
+## XRD
+- **Kind**: <XR Kind> / <Claim Kind>
+- **API Group**: <group>
+- **Version**: <version>
+
+## Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| <param> | <type> | <default> | <desc> |
+
+## Outputs
+
+| Field | Description |
+|-------|-------------|
+| <field> | <desc> |
+```
+
+---
+
+## Step 10: Update Track Registry
+
+Update `.infrakit/tracks.md` — change the track's status to `done`:
+
+Find the row for `<track-name>` and update Status to `✅ done`.
+
+> "✅ **Implementation complete!**
+>
+> **Track**: `<track-name>`
+> **Status**: done
+>
+> Run `/infrakit:status` to see all track statuses."
+
+---
+
+## Error Handling
+
+| Error | Action |
+|-------|--------|
+| Setup files missing | Halt, direct to `/infrakit:setup` |
+| tasks.md missing | Halt, direct to `/infrakit:tasks <track-name>` |
+| Task execution fails | Report error, halt, ask user how to proceed |
+| Coding style conflict | Flag before writing, wait for user |
+| Unknown IaC tool | Warn, proceed in generic mode |

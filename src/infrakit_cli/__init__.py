@@ -1091,7 +1091,7 @@ def initialize_iac_config(project_path: Path, iac_tool: str, ai_assistant: str, 
     - .infrakit/coding-style.md — default coding standards
     - .infrakit/tracks.md — master resource registry
     - .infrakit/agent_personas/ — IaC-specific agent definitions
-    - .infrakit_tracks/ — track directories
+    - .infrakit/tracks/ — track directories
     - technical-docs/ — provider and tool documentation
     - IaC-native commands in the agent's commands directory
     """
@@ -1146,17 +1146,38 @@ def initialize_iac_config(project_path: Path, iac_tool: str, ai_assistant: str, 
     if not tracks_md.exists():
         tracks_md.write_text(
             "# Infrastructure Resource Registry\n\n"
-            "| Resource | Track Directory | Status |\n"
-            "|----------|----------------|--------|\n"
-            "| (none yet) | — | — |\n",
+            "Track all infrastructure compositions and their current status.\n\n"
+            "## Status Reference\n\n"
+            "| Symbol | Meaning |\n"
+            "|--------|---------|\n"
+            "| 🔵 `initializing` | Track created, spec in progress |\n"
+            "| 📝 `spec-generated` | Spec confirmed, ready for plan |\n"
+            "| 📋 `planned` | Plan generated, ready for implementation |\n"
+            "| ⚙️ `in-progress` | Implementation underway |\n"
+            "| ✅ `done` | Implementation complete and reviewed |\n"
+            "| ❌ `blocked` | Blocked, needs attention |\n\n"
+            "---\n\n"
+            "## Tracks\n\n"
+            "| Track | Type | Directory | Status | Created |\n"
+            "|-------|------|-----------|--------|---------|\n"
+            "| (none yet) | — | — | — | — |\n",
+            encoding="utf-8",
+        )
+
+    # tagging.md — tagging constraints (populated by /infrakit:setup)
+    tagging_md = infrakit_dir / "tagging.md"
+    if not tagging_md.exists():
+        tagging_md.write_text(
+            "# Tagging Constraints\n\n"
+            "> Run `/infrakit:setup` to configure your tagging requirements.\n",
             encoding="utf-8",
         )
 
     # memory directory (for project context)
     (infrakit_dir / "memory").mkdir(parents=True, exist_ok=True)
 
-    # .infrakit_tracks/ directory
-    tracks_dir = project_path / ".infrakit_tracks"
+    # .infrakit/tracks/ — track working directories
+    tracks_dir = infrakit_dir / "tracks"
     tracks_dir.mkdir(parents=True, exist_ok=True)
 
     # Copy IaC-specific agents
@@ -1200,24 +1221,26 @@ def initialize_iac_config(project_path: Path, iac_tool: str, ai_assistant: str, 
 
     cmds_dest.mkdir(parents=True, exist_ok=True)
 
-    # Copy generic commands from templates/commands/
+    # Copy generic commands from templates/commands/ (filtered by iac_config generic_commands list)
     generic_commands_dir = script_dir / "templates" / "commands"
+    allowed_generic = set(iac_cfg.get("generic_commands", []))
     generic_count = 0
     if generic_commands_dir.is_dir():
         for cmd_file in generic_commands_dir.iterdir():
-            if cmd_file.is_file() and cmd_file.suffix == ".md":
+            if cmd_file.is_file() and cmd_file.suffix == ".md" and cmd_file.stem in allowed_generic:
                 dest_name = f"infrakit:{cmd_file.stem}{command_ext}"
                 dest = cmds_dest / dest_name
                 if not dest.exists():
                     shutil.copy2(cmd_file, dest)
                     generic_count += 1
 
-    # Copy IaC-native commands from templates/iac/<tool>/commands/
+    # Copy IaC-native commands from templates/iac/<tool>/commands/ (filtered by iac_config iac_commands list)
     iac_commands_dir = iac_templates_dir / "commands"
+    allowed_iac = set(iac_cfg.get("iac_commands", []))
     iac_count = 0
     if iac_commands_dir.is_dir():
         for cmd_file in iac_commands_dir.iterdir():
-            if cmd_file.is_file() and cmd_file.suffix == ".md":
+            if cmd_file.is_file() and cmd_file.suffix == ".md" and cmd_file.stem in allowed_iac:
                 dest_name = f"infrakit:{cmd_file.stem}{command_ext}"
                 dest = cmds_dest / dest_name
                 if not dest.exists():

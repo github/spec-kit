@@ -12,8 +12,7 @@ Follow this fallback chain for Azure documentation:
 
 1. **microsoft-learn MCP** (Primary)
 2. **azure-best-practices MCP** (Co-Primary for security/architecture)
-3. **DeepWiki MCP** (Secondary)
-4. **search_web** (Final fallback)
+3. **search_web** (Final fallback)
 
 ### 1. Primary: microsoft-learn MCP
 
@@ -52,31 +51,17 @@ search_best_practices("Azure <service> high availability")
 get_recommendation("Azure <architecture pattern>")
 ```
 
-### 3. Secondary: DeepWiki MCP
-
-Use for aggregating Azure documentation when MCPs fail:
-
-```
-deepwiki_fetch(
-  "https://learn.microsoft.com/en-us/azure/<service>/",
-  mode: "crawl",
-  maxDepth: 2
-)
-
-Examples:
-- deepwiki_fetch("https://learn.microsoft.com/azure/postgresql/", "crawl", 2)
-- deepwiki_fetch("https://learn.microsoft.com/azure/storage/", "single", 1)
-```
-
-### 4. Final Fallback: search_web
+### 3. Final Fallback: search_web
 
 ```
 search_web("site:marketplace.upbound.io provider-azure-<family> <Resource> apiVersion")
 search_web("site:learn.microsoft.com azure <service> <topic>")
+search_web("site:doc.crds.dev provider-azure-<family> <Resource> v1beta1")
 
 Examples:
 - search_web("site:marketplace.upbound.io provider-azure-dbforpostgresql FlexibleServer apiVersion")
 - search_web("site:learn.microsoft.com azure sql database security")
+- search_web("site:doc.crds.dev upbound provider-azure MSSQLDatabase v1beta1")
 ```
 
 ---

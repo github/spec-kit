@@ -2,94 +2,131 @@
 
 ## Prerequisites
 
-- **Linux/macOS** (or Windows; PowerShell scripts now supported without WSL)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Codebuddy CLI](https://www.codebuddy.ai/cli) or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+- Linux, macOS, or Windows
+- A [supported AI agent](../README.md#supported-ai-agents) (Claude Code, Gemini CLI, GitHub Copilot, Cursor, etc.)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
+- `kubectl` (for Crossplane projects)
+
+---
 
 ## Installation
 
-### Initialize a New Project
+### Option 1: Persistent Installation (Recommended)
 
-The easiest way to get started is to initialize a new project:
-
-```bash
-uvx --from git+https://github.com/github/infrakit.git infrakit init <PROJECT_NAME> --iac crossplane
-```
-
-Or initialize in the current directory:
+Install `infrakit-cli` as a persistent tool using `uv`:
 
 ```bash
-uvx --from git+https://github.com/github/infrakit.git infrakit init . --iac crossplane
-# or use the --here flag
-uvx --from git+https://github.com/github/infrakit.git infrakit init --here --iac crossplane
+uv tool install infrakit-cli --from git+https://github.com/neelneelpurk/infrakit.git
 ```
 
-### Choose your AI Agent
-
-You can proactively specify your AI agent during initialization:
+Then initialize your project:
 
 ```bash
-uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --ai claude --iac crossplane
-uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --ai gemini --iac crossplane
-uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --ai copilot --iac crossplane
-uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --ai codebuddy --iac crossplane
+# New project directory
+infrakit init my-infra --ai claude --iac crossplane
+
+# Or initialize in the current directory
+infrakit init --here --ai claude --iac crossplane
 ```
 
-### Specify Script Type (Shell vs PowerShell)
+### Option 2: One-Time Usage
 
-All automation scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants.
-
-Auto behavior:
-
-- Windows default: `ps`
-- Other OS default: `sh`
-- Interactive mode: you'll be prompted unless you pass `--script`
-
-Force a specific script type:
+Run without installing using `uvx`:
 
 ```bash
-uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --iac crossplane --script sh
-uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --iac crossplane --script ps
+uvx --from git+https://github.com/neelneelpurk/infrakit.git infrakit init my-infra --ai claude --iac crossplane
 ```
 
-### Ignore Agent Tools Check
+---
 
-If you prefer to get the templates without checking for the right tools:
+## Choosing Your AI Agent
+
+Specify your agent with `--ai`:
 
 ```bash
-uvx --from git+https://github.com/github/infrakit.git infrakit init <project_name> --ai claude --iac crossplane --ignore-agent-tools
+infrakit init my-infra --ai claude --iac crossplane
+infrakit init my-infra --ai gemini --iac crossplane
+infrakit init my-infra --ai copilot --iac crossplane
+infrakit init my-infra --ai cursor-agent --iac crossplane
 ```
+
+For a full list of supported agents see [Supported AI Agents](../README.md#supported-ai-agents).
+
+**Bring your own agent:**
+
+```bash
+infrakit init my-infra --ai generic --ai-commands-dir .myagent/commands/ --iac crossplane
+```
+
+---
 
 ## Verification
 
-After initialization, you should see the following commands available in your AI agent:
+After initialization, verify these command files are installed in your agent's commands directory:
 
-- `/infrakit:project_context` - Define infrastructure principles and standards
-- `/infrakit:specify_composition` - Create infrastructure resource specification
-- `/infrakit:plan_composition` - Architecture review + implementation plan
-- `/infrakit:implement_composition` - Generate XRD, Composition, and Claim YAML
-- `/infrakit:coding_style` - Specify and update the project coding style standards
-- `/infrakit:tagging` - Update project tagging requirements
+```bash
+# Claude Code
+ls .claude/commands/ | grep infrakit
 
-The `.infrakit/scripts` directory will contain both `.sh` and `.ps1` scripts.
+# Gemini CLI
+ls .gemini/commands/ | grep infrakit
+
+# GitHub Copilot
+ls .github/prompts/ | grep infrakit
+```
+
+You should see the following commands available in your AI agent:
+
+**Generic:**
+- `/infrakit:setup` — Configure project context, coding standards, and tagging requirements
+- `/infrakit:status` — Track progress dashboard
+- `/infrakit:analyze` — Spec/plan consistency check
+- `/infrakit:implement` — Execute implementation tasks
+- `/infrakit:architect-review` — Architecture review
+- `/infrakit:security-review` — Security compliance review
+- `/infrakit:tasks` — Generate task breakdown
+
+**Crossplane:**
+- `/infrakit:new_composition` — Multi-persona new resource workflow
+- `/infrakit:update_composition` — Update an existing composition
+- `/infrakit:plan` — Generate implementation plan
+- `/infrakit:review` — Code review against coding standards
+
+---
+
+## Initial Project Configuration
+
+After initialization, run `/infrakit:setup` in your AI agent to configure:
+
+1. **Project context** — cloud provider, API groups, naming conventions, environments
+2. **Coding standards** — Pipeline mode requirements, connection secrets, patch patterns
+3. **Tagging requirements** — required tags, enforcement rules, provider-specific field paths
+
+```
+/infrakit:setup
+```
+
+This creates `.infrakit/context.md`, `.infrakit/coding-style.md`, and `.infrakit/tagging.md` — the files that all InfraKit commands read before generating or reviewing code.
+
+---
 
 ## Troubleshooting
 
 ### Git Credential Manager on Linux
 
-If you're having issues with Git authentication on Linux, you can install Git Credential Manager:
-
 ```bash
 #!/usr/bin/env bash
 set -e
-echo "Downloading Git Credential Manager v2.6.1..."
 wget https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.6.1/gcm-linux_amd64.2.6.1.deb
-echo "Installing Git Credential Manager..."
 sudo dpkg -i gcm-linux_amd64.2.6.1.deb
-echo "Configuring Git to use GCM..."
 git config --global credential.helper manager
-echo "Cleaning up..."
 rm gcm-linux_amd64.2.6.1.deb
 ```
+
+### Slash commands not appearing
+
+1. Verify command files exist in the expected directory (see Verification above)
+2. Restart your AI agent or IDE completely
+3. Re-run `infrakit init --here --force --ai <your-agent> --iac crossplane` to refresh files

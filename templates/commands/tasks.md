@@ -1,17 +1,11 @@
 ---
-description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
-handoffs: 
-  - label: Analyze For Consistency
-    agent: infrakit:analyze
-    prompt: Run a project analysis for consistency
-    send: true
-  - label: Implement Project
-    agent: infrakit:implement
-    prompt: Start the implementation in phases
-    send: true
-scripts:
-  sh: scripts/bash/check-prerequisites.sh --json
-  ps: scripts/powershell/check-prerequisites.ps1 -Json
+description: "Generate an ordered task list for implementing a track. Writes tasks.md to the track directory."
+argument-hint: "<track-name>"
+handoffs:
+  - label: "Implement Track"
+    agent: "infrakit:implement"
+  - label: "Analyze for Consistency"
+    agent: "infrakit:analyze"
 ---
 
 ## User Input
@@ -20,121 +14,205 @@ scripts:
 $ARGUMENTS
 ```
 
-You **MUST** consider the user input before proceeding (if not empty).
+You **MUST** parse the track name from `$ARGUMENTS`. If not provided, ask:
 
-## Outline
+> "Which track would you like to generate tasks for?
+> Example: `sql-instance-20260101-120000`"
 
-1. **Setup**: Run `{SCRIPT}` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+**WAIT** for response before continuing.
 
-2. **Load design documents**: Read from FEATURE_DIR:
-   - **Required**: plan.md (tech stack, libraries, structure), spec.md (user stories with priorities)
-   - **Optional**: data-model.md (entities), contracts/ (interface contracts), research.md (decisions), quickstart.md (test scenarios)
-   - Note: Not all projects have all documents. Generate tasks based on what's available.
+---
 
-3. **Execute task generation workflow**:
-   - Load plan.md and extract tech stack, libraries, project structure
-   - Load spec.md and extract user stories with their priorities (P1, P2, P3, etc.)
-   - If data-model.md exists: Extract entities and map to user stories
-   - If contracts/ exists: Map interface contracts to user stories
-   - If research.md exists: Extract decisions for setup tasks
-   - Generate tasks organized by user story (see Task Generation Rules below)
-   - Generate dependency graph showing user story completion order
-   - Create parallel execution examples per user story
-   - Validate task completeness (each user story has all needed tasks, independently testable)
+## System Directive
 
-4. **Generate tasks.md**: Use `templates/tasks-template.md` as structure, fill with:
-   - Correct feature name from plan.md
-   - Phase 1: Setup tasks (project initialization)
-   - Phase 2: Foundational tasks (blocking prerequisites for all user stories)
-   - Phase 3+: One phase per user story (in priority order from spec.md)
-   - Each phase includes: story goal, independent test criteria, tests (if requested), implementation tasks
-   - Final Phase: Polish & cross-cutting concerns
-   - All tasks must follow the strict checklist format (see Task Generation Rules below)
-   - Clear file paths for each task
-   - Dependencies section showing story completion order
-   - Parallel execution examples per story
-   - Implementation strategy section (MVP first, incremental delivery)
+You are generating an actionable, ordered task list for implementing an infrastructure track. Tasks will be written to `.infrakit/tracks/<track-name>/tasks.md` and will be executed by `/infrakit:implement`.
 
-5. **Report**: Output path to generated tasks.md and summary:
-   - Total task count
-   - Task count per user story
-   - Parallel opportunities identified
-   - Independent test criteria for each story
-   - Suggested MVP scope (typically just User Story 1)
-   - Format validation: Confirm ALL tasks follow the checklist format (checkbox, ID, labels, file paths)
+**Each task must be specific enough to execute without additional context.**
 
-Context for task generation: {ARGS}
+---
 
-The tasks.md should be immediately executable - each task must be specific enough that an LLM can complete it without additional context.
+## Step 1: Setup Check
 
-## Task Generation Rules
+Verify required files exist:
 
-**CRITICAL**: Tasks MUST be organized by user story to enable independent implementation and testing.
+| File | Path | Required |
+|------|------|----------|
+| Project Context | `.infrakit/context.md` | ✅ Yes |
+| Spec | `.infrakit/tracks/<track-name>/spec.md` | ✅ Yes |
+| Plan | `.infrakit/tracks/<track-name>/plan.md` | ✅ Yes |
 
-**Tests are OPTIONAL**: Only generate test tasks if explicitly requested in the feature specification or if user requests TDD approach.
+**If context.md is missing:**
+> "❌ Project context not found. Run `/infrakit:setup` first."
+**HALT**
 
-### Checklist Format (REQUIRED)
+**If spec.md is missing:**
+> "❌ `spec.md` not found. Run `/infrakit:new_composition <track-name>` to create the spec."
+**HALT**
 
-Every task MUST strictly follow this format:
+**If plan.md is missing:**
+> "❌ `plan.md` not found. Run `/infrakit:plan <track-name>` to generate the plan."
+**HALT**
 
-```text
-- [ ] [TaskID] [P?] [Story?] Description with file path
+---
+
+## Step 2: Load Artifacts
+
+Read the following files:
+
+1. `.infrakit/context.md` — Project standards and naming conventions
+2. `.infrakit/coding-style.md` — Coding standards (for task constraints)
+3. `.infrakit/tagging.md` — Tagging requirements (for tag tasks)
+4. `.infrakit/tracks/<track-name>/spec.md` — Requirements and acceptance criteria
+5. `.infrakit/tracks/<track-name>/plan.md` — File structure, managed resources, patch mappings
+
+---
+
+## Step 3: Detect IaC Tool
+
+Read `.infrakit/config.yaml` to detect the IaC tool (crossplane, terraform, etc.). This determines the task phases and file names.
+
+---
+
+## Step 4: Generate Task List
+
+### For Crossplane Projects
+
+Break the plan into discrete, ordered tasks across 5 phases:
+
+**Phase 1: XRD (definition.yaml)**
+- Create the CompositeResourceDefinition with:
+  - API group from context.md
+  - XR Kind and Claim Kind from plan.md
+  - OpenAPI v3 schema for each parameter in spec.md (type, required, default, description)
+  - Status fields from spec.md
+  - Connection secret keys (if applicable)
+
+**Phase 2: Composition (composition.yaml)**
+- Create the Composition in Pipeline mode with `crossplane-contrib-function-patch-and-transform`
+- For each managed resource in plan.md: define with correct `apiVersion`, `kind`, and `forProvider` fields
+- Add `FromCompositeFieldPath` patches for each input parameter → managed resource field mapping
+- Add `ToCompositeFieldPath` patches for each status output ← `status.atProvider` field
+- Add required tag patches per tagging.md:
+  - `crossplane.io/claim-name` from `metadata.name`
+  - `crossplane.io/claim-namespace` from `metadata.namespace`
+  - `managed-by: crossplane`
+- Add `providerConfigRef: name: default` to every managed resource
+- Configure `writeConnectionSecretToRef` (if resource has endpoints)
+
+**Phase 3: Example Claim (claim.yaml)**
+- Create an example claim with all required parameters populated and commented
+
+**Phase 4: Documentation (README.md)**
+- Document the resource purpose, all parameters, connection secrets, and usage examples
+
+**Phase 5: Validation**
+- Run `crossplane render claim.yaml composition.yaml definition.yaml` to validate output
+- Verify all patches resolve correctly and no errors appear
+
+### For Other IaC Tools
+
+Adapt task phases based on the IaC tool's conventions (modules, templates, etc.).
+
+---
+
+## Step 5: Write tasks.md
+
+Write to `.infrakit/tracks/<track-name>/tasks.md` using this format:
+
+```markdown
+# Tasks: <track-name>
+
+Generated from:
+- `.infrakit/tracks/<track-name>/spec.md`
+- `.infrakit/tracks/<track-name>/plan.md`
+
+---
+
+## Phase 1: XRD Definition
+
+- [ ] T001 Create `<resource-dir>/definition.yaml` — CompositeResourceDefinition
+  - Kind: `<XR Kind>` / Claim Kind: `<Claim Kind>`
+  - API group: `<api-group>` (from context.md)
+  - Parameters: <list each parameter with type>
+  - Status fields: <list each output field>
+
+---
+
+## Phase 2: Composition
+
+- [ ] T002 Create `<resource-dir>/composition.yaml` — Pipeline mode Composition
+  - Composite type ref: `<XR Kind>.<api-group>`
+  - Managed resources: <list each resource from plan.md>
+
+- [ ] T003 [P] Add `FromCompositeFieldPath` patches for all input parameters
+  <list each: spec.parameters.<param> → <managed-resource>.spec.forProvider.<field>>
+
+- [ ] T004 [P] Add `ToCompositeFieldPath` patches for all status outputs
+  <list each: <managed-resource>.status.atProvider.<field> → status.<field>>
+
+- [ ] T005 Add required tag patches per tagging.md to every managed resource
+  - `crossplane.io/claim-name` from metadata.name
+  - `crossplane.io/claim-namespace` from metadata.namespace
+  - `managed-by: crossplane`
+
+- [ ] T006 Add `providerConfigRef: name: default` to every managed resource
+
+---
+
+## Phase 3: Example Claim
+
+- [ ] T007 Create `<resource-dir>/claim.yaml` — Example claim with all parameters and comments
+
+---
+
+## Phase 4: Documentation
+
+- [ ] T008 Create `<resource-dir>/README.md` — Usage docs, parameter reference, connection secrets
+
+---
+
+## Phase 5: Validation
+
+- [ ] T009 Run `crossplane render <resource-dir>/claim.yaml <resource-dir>/composition.yaml <resource-dir>/definition.yaml` and verify output
+
+---
+
+## Notes
+
+- All code must follow `.infrakit/coding-style.md`
+- Pipeline mode is mandatory — never use Resources mode
+- Never hardcode secrets or credentials
+- Apply all tags from `.infrakit/tagging.md` to every managed resource
 ```
 
-**Format Components**:
+---
 
-1. **Checkbox**: ALWAYS start with `- [ ]` (markdown checkbox)
-2. **Task ID**: Sequential number (T001, T002, T003...) in execution order
-3. **[P] marker**: Include ONLY if task is parallelizable (different files, no dependencies on incomplete tasks)
-4. **[Story] label**: REQUIRED for user story phase tasks only
-   - Format: [US1], [US2], [US3], etc. (maps to user stories from spec.md)
-   - Setup phase: NO story label
-   - Foundational phase: NO story label  
-   - User Story phases: MUST have story label
-   - Polish phase: NO story label
-5. **Description**: Clear action with exact file path
+## Step 6: Present Summary and Confirm
 
-**Examples**:
+After writing tasks.md:
 
-- ✅ CORRECT: `- [ ] T001 Create project structure per implementation plan`
-- ✅ CORRECT: `- [ ] T005 [P] Implement authentication middleware in src/middleware/auth.py`
-- ✅ CORRECT: `- [ ] T012 [P] [US1] Create User model in src/models/user.py`
-- ✅ CORRECT: `- [ ] T014 [US1] Implement UserService in src/services/user_service.py`
-- ❌ WRONG: `- [ ] Create User model` (missing ID and Story label)
-- ❌ WRONG: `T001 [US1] Create model` (missing checkbox)
-- ❌ WRONG: `- [ ] [US1] Create User model` (missing Task ID)
-- ❌ WRONG: `- [ ] T001 [US1] Create model` (missing file path)
+> "✅ Tasks generated for track `<track-name>`.
+>
+> | Phase | Tasks | Description |
+> |-------|-------|-------------|
+> | Phase 1: XRD | 1 | definition.yaml |
+> | Phase 2: Composition | N | composition.yaml with patches and tags |
+> | Phase 3: Claim | 1 | claim.yaml example |
+> | Phase 4: Docs | 1 | README.md |
+> | Phase 5: Validation | 1 | crossplane render |
+> | **Total** | **N** | |
+>
+> **File**: `.infrakit/tracks/<track-name>/tasks.md`
+>
+> Run `/infrakit:implement <track-name>` to begin implementation."
 
-### Task Organization
+---
 
-1. **From User Stories (spec.md)** - PRIMARY ORGANIZATION:
-   - Each user story (P1, P2, P3...) gets its own phase
-   - Map all related components to their story:
-     - Models needed for that story
-     - Services needed for that story
-     - Interfaces/UI needed for that story
-     - If tests requested: Tests specific to that story
-   - Mark story dependencies (most stories should be independent)
+## Error Handling
 
-2. **From Contracts**:
-   - Map each interface contract → to the user story it serves
-   - If tests requested: Each interface contract → contract test task [P] before implementation in that story's phase
-
-3. **From Data Model**:
-   - Map each entity to the user story(ies) that need it
-   - If entity serves multiple stories: Put in earliest story or Setup phase
-   - Relationships → service layer tasks in appropriate story phase
-
-4. **From Setup/Infrastructure**:
-   - Shared infrastructure → Setup phase (Phase 1)
-   - Foundational/blocking tasks → Foundational phase (Phase 2)
-   - Story-specific setup → within that story's phase
-
-### Phase Structure
-
-- **Phase 1**: Setup (project initialization)
-- **Phase 2**: Foundational (blocking prerequisites - MUST complete before user stories)
-- **Phase 3+**: User Stories in priority order (P1, P2, P3...)
-  - Within each story: Tests (if requested) → Models → Services → Endpoints → Integration
-  - Each phase should be a complete, independently testable increment
-- **Final Phase**: Polish & Cross-Cutting Concerns
+| Error | Action |
+|-------|--------|
+| Setup files missing | Halt, direct to `/infrakit:setup` |
+| spec.md missing | Halt, direct to `/infrakit:new_composition <track-name>` |
+| plan.md missing | Halt, direct to `/infrakit:plan <track-name>` |
+| tasks.md already exists | Ask: overwrite or append? |
