@@ -276,13 +276,12 @@ For agents that have VS Code extensions or require CLI installation, update the 
 
 For agents available as VS Code extensions, add them to `.devcontainer/devcontainer.json`:
 
-```json
+```jsonc
 {
   "customizations": {
     "vscode": {
       "extensions": [
-        "// ... existing extensions ...",
-        "// [New Agent Name]",
+        // ... existing extensions ...
         "[New Agent Extension ID]"
       ]
     }
