@@ -2,19 +2,26 @@
 
 This document is the primary entry point for people modifying Spec Kit itself.
 
-Use this guide when you need to understand how the repository fits together, where different kinds of changes belong, how to validate them, and which deeper documents to read next.
+Use this guide when you need to understand how the repository fits together, where different kinds of changes belong, how to validate them, and which deeper documents to read next. This document is intentionally focused on system understanding, repository navigation, and change workflows.
 
-## Relationship to Other Top-Level Documents
+## Maintainer Onboarding Checklist
 
-Spec Kit has several top-level documents with different roles. They should not duplicate each other.
+Spec Kit has several top-level documents with different roles. They should not duplicate each other. A new maintainer should usually do the following before making broad changes:
 
-- `README.md` is the primary entry point for users adopting Spec Kit in a project.
-- `DEVELOPMENT.md` is the primary entry point for contributors and maintainers changing Spec Kit itself.
-- `CONTRIBUTING.md` defines contribution mechanics, review expectations, and required development practices.
-- `TESTING.md` describes validation strategy and testing procedures in more detail.
-- Other specialized documents cover specific subsystems or publishing workflows.
+1. Read core top-level documents:
 
-This document is intentionally focused on system understanding, repository navigation, and change workflows.
+| Document                                   | Focus                                                                              |
+| ------------------------------------------ | ---------------------------------------------------------------------------------- |
+| [README.md](./README.md)                   | The primary entry point for users adopting Spec Kit in a project.                  |
+| This document                              | The primary entry point for contributors and maintainers changing Spec Kit itself. |
+| [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) |                                                                                    |
+| [CONTRIBUTING.md](./CONTRIBUTING.md)       | Contribution mechanics, review expectations, and required development practices.   |
+| [TESTING.md](./TESTING.md)                 | Validation strategy and testing procedures.                                        |
+
+2. inspect the repository layout, especially `templates/`, `scripts/`, and any CLI or packaging code,
+3. trace at least one representative end-to-end workflow,
+4. start with a narrow, well-scoped change before attempting structural revisions.
+
 
 ## What Spec Kit Is, from a Maintainer Perspective
 
