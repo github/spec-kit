@@ -6,30 +6,22 @@ Use this guide when you need to understand how the repository fits together, whe
 
 ## Maintainer Onboarding Checklist
 
-Start here before making broad changes to Spec Kit.
+Read the essential project documents.
 
-### 1. Read the core top-level documents
+| Document                                                     | Focus                                                                                                                         |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| [README.md](./README.md)                                     | Primary user-facing entry point and high-level overview of what Spec Kit is, how it is used, and what workflow it supports.   |
+| [DEVELOPMENT.md](./DEVELOPMENT.md)                           | Primary maintainer-facing entry point for contributors changing Spec Kit itself.                                              |
+| [spec-driven.md](./spec-driven.md)                           | Full conceptual and procedural walkthrough of the Spec-Driven Development workflow supported by Spec Kit.                     |
+| [RELEASE-PROCESS.md](./.github/workflows/RELEASE-PROCESS.md) | Release workflow, versioning model, changelog generation, and release-process invariants.                                     |
+| [docs/index.md](./docs/index.md)                             | Entry point to the documentation under `docs/`, including installation, quick start, upgrade, and local development guidance. |
+| [CONTRIBUTING.md](./CONTRIBUTING.md)                         | Contribution mechanics, review expectations, and required development practices.                                              |
+| [TESTING.md](./TESTING.md)                                   | Validation strategy and testing procedures.                                                                                   |
 
-Spec Kit has several top-level documents with different roles. They should not duplicate each other.
+Inspect the repository layout, especially
 
-| Document                                   | Focus                                                                            |
-| ------------------------------------------ | -------------------------------------------------------------------------------- |
-| [README.md](./README.md)                   | Primary entry point for users adopting Spec Kit in a project.                    |
-| [DEVELOPMENT.md](./DEVELOPMENT.md)         | Primary entry point for contributors and maintainers changing Spec Kit itself.   |
-| [CONTRIBUTING.md](./CONTRIBUTING.md)       | Contribution mechanics, review expectations, and required development practices. |
-| [TESTING.md](./TESTING.md)                 | Validation strategy and testing procedures.                                      |
-
-### 2. Inspect the repository layout
-
-Inspect the repository layout, especially `templates/`, `scripts/`, and any CLI or packaging code.
-
-### 3. Trace a representative workflow
-
-Trace at least one representative end-to-end workflow so you can connect the repository's source assets to the user-visible behavior they produce.
-
-### 4. Start with a narrow change
-
-Start with a narrow, well-scoped change before attempting broader structural revisions.
+- `templates/` - core project 
+- `scripts/`, and any CLI or packaging code.
 
 ## What Spec Kit Is, from a Maintainer Perspective
 
@@ -340,42 +332,6 @@ When changing install, release, extension, or preset behavior, confirm that the 
 
 Do not assume that source-level correctness is sufficient.
 
-## Documentation Map
-
-This section routes contributors to the right deeper documents.
-
-### `README.md`
-
-Primary user-facing introduction.
-
-Read this when you need to understand how the repository presents itself to adopters and what promises are made to users.
-
-### `CONTRIBUTING.md`
-
-Contribution process, expectations, and contribution hygiene.
-
-Read this before opening a pull request or when you need the repository's current contribution rules.
-
-### `TESTING.md`
-
-Validation strategy and test guidance.
-
-Read this when planning or executing validation for non-trivial changes.
-
-### Extension Publishing Documentation
-
-Read the extension-specific publishing guide when working on extension creation, packaging, or publication.
-
-### Preset Publishing Documentation
-
-Read the preset-specific publishing guide when working on preset creation, packaging, or publication.
-
-### Other Specialized Documents
-
-Read subsystem-specific documents when your change targets a specific area rather than the core maintainer workflow.
-
-As the repository evolves, keep this section curated. It should remain a developer routing table, not a raw list of markdown files.
-
 ## Architectural Invariants and Guardrails
 
 The following guardrails should remain true unless there is an explicit, repository-wide decision to change them.
@@ -445,18 +401,6 @@ Does this change
 - need explicit release-note treatment?
 
 When in doubt, assume user-visible workflow changes deserve explicit documentation and release awareness.
-
-## Maintainer Onboarding Checklist
-
-A new maintainer should usually do the following before making broad changes:
-
-1. read `README.md` to understand the user-facing model,
-2. read this document to understand the maintainer-facing model,
-3. read `CONTRIBUTING.md` before preparing changes,
-4. read `TESTING.md` before validating non-trivial work,
-5. inspect the repository layout, especially `templates/`, `scripts/`, and any CLI or packaging code,
-6. trace at least one representative end-to-end workflow,
-7. start with a narrow, well-scoped change before attempting structural revisions.
 
 ## Keeping This Document Healthy
 
