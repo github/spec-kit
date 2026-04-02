@@ -307,7 +307,7 @@ Community projects that extend, visualize, or build on Spec Kit:
 ## 🔧 Specify CLI Reference
 
 The `specify` command supports the following options:
-
+The examples below assume you used the persistent installation method from the Get Started section, so the `specify` command is available directly in your PATH. If you are using the one-time usage method instead, run the equivalent commands with `uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify ...`.
 ### Commands
 
 | Command | Description                                                                                                                                                                                                                                                                              |
@@ -334,7 +334,7 @@ The `specify` command supports the following options:
 | `--branch-numbering`   | Option   | Branch numbering strategy: `sequential` (default — `001`, `002`, `003`) or `timestamp` (`YYYYMMDD-HHMMSS`). Timestamp mode is useful for distributed teams to avoid numbering conflicts                                                                                                                                                                                                  |
 
 ### Examples
-
+Examples below use the persistent installation form. If you did not install the CLI persistently, use the `uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify ...` form instead.
 ```bash
 # Basic project initialization
 specify init my-project
