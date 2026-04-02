@@ -447,8 +447,9 @@ function Update-AllExistingAgents {
         }
         
         # Record the file as seen before attempting the update
-        $script:updatedPaths += $realPath
-        $script:found = $true
+        # Use parent scope (1) to modify Update-AllExistingAgents' local variables
+        Set-Variable -Name updatedPaths -Value ($updatedPaths + $realPath) -Scope 1
+        Set-Variable -Name found -Value $true -Scope 1
         
         # Perform the update
         return (Update-AgentFile -TargetFile $FilePath -AgentName $AgentName)
