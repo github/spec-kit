@@ -277,7 +277,7 @@ Wait for the user's response before proceeding.
 
 **Purpose**: Verify compliance requirements against authoritative sources before flagging gaps or accepting claims.
 
-> **See**: [`${extensionPath}/technical-docs/mcp-protocol.md`](${extensionPath}/technical-docs/mcp-protocol.md) for complete MCP usage patterns.
+> **See**: the provider technical reference docs in `technical-docs/` for MCP usage patterns.
 
 ### When to Use MCP Tools
 

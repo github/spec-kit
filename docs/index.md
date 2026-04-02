@@ -1,12 +1,16 @@
 # InfraKit
 
-*Build high-quality software faster.*
+*Build production-ready infrastructure faster.*
 
-**An effort to allow organizations to focus on product scenarios rather than writing undifferentiated code with the help of Constraint-Driven Development.**
+**An infrastructure-first toolkit that brings Constraint-Driven Development to IaC — specify what you need, let agents generate it.**
 
-## What is Constraint-Driven Development?
+## What is InfraKit?
 
-Constraint-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Constraint-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
+InfraKit applies **Constraint-Driven Development** to Infrastructure as Code. Instead of writing YAML by hand, you describe what infrastructure you need — InfraKit's AI agent workflow produces production-ready manifests through a structured **spec → plan → implement → review** pipeline.
+
+Each infrastructure resource gets its own **track** under `.infrakit/tracks/`, containing the spec, plan, and tasks. Multiple tracks can run in parallel, and every step is transparent and user-controlled.
+
+At launch InfraKit supports **Crossplane** (Kubernetes-native IaC). Terraform, Pulumi, CloudFormation, and OpenTofu are on the roadmap.
 
 ## Getting Started
 
@@ -17,51 +21,35 @@ Constraint-Driven Development **flips the script** on traditional software devel
 
 ## Core Philosophy
 
-Constraint-Driven Development is a structured process that emphasizes:
+Constraint-Driven Development for infrastructure means:
 
-- **Intent-driven development** where specifications define the "*what*" before the "*how*"
-- **Rich specification creation** using guardrails and organizational principles
-- **Multi-step refinement** rather than one-shot code generation from prompts
-- **Heavy reliance** on advanced AI model capabilities for specification interpretation
+- **Spec before YAML** — define *what* the resource must do before any code is written
+- **Multi-persona review** — Cloud Solutions Engineer, Cloud Architect, Cloud Security Engineer, and Crossplane Engineer each own a distinct phase
+- **Never guess schemas** — all `apiVersion` and field names are verified against provider documentation
+- **Standards enforced** — mandatory tagging, Pipeline mode, and `providerConfigRef` baked in from the start
 
 ## Development Phases
 
 | Phase | Focus | Key Activities |
 |-------|-------|----------------|
-| **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
-| **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
-| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
+| **Greenfield** | New infrastructure resources | Spec, architect review, security review, plan, implement, code review |
+| **Brownfield** | Update existing compositions | Scan existing code, generate update spec, review changes, implement delta |
 
-## Experimental Goals
+## Agent Personas
 
-Our research and experimentation focus on:
+InfraKit uses four specialized AI personas, each with a distinct scope:
 
-### Technology Independence
-
-- Create applications using diverse technology stacks
-- Validate the hypothesis that Constraint-Driven Development is a process not tied to specific technologies, programming languages, or frameworks
-
-### Enterprise Constraints
-
-- Demonstrate mission-critical application development
-- Incorporate organizational constraints (cloud providers, tech stacks, engineering practices)
-- Support enterprise design systems and compliance requirements
-
-### User-Centric Development
-
-- Build applications for different user cohorts and preferences
-- Support various development approaches (from vibe-coding to AI-native development)
-
-### Creative & Iterative Processes
-
-- Validate the concept of parallel implementation exploration
-- Provide robust iterative feature development workflows
-- Extend processes to handle upgrades and modernization tasks
+| Persona | Role | Phase |
+|---------|------|-------|
+| **Cloud Solutions Engineer** | Gathers requirements, writes spec | Phase 1 |
+| **Cloud Architect** | Reviews architecture, reliability, cost | Phase 2 |
+| **Cloud Security Engineer** | Audits against compliance frameworks (SOC2, HIPAA, etc.) | Phase 2.5 |
+| **Crossplane Engineer** | Implements spec to verified YAML | Phase 3 |
 
 ## Contributing
 
-Please see our [Contributing Guide](https://github.com/github/infrakit/blob/main/CONTRIBUTING.md) for information on how to contribute to this project.
+See the [Contributing Guide](https://github.com/neelneelpurk/infrakit/blob/main/CONTRIBUTING.md) for how to contribute.
 
 ## Support
 
-For support, please check our [Support Guide](https://github.com/github/infrakit/blob/main/SUPPORT.md) or open an issue on GitHub.
+Open a [GitHub issue](https://github.com/neelneelpurk/infrakit/issues/new) for support, bug reports, or feature requests.

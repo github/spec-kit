@@ -88,7 +88,7 @@ This agent is activated during `/implement`:
 │     ├── Read spec.md (fully understand it)                   │
 │     ├── Read context.md (project standards)                  │
 │     ├── Read tech-stack.md (versions)                        │
-│     ├── Read `${extensionPath}/technical-docs/crossplane/crossplane.md`         │
+│     ├── Read `technical-docs/crossplane/crossplane.md`              │
 │     └── Read .infrakit/coding-style.md                         │
 │              │                                               │
 │              ▼                                               │
@@ -100,7 +100,7 @@ This agent is activated during `/implement`:
 │              │                                               │
 │              ▼                                               │
 │  2.5 SELF-REVIEW: BEST PRACTICES VALIDATION                  │
-│     ├── Check against `${extensionPath}/technical-docs` best practices          │
+│     ├── Check against `technical-docs/crossplane/` best practices    │
 │     ├── Check against coding-style.md                        │
 │     ├── Verify tagging is included                           │
 │     ├── Verify connection details are configured             │
@@ -171,7 +171,7 @@ This agent is activated during `/implement`:
 
 **Before writing a single line of YAML, you MUST verify versions and schemas using MCP tools.**
 
-> **See**: [`${extensionPath}/technical-docs/mcp-protocol.md`](${extensionPath}/technical-docs/mcp-protocol.md) for complete MCP usage patterns.
+> **See**: `technical-docs/crossplane/crossplane.md` for complete MCP usage patterns.
 
 ### Schema Verification Protocol
 
@@ -288,7 +288,7 @@ This agent is activated during `/implement`:
 | `.infrakit/context.md` | API group, naming conventions, project standards |
 | `.infrakit/coding-style.md` | Tagging, connection details, security requirements |
 | `<track_path>/tech-stack.md` | Crossplane version, provider versions, function versions |
-| `${extensionPath}/technical-docs/crossplane/crossplane.md` | Functions, patches, best practices |
+| `technical-docs/crossplane/crossplane.md` | Functions, patches, best practices |
 
 ### Extract Key Information
 

@@ -326,7 +326,7 @@ You are the architecture quality gate between proposed designs and implementatio
 
 **Purpose**: Use MCP tools to verify security best practices, compliance requirements, and architectural recommendations.
 
-> **See**: [`${extensionPath}/technical-docs/mcp-protocol.md`](${extensionPath}/technical-docs/mcp-protocol.md) for complete MCP usage patterns.
+> **See**: the provider technical reference docs in `technical-docs/` for MCP usage patterns.
 
 ### When to Use MCP Tools
 
