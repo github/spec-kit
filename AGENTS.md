@@ -449,11 +449,12 @@ Forge has special frontmatter and argument requirements:
 - Strips `handoffs` frontmatter key (Forge-specific collaboration feature)
 - Injects `name` field into frontmatter when missing
 
-Implementation: Extends `IntegrationBase` with custom `setup()` method that:
-1. Processes templates with `process_template()` using `{{parameters}}`
-2. Applies Forge-specific transformations via `_apply_forge_transformations()`
-3. Strips unwanted frontmatter keys
-4. Injects missing `name` fields
+Implementation: Extends `MarkdownIntegration` with custom `setup()` method that:
+1. Inherits standard template processing from `MarkdownIntegration`
+2. Adds extra `$ARGUMENTS` → `{{parameters}}` replacement after template processing
+3. Applies Forge-specific transformations via `_apply_forge_transformations()`
+4. Strips `handoffs` frontmatter key
+5. Injects missing `name` fields
 
 ### Standard Markdown Agents
 

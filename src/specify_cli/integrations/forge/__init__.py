@@ -11,12 +11,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..base import IntegrationBase
+from ..base import MarkdownIntegration
 from ..manifest import IntegrationManifest
 
 
-class ForgeIntegration(IntegrationBase):
-    """Integration for Forge (forgecode.dev)."""
+class ForgeIntegration(MarkdownIntegration):
+    """Integration for Forge (forgecode.dev).
+    
+    Extends MarkdownIntegration to add Forge-specific processing:
+    - Replaces $ARGUMENTS with {{parameters}}
+    - Strips 'handoffs' frontmatter key
+    - Injects 'name' field into frontmatter when missing
+    """
 
     key = "forge"
     config = {
@@ -45,12 +51,8 @@ class ForgeIntegration(IntegrationBase):
     ) -> list[Path]:
         """Install Forge commands with custom processing.
 
-        Processes command templates similarly to MarkdownIntegration but with
-        Forge-specific transformations:
-        1. Replaces {SCRIPT} and {ARGS} placeholders
-        2. Strips 'handoffs' frontmatter key
-        3. Injects 'name' field into frontmatter
-        4. Uses {{parameters}} instead of $ARGUMENTS
+        Extends MarkdownIntegration.setup() to inject Forge-specific transformations
+        after standard template processing.
         """
         templates = self.list_command_templates()
         if not templates:
@@ -79,14 +81,14 @@ class ForgeIntegration(IntegrationBase):
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
-            # Process template with Forge-specific argument placeholder
+            # Process template with standard MarkdownIntegration logic
             processed = self.process_template(raw, self.key, script_type, arg_placeholder)
             
-            # Ensure any remaining $ARGUMENTS placeholders are converted to the
-            # Forge argument placeholder ({{parameters}} by default)
+            # FORGE-SPECIFIC: Ensure any remaining $ARGUMENTS placeholders are
+            # converted to {{parameters}}
             processed = processed.replace("$ARGUMENTS", arg_placeholder)
             
-            # Apply Forge-specific transformations
+            # FORGE-SPECIFIC: Apply frontmatter transformations
             processed = self._apply_forge_transformations(processed, src_file.stem)
             
             dst_name = self.command_filename(src_file.stem)
