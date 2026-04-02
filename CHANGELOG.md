@@ -2,6 +2,14 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.5.0] - 2026-04-02
+
+### Changed
+
+- Introduces DEVELOPMENT.md (#2069)
+- Update cc-sdd reference to cc-spex in Community Friends (#2007)
+- chore: release 0.4.5, begin 0.4.6.dev0 development (#2064)
+
 ## [0.4.5] - 2026-04-02
 
 ### Changed
