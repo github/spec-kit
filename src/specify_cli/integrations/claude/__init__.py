@@ -7,7 +7,6 @@ from typing import Any
 
 import yaml
 
-from ...agents import CommandRegistrar
 from ..base import SkillsIntegration
 from ..manifest import IntegrationManifest
 
@@ -23,11 +22,13 @@ class ClaudeIntegration(SkillsIntegration):
         "install_url": "https://docs.anthropic.com/en/docs/claude-code/setup",
         "requires_cli": True,
     }
+    # registrar_config reflects where extensions/presets write command
+    # overrides — still .claude/commands even though init installs skills.
     registrar_config = {
-        "dir": ".claude/skills",
+        "dir": ".claude/commands",
         "format": "markdown",
         "args": "$ARGUMENTS",
-        "extension": "/SKILL.md",
+        "extension": ".md",
     }
     context_file = "CLAUDE.md"
 
@@ -43,14 +44,17 @@ class ClaudeIntegration(SkillsIntegration):
             "description",
             f"Spec-kit workflow command: {template_name}",
         )
-        skill_frontmatter = CommandRegistrar.build_skill_frontmatter(
-            self.key,
-            skill_name,
-            description,
-            f"templates/commands/{template_name}.md",
+        skill_frontmatter = self._build_skill_fm(
+            skill_name, description, f"templates/commands/{template_name}.md"
         )
         frontmatter_text = yaml.safe_dump(skill_frontmatter, sort_keys=False).strip()
         return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
+
+    def _build_skill_fm(self, name: str, description: str, source: str) -> dict:
+        from specify_cli.agents import CommandRegistrar
+        return CommandRegistrar.build_skill_frontmatter(
+            self.key, name, description, source
+        )
 
     def setup(
         self,
@@ -83,6 +87,7 @@ class ClaudeIntegration(SkillsIntegration):
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = self.registrar_config.get("args", "$ARGUMENTS")
+        from specify_cli.agents import CommandRegistrar
         registrar = CommandRegistrar()
         created: list[Path] = []
 

@@ -15,6 +15,18 @@ from copy import deepcopy
 import yaml
 
 
+def _build_agent_configs() -> dict[str, Any]:
+    """Derive CommandRegistrar.AGENT_CONFIGS from INTEGRATION_REGISTRY."""
+    from specify_cli.integrations import INTEGRATION_REGISTRY
+    configs: dict[str, dict[str, Any]] = {}
+    for key, integration in INTEGRATION_REGISTRY.items():
+        if key == "generic":
+            continue
+        if integration.registrar_config:
+            configs[key] = dict(integration.registrar_config)
+    return configs
+
+
 class CommandRegistrar:
     """Handles registration of commands with AI agents.
 
@@ -24,20 +36,22 @@ class CommandRegistrar:
     """
 
     # Derived from INTEGRATION_REGISTRY — single source of truth.
-    # Each integration's ``registrar_config`` provides dir, format, args, extension.
-    @staticmethod
-    def _build_agent_configs() -> dict[str, dict[str, Any]]:
-        from specify_cli.integrations import INTEGRATION_REGISTRY
-        configs: dict[str, dict[str, Any]] = {}
-        for key, integration in INTEGRATION_REGISTRY.items():
-            # Skip generic — it has no fixed directory (set at runtime).
-            if key == "generic":
-                continue
-            if integration.registrar_config:
-                configs[key] = dict(integration.registrar_config)
-        return configs
+    # Populated lazily via _ensure_configs() on first use.
+    AGENT_CONFIGS: dict[str, dict[str, Any]] = {}
+    _configs_loaded: bool = False
 
-    AGENT_CONFIGS = _build_agent_configs()
+    def __init__(self) -> None:
+        self._ensure_configs()
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        cls._ensure_configs()
+
+    @classmethod
+    def _ensure_configs(cls) -> None:
+        if not cls._configs_loaded:
+            cls._configs_loaded = True
+            cls.AGENT_CONFIGS = _build_agent_configs()
 
     @staticmethod
     def parse_frontmatter(content: str) -> tuple[dict, str]:
@@ -368,6 +382,7 @@ class CommandRegistrar:
         Raises:
             ValueError: If agent is not supported
         """
+        self._ensure_configs()
         if agent_name not in self.AGENT_CONFIGS:
             raise ValueError(f"Unsupported agent: {agent_name}")
 
@@ -467,6 +482,7 @@ class CommandRegistrar:
         """
         results = {}
 
+        self._ensure_configs()
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
             agent_dir = project_root / agent_config["dir"]
 
@@ -495,6 +511,7 @@ class CommandRegistrar:
             project_root: Path to project root
         """
         for agent_name, cmd_names in registered_commands.items():
+            self._ensure_configs()
             if agent_name not in self.AGENT_CONFIGS:
                 continue
 
@@ -511,3 +528,12 @@ class CommandRegistrar:
                     prompt_file = project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
                     if prompt_file.exists():
                         prompt_file.unlink()
+
+
+# Populate AGENT_CONFIGS after class definition.
+# The deferred import avoids circular import issues during module loading.
+try:
+    CommandRegistrar._ensure_configs()
+except Exception:
+    pass  # Silently defer to first explicit access
+

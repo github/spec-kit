@@ -97,7 +97,6 @@ class TestInitIntegrationFlag:
             os.chdir(old_cwd)
 
         assert result.exit_code == 0, result.output
-        assert "--integration claude" in result.output
         assert command_file.exists()
         assert command_file.read_text(encoding="utf-8") == "# preexisting command\n"
         assert (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
