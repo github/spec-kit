@@ -139,8 +139,10 @@ function Test-FeatureBranch {
         return $true
     }
     
-    # Accept sequential prefix (3+ digits) but exclude malformed timestamps (7-digit date + 6-digit time)
-    $isSequential = ($Branch -match '^[0-9]{3,}-') -and ($Branch -notmatch '^[0-9]{7}-[0-9]{6}-')
+    # Accept sequential prefix (3+ digits) but exclude malformed timestamps
+    # Malformed: 7-or-8 digit date + 6-digit time with no trailing slug (e.g. "2026031-143022" or "20260319-143022")
+    $hasMalformedTimestamp = ($Branch -match '^[0-9]{7}-[0-9]{6}-') -or ($Branch -match '^(?:\d{7}|\d{8})-\d{6}$')
+    $isSequential = ($Branch -match '^[0-9]{3,}-') -and (-not $hasMalformedTimestamp)
     if (-not $isSequential -and $Branch -notmatch '^\d{8}-\d{6}-') {
         Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
         Write-Output "Feature branches should be named like: 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name"

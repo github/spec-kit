@@ -196,6 +196,16 @@ class TestCheckFeatureBranch:
         result = source_and_call('check_feature_branch "2026031-143022-feat" "true"')
         assert result.returncode != 0
 
+    def test_rejects_timestamp_without_slug(self):
+        """check_feature_branch rejects timestamp-like branch missing trailing slug."""
+        result = source_and_call('check_feature_branch "20260319-143022" "true"')
+        assert result.returncode != 0
+
+    def test_rejects_7digit_timestamp_without_slug(self):
+        """check_feature_branch rejects 7-digit date + 6-digit time without slug."""
+        result = source_and_call('check_feature_branch "2026031-143022" "true"')
+        assert result.returncode != 0
+
 
 # ── find_feature_dir_by_prefix Tests ─────────────────────────────────────────
 
