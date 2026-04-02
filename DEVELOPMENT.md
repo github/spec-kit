@@ -4,9 +4,9 @@ This document is the primary entry point for people modifying Spec Kit itself.
 
 Use this guide when you need to understand how the repository fits together, where different kinds of changes belong, how to validate them, and which deeper documents to read next. This document is intentionally focused on system understanding, repository navigation, and change workflows.
 
-## Maintainer Onboarding Checklist
+## Maintainer Onboarding
 
-Read the essential project documents.
+**Read the essential project documents**:
 
 | Document                                                     | Focus                                                                                                                         |
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -18,10 +18,15 @@ Read the essential project documents.
 | [CONTRIBUTING.md](./CONTRIBUTING.md)                         | Contribution mechanics, review expectations, and required development practices.                                              |
 | [TESTING.md](./TESTING.md)                                   | Validation strategy and testing procedures.                                                                                   |
 
-Inspect the repository layout, especially
+**Inspect the repository layout**:
 
-- `templates/` - core project 
-- `scripts/`, and any CLI or packaging code.
+| Directory          | Role                                                                   |
+| ------------------ | ---------------------------------------------------------------------- |
+| `templates/`       | Core project framework, LLM templated prompts and associated templates |
+| `scripts/`         | Deterministic component of the project framework.                      |
+| `src/specify_cli/` | Python sources of `specify` CLI.                                       |
+| `extensions/`      | Documentation and associated files for the `extensions` feature.       |
+| `presets/`         | Documentation and associated files for the `presets` feature.          |
 
 ## What Spec Kit Is, from a Maintainer Perspective
 
