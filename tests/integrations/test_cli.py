@@ -76,6 +76,33 @@ class TestInitIntegrationFlag:
         assert "--integration copilot" in result.output
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
 
+    def test_ai_claude_here_preserves_preexisting_commands(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "claude-here-existing"
+        project.mkdir()
+        commands_dir = project / ".claude" / "commands"
+        commands_dir.mkdir(parents=True)
+        command_file = commands_dir / "speckit.specify.md"
+        command_file.write_text("# preexisting command\n", encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here", "--force", "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert "--integration claude" in result.output
+        assert command_file.exists()
+        assert command_file.read_text(encoding="utf-8") == "# preexisting command\n"
+        assert (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
+
     def test_shared_infra_skips_existing_files(self, tmp_path):
         """Pre-existing shared files are not overwritten by _install_shared_infra."""
         from typer.testing import CliRunner
