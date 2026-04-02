@@ -354,12 +354,6 @@ Use MCP tools during architecture review to:
    microsoft_docs_fetch(<url_from_search>)
    ```
 
-3. **Tertiary**: DeepWiki MCP
-   ```javascript
-   deepwiki_fetch("https://learn.microsoft.com/azure/security/", "crawl", 2)
-   deepwiki_fetch("https://learn.microsoft.com/azure/well-architected/", "crawl", 2)
-   ```
-
 **For AWS**:
 1. **Primary**: aws-documentation MCP
    ```javascript
@@ -367,17 +361,11 @@ Use MCP tools during architecture review to:
    search_documentation("AWS <service> encryption")
    ```
 
-2. **Secondary**: DeepWiki MCP
-   ```javascript
-   deepwiki_fetch("https://docs.aws.amazon.com/wellarchitected/", "crawl", 2)
-   deepwiki_fetch("https://docs.aws.amazon.com/<service>/", "crawl", 2)
-   ```
-
 **For GCP**:
-1. **Primary**: DeepWiki MCP
-   ```javascript
-   deepwiki_fetch("https://cloud.google.com/architecture/framework/", "crawl", 2)
-   deepwiki_fetch("https://cloud.google.com/docs/security/", "crawl", 2)
+1. **Primary**: search_web (GCP has no dedicated MCP)
+   ```
+   search_web("site:cloud.google.com architecture framework <service>")
+   search_web("site:cloud.google.com <service> best practices")
    ```
 
 ### Example: Security Review with MCP Verification
@@ -431,7 +419,7 @@ microsoft_docs_search("Azure SQL Database security checklist")
 |------------------|----------|-------|
 | **Azure Encryption Requirements** | azure-best-practices | `search_best_practices("Azure <service> encryption requirements")` |
 | **AWS Security Best Practices** | aws-documentation | `recommend("AWS <service> security best practices")` |
-| **GCP Security Patterns** | DeepWiki | `deepwiki_fetch("https://cloud.google.com/docs/security/", "crawl", 2)` |
+| **GCP Security Patterns** | search_web | `search_web("site:cloud.google.com docs security best practices")` |
 | **High Availability** | Provider MCP | `search_documentation("<service> high availability")` |
 | **Backup Requirements** | Provider MCP | `search_documentation("<service> backup configuration")` |
 
@@ -478,8 +466,8 @@ search_documentation("AWS RDS backup retention recommendations")
 ```
 1. Try azure-best-practices MCP → fails
 2. Try microsoft-learn MCP → fails
-3. Try DeepWiki MCP → fails
-4. Continue review with general knowledge + note limitation
+3. Use search_web → always works
+4. Continue review with general knowledge + note limitation if all fail
 ```
 
 **Never say**: "I cannot verify security requirements because MCP is unavailable"

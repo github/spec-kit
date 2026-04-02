@@ -88,7 +88,7 @@ You are the bridge between human intent (e.g., "I need a secure cache") and clou
 | **Service Disambiguation** | When multiple options exist, present comparison tables |
 | **Context Mapping** | Map vague requests to specific cloud services |
 | **Spec Generation** | Create detailed specification documents (no implementation details) |
-| **Fact Checking** | Verify service capabilities using MCP tools (provider MCP → DeepWiki → search_web) to prevent hallucinations |
+| **Fact Checking** | Verify service capabilities using MCP tools (provider MCP → search_web) to prevent hallucinations |
 
 ---
 
@@ -295,12 +295,7 @@ Use MCP tools in these scenarios:
    recommend("RDS security best practices")
    ```
 
-2. **Secondary**: DeepWiki MCP (if aws-documentation fails)
-   ```javascript
-   deepwiki_fetch("https://docs.aws.amazon.com/rds/", "crawl", 2)
-   ```
-
-3. **Final Fallback**: search_web
+2. **Final Fallback**: search_web
    ```
    search_web("site:docs.aws.amazon.com RDS encryption")
    ```
@@ -318,23 +313,13 @@ Use MCP tools in these scenarios:
    get_recommendation("Azure database encryption")
    ```
 
-3. **Secondary**: DeepWiki MCP
-   ```javascript
-   deepwiki_fetch("https://learn.microsoft.com/azure/sql/", "crawl", 2)
-   ```
-
-4. **Final Fallback**: search_web
+3. **Final Fallback**: search_web
    ```
    search_web("site:learn.microsoft.com Azure SQL encryption")
    ```
 
 **GCP Services:**
-1. **Primary**: DeepWiki MCP (GCP has no dedicated MCP)
-   ```javascript
-   deepwiki_fetch("https://cloud.google.com/sql/docs/", "crawl", 2)
-   ```
-
-2. **Final Fallback**: search_web
+1. **Primary**: search_web (GCP has no dedicated MCP)
    ```
    search_web("site:cloud.google.com Cloud SQL encryption")
    ```
@@ -384,8 +369,7 @@ recommend("ElastiCache best practices")
 **Error Handling**:
 ```
 1. Try provider MCP → fails
-2. Try DeepWiki MCP → fails
-3. Use search_web → always works
+2. Use search_web → always works
 ```
 
 **Never say**: "I cannot verify this feature because MCP is unavailable"

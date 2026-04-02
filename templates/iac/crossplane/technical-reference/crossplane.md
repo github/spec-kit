@@ -613,17 +613,11 @@ EOF
 
 Follow this fallback chain for Crossplane provider schema verification:
 
-1. **DeepWiki MCP** (Primary - AUTHORITATIVE SOURCE)
-2. **search_web** (Final fallback)
+1. **search_web** (Primary - use `site:doc.crds.dev` for authoritative schemas)
 
-### 1. Primary: DeepWiki MCP (CRITICAL for Schema Accuracy)
+### 1. Primary: search_web with doc.crds.dev
 
-**Why DeepWiki is critical**: The doc.crds.dev site hosts the authoritative CRD schemas from provider repositories. They contain the exact:
-- `apiVersion` strings
-- `kind` names
-- Required and optional fields in `spec.forProvider`
-- Field types and validation rules
-- Nested object structures
+**Why doc.crds.dev is authoritative**: It hosts CRD schemas from provider repositories containing exact `apiVersion` strings, `kind` names, required/optional `spec.forProvider` fields, types, and validation rules.
 
 **Target Repositories:**
 - `upbound/provider-aws` or `crossplane-contrib/provider-aws`
@@ -631,30 +625,23 @@ Follow this fallback chain for Crossplane provider schema verification:
 - `upbound/provider-gcp` or `crossplane-contrib/provider-gcp`
 - `crossplane/crossplane` (for core resources)
 
-**Example Schema Verification Workflow:**
+**Schema Verification Queries:**
 
-```javascript
-// Fetch AWS RDS Instance schema from doc.crds.dev
-deepwiki_fetch(
-  "https://doc.crds.dev/github.com/upbound/provider-aws/rds.aws.upbound.io/Instance/v1beta1",
-  "single",
-  1
-)
-
-// Extract from the rendered page:
-// - apiVersion: "rds.aws.upbound.io/v1beta1"
-// - kind: "Instance"
-// - spec.forProvider fields with EXACT names (e.g., "allocatedStorage", not "storageGB")
-```
+| Purpose | Query Pattern | Example |
+|---------|---------------|---------|
+| **CRD Schema** | `site:doc.crds.dev upbound/provider-<p> <group> <Kind> <version>` | `site:doc.crds.dev upbound provider-aws rds Instance v1beta1` |
+| **API Versions** | `site:marketplace.upbound.io <provider> <resource> apiVersion` | `site:marketplace.upbound.io provider-aws-rds Instance apiVersion` |
+| **Function Docs** | `site:github.com crossplane <function-name>` | `site:github.com crossplane function-patch-and-transform` |
+| **Best Practices** | `crossplane <topic> best practices` | `crossplane composition pipeline best practices` |
 
 **Example Queries by Provider:**
 
 | Provider | Query | Purpose |
 |----------|-------|---------|
-| **AWS S3** | `deepwiki_fetch("https://doc.crds.dev/github.com/upbound/provider-aws/s3.aws.upbound.io/Bucket/v1beta1", "single", 1)` | Find S3 Bucket schema |
-| **Azure SQL** | `deepwiki_fetch("https://doc.crds.dev/github.com/upbound/provider-azure/sql.azure.upbound.io/MSSQLDatabase/v1beta1", "single", 1)` | Find Azure SQL schema |
-| **GCP Storage** | `deepwiki_fetch("https://doc.crds.dev/github.com/upbound/provider-gcp/storage.googleapis.com/Bucket/v1beta1", "single", 1)` | Find GCP Bucket schema |
-| **Crossplane XRD** | `deepwiki_fetch("https://doc.crds.dev/github.com/crossplane/crossplane/apiextensions.crossplane.io/CompositeResourceDefinition/v1", "single", 1)` | Core XRD types |
+| **AWS S3** | `search_web("site:doc.crds.dev upbound provider-aws s3 Bucket v1beta1")` | Find S3 Bucket schema |
+| **Azure SQL** | `search_web("site:doc.crds.dev upbound provider-azure sql MSSQLDatabase v1beta1")` | Find Azure SQL schema |
+| **GCP Storage** | `search_web("site:doc.crds.dev upbound provider-gcp storage Bucket v1beta1")` | Find GCP Bucket schema |
+| **Crossplane XRD** | `search_web("site:docs.crossplane.io CompositeResourceDefinition spec fields")` | Core XRD types |
 
 **What to Extract from doc.crds.dev:**
 
@@ -677,17 +664,6 @@ type InstanceParameters struct {
 
 **Result**: EXACT schema with no guessed field names or hallucinated apiVersions.
 
-### 2. Final Fallback: search_web
-
-Use ONLY when all MCP tools fail or are unavailable:
-
-| Purpose | Query Pattern | Example |
-|---------|---------------|---------|
-| **CRD Schema** | `site:doc.crds.dev <provider> <resource>` | `site:doc.crds.dev provider-aws-s3 Bucket` |
-| **API Versions** | `site:marketplace.upbound.io <provider> <resource> apiVersion` | `site:marketplace.upbound.io provider-gcp-storage Bucket apiVersion` |
-| **Function Docs** | `site:github.com <function-name>` | `site:github.com function-patch-and-transform` |
-| **Best Practices** | `crossplane <topic> best practices` | `crossplane composition best practices` |
-
 ### Phase 0: Schema Verification Protocol
 
 **BEFORE writing ANY YAML**, follow this protocol:
@@ -697,28 +673,28 @@ User Request: "Create an AWS RDS database"
 
 Phase 0 - Schema Verification (MANDATORY):
 
-1. DeepWiki MCP (Primary):
-   URL: "https://doc.crds.dev/github.com/upbound/provider-aws/rds.aws.upbound.io/Instance/v1beta1"
+1. search_web (Primary):
+   Query: "site:doc.crds.dev upbound provider-aws rds Instance v1beta1"
    Extract EXACT:
    ✅ apiVersion: "rds.aws.upbound.io/v1beta1"
    ✅ kind: "Instance"
    ✅ Required fields: engine, instanceClass
    ✅ Optional fields: allocatedStorage, engineVersion, ...
 
-2. Final fallback:
-   search_web("site:marketplace.upbound.io provider-aws Instance")
+2. Fallback (if doc.crds.dev unreachable):
+   search_web("site:marketplace.upbound.io provider-aws Instance apiVersion")
 
 Result: 100% accurate schema → Zero hallucinations in generated YAML
 ```
 
 ### Recommended Searches by Topic
 
-| Topic | MCP Tool | Query/URL |
-|-------|----------|-----------|
-| **AWS Provider Schema** | DeepWiki | `deepwiki_fetch("https://doc.crds.dev/github.com/upbound/provider-aws/rds.aws.upbound.io/Instance/v1beta1", "single", 1)` |
-| **Azure Provider Schema** | DeepWiki | `deepwiki_fetch("https://doc.crds.dev/github.com/upbound/provider-azure/sql.azure.upbound.io/MSSQLDatabase/v1beta1", "single", 1)` |
-| **GCP Provider Schema** | DeepWiki | `deepwiki_fetch("https://doc.crds.dev/github.com/upbound/provider-gcp/sql.googleapis.com/DatabaseInstance/v1beta1", "single", 1)` |
-| **Function Documentation** | DeepWiki | `deepwiki_fetch("https://docs.crossplane.io/latest/concepts/composition-functions/", "crawl", 2)` |
+| Topic | Tool | Query |
+|-------|------|-------|
+| **AWS Provider Schema** | search_web | `site:doc.crds.dev upbound provider-aws rds Instance v1beta1` |
+| **Azure Provider Schema** | search_web | `site:doc.crds.dev upbound provider-azure sql MSSQLDatabase v1beta1` |
+| **GCP Provider Schema** | search_web | `site:doc.crds.dev upbound provider-gcp sql DatabaseInstance v1beta1` |
+| **Function Documentation** | search_web | `site:docs.crossplane.io composition functions patch-and-transform` |
 | **Best Practices** | search_web | `crossplane composition best practices` |
 
 ---

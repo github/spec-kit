@@ -60,7 +60,7 @@ This agent is activated during `/implement`:
 
 | Capability | Description |
 |------------|-------------|
-| **Schema Verification** | Uses DeepWiki (primary) → search_web for exact apiVersions and fields |
+| **Schema Verification** | Uses search_web with site:doc.crds.dev for exact apiVersions and fields |
 | **Implementation Planning** | Creates detailed crossplane_implementation.md |
 | **Best Practices Validation** | Self-reviews against best practices before user review |
 | **Spec-Based Coding** | Strictly follows approved parameters and status fields |
@@ -175,43 +175,35 @@ This agent is activated during `/implement`:
 
 ### Schema Verification Protocol
 
-**CRITICAL**: The `*_types.go` files in provider repositories are the **AUTHORITATIVE SOURCE** for schemas. They contain exact apiVersions, kinds, and field names. Using DeepWiki prevents 100% of hallucinated schemas.
+**CRITICAL**: The `*_types.go` files in provider repositories are the **AUTHORITATIVE SOURCE** for schemas. They are indexed at `doc.crds.dev` and `marketplace.upbound.io`. Always query these via `search_web` to get exact apiVersions, kinds, and field names.
 
 **Follow this fallback chain:**
 
-1. **DeepWiki MCP** (Primary - AUTHORITATIVE)
-2. **search_web** (Final fallback)
+1. **search_web** with `site:doc.crds.dev` (Primary - AUTHORITATIVE)
+2. **search_web** with `site:marketplace.upbound.io` (Secondary)
 
 ### Step-by-Step Verification
 
 1.  **Verify Provider Version Compatibility**:
     *   Read `tech-stack.md` for the target Crossplane version (e.g., v1.14.0).
-    *   **Use DeepWiki**:
-        ```javascript
-        deepwiki_fetch("https://marketplace.upbound.io/providers/upbound/provider-<provider>", "single", 1)
+    *   **Use search_web**:
+        ```
+        search_web("site:marketplace.upbound.io upbound provider-<provider> versions")
         ```
     *   **Action**: Confirm the provider version in `tech-stack.md` is compatible with the Crossplane version.
     *   **If incompatible**: STOP and ask the user to update `tech-stack.md`.
 
-2.  **Search for Authoritative CRD Schema (PRIMARY: DeepWiki)**:
+2.  **Search for Authoritative CRD Schema (PRIMARY: search_web + doc.crds.dev)**:
 
     **Target Repository**: `upbound/provider-<provider>` or `crossplane-contrib/provider-<provider>`
 
-    **DeepWiki Queries**:
-    ```javascript
+    **search_web Queries**:
+    ```
     // Example: Find AWS RDS Instance schema
-    deepwiki_fetch(
-      "https://doc.crds.dev/github.com/upbound/provider-<provider>/<group>/<Kind>/<version>",
-      "single",
-      1
-    )
+    search_web("site:doc.crds.dev upbound provider-<provider> <group> <Kind> <version>")
 
     // Example:
-    deepwiki_fetch(
-      "https://doc.crds.dev/github.com/upbound/provider-aws/rds.aws.upbound.io/Instance/v1beta1",
-      "single",
-      1
-    )
+    search_web("site:doc.crds.dev upbound provider-aws rds Instance v1beta1")
     ```
 
     **Extract from \_types.go file**:
@@ -237,22 +229,19 @@ This agent is activated during `/implement`:
     }
     ```
 
-3.  **Final Fallback: search_web** (if DeepWiki unavailable):
+3.  **Secondary Fallback: search_web with marketplace.upbound.io**:
 
-    **Query**: `site:doc.crds.dev provider-<provider> <resource> <version>`
+    **Query**: `site:marketplace.upbound.io provider-<provider> <resource> apiVersion`
 
-    **Example**: `site:doc.crds.dev provider-aws-rds Instance v1beta1`
+    **Example**: `search_web("site:marketplace.upbound.io provider-aws-rds Instance apiVersion")`
 
 5.  **Verify Required Fields**:
 
-    **Using DeepWiki**:
+    **Using search_web**:
+    - Query: `search_web("site:doc.crds.dev <provider> <Kind> <field_name> required")`
     - Check JSON struct tags in `*Parameters` struct
     - Fields WITHOUT `omitempty` tag are REQUIRED
     - Document all required fields in implementation plan
-
-    **Using other tools**:
-    - Query: `site:doc.crds.dev <kind> <field_name>` (search_web)
-    - Verify fields exist in `spec.forProvider`
 
 6.  **Document Findings in crossplane_implementation.md**:
 
@@ -260,7 +249,7 @@ This agent is activated during `/implement`:
     ## Schema Verification
 
     **Resource**: AWS RDS Instance
-    **Source**: DeepWiki - https://doc.crds.dev/github.com/upbound/provider-aws/rds.aws.upbound.io/Instance/v1beta1
+    **Source**: doc.crds.dev - https://doc.crds.dev/github.com/upbound/provider-aws/rds.aws.upbound.io/Instance/v1beta1
     **apiVersion**: rds.aws.upbound.io/v1beta1
     **kind**: Instance
 
@@ -276,9 +265,9 @@ This agent is activated during `/implement`:
     **Schema URL**: https://doc.crds.dev/github.com/upbound/provider-aws/rds.aws.upbound.io/Instance/v1beta1
     ```
 
-**NEVER GUESS API VERSIONS OR FIELD NAMES. ALWAYS USE MCP TOOLS WITH FALLBACK CHAIN.**
+**NEVER GUESS API VERSIONS OR FIELD NAMES. ALWAYS USE search_web WITH doc.crds.dev.**
 
-### Common DeepWiki URLs by Provider
+### Common doc.crds.dev URLs by Provider
 
 | Provider | Repository | Example URL |
 |----------|-----------|-------------|

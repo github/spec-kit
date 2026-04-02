@@ -11,8 +11,7 @@ AWS documentation and Crossplane provider context.
 Follow this fallback chain for AWS documentation:
 
 1. **aws-documentation MCP** (Primary)
-2. **DeepWiki MCP** (Secondary)
-3. **search_web** (Final fallback)
+2. **search_web** (Final fallback)
 
 ### 1. Primary: aws-documentation MCP
 
@@ -35,33 +34,19 @@ Follow this fallback chain for AWS documentation:
    Topic: "<service> security best practices"
 ```
 
-### 2. Secondary: DeepWiki MCP
+### 2. Final Fallback: search_web
 
-Use for aggregating AWS documentation when aws-documentation MCP fails:
-
-```
-deepwiki_fetch(
-  "https://docs.aws.amazon.com/<service>/",
-  mode: "crawl",
-  maxDepth: 2
-)
-
-Examples:
-- deepwiki_fetch("https://docs.aws.amazon.com/rds/", "crawl", 2)
-- deepwiki_fetch("https://docs.aws.amazon.com/s3/", "single", 1)
-```
-
-### 3. Final Fallback: search_web
-
-Use ONLY when all MCP tools fail or are unavailable:
+Use when aws-documentation MCP fails or is unavailable:
 
 ```
 search_web("site:marketplace.upbound.io provider-aws-<family> <Resource> apiVersion")
 search_web("site:docs.aws.amazon.com <service> <topic>")
+search_web("site:doc.crds.dev provider-aws-<family> <Resource> v1beta1")
 
 Examples:
 - search_web("site:marketplace.upbound.io provider-aws-rds Instance apiVersion")
 - search_web("site:docs.aws.amazon.com RDS encryption best practices")
+- search_web("site:doc.crds.dev upbound provider-aws rds Instance v1beta1")
 ```
 
 ---

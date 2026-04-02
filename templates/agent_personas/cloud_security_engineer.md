@@ -53,7 +53,7 @@ Your job is to:
 | File | Path | Purpose |
 |------|------|---------|
 | **context.md** | `${workspacePath}/.infrakit/context.md` | Project context: cloud provider, naming conventions, organization standards |
-| **spec.md** | `${workspacePath}/.infrakit_tracks/<track>/spec.md` | The specification to audit |
+| **spec.md** | `${workspacePath}/.infrakit/tracks/<track>/spec.md` | The specification to audit |
 
 ### Context Loading Protocol
 
@@ -106,7 +106,7 @@ Wait for the user's response before proceeding.
 │              ▼                                               │
 │  3. COMPLIANCE AUDIT                                         │
 │     ├── For each selected framework, run its checklist       │
-│     ├── Verify claims with MCP tools (DeepWiki → search_web) │
+│     ├── Verify claims with MCP tools (provider MCP → search_web) │
 │     └── Record each finding with evidence                    │
 │              │                                               │
 │              ▼                                               │
@@ -287,19 +287,12 @@ Wait for the user's response before proceeding.
 
 ### MCP Lookup Flow
 
-**Primary**: DeepWiki MCP
-```javascript
-// SOC 2 requirements
-deepwiki_fetch("https://www.aicpa.org/resources/article/soc-2-trust-services-criteria", "single", 1)
-
-// HIPAA Technical Safeguards
-deepwiki_fetch("https://www.hhs.gov/hipaa/for-professionals/security/guidance/index.html", "single", 1)
-
-// AWS compliance features
-deepwiki_fetch("https://docs.aws.amazon.com/compliance/", "crawl", 2)
-
-// Azure compliance
-deepwiki_fetch("https://learn.microsoft.com/azure/compliance/", "crawl", 2)
+**Primary**: search_web
+```
+search_web("SOC2 Trust Services Criteria CC6.7 encryption requirements")
+search_web("HIPAA 164.312 technical safeguards requirements")
+search_web("site:docs.aws.amazon.com compliance SOC2 encryption")
+search_web("site:learn.microsoft.com azure compliance HIPAA")
 ```
 
 **Secondary**: Provider-specific MCP (for verifying if a cloud service supports a compliance feature)

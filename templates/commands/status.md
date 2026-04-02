@@ -1,0 +1,123 @@
+---
+description: "Show the status of all infrastructure tracks registered in .infrakit/tracks.md."
+argument-hint: "[optional: filter by status e.g. 'in-progress' or track name pattern]"
+handoffs:
+  - label: "Implement a Track"
+    agent: "infrakit:implement"
+  - label: "Create New Composition"
+    agent: "infrakit:new_composition"
+---
+
+## User Input
+
+```text
+$ARGUMENTS
+```
+
+If the user provided a filter argument, apply it to the status output.
+
+---
+
+## System Directive
+
+You are displaying the current status of all infrastructure resource tracks registered in this project.
+
+**This command is READ-ONLY. Do not modify any files.**
+
+---
+
+## Step 1: Check Setup
+
+Verify that `.infrakit/tracks.md` exists.
+
+**If missing:**
+> "❌ **Setup required**
+>
+> `.infrakit/tracks.md` not found. The project has not been initialized yet.
+>
+> Run `/infrakit:setup` to initialize the project."
+
+**HALT** — do not proceed.
+
+---
+
+## Step 2: Read tracks.md
+
+Read `.infrakit/tracks.md` and parse all track entries.
+
+Also read `.infrakit/context.md` if it exists to get project name and cloud provider.
+
+---
+
+## Step 3: Display Status Dashboard
+
+Output a formatted status dashboard:
+
+```
+# InfraKit Status Dashboard
+
+Project: <project_name> | Provider: <cloud_provider> | Date: <YYYY-MM-DD>
+
+---
+
+## Track Summary
+
+| Status       | Count |
+|--------------|-------|
+| 🔵 Initializing   | N |
+| 📝 Spec Generated | N |
+| 📋 Planned        | N |
+| ⚙️  In Progress   | N |
+| ✅ Done           | N |
+| ❌ Blocked        | N |
+| Total             | N |
+
+---
+
+## All Tracks
+
+| Track | Type | Directory | Status | Created |
+|-------|------|-----------|--------|---------|
+| <name> | new/update | <path> | <status> | <date> |
+
+---
+
+## In Progress (detailed)
+
+For each in-progress track:
+
+### ⚙️ <track-name>
+- Type: new_composition / update_composition
+- Track Dir: .infrakit/tracks/<track-name>/
+- Target Dir: <resource_directory>
+- Files Present: spec.md ✅/❌ | plan.md ✅/❌ | tasks.md ✅/❌
+- Next Action: <suggested next command>
+
+---
+
+## Suggested Next Actions
+
+<Based on current state:>
+- No tracks → Run /infrakit:new_composition to create a new resource
+- Spec-generated tracks → Run /infrakit:plan <track-name>
+- Planned tracks → Run /infrakit:tasks <track-name> then /infrakit:implement <track-name>
+- In-progress tracks → Run /infrakit:implement <track-name> to continue
+```
+
+---
+
+## Step 4: Handle Filter
+
+If the user provided a filter argument (e.g., "in-progress", "done", a track name pattern):
+- Filter the tracks table to show only matching entries
+- Still show the full summary counts
+
+---
+
+## Step 5: Handle Empty Registry
+
+If no tracks are registered yet:
+
+> "No tracks registered yet.
+>
+> Run `/infrakit:new_composition` to create your first infrastructure resource."
