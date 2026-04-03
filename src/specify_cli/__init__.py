@@ -6,7 +6,6 @@
 #     "rich",
 #     "platformdirs",
 #     "readchar",
-#     "httpx",
 #     "json5",
 # ]
 # ///
