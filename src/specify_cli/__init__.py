@@ -1856,7 +1856,13 @@ def integration_switch(
 
         if current_integration and manifest_path.exists():
             console.print(f"Uninstalling current integration: [cyan]{installed_key}[/cyan]")
-            old_manifest = IntegrationManifest.load(installed_key, project_root)
+            try:
+                old_manifest = IntegrationManifest.load(installed_key, project_root)
+            except (ValueError, FileNotFoundError) as exc:
+                console.print(f"[red]Error:[/red] Could not read integration manifest for '{installed_key}': {manifest_path}")
+                console.print(f"[dim]{exc}[/dim]")
+                console.print("Try repairing or removing the manifest file, then rerun the command.")
+                raise typer.Exit(1)
             removed, skipped = current_integration.teardown(
                 project_root, old_manifest, force=force,
             )
@@ -1864,6 +1870,8 @@ def integration_switch(
                 console.print(f"  Removed {len(removed)} file(s)")
             if skipped:
                 console.print(f"  [yellow]⚠[/yellow]  {len(skipped)} modified file(s) preserved")
+        elif not current_integration:
+            console.print(f"[dim]Unknown installed integration '{installed_key}' — skipping uninstall phase[/dim]")
         else:
             console.print(f"[dim]No manifest for '{installed_key}' — skipping uninstall phase[/dim]")
 
