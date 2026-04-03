@@ -1650,15 +1650,7 @@ def integration_install(
         )
         manifest.save()
         _write_integration_json(project_root, integration.key, selected_script)
-
-        # Update init-options.json to reflect the new integration
-        opts = load_init_options(project_root)
-        opts["integration"] = integration.key
-        opts["ai"] = integration.key
-        from .integrations.base import SkillsIntegration
-        if isinstance(integration, SkillsIntegration):
-            opts["ai_skills"] = True
-        save_init_options(project_root, opts)
+        _update_init_options_for_integration(project_root, integration)
 
     except Exception as e:
         console.print(f"[red]Error:[/red] Failed to install integration: {e}")
@@ -1668,8 +1660,11 @@ def integration_install(
     console.print(f"\n[green]✓[/green] Integration '{name}' installed successfully")
 
 
-def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, Any]:
-    """Parse --integration-options string into a dict matching the integration's declared options."""
+def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, Any] | None:
+    """Parse --integration-options string into a dict matching the integration's declared options.
+
+    Returns ``None`` when no recognised options are found.
+    """
     import shlex
     parsed: dict[str, Any] = {}
     tokens = shlex.split(raw_options)
@@ -1688,6 +1683,22 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
         else:
             i += 1
     return parsed or None
+
+
+def _update_init_options_for_integration(
+    project_root: Path,
+    integration: Any,
+) -> None:
+    """Update ``init-options.json`` to reflect *integration* as the active one."""
+    from .integrations.base import SkillsIntegration
+    opts = load_init_options(project_root)
+    opts["integration"] = integration.key
+    opts["ai"] = integration.key
+    if isinstance(integration, SkillsIntegration):
+        opts["ai_skills"] = True
+    else:
+        opts.pop("ai_skills", None)
+    save_init_options(project_root, opts)
 
 
 @integration_app.command("uninstall")
@@ -1828,17 +1839,7 @@ def integration_switch(
         )
         manifest.save()
         _write_integration_json(project_root, target_integration.key, selected_script)
-
-        # Update init-options.json
-        opts = load_init_options(project_root)
-        opts["integration"] = target_integration.key
-        opts["ai"] = target_integration.key
-        from .integrations.base import SkillsIntegration
-        if isinstance(target_integration, SkillsIntegration):
-            opts["ai_skills"] = True
-        else:
-            opts.pop("ai_skills", None)
-        save_init_options(project_root, opts)
+        _update_init_options_for_integration(project_root, target_integration)
 
     except Exception as e:
         console.print(f"[red]Error:[/red] Failed to install integration '{target}': {e}")
