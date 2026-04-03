@@ -164,19 +164,22 @@ class TestForgeIntegration:
     def test_forge_specific_transformations(self, tmp_path):
         """Test Forge-specific processing: name injection and handoffs stripping."""
         from specify_cli.integrations.forge import ForgeIntegration
+        from specify_cli.agents import CommandRegistrar
         forge = ForgeIntegration()
         m = IntegrationManifest("forge", tmp_path)
         forge.setup(tmp_path, m)
         commands_dir = tmp_path / ".forge" / "commands"
 
+        registrar = CommandRegistrar()
         for cmd_file in commands_dir.glob("speckit.*.md"):
             content = cmd_file.read_text(encoding="utf-8")
+            frontmatter, _ = registrar.parse_frontmatter(content)
 
             # Check that name field is injected in frontmatter
-            assert "\nname: " in content, f"{cmd_file.name} missing injected 'name' field"
+            assert "name" in frontmatter, f"{cmd_file.name} missing injected 'name' field in frontmatter"
 
             # Check that handoffs frontmatter key is stripped
-            assert "\nhandoffs:" not in content, f"{cmd_file.name} has unstripped 'handoffs' key"
+            assert "handoffs" not in frontmatter, f"{cmd_file.name} has unstripped 'handoffs' key in frontmatter"
 
     def test_uses_parameters_placeholder(self, tmp_path):
         """Verify Forge replaces $ARGUMENTS with {{parameters}} in generated files."""
@@ -213,21 +216,22 @@ class TestForgeIntegration:
     def test_name_field_uses_hyphenated_format(self, tmp_path):
         """Verify that injected name fields use hyphenated format (speckit-plan, not speckit.plan)."""
         from specify_cli.integrations.forge import ForgeIntegration
+        from specify_cli.agents import CommandRegistrar
         forge = ForgeIntegration()
         m = IntegrationManifest("forge", tmp_path)
         forge.setup(tmp_path, m)
         commands_dir = tmp_path / ".forge" / "commands"
 
         # Check that name fields use hyphenated format
+        registrar = CommandRegistrar()
         for cmd_file in commands_dir.glob("speckit.*.md"):
             content = cmd_file.read_text(encoding="utf-8")
-            # Extract the name field from frontmatter
-            import re
-            name_match = re.search(r'^name:\s*(.+)$', content, re.MULTILINE)
-            assert name_match is not None, (
+            # Extract the name field from frontmatter using the parser
+            frontmatter, _ = registrar.parse_frontmatter(content)
+            assert "name" in frontmatter, (
                 f"{cmd_file.name} missing injected 'name' field in frontmatter"
             )
-            name_value = name_match.group(1).strip()
+            name_value = frontmatter["name"]
             # Name should use hyphens, not dots
             assert "." not in name_value, (
                 f"{cmd_file.name} has name field with dots: {name_value} "
@@ -286,9 +290,11 @@ class TestForgeCommandRegistrar:
         assert forge_cmd.exists()
         
         content = forge_cmd.read_text(encoding="utf-8")
+        # Parse frontmatter to validate name field precisely
+        frontmatter, _ = registrar.parse_frontmatter(content)
+        assert "name" in frontmatter, "name field should be injected in frontmatter"
         # Name field should use hyphens, not dots
-        assert "name: speckit-my-extension-example" in content
-        assert "name: speckit.my-extension.example" not in content
+        assert frontmatter["name"] == "speckit-my-extension-example"
 
     def test_registrar_formats_alias_names_for_forge(self, tmp_path):
         """Verify CommandRegistrar converts alias names to hyphens for Forge."""
@@ -332,9 +338,11 @@ class TestForgeCommandRegistrar:
         assert alias_file.exists()
         
         content = alias_file.read_text(encoding="utf-8")
+        # Parse frontmatter to validate alias name field precisely
+        frontmatter, _ = registrar.parse_frontmatter(content)
+        assert "name" in frontmatter, "name field should be injected in alias frontmatter"
         # Alias name field should also use hyphens
-        assert "name: speckit-my-extension-ex" in content
-        assert "name: speckit.my-extension.ex" not in content
+        assert frontmatter["name"] == "speckit-my-extension-ex"
 
     def test_registrar_does_not_affect_other_agents(self, tmp_path):
         """Verify format_name callback is Forge-specific and doesn't affect other agents."""
