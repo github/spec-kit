@@ -1500,14 +1500,22 @@ INTEGRATION_JSON = ".specify/integration.json"
 
 
 def _read_integration_json(project_root: Path) -> dict[str, Any]:
-    """Load ``.specify/integration.json``.  Returns ``{}`` on missing/corrupt."""
+    """Load ``.specify/integration.json``.  Returns ``{}`` when missing."""
     path = project_root / INTEGRATION_JSON
     if not path.exists():
         return {}
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
+    except json.JSONDecodeError as exc:
+        console.print(f"[red]Error:[/red] {path} contains invalid JSON.")
+        console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
+        console.print(f"[dim]Details:[/dim] {exc}")
+        raise typer.Exit(1)
+    except OSError as exc:
+        console.print(f"[red]Error:[/red] Could not read {path}.")
+        console.print(f"Please fix file permissions or delete {INTEGRATION_JSON} and retry.")
+        console.print(f"[dim]Details:[/dim] {exc}")
+        raise typer.Exit(1)
 
 
 def _write_integration_json(
@@ -1687,32 +1695,49 @@ def integration_install(
 def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, Any] | None:
     """Parse --integration-options string into a dict matching the integration's declared options.
 
-    Returns ``None`` when no recognised options are found.
+    Returns ``None`` when no options are provided.
     """
     import shlex
     parsed: dict[str, Any] = {}
     tokens = shlex.split(raw_options)
-    declared = {opt.name.lstrip("-"): opt for opt in integration.options()}
+    declared_options = list(integration.options())
+    declared = {opt.name.lstrip("-"): opt for opt in declared_options}
+    allowed = ", ".join(sorted(opt.name for opt in declared_options))
     i = 0
     while i < len(tokens):
         token = tokens[i]
+        if not token.startswith("-"):
+            console.print(f"[red]Error:[/red] Unexpected integration option value '{token}'.")
+            if allowed:
+                console.print(f"Allowed options: {allowed}")
+            raise typer.Exit(1)
         name = token.lstrip("-")
         value: str | None = None
         # Handle --name=value syntax
         if "=" in name:
             name, value = name.split("=", 1)
         opt = declared.get(name)
-        if opt and opt.is_flag:
-            parsed[name.replace("-", "_")] = True
+        if not opt:
+            console.print(f"[red]Error:[/red] Unknown integration option '{token}'.")
+            if allowed:
+                console.print(f"Allowed options: {allowed}")
+            raise typer.Exit(1)
+        key = name.replace("-", "_")
+        if opt.is_flag:
+            if value is not None:
+                console.print(f"[red]Error:[/red] Option '{opt.name}' is a flag and does not accept a value.")
+                raise typer.Exit(1)
+            parsed[key] = True
             i += 1
-        elif opt and value is not None:
-            parsed[name.replace("-", "_")] = value
+        elif value is not None:
+            parsed[key] = value
             i += 1
-        elif opt and i + 1 < len(tokens):
-            parsed[name.replace("-", "_")] = tokens[i + 1]
+        elif i + 1 < len(tokens) and not tokens[i + 1].startswith("-"):
+            parsed[key] = tokens[i + 1]
             i += 2
         else:
-            i += 1
+            console.print(f"[red]Error:[/red] Option '{opt.name}' requires a value.")
+            raise typer.Exit(1)
     return parsed or None
 
 
