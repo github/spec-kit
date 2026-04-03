@@ -39,7 +39,6 @@ from pathlib import Path
 from typing import Any, Optional, Tuple
 
 import typer
-import httpx
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -51,20 +50,6 @@ from typer.core import TyperGroup
 
 # For cross-platform keyboard input
 import readchar
-import ssl
-import truststore
-
-ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-client = httpx.Client(verify=ssl_context)
-
-def _github_token(cli_token: str | None = None) -> str | None:
-    """Return sanitized GitHub token (cli arg takes precedence) or None."""
-    return ((cli_token or os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN") or "").strip()) or None
-
-def _github_auth_headers(cli_token: str | None = None) -> dict:
-    """Return Authorization header dict only when a non-empty token exists."""
-    token = _github_token(cli_token)
-    return {"Authorization": f"Bearer {token}"} if token else {}
 
 def _build_agent_config() -> dict[str, dict[str, Any]]:
     """Derive AGENT_CONFIG from INTEGRATION_REGISTRY."""
