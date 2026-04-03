@@ -5,9 +5,6 @@
 
 ## Table of Contents
 
-<!-- TOC below is an exemplar. The /speckit.plan command MUST regenerate
-     this list with proper anchor links from the actual ## headings. -->
-
 - Summary
 - Technical Context
 - Constitution Check
