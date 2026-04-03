@@ -14,16 +14,16 @@ description: "Task list template for feature implementation"
 
 ## Table of Contents
 
+<!-- TOC below is an exemplar. The /speckit.tasks command MUST regenerate
+     this list from the actual ## headings in the final document. -->
+
 - [Format](#format-id-p-story-description)
 - [Path Conventions](#path-conventions)
-- [Phase 1: Setup (Shared Infrastructure)](#phase-1-setup-shared-infrastructure)
-- [Phase 2: Foundational (Blocking Prerequisites)](#phase-2-foundational-blocking-prerequisites)
-- [Phase 3: User Story 1](#phase-3-user-story-1---title-priority-p1--mvp)
-- [Phase 4: User Story 2](#phase-4-user-story-2---title-priority-p2)
-- [Phase 5: User Story 3](#phase-5-user-story-3---title-priority-p3)
-- [Phase N: Polish & Cross-Cutting Concerns](#phase-n-polish--cross-cutting-concerns)
+- Phase 1: Setup (Shared Infrastructure)
+- Phase 2: Foundational (Blocking Prerequisites)
+- Phase 3+: User Story phases (generated from spec.md priorities)
+- Phase N: Polish & Cross-Cutting Concerns
 - [Dependencies & Execution Order](#dependencies--execution-order)
-- [Parallel Example: User Story 1](#parallel-example-user-story-1)
 - [Implementation Strategy](#implementation-strategy)
 - [Notes](#notes)
 
