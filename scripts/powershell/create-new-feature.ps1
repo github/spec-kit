@@ -293,8 +293,9 @@ $specFile = Join-Path $featureDir 'spec.md'
 if (-not $DryRun) {
     if ($hasGit) {
         $branchCreated = $false
+        $checkoutStderr = ''
         try {
-            git checkout -q -b $branchName 2>$null | Out-Null
+            $checkoutStderr = git checkout -q -b $branchName 2>&1 | Out-String
             if ($LASTEXITCODE -eq 0) {
                 $branchCreated = $true
             }
@@ -308,9 +309,12 @@ if (-not $DryRun) {
             if ($existingBranch) {
                 if ($AllowExistingBranch) {
                     # Switch to the existing branch instead of failing
-                    git checkout -q $branchName 2>$null | Out-Null
+                    $checkoutStderr = git checkout -q $branchName 2>&1 | Out-String
                     if ($LASTEXITCODE -ne 0) {
                         Write-Error "Error: Branch '$branchName' exists but could not be checked out. Resolve any uncommitted changes or conflicts and try again."
+                        if (-not [string]::IsNullOrWhiteSpace($checkoutStderr)) {
+                            [Console]::Error.WriteLine($checkoutStderr.TrimEnd())
+                        }
                         exit 1
                     }
                 } elseif ($Timestamp) {
@@ -322,6 +326,9 @@ if (-not $DryRun) {
                 }
             } else {
                 Write-Error "Error: Failed to create git branch '$branchName'. Please check your git configuration and try again."
+                if (-not [string]::IsNullOrWhiteSpace($checkoutStderr)) {
+                    [Console]::Error.WriteLine($checkoutStderr.TrimEnd())
+                }
                 exit 1
             }
         }

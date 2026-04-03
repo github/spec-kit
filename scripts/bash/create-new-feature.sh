@@ -327,13 +327,17 @@ SPEC_FILE="$FEATURE_DIR/spec.md"
 
 if [ "$DRY_RUN" != true ]; then
     if [ "$HAS_GIT" = true ]; then
-        if ! git checkout -b "$BRANCH_NAME" 2>/dev/null; then
+        checkout_stderr=""
+        if ! { checkout_stderr=$(git checkout -b "$BRANCH_NAME" 2>&1 1>&3); } 3>&1; then
             # Check if branch already exists
             if git branch --list "$BRANCH_NAME" | grep -q .; then
                 if [ "$ALLOW_EXISTING" = true ]; then
                     # Switch to the existing branch instead of failing
-                    if ! git checkout "$BRANCH_NAME" 2>/dev/null; then
+                    if ! { checkout_stderr=$(git checkout "$BRANCH_NAME" 2>&1 1>&3); } 3>&1; then
                         >&2 echo "Error: Failed to switch to existing branch '$BRANCH_NAME'. Please resolve any local changes or conflicts and try again."
+                        if [ -n "$checkout_stderr" ]; then
+                            >&2 echo "$checkout_stderr"
+                        fi
                         exit 1
                     fi
                 elif [ "$USE_TIMESTAMP" = true ]; then
@@ -345,6 +349,9 @@ if [ "$DRY_RUN" != true ]; then
                 fi
             else
                 >&2 echo "Error: Failed to create git branch '$BRANCH_NAME'. Please check your git configuration and try again."
+                if [ -n "$checkout_stderr" ]; then
+                    >&2 echo "$checkout_stderr"
+                fi
                 exit 1
             fi
         fi
