@@ -1670,6 +1670,11 @@ def integration_install(
         _update_init_options_for_integration(project_root, integration, script_type=selected_script)
 
     except Exception as e:
+        # Attempt rollback of any files written by setup
+        try:
+            integration.teardown(project_root, manifest, force=True)
+        except Exception:
+            pass
         console.print(f"[red]Error:[/red] Failed to install integration: {e}")
         raise typer.Exit(1)
 
@@ -1776,7 +1781,14 @@ def integration_uninstall(
             save_init_options(project_root, opts)
         raise typer.Exit(0)
 
-    manifest = IntegrationManifest.load(key, project_root)
+    try:
+        manifest = IntegrationManifest.load(key, project_root)
+    except (ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]Error:[/red] Integration manifest for '{key}' is unreadable.")
+        console.print(f"Manifest: {manifest_path}")
+        console.print("Delete the manifest file and run [cyan]specify integration install[/cyan] to recover.")
+        console.print(f"[dim]Details:[/dim] {exc}")
+        raise typer.Exit(1)
 
     removed, skipped = integration.teardown(project_root, manifest, force=force)
 
@@ -1854,6 +1866,14 @@ def integration_switch(
         else:
             console.print(f"[dim]No manifest for '{installed_key}' — skipping uninstall phase[/dim]")
 
+        # Clear metadata so a failed Phase 2 doesn't leave stale references
+        _remove_integration_json(project_root)
+        opts = load_init_options(project_root)
+        opts.pop("integration", None)
+        opts.pop("ai", None)
+        opts.pop("ai_skills", None)
+        save_init_options(project_root, opts)
+
     # Ensure shared infrastructure is present (safe to run unconditionally;
     # _install_shared_infra merges missing files without overwriting).
     _install_shared_infra(project_root, selected_script)
@@ -1882,6 +1902,11 @@ def integration_switch(
         _update_init_options_for_integration(project_root, target_integration, script_type=selected_script)
 
     except Exception as e:
+        # Attempt rollback of any files written by setup
+        try:
+            target_integration.teardown(project_root, manifest, force=True)
+        except Exception:
+            pass
         console.print(f"[red]Error:[/red] Failed to install integration '{target}': {e}")
         raise typer.Exit(1)
 
