@@ -224,16 +224,18 @@ class TestForgeIntegration:
             # Extract the name field from frontmatter
             import re
             name_match = re.search(r'^name:\s*(.+)$', content, re.MULTILINE)
-            if name_match:
-                name_value = name_match.group(1).strip()
-                # Name should use hyphens, not dots
-                assert "." not in name_value, (
-                    f"{cmd_file.name} has name field with dots: {name_value} "
-                    f"(should use hyphens for Forge/ZSH compatibility)"
-                )
-                assert name_value.startswith("speckit-"), (
-                    f"{cmd_file.name} name field should start with 'speckit-': {name_value}"
-                )
+            assert name_match is not None, (
+                f"{cmd_file.name} missing injected 'name' field in frontmatter"
+            )
+            name_value = name_match.group(1).strip()
+            # Name should use hyphens, not dots
+            assert "." not in name_value, (
+                f"{cmd_file.name} has name field with dots: {name_value} "
+                f"(should use hyphens for Forge/ZSH compatibility)"
+            )
+            assert name_value.startswith("speckit-"), (
+                f"{cmd_file.name} name field should start with 'speckit-': {name_value}"
+            )
 
 
 class TestForgeCommandRegistrar:
@@ -370,8 +372,9 @@ class TestForgeCommandRegistrar:
             tmp_path
         )
         
-        # Claude uses skills format (hyphenated directory names)
-        # but doesn't inject frontmatter names
+        # Claude uses skills format with hyphenated directory names.
+        # It doesn't use the inject_name path, but generated SKILL.md
+        # frontmatter still includes the hyphenated name.
         skill_dir = tmp_path / ".claude" / "skills" / "speckit-my-extension-example"
         assert skill_dir.exists()
         
