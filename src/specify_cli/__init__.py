@@ -1766,9 +1766,6 @@ def integration_uninstall(
         raise typer.Exit(1)
 
     integration = get_integration(key)
-    if integration is None:
-        console.print(f"[red]Error:[/red] Unknown integration '{key}'")
-        raise typer.Exit(1)
 
     manifest_path = project_root / ".specify" / "integrations" / f"{key}.manifest.json"
     if not manifest_path.exists():
@@ -1796,7 +1793,7 @@ def integration_uninstall(
         console.print(f"[dim]Details:[/dim] {exc}")
         raise typer.Exit(1)
 
-    removed, skipped = integration.teardown(project_root, manifest, force=force)
+    removed, skipped = manifest.uninstall(project_root, force=force)
 
     _remove_integration_json(project_root)
 
@@ -1808,7 +1805,7 @@ def integration_uninstall(
         opts.pop("ai_skills", None)
         save_init_options(project_root, opts)
 
-    name = (integration.config or {}).get("name", key)
+    name = (integration.config or {}).get("name", key) if integration else key
     console.print(f"\n[green]✓[/green] Integration '{name}' uninstalled")
     if removed:
         console.print(f"  Removed {len(removed)} file(s)")
@@ -1871,15 +1868,23 @@ def integration_switch(
                     f"run [cyan]specify integration uninstall {installed_key}[/cyan], then retry."
                 )
                 raise typer.Exit(1)
-            removed, skipped = current_integration.teardown(
-                project_root, old_manifest, force=force,
-            )
+            removed, skipped = old_manifest.uninstall(project_root, force=force)
             if removed:
                 console.print(f"  Removed {len(removed)} file(s)")
             if skipped:
                 console.print(f"  [yellow]⚠[/yellow]  {len(skipped)} modified file(s) preserved")
-        elif not current_integration:
-            console.print(f"[dim]Unknown installed integration '{installed_key}' — skipping uninstall phase[/dim]")
+        elif not current_integration and manifest_path.exists():
+            # Integration removed from registry but manifest exists — use manifest-only uninstall
+            console.print(f"Uninstalling unknown integration '{installed_key}' via manifest")
+            try:
+                old_manifest = IntegrationManifest.load(installed_key, project_root)
+                removed, skipped = old_manifest.uninstall(project_root, force=force)
+                if removed:
+                    console.print(f"  Removed {len(removed)} file(s)")
+                if skipped:
+                    console.print(f"  [yellow]⚠[/yellow]  {len(skipped)} modified file(s) preserved")
+            except (ValueError, FileNotFoundError) as exc:
+                console.print(f"[yellow]Warning:[/yellow] Could not read manifest for '{installed_key}': {exc}")
         else:
             console.print(f"[dim]No manifest for '{installed_key}' — skipping uninstall phase[/dim]")
 
