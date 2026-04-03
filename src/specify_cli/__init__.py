@@ -1608,7 +1608,6 @@ def integration_install(
     key: str = typer.Argument(help="Integration key to install (e.g. claude, copilot)"),
     script: str = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
     integration_options: str = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
-    force: bool = typer.Option(False, "--force", help="Overwrite existing integration without uninstalling first"),
 ):
     """Install an integration into an existing project."""
     from .integrations import INTEGRATION_REGISTRY, get_integration
@@ -1632,22 +1631,23 @@ def integration_install(
     current = _read_integration_json(project_root)
     installed_key = current.get("integration")
 
-    if installed_key and installed_key == key and not force:
+    if installed_key and installed_key == key:
         console.print(f"[yellow]Integration '{key}' is already installed.[/yellow]")
-        console.print("Use [cyan]--force[/cyan] to reinstall, or [cyan]specify integration switch <target>[/cyan] to change.")
+        console.print("Run [cyan]specify integration uninstall[/cyan] first, then reinstall.")
         raise typer.Exit(0)
 
     if installed_key and installed_key != key:
         console.print(f"[red]Error:[/red] Integration '{installed_key}' is already installed.")
-        console.print(f"Use [cyan]specify integration switch {key}[/cyan] to switch integrations.")
-        if force:
-            console.print(
-                "[yellow]--force only supports reinstalling the currently installed integration "
-                "and cannot overwrite a different integration.[/yellow]"
-            )
+        console.print(f"Run [cyan]specify integration uninstall[/cyan] first, or use [cyan]specify integration switch {key}[/cyan].")
         raise typer.Exit(1)
 
     selected_script = _resolve_script_type(project_root, script)
+
+    # Ensure shared infrastructure exists
+    if not (project_root / ".specify" / "scripts").exists():
+        _install_shared_infra(project_root, selected_script)
+        if os.name != "nt":
+            ensure_executable_scripts(project_root)
 
     manifest = IntegrationManifest(
         integration.key, project_root, version=get_speckit_version()
@@ -1861,6 +1861,12 @@ def integration_switch(
         opts.pop("ai", None)
         opts.pop("ai_skills", None)
         save_init_options(project_root, opts)
+
+    # Ensure shared infrastructure exists
+    if not (project_root / ".specify" / "scripts").exists():
+        _install_shared_infra(project_root, selected_script)
+        if os.name != "nt":
+            ensure_executable_scripts(project_root)
 
     # Phase 2: Install target integration
     console.print(f"Installing integration: [cyan]{target}[/cyan]")

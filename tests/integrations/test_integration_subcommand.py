@@ -106,6 +106,7 @@ class TestIntegrationInstall:
             os.chdir(old_cwd)
         assert result.exit_code == 0
         assert "already installed" in result.output
+        assert "uninstall" in result.output
 
     def test_install_different_when_one_exists(self, tmp_path):
         project = _init_project(tmp_path, "copilot")
@@ -117,22 +118,7 @@ class TestIntegrationInstall:
             os.chdir(old_cwd)
         assert result.exit_code != 0
         assert "already installed" in result.output
-
-    def test_force_blocked_with_different_integration(self, tmp_path):
-        """--force must not allow overwriting a different integration."""
-        project = _init_project(tmp_path, "copilot")
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            result = runner.invoke(app, [
-                "integration", "install", "claude", "--force",
-                "--script", "sh",
-            ])
-        finally:
-            os.chdir(old_cwd)
-        assert result.exit_code != 0
-        assert "already installed" in result.output
-        assert "cannot overwrite a different integration" in result.output
+        assert "uninstall" in result.output
 
     def test_install_into_bare_project(self, tmp_path):
         """Install into a project with .specify/ but no integration."""
@@ -160,6 +146,26 @@ class TestIntegrationInstall:
 
         # Claude uses skills directory (not commands)
         assert (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
+
+    def test_install_bare_project_gets_shared_infra(self, tmp_path):
+        """Installing into a bare project should create shared scripts and templates."""
+        project = tmp_path / "bare"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "install", "claude",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, result.output
+
+        # Shared infrastructure should be present
+        assert (project / ".specify" / "scripts").is_dir()
+        assert (project / ".specify" / "templates").is_dir()
 
 
 # ── uninstall ────────────────────────────────────────────────────────
