@@ -1606,8 +1606,8 @@ def integration_list():
 @integration_app.command("install")
 def integration_install(
     key: str = typer.Argument(help="Integration key to install (e.g. claude, copilot)"),
-    script: str = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
-    integration_options: str = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
+    script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
+    integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
 ):
     """Install an integration into an existing project."""
     from .integrations import INTEGRATION_REGISTRY, get_integration
@@ -1788,7 +1788,11 @@ def integration_uninstall(
     except (ValueError, FileNotFoundError) as exc:
         console.print(f"[red]Error:[/red] Integration manifest for '{key}' is unreadable.")
         console.print(f"Manifest: {manifest_path}")
-        console.print("Delete the manifest file and run [cyan]specify integration install[/cyan] to recover.")
+        console.print(
+            f"To recover, delete the unreadable manifest, run "
+            f"[cyan]specify integration uninstall {key}[/cyan] to clear stale metadata, "
+            f"then run [cyan]specify integration install {key}[/cyan] to regenerate."
+        )
         console.print(f"[dim]Details:[/dim] {exc}")
         raise typer.Exit(1)
 
@@ -1818,9 +1822,9 @@ def integration_uninstall(
 @integration_app.command("switch")
 def integration_switch(
     target: str = typer.Argument(help="Integration key to switch to"),
-    script: str = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
+    script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
     force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall"),
-    integration_options: str = typer.Option(None, "--integration-options", help='Options for the target integration'),
+    integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the target integration'),
 ):
     """Switch from the current integration to a different one."""
     from .integrations import INTEGRATION_REGISTRY, get_integration
@@ -1862,7 +1866,10 @@ def integration_switch(
             except (ValueError, FileNotFoundError) as exc:
                 console.print(f"[red]Error:[/red] Could not read integration manifest for '{installed_key}': {manifest_path}")
                 console.print(f"[dim]{exc}[/dim]")
-                console.print("Try repairing or removing the manifest file, then rerun the command.")
+                console.print(
+                    f"To recover, delete the unreadable manifest at {manifest_path}, "
+                    f"run [cyan]specify integration uninstall {installed_key}[/cyan], then retry."
+                )
                 raise typer.Exit(1)
             removed, skipped = current_integration.teardown(
                 project_root, old_manifest, force=force,
