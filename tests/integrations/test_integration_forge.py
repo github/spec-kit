@@ -2,6 +2,41 @@
 
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.manifest import IntegrationManifest
+from specify_cli.integrations.forge import format_forge_command_name
+
+
+class TestForgeCommandNameFormatter:
+    """Test the centralized Forge command name formatter."""
+
+    def test_simple_name_without_prefix(self):
+        """Test formatting a simple name without 'speckit.' prefix."""
+        assert format_forge_command_name("plan") == "speckit-plan"
+        assert format_forge_command_name("tasks") == "speckit-tasks"
+        assert format_forge_command_name("specify") == "speckit-specify"
+
+    def test_name_with_speckit_prefix(self):
+        """Test formatting a name that already has 'speckit.' prefix."""
+        assert format_forge_command_name("speckit.plan") == "speckit-plan"
+        assert format_forge_command_name("speckit.tasks") == "speckit-tasks"
+
+    def test_extension_command_name(self):
+        """Test formatting extension command names with dots."""
+        assert format_forge_command_name("speckit.my-extension.example") == "speckit-my-extension-example"
+        assert format_forge_command_name("my-extension.example") == "speckit-my-extension-example"
+
+    def test_complex_nested_name(self):
+        """Test formatting deeply nested command names."""
+        assert format_forge_command_name("speckit.jira.sync-status") == "speckit-jira-sync-status"
+        assert format_forge_command_name("speckit.foo.bar.baz") == "speckit-foo-bar-baz"
+
+    def test_name_with_hyphens_preserved(self):
+        """Test that existing hyphens are preserved."""
+        assert format_forge_command_name("my-extension") == "speckit-my-extension"
+        assert format_forge_command_name("speckit.my-ext.test-cmd") == "speckit-my-ext-test-cmd"
+
+    def test_alias_formatting(self):
+        """Test formatting alias names."""
+        assert format_forge_command_name("speckit.my-extension.example-short") == "speckit-my-extension-example-short"
 
 
 class TestForgeIntegration:
@@ -168,3 +203,173 @@ class TestForgeIntegration:
             assert "{{parameters}}" in content, (
                 "checklist should contain {{parameters}} in User Input section"
             )
+
+    def test_name_field_uses_hyphenated_format(self, tmp_path):
+        """Verify that injected name fields use hyphenated format (speckit-plan, not speckit.plan)."""
+        from specify_cli.integrations.forge import ForgeIntegration
+        forge = ForgeIntegration()
+        m = IntegrationManifest("forge", tmp_path)
+        forge.setup(tmp_path, m)
+        commands_dir = tmp_path / ".forge" / "commands"
+
+        # Check that name fields use hyphenated format
+        for cmd_file in commands_dir.glob("speckit.*.md"):
+            content = cmd_file.read_text(encoding="utf-8")
+            # Extract the name field from frontmatter
+            import re
+            name_match = re.search(r'^name:\s*(.+)$', content, re.MULTILINE)
+            if name_match:
+                name_value = name_match.group(1).strip()
+                # Name should use hyphens, not dots
+                assert "." not in name_value, (
+                    f"{cmd_file.name} has name field with dots: {name_value} "
+                    f"(should use hyphens for Forge/ZSH compatibility)"
+                )
+                assert name_value.startswith("speckit-"), (
+                    f"{cmd_file.name} name field should start with 'speckit-': {name_value}"
+                )
+
+
+class TestForgeCommandRegistrar:
+    """Test CommandRegistrar's Forge-specific name formatting."""
+
+    def test_registrar_formats_extension_command_names_for_forge(self, tmp_path):
+        """Verify CommandRegistrar converts dot notation to hyphens for Forge."""
+        from specify_cli.agents import CommandRegistrar
+        
+        # Create a mock extension command file
+        ext_dir = tmp_path / "extension"
+        ext_dir.mkdir()
+        cmd_dir = ext_dir / "commands"
+        cmd_dir.mkdir()
+        
+        # Create a test command with dot notation name
+        cmd_file = cmd_dir / "example.md"
+        cmd_file.write_text(
+            "---\n"
+            "description: Test extension command\n"
+            "---\n\n"
+            "Test content with $ARGUMENTS\n",
+            encoding="utf-8"
+        )
+        
+        # Register with Forge
+        registrar = CommandRegistrar()
+        commands = [
+            {
+                "name": "speckit.my-extension.example",
+                "file": "commands/example.md"
+            }
+        ]
+        
+        registered = registrar.register_commands(
+            "forge",
+            commands,
+            "test-extension",
+            ext_dir,
+            tmp_path
+        )
+        
+        # Verify registration succeeded
+        assert "speckit.my-extension.example" in registered
+        
+        # Check the generated file has hyphenated name in frontmatter
+        forge_cmd = tmp_path / ".forge" / "commands" / "speckit.my-extension.example.md"
+        assert forge_cmd.exists()
+        
+        content = forge_cmd.read_text(encoding="utf-8")
+        # Name field should use hyphens, not dots
+        assert "name: speckit-my-extension-example" in content
+        assert "name: speckit.my-extension.example" not in content
+
+    def test_registrar_formats_alias_names_for_forge(self, tmp_path):
+        """Verify CommandRegistrar converts alias names to hyphens for Forge."""
+        from specify_cli.agents import CommandRegistrar
+        
+        # Create a mock extension command file
+        ext_dir = tmp_path / "extension"
+        ext_dir.mkdir()
+        cmd_dir = ext_dir / "commands"
+        cmd_dir.mkdir()
+        
+        cmd_file = cmd_dir / "example.md"
+        cmd_file.write_text(
+            "---\n"
+            "description: Test command with alias\n"
+            "---\n\n"
+            "Test content\n",
+            encoding="utf-8"
+        )
+        
+        # Register with Forge including an alias
+        registrar = CommandRegistrar()
+        commands = [
+            {
+                "name": "speckit.my-extension.example",
+                "file": "commands/example.md",
+                "aliases": ["speckit.my-extension.ex"]
+            }
+        ]
+        
+        registrar.register_commands(
+            "forge",
+            commands,
+            "test-extension",
+            ext_dir,
+            tmp_path
+        )
+        
+        # Check the alias file has hyphenated name in frontmatter
+        alias_file = tmp_path / ".forge" / "commands" / "speckit.my-extension.ex.md"
+        assert alias_file.exists()
+        
+        content = alias_file.read_text(encoding="utf-8")
+        # Alias name field should also use hyphens
+        assert "name: speckit-my-extension-ex" in content
+        assert "name: speckit.my-extension.ex" not in content
+
+    def test_registrar_does_not_affect_other_agents(self, tmp_path):
+        """Verify other agents still use dot notation (not affected by Forge formatter)."""
+        from specify_cli.agents import CommandRegistrar
+        
+        # Create a mock extension command file
+        ext_dir = tmp_path / "extension"
+        ext_dir.mkdir()
+        cmd_dir = ext_dir / "commands"
+        cmd_dir.mkdir()
+        
+        cmd_file = cmd_dir / "example.md"
+        cmd_file.write_text(
+            "---\n"
+            "description: Test command\n"
+            "---\n\n"
+            "Test content with $ARGUMENTS\n",
+            encoding="utf-8"
+        )
+        
+        # Register with Claude (uses dot notation)
+        registrar = CommandRegistrar()
+        commands = [
+            {
+                "name": "speckit.my-extension.example",
+                "file": "commands/example.md"
+            }
+        ]
+        
+        registrar.register_commands(
+            "claude",
+            commands,
+            "test-extension",
+            ext_dir,
+            tmp_path
+        )
+        
+        # Claude uses skills format (hyphenated directory names)
+        # but doesn't inject frontmatter names
+        skill_dir = tmp_path / ".claude" / "skills" / "speckit-my-extension-example"
+        assert skill_dir.exists()
+        
+        skill_file = skill_dir / "SKILL.md"
+        content = skill_file.read_text(encoding="utf-8")
+        # Claude skills should have hyphenated name in metadata
+        assert "name: speckit-my-extension-example" in content
