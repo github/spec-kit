@@ -337,7 +337,7 @@ class TestForgeCommandRegistrar:
         assert "name: speckit.my-extension.ex" not in content
 
     def test_registrar_does_not_affect_other_agents(self, tmp_path):
-        """Verify other agents still use dot notation (not affected by Forge formatter)."""
+        """Verify format_name callback is Forge-specific and doesn't affect other agents."""
         from specify_cli.agents import CommandRegistrar
         
         # Create a mock extension command file
@@ -355,7 +355,7 @@ class TestForgeCommandRegistrar:
             encoding="utf-8"
         )
         
-        # Register with Claude (uses dot notation)
+        # Register with Windsurf (standard markdown agent without inject_name)
         registrar = CommandRegistrar()
         commands = [
             {
@@ -365,20 +365,20 @@ class TestForgeCommandRegistrar:
         ]
         
         registrar.register_commands(
-            "claude",
+            "windsurf",
             commands,
             "test-extension",
             ext_dir,
             tmp_path
         )
         
-        # Claude uses skills format with hyphenated directory names.
-        # It doesn't use the inject_name path, but generated SKILL.md
-        # frontmatter still includes the hyphenated name.
-        skill_dir = tmp_path / ".claude" / "skills" / "speckit-my-extension-example"
-        assert skill_dir.exists()
+        # Windsurf uses standard markdown format without name injection.
+        # The format_name callback should not be invoked for non-Forge agents.
+        windsurf_cmd = tmp_path / ".windsurf" / "workflows" / "speckit.my-extension.example.md"
+        assert windsurf_cmd.exists()
         
-        skill_file = skill_dir / "SKILL.md"
-        content = skill_file.read_text(encoding="utf-8")
-        # Claude skills should have hyphenated name in metadata
-        assert "name: speckit-my-extension-example" in content
+        content = windsurf_cmd.read_text(encoding="utf-8")
+        # Windsurf should NOT have a name field injected
+        assert "name:" not in content, (
+            "Windsurf should not inject name field - format_name callback should be Forge-only"
+        )

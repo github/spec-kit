@@ -4,7 +4,7 @@ Forge has several unique behaviors compared to standard markdown agents:
 - Uses `{{parameters}}` instead of `$ARGUMENTS` for argument passing
 - Strips `handoffs` frontmatter key (Claude Code feature that causes Forge to hang)
 - Injects `name` field into frontmatter when missing
-- Requires hyphenated command names (speckit-foo-bar) instead of dot notation (speckit.foo.bar)
+- Uses a hyphenated frontmatter `name` value (e.g., `speckit-foo-bar`) for shell compatibility, especially with ZSH
 """
 
 from __future__ import annotations
