@@ -996,7 +996,7 @@
       "name": "Security Review",
       "id": "security-review",
       "description": "Comprehensive security audit of codebases using AI-powered DevSecOps analysis",
-      "author": "Spec-Kit Security Team",
+      "author": "DyanGalih",
       "version": "1.1.0",
       "download_url": "https://github.com/DyanGalih/spec-kit-security-review/archive/refs/tags/v1.1.0.zip",
       "repository": "https://github.com/DyanGalih/spec-kit-security-review",
