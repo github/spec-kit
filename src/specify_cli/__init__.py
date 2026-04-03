@@ -1637,9 +1637,14 @@ def integration_install(
         console.print("Use [cyan]--force[/cyan] to reinstall, or [cyan]specify integration switch <target>[/cyan] to change.")
         raise typer.Exit(0)
 
-    if installed_key and installed_key != key and not force:
+    if installed_key and installed_key != key:
         console.print(f"[red]Error:[/red] Integration '{installed_key}' is already installed.")
-        console.print(f"Use [cyan]specify integration switch {key}[/cyan] to switch, or [cyan]--force[/cyan] to overwrite.")
+        console.print(f"Use [cyan]specify integration switch {key}[/cyan] to switch integrations.")
+        if force:
+            console.print(
+                "[yellow]--force only supports reinstalling the currently installed integration "
+                "and cannot overwrite a different integration.[/yellow]"
+            )
         raise typer.Exit(1)
 
     selected_script = _resolve_script_type(project_root, script)
@@ -1662,7 +1667,7 @@ def integration_install(
         )
         manifest.save()
         _write_integration_json(project_root, integration.key, selected_script)
-        _update_init_options_for_integration(project_root, integration)
+        _update_init_options_for_integration(project_root, integration, script_type=selected_script)
 
     except Exception as e:
         console.print(f"[red]Error:[/red] Failed to install integration: {e}")
@@ -1707,12 +1712,15 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
 def _update_init_options_for_integration(
     project_root: Path,
     integration: Any,
+    script_type: str | None = None,
 ) -> None:
     """Update ``init-options.json`` to reflect *integration* as the active one."""
     from .integrations.base import SkillsIntegration
     opts = load_init_options(project_root)
     opts["integration"] = integration.key
     opts["ai"] = integration.key
+    if script_type:
+        opts["script"] = script_type
     if isinstance(integration, SkillsIntegration):
         opts["ai_skills"] = True
     else:
@@ -1873,7 +1881,7 @@ def integration_switch(
         )
         manifest.save()
         _write_integration_json(project_root, target_integration.key, selected_script)
-        _update_init_options_for_integration(project_root, target_integration)
+        _update_init_options_for_integration(project_root, target_integration, script_type=selected_script)
 
     except Exception as e:
         console.print(f"[red]Error:[/red] Failed to install integration '{target}': {e}")

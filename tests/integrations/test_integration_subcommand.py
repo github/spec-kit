@@ -118,6 +118,22 @@ class TestIntegrationInstall:
         assert result.exit_code != 0
         assert "already installed" in result.output
 
+    def test_force_blocked_with_different_integration(self, tmp_path):
+        """--force must not allow overwriting a different integration."""
+        project = _init_project(tmp_path, "copilot")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "install", "claude", "--force",
+                "--script", "sh",
+            ])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code != 0
+        assert "already installed" in result.output
+        assert "cannot overwrite a different integration" in result.output
+
     def test_install_into_bare_project(self, tmp_path):
         """Install into a project with .specify/ but no integration."""
         project = tmp_path / "bare"
@@ -489,7 +505,7 @@ class TestUninstallNoManifestClearsInitOptions:
 
 class TestSwitchClearsMetadataAfterTeardown:
     def test_metadata_cleared_between_phases(self, tmp_path):
-        """If install phase fails during switch, metadata should not reference the removed integration."""
+        """After a successful switch, metadata should reference the new integration."""
         project = _init_project(tmp_path, "claude")
 
         # Verify initial state
