@@ -65,6 +65,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 2. **Load context**: Read FEATURE_SPEC and `/memory/constitution.md`. Load IMPL_PLAN template (already copied).
 
 3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
+   - Include a **Table of Contents** section immediately after the header metadata block and before the Summary. List all `##`-level headings as markdown anchor links (lowercase, spaces to hyphens, strip special characters). Only include sections that actually appear in the final document.
    - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
    - Fill Constitution Check section from constitution
    - Evaluate gates (ERROR if violations unjustified)
