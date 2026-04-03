@@ -1486,6 +1486,368 @@ def get_speckit_version() -> str:
     return "unknown"
 
 
+# ===== Integration Commands =====
+
+integration_app = typer.Typer(
+    name="integration",
+    help="Manage AI agent integrations",
+    add_completion=False,
+)
+app.add_typer(integration_app, name="integration")
+
+
+INTEGRATION_JSON = ".specify/integration.json"
+
+
+def _read_integration_json(project_root: Path) -> dict[str, Any]:
+    """Load ``.specify/integration.json``.  Returns ``{}`` on missing/corrupt."""
+    path = project_root / INTEGRATION_JSON
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _write_integration_json(
+    project_root: Path,
+    integration_key: str,
+    script_type: str,
+) -> None:
+    """Write ``.specify/integration.json`` for *integration_key*."""
+    script_ext = "sh" if script_type == "sh" else "ps1"
+    dest = project_root / INTEGRATION_JSON
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps({
+        "integration": integration_key,
+        "version": get_speckit_version(),
+        "scripts": {
+            "update-context": f".specify/integrations/{integration_key}/scripts/update-context.{script_ext}",
+        },
+    }, indent=2) + "\n", encoding="utf-8")
+
+
+def _remove_integration_json(project_root: Path) -> None:
+    """Remove ``.specify/integration.json`` if it exists."""
+    path = project_root / INTEGRATION_JSON
+    if path.exists():
+        path.unlink()
+
+
+def _resolve_script_type(project_root: Path, script_type: str | None) -> str:
+    """Resolve the script type from the CLI flag or init-options.json."""
+    if script_type:
+        return script_type
+    opts = load_init_options(project_root)
+    saved = opts.get("script")
+    if saved:
+        return saved
+    return "ps" if os.name == "nt" else "sh"
+
+
+@integration_app.command("list")
+def integration_list():
+    """List available integrations and installed status."""
+    from .integrations import INTEGRATION_REGISTRY
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    current = _read_integration_json(project_root)
+    installed_key = current.get("integration")
+
+    table = Table(title="AI Agent Integrations")
+    table.add_column("Key", style="cyan")
+    table.add_column("Name")
+    table.add_column("Status")
+    table.add_column("CLI Required")
+
+    for key in sorted(INTEGRATION_REGISTRY.keys()):
+        integration = INTEGRATION_REGISTRY[key]
+        cfg = integration.config or {}
+        name = cfg.get("name", key)
+        requires_cli = cfg.get("requires_cli", False)
+
+        if key == installed_key:
+            status = "[green]installed[/green]"
+        else:
+            status = ""
+
+        cli_req = "yes" if requires_cli else "no (IDE)"
+        table.add_row(key, name, status, cli_req)
+
+    console.print(table)
+
+    if installed_key:
+        console.print(f"\n[dim]Current integration:[/dim] [cyan]{installed_key}[/cyan]")
+    else:
+        console.print("\n[yellow]No integration currently installed.[/yellow]")
+        console.print("Install one with: [cyan]specify integration install <key>[/cyan]")
+
+
+@integration_app.command("install")
+def integration_install(
+    key: str = typer.Argument(help="Integration key to install (e.g. claude, copilot)"),
+    script: str = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
+    integration_options: str = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing integration without uninstalling first"),
+):
+    """Install an integration into an existing project."""
+    from .integrations import INTEGRATION_REGISTRY, get_integration
+    from .integrations.manifest import IntegrationManifest
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    integration = get_integration(key)
+    if integration is None:
+        console.print(f"[red]Error:[/red] Unknown integration '{key}'")
+        available = ", ".join(sorted(INTEGRATION_REGISTRY.keys()))
+        console.print(f"Available integrations: {available}")
+        raise typer.Exit(1)
+
+    current = _read_integration_json(project_root)
+    installed_key = current.get("integration")
+
+    if installed_key and installed_key == key and not force:
+        console.print(f"[yellow]Integration '{key}' is already installed.[/yellow]")
+        console.print("Use [cyan]--force[/cyan] to reinstall, or [cyan]specify integration switch <target>[/cyan] to change.")
+        raise typer.Exit(0)
+
+    if installed_key and installed_key != key and not force:
+        console.print(f"[red]Error:[/red] Integration '{installed_key}' is already installed.")
+        console.print(f"Use [cyan]specify integration switch {key}[/cyan] to switch, or [cyan]--force[/cyan] to overwrite.")
+        raise typer.Exit(1)
+
+    selected_script = _resolve_script_type(project_root, script)
+
+    manifest = IntegrationManifest(
+        integration.key, project_root, version=get_speckit_version()
+    )
+
+    # Build parsed options from --integration-options
+    parsed_options: dict[str, Any] | None = None
+    if integration_options:
+        parsed_options = _parse_integration_options(integration, integration_options)
+
+    try:
+        integration.setup(
+            project_root, manifest,
+            parsed_options=parsed_options,
+            script_type=selected_script,
+            raw_options=integration_options,
+        )
+        manifest.save()
+        _write_integration_json(project_root, integration.key, selected_script)
+
+        # Update init-options.json to reflect the new integration
+        opts = load_init_options(project_root)
+        opts["integration"] = integration.key
+        opts["ai"] = integration.key
+        from .integrations.base import SkillsIntegration
+        if isinstance(integration, SkillsIntegration):
+            opts["ai_skills"] = True
+        save_init_options(project_root, opts)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Failed to install integration: {e}")
+        raise typer.Exit(1)
+
+    name = (integration.config or {}).get("name", key)
+    console.print(f"\n[green]✓[/green] Integration '{name}' installed successfully")
+
+
+def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, Any]:
+    """Parse --integration-options string into a dict matching the integration's declared options."""
+    import shlex
+    parsed: dict[str, Any] = {}
+    tokens = shlex.split(raw_options)
+    declared = {opt.name.lstrip("-"): opt for opt in integration.options()}
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        name = token.lstrip("-")
+        opt = declared.get(name)
+        if opt and opt.is_flag:
+            parsed[name.replace("-", "_")] = True
+            i += 1
+        elif opt and i + 1 < len(tokens):
+            parsed[name.replace("-", "_")] = tokens[i + 1]
+            i += 2
+        else:
+            i += 1
+    return parsed or None
+
+
+@integration_app.command("uninstall")
+def integration_uninstall(
+    key: str = typer.Argument(None, help="Integration key to uninstall (default: current integration)"),
+    force: bool = typer.Option(False, "--force", help="Remove files even if modified"),
+):
+    """Uninstall an integration, safely preserving modified files."""
+    from .integrations import get_integration
+    from .integrations.manifest import IntegrationManifest
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    current = _read_integration_json(project_root)
+    installed_key = current.get("integration")
+
+    if key is None:
+        if not installed_key:
+            console.print("[yellow]No integration is currently installed.[/yellow]")
+            raise typer.Exit(0)
+        key = installed_key
+
+    if installed_key and installed_key != key:
+        console.print(f"[red]Error:[/red] Integration '{key}' is not the currently installed integration ('{installed_key}').")
+        raise typer.Exit(1)
+
+    integration = get_integration(key)
+    if integration is None:
+        console.print(f"[red]Error:[/red] Unknown integration '{key}'")
+        raise typer.Exit(1)
+
+    manifest_path = project_root / ".specify" / "integrations" / f"{key}.manifest.json"
+    if not manifest_path.exists():
+        console.print(f"[yellow]No manifest found for integration '{key}'. Nothing to uninstall.[/yellow]")
+        _remove_integration_json(project_root)
+        raise typer.Exit(0)
+
+    manifest = IntegrationManifest.load(key, project_root)
+
+    removed, skipped = integration.teardown(project_root, manifest, force=force)
+
+    _remove_integration_json(project_root)
+
+    # Update init-options.json to clear the integration
+    opts = load_init_options(project_root)
+    if opts.get("integration") == key:
+        opts.pop("integration", None)
+        opts.pop("ai", None)
+        opts.pop("ai_skills", None)
+        save_init_options(project_root, opts)
+
+    name = (integration.config or {}).get("name", key)
+    console.print(f"\n[green]✓[/green] Integration '{name}' uninstalled")
+    if removed:
+        console.print(f"  Removed {len(removed)} file(s)")
+    if skipped:
+        console.print(f"\n[yellow]⚠[/yellow]  {len(skipped)} modified file(s) were preserved:")
+        for path in skipped:
+            rel = path.relative_to(project_root) if path.is_absolute() else path
+            console.print(f"    {rel}")
+
+
+@integration_app.command("switch")
+def integration_switch(
+    target: str = typer.Argument(help="Integration key to switch to"),
+    script: str = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
+    force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall"),
+    integration_options: str = typer.Option(None, "--integration-options", help='Options for the target integration'),
+):
+    """Switch from the current integration to a different one."""
+    from .integrations import INTEGRATION_REGISTRY, get_integration
+    from .integrations.manifest import IntegrationManifest
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    target_integration = get_integration(target)
+    if target_integration is None:
+        console.print(f"[red]Error:[/red] Unknown integration '{target}'")
+        available = ", ".join(sorted(INTEGRATION_REGISTRY.keys()))
+        console.print(f"Available integrations: {available}")
+        raise typer.Exit(1)
+
+    current = _read_integration_json(project_root)
+    installed_key = current.get("integration")
+
+    if installed_key == target:
+        console.print(f"[yellow]Integration '{target}' is already installed. Nothing to switch.[/yellow]")
+        raise typer.Exit(0)
+
+    selected_script = _resolve_script_type(project_root, script)
+
+    # Phase 1: Uninstall current integration (if any)
+    if installed_key:
+        current_integration = get_integration(installed_key)
+        manifest_path = project_root / ".specify" / "integrations" / f"{installed_key}.manifest.json"
+
+        if current_integration and manifest_path.exists():
+            console.print(f"Uninstalling current integration: [cyan]{installed_key}[/cyan]")
+            old_manifest = IntegrationManifest.load(installed_key, project_root)
+            removed, skipped = current_integration.teardown(
+                project_root, old_manifest, force=force,
+            )
+            if removed:
+                console.print(f"  Removed {len(removed)} file(s)")
+            if skipped:
+                console.print(f"  [yellow]⚠[/yellow]  {len(skipped)} modified file(s) preserved")
+        else:
+            console.print(f"[dim]No manifest for '{installed_key}' — skipping uninstall phase[/dim]")
+
+    # Phase 2: Install target integration
+    console.print(f"Installing integration: [cyan]{target}[/cyan]")
+    manifest = IntegrationManifest(
+        target_integration.key, project_root, version=get_speckit_version()
+    )
+
+    parsed_options: dict[str, Any] | None = None
+    if integration_options:
+        parsed_options = _parse_integration_options(target_integration, integration_options)
+
+    try:
+        target_integration.setup(
+            project_root, manifest,
+            parsed_options=parsed_options,
+            script_type=selected_script,
+            raw_options=integration_options,
+        )
+        manifest.save()
+        _write_integration_json(project_root, target_integration.key, selected_script)
+
+        # Update init-options.json
+        opts = load_init_options(project_root)
+        opts["integration"] = target_integration.key
+        opts["ai"] = target_integration.key
+        from .integrations.base import SkillsIntegration
+        if isinstance(target_integration, SkillsIntegration):
+            opts["ai_skills"] = True
+        else:
+            opts.pop("ai_skills", None)
+        save_init_options(project_root, opts)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Failed to install integration '{target}': {e}")
+        raise typer.Exit(1)
+
+    name = (target_integration.config or {}).get("name", target)
+    console.print(f"\n[green]✓[/green] Switched to integration '{name}'")
+
+
 # ===== Preset Commands =====
 
 
