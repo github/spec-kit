@@ -394,3 +394,125 @@ class TestIntegrationLifecycle:
             assert plan_file.read_text(encoding="utf-8") == "# user customization\n"
         finally:
             os.chdir(old_cwd)
+
+
+# ── Edge-case fixes ─────────────────────────────────────────────────
+
+
+class TestScriptTypeValidation:
+    def test_invalid_script_type_rejected(self, tmp_path):
+        """--script with an invalid value should fail with a clear error."""
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "install", "claude",
+                "--script", "bash",
+            ])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code != 0
+        assert "Invalid script type" in result.output
+
+    def test_valid_script_types_accepted(self, tmp_path):
+        """Both 'sh' and 'ps' should be accepted."""
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "install", "claude",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+
+
+class TestParseIntegrationOptionsEqualsForm:
+    def test_equals_form_parsed(self):
+        """--commands-dir=./x should be parsed the same as --commands-dir ./x."""
+        from specify_cli import _parse_integration_options
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("generic")
+        assert integration is not None
+
+        result_space = _parse_integration_options(integration, "--commands-dir ./mydir")
+        result_equals = _parse_integration_options(integration, "--commands-dir=./mydir")
+        assert result_space is not None
+        assert result_equals is not None
+        assert result_space["commands_dir"] == "./mydir"
+        assert result_equals["commands_dir"] == "./mydir"
+
+
+class TestUninstallNoManifestClearsInitOptions:
+    def test_init_options_cleared_on_no_manifest_uninstall(self, tmp_path):
+        """When no manifest exists, uninstall should still clear init-options.json."""
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        # Write integration.json and init-options.json without a manifest
+        int_json = project / ".specify" / "integration.json"
+        int_json.write_text(json.dumps({"integration": "claude"}), encoding="utf-8")
+
+        opts_json = project / ".specify" / "init-options.json"
+        opts_json.write_text(json.dumps({
+            "integration": "claude",
+            "ai": "claude",
+            "ai_skills": True,
+            "script": "sh",
+        }), encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["integration", "uninstall", "claude"])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+
+        # init-options.json should have integration keys cleared
+        opts = json.loads(opts_json.read_text(encoding="utf-8"))
+        assert "integration" not in opts
+        assert "ai" not in opts
+        assert "ai_skills" not in opts
+        # Non-integration keys preserved
+        assert opts.get("script") == "sh"
+
+
+class TestSwitchClearsMetadataAfterTeardown:
+    def test_metadata_cleared_between_phases(self, tmp_path):
+        """If install phase fails during switch, metadata should not reference the removed integration."""
+        project = _init_project(tmp_path, "claude")
+
+        # Verify initial state
+        int_json = project / ".specify" / "integration.json"
+        assert json.loads(int_json.read_text(encoding="utf-8"))["integration"] == "claude"
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            # Switch to copilot — should succeed and update metadata
+            result = runner.invoke(app, [
+                "integration", "switch", "copilot",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+
+        # integration.json should reference copilot, not claude
+        data = json.loads(int_json.read_text(encoding="utf-8"))
+        assert data["integration"] == "copilot"
+
+        # init-options.json should reference copilot
+        opts_json = project / ".specify" / "init-options.json"
+        opts = json.loads(opts_json.read_text(encoding="utf-8"))
+        assert opts.get("ai") == "copilot"

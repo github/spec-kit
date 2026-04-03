@@ -1535,14 +1535,26 @@ def _remove_integration_json(project_root: Path) -> None:
         path.unlink()
 
 
+def _normalize_script_type(script_type: str, source: str) -> str:
+    """Normalize and validate a script type from CLI/config sources."""
+    normalized = script_type.strip().lower()
+    if normalized in SCRIPT_TYPE_CHOICES:
+        return normalized
+    console.print(
+        f"[red]Error:[/red] Invalid script type {script_type!r} from {source}. "
+        f"Expected one of: {', '.join(sorted(SCRIPT_TYPE_CHOICES.keys()))}."
+    )
+    raise typer.Exit(1)
+
+
 def _resolve_script_type(project_root: Path, script_type: str | None) -> str:
     """Resolve the script type from the CLI flag or init-options.json."""
     if script_type:
-        return script_type
+        return _normalize_script_type(script_type, "--script")
     opts = load_init_options(project_root)
     saved = opts.get("script")
-    if saved:
-        return saved
+    if isinstance(saved, str) and saved.strip():
+        return _normalize_script_type(saved, ".specify/init-options.json")
     return "ps" if os.name == "nt" else "sh"
 
 
@@ -1673,9 +1685,16 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
     while i < len(tokens):
         token = tokens[i]
         name = token.lstrip("-")
+        value: str | None = None
+        # Handle --name=value syntax
+        if "=" in name:
+            name, value = name.split("=", 1)
         opt = declared.get(name)
         if opt and opt.is_flag:
             parsed[name.replace("-", "_")] = True
+            i += 1
+        elif opt and value is not None:
+            parsed[name.replace("-", "_")] = value
             i += 1
         elif opt and i + 1 < len(tokens):
             parsed[name.replace("-", "_")] = tokens[i + 1]
@@ -1740,6 +1759,13 @@ def integration_uninstall(
     if not manifest_path.exists():
         console.print(f"[yellow]No manifest found for integration '{key}'. Nothing to uninstall.[/yellow]")
         _remove_integration_json(project_root)
+        # Clear integration-related keys from init-options.json
+        opts = load_init_options(project_root)
+        if opts.get("integration") == key:
+            opts.pop("integration", None)
+            opts.pop("ai", None)
+            opts.pop("ai_skills", None)
+            save_init_options(project_root, opts)
         raise typer.Exit(0)
 
     manifest = IntegrationManifest.load(key, project_root)
@@ -1819,6 +1845,14 @@ def integration_switch(
                 console.print(f"  [yellow]⚠[/yellow]  {len(skipped)} modified file(s) preserved")
         else:
             console.print(f"[dim]No manifest for '{installed_key}' — skipping uninstall phase[/dim]")
+
+        # Clear stale metadata so a failed Phase 2 doesn't reference the removed integration
+        _remove_integration_json(project_root)
+        opts = load_init_options(project_root)
+        opts.pop("integration", None)
+        opts.pop("ai", None)
+        opts.pop("ai_skills", None)
+        save_init_options(project_root, opts)
 
     # Phase 2: Install target integration
     console.print(f"Installing integration: [cyan]{target}[/cyan]")
