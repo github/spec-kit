@@ -38,6 +38,12 @@ class TestForgeCommandNameFormatter:
         """Test formatting alias names."""
         assert format_forge_command_name("speckit.my-extension.example-short") == "speckit-my-extension-example-short"
 
+    def test_idempotent_already_hyphenated(self):
+        """Test that already-hyphenated names are returned unchanged (idempotent)."""
+        assert format_forge_command_name("speckit-plan") == "speckit-plan"
+        assert format_forge_command_name("speckit-my-extension-example") == "speckit-my-extension-example"
+        assert format_forge_command_name("speckit-jira-sync-status") == "speckit-jira-sync-status"
+
 
 class TestForgeIntegration:
     def test_forge_key_and_config(self):

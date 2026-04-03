@@ -23,22 +23,33 @@ def format_forge_command_name(cmd_name: str) -> str:
     compatibility with ZSH and other shells. This function converts
     dot-notation command names to hyphenated format.
     
+    The function is idempotent: already-formatted names are returned unchanged.
+    
     Examples:
         >>> format_forge_command_name("plan")
         'speckit-plan'
         >>> format_forge_command_name("speckit.plan")
         'speckit-plan'
+        >>> format_forge_command_name("speckit-plan")
+        'speckit-plan'
         >>> format_forge_command_name("speckit.my-extension.example")
+        'speckit-my-extension-example'
+        >>> format_forge_command_name("speckit-my-extension-example")
         'speckit-my-extension-example'
         >>> format_forge_command_name("speckit.jira.sync-status")
         'speckit-jira-sync-status'
     
     Args:
-        cmd_name: Command name in any format (with or without 'speckit.' prefix)
+        cmd_name: Command name in dot notation (speckit.foo.bar), 
+                  hyphenated format (speckit-foo-bar), or plain name (foo)
     
     Returns:
         Hyphenated command name with 'speckit-' prefix
     """
+    # Already in hyphenated format - return as-is (idempotent)
+    if cmd_name.startswith("speckit-"):
+        return cmd_name
+    
     # Strip 'speckit.' prefix if present
     short_name = cmd_name
     if short_name.startswith("speckit."):
