@@ -5,13 +5,6 @@
 **Status**: Draft  
 **Input**: User description: "$ARGUMENTS"
 
-## Table of Contents
-
-- User Scenarios & Testing
-- Requirements
-- Success Criteria
-- Assumptions
-
 ## User Scenarios & Testing *(mandatory)*
 
 <!--
