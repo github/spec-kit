@@ -12,19 +12,6 @@ description: "Task list template for feature implementation"
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
-## Table of Contents
-
-- Format
-- Path Conventions
-- Phase 1: Setup (Shared Infrastructure)
-- Phase 2: Foundational (Blocking Prerequisites)
-- Phase 3+: User Story phases (generated from spec.md priorities)
-- Phase N: Polish & Cross-Cutting Concerns
-- Dependencies & Execution Order
-- Parallel Example: User Story 1
-- Implementation Strategy
-- Notes
-
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
