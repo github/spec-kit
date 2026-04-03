@@ -1636,7 +1636,7 @@ def integration_install(
         console.print("Run [cyan]specify integration uninstall[/cyan] first, then reinstall.")
         raise typer.Exit(0)
 
-    if installed_key and installed_key != key:
+    if installed_key:
         console.print(f"[red]Error:[/red] Integration '{installed_key}' is already installed.")
         console.print(f"Run [cyan]specify integration uninstall[/cyan] first, or use [cyan]specify integration switch {key}[/cyan].")
         raise typer.Exit(1)
