@@ -57,6 +57,7 @@ class TestClaudeIntegration:
         parts = content.split("---", 2)
         parsed = yaml.safe_load(parts[1])
         assert parsed["name"] == "speckit-plan"
+        assert parsed["user-invocable"] is True
         assert parsed["disable-model-invocation"] is True
         assert parsed["metadata"]["source"] == "templates/commands/plan.md"
 
@@ -175,7 +176,9 @@ class TestClaudeIntegration:
 
         skill_file = project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
         assert skill_file.exists()
-        assert "disable-model-invocation: true" in skill_file.read_text(encoding="utf-8")
+        skill_content = skill_file.read_text(encoding="utf-8")
+        assert "user-invocable: true" in skill_content
+        assert "disable-model-invocation: true" in skill_content
 
         init_options = json.loads(
             (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
@@ -275,6 +278,7 @@ class TestClaudeIntegration:
         content = skill_file.read_text(encoding="utf-8")
         assert "preset:claude-skill-command" in content
         assert "name: speckit-research" in content
+        assert "user-invocable: true" in content
         assert "disable-model-invocation: true" in content
 
         metadata = manager.registry.get("claude-skill-command")
