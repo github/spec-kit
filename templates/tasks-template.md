@@ -14,9 +14,6 @@ description: "Task list template for feature implementation"
 
 ## Table of Contents
 
-<!-- TOC below is an exemplar. The /speckit.tasks command MUST regenerate
-     this list with proper anchor links from the actual ## headings. -->
-
 - Format
 - Path Conventions
 - Phase 1: Setup (Shared Infrastructure)
