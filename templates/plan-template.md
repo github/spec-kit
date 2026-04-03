@@ -5,11 +5,14 @@
 
 ## Table of Contents
 
-- [Summary](#summary)
-- [Technical Context](#technical-context)
-- [Constitution Check](#constitution-check)
-- [Project Structure](#project-structure)
-- [Complexity Tracking](#complexity-tracking)
+<!-- TOC below is an exemplar. The /speckit.plan command MUST regenerate
+     this list with proper anchor links from the actual ## headings. -->
+
+- Summary
+- Technical Context
+- Constitution Check
+- Project Structure
+- Complexity Tracking
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
 

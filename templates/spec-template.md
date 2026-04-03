@@ -7,10 +7,13 @@
 
 ## Table of Contents
 
-- [User Scenarios & Testing](#user-scenarios--testing-mandatory)
-- [Requirements](#requirements-mandatory)
-- [Success Criteria](#success-criteria-mandatory)
-- [Assumptions](#assumptions)
+<!-- TOC below is an exemplar. The /speckit.specify command MUST regenerate
+     this list with proper anchor links from the actual ## headings. -->
+
+- User Scenarios & Testing
+- Requirements
+- Success Criteria
+- Assumptions
 
 ## User Scenarios & Testing *(mandatory)*
 
