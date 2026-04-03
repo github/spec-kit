@@ -146,8 +146,8 @@ class ForgeIntegration(MarkdownIntegration):
         # 2. Inject 'name' field if missing
         has_name = any(line.strip().startswith('name:') for line in filtered_frontmatter)
         if not has_name:
-            # Use the template name as the command name (e.g., "plan" -> "speckit.plan")
-            cmd_name = f"speckit.{template_name}"
+            # Use the template name as the command name (e.g., "plan" -> "speckit-plan")
+            cmd_name = f"speckit-{template_name}"
             filtered_frontmatter.insert(0, f'name: {cmd_name}')
 
         # Reconstruct content
