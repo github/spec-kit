@@ -1676,6 +1676,7 @@ def integration_install(
         except Exception as rollback_err:
             # Suppress so the original setup error remains the primary failure
             console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration changes: {rollback_err}")
+        _remove_integration_json(project_root)
         console.print(f"[red]Error:[/red] Failed to install integration: {e}")
         raise typer.Exit(1)
 
@@ -1775,7 +1776,7 @@ def integration_uninstall(
         _remove_integration_json(project_root)
         # Clear integration-related keys from init-options.json
         opts = load_init_options(project_root)
-        if opts.get("integration") == key:
+        if opts.get("integration") == key or opts.get("ai") == key:
             opts.pop("integration", None)
             opts.pop("ai", None)
             opts.pop("ai_skills", None)
@@ -1797,7 +1798,7 @@ def integration_uninstall(
 
     # Update init-options.json to clear the integration
     opts = load_init_options(project_root)
-    if opts.get("integration") == key:
+    if opts.get("integration") == key or opts.get("ai") == key:
         opts.pop("integration", None)
         opts.pop("ai", None)
         opts.pop("ai_skills", None)
@@ -1917,6 +1918,7 @@ def integration_switch(
         except Exception as rollback_err:
             # Suppress so the original setup error remains the primary failure
             console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration '{target}': {rollback_err}")
+        _remove_integration_json(project_root)
         console.print(f"[red]Error:[/red] Failed to install integration '{target}': {e}")
         raise typer.Exit(1)
 
