@@ -1673,8 +1673,9 @@ def integration_install(
         # Attempt rollback of any files written by setup
         try:
             integration.teardown(project_root, manifest, force=True)
-        except Exception:
-            pass
+        except Exception as rollback_err:
+            # Suppress so the original setup error remains the primary failure
+            console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration changes: {rollback_err}")
         console.print(f"[red]Error:[/red] Failed to install integration: {e}")
         raise typer.Exit(1)
 
@@ -1905,8 +1906,9 @@ def integration_switch(
         # Attempt rollback of any files written by setup
         try:
             target_integration.teardown(project_root, manifest, force=True)
-        except Exception:
-            pass
+        except Exception as rollback_err:
+            # Suppress so the original setup error remains the primary failure
+            console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration '{target}': {rollback_err}")
         console.print(f"[red]Error:[/red] Failed to install integration '{target}': {e}")
         raise typer.Exit(1)
 
