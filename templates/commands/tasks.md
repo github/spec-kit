@@ -77,7 +77,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Validate task completeness (each user story has all needed tasks, independently testable)
 
 4. **Generate tasks.md**: Use `templates/tasks-template.md` as structure, fill with:
-   - A **Table of Contents** section immediately after the header metadata block and before the first phase. List all `##`-level headings as markdown anchor links (lowercase, spaces to hyphens, strip special characters). Only include sections that actually appear in the final document.
+   - A **Table of Contents** section before the first phase. List all `##`-level headings as markdown anchor links (lowercase, spaces to hyphens, strip special characters). Only include sections that actually appear in the final document.
    - Correct feature name from plan.md
    - Phase 1: Setup tasks (project initialization)
    - Phase 2: Foundational tasks (blocking prerequisites for all user stories)
