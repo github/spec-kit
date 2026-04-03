@@ -120,7 +120,7 @@ Given that feature description, do this:
     7. Identify Key Entities (if data involved)
     8. Return: SUCCESS (spec ready for planning)
 
-5. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings. Include a **Table of Contents** section immediately after the header metadata block and before the first content section. The TOC must list all `##`-level headings as markdown anchor links (lowercase, spaces to hyphens, strip special characters). Example: `- [User Scenarios & Testing](#user-scenarios--testing)`. Only include sections that actually appear in the final document.
+5. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings. Include a **Table of Contents** section immediately after the title and initial metadata lines at the top of the file, and before the first content section. The TOC must list all `##`-level headings as markdown anchor links (lowercase, spaces to hyphens, strip special characters). Example: `- [User Scenarios & Testing](#user-scenarios--testing)`. Only include sections that actually appear in the final document.
 
 6. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
 
