@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-01T00:00:00Z",
+  "updated_at": "2026-04-03T03:24:03Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1104,6 +1104,38 @@
       "stars": 0,
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-03-06T00:00:00Z"
+    },
+    "security-review": {
+      "name": "Security Review",
+      "id": "security-review",
+      "description": "Comprehensive security audit of codebases using AI-powered DevSecOps analysis",
+      "author": "Spec-Kit Security Team",
+      "version": "1.1.0",
+      "download_url": "https://github.com/DyanGalih/spec-kit-security-review/archive/refs/tags/v1.1.0.zip",
+      "repository": "https://github.com/DyanGalih/spec-kit-security-review",
+      "homepage": "https://github.com/DyanGalih/spec-kit-security-review",
+      "documentation": "https://github.com/DyanGalih/spec-kit-security-review/blob/main/README.md",
+      "changelog": "https://github.com/DyanGalih/spec-kit-security-review/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 0
+      },
+      "tags": [
+        "security",
+        "devsecops",
+        "audit",
+        "owasp",
+        "compliance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-03T03:24:03Z",
+      "updated_at": "2026-04-03T03:24:03Z"
     },
     "ship": {
       "name": "Ship Release Extension",
