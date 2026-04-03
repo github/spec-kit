@@ -1011,7 +1011,13 @@
         "commands": 3,
         "hooks": 0
       },
-      "tags": ["security", "devsecops", "audit", "owasp", "compliance"],
+      "tags": [
+        "security",
+        "devsecops",
+        "audit",
+        "owasp",
+        "compliance"
+      ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
