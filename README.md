@@ -524,7 +524,7 @@ See the [Presets README](./presets/README.md) for the full guide, including reso
 
 Spec-Driven Development is a structured process that emphasizes:
 
-- **Intent-driven development** where specifications define the "_what_" before the "_how_"
+- **Intent-driven development** where specifications define the "*what*" before the "*how*"
 - **Rich specification creation** using guardrails and organizational principles
 - **Multi-step refinement** rather than one-shot code generation from prompts
 - **Heavy reliance** on advanced AI model capabilities for specification interpretation
@@ -654,7 +654,7 @@ This step creates or updates the `.specify/memory/constitution.md` file with you
 With your project principles established, you can now create the functional specifications. Use the `/speckit.specify` command and then provide the concrete requirements for the project you want to develop.
 
 > [!IMPORTANT]
-> Be as explicit as possible about _what_ you are trying to build and _why_. **Do not focus on the tech stack at this point**.
+> Be as explicit as possible about *what* you are trying to build and *why*. **Do not focus on the tech stack at this point**.
 
 An example prompt:
 

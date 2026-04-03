@@ -870,7 +870,7 @@
     "repoindex": {
       "name": "Repository Index",
       "id": "repoindex",
-      "description": "Generate index of your repo for overview, architecuture and module",
+      "description": "Generate index of your repo for overview, architecture and module",
       "author": "Yiyu Liu",
       "version": "1.0.0",
       "download_url": "https://github.com/liuyiyu/spec-kit-repoindex/archive/refs/tags/v1.0.0.zip",
