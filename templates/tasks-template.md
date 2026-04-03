@@ -21,6 +21,7 @@ description: "Task list template for feature implementation"
 - Phase 3+: User Story phases (generated from spec.md priorities)
 - Phase N: Polish & Cross-Cutting Concerns
 - Dependencies & Execution Order
+- Parallel Example: User Story 1
 - Implementation Strategy
 - Notes
 
