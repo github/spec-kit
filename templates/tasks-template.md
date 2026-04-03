@@ -10,6 +10,8 @@ description: "Task list template for feature implementation"
 
 ## Table of Contents
 
+- [Format](#format-id-p-story-description)
+- [Path Conventions](#path-conventions)
 - [Phase 1: Setup (Shared Infrastructure)](#phase-1-setup-shared-infrastructure)
 - [Phase 2: Foundational (Blocking Prerequisites)](#phase-2-foundational-blocking-prerequisites)
 - [Phase 3: User Story 1](#phase-3-user-story-1---title-priority-p1--mvp)
