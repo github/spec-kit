@@ -414,7 +414,9 @@ class CommandRegistrar:
                 frontmatter.pop(key, None)
 
             if agent_config.get("inject_name") and not frontmatter.get("name"):
-                frontmatter["name"] = cmd_name
+                # Use custom name formatter if provided (e.g., Forge's hyphenated format)
+                format_name = agent_config.get("format_name")
+                frontmatter["name"] = format_name(cmd_name) if format_name else cmd_name
 
             body = self._convert_argument_placeholder(
                 body, "$ARGUMENTS", agent_config["args"]
@@ -448,7 +450,9 @@ class CommandRegistrar:
                 # For agents with inject_name, render with alias-specific frontmatter
                 if agent_config.get("inject_name"):
                     alias_frontmatter = deepcopy(frontmatter)
-                    alias_frontmatter["name"] = alias
+                    # Use custom name formatter if provided (e.g., Forge's hyphenated format)
+                    format_name = agent_config.get("format_name")
+                    alias_frontmatter["name"] = format_name(alias) if format_name else alias
 
                     if agent_config["extension"] == "/SKILL.md":
                         alias_output = self.render_skill_command(
