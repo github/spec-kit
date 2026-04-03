@@ -111,6 +111,38 @@ class ClaudeIntegration(SkillsIntegration):
             self.key, name, description, source
         )
 
+    @staticmethod
+    def _inject_disable_model_invocation(content: str) -> str:
+        """Insert ``disable-model-invocation: true`` before the closing ``---``."""
+        lines = content.splitlines(keepends=True)
+
+        # Pre-scan: bail out if already present in frontmatter
+        dash_count = 0
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith("disable-model-invocation:"):
+                return content
+
+        # Inject before the closing --- of frontmatter
+        out: list[str] = []
+        dash_count = 0
+        injected = False
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2 and not injected:
+                    eol = "\r\n" if line.endswith("\r\n") else "\n"
+                    out.append(f"disable-model-invocation: true{eol}")
+                    injected = True
+            out.append(line)
+        return "".join(out)
+
     def setup(
         self,
         project_root: Path,
@@ -118,10 +150,10 @@ class ClaudeIntegration(SkillsIntegration):
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
-        """Install Claude skills, then inject argument-hint into each SKILL.md."""
+        """Install Claude skills, then inject argument-hint and disable-model-invocation."""
         created = super().setup(project_root, manifest, parsed_options, **opts)
 
-        # Post-process generated skill files to add argument-hint
+        # Post-process generated skill files
         skills_dir = self.skills_dest(project_root).resolve()
 
         for path in created:
@@ -133,22 +165,23 @@ class ClaudeIntegration(SkillsIntegration):
             if path.name != "SKILL.md":
                 continue
 
-            # Extract template stem from skill dir name: speckit-plan -> plan
+            content_bytes = path.read_bytes()
+            content = content_bytes.decode("utf-8")
+
+            # Inject disable-model-invocation: true (Claude skills run only when invoked)
+            updated = self._inject_disable_model_invocation(content)
+
+            # Inject argument-hint if available for this skill
             skill_dir_name = path.parent.name  # e.g. "speckit-plan"
             stem = skill_dir_name
             if stem.startswith("speckit-"):
                 stem = stem[len("speckit-"):]
-
             hint = ARGUMENT_HINTS.get(stem, "")
-            if not hint:
-                continue
+            if hint:
+                updated = self.inject_argument_hint(updated, hint)
 
-            content_bytes = path.read_bytes()
-            content = content_bytes.decode("utf-8")
-            updated = self.inject_argument_hint(content, hint)
             if updated != content:
                 path.write_bytes(updated.encode("utf-8"))
-                # Re-record hash so manifest stays in sync for uninstall
                 self.record_file_in_manifest(path, project_root, manifest)
 
         return created
