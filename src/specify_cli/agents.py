@@ -27,28 +27,6 @@ def _build_agent_configs() -> dict[str, Any]:
     return configs
 
 
-def _format_name_for_agent(agent_name: str, cmd_name: str) -> str:
-    """Format command name according to agent-specific requirements.
-    
-    Some agents (e.g., Forge) require hyphenated names instead of dot notation
-    for compatibility with shells and other tooling.
-    
-    Args:
-        agent_name: Agent key (e.g., "forge", "claude", "gemini")
-        cmd_name: Command name in dot notation (e.g., "speckit.my-extension.example")
-    
-    Returns:
-        Formatted command name appropriate for the agent
-    """
-    if agent_name == "forge":
-        # Forge requires hyphenated format for ZSH/shell compatibility
-        from specify_cli.integrations.forge import format_forge_command_name
-        return format_forge_command_name(cmd_name)
-    
-    # All other agents use the command name as-is (preserving dot notation)
-    return cmd_name
-
-
 class CommandRegistrar:
     """Handles registration of commands with AI agents.
 
@@ -434,8 +412,9 @@ class CommandRegistrar:
                 frontmatter.pop(key, None)
 
             if agent_config.get("inject_name") and not frontmatter.get("name"):
-                # Use agent-specific name formatting (e.g., hyphenated for Forge)
-                frontmatter["name"] = _format_name_for_agent(agent_name, cmd_name)
+                # Use custom name formatter if provided (e.g., Forge's hyphenated format)
+                format_name = agent_config.get("format_name")
+                frontmatter["name"] = format_name(cmd_name) if format_name else cmd_name
 
             body = self._convert_argument_placeholder(
                 body, "$ARGUMENTS", agent_config["args"]
@@ -469,8 +448,9 @@ class CommandRegistrar:
                 # For agents with inject_name, render with alias-specific frontmatter
                 if agent_config.get("inject_name"):
                     alias_frontmatter = deepcopy(frontmatter)
-                    # Use agent-specific name formatting (e.g., hyphenated for Forge)
-                    alias_frontmatter["name"] = _format_name_for_agent(agent_name, alias)
+                    # Use custom name formatter if provided (e.g., Forge's hyphenated format)
+                    format_name = agent_config.get("format_name")
+                    alias_frontmatter["name"] = format_name(alias) if format_name else alias
 
                     if agent_config["extension"] == "/SKILL.md":
                         alias_output = self.render_skill_command(

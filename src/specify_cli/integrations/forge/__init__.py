@@ -75,6 +75,7 @@ class ForgeIntegration(MarkdownIntegration):
         "extension": ".md",
         "strip_frontmatter_keys": ["handoffs"],
         "inject_name": True,
+        "format_name": format_forge_command_name,  # Custom name formatter
     }
     context_file = "AGENTS.md"
 
