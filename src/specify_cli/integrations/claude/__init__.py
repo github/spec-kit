@@ -137,7 +137,12 @@ class ClaudeIntegration(SkillsIntegration):
             if stripped == "---":
                 dash_count += 1
                 if dash_count == 2 and not injected:
-                    eol = "\r\n" if line.endswith("\r\n") else "\n"
+                    if line.endswith("\r\n"):
+                        eol = "\r\n"
+                    elif line.endswith("\n"):
+                        eol = "\n"
+                    else:
+                        eol = ""
                     out.append(f"{key}: {value}{eol}")
                     injected = True
             out.append(line)
