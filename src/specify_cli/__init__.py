@@ -1505,7 +1505,7 @@ def _read_integration_json(project_root: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         console.print(f"[red]Error:[/red] {path} contains invalid JSON.")
         console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
@@ -1516,6 +1516,11 @@ def _read_integration_json(project_root: Path) -> dict[str, Any]:
         console.print(f"Please fix file permissions or delete {INTEGRATION_JSON} and retry.")
         console.print(f"[dim]Details:[/dim] {exc}")
         raise typer.Exit(1)
+    if not isinstance(data, dict):
+        console.print(f"[red]Error:[/red] {path} must contain a JSON object, got {type(data).__name__}.")
+        console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
+        raise typer.Exit(1)
+    return data
 
 
 def _write_integration_json(
@@ -1911,7 +1916,12 @@ def integration_switch(
             except (ValueError, FileNotFoundError) as exc:
                 console.print(f"[yellow]Warning:[/yellow] Could not read manifest for '{installed_key}': {exc}")
         else:
-            console.print(f"[dim]No manifest for '{installed_key}' — skipping uninstall phase[/dim]")
+            console.print(f"[red]Error:[/red] Integration '{installed_key}' is installed but has no manifest.")
+            console.print(
+                f"Run [cyan]specify integration uninstall {installed_key}[/cyan] to clear metadata, "
+                f"then retry [cyan]specify integration switch {target}[/cyan]."
+            )
+            raise typer.Exit(1)
 
         # Clear metadata so a failed Phase 2 doesn't leave stale references
         _remove_integration_json(project_root)
