@@ -1643,11 +1643,11 @@ def integration_install(
 
     selected_script = _resolve_script_type(project_root, script)
 
-    # Ensure shared infrastructure exists
-    if not (project_root / ".specify" / "scripts").exists():
-        _install_shared_infra(project_root, selected_script)
-        if os.name != "nt":
-            ensure_executable_scripts(project_root)
+    # Ensure shared infrastructure is present (safe to run unconditionally;
+    # _install_shared_infra merges missing files without overwriting).
+    _install_shared_infra(project_root, selected_script)
+    if os.name != "nt":
+        ensure_executable_scripts(project_root)
 
     manifest = IntegrationManifest(
         integration.key, project_root, version=get_speckit_version()
@@ -1854,19 +1854,11 @@ def integration_switch(
         else:
             console.print(f"[dim]No manifest for '{installed_key}' — skipping uninstall phase[/dim]")
 
-        # Clear stale metadata so a failed Phase 2 doesn't reference the removed integration
-        _remove_integration_json(project_root)
-        opts = load_init_options(project_root)
-        opts.pop("integration", None)
-        opts.pop("ai", None)
-        opts.pop("ai_skills", None)
-        save_init_options(project_root, opts)
-
-    # Ensure shared infrastructure exists
-    if not (project_root / ".specify" / "scripts").exists():
-        _install_shared_infra(project_root, selected_script)
-        if os.name != "nt":
-            ensure_executable_scripts(project_root)
+    # Ensure shared infrastructure is present (safe to run unconditionally;
+    # _install_shared_infra merges missing files without overwriting).
+    _install_shared_infra(project_root, selected_script)
+    if os.name != "nt":
+        ensure_executable_scripts(project_root)
 
     # Phase 2: Install target integration
     console.print(f"Installing integration: [cyan]{target}[/cyan]")
