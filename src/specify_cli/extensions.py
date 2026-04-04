@@ -37,6 +37,9 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset({
     "taskstoissues",
 })
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
+# Aliases use a 2-part 'namespace.command' form without the 'speckit.' prefix.
+# The 'speckit' namespace is reserved for core commands.
+EXTENSION_ALIAS_PATTERN = re.compile(r"^([a-z0-9-]+)\.([a-z0-9-]+)$")
 
 
 def _load_core_command_names() -> frozenset[str]:
@@ -214,6 +217,7 @@ class ExtensionManifest:
             aliases = cmd.get("aliases")
             if aliases is None:
                 aliases = []
+                cmd["aliases"] = []  # normalize null/missing to empty list in-place
             if not isinstance(aliases, list):
                 raise ValidationError(
                     f"Aliases for command '{cmd['name']}' must be a list"
@@ -223,12 +227,15 @@ class ExtensionManifest:
                     raise ValidationError(
                         f"Aliases for command '{cmd['name']}' must be strings"
                     )
-                if not EXTENSION_COMMAND_NAME_PATTERN.match(alias):
-                    corrected = self._try_correct_command_name(alias, ext["id"])
+                alias_match = EXTENSION_ALIAS_PATTERN.match(alias)
+                if alias_match and alias_match.group(1) != 'speckit':
+                    pass  # already valid: 'myext.command' form
+                else:
+                    corrected = self._try_correct_alias_name(alias, ext["id"])
                     if corrected:
                         self.warnings.append(
                             f"Alias '{alias}' does not follow the required pattern "
-                            f"'speckit.{{extension}}.{{command}}'. Registering as '{corrected}'. "
+                            f"'{{extension}}.{{command}}'. Registering as '{corrected}'. "
                             f"The extension author should update the manifest to use this name."
                         )
                         rename_map[alias] = corrected
@@ -236,7 +243,8 @@ class ExtensionManifest:
                     else:
                         raise ValidationError(
                             f"Invalid alias '{alias}': "
-                            "must follow pattern 'speckit.{extension}.{command}'"
+                            "must follow pattern '{extension}.{command}' "
+                            "(the 'speckit.' prefix is reserved for core commands)"
                         )
 
         # Rewrite any hook command references that pointed at a renamed command.
@@ -252,15 +260,14 @@ class ExtensionManifest:
 
     @staticmethod
     def _try_correct_command_name(name: str, ext_id: str) -> Optional[str]:
-        """Try to auto-correct a non-conforming command name to the required pattern.
+        """Try to auto-correct a non-conforming primary command name to 'speckit.{ext_id}.command'.
 
-        Handles the two legacy formats used by community extensions:
+        Handles legacy formats:
           - 'speckit.command'  → 'speckit.{ext_id}.command'
           - '{ext_id}.command' → 'speckit.{ext_id}.command'
 
         The 'X.Y' form is only corrected when X matches ext_id to ensure the
-        result passes the install-time namespace check. Any other prefix is
-        uncorrectable and will produce a ValidationError at the call site.
+        result passes the install-time namespace check.
 
         Returns the corrected name, or None if no safe correction is possible.
         """
@@ -270,6 +277,27 @@ class ExtensionManifest:
                 candidate = f"speckit.{ext_id}.{parts[1]}"
                 if EXTENSION_COMMAND_NAME_PATTERN.match(candidate):
                     return candidate
+        return None
+
+    @staticmethod
+    def _try_correct_alias_name(name: str, ext_id: str) -> Optional[str]:
+        """Try to auto-correct a non-conforming alias to the '{ext_id}.command' pattern.
+
+        Handles legacy formats:
+          - 'speckit.command'         → '{ext_id}.command'
+          - 'speckit.ext_id.command'  → 'ext_id.command'  (3-part with speckit prefix)
+
+        Returns the corrected name, or None if no safe correction is possible.
+        """
+        parts = name.split('.')
+        if len(parts) == 2 and parts[0] == 'speckit':
+            candidate = f"{ext_id}.{parts[1]}"
+            if EXTENSION_ALIAS_PATTERN.match(candidate):
+                return candidate
+        if len(parts) == 3 and parts[0] == 'speckit':
+            candidate = f"{parts[1]}.{parts[2]}"
+            if EXTENSION_ALIAS_PATTERN.match(candidate):
+                return candidate
         return None
 
     @property
@@ -608,14 +636,24 @@ class ExtensionManager:
                         f"{kind.capitalize()} for command '{primary_name}' must be a string"
                     )
 
-                match = EXTENSION_COMMAND_NAME_PATTERN.match(name)
-                if match is None:
-                    raise ValidationError(
-                        f"Invalid {kind} '{name}': "
-                        "must follow pattern 'speckit.{extension}.{command}'"
-                    )
+                if kind == "command":
+                    match = EXTENSION_COMMAND_NAME_PATTERN.match(name)
+                    if match is None:
+                        raise ValidationError(
+                            f"Invalid command '{name}': "
+                            "must follow pattern 'speckit.{extension}.{command}'"
+                        )
+                    namespace = match.group(1)
+                else:
+                    match = EXTENSION_ALIAS_PATTERN.match(name)
+                    if match is None or match.group(1) == 'speckit':
+                        raise ValidationError(
+                            f"Invalid alias '{name}': "
+                            "must follow pattern '{extension}.{command}' "
+                            "(the 'speckit.' prefix is reserved for core commands)"
+                        )
+                    namespace = match.group(1)
 
-                namespace = match.group(1)
                 if namespace != manifest.id:
                     raise ValidationError(
                         f"{kind.capitalize()} '{name}' must use extension namespace '{manifest.id}'"

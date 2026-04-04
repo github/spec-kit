@@ -304,8 +304,23 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="Invalid command name"):
             ExtensionManifest(manifest_path)
 
-    def test_alias_autocorrect_speckit_prefix(self, temp_dir, valid_manifest_data):
-        """Test that a legacy 'speckit.command' alias is auto-corrected."""
+    def test_alias_valid_two_part_no_prefix(self, temp_dir, valid_manifest_data):
+        """Test that a 'myext.command' alias is accepted as-is with no warning."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["test-ext.hello"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["aliases"] == ["test-ext.hello"]
+        assert manifest.warnings == []
+
+    def test_alias_autocorrect_speckit_two_part(self, temp_dir, valid_manifest_data):
+        """Test that legacy 'speckit.command' alias is corrected to '{ext_id}.command'."""
         import yaml
 
         valid_manifest_data["provides"]["commands"][0]["aliases"] = ["speckit.hello"]
@@ -316,10 +331,29 @@ class TestExtensionManifest:
 
         manifest = ExtensionManifest(manifest_path)
 
-        assert manifest.commands[0]["aliases"] == ["speckit.test-ext.hello"]
+        assert manifest.commands[0]["aliases"] == ["test-ext.hello"]
         assert len(manifest.warnings) == 1
         assert "speckit.hello" in manifest.warnings[0]
+        assert "test-ext.hello" in manifest.warnings[0]
+
+    def test_alias_autocorrect_speckit_three_part(self, temp_dir, valid_manifest_data):
+        """Test that a 3-part 'speckit.ext.command' alias is corrected to 'ext.command'."""
+        import yaml
+
+        # Clear hooks so the alias rename doesn't also trigger a hook-reference warning.
+        valid_manifest_data.pop("hooks", None)
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["speckit.test-ext.hello"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["aliases"] == ["test-ext.hello"]
+        assert len(manifest.warnings) == 1
         assert "speckit.test-ext.hello" in manifest.warnings[0]
+        assert "test-ext.hello" in manifest.warnings[0]
 
     def test_valid_command_name_has_no_warnings(self, temp_dir, valid_manifest_data):
         """Test that a correctly-named command produces no warnings."""
@@ -715,8 +749,8 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="conflicts with core command namespace"):
             manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
-    def test_install_autocorrects_alias_without_extension_namespace(self, temp_dir, project_dir):
-        """Legacy short aliases are auto-corrected to 'speckit.{ext_id}.{cmd}' with a warning."""
+    def test_install_autocorrects_speckit_alias_to_ext_form(self, temp_dir, project_dir):
+        """Legacy 'speckit.command' aliases are corrected to '{ext_id}.command' with a warning."""
         import yaml
 
         ext_dir = temp_dir / "alias-shortcut"
@@ -749,10 +783,10 @@ class TestExtensionManager:
         manager = ExtensionManager(project_dir)
         manifest = manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
-        assert manifest.commands[0]["aliases"] == ["speckit.alias-shortcut.shortcut"]
+        assert manifest.commands[0]["aliases"] == ["alias-shortcut.shortcut"]
         assert len(manifest.warnings) == 1
         assert "speckit.shortcut" in manifest.warnings[0]
-        assert "speckit.alias-shortcut.shortcut" in manifest.warnings[0]
+        assert "alias-shortcut.shortcut" in manifest.warnings[0]
 
     def test_install_rejects_namespace_squatting(self, temp_dir, project_dir):
         """Install should reject commands and aliases outside the extension namespace."""
@@ -790,12 +824,21 @@ class TestExtensionManager:
             manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
     def test_install_rejects_command_collision_with_installed_extension(self, temp_dir, project_dir):
-        """Install should reject names already claimed by an installed legacy extension."""
+        """Install should reject names already claimed by an installed extension.
+
+        The first extension is written directly to disk (bypassing install_from_directory) to
+        simulate a scenario where it claims a command in a different namespace — something that
+        could happen with a legacy or manually-placed extension.  The collision detector must
+        still catch the conflict when the second extension tries to register the same command.
+        """
         import yaml
 
         first_dir = temp_dir / "ext-one"
         first_dir.mkdir()
         (first_dir / "commands").mkdir()
+        # Directly write a manifest that claims speckit.shared.sync even though its id is
+        # "ext-one" — this bypasses install-time namespace enforcement and simulates a
+        # legacy/corrupted extension that already occupies the name.
         first_manifest = {
             "schema_version": "1.0",
             "extension": {
@@ -808,9 +851,8 @@ class TestExtensionManager:
             "provides": {
                 "commands": [
                     {
-                        "name": "speckit.ext-one.sync",
+                        "name": "speckit.shared.sync",
                         "file": "commands/cmd.md",
-                        "aliases": ["speckit.shared.sync"],
                     }
                 ]
             },
@@ -1148,7 +1190,7 @@ $ARGUMENTS
                     {
                         "name": "speckit.ext-alias.cmd",
                         "file": "commands/cmd.md",
-                        "aliases": ["speckit.ext-alias.shortcut"],
+                        "aliases": ["ext-alias.shortcut"],
                     }
                 ]
             },
@@ -1169,7 +1211,7 @@ $ARGUMENTS
 
         assert len(registered) == 2
         assert "speckit.ext-alias.cmd" in registered
-        assert "speckit.ext-alias.shortcut" in registered
+        assert "ext-alias.shortcut" in registered
         assert (claude_dir / "speckit-ext-alias-cmd" / "SKILL.md").exists()
         assert (claude_dir / "speckit-ext-alias-shortcut" / "SKILL.md").exists()
 
@@ -1591,7 +1633,7 @@ Then {AGENT_SCRIPT}
                     {
                         "name": "speckit.ext-alias-copilot.cmd",
                         "file": "commands/cmd.md",
-                        "aliases": ["speckit.ext-alias-copilot.shortcut"],
+                        "aliases": ["ext-alias-copilot.shortcut"],
                     }
                 ]
             },
@@ -1619,7 +1661,7 @@ Then {AGENT_SCRIPT}
         # Both primary and alias get companion .prompt.md
         prompts_dir = project_dir / ".github" / "prompts"
         assert (prompts_dir / "speckit.ext-alias-copilot.cmd.prompt.md").exists()
-        assert (prompts_dir / "speckit.ext-alias-copilot.shortcut.prompt.md").exists()
+        assert (prompts_dir / "ext-alias-copilot.shortcut.prompt.md").exists()
 
     def test_non_copilot_agent_no_companion_file(self, extension_dir, project_dir):
         """Test that non-copilot agents do NOT create .prompt.md files."""
