@@ -393,6 +393,10 @@ class TestExtensionManifest:
 
         # Hook ref should be lifted to canonical form for skill-mode invocation.
         assert manifest.hooks["after_tasks"]["command"] == "speckit.test-ext.greet"
+        # A compatibility warning should be emitted so the author knows to update.
+        assert len(manifest.warnings) == 1
+        assert "test-ext.greet" in manifest.warnings[0]
+        assert "speckit.test-ext.greet" in manifest.warnings[0]
 
     def test_hook_non_dict_value_raises(self, temp_dir, valid_manifest_data):
         """A non-mapping hooks value raises ValidationError."""
@@ -3144,8 +3148,8 @@ class TestExtensionRemoveCLI:
             result = runner.invoke(app, ["extension", "remove", "test-ext"], input="n\n")
 
         plain = strip_ansi(result.output)
-        # The fixture has 1 command and 0 aliases → "1 commands from AI agent"
-        assert "1 commands from AI agent" in plain
+        # The fixture has 1 command and 0 aliases → "1 command from AI agent"
+        assert "1 command from AI agent" in plain
 
     def test_remove_confirmation_counts_aliases(self, temp_dir, project_dir):
         """Removal confirmation shows primary + alias count, not just primary."""
@@ -3198,9 +3202,9 @@ class TestExtensionRemoveCLI:
             result = runner.invoke(app, ["extension", "remove", "ext-with-alias"], input="n\n")
 
         plain = strip_ansi(result.output)
-        # 1 primary + 1 alias = "2 commands from AI agent" (not "1")
+        # 1 primary + 1 alias = "2 commands from AI agent" (not "1 command")
         assert "2 commands from AI agent" in plain
-        assert "1 commands from AI agent" not in plain
+        assert "1 command from AI agent" not in plain
 
 
 class TestExtensionUpdateCLI:

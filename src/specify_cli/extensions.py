@@ -295,6 +295,14 @@ class ExtensionManifest:
                         f"updated to '{final_ref}'. "
                         f"The extension author should update the manifest."
                     )
+                else:
+                    # Alias-form ref was canonicalized (e.g. 'ext.cmd' → 'speckit.ext.cmd').
+                    self.warnings.append(
+                        f"Hook '{hook_name}' referenced alias '{command_ref}'; "
+                        f"updated to canonical command '{final_ref}'. "
+                        f"The extension author should update the manifest to reference "
+                        f"the canonical command name directly."
+                    )
 
     @staticmethod
     def _try_correct_command_name(name: str, ext_id: str) -> Optional[str]:
