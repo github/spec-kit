@@ -227,6 +227,34 @@
       "created_at": "2026-04-01T00:00:00Z",
       "updated_at": "2026-04-01T00:00:00Z"
     },
+    "confluence": {
+      "name": "Confluence Extension",
+      "id": "confluence",
+      "description": "Create, read, and update Confluence docs for your project",
+      "author": "aaronrsun",
+      "version": "1.1.0",
+      "download_url": "https://github.com/aaronrsun/spec-kit-confluence/archive/refs/tags/v1.1.0.zip",
+      "repository": "https://github.com/aaronrsun/spec-kit-confluence",
+      "homepage": "https://github.com/aaronrsun/spec-kit-confluence",
+      "documentation": "https://github.com/aaronrsun/spec-kit-confluence/blob/main/README.md",
+      "changelog": "https://github.com/aaronrsun/spec-kit-confluence/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "confluence"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-29T00:00:00Z",
+      "updated_at": "2026-03-29T00:00:00Z"
+    },
     "docguard": {
       "name": "DocGuard — CDD Enforcement",
       "id": "docguard",
