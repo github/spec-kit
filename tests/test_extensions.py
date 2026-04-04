@@ -305,7 +305,7 @@ class TestExtensionManifest:
             ExtensionManifest(manifest_path)
 
     def test_alias_valid_two_part_no_prefix(self, temp_dir, valid_manifest_data):
-        """Test that a 'myext.command' alias is accepted as-is with no warning."""
+        """Test that a 'test-ext.hello' alias is accepted as-is with no warning."""
         import yaml
 
         valid_manifest_data["provides"]["commands"][0]["aliases"] = ["test-ext.hello"]
@@ -354,6 +354,36 @@ class TestExtensionManifest:
         assert len(manifest.warnings) == 1
         assert "speckit.test-ext.hello" in manifest.warnings[0]
         assert "test-ext.hello" in manifest.warnings[0]
+
+    def test_hook_alias_ref_canonicalized_to_speckit_form(self, temp_dir, valid_manifest_data):
+        """Hook command refs in alias form are lifted to canonical speckit.ext.cmd form."""
+        import yaml
+
+        # Manifest uses a valid alias but the hook mistakenly references the alias name.
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["test-ext.hello"]
+        valid_manifest_data["hooks"]["after_tasks"]["command"] = "test-ext.hello"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        # Hook ref should be lifted to canonical form for skill-mode invocation.
+        assert manifest.hooks["after_tasks"]["command"] == "speckit.test-ext.hello"
+
+    def test_hook_non_dict_value_raises(self, temp_dir, valid_manifest_data):
+        """A non-mapping hooks value raises ValidationError."""
+        import yaml
+
+        valid_manifest_data["hooks"] = ["not", "a", "dict"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="'hooks' must be a mapping"):
+            ExtensionManifest(manifest_path)
 
     def test_valid_command_name_has_no_warnings(self, temp_dir, valid_manifest_data):
         """Test that a correctly-named command produces no warnings."""

@@ -247,21 +247,39 @@ class ExtensionManifest:
                             "(the 'speckit.' prefix is reserved for core commands)"
                         )
 
-        # Rewrite any hook command references that pointed at a renamed command.
+        # Rewrite any hook command references that pointed at a renamed command,
+        # then canonicalize alias-form refs (e.g. 'ext.cmd') to the canonical
+        # 'speckit.{ext}.cmd' form so hook-invocation skill-name mapping works.
         hooks = self.data.get("hooks", {})
         if not isinstance(hooks, dict):
             raise ValidationError(
                 f"'hooks' must be a mapping, got {type(hooks).__name__}"
             )
         for hook_name, hook_data in hooks.items():
-            if isinstance(hook_data, dict) and hook_data.get("command") in rename_map:
-                old_ref = hook_data["command"]
-                hook_data["command"] = rename_map[old_ref]
+            if not isinstance(hook_data, dict):
+                continue
+            command_ref = hook_data.get("command")
+            if not isinstance(command_ref, str):
+                continue
+
+            # Step 1: apply rename_map (command was auto-corrected during validation).
+            rewritten = rename_map.get(command_ref, command_ref)
+            if rewritten != command_ref:
+                hook_data["command"] = rewritten
                 self.warnings.append(
-                    f"Hook '{hook_name}' referenced renamed command '{old_ref}'; "
-                    f"updated to '{rename_map[old_ref]}'. "
+                    f"Hook '{hook_name}' referenced renamed command '{command_ref}'; "
+                    f"updated to '{rewritten}'. "
                     f"The extension author should update the manifest."
                 )
+                command_ref = rewritten
+
+            # Step 2: if the ref is in alias form '{ext_id}.cmd', lift it to
+            # 'speckit.{ext_id}.cmd' so skill-mode hook invocation renders correctly.
+            parts = command_ref.split('.')
+            if len(parts) == 2 and parts[0] == ext["id"]:
+                canonical = f"speckit.{ext['id']}.{parts[1]}"
+                if EXTENSION_COMMAND_NAME_PATTERN.match(canonical):
+                    hook_data["command"] = canonical
 
     @staticmethod
     def _try_correct_command_name(name: str, ext_id: str) -> Optional[str]:
@@ -601,7 +619,8 @@ class ExtensionManager:
         """Collect command and alias names declared by a manifest.
 
         Performs install-time validation for extension-specific constraints:
-        - commands and aliases must use the canonical `speckit.{extension}.{command}` shape
+        - primary commands must use the canonical `speckit.{extension}.{command}` shape
+        - aliases must use the `{extension}.{command}` shape (no `speckit.` prefix)
         - commands and aliases must use this extension's namespace
         - command namespaces must not shadow core commands
         - duplicate command/alias names inside one manifest are rejected
