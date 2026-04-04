@@ -328,7 +328,7 @@ SPEC_FILE="$FEATURE_DIR/spec.md"
 if [ "$DRY_RUN" != true ]; then
     if [ "$HAS_GIT" = true ]; then
         branch_create_error=""
-        if ! branch_create_error=$(git checkout -b "$BRANCH_NAME" 2>&1); then
+        if ! branch_create_error=$(git checkout -q -b "$BRANCH_NAME" 2>&1); then
             current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
             # Check if branch already exists
             if git branch --list "$BRANCH_NAME" | grep -q .; then
@@ -357,9 +357,6 @@ if [ "$DRY_RUN" != true ]; then
                 fi
                 exit 1
             fi
-        else
-            # Show normal git output (e.g., "Switched to a new branch '...'")
-            [ -n "$branch_create_error" ] && >&2 printf '%s\n' "$branch_create_error"
         fi
     else
         >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"

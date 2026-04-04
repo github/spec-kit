@@ -295,7 +295,7 @@ if (-not $DryRun) {
         $branchCreated = $false
         $branchCreateError = ''
         try {
-            $branchCreateError = git checkout -b $branchName 2>&1 | Out-String
+            $branchCreateError = git checkout -q -b $branchName 2>&1 | Out-String
             if ($LASTEXITCODE -eq 0) {
                 $branchCreated = $true
             }
