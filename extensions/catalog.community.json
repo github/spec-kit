@@ -776,6 +776,38 @@
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
     },
+    "optimize": {
+      "name": "Optimize Extension",
+      "id": "optimize",
+      "description": "Audits and optimizes AI governance for context efficiency",
+      "author": "sakitA",
+      "version": "1.0.0",
+      "download_url": "https://github.com/sakitA/spec-kit-optimize/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/sakitA/spec-kit-optimize",
+      "homepage": "https://github.com/sakitA/spec-kit-optimize",
+      "documentation": "https://github.com/sakitA/spec-kit-optimize/blob/main/README.md",
+      "changelog": "https://github.com/sakitA/spec-kit-optimize/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 0
+      },
+      "tags": [
+        "constitution",
+        "optimization",
+        "token-budget",
+        "governance",
+        "audit"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-03T00:00:00Z",
+      "updated_at": "2026-04-03T00:00:00Z"
+    },
     "plan-review-gate": {
       "name": "Plan Review Gate",
       "id": "plan-review-gate",
