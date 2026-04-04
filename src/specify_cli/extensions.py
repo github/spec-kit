@@ -192,6 +192,12 @@ class ExtensionManifest:
 
         # Validate commands; track renames so hook references can be rewritten.
         rename_map: Dict[str, str] = {}
+        # Track SKILL output names across all commands+aliases to catch cross-command
+        # collisions. For SKILL.md agents, _compute_output_name strips the 'speckit.'
+        # prefix and hyphenates: 'speckit.myext.build' and alias 'myext.build' on a
+        # *different* command entry both map to 'speckit-myext-build/SKILL.md'.
+        seen_skill_names: Dict[str, str] = {}  # skill_output_name -> description of claimant
+
         for cmd in provides["commands"]:
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
@@ -213,6 +219,17 @@ class ExtensionManifest:
                         "must follow pattern 'speckit.{extension}.{command}'"
                     )
 
+            # Register the primary command's SKILL output name.
+            primary_skill = self._skill_output_name(cmd["name"])
+            if primary_skill in seen_skill_names:
+                raise ValidationError(
+                    f"Command '{cmd['name']}' would produce SKILL output name "
+                    f"'{primary_skill}' which is already claimed by "
+                    f"{seen_skill_names[primary_skill]}. "
+                    f"Choose a distinct command name."
+                )
+            seen_skill_names[primary_skill] = f"primary command '{cmd['name']}'"
+
             # Validate and auto-correct alias name formats
             aliases = cmd.get("aliases")
             if aliases is None:
@@ -229,21 +246,22 @@ class ExtensionManifest:
                     )
                 alias_match = EXTENSION_ALIAS_PATTERN.match(alias)
                 if alias_match and alias_match.group(1) != 'speckit':
-                    # Valid 'ext.cmd' form — check it won't collide with the primary
-                    # command's SKILL output name. For SKILL.md agents,
-                    # _compute_output_name strips 'speckit.' so e.g. primary
-                    # 'speckit.myext.run' and alias 'myext.run' both map to
-                    # 'speckit-myext-run', causing the alias write to overwrite
-                    # the primary skill file.
-                    primary = cmd["name"]
-                    if primary.startswith("speckit.") and primary[len("speckit."):] == alias:
-                        skill_name = "speckit-" + alias.replace(".", "-")
+                    # Valid 'ext.cmd' form — check it won't collide with any previously
+                    # seen primary or alias SKILL output name (including its own command's
+                    # primary). For SKILL.md agents, _compute_output_name strips 'speckit.'
+                    # so e.g. primary 'speckit.myext.run' and alias 'myext.run' both map
+                    # to 'speckit-myext-run', causing the alias write to overwrite the
+                    # primary skill file.
+                    alias_skill = self._skill_output_name(alias)
+                    if alias_skill in seen_skill_names:
+                        skill_name = alias_skill
                         raise ValidationError(
-                            f"Alias '{alias}' would collide with primary command "
-                            f"'{primary}' on SKILL.md-based agents (both map to "
-                            f"'{skill_name}'). "
+                            f"Alias '{alias}' on command '{cmd['name']}' would produce "
+                            f"SKILL output name '{skill_name}' which is already claimed by "
+                            f"{seen_skill_names[alias_skill]}. "
                             f"Choose a distinct alias name."
                         )
+                    seen_skill_names[alias_skill] = f"alias '{alias}' on command '{cmd['name']}'"
                 else:
                     corrected = self._try_correct_alias_name(alias, ext["id"])
                     if corrected:
@@ -303,6 +321,16 @@ class ExtensionManifest:
                         f"The extension author should update the manifest to reference "
                         f"the canonical command name directly."
                     )
+
+    @staticmethod
+    def _skill_output_name(cmd_name: str) -> str:
+        """Compute the SKILL.md directory name for a command or alias.
+
+        Mirrors the logic in CommandRegistrar._compute_output_name for SKILL.md
+        agents: strip the 'speckit.' prefix (if present) then hyphenate.
+        """
+        short = cmd_name[len("speckit."):] if cmd_name.startswith("speckit.") else cmd_name
+        return "speckit-" + short.replace(".", "-")
 
     @staticmethod
     def _try_correct_command_name(name: str, ext_id: str) -> Optional[str]:

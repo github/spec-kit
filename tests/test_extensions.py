@@ -373,7 +373,28 @@ class TestExtensionManifest:
         with open(manifest_path, "w") as f:
             yaml.dump(valid_manifest_data, f)
 
-        with pytest.raises(ValidationError, match="would collide with primary command"):
+        with pytest.raises(ValidationError, match="would produce SKILL output name"):
+            ExtensionManifest(manifest_path)
+
+    def test_cross_command_skill_name_collision_rejected(self, temp_dir, valid_manifest_data):
+        """Alias on one command that collides with a primary on a different command is rejected."""
+        import yaml
+
+        # Command A: primary 'speckit.test-ext.hello' → skill 'speckit-test-ext-hello'
+        # Command B: primary 'speckit.test-ext.build' with alias 'test-ext.hello'
+        #            → alias also maps to 'speckit-test-ext-hello' — collision with cmd A.
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = []
+        valid_manifest_data["provides"]["commands"].append({
+            "name": "speckit.test-ext.build",
+            "file": "commands/build.md",
+            "aliases": ["test-ext.hello"],
+        })
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="would produce SKILL output name"):
             ExtensionManifest(manifest_path)
 
     def test_hook_alias_ref_canonicalized_to_speckit_form(self, temp_dir, valid_manifest_data):
