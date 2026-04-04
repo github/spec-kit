@@ -357,6 +357,9 @@ if [ "$DRY_RUN" != true ]; then
                 fi
                 exit 1
             fi
+        else
+            # Show normal git output (e.g., "Switched to a new branch '...'")
+            [ -n "$branch_create_error" ] && >&2 printf '%s\n' "$branch_create_error"
         fi
     else
         >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
