@@ -53,6 +53,31 @@
         "fun",
         "experimental"
       ]
+    },
+    "vscode-ask-questions": {
+      "name": "VS Code Ask Questions Clarify",
+      "id": "vscode-ask-questions",
+      "version": "1.0.0",
+      "description": "Enhances the clarify command to use vscode/askQuestions for batched interactive questioning, reducing API request costs in GitHub Copilot.",
+      "author": "fdcastel",
+      "repository": "https://github.com/fdcastel/spec-kit-presets",
+      "download_url": "https://github.com/fdcastel/spec-kit-presets/releases/download/vscode-ask-questions-v1.0.0/vscode-ask-questions.zip",
+      "homepage": "https://github.com/fdcastel/spec-kit-presets",
+      "documentation": "https://github.com/fdcastel/spec-kit-presets/blob/main/vscode-ask-questions/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 1
+      },
+      "tags": [
+        "vscode",
+        "askQuestions",
+        "clarify",
+        "interactive"
+      ]
     }
   }
 }
