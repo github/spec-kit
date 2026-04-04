@@ -3123,9 +3123,13 @@ def extension_remove(
     extension_id, display_name = _resolve_installed_extension(extension, installed, "remove")
 
     # Get extension info for command and skill counts
-    ext_manifest = manager.get_extension(extension_id)
-    cmd_count = len(ext_manifest.commands) if ext_manifest else 0
     reg_meta = manager.registry.get(extension_id)
+    # Count total registered commands across all agents (includes aliases)
+    registered_commands = reg_meta.get("registered_commands", {}) if reg_meta else {}
+    cmd_count = sum(
+        len(names) for names in registered_commands.values()
+        if isinstance(names, list)
+    )
     raw_skills = reg_meta.get("registered_skills") if reg_meta else None
     skill_count = len(raw_skills) if isinstance(raw_skills, list) else 0
 
