@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-24T00:00:00Z",
+  "updated_at": "2026-04-04T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "aide-in-place": {
@@ -55,7 +55,7 @@
       ]
     },
     "vscode-ask-questions": {
-      "name": "VS Code Ask Questions Clarify",
+      "name": "VS Code Ask Questions",
       "id": "vscode-ask-questions",
       "version": "1.0.0",
       "description": "Enhances the clarify command to use vscode/askQuestions for batched interactive questioning, reducing API request costs in GitHub Copilot.",
@@ -74,7 +74,7 @@
       },
       "tags": [
         "vscode",
-        "askQuestions",
+        "askquestions",
         "clarify",
         "interactive"
       ]
