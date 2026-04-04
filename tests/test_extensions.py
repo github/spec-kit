@@ -1262,6 +1262,21 @@ $ARGUMENTS
         assert not (skills_dir / "speckit-specify" / "SKILL.md").exists()
         assert not (skills_dir / "speckit-shortcut" / "SKILL.md").exists()
 
+    def test_unregister_skill_removes_parent_directory(self, project_dir):
+        """Removing a SKILL.md-based command also removes the empty parent directory."""
+        skills_dir = project_dir / ".agents" / "skills"
+        (skills_dir / "speckit-myext-run").mkdir(parents=True)
+        (skills_dir / "speckit-myext-run" / "SKILL.md").write_text("body")
+
+        registrar = CommandRegistrar()
+        registrar.unregister_commands(
+            {"codex": ["speckit.myext.run"]},
+            project_dir,
+        )
+
+        assert not (skills_dir / "speckit-myext-run" / "SKILL.md").exists()
+        assert not (skills_dir / "speckit-myext-run").exists()
+
     def test_register_commands_for_all_agents_distinguishes_codex_from_amp(self, extension_dir, project_dir):
         """A Codex project under .agents/skills should not implicitly activate Amp."""
         skills_dir = project_dir / ".agents" / "skills"

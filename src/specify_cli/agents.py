@@ -553,6 +553,14 @@ class CommandRegistrar:
                 cmd_file = commands_dir / f"{output_name}{agent_config['extension']}"
                 if cmd_file.exists():
                     cmd_file.unlink()
+                    # For SKILL.md agents the file lives in a subdirectory
+                    # (e.g. .claude/skills/speckit-foo/SKILL.md). Remove the
+                    # now-empty parent directory so no orphaned dirs remain.
+                    if agent_config["extension"] == "/SKILL.md":
+                        try:
+                            cmd_file.parent.rmdir()
+                        except OSError:
+                            pass  # not empty or already gone — leave it
 
                 if agent_name == "copilot":
                     prompt_file = project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
