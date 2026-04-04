@@ -3101,6 +3101,86 @@ class TestExtensionAddCLI:
         )
 
 
+class TestExtensionRemoveCLI:
+    """CLI integration tests for extension remove confirmation output."""
+
+    def test_remove_confirmation_counts_primary_command_only(self, extension_dir, project_dir):
+        """Removal confirmation shows correct count when extension has no aliases."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install via manager so registry is fully populated
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=True)
+
+        # Invoke remove with 'n' so we only see the confirmation prompt
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "remove", "test-ext"], input="n\n")
+
+        plain = strip_ansi(result.output)
+        # The fixture has 1 command and 0 aliases → "1 commands from AI agent"
+        assert "1 commands from AI agent" in plain
+
+    def test_remove_confirmation_counts_aliases(self, temp_dir, project_dir):
+        """Removal confirmation shows primary + alias count, not just primary."""
+        import yaml
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Build an extension with 1 primary command + 1 alias
+        ext_dir = temp_dir / "ext-with-alias"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-with-alias",
+                "name": "Extension With Alias",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.ext-with-alias.run",
+                        "file": "commands/run.md",
+                        "aliases": ["ext-with-alias.go"],
+                    }
+                ]
+            },
+        }
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+        (ext_dir / "commands" / "run.md").write_text("---\ndescription: Run\n---\nBody")
+
+        # Install with command registration so registry captures both names
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=True)
+
+        # Verify registry recorded both names
+        meta = manager.registry.get("ext-with-alias")
+        claude_cmds = meta["registered_commands"].get("claude", [])
+        assert "speckit.ext-with-alias.run" in claude_cmds
+        assert "ext-with-alias.go" in claude_cmds
+
+        # Invoke remove with 'n' so we only see the confirmation prompt
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "remove", "ext-with-alias"], input="n\n")
+
+        plain = strip_ansi(result.output)
+        # 1 primary + 1 alias = "2 commands from AI agent" (not "1")
+        assert "2 commands from AI agent" in plain
+        assert "1 commands from AI agent" not in plain
+
+
 class TestExtensionUpdateCLI:
     """CLI integration tests for extension update command."""
 
