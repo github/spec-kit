@@ -305,10 +305,12 @@ class TestExtensionManifest:
             ExtensionManifest(manifest_path)
 
     def test_alias_valid_two_part_no_prefix(self, temp_dir, valid_manifest_data):
-        """Test that a 'test-ext.hello' alias is accepted as-is with no warning."""
+        """Test that a 'test-ext.greet' alias is accepted as-is with no warning."""
         import yaml
 
-        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["test-ext.hello"]
+        # Use a name distinct from the primary command's suffix ('hello') to avoid
+        # the SKILL.md output-name collision (both would map to speckit-test-ext-hello).
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["test-ext.greet"]
 
         manifest_path = temp_dir / "extension.yml"
         with open(manifest_path, 'w') as f:
@@ -316,14 +318,16 @@ class TestExtensionManifest:
 
         manifest = ExtensionManifest(manifest_path)
 
-        assert manifest.commands[0]["aliases"] == ["test-ext.hello"]
+        assert manifest.commands[0]["aliases"] == ["test-ext.greet"]
         assert manifest.warnings == []
 
     def test_alias_autocorrect_speckit_two_part(self, temp_dir, valid_manifest_data):
         """Test that legacy 'speckit.command' alias is corrected to '{ext_id}.command'."""
         import yaml
 
-        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["speckit.hello"]
+        # Use 'speckit.greet' → 'test-ext.greet' to avoid colliding with the primary
+        # command's SKILL output name (speckit.test-ext.hello → speckit-test-ext-hello).
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["speckit.greet"]
 
         manifest_path = temp_dir / "extension.yml"
         with open(manifest_path, 'w') as f:
@@ -331,18 +335,20 @@ class TestExtensionManifest:
 
         manifest = ExtensionManifest(manifest_path)
 
-        assert manifest.commands[0]["aliases"] == ["test-ext.hello"]
+        assert manifest.commands[0]["aliases"] == ["test-ext.greet"]
         assert len(manifest.warnings) == 1
-        assert "speckit.hello" in manifest.warnings[0]
-        assert "test-ext.hello" in manifest.warnings[0]
+        assert "speckit.greet" in manifest.warnings[0]
+        assert "test-ext.greet" in manifest.warnings[0]
 
     def test_alias_autocorrect_speckit_three_part(self, temp_dir, valid_manifest_data):
         """Test that a 3-part 'speckit.ext.command' alias is corrected to 'ext.command'."""
         import yaml
 
         # Clear hooks so the alias rename doesn't also trigger a hook-reference warning.
+        # Use 'speckit.test-ext.greet' → 'test-ext.greet' to avoid colliding with the
+        # primary command's SKILL output name (speckit.test-ext.hello → speckit-test-ext-hello).
         valid_manifest_data.pop("hooks", None)
-        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["speckit.test-ext.hello"]
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["speckit.test-ext.greet"]
 
         manifest_path = temp_dir / "extension.yml"
         with open(manifest_path, 'w') as f:
@@ -350,18 +356,34 @@ class TestExtensionManifest:
 
         manifest = ExtensionManifest(manifest_path)
 
-        assert manifest.commands[0]["aliases"] == ["test-ext.hello"]
+        assert manifest.commands[0]["aliases"] == ["test-ext.greet"]
         assert len(manifest.warnings) == 1
-        assert "speckit.test-ext.hello" in manifest.warnings[0]
-        assert "test-ext.hello" in manifest.warnings[0]
+        assert "speckit.test-ext.greet" in manifest.warnings[0]
+        assert "test-ext.greet" in manifest.warnings[0]
+
+    def test_alias_collision_with_primary_skill_name_rejected(self, temp_dir, valid_manifest_data):
+        """Alias whose SKILL output name matches the primary command's is rejected."""
+        import yaml
+
+        # Primary 'speckit.test-ext.hello' maps to skill 'speckit-test-ext-hello'.
+        # Alias 'test-ext.hello' would map to the same skill name — collision.
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["test-ext.hello"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="would collide with primary command"):
+            ExtensionManifest(manifest_path)
 
     def test_hook_alias_ref_canonicalized_to_speckit_form(self, temp_dir, valid_manifest_data):
         """Hook command refs in alias form are lifted to canonical speckit.ext.cmd form."""
         import yaml
 
-        # Manifest uses a valid alias but the hook mistakenly references the alias name.
-        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["test-ext.hello"]
-        valid_manifest_data["hooks"]["after_tasks"]["command"] = "test-ext.hello"
+        # Manifest uses a valid alias (distinct suffix to avoid SKILL name collision)
+        # but the hook mistakenly references the alias name instead of the primary.
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["test-ext.greet"]
+        valid_manifest_data["hooks"]["after_tasks"]["command"] = "test-ext.greet"
 
         manifest_path = temp_dir / "extension.yml"
         with open(manifest_path, "w") as f:
@@ -370,7 +392,7 @@ class TestExtensionManifest:
         manifest = ExtensionManifest(manifest_path)
 
         # Hook ref should be lifted to canonical form for skill-mode invocation.
-        assert manifest.hooks["after_tasks"]["command"] == "speckit.test-ext.hello"
+        assert manifest.hooks["after_tasks"]["command"] == "speckit.test-ext.greet"
 
     def test_hook_non_dict_value_raises(self, temp_dir, valid_manifest_data):
         """A non-mapping hooks value raises ValidationError."""

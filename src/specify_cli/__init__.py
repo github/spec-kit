@@ -3124,8 +3124,11 @@ def extension_remove(
 
     # Get extension info for command and skill counts
     reg_meta = manager.registry.get(extension_id)
-    # Count total registered commands across all agents (includes aliases)
-    registered_commands = reg_meta.get("registered_commands", {}) if reg_meta else {}
+    # Count total registered commands across all agents (includes aliases).
+    # Normalize to dict in case registry entry is corrupted or from an older version.
+    registered_commands = reg_meta.get("registered_commands") if reg_meta else None
+    if not isinstance(registered_commands, dict):
+        registered_commands = {}
     cmd_count = sum(
         len(names) for names in registered_commands.values()
         if isinstance(names, list)

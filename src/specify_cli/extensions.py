@@ -229,7 +229,21 @@ class ExtensionManifest:
                     )
                 alias_match = EXTENSION_ALIAS_PATTERN.match(alias)
                 if alias_match and alias_match.group(1) != 'speckit':
-                    pass  # already valid: 'myext.command' form
+                    # Valid 'ext.cmd' form — check it won't collide with the primary
+                    # command's SKILL output name. For SKILL.md agents,
+                    # _compute_output_name strips 'speckit.' so e.g. primary
+                    # 'speckit.myext.run' and alias 'myext.run' both map to
+                    # 'speckit-myext-run', causing the alias write to overwrite
+                    # the primary skill file.
+                    primary = cmd["name"]
+                    if primary.startswith("speckit.") and primary[len("speckit."):] == alias:
+                        skill_name = "speckit-" + alias.replace(".", "-")
+                        raise ValidationError(
+                            f"Alias '{alias}' would collide with primary command "
+                            f"'{primary}' on SKILL.md-based agents (both map to "
+                            f"'{skill_name}'). "
+                            f"Choose a distinct alias name."
+                        )
                 else:
                     corrected = self._try_correct_alias_name(alias, ext["id"])
                     if corrected:
@@ -263,23 +277,24 @@ class ExtensionManifest:
                 continue
 
             # Step 1: apply rename_map (command was auto-corrected during validation).
-            rewritten = rename_map.get(command_ref, command_ref)
-            if rewritten != command_ref:
-                hook_data["command"] = rewritten
-                self.warnings.append(
-                    f"Hook '{hook_name}' referenced renamed command '{command_ref}'; "
-                    f"updated to '{rewritten}'. "
-                    f"The extension author should update the manifest."
-                )
-                command_ref = rewritten
+            final_ref = rename_map.get(command_ref, command_ref)
 
             # Step 2: if the ref is in alias form '{ext_id}.cmd', lift it to
             # 'speckit.{ext_id}.cmd' so skill-mode hook invocation renders correctly.
-            parts = command_ref.split('.')
+            parts = final_ref.split('.')
             if len(parts) == 2 and parts[0] == ext["id"]:
                 canonical = f"speckit.{ext['id']}.{parts[1]}"
                 if EXTENSION_COMMAND_NAME_PATTERN.match(canonical):
-                    hook_data["command"] = canonical
+                    final_ref = canonical
+
+            if final_ref != command_ref:
+                hook_data["command"] = final_ref
+                if command_ref in rename_map:
+                    self.warnings.append(
+                        f"Hook '{hook_name}' referenced renamed command '{command_ref}'; "
+                        f"updated to '{final_ref}'. "
+                        f"The extension author should update the manifest."
+                    )
 
     @staticmethod
     def _try_correct_command_name(name: str, ext_id: str) -> Optional[str]:
