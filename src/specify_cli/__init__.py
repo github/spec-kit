@@ -3988,6 +3988,18 @@ def extension_set_priority(
     console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
 
 
+@app.command()
+def approval(
+    action: str = typer.Option("status", "--action", "-a", help="Approval action"),
+):
+    """Check approval gates status (if configured).
+
+    If no .speckit/approval-gates.yaml exists, shows setup instructions.
+    """
+    from .approval_command import approval_command
+    approval_command(action=action)
+
+
 def main():
     app()
 
