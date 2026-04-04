@@ -248,7 +248,12 @@ class ExtensionManifest:
                         )
 
         # Rewrite any hook command references that pointed at a renamed command.
-        for hook_name, hook_data in self.data.get("hooks", {}).items():
+        hooks = self.data.get("hooks", {})
+        if not isinstance(hooks, dict):
+            raise ValidationError(
+                f"'hooks' must be a mapping, got {type(hooks).__name__}"
+            )
+        for hook_name, hook_data in hooks.items():
             if isinstance(hook_data, dict) and hook_data.get("command") in rename_map:
                 old_ref = hook_data["command"]
                 hook_data["command"] = rename_map[old_ref]
@@ -294,7 +299,7 @@ class ExtensionManifest:
             candidate = f"{ext_id}.{parts[1]}"
             if EXTENSION_ALIAS_PATTERN.match(candidate):
                 return candidate
-        if len(parts) == 3 and parts[0] == 'speckit':
+        if len(parts) == 3 and parts[0] == 'speckit' and parts[1] == ext_id:
             candidate = f"{parts[1]}.{parts[2]}"
             if EXTENSION_ALIAS_PATTERN.match(candidate):
                 return candidate
