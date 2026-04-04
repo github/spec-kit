@@ -265,6 +265,15 @@ class ExtensionManifest:
                 else:
                     corrected = self._try_correct_alias_name(alias, ext["id"])
                     if corrected:
+                        corrected_skill = self._skill_output_name(corrected)
+                        if corrected_skill in seen_skill_names:
+                            raise ValidationError(
+                                f"Alias '{alias}' (corrected to '{corrected}') on command "
+                                f"'{cmd['name']}' would produce SKILL output name "
+                                f"'{corrected_skill}' which is already claimed by "
+                                f"{seen_skill_names[corrected_skill]}. "
+                                f"Choose a distinct alias name."
+                            )
                         self.warnings.append(
                             f"Alias '{alias}' does not follow the required pattern "
                             f"'{{extension}}.{{command}}'. Registering as '{corrected}'. "
@@ -272,6 +281,7 @@ class ExtensionManifest:
                         )
                         rename_map[alias] = corrected
                         aliases[i] = corrected
+                        seen_skill_names[corrected_skill] = f"alias '{corrected}' on command '{cmd['name']}'"
                     else:
                         raise ValidationError(
                             f"Invalid alias '{alias}': "

@@ -397,6 +397,22 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="would produce SKILL output name"):
             ExtensionManifest(manifest_path)
 
+    def test_corrected_alias_skill_name_collision_rejected(self, temp_dir, valid_manifest_data):
+        """Auto-corrected alias that collides with an existing primary's SKILL name is rejected."""
+        import yaml
+
+        # Primary 'speckit.test-ext.hello' → skill 'speckit-test-ext-hello'.
+        # Alias 'speckit.test-ext.hello' gets auto-corrected to 'test-ext.hello'
+        # which also maps to 'speckit-test-ext-hello' — collision.
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["speckit.test-ext.hello"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="would produce SKILL output name"):
+            ExtensionManifest(manifest_path)
+
     def test_hook_alias_ref_canonicalized_to_speckit_form(self, temp_dir, valid_manifest_data):
         """Hook command refs in alias form are lifted to canonical speckit.ext.cmd form."""
         import yaml
