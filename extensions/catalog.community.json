@@ -975,7 +975,7 @@
     "repoindex":{
       "name": "Repository Index",
       "id": "repoindex",
-      "description": "Generate index of your repo for overview, architecuture and module",
+      "description": "Generate index of your repo for overview, architecture and module",
       "author": "Yiyu Liu",
       "version": "1.0.0",
       "download_url": "https://github.com/liuyiyu/spec-kit-repoindex/archive/refs/tags/v1.0.0.zip",
@@ -1104,6 +1104,38 @@
       "stars": 0,
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-03-06T00:00:00Z"
+    },
+    "security-review": {
+      "name": "Security Review",
+      "id": "security-review",
+      "description": "Comprehensive security audit of codebases using AI-powered DevSecOps analysis",
+      "author": "DyanGalih",
+      "version": "1.1.1",
+      "download_url": "https://github.com/DyanGalih/spec-kit-security-review/archive/refs/tags/v1.1.1.zip",
+      "repository": "https://github.com/DyanGalih/spec-kit-security-review",
+      "homepage": "https://github.com/DyanGalih/spec-kit-security-review",
+      "documentation": "https://github.com/DyanGalih/spec-kit-security-review/blob/main/README.md",
+      "changelog": "https://github.com/DyanGalih/spec-kit-security-review/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 0
+      },
+      "tags": [
+        "security",
+        "devsecops",
+        "audit",
+        "owasp",
+        "compliance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-03T03:24:03Z",
+      "updated_at": "2026-04-03T04:15:00Z"
     },
     "ship": {
       "name": "Ship Release Extension",
