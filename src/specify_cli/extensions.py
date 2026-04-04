@@ -299,7 +299,9 @@ class ExtensionManifest:
             )
         for hook_name, hook_data in hooks.items():
             if not isinstance(hook_data, dict):
-                continue
+                raise ValidationError(
+                    f"'hooks.{hook_name}' must be a mapping, got {type(hook_data).__name__}"
+                )
             command_ref = hook_data.get("command")
             if not isinstance(command_ref, str):
                 continue

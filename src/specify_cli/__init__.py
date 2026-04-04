@@ -3140,7 +3140,7 @@ def extension_remove(
     if not force:
         console.print("\n[yellow]⚠  This will remove:[/yellow]")
         cmd_label = "command" if cmd_count == 1 else "commands"
-        console.print(f"   • {cmd_count} {cmd_label} from AI agent")
+        console.print(f"   • {cmd_count} {cmd_label} across AI agents")
         if skill_count:
             console.print(f"   • {skill_count} agent skill(s)")
         console.print(f"   • Extension directory: .specify/extensions/{extension_id}/")

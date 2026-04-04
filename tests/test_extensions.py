@@ -448,6 +448,21 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="'hooks' must be a mapping"):
             ExtensionManifest(manifest_path)
 
+    def test_hook_entry_non_dict_value_raises(self, temp_dir, valid_manifest_data):
+        """A hook entry that is not a mapping raises ValidationError instead of silently skipping."""
+        import yaml
+
+        # hooks.after_tasks is a list instead of a dict — should fail validation,
+        # not silently pass and crash later in HookExecutor.
+        valid_manifest_data["hooks"]["after_tasks"] = ["x", "y"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="'hooks.after_tasks' must be a mapping"):
+            ExtensionManifest(manifest_path)
+
     def test_valid_command_name_has_no_warnings(self, temp_dir, valid_manifest_data):
         """Test that a correctly-named command produces no warnings."""
         import yaml
@@ -3185,8 +3200,8 @@ class TestExtensionRemoveCLI:
             result = runner.invoke(app, ["extension", "remove", "test-ext"], input="n\n")
 
         plain = strip_ansi(result.output)
-        # The fixture has 1 command and 0 aliases → "1 command from AI agent"
-        assert "1 command from AI agent" in plain
+        # The fixture has 1 command and 0 aliases → "1 command across AI agents"
+        assert "1 command across AI agents" in plain
 
     def test_remove_confirmation_counts_aliases(self, temp_dir, project_dir):
         """Removal confirmation shows primary + alias count, not just primary."""
@@ -3239,9 +3254,9 @@ class TestExtensionRemoveCLI:
             result = runner.invoke(app, ["extension", "remove", "ext-with-alias"], input="n\n")
 
         plain = strip_ansi(result.output)
-        # 1 primary + 1 alias = "2 commands from AI agent" (not "1 command")
-        assert "2 commands from AI agent" in plain
-        assert "1 command from AI agent" not in plain
+        # 1 primary + 1 alias = "2 commands across AI agents" (not "1 command")
+        assert "2 commands across AI agents" in plain
+        assert "1 command across AI agents" not in plain
 
 
 class TestExtensionUpdateCLI:
