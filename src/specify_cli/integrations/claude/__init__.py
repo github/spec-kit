@@ -10,6 +10,20 @@ import yaml
 from ..base import SkillsIntegration
 from ..manifest import IntegrationManifest
 
+# Mapping of command template stem → argument-hint text shown inline
+# when a user invokes the slash command in Claude Code.
+ARGUMENT_HINTS: dict[str, str] = {
+    "specify": "Describe the feature you want to specify",
+    "plan": "Optional guidance for the planning phase",
+    "tasks": "Optional task generation constraints",
+    "implement": "Optional implementation guidance or task filter",
+    "analyze": "Optional focus areas for analysis",
+    "clarify": "Optional areas to clarify in the spec",
+    "constitution": "Principles or values for the project constitution",
+    "checklist": "Domain or focus area for the checklist",
+    "taskstoissues": "Optional filter or label for GitHub issues",
+}
+
 
 class ClaudeIntegration(SkillsIntegration):
     """Integration for Claude Code skills."""
@@ -30,10 +44,53 @@ class ClaudeIntegration(SkillsIntegration):
     }
     context_file = "CLAUDE.md"
 
-    def command_filename(self, template_name: str) -> str:
-        """Claude skills live at .claude/skills/<name>/SKILL.md."""
-        skill_name = f"speckit-{template_name.replace('.', '-')}"
-        return f"{skill_name}/SKILL.md"
+    @staticmethod
+    def inject_argument_hint(content: str, hint: str) -> str:
+        """Insert ``argument-hint`` after the first ``description:`` in YAML frontmatter.
+
+        Skips injection if ``argument-hint:`` already exists in the
+        frontmatter to avoid duplicate keys.
+        """
+        lines = content.splitlines(keepends=True)
+
+        # Pre-scan: bail out if argument-hint already present in frontmatter
+        dash_count = 0
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith("argument-hint:"):
+                return content  # already present
+
+        out: list[str] = []
+        in_fm = False
+        dash_count = 0
+        injected = False
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                in_fm = dash_count == 1
+                out.append(line)
+                continue
+            if in_fm and not injected and stripped.startswith("description:"):
+                out.append(line)
+                # Preserve the exact line-ending style (\r\n vs \n)
+                if line.endswith("\r\n"):
+                    eol = "\r\n"
+                elif line.endswith("\n"):
+                    eol = "\n"
+                else:
+                    eol = ""
+                escaped = hint.replace("\\", "\\\\").replace('"', '\\"')
+                out.append(f'argument-hint: "{escaped}"{eol}')
+                injected = True
+                continue
+            out.append(line)
+        return "".join(out)
 
     def _render_skill(self, template_name: str, frontmatter: dict[str, Any], body: str) -> str:
         """Render a processed command template as a Claude skill."""
@@ -54,6 +111,43 @@ class ClaudeIntegration(SkillsIntegration):
             self.key, name, description, source
         )
 
+    @staticmethod
+    def _inject_frontmatter_flag(content: str, key: str, value: str = "true") -> str:
+        """Insert ``key: value`` before the closing ``---`` if not already present."""
+        lines = content.splitlines(keepends=True)
+
+        # Pre-scan: bail out if already present in frontmatter
+        dash_count = 0
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith(f"{key}:"):
+                return content
+
+        # Inject before the closing --- of frontmatter
+        out: list[str] = []
+        dash_count = 0
+        injected = False
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2 and not injected:
+                    if line.endswith("\r\n"):
+                        eol = "\r\n"
+                    elif line.endswith("\n"):
+                        eol = "\n"
+                    else:
+                        eol = ""
+                    out.append(f"{key}: {value}{eol}")
+                    injected = True
+            out.append(line)
+        return "".join(out)
+
     def setup(
         self,
         project_root: Path,
@@ -61,49 +155,41 @@ class ClaudeIntegration(SkillsIntegration):
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
-        """Install Claude skills into .claude/skills."""
-        templates = self.list_command_templates()
-        if not templates:
-            return []
+        """Install Claude skills, then inject user-invocable, disable-model-invocation, and argument-hint."""
+        created = super().setup(project_root, manifest, parsed_options, **opts)
 
-        project_root_resolved = project_root.resolve()
-        if manifest.project_root != project_root_resolved:
-            raise ValueError(
-                f"manifest.project_root ({manifest.project_root}) does not match "
-                f"project_root ({project_root_resolved})"
-            )
+        # Post-process generated skill files
+        skills_dir = self.skills_dest(project_root).resolve()
 
-        dest = self.skills_dest(project_root).resolve()
-        try:
-            dest.relative_to(project_root_resolved)
-        except ValueError as exc:
-            raise ValueError(
-                f"Integration destination {dest} escapes "
-                f"project root {project_root_resolved}"
-            ) from exc
-        dest.mkdir(parents=True, exist_ok=True)
+        for path in created:
+            # Only touch SKILL.md files under the skills directory
+            try:
+                path.resolve().relative_to(skills_dir)
+            except ValueError:
+                continue
+            if path.name != "SKILL.md":
+                continue
 
-        script_type = opts.get("script_type", "sh")
-        arg_placeholder = self.registrar_config.get("args", "$ARGUMENTS")
-        from specify_cli.agents import CommandRegistrar
-        registrar = CommandRegistrar()
-        created: list[Path] = []
+            content_bytes = path.read_bytes()
+            content = content_bytes.decode("utf-8")
 
-        for src_file in templates:
-            raw = src_file.read_text(encoding="utf-8")
-            processed = self.process_template(raw, self.key, script_type, arg_placeholder)
-            frontmatter, body = registrar.parse_frontmatter(processed)
-            if not isinstance(frontmatter, dict):
-                frontmatter = {}
+            # Inject user-invocable: true (Claude skills are accessible via /command)
+            updated = self._inject_frontmatter_flag(content, "user-invocable")
 
-            rendered = self._render_skill(src_file.stem, frontmatter, body)
-            dst_file = self.write_file_and_record(
-                rendered,
-                dest / self.command_filename(src_file.stem),
-                project_root,
-                manifest,
-            )
-            created.append(dst_file)
+            # Inject disable-model-invocation: true (Claude skills run only when invoked)
+            updated = self._inject_frontmatter_flag(updated, "disable-model-invocation")
 
-        created.extend(self.install_scripts(project_root, manifest))
+            # Inject argument-hint if available for this skill
+            skill_dir_name = path.parent.name  # e.g. "speckit-plan"
+            stem = skill_dir_name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
+            hint = ARGUMENT_HINTS.get(stem, "")
+            if hint:
+                updated = self.inject_argument_hint(updated, hint)
+
+            if updated != content:
+                path.write_bytes(updated.encode("utf-8"))
+                self.record_file_in_manifest(path, project_root, manifest)
+
         return created

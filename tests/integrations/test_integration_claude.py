@@ -8,6 +8,7 @@ import yaml
 
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from specify_cli.integrations.base import IntegrationBase
+from specify_cli.integrations.claude import ARGUMENT_HINTS
 from specify_cli.integrations.manifest import IntegrationManifest
 
 
@@ -57,6 +58,7 @@ class TestClaudeIntegration:
         parts = content.split("---", 2)
         parsed = yaml.safe_load(parts[1])
         assert parsed["name"] == "speckit-plan"
+        assert parsed["user-invocable"] is True
         assert parsed["disable-model-invocation"] is True
         assert parsed["metadata"]["source"] == "templates/commands/plan.md"
 
@@ -175,7 +177,9 @@ class TestClaudeIntegration:
 
         skill_file = project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
         assert skill_file.exists()
-        assert "disable-model-invocation: true" in skill_file.read_text(encoding="utf-8")
+        skill_content = skill_file.read_text(encoding="utf-8")
+        assert "user-invocable: true" in skill_content
+        assert "disable-model-invocation: true" in skill_content
 
         init_options = json.loads(
             (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
@@ -275,7 +279,124 @@ class TestClaudeIntegration:
         content = skill_file.read_text(encoding="utf-8")
         assert "preset:claude-skill-command" in content
         assert "name: speckit-research" in content
+        assert "user-invocable: true" in content
         assert "disable-model-invocation: true" in content
 
         metadata = manager.registry.get("claude-skill-command")
         assert "speckit-research" in metadata.get("registered_skills", [])
+
+
+class TestClaudeArgumentHints:
+    """Verify that argument-hint frontmatter is injected for Claude skills."""
+
+    def test_all_skills_have_hints(self, tmp_path):
+        """Every generated SKILL.md must contain an argument-hint line."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        created = i.setup(tmp_path, m, script_type="sh")
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            assert "argument-hint:" in content, (
+                f"{f.parent.name}/SKILL.md is missing argument-hint frontmatter"
+            )
+
+    def test_hints_match_expected_values(self, tmp_path):
+        """Each skill's argument-hint must match the expected text."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        created = i.setup(tmp_path, m, script_type="sh")
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        for f in skill_files:
+            # Extract stem: speckit-plan -> plan
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
+            expected_hint = ARGUMENT_HINTS.get(stem)
+            assert expected_hint is not None, (
+                f"No expected hint defined for skill '{stem}'"
+            )
+            content = f.read_text(encoding="utf-8")
+            assert f'argument-hint: "{expected_hint}"' in content, (
+                f"{f.parent.name}/SKILL.md: expected hint '{expected_hint}' not found"
+            )
+
+    def test_hint_is_inside_frontmatter(self, tmp_path):
+        """argument-hint must appear between the --- delimiters, not in the body."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        created = i.setup(tmp_path, m, script_type="sh")
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            parts = content.split("---", 2)
+            assert len(parts) >= 3, f"No frontmatter in {f.parent.name}/SKILL.md"
+            frontmatter = parts[1]
+            body = parts[2]
+            assert "argument-hint:" in frontmatter, (
+                f"{f.parent.name}/SKILL.md: argument-hint not in frontmatter section"
+            )
+            assert "argument-hint:" not in body, (
+                f"{f.parent.name}/SKILL.md: argument-hint leaked into body"
+            )
+
+    def test_hint_appears_after_description(self, tmp_path):
+        """argument-hint must immediately follow the description line."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        created = i.setup(tmp_path, m, script_type="sh")
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            lines = content.splitlines()
+            found_description = False
+            for idx, line in enumerate(lines):
+                if line.startswith("description:"):
+                    found_description = True
+                    assert idx + 1 < len(lines), (
+                        f"{f.parent.name}/SKILL.md: description is last line"
+                    )
+                    assert lines[idx + 1].startswith("argument-hint:"), (
+                        f"{f.parent.name}/SKILL.md: argument-hint does not follow description"
+                    )
+                    break
+            assert found_description, (
+                f"{f.parent.name}/SKILL.md: no description: line found in output"
+            )
+
+    def test_inject_argument_hint_only_in_frontmatter(self):
+        """inject_argument_hint must not modify description: lines in the body."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        content = (
+            "---\n"
+            "description: My command\n"
+            "---\n"
+            "\n"
+            "description: this is body text\n"
+        )
+        result = ClaudeIntegration.inject_argument_hint(content, "Test hint")
+        lines = result.splitlines()
+        hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
+        assert hint_count == 1, (
+            f"Expected exactly 1 argument-hint line, found {hint_count}"
+        )
+
+    def test_inject_argument_hint_skips_if_already_present(self):
+        """inject_argument_hint must not duplicate if argument-hint already exists."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        content = (
+            "---\n"
+            "description: My command\n"
+            'argument-hint: "Existing hint"\n'
+            "---\n"
+            "\n"
+            "Body text\n"
+        )
+        result = ClaudeIntegration.inject_argument_hint(content, "New hint")
+        assert result == content, "Content should be unchanged when hint already exists"
+        lines = result.splitlines()
+        hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
+        assert hint_count == 1
