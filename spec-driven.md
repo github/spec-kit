@@ -78,7 +78,7 @@ The SDD methodology is significantly enhanced through three powerful commands th
 
 This command transforms a simple feature description (the user-prompt) into a complete, structured specification with automatic repository management:
 
-1. **Automatic Feature Numbering**: Scans existing specs to determine the next feature number (e.g., 001, 002, 003)
+1. **Automatic Feature Numbering**: Scans existing specs to determine the next feature number (e.g., 001, 002, 003, …, 1000 — expands beyond 3 digits automatically)
 2. **Branch Creation**: Generates a semantic branch name from your description and creates it automatically
 3. **Template-Based Generation**: Copies and customizes the feature specification template with your requirements
 4. **Directory Structure**: Creates the proper `specs/[branch-name]/` structure for all related documents

@@ -134,7 +134,7 @@ class TestSequentialBranch:
             if line.startswith("BRANCH_NAME:"):
                 branch = line.split(":", 1)[1].strip()
         assert branch is not None
-        assert re.match(r"^\d{3}-new-feat$", branch), f"unexpected branch: {branch}"
+        assert re.match(r"^\d{3,}-new-feat$", branch), f"unexpected branch: {branch}"
 
     def test_sequential_ignores_timestamp_dirs(self, git_repo: Path):
         """Sequential numbering skips timestamp dirs when computing next number."""
@@ -289,7 +289,7 @@ class TestE2EFlow:
             capture_output=True,
             text=True,
         ).stdout.strip()
-        assert re.match(r"^\d{3}-seq-feat$", branch), f"branch: {branch}"
+        assert re.match(r"^\d{3,}-seq-feat$", branch), f"branch: {branch}"
         assert (git_repo / "specs" / branch).is_dir()
         val = source_and_call(f'check_feature_branch "{branch}" "true"')
         assert val.returncode == 0
