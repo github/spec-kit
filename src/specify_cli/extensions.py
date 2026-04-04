@@ -1411,6 +1411,27 @@ class ExtensionCatalog:
         if not parsed.netloc:
             raise ValidationError("Catalog URL must be a valid URL with a host.")
 
+    def _make_request(self, url: str) -> "urllib.request.Request":
+        """Build a urllib Request, adding a GitHub auth header when available.
+
+        Reads GITHUB_TOKEN or GH_TOKEN from the environment and attaches an
+        ``Authorization: token <value>`` header for requests to GitHub-hosted
+        domains (``raw.githubusercontent.com``, ``github.com``,
+        ``api.github.com``).  Non-GitHub URLs are returned as plain requests
+        so credentials are never leaked to third-party hosts.
+        """
+        import os
+        import urllib.request
+
+        headers: Dict[str, str] = {}
+        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        if token and any(
+            host in url
+            for host in ("raw.githubusercontent.com", "github.com", "api.github.com")
+        ):
+            headers["Authorization"] = f"token {token}"
+        return urllib.request.Request(url, headers=headers)
+
     def _load_catalog_config(self, config_path: Path) -> Optional[List[CatalogEntry]]:
         """Load catalog stack configuration from a YAML file.
 
@@ -1601,7 +1622,7 @@ class ExtensionCatalog:
 
         # Fetch from network
         try:
-            with urllib.request.urlopen(entry.url, timeout=10) as response:
+            with urllib.request.urlopen(self._make_request(entry.url), timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
             if "schema_version" not in catalog_data or "extensions" not in catalog_data:
@@ -1718,7 +1739,7 @@ class ExtensionCatalog:
             import urllib.request
             import urllib.error
 
-            with urllib.request.urlopen(catalog_url, timeout=10) as response:
+            with urllib.request.urlopen(self._make_request(catalog_url), timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
             # Validate catalog structure
@@ -1861,7 +1882,7 @@ class ExtensionCatalog:
 
         # Download the ZIP file
         try:
-            with urllib.request.urlopen(download_url, timeout=60) as response:
+            with urllib.request.urlopen(self._make_request(download_url), timeout=60) as response:
                 zip_data = response.read()
 
             zip_path.write_bytes(zip_data)
