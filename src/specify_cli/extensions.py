@@ -37,6 +37,9 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset({
     "taskstoissues",
 })
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
+# Aliases use a 2-part 'namespace.command' form without the 'speckit.' prefix.
+# The 'speckit' namespace is reserved for core commands.
+EXTENSION_ALIAS_PATTERN = re.compile(r"^([a-z0-9-]+)\.([a-z0-9-]+)$")
 
 
 def _load_core_command_names() -> frozenset[str]:
@@ -130,6 +133,7 @@ class ExtensionManifest:
             ValidationError: If manifest is invalid
         """
         self.path = manifest_path
+        self.warnings: List[str] = []
         self.data = self._load_yaml(manifest_path)
         self._validate()
 
@@ -186,17 +190,201 @@ class ExtensionManifest:
         if "commands" not in provides or not provides["commands"]:
             raise ValidationError("Extension must provide at least one command")
 
-        # Validate commands
+        # Validate commands; track renames so hook references can be rewritten.
+        rename_map: Dict[str, str] = {}
+        # Track SKILL output names across all commands+aliases to catch cross-command
+        # collisions. For SKILL.md agents, _compute_output_name strips the 'speckit.'
+        # prefix and hyphenates: 'speckit.myext.build' and alias 'myext.build' on a
+        # *different* command entry both map to 'speckit-myext-build/SKILL.md'.
+        seen_skill_names: Dict[str, str] = {}  # skill_output_name -> description of claimant
+
         for cmd in provides["commands"]:
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
 
             # Validate command name format
-            if EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]) is None:
+            if not EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]):
+                corrected = self._try_correct_command_name(cmd["name"], ext["id"])
+                if corrected:
+                    self.warnings.append(
+                        f"Command name '{cmd['name']}' does not follow the required pattern "
+                        f"'speckit.{{extension}}.{{command}}'. Registering as '{corrected}'. "
+                        f"The extension author should update the manifest to use this name."
+                    )
+                    rename_map[cmd["name"]] = corrected
+                    cmd["name"] = corrected
+                else:
+                    raise ValidationError(
+                        f"Invalid command name '{cmd['name']}': "
+                        "must follow pattern 'speckit.{extension}.{command}'"
+                    )
+
+            # Register the primary command's SKILL output name.
+            primary_skill = self._skill_output_name(cmd["name"])
+            if primary_skill in seen_skill_names:
                 raise ValidationError(
-                    f"Invalid command name '{cmd['name']}': "
-                    "must follow pattern 'speckit.{extension}.{command}'"
+                    f"Command '{cmd['name']}' would produce SKILL output name "
+                    f"'{primary_skill}' which is already claimed by "
+                    f"{seen_skill_names[primary_skill]}. "
+                    f"Choose a distinct command name."
                 )
+            seen_skill_names[primary_skill] = f"primary command '{cmd['name']}'"
+
+            # Validate and auto-correct alias name formats
+            aliases = cmd.get("aliases")
+            if aliases is None:
+                aliases = []
+                cmd["aliases"] = []  # normalize null/missing to empty list in-place
+            if not isinstance(aliases, list):
+                raise ValidationError(
+                    f"Aliases for command '{cmd['name']}' must be a list"
+                )
+            for i, alias in enumerate(aliases):
+                if not isinstance(alias, str):
+                    raise ValidationError(
+                        f"Aliases for command '{cmd['name']}' must be strings"
+                    )
+                alias_match = EXTENSION_ALIAS_PATTERN.match(alias)
+                if alias_match and alias_match.group(1) != 'speckit':
+                    # Valid 'ext.cmd' form — check it won't collide with any previously
+                    # seen primary or alias SKILL output name (including its own command's
+                    # primary). For SKILL.md agents, _compute_output_name strips 'speckit.'
+                    # so e.g. primary 'speckit.myext.run' and alias 'myext.run' both map
+                    # to 'speckit-myext-run', causing the alias write to overwrite the
+                    # primary skill file.
+                    alias_skill = self._skill_output_name(alias)
+                    if alias_skill in seen_skill_names:
+                        skill_name = alias_skill
+                        raise ValidationError(
+                            f"Alias '{alias}' on command '{cmd['name']}' would produce "
+                            f"SKILL output name '{skill_name}' which is already claimed by "
+                            f"{seen_skill_names[alias_skill]}. "
+                            f"Choose a distinct alias name."
+                        )
+                    seen_skill_names[alias_skill] = f"alias '{alias}' on command '{cmd['name']}'"
+                else:
+                    corrected = self._try_correct_alias_name(alias, ext["id"])
+                    if corrected:
+                        corrected_skill = self._skill_output_name(corrected)
+                        if corrected_skill in seen_skill_names:
+                            raise ValidationError(
+                                f"Alias '{alias}' (corrected to '{corrected}') on command "
+                                f"'{cmd['name']}' would produce SKILL output name "
+                                f"'{corrected_skill}' which is already claimed by "
+                                f"{seen_skill_names[corrected_skill]}. "
+                                f"Choose a distinct alias name."
+                            )
+                        self.warnings.append(
+                            f"Alias '{alias}' does not follow the required pattern "
+                            f"'{{extension}}.{{command}}'. Registering as '{corrected}'. "
+                            f"The extension author should update the manifest to use this name."
+                        )
+                        rename_map[alias] = corrected
+                        aliases[i] = corrected
+                        seen_skill_names[corrected_skill] = f"alias '{corrected}' on command '{cmd['name']}'"
+                    else:
+                        raise ValidationError(
+                            f"Invalid alias '{alias}': "
+                            "must follow pattern '{extension}.{command}' "
+                            "(the 'speckit.' prefix is reserved for core commands)"
+                        )
+
+        # Rewrite any hook command references that pointed at a renamed command,
+        # then canonicalize alias-form refs (e.g. 'ext.cmd') to the canonical
+        # 'speckit.{ext}.cmd' form so hook-invocation skill-name mapping works.
+        hooks = self.data.get("hooks", {})
+        if not isinstance(hooks, dict):
+            raise ValidationError(
+                f"'hooks' must be a mapping, got {type(hooks).__name__}"
+            )
+        for hook_name, hook_data in hooks.items():
+            if not isinstance(hook_data, dict):
+                raise ValidationError(
+                    f"'hooks.{hook_name}' must be a mapping, got {type(hook_data).__name__}"
+                )
+            command_ref = hook_data.get("command")
+            if not isinstance(command_ref, str):
+                continue
+
+            # Step 1: apply rename_map (command was auto-corrected during validation).
+            final_ref = rename_map.get(command_ref, command_ref)
+
+            # Step 2: if the ref is in alias form '{ext_id}.cmd', lift it to
+            # 'speckit.{ext_id}.cmd' so skill-mode hook invocation renders correctly.
+            parts = final_ref.split('.')
+            if len(parts) == 2 and parts[0] == ext["id"]:
+                canonical = f"speckit.{ext['id']}.{parts[1]}"
+                if EXTENSION_COMMAND_NAME_PATTERN.match(canonical):
+                    final_ref = canonical
+
+            if final_ref != command_ref:
+                hook_data["command"] = final_ref
+                if command_ref in rename_map:
+                    self.warnings.append(
+                        f"Hook '{hook_name}' referenced renamed command '{command_ref}'; "
+                        f"updated to '{final_ref}'. "
+                        f"The extension author should update the manifest."
+                    )
+                else:
+                    # Alias-form ref was canonicalized (e.g. 'ext.cmd' → 'speckit.ext.cmd').
+                    self.warnings.append(
+                        f"Hook '{hook_name}' referenced alias '{command_ref}'; "
+                        f"updated to canonical command '{final_ref}'. "
+                        f"The extension author should update the manifest to reference "
+                        f"the canonical command name directly."
+                    )
+
+    @staticmethod
+    def _skill_output_name(cmd_name: str) -> str:
+        """Compute the SKILL.md directory name for a command or alias.
+
+        Mirrors the logic in CommandRegistrar._compute_output_name for SKILL.md
+        agents: strip the 'speckit.' prefix (if present) then hyphenate.
+        """
+        short = cmd_name[len("speckit."):] if cmd_name.startswith("speckit.") else cmd_name
+        return "speckit-" + short.replace(".", "-")
+
+    @staticmethod
+    def _try_correct_command_name(name: str, ext_id: str) -> Optional[str]:
+        """Try to auto-correct a non-conforming primary command name to 'speckit.{ext_id}.command'.
+
+        Handles legacy formats:
+          - 'speckit.command'  → 'speckit.{ext_id}.command'
+          - '{ext_id}.command' → 'speckit.{ext_id}.command'
+
+        The 'X.Y' form is only corrected when X matches ext_id to ensure the
+        result passes the install-time namespace check.
+
+        Returns the corrected name, or None if no safe correction is possible.
+        """
+        parts = name.split('.')
+        if len(parts) == 2:
+            if parts[0] == 'speckit' or parts[0] == ext_id:
+                candidate = f"speckit.{ext_id}.{parts[1]}"
+                if EXTENSION_COMMAND_NAME_PATTERN.match(candidate):
+                    return candidate
+        return None
+
+    @staticmethod
+    def _try_correct_alias_name(name: str, ext_id: str) -> Optional[str]:
+        """Try to auto-correct a non-conforming alias to the '{ext_id}.command' pattern.
+
+        Handles legacy formats:
+          - 'speckit.command'         → '{ext_id}.command'
+          - 'speckit.ext_id.command'  → 'ext_id.command'  (3-part with speckit prefix)
+
+        Returns the corrected name, or None if no safe correction is possible.
+        """
+        parts = name.split('.')
+        if len(parts) == 2 and parts[0] == 'speckit':
+            candidate = f"{ext_id}.{parts[1]}"
+            if EXTENSION_ALIAS_PATTERN.match(candidate):
+                return candidate
+        if len(parts) == 3 and parts[0] == 'speckit' and parts[1] == ext_id:
+            candidate = f"{parts[1]}.{parts[2]}"
+            if EXTENSION_ALIAS_PATTERN.match(candidate):
+                return candidate
+        return None
 
     @property
     def id(self) -> str:
@@ -494,7 +682,8 @@ class ExtensionManager:
         """Collect command and alias names declared by a manifest.
 
         Performs install-time validation for extension-specific constraints:
-        - commands and aliases must use the canonical `speckit.{extension}.{command}` shape
+        - primary commands must use the canonical `speckit.{extension}.{command}` shape
+        - aliases must use the `{extension}.{command}` shape (no `speckit.` prefix)
         - commands and aliases must use this extension's namespace
         - command namespaces must not shadow core commands
         - duplicate command/alias names inside one manifest are rejected
@@ -534,14 +723,24 @@ class ExtensionManager:
                         f"{kind.capitalize()} for command '{primary_name}' must be a string"
                     )
 
-                match = EXTENSION_COMMAND_NAME_PATTERN.match(name)
-                if match is None:
-                    raise ValidationError(
-                        f"Invalid {kind} '{name}': "
-                        "must follow pattern 'speckit.{extension}.{command}'"
-                    )
+                if kind == "command":
+                    match = EXTENSION_COMMAND_NAME_PATTERN.match(name)
+                    if match is None:
+                        raise ValidationError(
+                            f"Invalid command '{name}': "
+                            "must follow pattern 'speckit.{extension}.{command}'"
+                        )
+                    namespace = match.group(1)
+                else:
+                    match = EXTENSION_ALIAS_PATTERN.match(name)
+                    if match is None or match.group(1) == 'speckit':
+                        raise ValidationError(
+                            f"Invalid alias '{name}': "
+                            "must follow pattern '{extension}.{command}' "
+                            "(the 'speckit.' prefix is reserved for core commands)"
+                        )
+                    namespace = match.group(1)
 
-                namespace = match.group(1)
                 if namespace != manifest.id:
                     raise ValidationError(
                         f"{kind.capitalize()} '{name}' must use extension namespace '{manifest.id}'"

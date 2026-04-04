@@ -3067,6 +3067,10 @@ def extension_add(
         console.print("\n[green]✓[/green] Extension installed successfully!")
         console.print(f"\n[bold]{manifest.name}[/bold] (v{manifest.version})")
         console.print(f"  {manifest.description}")
+
+        for warning in manifest.warnings:
+            console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {warning}")
+
         console.print("\n[bold cyan]Provided commands:[/bold cyan]")
         for cmd in manifest.commands:
             console.print(f"  • {cmd['name']} - {cmd.get('description', '')}")
@@ -3119,16 +3123,24 @@ def extension_remove(
     extension_id, display_name = _resolve_installed_extension(extension, installed, "remove")
 
     # Get extension info for command and skill counts
-    ext_manifest = manager.get_extension(extension_id)
-    cmd_count = len(ext_manifest.commands) if ext_manifest else 0
     reg_meta = manager.registry.get(extension_id)
+    # Count total registered commands across all agents (includes aliases).
+    # Normalize to dict in case registry entry is corrupted or from an older version.
+    registered_commands = reg_meta.get("registered_commands") if reg_meta else None
+    if not isinstance(registered_commands, dict):
+        registered_commands = {}
+    cmd_count = sum(
+        len(names) for names in registered_commands.values()
+        if isinstance(names, list)
+    )
     raw_skills = reg_meta.get("registered_skills") if reg_meta else None
     skill_count = len(raw_skills) if isinstance(raw_skills, list) else 0
 
     # Confirm removal
     if not force:
         console.print("\n[yellow]⚠  This will remove:[/yellow]")
-        console.print(f"   • {cmd_count} commands from AI agent")
+        cmd_label = "command" if cmd_count == 1 else "commands"
+        console.print(f"   • {cmd_count} {cmd_label} across AI agents")
         if skill_count:
             console.print(f"   • {skill_count} agent skill(s)")
         console.print(f"   • Extension directory: .specify/extensions/{extension_id}/")

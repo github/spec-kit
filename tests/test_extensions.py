@@ -242,7 +242,7 @@ class TestExtensionManifest:
             ExtensionManifest(manifest_path)
 
     def test_invalid_command_name(self, temp_dir, valid_manifest_data):
-        """Test manifest with invalid command name format."""
+        """Test manifest with command name that cannot be auto-corrected raises ValidationError."""
         import yaml
 
         valid_manifest_data["provides"]["commands"][0]["name"] = "invalid-name"
@@ -253,6 +253,227 @@ class TestExtensionManifest:
 
         with pytest.raises(ValidationError, match="Invalid command name"):
             ExtensionManifest(manifest_path)
+
+    def test_command_name_autocorrect_speckit_prefix(self, temp_dir, valid_manifest_data):
+        """Test that 'speckit.command' is auto-corrected to 'speckit.{ext_id}.command'."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["name"] = "speckit.hello"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["name"] == "speckit.test-ext.hello"
+        assert len(manifest.warnings) == 1
+        assert "speckit.hello" in manifest.warnings[0]
+        assert "speckit.test-ext.hello" in manifest.warnings[0]
+
+    def test_command_name_autocorrect_matching_ext_id_prefix(self, temp_dir, valid_manifest_data):
+        """Test that '{ext_id}.command' is auto-corrected to 'speckit.{ext_id}.command'."""
+        import yaml
+
+        # Set ext_id to match the legacy namespace so correction is valid
+        valid_manifest_data["extension"]["id"] = "docguard"
+        valid_manifest_data["provides"]["commands"][0]["name"] = "docguard.guard"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["name"] == "speckit.docguard.guard"
+        assert len(manifest.warnings) == 1
+        assert "docguard.guard" in manifest.warnings[0]
+        assert "speckit.docguard.guard" in manifest.warnings[0]
+
+    def test_command_name_mismatched_namespace_not_corrected(self, temp_dir, valid_manifest_data):
+        """Test that 'X.command' is NOT corrected when X doesn't match ext_id."""
+        import yaml
+
+        # ext_id is "test-ext" but command uses a different namespace
+        valid_manifest_data["provides"]["commands"][0]["name"] = "docguard.guard"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid command name"):
+            ExtensionManifest(manifest_path)
+
+    def test_alias_valid_two_part_no_prefix(self, temp_dir, valid_manifest_data):
+        """Test that a 'test-ext.greet' alias is accepted as-is with no warning."""
+        import yaml
+
+        # Use a name distinct from the primary command's suffix ('hello') to avoid
+        # the SKILL.md output-name collision (both would map to speckit-test-ext-hello).
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["test-ext.greet"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["aliases"] == ["test-ext.greet"]
+        assert manifest.warnings == []
+
+    def test_alias_autocorrect_speckit_two_part(self, temp_dir, valid_manifest_data):
+        """Test that legacy 'speckit.command' alias is corrected to '{ext_id}.command'."""
+        import yaml
+
+        # Use 'speckit.greet' → 'test-ext.greet' to avoid colliding with the primary
+        # command's SKILL output name (speckit.test-ext.hello → speckit-test-ext-hello).
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["speckit.greet"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["aliases"] == ["test-ext.greet"]
+        assert len(manifest.warnings) == 1
+        assert "speckit.greet" in manifest.warnings[0]
+        assert "test-ext.greet" in manifest.warnings[0]
+
+    def test_alias_autocorrect_speckit_three_part(self, temp_dir, valid_manifest_data):
+        """Test that a 3-part 'speckit.ext.command' alias is corrected to 'ext.command'."""
+        import yaml
+
+        # Clear hooks so the alias rename doesn't also trigger a hook-reference warning.
+        # Use 'speckit.test-ext.greet' → 'test-ext.greet' to avoid colliding with the
+        # primary command's SKILL output name (speckit.test-ext.hello → speckit-test-ext-hello).
+        valid_manifest_data.pop("hooks", None)
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["speckit.test-ext.greet"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["aliases"] == ["test-ext.greet"]
+        assert len(manifest.warnings) == 1
+        assert "speckit.test-ext.greet" in manifest.warnings[0]
+        assert "test-ext.greet" in manifest.warnings[0]
+
+    def test_alias_collision_with_primary_skill_name_rejected(self, temp_dir, valid_manifest_data):
+        """Alias whose SKILL output name matches the primary command's is rejected."""
+        import yaml
+
+        # Primary 'speckit.test-ext.hello' maps to skill 'speckit-test-ext-hello'.
+        # Alias 'test-ext.hello' would map to the same skill name — collision.
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["test-ext.hello"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="would produce SKILL output name"):
+            ExtensionManifest(manifest_path)
+
+    def test_cross_command_skill_name_collision_rejected(self, temp_dir, valid_manifest_data):
+        """Alias on one command that collides with a primary on a different command is rejected."""
+        import yaml
+
+        # Command A: primary 'speckit.test-ext.hello' → skill 'speckit-test-ext-hello'
+        # Command B: primary 'speckit.test-ext.build' with alias 'test-ext.hello'
+        #            → alias also maps to 'speckit-test-ext-hello' — collision with cmd A.
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = []
+        valid_manifest_data["provides"]["commands"].append({
+            "name": "speckit.test-ext.build",
+            "file": "commands/build.md",
+            "aliases": ["test-ext.hello"],
+        })
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="would produce SKILL output name"):
+            ExtensionManifest(manifest_path)
+
+    def test_corrected_alias_skill_name_collision_rejected(self, temp_dir, valid_manifest_data):
+        """Auto-corrected alias that collides with an existing primary's SKILL name is rejected."""
+        import yaml
+
+        # Primary 'speckit.test-ext.hello' → skill 'speckit-test-ext-hello'.
+        # Alias 'speckit.test-ext.hello' gets auto-corrected to 'test-ext.hello'
+        # which also maps to 'speckit-test-ext-hello' — collision.
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["speckit.test-ext.hello"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="would produce SKILL output name"):
+            ExtensionManifest(manifest_path)
+
+    def test_hook_alias_ref_canonicalized_to_speckit_form(self, temp_dir, valid_manifest_data):
+        """Hook command refs in alias form are lifted to canonical speckit.ext.cmd form."""
+        import yaml
+
+        # Manifest uses a valid alias (distinct suffix to avoid SKILL name collision)
+        # but the hook mistakenly references the alias name instead of the primary.
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["test-ext.greet"]
+        valid_manifest_data["hooks"]["after_tasks"]["command"] = "test-ext.greet"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        # Hook ref should be lifted to canonical form for skill-mode invocation.
+        assert manifest.hooks["after_tasks"]["command"] == "speckit.test-ext.greet"
+        # A compatibility warning should be emitted so the author knows to update.
+        assert len(manifest.warnings) == 1
+        assert "test-ext.greet" in manifest.warnings[0]
+        assert "speckit.test-ext.greet" in manifest.warnings[0]
+
+    def test_hook_non_dict_value_raises(self, temp_dir, valid_manifest_data):
+        """A non-mapping hooks value raises ValidationError."""
+        import yaml
+
+        valid_manifest_data["hooks"] = ["not", "a", "dict"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="'hooks' must be a mapping"):
+            ExtensionManifest(manifest_path)
+
+    def test_hook_entry_non_dict_value_raises(self, temp_dir, valid_manifest_data):
+        """A hook entry that is not a mapping raises ValidationError instead of silently skipping."""
+        import yaml
+
+        # hooks.after_tasks is a list instead of a dict — should fail validation,
+        # not silently pass and crash later in HookExecutor.
+        valid_manifest_data["hooks"]["after_tasks"] = ["x", "y"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="'hooks.after_tasks' must be a mapping"):
+            ExtensionManifest(manifest_path)
+
+    def test_valid_command_name_has_no_warnings(self, temp_dir, valid_manifest_data):
+        """Test that a correctly-named command produces no warnings."""
+        import yaml
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.warnings == []
 
     def test_no_commands(self, temp_dir, valid_manifest_data):
         """Test manifest with no commands provided."""
@@ -636,8 +857,8 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="conflicts with core command namespace"):
             manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
-    def test_install_rejects_alias_without_extension_namespace(self, temp_dir, project_dir):
-        """Install should reject legacy short aliases that can shadow core commands."""
+    def test_install_autocorrects_speckit_alias_to_ext_form(self, temp_dir, project_dir):
+        """Legacy 'speckit.command' aliases are corrected to '{ext_id}.command' with a warning."""
         import yaml
 
         ext_dir = temp_dir / "alias-shortcut"
@@ -668,8 +889,12 @@ class TestExtensionManager:
         (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nBody")
 
         manager = ExtensionManager(project_dir)
-        with pytest.raises(ValidationError, match="Invalid alias 'speckit.shortcut'"):
-            manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+        manifest = manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        assert manifest.commands[0]["aliases"] == ["alias-shortcut.shortcut"]
+        assert len(manifest.warnings) == 1
+        assert "speckit.shortcut" in manifest.warnings[0]
+        assert "alias-shortcut.shortcut" in manifest.warnings[0]
 
     def test_install_rejects_namespace_squatting(self, temp_dir, project_dir):
         """Install should reject commands and aliases outside the extension namespace."""
@@ -707,12 +932,21 @@ class TestExtensionManager:
             manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
     def test_install_rejects_command_collision_with_installed_extension(self, temp_dir, project_dir):
-        """Install should reject names already claimed by an installed legacy extension."""
+        """Install should reject names already claimed by an installed extension.
+
+        The first extension is written directly to disk (bypassing install_from_directory) to
+        simulate a scenario where it claims a command in a different namespace — something that
+        could happen with a legacy or manually-placed extension.  The collision detector must
+        still catch the conflict when the second extension tries to register the same command.
+        """
         import yaml
 
         first_dir = temp_dir / "ext-one"
         first_dir.mkdir()
         (first_dir / "commands").mkdir()
+        # Directly write a manifest that claims speckit.shared.sync even though its id is
+        # "ext-one" — this bypasses install-time namespace enforcement and simulates a
+        # legacy/corrupted extension that already occupies the name.
         first_manifest = {
             "schema_version": "1.0",
             "extension": {
@@ -725,9 +959,8 @@ class TestExtensionManager:
             "provides": {
                 "commands": [
                     {
-                        "name": "speckit.ext-one.sync",
+                        "name": "speckit.shared.sync",
                         "file": "commands/cmd.md",
-                        "aliases": ["speckit.shared.sync"],
                     }
                 ]
             },
@@ -1065,7 +1298,7 @@ $ARGUMENTS
                     {
                         "name": "speckit.ext-alias.cmd",
                         "file": "commands/cmd.md",
-                        "aliases": ["speckit.ext-alias.shortcut"],
+                        "aliases": ["ext-alias.shortcut"],
                     }
                 ]
             },
@@ -1086,7 +1319,7 @@ $ARGUMENTS
 
         assert len(registered) == 2
         assert "speckit.ext-alias.cmd" in registered
-        assert "speckit.ext-alias.shortcut" in registered
+        assert "ext-alias.shortcut" in registered
         assert (claude_dir / "speckit-ext-alias-cmd" / "SKILL.md").exists()
         assert (claude_dir / "speckit-ext-alias-shortcut" / "SKILL.md").exists()
 
@@ -1106,6 +1339,21 @@ $ARGUMENTS
 
         assert not (skills_dir / "speckit-specify" / "SKILL.md").exists()
         assert not (skills_dir / "speckit-shortcut" / "SKILL.md").exists()
+
+    def test_unregister_skill_removes_parent_directory(self, project_dir):
+        """Removing a SKILL.md-based command also removes the empty parent directory."""
+        skills_dir = project_dir / ".agents" / "skills"
+        (skills_dir / "speckit-myext-run").mkdir(parents=True)
+        (skills_dir / "speckit-myext-run" / "SKILL.md").write_text("body")
+
+        registrar = CommandRegistrar()
+        registrar.unregister_commands(
+            {"codex": ["speckit.myext.run"]},
+            project_dir,
+        )
+
+        assert not (skills_dir / "speckit-myext-run" / "SKILL.md").exists()
+        assert not (skills_dir / "speckit-myext-run").exists()
 
     def test_register_commands_for_all_agents_distinguishes_codex_from_amp(self, extension_dir, project_dir):
         """A Codex project under .agents/skills should not implicitly activate Amp."""
@@ -1508,7 +1756,7 @@ Then {AGENT_SCRIPT}
                     {
                         "name": "speckit.ext-alias-copilot.cmd",
                         "file": "commands/cmd.md",
-                        "aliases": ["speckit.ext-alias-copilot.shortcut"],
+                        "aliases": ["ext-alias-copilot.shortcut"],
                     }
                 ]
             },
@@ -1536,7 +1784,7 @@ Then {AGENT_SCRIPT}
         # Both primary and alias get companion .prompt.md
         prompts_dir = project_dir / ".github" / "prompts"
         assert (prompts_dir / "speckit.ext-alias-copilot.cmd.prompt.md").exists()
-        assert (prompts_dir / "speckit.ext-alias-copilot.shortcut.prompt.md").exists()
+        assert (prompts_dir / "ext-alias-copilot.shortcut.prompt.md").exists()
 
     def test_non_copilot_agent_no_companion_file(self, extension_dir, project_dir):
         """Test that non-copilot agents do NOT create .prompt.md files."""
@@ -2929,6 +3177,86 @@ class TestExtensionAddCLI:
             f"Expected download_extension to be called with resolved ID 'acme-jira-integration', "
             f"but was called with '{download_called_with[0]}'"
         )
+
+
+class TestExtensionRemoveCLI:
+    """CLI integration tests for extension remove confirmation output."""
+
+    def test_remove_confirmation_counts_primary_command_only(self, extension_dir, project_dir):
+        """Removal confirmation shows correct count when extension has no aliases."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Install via manager so registry is fully populated
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=True)
+
+        # Invoke remove with 'n' so we only see the confirmation prompt
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "remove", "test-ext"], input="n\n")
+
+        plain = strip_ansi(result.output)
+        # The fixture has 1 command and 0 aliases → "1 command across AI agents"
+        assert "1 command across AI agents" in plain
+
+    def test_remove_confirmation_counts_aliases(self, temp_dir, project_dir):
+        """Removal confirmation shows primary + alias count, not just primary."""
+        import yaml
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Build an extension with 1 primary command + 1 alias
+        ext_dir = temp_dir / "ext-with-alias"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-with-alias",
+                "name": "Extension With Alias",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.ext-with-alias.run",
+                        "file": "commands/run.md",
+                        "aliases": ["ext-with-alias.go"],
+                    }
+                ]
+            },
+        }
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+        (ext_dir / "commands" / "run.md").write_text("---\ndescription: Run\n---\nBody")
+
+        # Install with command registration so registry captures both names
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=True)
+
+        # Verify registry recorded both names
+        meta = manager.registry.get("ext-with-alias")
+        claude_cmds = meta["registered_commands"].get("claude", [])
+        assert "speckit.ext-with-alias.run" in claude_cmds
+        assert "ext-with-alias.go" in claude_cmds
+
+        # Invoke remove with 'n' so we only see the confirmation prompt
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "remove", "ext-with-alias"], input="n\n")
+
+        plain = strip_ansi(result.output)
+        # 1 primary + 1 alias = "2 commands across AI agents" (not "1 command")
+        assert "2 commands across AI agents" in plain
+        assert "1 command across AI agents" not in plain
 
 
 class TestExtensionUpdateCLI:

@@ -10,6 +10,8 @@
 
 ## Installation
 
+> **Important:** The only official, maintained packages for Spec Kit are published from the [github/spec-kit](https://github.com/github/spec-kit) GitHub repository. Any packages with the same name available on PyPI (e.g. `specify-cli` on pypi.org) are **not** affiliated with this project and are not maintained by the Spec Kit maintainers. Always install directly from GitHub as shown below.
+
 ### Initialize a New Project
 
 The easiest way to get started is to initialize a new project. Pin a specific release tag for stability (check [Releases](https://github.com/github/spec-kit/releases) for the latest):
@@ -68,6 +70,14 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <proje
 ```
 
 ## Verification
+
+After installation, run the following command to confirm the correct version is installed:
+
+```bash
+specify version
+```
+
+This helps verify you are running the official Spec Kit build from GitHub, not an unrelated package with the same name.
 
 After initialization, you should see the following commands available in your AI agent:
 
