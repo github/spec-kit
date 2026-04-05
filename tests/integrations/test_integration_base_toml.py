@@ -9,6 +9,9 @@ adapted for TOML output format.
 """
 
 import os
+import tomllib
+
+import pytest
 
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from specify_cli.integrations.base import TomlIntegration
@@ -132,13 +135,77 @@ class TomlIntegrationTests:
         has_args = any("{{args}}" in f.read_text(encoding="utf-8") for f in cmd_files)
         assert has_args, "No TOML command file contains {{args}} placeholder"
 
+    @pytest.mark.parametrize(
+        ("frontmatter", "expected"),
+        [
+            (
+                "---\ndescription: |\n  First line\n  Second line\n---\nBody\n",
+                "First line\nSecond line\n",
+            ),
+            (
+                "---\ndescription: >\n  First line\n  Second line\n---\nBody\n",
+                "First line Second line\n",
+            ),
+            (
+                "---\ndescription: |-\n  First line\n  Second line\n---\nBody\n",
+                "First line\nSecond line",
+            ),
+            (
+                "---\ndescription: >-\n  First line\n  Second line\n---\nBody\n",
+                "First line Second line",
+            ),
+        ],
+    )
+    def test_toml_extract_description_supports_block_scalars(self, frontmatter, expected):
+        assert TomlIntegration._extract_description(frontmatter) == expected
+
+    def test_split_frontmatter_ignores_indented_delimiters(self):
+        content = (
+            "---\n"
+            "description: |\n"
+            "  line one\n"
+            "  ---\n"
+            "  line two\n"
+            "---\n"
+            "Body\n"
+        )
+
+        frontmatter, body = TomlIntegration._split_frontmatter(content)
+
+        assert "line two" in frontmatter
+        assert body == "Body\n"
+
+    def test_toml_prompt_excludes_frontmatter(self, tmp_path, monkeypatch):
+        i = get_integration(self.KEY)
+        template = tmp_path / "sample.md"
+        template.write_text(
+            "---\n"
+            "description: Summary line one\n"
+            "scripts:\n"
+            "  sh: scripts/bash/example.sh\n"
+            "---\n"
+            "Body line one\n"
+            "Body line two\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(i, "list_command_templates", lambda: [template])
+
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        cmd_files = [f for f in created if "scripts" not in f.parts]
+        assert len(cmd_files) == 1
+
+        generated = cmd_files[0].read_text(encoding="utf-8")
+        parsed = tomllib.loads(generated)
+
+        assert parsed["description"] == "Summary line one"
+        assert parsed["prompt"] == "Body line one\nBody line two"
+        assert "description:" not in parsed["prompt"]
+        assert "scripts:" not in parsed["prompt"]
+        assert "---" not in parsed["prompt"]
+
     def test_toml_is_valid(self, tmp_path):
         """Every generated TOML file must parse without errors."""
-        try:
-            import tomllib
-        except ModuleNotFoundError:
-            import tomli as tomllib  # type: ignore[no-redef]
-
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
