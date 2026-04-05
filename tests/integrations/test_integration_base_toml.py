@@ -146,10 +146,34 @@ class TomlIntegrationTests:
                 "---\ndescription: >\n  First line\n  Second line\n---\nBody\n",
                 "First line Second line\n",
             ),
+            (
+                "---\ndescription: |-\n  First line\n  Second line\n---\nBody\n",
+                "First line\nSecond line",
+            ),
+            (
+                "---\ndescription: >-\n  First line\n  Second line\n---\nBody\n",
+                "First line Second line",
+            ),
         ],
     )
     def test_toml_extract_description_supports_block_scalars(self, frontmatter, expected):
         assert TomlIntegration._extract_description(frontmatter) == expected
+
+    def test_split_frontmatter_ignores_indented_delimiters(self):
+        content = (
+            "---\n"
+            "description: |\n"
+            "  line one\n"
+            "  ---\n"
+            "  line two\n"
+            "---\n"
+            "Body\n"
+        )
+
+        frontmatter, body = TomlIntegration._split_frontmatter(content)
+
+        assert "line two" in frontmatter
+        assert body == "Body\n"
 
     def test_toml_prompt_excludes_frontmatter(self, tmp_path, monkeypatch):
         i = get_integration(self.KEY)
@@ -175,7 +199,7 @@ class TomlIntegrationTests:
         parsed = tomllib.loads(generated)
 
         assert parsed["description"] == "Summary line one"
-        assert parsed["prompt"] == "Body line one\nBody line two\n"
+        assert parsed["prompt"] == "Body line one\nBody line two"
         assert "description:" not in parsed["prompt"]
         assert "scripts:" not in parsed["prompt"]
         assert "---" not in parsed["prompt"]

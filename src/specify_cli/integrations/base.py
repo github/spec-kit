@@ -566,12 +566,12 @@ class TomlIntegration(IntegrationBase):
             return "", content
 
         lines = content.splitlines(keepends=True)
-        if not lines or lines[0].strip() != "---":
+        if not lines or lines[0].rstrip("\r\n") != "---":
             return "", content
 
         frontmatter_end = -1
         for i, line in enumerate(lines[1:], start=1):
-            if line.strip() == "---":
+            if line.rstrip("\r\n") == "---":
                 frontmatter_end = i
                 break
 
@@ -595,15 +595,14 @@ class TomlIntegration(IntegrationBase):
             escaped = value.replace("\\", "\\\\").replace('"', '\\"')
             return f'"{escaped}"'
 
-        multiline_value = value.rstrip("\n")
-        escaped = multiline_value.replace("\\", "\\\\")
+        escaped = value.replace("\\", "\\\\")
         if '"""' not in escaped:
-            return '"""\n' + escaped + '\n"""'
-        if "'''" not in multiline_value:
-            return "'''\n" + multiline_value + "\n'''"
+            return '"""\n' + escaped + '"""'
+        if "'''" not in value:
+            return "'''\n" + value + "'''"
 
         return '"' + (
-            multiline_value.replace("\\", "\\\\")
+            value.replace("\\", "\\\\")
             .replace('"', '\\"')
             .replace("\n", "\\n")
             .replace("\r", "\\r")
