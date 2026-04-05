@@ -191,8 +191,9 @@ class CommandRegistrar:
         toml_lines = []
 
         if "description" in frontmatter:
-            desc = frontmatter["description"].replace('"', '\\"')
-            toml_lines.append(f'description = "{desc}"')
+            toml_lines.append(
+                f'description = {self._render_basic_toml_string(frontmatter["description"])}'
+            )
             toml_lines.append("")
 
         toml_lines.append(f"# Source: {source_id}")
@@ -219,6 +220,18 @@ class CommandRegistrar:
             toml_lines.append(f'prompt = "{escaped_body}"')
 
         return "\n".join(toml_lines)
+
+    @staticmethod
+    def _render_basic_toml_string(value: str) -> str:
+        """Render *value* as a TOML basic string literal."""
+        escaped = (
+            value.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+        )
+        return f'"{escaped}"'
 
     def render_skill_command(
         self,
