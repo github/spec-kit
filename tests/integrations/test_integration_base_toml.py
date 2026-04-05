@@ -182,11 +182,6 @@ class TomlIntegrationTests:
 
     def test_toml_is_valid(self, tmp_path):
         """Every generated TOML file must parse without errors."""
-        try:
-            import tomllib
-        except ModuleNotFoundError:
-            import tomli as tomllib  # type: ignore[no-redef]
-
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)

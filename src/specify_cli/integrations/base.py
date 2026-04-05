@@ -538,23 +538,9 @@ class TomlIntegration(IntegrationBase):
         """
         import yaml
 
-        if not content.startswith("---"):
+        frontmatter_text, _ = TomlIntegration._split_frontmatter(content)
+        if not frontmatter_text:
             return ""
-
-        lines = content.splitlines(keepends=True)
-        if not lines or lines[0].strip() != "---":
-            return ""
-
-        frontmatter_end = -1
-        for i, line in enumerate(lines[1:], start=1):
-            if line.strip() == "---":
-                frontmatter_end = i
-                break
-
-        if frontmatter_end == -1:
-            return ""
-
-        frontmatter_text = "".join(lines[1:frontmatter_end])
         try:
             frontmatter = yaml.safe_load(frontmatter_text) or {}
         except yaml.YAMLError:
