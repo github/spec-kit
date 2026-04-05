@@ -780,6 +780,7 @@ class PresetManager:
                     target_skill_name,
                     enhanced_desc,
                     f"preset:{manifest.id}",
+                    project_root=self.project_root,
                 )
                 frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
                 skill_content = (
@@ -867,6 +868,7 @@ class PresetManager:
                     skill_name,
                     enhanced_desc,
                     f"templates/commands/{short_name}.md",
+                    project_root=self.project_root,
                 )
                 frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
                 skill_title = self._skill_title_from_command(short_name)
@@ -897,6 +899,7 @@ class PresetManager:
                     skill_name,
                     frontmatter.get("description", f"Extension command: {command_name}"),
                     extension_restore["source"],
+                    project_root=self.project_root,
                 )
                 frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
                 skill_content = (

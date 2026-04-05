@@ -843,6 +843,7 @@ def init(
     branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, ...) or 'timestamp' (YYYYMMDD-HHMMSS)"),
     integration: str = typer.Option(None, "--integration", help="Use the new integration system (e.g. --integration copilot). Mutually exclusive with --ai."),
     integration_options: str = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
+    allow_model_invocation: bool = typer.Option(False, "--allow-model-invocation", help="Allow AI model to invoke speckit skills programmatically (sets disable-model-invocation: false)"),
 ):
     """
     Initialize a new Specify project.
@@ -1125,6 +1126,27 @@ def init(
             if ai_skills:
                 integration_parsed_options["skills"] = True
 
+            # Persist the CLI options BEFORE calling setup() so that integrations
+            # can read them during skill generation (e.g., allow_model_invocation).
+            init_opts = {
+                "ai": selected_ai,
+                "integration": resolved_integration.key,
+                "branch_numbering": branch_numbering or "sequential",
+                "here": here,
+                "preset": preset,
+                "script": selected_script,
+                "speckit_version": get_speckit_version(),
+            }
+            # Ensure ai_skills is set for SkillsIntegration so downstream
+            # tools (extensions, presets) emit SKILL.md overrides correctly.
+            from .integrations.base import SkillsIntegration as _SkillsPersist
+            if isinstance(resolved_integration, _SkillsPersist):
+                init_opts["ai_skills"] = True
+            # Persist allow_model_invocation flag if specified
+            if allow_model_invocation:
+                init_opts["allow_model_invocation"] = True
+            save_init_options(project_path, init_opts)
+
             resolved_integration.setup(
                 project_path, manifest,
                 parsed_options=integration_parsed_options or None,
@@ -1172,24 +1194,8 @@ def init(
             else:
                 tracker.skip("git", "--no-git flag")
 
-            # Persist the CLI options so later operations (e.g. preset add)
-            # can adapt their behaviour without re-scanning the filesystem.
-            # Must be saved BEFORE preset install so _get_skills_dir() works.
-            init_opts = {
-                "ai": selected_ai,
-                "integration": resolved_integration.key,
-                "branch_numbering": branch_numbering or "sequential",
-                "here": here,
-                "preset": preset,
-                "script": selected_script,
-                "speckit_version": get_speckit_version(),
-            }
-            # Ensure ai_skills is set for SkillsIntegration so downstream
-            # tools (extensions, presets) emit SKILL.md overrides correctly.
-            from .integrations.base import SkillsIntegration as _SkillsPersist
-            if isinstance(resolved_integration, _SkillsPersist):
-                init_opts["ai_skills"] = True
-            save_init_options(project_path, init_opts)
+            # Note: init_opts were already saved before integration.setup() above
+            # so that integrations can read them during initialization.
 
             # Install preset if specified
             if preset:

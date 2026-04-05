@@ -105,10 +105,10 @@ class ClaudeIntegration(SkillsIntegration):
         frontmatter_text = yaml.safe_dump(skill_frontmatter, sort_keys=False).strip()
         return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
 
-    def _build_skill_fm(self, name: str, description: str, source: str) -> dict:
+    def _build_skill_fm(self, name: str, description: str, source: str, project_root: Path | None = None) -> dict:
         from specify_cli.agents import CommandRegistrar
         return CommandRegistrar.build_skill_frontmatter(
-            self.key, name, description, source
+            self.key, name, description, source, project_root=project_root
         )
 
     @staticmethod
@@ -158,6 +158,11 @@ class ClaudeIntegration(SkillsIntegration):
         """Install Claude skills, then inject user-invocable, disable-model-invocation, and argument-hint."""
         created = super().setup(project_root, manifest, parsed_options, **opts)
 
+        # Check if model invocation is allowed from init-options.json
+        from specify_cli import load_init_options
+        init_opts = load_init_options(project_root)
+        allow_model_invocation = init_opts.get("allow_model_invocation", False) if isinstance(init_opts, dict) else False
+
         # Post-process generated skill files
         skills_dir = self.skills_dest(project_root).resolve()
 
@@ -176,8 +181,11 @@ class ClaudeIntegration(SkillsIntegration):
             # Inject user-invocable: true (Claude skills are accessible via /command)
             updated = self._inject_frontmatter_flag(content, "user-invocable")
 
-            # Inject disable-model-invocation: true (Claude skills run only when invoked)
-            updated = self._inject_frontmatter_flag(updated, "disable-model-invocation")
+            # Inject disable-model-invocation conditionally:
+            # - True (default): skills run only when user explicitly invokes them
+            # - False (--allow-model-invocation): skills can be auto-invoked by the model
+            disable_value = "false" if allow_model_invocation else "true"
+            updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", disable_value)
 
             # Inject argument-hint if available for this skill
             skill_dir_name = path.parent.name  # e.g. "speckit-plan"
