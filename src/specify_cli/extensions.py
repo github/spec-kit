@@ -806,6 +806,7 @@ class ExtensionManager:
                 skill_name,
                 description,
                 f"extension:{manifest.id}",
+                project_root=self.project_root,
             )
             frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
 
