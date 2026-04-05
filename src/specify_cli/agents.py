@@ -210,14 +210,7 @@ class CommandRegistrar:
             toml_lines.append(body)
             toml_lines.append("'''")
         else:
-            escaped_body = (
-                body.replace("\\", "\\\\")
-                .replace('"', '\\"')
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t")
-            )
-            toml_lines.append(f'prompt = "{escaped_body}"')
+            toml_lines.append(f"prompt = {self._render_basic_toml_string(body)}")
 
         return "\n".join(toml_lines)
 
