@@ -38,3 +38,15 @@ tags:
   - "governance"
   - "approval"
   - "quality-gates"
+
+defaults:
+  specify:
+    enabled: false
+  plan:
+    enabled: false
+  tasks:
+    enabled: false
+  implement:
+    enabled: false
+  constitution:
+    enabled: false
