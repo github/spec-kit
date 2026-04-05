@@ -618,9 +618,10 @@ class TomlIntegration(IntegrationBase):
         to multiline literal strings (``'''``) if the body contains
         ``\"\"\"``, then to an escaped basic string as a last resort.
 
-        The body is rstrip'd so the closing delimiter appears on the line
-        immediately after the last content line — matching the release
-        script's ``echo "$body"; echo '\"\"\"'`` pattern.
+        The body is ``rstrip("\\n")``'d before rendering, so the TOML
+        value preserves content without forcing a trailing newline. As a
+        result, multiline delimiters appear on their own line only when
+        the rendered value itself ends with a newline.
         """
         toml_lines: list[str] = []
 
