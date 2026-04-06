@@ -14,7 +14,7 @@ This guide walks you through creating a production-ready Crossplane composition 
 ## The Workflow
 
 ```
-setup → new_composition → plan → tasks → implement → review
+setup → new_composition → plan → tasks → checklist (opt) → implement → review
 ```
 
 Each step builds on the last, and every artifact lives in `.infrakit/tracks/<track-name>/`.
@@ -99,7 +99,17 @@ This breaks the plan into ordered, executable tasks across 5 phases:
 
 ---
 
-## Step 5: Implement
+## Step 5: (Optional) Generate a Verification Checklist
+
+```
+/infrakit:checklist <track-name>
+```
+
+The **Crossplane Engineer** generates a comprehensive checklist to verify the implementation against the spec and plan. This is useful for manual verification or as a guide during implementation.
+
+---
+
+## Step 6: Implement
 
 ```
 /infrakit:implement <track-name>
@@ -111,7 +121,7 @@ After all tasks complete, it hands off automatically to the code review step.
 
 ---
 
-## Step 6: Review
+## Step 7: Review
 
 ```
 /infrakit:review <resource-directory>
@@ -150,10 +160,13 @@ The review report shows findings by severity (CRITICAL / HIGH / MEDIUM / LOW) an
 # Step 4: Tasks
 /infrakit:tasks postgres-database-20260401-120000
 
-# Step 5: Implement
+# Step 5: (Optional) Checklist
+/infrakit:checklist postgres-database-20260401-120000
+
+# Step 6: Implement
 /infrakit:implement postgres-database-20260401-120000
 
-# Step 6: Review
+# Step 7: Review
 /infrakit:review ./resources/postgres
 ```
 

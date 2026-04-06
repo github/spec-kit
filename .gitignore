@@ -50,3 +50,6 @@ docs/dev
 .specify/extensions/.cache/
 .specify/extensions/.backup/
 .specify/extensions/*/local-config.yml
+
+.air/
+.claude/

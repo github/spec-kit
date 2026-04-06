@@ -6,7 +6,7 @@ This project uses GitHub issues to track bugs and feature requests. Please searc
 
 For help or questions about using this project, please:
 
-- Open a [GitHub issue](https://github.com/github/infrakit/issues/new) for bug reports, feature requests, or questions about the Constraint-Driven Development methodology
+- Open a [GitHub issue](https://github.com/neelneelpurk/infrakit/issues/new) for bug reports, feature requests, or questions about the Constraint-Driven Development methodology
 - Check the [comprehensive guide](./constraint-driven.md) for detailed documentation on the Constraint-Driven Development process
 - Review the [README](./README.md) for getting started instructions and troubleshooting tips
 

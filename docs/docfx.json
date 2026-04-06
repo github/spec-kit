@@ -56,13 +56,13 @@
     "cleanupCacheHistory": false,
     "disableGitFeatures": false,
     "globalMetadata": {
-      "_appTitle": "Spec Kit Documentation",
-      "_appName": "Spec Kit",
-      "_appFooter": "Spec Kit - A specification-driven development toolkit",
+      "_appTitle": "InfraKit Documentation",
+      "_appName": "InfraKit",
+      "_appFooter": "InfraKit - An infrastructure-first toolkit for constraint-driven development",
       "_enableSearch": true,
       "_disableContribution": false,
       "_gitContribute": {
-        "repo": "https://github.com/github/infrakit",
+        "repo": "https://github.com/neelneelpurk/infrakit",
         "branch": "main"
       }
     }

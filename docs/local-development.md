@@ -7,7 +7,7 @@ This guide shows how to iterate on the `infrakit` CLI locally without publishing
 ## 1. Clone and Switch Branches
 
 ```bash
-git clone https://github.com/github/infrakit.git
+git clone https://github.com/neelneelpurk/infrakit.git
 cd infrakit
 # Work on a feature branch
 git checkout -b your-feature-branch
@@ -60,7 +60,7 @@ You can also point uvx at a specific branch without merging:
 ```bash
 # Push your working branch first
 git push origin your-feature-branch
-uvx --from git+https://github.com/github/infrakit.git@your-feature-branch infrakit init demo-branch-test --iac crossplane --script ps
+uvx --from git+https://github.com/neelneelpurk/infrakit.git@your-feature-branch infrakit init demo-branch-test --iac crossplane --script ps
 ```
 
 ### 4a. Absolute Path uvx (Run From Anywhere)
@@ -68,21 +68,21 @@ uvx --from git+https://github.com/github/infrakit.git@your-feature-branch infrak
 If you're in another directory, use an absolute path instead of `.`:
 
 ```bash
-uvx --from /mnt/c/GitHub/infrakit infrakit --help
-uvx --from /mnt/c/GitHub/infrakit infrakit init demo-anywhere --ai copilot --iac crossplane --ignore-agent-tools --script sh
+uvx --from /path/to/infrakit infrakit --help
+uvx --from /path/to/infrakit infrakit init demo-anywhere --ai copilot --iac crossplane --ignore-agent-tools --script sh
 ```
 
 Set an environment variable for convenience:
 
 ```bash
-export INFRAKIT_SRC=/mnt/c/GitHub/infrakit
+export INFRAKIT_SRC=/path/to/infrakit
 uvx --from "$INFRAKIT_SRC" infrakit init demo-env --ai copilot --iac crossplane --ignore-agent-tools --script ps
 ```
 
 (Optional) Define a shell function:
 
 ```bash
-infrakit-dev() { uvx --from /mnt/c/GitHub/infrakit infrakit "$@"; }
+infrakit-dev() { uvx --from /path/to/infrakit infrakit "$@"; }
 # Then
 infrakit-dev --help
 ```
@@ -146,7 +146,7 @@ infrakit init demo --iac crossplane --skip-tls --ai gemini --ignore-agent-tools 
 | Run CLI directly | `python -m src.infrakit_cli --help` |
 | Editable install | `uv pip install -e .` then `infrakit ...` |
 | Local uvx run (repo root) | `uvx --from . infrakit ...` |
-| Local uvx run (abs path) | `uvx --from /mnt/c/GitHub/infrakit infrakit ...` |
+| Local uvx run (abs path) | `uvx --from /path/to/infrakit infrakit ...` |
 | Git branch uvx | `uvx --from git+URL@branch infrakit ...` |
 | Build wheel | `uv build` |
 

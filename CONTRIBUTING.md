@@ -57,14 +57,14 @@ Here are a few things you can do that will increase the likelihood of your pull 
 
 When working on infrakit:
 
-1. Test changes with the `infrakit` CLI commands (`/infrakit:specify_composition`, `/infrakit:plan_composition`, `/infrakit:tasks`) in your coding agent of choice
+1. Test changes with the `infrakit` CLI commands (`/infrakit:new_composition`, `/infrakit:plan`, `/infrakit:tasks`) in your coding agent of choice
 2. Verify templates are working correctly in `templates/` directory
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/project-context.md`) are updated if major process changes are made
 
 ### Testing template and command changes locally
 
-Running `uv run infrakit init` pulls released packages, which won’t include your local changes.
+Running `infrakit init` pulls released packages, which won’t include your local changes.
 To test your templates, commands, and other changes locally, follow these steps:
 
 1. **Create release packages**
@@ -78,7 +78,7 @@ To test your templates, commands, and other changes locally, follow these steps:
 2. **Copy the relevant package to your test project**
 
    ```bash
-   cp -r .genreleases/sdd-copilot-package-sh/. <path-to-test-project>/
+   cp -r .genreleases/infrakit-copilot-crossplane-package-sh/. <path-to-test-project>/
    ```
 
 3. **Open and test the agent**

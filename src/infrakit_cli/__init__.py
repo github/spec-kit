@@ -391,7 +391,7 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
         True if tool is found, False otherwise
     """
     # Special handling for Claude CLI after `claude migrate-installer`
-    # See: https://github.com/github/infrakit/issues/123
+    # See: https://github.com/neelneelpurk/infrakit/issues/123
     # The migrate-installer command REMOVES the original executable from PATH
     # and creates an alias at ~/.claude/local/claude instead
     # This path should be prioritized over other claude executables in PATH
@@ -1119,7 +1119,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
 
             # Select the best description available
             original_desc = frontmatter.get("description", "")
-            enhanced_desc = SKILL_DESCRIPTIONS.get(command_name, original_desc or f"Spec-kit workflow command: {command_name}")
+            enhanced_desc = SKILL_DESCRIPTIONS.get(command_name, original_desc or f"InfraKit workflow command: {command_name}")
 
             # Build SKILL.md following agentskills.io spec
             # Use yaml.safe_dump to safely serialise the frontmatter and
@@ -1136,7 +1136,7 @@ def install_ai_skills(project_path: Path, selected_ai: str, tracker: StepTracker
                 "description": enhanced_desc,
                 "compatibility": "Requires InfraKit project structure with .infrakit/ directory",
                 "metadata": {
-                    "author": "github-infrakit",
+                    "author": "neelneelpurk",
                     "source": f"templates/commands/{source_name}",
                 },
             }
