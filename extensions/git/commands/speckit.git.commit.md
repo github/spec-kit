@@ -1,8 +1,5 @@
 ---
 description: "Auto-commit changes after a Spec Kit command completes"
-scripts:
-  sh: ../../scripts/bash/auto-commit.sh
-  ps: ../../scripts/powershell/auto-commit.ps1
 ---
 
 # Auto-Commit Changes
@@ -11,20 +8,23 @@ Automatically stage and commit all changes after a Spec Kit command completes.
 
 ## Behavior
 
-This command is invoked as a post-hook after core commands. It:
+This command is invoked as a hook after (or before) core commands. It:
 
-1. Checks `.specify/extensions/git/git-config.yml` for the `auto_commit` section
-2. Looks up the specific event key (e.g., `after_specify`) to see if auto-commit is enabled
-3. Falls back to `auto_commit.default` if no event-specific key exists
-4. Uses the per-command `message` if configured, otherwise a default message
-5. If enabled and there are uncommitted changes, runs `git add .` + `git commit`
+1. Determines the event name from the hook context (e.g., if invoked as an `after_specify` hook, the event is `after_specify`; if `before_plan`, the event is `before_plan`)
+2. Checks `.specify/extensions/git/git-config.yml` for the `auto_commit` section
+3. Looks up the specific event key to see if auto-commit is enabled
+4. Falls back to `auto_commit.default` if no event-specific key exists
+5. Uses the per-command `message` if configured, otherwise a default message
+6. If enabled and there are uncommitted changes, runs `git add .` + `git commit`
 
 ## Execution
 
-The hook system passes the event name to the script:
+Determine the event name from the hook that triggered this command, then run the script:
 
-- **Bash**: `.specify/extensions/git/scripts/bash/auto-commit.sh after_specify`
-- **PowerShell**: `.specify/extensions/git/scripts/powershell/auto-commit.ps1 after_specify`
+- **Bash**: `.specify/extensions/git/scripts/bash/auto-commit.sh <event_name>`
+- **PowerShell**: `.specify/extensions/git/scripts/powershell/auto-commit.ps1 <event_name>`
+
+Replace `<event_name>` with the actual hook event (e.g., `after_specify`, `before_plan`, `after_implement`).
 
 ## Configuration
 

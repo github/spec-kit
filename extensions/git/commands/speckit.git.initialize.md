@@ -1,8 +1,5 @@
 ---
 description: "Initialize a Git repository with an initial commit"
-scripts:
-  sh: ../../scripts/bash/initialize-repo.sh
-  ps: ../../scripts/powershell/initialize-repo.ps1
 ---
 
 # Initialize Git Repository

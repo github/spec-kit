@@ -1,8 +1,5 @@
 ---
 description: "Create a feature branch with sequential or timestamp numbering"
-scripts:
-  sh: ../../scripts/bash/create-new-feature.sh
-  ps: ../../scripts/powershell/create-new-feature.ps1
 ---
 
 # Create Feature Branch
