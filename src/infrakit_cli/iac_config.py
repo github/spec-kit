@@ -29,15 +29,30 @@ IAC_CONFIG = {
             "plan",
         ],
     },
+    "terraform": {
+        "name": "Terraform",
+        "description": "Infrastructure as code by HashiCorp",
+        "requires_tools": ["terraform"],
+        "optional_tools": [],
+        "output_format": "hcl",
+        "resource_term": "module",
+        "generic_commands": [
+            "setup",
+            "status",
+            "analyze",
+            "implement",
+            "architect-review",
+            "security-review",
+            "tasks",
+        ],
+        "iac_commands": [
+            "create_terraform_code",
+            "update_terraform_code",
+            "review",
+            "plan",
+        ],
+    },
     # Future IaC tools:
-    # "terraform": {
-    #     "name": "Terraform",
-    #     "description": "Infrastructure as code by HashiCorp",
-    #     "requires_tools": ["terraform"],
-    #     "optional_tools": [],
-    #     "output_format": "hcl",
-    #     "resource_term": "module",
-    # },
     # "cloudformation": {
     #     "name": "AWS CloudFormation",
     #     "description": "AWS-native infrastructure as code",
