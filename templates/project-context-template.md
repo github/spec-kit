@@ -1,50 +1,227 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# [PROJECT_NAME] Infrastructure Constitution
+<!-- Example: Acme Platform Infrastructure Constitution, DataOps Infra Constitution -->
 
-## Core Principles
+## Overview
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+[PLATFORM_OVERVIEW]
+<!-- Example: Acme Corp's Platform Engineering team manages shared AWS infrastructure for 4 product
+teams (payments, data, frontend, mobile) using Crossplane on EKS. All infrastructure is GitOps-driven
+via ArgoCD from the infra-platform monorepo. The platform team owns all Crossplane compositions;
+product teams consume them via Claims. -->
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+---
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+## Architecture Decisions
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IaC Tool & Strategy
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+| Decision | Choice |
+|----------|--------|
+| **IaC Tool** | [IAC_TOOL_CHOICE] |
+| **GitOps Engine** | [GITOPS_STRATEGY] |
+| **State Management** | [STATE_MANAGEMENT] |
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+<!-- Example:
+| IaC Tool | Crossplane v1.15.2 — Kubernetes-native, GitOps-aligned, no external state backend |
+| GitOps Engine | ArgoCD ApplicationSets; PRs to main trigger deployment; no direct kubectl apply in prod |
+| State Management | EKS etcd (HA, 3 control plane nodes); Velero backups to S3 every 6 hours |
+-->
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### Cloud Account Structure
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+[ACCOUNT_STRUCTURE]
+<!-- Example: AWS Organizations — 1 management account + 5 member accounts: shared-services, dev,
+staging, prod, security-audit. All member accounts reside under the Platform OU inside the Acme Root OU. -->
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+**Organization Hierarchy:**
 
-## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
+```
+[ORG_HIERARCHY]
+```
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+<!-- Example:
+Root OU (Acme)
+└── Platform OU
+    ├── shared-services (Transit Gateway, DNS, tooling)
+    ├── dev
+    ├── staging
+    ├── prod
+    └── security-audit (read-only, CloudTrail aggregation)
+-->
+
+### Network Architecture
+
+| Property | Value |
+|----------|-------|
+| **Topology** | [NETWORK_TOPOLOGY] |
+| **VPC Strategy** | [VPC_STRATEGY] |
+| **Connectivity Model** | [CONNECTIVITY_MODEL] |
+
+<!-- Example:
+| Topology | Hub-and-spoke via AWS Transit Gateway in shared-services account |
+| VPC Strategy | Per-account VPCs — dev 10.10.0.0/16, staging 10.11.0.0/16, prod 10.12.0.0/16, shared 10.0.0.0/16 |
+| Connectivity Model | Prod: private subnets only, NAT via shared-services. Dev: public subnets allowed with security group restrictions. No direct internet access for prod workloads. |
+-->
+
+---
+
+## Resource Organization
+
+### Environments
+
+[ENVIRONMENTS_LIST]
+<!-- Example: dev, staging, prod — each maps to a separate AWS account and a dedicated Kubernetes
+namespace on the platform EKS cluster. dev is used for active development and experimentation;
+staging mirrors prod configuration but with relaxed DR requirements; prod is subject to full
+security, compliance, and DR policies. -->
+
+### Naming Conventions
+
+**Convention**: [NAMING_CONVENTION]
+<!-- Example: kebab-case; format: {env}-{team}-{resource-type} -->
+
+| Resource Type | Pattern | Example |
+|---------------|---------|---------|
+| Cloud resource | [NAMING_EXAMPLES] | [NAMING_EXAMPLE_CONCRETE] |
+| XRD Kind | PascalCase, X-prefixed | `XPostgreSQLInstance` |
+| Claim Kind | PascalCase, no X prefix | `PostgreSQLInstance` |
+| Composition Name | kebab-case | `postgres-aws` |
+
+<!-- Example:
+| Cloud resource | {env}-{team}-{resource-type} | prod-payments-rds-primary, dev-data-s3-raw |
+-->
+
+### Tagging Strategy
+
+**Required Tags** (every managed resource MUST carry these):
+
+| Tag Key | Value Source | Description |
+|---------|-------------|-------------|
+| `crossplane.io/claim-name` | Crossplane label | Name of the originating Claim |
+| `crossplane.io/claim-namespace` | Crossplane label | Namespace of the originating Claim |
+| `managed-by` | Static: `crossplane` | Identifies Crossplane-managed resources |
+[REQUIRED_TAGS]
+
+<!-- Example additional required tags:
+| `environment` | spec.parameters.environment | Target environment (dev/staging/prod) |
+| `cost-center` | spec.parameters.costCenter | Billing allocation |
+| `team` | spec.parameters.teamName | Owning team |
+-->
+
+**Optional Tags** (propagated from Claim if provided):
+
+| Tag Key | Description |
+|---------|-------------|
+[OPTIONAL_TAGS]
+
+<!-- Example:
+| `project` | Project name for grouping costs |
+| `owner` | Individual owner for escalation |
+| `created-by` | CI/CD pipeline or user who initiated |
+-->
+
+---
+
+## Security & Compliance
+
+### Security Baseline
+
+[SECURITY_BASELINE]
+<!-- Example:
+- Encryption at rest required on all storage resources (S3, RDS, ElastiCache, EBS)
+- TLS 1.2+ required for all data in transit
+- No public network access in prod without explicit security review and approval
+- MFA required for all AWS console access
+- Least-privilege IAM policies; no wildcard actions in production
+-->
+
+### Compliance Frameworks
+
+[COMPLIANCE_FRAMEWORKS]
+<!-- Example:
+- SOC 2 Type II — CloudTrail logging enabled on all accounts; log retention ≥ 1 year; access reviews quarterly
+- PCI-DSS — Payments workloads isolated to dedicated node group with network policies; cardholder data never stored in non-encrypted form
+-->
+
+### Access Management
+
+[ACCESS_MANAGEMENT]
+<!-- Example:
+- IRSA (IAM Roles for Service Accounts) for all pod-level AWS resource access
+- No long-lived access keys; all programmatic access via STS AssumeRole
+- Cross-account access from shared-services account only; product accounts have no cross-account trust to each other
+- Emergency access (break-glass) documented in runbook; access logged and reviewed within 24h
+-->
+
+---
+
+## Operational Standards
+
+### Disaster Recovery & High Availability
+
+| Requirement | Production | Staging | Dev |
+|-------------|------------|---------|-----|
+| **RTO** | [PROD_RTO] | [STAGING_RTO] | N/A |
+| **RPO** | [PROD_RPO] | [STAGING_RPO] | N/A |
+| **HA Requirement** | [PROD_HA] | [STAGING_HA] | None |
+
+<!-- Example:
+| RTO | 4 hours | 8 hours | N/A |
+| RPO | 1 hour | 4 hours | N/A |
+| HA | Multi-AZ required for all RDS and ElastiCache | Single-AZ acceptable | None |
+-->
+
+[DR_TARGETS]
+<!-- Example: Prod database backups: automated RDS snapshots every 6h + daily cross-region copy to us-west-2.
+EKS state backed up via Velero to S3 every 6h. -->
+
+### SLOs & SLAs
+
+| Environment | Availability SLO | Latency Target |
+|-------------|-----------------|----------------|
+[SLO_DEFINITIONS]
+
+<!-- Example:
+| prod | 99.9% monthly | p99 < 500ms for provisioning operations |
+| staging | 99.5% monthly | best-effort |
+| dev | best-effort | best-effort |
+-->
+
+### Monitoring & Alerting
+
+[MONITORING_STACK]
+<!-- Example:
+- Metrics & Traces: Datadog — all Crossplane controllers and managed resources instrumented
+- Prod P1/P2 alerts: PagerDuty (on-call rotation required)
+- Non-critical alerts: Slack #infra-alerts channel
+- Crossplane health dashboard: Datadog — monitors XR sync status, provider health, reconciliation errors
+-->
+
+---
+
+## Governance & Change Management
+
+### Change Process
+
+[CHANGE_PROCESS]
+<!-- Example:
+- All changes via GitHub PR against the infra-platform monorepo
+- Prod changes: 2 approvals required (1 from platform team, 1 from security team for security-impacting changes)
+- Dev/staging changes: 1 approval from platform team
+- Emergency break-glass: documented in runbook; post-incident review required within 48h
+- No direct kubectl apply or AWS console changes in prod; all changes audited via CloudTrail + ArgoCD
+-->
+
+### Enforcement
+
+[ENFORCEMENT_RULES]
+<!-- Example:
+- This constitution supersedes all other team conventions; amendments require platform team vote and documentation
+- All PRs must verify compliance with naming conventions, tagging, and security baseline
+- Crossplane compositions that violate this constitution will not be merged
+-->
+
+---
 
 **Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+<!-- Example: Version: 1.0.0 | Ratified: 2026-01-15 | Last Amended: 2026-03-20 -->

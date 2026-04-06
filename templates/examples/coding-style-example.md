@@ -1,9 +1,8 @@
-# [PROJECT_NAME] Crossplane Coding Style Guide
-<!-- Example: Acme Platform Crossplane Coding Style Guide -->
+# Acme Platform Crossplane Coding Style Guide
 
 > This document captures both universal Crossplane standards (non-negotiable) and
-> project-specific conventions for this platform. Run `/infrakit:setup` to populate
-> the placeholder sections.
+> project-specific conventions for the Acme Platform. Run `/infrakit:setup` to update
+> project-specific sections.
 
 All Crossplane engineers **MUST** follow these standards when generating infrastructure code.
 
@@ -13,15 +12,9 @@ All Crossplane engineers **MUST** follow these standards when generating infrast
 
 | Setting | Value |
 |---------|-------|
-| **Crossplane Version** | [CROSSPLANE_VERSION] |
-| **Primary Pipeline Function** | [PRIMARY_FUNCTION] |
-| **Provider Package(s)** | [PROVIDER_PACKAGES] |
-
-<!-- Example:
-| Crossplane Version | v1.15.2 |
-| Primary Pipeline Function | function-go-template v0.7.0 |
-| Provider Package(s) | upbound/provider-aws-s3 v1.2.0, upbound/provider-aws-rds v1.2.0 |
--->
+| **Crossplane Version** | v1.15.2 |
+| **Primary Pipeline Function** | `function-go-template` v0.7.0 |
+| **Provider Package(s)** | `upbound/provider-aws-s3` v1.2.0, `upbound/provider-aws-rds` v1.2.0, `upbound/provider-aws-ec2` v1.2.0, `upbound/provider-aws-elasticache` v1.2.0 |
 
 ---
 
@@ -30,10 +23,6 @@ All Crossplane engineers **MUST** follow these standards when generating infrast
 **Project directory structure:**
 
 ```
-[PROJECT_FILE_STRUCTURE]
-```
-
-<!-- Example:
 apis/
   database/
     v1alpha1/
@@ -41,17 +30,24 @@ apis/
   cache/
     v1alpha1/
       xrediscaches_types.yaml
+  storage/
+    v1alpha1/
+      xobjectstores_types.yaml
 compositions/
   database/
     postgres-aws.yaml
   cache/
     redis-aws.yaml
+  storage/
+    s3-aws.yaml
 examples/
   database/
     claim.yaml
   cache/
     claim.yaml
--->
+  storage/
+    claim.yaml
+```
 
 **Non-negotiable rules (apply to all projects):**
 - **File Naming**: Use `kebab-case` for all YAML files (e.g., `postgres-instance.yaml`).
@@ -64,23 +60,15 @@ examples/
 
 ### API Groups
 
-**Base API Group**: `[BASE_API_GROUP]`
-<!-- Example: platform.acme.com -->
+**Base API Group**: `platform.acme.com`
 
 | Resource | Pattern | Example |
 |----------|---------|---------|
-| XRD Kind | PascalCase prefixed with `X` | [XRD_KIND_EXAMPLE] |
-| Claim Kind | Same as XRD without `X` prefix | [CLAIM_KIND_EXAMPLE] |
-| Composition Name | `[COMPOSITION_NAME_PATTERN]` | [COMPOSITION_NAME_EXAMPLE] |
-| CRD/XRD Name | `x<plural>.<group>` | `xpostgresqlinstances.[BASE_API_GROUP]` |
+| XRD Kind | PascalCase prefixed with `X` | `XPostgreSQLInstance` |
+| Claim Kind | Same as XRD without `X` prefix | `PostgreSQLInstance` |
+| Composition Name | `{resource}-{provider}` | `postgres-aws`, `redis-aws` |
+| CRD/XRD Name | `x<plural>.<group>` | `xpostgresqlinstances.platform.acme.com` |
 | File Names | kebab-case | `postgres-aws.yaml` |
-
-<!-- Example:
-XRD Kind: XPostgreSQLInstance
-Claim Kind: PostgreSQLInstance
-Composition Name pattern: {resource}-{provider} — e.g., postgres-aws
-CRD Name: xpostgresqlinstances.platform.acme.com
--->
 
 ### Properties
 
@@ -91,15 +79,9 @@ CRD Name: xpostgresqlinstances.platform.acme.com
 
 | Version | Policy |
 |---------|--------|
-| `v1alpha1` | [V1ALPHA1_POLICY] |
-| `v1beta1` | [V1BETA1_POLICY] |
-| `v1` | [V1_POLICY] |
-
-<!-- Example:
-v1alpha1: Experimental / new — internal use only, no compatibility guarantees
-v1beta1: Stable API, minor backward-compatible changes allowed; announced to consumers
-v1: Production stable — no breaking changes permitted without migration plan
--->
+| `v1alpha1` | Experimental / new — internal use only, no compatibility guarantees; may change without notice |
+| `v1beta1` | Stable API, backward-compatible minor changes allowed; changes announced to consuming teams with 2-sprint notice |
+| `v1` | Production stable — no breaking changes permitted; requires migration plan, deprecation notice, and team ratification |
 
 ---
 
@@ -115,15 +97,12 @@ spec:
   pipeline:
     - step: render-resources
       functionRef:
-        name: [PREFERRED_FUNCTION]
+        name: function-go-template
 ```
-
-<!-- Example: function-go-template -->
 
 ### Preferred Templating Function
 
-**Project standard**: `[PREFERRED_FUNCTION]`
-<!-- Example: function-go-template — use source: Inline for all templates -->
+**Project standard**: `function-go-template` — use `source: Inline` for all templates.
 
 **Templating rules:**
 - Use `source: Inline` to keep template logic visible in the composition file.
@@ -169,15 +148,17 @@ spec:
 
 ## 5. CompositeResourceDefinitions (XRDs)
 
-- **API Groups**: Use the project base API group (`[BASE_API_GROUP]`) distinct from provider groups.
+- **API Groups**: Use `platform.acme.com` as the base group for all compositions.
 - **Descriptions**: ALWAYS add descriptions to all `properties` in the OpenAPI schema.
 - **Categories**: Always include `crossplane` and `composite` (or `managed`) categories.
 - **Required Fields**: Mark all mandatory parameters as `required` in the OpenAPI schema.
 
 ### Validation Approach
 
-[PROJECT_VALIDATION_APPROACH]
-<!-- Example: Use OpenAPI enum constraints on all environment fields; mark all required fields as required; use pattern constraints on name fields (e.g., pattern: "^[a-z][a-z0-9-]*$") -->
+Use OpenAPI enum constraints on all environment fields (allowed: `dev`, `staging`, `prod`).
+Mark all required fields as `required`. Apply pattern constraints on name fields:
+`pattern: "^[a-z][a-z0-9-]*$"` to enforce kebab-case. Use `minimum`/`maximum` for numeric
+resource sizes (e.g., storage in GiB, min: 20, max: 16384 for RDS).
 
 ---
 
@@ -197,13 +178,18 @@ spec:
 
 ### Deletion Policy
 
-**Project default**: `[DELETION_POLICY_DEFAULT]`
-<!-- Example: Delete — use Orphan only for stateful production resources where data loss is unacceptable; justification comment required in YAML -->
+**Project default**: `Delete` — use `Orphan` only for stateful production resources where data
+loss is unacceptable. When using `Orphan`, add a comment in YAML:
+```yaml
+# ORPHAN: Production stateful resource — manual cleanup required on composition deletion
+deletionPolicy: Orphan
+```
 
 ### Management Policies
 
-**Project standard**: `[PROJECT_MANAGEMENT_POLICY]`
-<!-- Example: Full lifecycle management by default (Create, Read, Update, Delete); use ["Observe"] only for resources imported from pre-existing infrastructure -->
+**Project standard**: Full lifecycle management by default (`["Create", "Read", "Update", "Delete"]`).
+Use `["Observe"]` only for resources imported from pre-existing infrastructure; document the
+import in the composition with a comment explaining why the resource is observe-only.
 
 ---
 
@@ -228,14 +214,10 @@ In addition to the required tags above, this project requires:
 
 | Tag Key | Value Source | Description |
 |---------|-------------|-------------|
-[PROJECT_SPECIFIC_TAGS]
-
-<!-- Example:
-| `environment` | `spec.parameters.environment` | Target environment (dev/staging/prod) |
-| `cost-center` | `spec.parameters.costCenter` | Billing allocation code |
-| `team` | `spec.parameters.teamName` | Owning team name |
-| `project` | Static: `"acme-platform"` | Platform identifier |
--->
+| `environment` | `spec.parameters.environment` | Target environment (`dev`/`staging`/`prod`) |
+| `cost-center` | `spec.parameters.costCenter` | Billing allocation code (e.g., `CC-1042`) |
+| `team` | `spec.parameters.teamName` | Owning team (e.g., `payments`, `data`) |
+| `project` | Static: `"acme-platform"` | Platform identifier for cost grouping |
 
 ### Provider-Specific Tag Field Paths
 
@@ -253,8 +235,9 @@ In addition to the required tags above, this project requires:
 
 ### Connection Secret Naming
 
-**Pattern**: `[CONNECTION_SECRET_NAME_PATTERN]`
-<!-- Example: {claim-name}-{resource-type}-conn — e.g., my-db-postgres-conn, cache-redis-conn -->
+**Pattern**: `{claim-name}-{resource-type}-conn`
+
+Examples: `my-db-postgres-conn`, `payments-cache-redis-conn`, `data-store-s3-conn`
 
 ### When to Publish Connection Details
 
@@ -312,8 +295,9 @@ spec:
 
 ### Project-Specific Additional Keys
 
-[PROJECT_CONNECTION_SECRET_KEYS]
-<!-- Example: All database connections must also include db-name and ssl-mode keys. -->
+All database connection secrets must also include:
+- `db-name` — the logical database name within the instance
+- `ssl-mode` — the SSL mode to use for connections (e.g., `require`, `verify-full`)
 
 ---
 
@@ -330,13 +314,11 @@ spec:
 
 ### Project-Specific Security Defaults
 
-[PROJECT_SECURITY_DEFAULTS]
-<!-- Example:
-- storageEncrypted: true on all RDS instances regardless of environment
-- publiclyAccessible: false always; override requires security team approval tracked as GitHub issue
-- deletionProtection: true for prod environment; false for dev/staging
-- multiAZ: true required in prod for all RDS and ElastiCache; false acceptable in dev/staging
--->
+- `storageEncrypted: true` on all RDS instances regardless of environment (including dev).
+- `publiclyAccessible: false` on all RDS instances always; override requires a documented security review linked as a GitHub issue in the YAML comment.
+- `deletionProtection: true` for prod environment; `false` for dev and staging.
+- `multiAZ: true` required in prod for all RDS and ElastiCache instances; `false` acceptable in dev and staging to reduce cost.
+- `backupRetentionPeriod: 7` (days) in prod; `1` in staging; `0` in dev.
 
 ---
 
@@ -349,10 +331,10 @@ metadata:
   name: postgres-aws
   labels:
     provider: aws
-    crossplane.io/xrd: xpostgresqlinstances.[BASE_API_GROUP]
+    crossplane.io/xrd: xpostgresqlinstances.platform.acme.com
 spec:
   compositeTypeRef:
-    apiVersion: [BASE_API_GROUP]/v1alpha1
+    apiVersion: platform.acme.com/v1alpha1
     kind: XPostgreSQLInstance
   mode: Pipeline
   pipeline:
@@ -376,6 +358,17 @@ spec:
               publiclyAccessible: false
               storageEncrypted: true
               instanceClass: {{ .observed.composite.resource.spec.parameters.instanceClass }}
+              deletionProtection: {{ eq .observed.composite.resource.spec.parameters.environment "prod" }}
+              multiAZ: {{ eq .observed.composite.resource.spec.parameters.environment "prod" }}
+              tags:
+                - key: managed-by
+                  value: crossplane
+                - key: environment
+                  value: {{ .observed.composite.resource.spec.parameters.environment }}
+                - key: team
+                  value: {{ .observed.composite.resource.spec.parameters.teamName }}
+                - key: project
+                  value: acme-platform
             providerConfigRef:
               name: default
 ```
