@@ -203,7 +203,7 @@ if (Get-Command Get-RepoRoot -ErrorAction SilentlyContinue) {
 
 # Check if git is available
 if (Get-Command Test-HasGit -ErrorAction SilentlyContinue) {
-    $hasGit = Test-HasGit
+    $hasGit = Test-HasGit -RepoRoot $repoRoot
 } else {
     try {
         git -C $repoRoot rev-parse --is-inside-work-tree 2>$null | Out-Null

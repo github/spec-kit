@@ -240,7 +240,7 @@ fi
 
 # Check if git is available at this repo root
 if type has_git >/dev/null 2>&1; then
-    if has_git; then
+    if has_git "$REPO_ROOT"; then
         HAS_GIT=true
     else
         HAS_GIT=false

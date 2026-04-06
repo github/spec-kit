@@ -42,7 +42,11 @@ On success:
 
 ## Graceful Degradation
 
-If Git is not installed or `git init` fails:
+If Git is not installed:
 - Warn the user
-- Do NOT block the rest of the workflow
+- Skip repository initialization
 - The project continues to function without Git (specs can still be created under `specs/`)
+
+If Git is installed but `git init`, `git add .`, or `git commit` fails:
+- Surface the error to the user
+- Stop this command rather than continuing with a partially initialized repository

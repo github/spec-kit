@@ -183,8 +183,20 @@ class ExtensionManifest:
 
         # Validate provides section
         provides = self.data["provides"]
-        has_commands = "commands" in provides and provides["commands"]
-        has_hooks = bool(self.data.get("hooks"))
+        commands = provides.get("commands", [])
+        hooks = self.data.get("hooks")
+
+        if "commands" in provides and not isinstance(commands, list):
+            raise ValidationError(
+                "Invalid provides.commands: expected a list"
+            )
+        if "hooks" in self.data and not isinstance(hooks, dict):
+            raise ValidationError(
+                "Invalid hooks: expected a mapping"
+            )
+
+        has_commands = bool(commands)
+        has_hooks = bool(hooks)
 
         if not has_commands and not has_hooks:
             raise ValidationError(
@@ -192,7 +204,7 @@ class ExtensionManifest:
             )
 
         # Validate commands (if present)
-        for cmd in provides.get("commands", []):
+        for cmd in commands:
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
 

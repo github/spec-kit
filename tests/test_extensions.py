@@ -291,6 +291,32 @@ class TestExtensionManifest:
         assert len(manifest.commands) == 0
         assert len(manifest.hooks) == 1
 
+    def test_commands_null_rejected(self, temp_dir, valid_manifest_data):
+        """Test manifest with commands: null is rejected."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"] = None
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid provides.commands"):
+            ExtensionManifest(manifest_path)
+
+    def test_hooks_not_dict_rejected(self, temp_dir, valid_manifest_data):
+        """Test manifest with hooks as a list is rejected."""
+        import yaml
+
+        valid_manifest_data["hooks"] = ["not", "a", "dict"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid hooks"):
+            ExtensionManifest(manifest_path)
+
     def test_manifest_hash(self, extension_dir):
         """Test manifest hash calculation."""
         manifest_path = extension_dir / "extension.yml"

@@ -23,8 +23,8 @@ check_feature_branch() {
         return 0
     fi
 
-    # Reject malformed timestamps (7-digit date or no trailing slug)
-    if [[ "$branch" =~ ^[0-9]{7}-[0-9]{6}- ]] || [[ "$branch" =~ ^[0-9]{8}-[0-9]{6}$ ]]; then
+    # Reject malformed timestamps (7-digit date, 8-digit date without trailing slug, or 7-digit with slug)
+    if [[ "$branch" =~ ^[0-9]{7}-[0-9]{6} ]] || [[ "$branch" =~ ^[0-9]{8}-[0-9]{6}$ ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
         echo "Feature branches should be named like: 001-feature-name or 20260319-143022-feature-name" >&2
         return 1
