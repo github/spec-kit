@@ -801,15 +801,12 @@ class ExtensionManager:
             original_desc = frontmatter.get("description", "")
             description = original_desc or f"Extension command: {cmd_name}"
 
-            frontmatter_data = {
-                "name": skill_name,
-                "description": description,
-                "compatibility": "Requires spec-kit project structure with .specify/ directory",
-                "metadata": {
-                    "author": "github-spec-kit",
-                    "source": f"extension:{manifest.id}",
-                },
-            }
+            frontmatter_data = registrar.build_skill_frontmatter(
+                selected_ai,
+                skill_name,
+                description,
+                f"extension:{manifest.id}",
+            )
             frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
 
             # Derive a human-friendly title from the command name
@@ -2138,11 +2135,14 @@ class HookExecutor:
         init_options = self._load_init_options()
         selected_ai = init_options.get("ai")
         codex_skill_mode = selected_ai == "codex" and bool(init_options.get("ai_skills"))
+        claude_skill_mode = selected_ai == "claude" and bool(init_options.get("ai_skills"))
         kimi_skill_mode = selected_ai == "kimi"
 
         skill_name = self._skill_name_from_command(command_id)
         if codex_skill_mode and skill_name:
             return f"${skill_name}"
+        if claude_skill_mode and skill_name:
+            return f"/{skill_name}"
         if kimi_skill_mode and skill_name:
             return f"/skill:{skill_name}"
 

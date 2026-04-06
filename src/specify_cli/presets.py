@@ -714,7 +714,14 @@ class PresetManager:
         selected_ai = init_opts.get("ai")
         if not isinstance(selected_ai, str):
             return []
+        ai_skills_enabled = bool(init_opts.get("ai_skills"))
         registrar = CommandRegistrar()
+        agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
+        # Native skill agents (e.g. codex/kimi/agy) materialize brand-new
+        # preset skills in _register_commands() because their detected agent
+        # directory is already the skills directory. This flag is only for
+        # command-backed agents that also mirror commands into skills.
+        create_missing_skills = ai_skills_enabled and agent_config.get("extension") != "/SKILL.md"
 
         written: List[str] = []
 
@@ -741,6 +748,10 @@ class PresetManager:
                 target_skill_names.append(skill_name)
             if legacy_skill_name != skill_name and (skills_dir / legacy_skill_name).is_dir():
                 target_skill_names.append(legacy_skill_name)
+            if not target_skill_names and create_missing_skills:
+                missing_skill_dir = skills_dir / skill_name
+                if not missing_skill_dir.exists():
+                    target_skill_names.append(skill_name)
             if not target_skill_names:
                 continue
 
@@ -760,15 +771,16 @@ class PresetManager:
             )
 
             for target_skill_name in target_skill_names:
-                frontmatter_data = {
-                    "name": target_skill_name,
-                    "description": enhanced_desc,
-                    "compatibility": "Requires spec-kit project structure with .specify/ directory",
-                    "metadata": {
-                        "author": "github-spec-kit",
-                        "source": f"preset:{manifest.id}",
-                    },
-                }
+                skill_subdir = skills_dir / target_skill_name
+                if skill_subdir.exists() and not skill_subdir.is_dir():
+                    continue
+                skill_subdir.mkdir(parents=True, exist_ok=True)
+                frontmatter_data = registrar.build_skill_frontmatter(
+                    selected_ai,
+                    target_skill_name,
+                    enhanced_desc,
+                    f"preset:{manifest.id}",
+                )
                 frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
                 skill_content = (
                     f"---\n"
@@ -778,7 +790,7 @@ class PresetManager:
                     f"{body}\n"
                 )
 
-                skill_file = skills_dir / target_skill_name / "SKILL.md"
+                skill_file = skill_subdir / "SKILL.md"
                 skill_file.write_text(skill_content, encoding="utf-8")
                 written.append(target_skill_name)
 
@@ -850,15 +862,12 @@ class PresetManager:
                     original_desc or f"Spec-kit workflow command: {short_name}",
                 )
 
-                frontmatter_data = {
-                    "name": skill_name,
-                    "description": enhanced_desc,
-                    "compatibility": "Requires spec-kit project structure with .specify/ directory",
-                    "metadata": {
-                        "author": "github-spec-kit",
-                        "source": f"templates/commands/{short_name}.md",
-                    },
-                }
+                frontmatter_data = registrar.build_skill_frontmatter(
+                    selected_ai if isinstance(selected_ai, str) else "",
+                    skill_name,
+                    enhanced_desc,
+                    f"templates/commands/{short_name}.md",
+                )
                 frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
                 skill_title = self._skill_title_from_command(short_name)
                 skill_content = (
@@ -883,15 +892,12 @@ class PresetManager:
                 command_name = extension_restore["command_name"]
                 title_name = self._skill_title_from_command(command_name)
 
-                frontmatter_data = {
-                    "name": skill_name,
-                    "description": frontmatter.get("description", f"Extension command: {command_name}"),
-                    "compatibility": "Requires spec-kit project structure with .specify/ directory",
-                    "metadata": {
-                        "author": "github-spec-kit",
-                        "source": extension_restore["source"],
-                    },
-                }
+                frontmatter_data = registrar.build_skill_frontmatter(
+                    selected_ai if isinstance(selected_ai, str) else "",
+                    skill_name,
+                    frontmatter.get("description", f"Extension command: {command_name}"),
+                    extension_restore["source"],
+                )
                 frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
                 skill_content = (
                     f"---\n"
@@ -1040,14 +1046,15 @@ class PresetManager:
         if registered_skills:
             self._unregister_skills(registered_skills, pack_dir)
             try:
-                from . import NATIVE_SKILLS_AGENTS
+                from .agents import CommandRegistrar
             except ImportError:
-                NATIVE_SKILLS_AGENTS = set()
-            registered_commands = {
-                agent_name: cmd_names
-                for agent_name, cmd_names in registered_commands.items()
-                if agent_name not in NATIVE_SKILLS_AGENTS
-            }
+                CommandRegistrar = None
+            if CommandRegistrar is not None:
+                registered_commands = {
+                    agent_name: cmd_names
+                    for agent_name, cmd_names in registered_commands.items()
+                    if CommandRegistrar.AGENT_CONFIGS.get(agent_name, {}).get("extension") != "/SKILL.md"
+                }
 
         # Unregister non-skill command files from AI agents.
         if registered_commands:
