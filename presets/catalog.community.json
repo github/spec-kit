@@ -78,6 +78,30 @@
         "experimental"
       ]
     },
+    "toc-navigation": {
+      "name": "Table of Contents Navigation",
+      "id": "toc-navigation",
+      "version": "1.0.0",
+      "description": "Adds a navigable Table of Contents to generated spec.md, plan.md, and tasks.md documents",
+      "author": "Quratulain-bilal",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "templates": 3,
+        "commands": 3
+      },
+      "tags": [
+        "navigation",
+        "toc",
+        "documentation"
+      ]
+    },
     "vscode-ask-questions": {
       "name": "VS Code Ask Questions",
       "id": "vscode-ask-questions",
