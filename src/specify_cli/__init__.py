@@ -3710,15 +3710,24 @@ def extension_remove(
 
     # Get extension info for command and skill counts
     ext_manifest = manager.get_extension(extension_id)
-    cmd_count = len(ext_manifest.commands) if ext_manifest else 0
     reg_meta = manager.registry.get(extension_id)
+    # Derive cmd_count from the registry's registered_commands (includes aliases,
+    # covers all agents) rather than from the manifest (primary commands only).
+    registered_commands = reg_meta.get("registered_commands", {}) if isinstance(reg_meta, dict) else {}
+    if registered_commands and isinstance(registered_commands, dict):
+        cmd_count = max(
+            (len(v) for v in registered_commands.values() if isinstance(v, list)),
+            default=0,
+        )
+    else:
+        cmd_count = len(ext_manifest.commands) if ext_manifest else 0
     raw_skills = reg_meta.get("registered_skills") if reg_meta else None
     skill_count = len(raw_skills) if isinstance(raw_skills, list) else 0
 
     # Confirm removal
     if not force:
         console.print("\n[yellow]⚠  This will remove:[/yellow]")
-        console.print(f"   • {cmd_count} command{'s' if cmd_count != 1 else ''} from AI agent")
+        console.print(f"   • {cmd_count} command{'s' if cmd_count != 1 else ''} across AI agents")
         if skill_count:
             console.print(f"   • {skill_count} agent skill(s)")
         console.print(f"   • Extension directory: .specify/extensions/{extension_id}/")
