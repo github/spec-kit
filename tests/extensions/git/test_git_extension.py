@@ -86,10 +86,19 @@ def _write_config(project: Path, content: str) -> Path:
     return config_path
 
 
+# Git identity env vars for CI runners without global git config
+_GIT_ENV = {
+    "GIT_AUTHOR_NAME": "Test User",
+    "GIT_AUTHOR_EMAIL": "test@example.com",
+    "GIT_COMMITTER_NAME": "Test User",
+    "GIT_COMMITTER_EMAIL": "test@example.com",
+}
+
+
 def _run_bash(script_name: str, cwd: Path, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
     """Run an extension bash script."""
     script = cwd / ".specify" / "extensions" / "git" / "scripts" / "bash" / script_name
-    env = {**os.environ, **(env_extra or {})}
+    env = {**os.environ, **_GIT_ENV, **(env_extra or {})}
     return subprocess.run(
         ["bash", str(script), *args],
         cwd=cwd,
@@ -102,11 +111,13 @@ def _run_bash(script_name: str, cwd: Path, *args: str, env_extra: dict | None = 
 def _run_pwsh(script_name: str, cwd: Path, *args: str) -> subprocess.CompletedProcess:
     """Run an extension PowerShell script."""
     script = cwd / ".specify" / "extensions" / "git" / "scripts" / "powershell" / script_name
+    env = {**os.environ, **_GIT_ENV}
     return subprocess.run(
         ["pwsh", "-NoProfile", "-File", str(script), *args],
         cwd=cwd,
         capture_output=True,
         text=True,
+        env=env,
     )
 
 
