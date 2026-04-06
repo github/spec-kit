@@ -1001,6 +1001,71 @@ Agent __AGENT__
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
         assert ".specify/scripts/bash/update-agent-context.sh codex" in content
 
+    def test_skill_registration_rewrites_extension_relative_paths(self, project_dir, temp_dir):
+        """Extension subdirectory paths in command bodies should be rewritten to
+        .specify/extensions/<id>/... in generated SKILL.md files."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-multidir"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "agents").mkdir()
+        (ext_dir / "templates").mkdir()
+        (ext_dir / "scripts").mkdir()
+        (ext_dir / "knowledge-base").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-multidir",
+                "name": "Multi-Dir Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.ext-multidir.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Read agents/control/commander.md for instructions.\n"
+            "Use templates/report.md as output format.\n"
+            "Run scripts/bash/gate.sh to validate.\n"
+            "Load knowledge-base/scores.yaml for calibration.\n"
+            "Also check memory/constitution.md for project rules.\n"
+        )
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        content = (skills_dir / "speckit-ext-multidir.run" / "SKILL.md").read_text()
+        # Extension-owned directories → extension-local paths
+        assert ".specify/extensions/ext-multidir/agents/control/commander.md" in content
+        assert ".specify/extensions/ext-multidir/templates/report.md" in content
+        assert ".specify/extensions/ext-multidir/scripts/bash/gate.sh" in content
+        assert ".specify/extensions/ext-multidir/knowledge-base/scores.yaml" in content
+        # memory/ is not an extension directory, so it is not rewritten
+        assert "memory/constitution.md" in content
+        # No bare extension-relative path references remain
+        assert "Read agents/" not in content
+        assert "Load knowledge-base/" not in content
+
     def test_codex_skill_alias_frontmatter_matches_alias_name(self, project_dir, temp_dir):
         """Codex alias skills should render their own matching `name:` frontmatter."""
         import yaml
