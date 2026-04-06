@@ -36,7 +36,7 @@
       "description": "Adapts original Spec Kit workflow to work together with Canon extension.",
       "author": "Maxim Stupakov",
       "download_url": "https://github.com/maximiliamus/spec-kit-canon/releases/download/v0.1.0/spec-kit-canon-core-v0.1.0.zip",
-      "repository": "https://github.com/maximiliamus/spec-kit-canon/tree/master/preset",
+      "repository": "https://github.com/maximiliamus/spec-kit-canon",
       "homepage": "https://github.com/maximiliamus/spec-kit-canon",
       "documentation": "https://github.com/maximiliamus/spec-kit-canon/blob/master/README.md",
       "license": "MIT",
