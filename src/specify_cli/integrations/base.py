@@ -532,22 +532,82 @@ class TomlIntegration(IntegrationBase):
     def _extract_description(content: str) -> str:
         """Extract the ``description`` value from YAML frontmatter.
 
-        Scans lines between the first pair of ``---`` delimiters for a
-        top-level ``description:`` key.  Returns the value (with
-        surrounding quotes stripped) or an empty string if not found.
+        Parses the YAML frontmatter so block scalar descriptions (``|``
+        and ``>``) keep their YAML semantics instead of being treated as
+        raw text.
         """
-        in_frontmatter = False
-        for line in content.splitlines():
-            stripped = line.rstrip("\n\r")
-            if stripped == "---":
-                if not in_frontmatter:
-                    in_frontmatter = True
-                    continue
-                break  # second ---
-            if in_frontmatter and stripped.startswith("description:"):
-                _, _, value = stripped.partition(":")
-                return value.strip().strip('"').strip("'")
+        import yaml
+
+        frontmatter_text, _ = TomlIntegration._split_frontmatter(content)
+        if not frontmatter_text:
+            return ""
+        try:
+            frontmatter = yaml.safe_load(frontmatter_text) or {}
+        except yaml.YAMLError:
+            return ""
+
+        if not isinstance(frontmatter, dict):
+            return ""
+
+        description = frontmatter.get("description", "")
+        if isinstance(description, str):
+            return description
         return ""
+
+    @staticmethod
+    def _split_frontmatter(content: str) -> tuple[str, str]:
+        """Split YAML frontmatter from the remaining content.
+
+        Returns ``("", content)`` when no complete frontmatter block is
+        present. The body is preserved exactly as written so prompt text
+        keeps its intended formatting.
+        """
+        if not content.startswith("---"):
+            return "", content
+
+        lines = content.splitlines(keepends=True)
+        if not lines or lines[0].rstrip("\r\n") != "---":
+            return "", content
+
+        frontmatter_end = -1
+        for i, line in enumerate(lines[1:], start=1):
+            if line.rstrip("\r\n") == "---":
+                frontmatter_end = i
+                break
+
+        if frontmatter_end == -1:
+            return "", content
+
+        frontmatter = "".join(lines[1:frontmatter_end])
+        body = "".join(lines[frontmatter_end + 1 :])
+        return frontmatter, body
+
+    @staticmethod
+    def _render_toml_string(value: str) -> str:
+        """Render *value* as a TOML string literal.
+
+        Uses a basic string for single-line values, multiline basic
+        strings for values containing newlines, and falls back to a
+        literal string or escaped basic string when delimiters appear in
+        the content.
+        """
+        if "\n" not in value and "\r" not in value:
+            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+            return f'"{escaped}"'
+
+        escaped = value.replace("\\", "\\\\")
+        if '"""' not in escaped:
+            return '"""\n' + escaped + '"""'
+        if "'''" not in value:
+            return "'''\n" + value + "'''"
+
+        return '"' + (
+            value.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+        ) + '"'
 
     @staticmethod
     def _render_toml(description: str, body: str) -> str:
@@ -558,39 +618,19 @@ class TomlIntegration(IntegrationBase):
         to multiline literal strings (``'''``) if the body contains
         ``\"\"\"``, then to an escaped basic string as a last resort.
 
-        The body is rstrip'd so the closing delimiter appears on the line
-        immediately after the last content line — matching the release
-        script's ``echo "$body"; echo '\"\"\"'`` pattern.
+        The body is ``rstrip("\\n")``'d before rendering, so the TOML
+        value preserves content without forcing a trailing newline. As a
+        result, multiline delimiters appear on their own line only when
+        the rendered value itself ends with a newline.
         """
         toml_lines: list[str] = []
 
         if description:
-            desc = description.replace('"', '\\"')
-            toml_lines.append(f'description = "{desc}"')
+            toml_lines.append(f"description = {TomlIntegration._render_toml_string(description)}")
             toml_lines.append("")
 
         body = body.rstrip("\n")
-
-        # Escape backslashes for basic multiline strings.
-        escaped = body.replace("\\", "\\\\")
-
-        if '"""' not in escaped:
-            toml_lines.append('prompt = """')
-            toml_lines.append(escaped)
-            toml_lines.append('"""')
-        elif "'''" not in body:
-            toml_lines.append("prompt = '''")
-            toml_lines.append(body)
-            toml_lines.append("'''")
-        else:
-            escaped_body = (
-                body.replace("\\", "\\\\")
-                .replace('"', '\\"')
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t")
-            )
-            toml_lines.append(f'prompt = "{escaped_body}"')
+        toml_lines.append(f"prompt = {TomlIntegration._render_toml_string(body)}")
 
         return "\n".join(toml_lines) + "\n"
 
@@ -630,7 +670,8 @@ class TomlIntegration(IntegrationBase):
             raw = src_file.read_text(encoding="utf-8")
             description = self._extract_description(raw)
             processed = self.process_template(raw, self.key, script_type, arg_placeholder)
-            toml_content = self._render_toml(description, processed)
+            _, body = self._split_frontmatter(processed)
+            toml_content = self._render_toml(description, body)
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
                 toml_content, dest / dst_name, project_root, manifest

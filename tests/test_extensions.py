@@ -13,6 +13,7 @@ import pytest
 import json
 import tempfile
 import shutil
+import tomllib
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -1013,6 +1014,21 @@ $ARGUMENTS
         assert 'prompt = "' in output
         assert "\\n" in output
         assert "\\\"\\\"\\\"" in output
+
+    def test_render_toml_command_preserves_multiline_description(self):
+        """Multiline descriptions should render as parseable TOML with preserved semantics."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        output = registrar.render_toml_command(
+            {"description": "first line\nsecond line\n"},
+            "body",
+            "extension:test-ext",
+        )
+
+        parsed = tomllib.loads(output)
+
+        assert parsed["description"] == "first line\nsecond line\n"
 
     def test_register_commands_for_claude(self, extension_dir, project_dir):
         """Test registering commands for Claude agent."""
