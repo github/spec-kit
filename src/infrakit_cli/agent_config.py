@@ -28,6 +28,7 @@ AGENT_CONFIG = {
         "command_format": DEFAULT_FORMAT,
         "command_args": DEFAULT_ARGS,
         "command_extension": DEFAULT_EXTENSION,
+        "mcp_config_file": "mcp.json",
     },
     "gemini": {
         "name": "Gemini CLI",
@@ -48,6 +49,7 @@ AGENT_CONFIG = {
         "command_format": DEFAULT_FORMAT,
         "command_args": DEFAULT_ARGS,
         "command_extension": DEFAULT_EXTENSION,
+        "mcp_config_file": "mcp.json",
     },
     "qwen": {
         "name": "Qwen Code",
