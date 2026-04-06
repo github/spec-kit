@@ -38,7 +38,7 @@
       "download_url": "https://github.com/maximiliamus/spec-kit-canon/releases/download/v0.1.0/spec-kit-canon-core-v0.1.0.zip",
       "repository": "https://github.com/maximiliamus/spec-kit-canon/tree/master/preset",
       "homepage": "https://github.com/maximiliamus/spec-kit-canon",
-      "documentation": "https://github.com/maximiliamus/spec-kit-canon/blob/main/README.md",
+      "documentation": "https://github.com/maximiliamus/spec-kit-canon/blob/master/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.4.3"

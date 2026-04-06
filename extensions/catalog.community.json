@@ -115,8 +115,8 @@
       "download_url": "https://github.com/maximiliamus/spec-kit-canon/releases/download/v0.1.0/spec-kit-canon-v0.1.0.zip",
       "repository": "https://github.com/maximiliamus/spec-kit-canon/tree/master/extension",
       "homepage": "https://github.com/maximiliamus/spec-kit-canon",
-      "documentation": "https://github.com/maximiliamus/spec-kit-canon/blob/main/README.md",
-      "changelog": "https://github.com/maximiliamus/spec-kit-canon/blob/main/CHANGELOG.md",
+      "documentation": "https://github.com/maximiliamus/spec-kit-canon/blob/master/README.md",
+      "changelog": "https://github.com/maximiliamus/spec-kit-canon/blob/master/CHANGELOG.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.4.3"
