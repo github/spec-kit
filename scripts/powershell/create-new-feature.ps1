@@ -416,11 +416,25 @@ if ($hasGit) {
     }
     else {
         # Standard branch mode
+        $branchCreateError = ''
         try {
-            git checkout -b $branchName | Out-Null
+            $branchCreateError = git checkout -b $branchName 2>&1 | Out-String
+            if ($LASTEXITCODE -ne 0) {
+                throw "git checkout failed"
+            }
         }
         catch {
-            Write-Warning "Failed to create git branch: $branchName"
+            $existingBranch = git branch --list $branchName 2>$null
+            if ($existingBranch) {
+                Write-Error "[specify] Error: Branch '$branchName' already exists. Please use a different feature name or specify a different number with -Number."
+            }
+            elseif ($branchCreateError) {
+                Write-Error "[specify] Error: Failed to create git branch '$branchName'.`n$($branchCreateError.Trim())"
+            }
+            else {
+                Write-Error "[specify] Error: Failed to create git branch '$branchName'. Please check your git configuration and try again."
+            }
+            exit 1
         }
         $creationMode = "branch"
         $featureRoot = $repoRoot
@@ -474,4 +488,3 @@ else {
     Write-Output "HAS_GIT: $hasGit"
     Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
 }
-

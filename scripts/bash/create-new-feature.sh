@@ -397,7 +397,20 @@ if [ "$HAS_GIT" = true ]; then
         fi
     else
         # Standard branch mode
-        git checkout -b "$BRANCH_NAME"
+        branch_create_error=""
+        if ! branch_create_error=$(git checkout -b "$BRANCH_NAME" 2>&1); then
+            if git branch --list "$BRANCH_NAME" | grep -q .; then
+                >&2 echo "[specify] Error: Branch '$BRANCH_NAME' already exists. Please use a different feature name or specify a different number with --number."
+            else
+                >&2 echo "[specify] Error: Failed to create git branch '$BRANCH_NAME'."
+                if [ -n "$branch_create_error" ]; then
+                    >&2 printf '%s\n' "$branch_create_error"
+                else
+                    >&2 echo "[specify] Please check your git configuration and try again."
+                fi
+            fi
+            exit 1
+        fi
         CREATION_MODE="branch"
         FEATURE_ROOT="$REPO_ROOT"
     fi
