@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-30T02:43:48Z",
+  "updated_at": "2026-04-06T06:30:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "aide-in-place": {
