@@ -26,7 +26,7 @@ if (-not $repoRoot) { $repoRoot = Get-Location }
 Set-Location $repoRoot
 
 # Read commit message from extension config, fall back to default
-$commitMsg = "Initial commit from Specify template"
+$commitMsg = "[Spec Kit] Initial commit"
 $configFile = Join-Path $repoRoot ".specify/extensions/git/git-config.yml"
 if (Test-Path $configFile) {
     foreach ($line in Get-Content $configFile) {

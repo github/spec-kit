@@ -136,4 +136,4 @@ tags:
 
 defaults:
   branch_numbering: sequential
-  init_commit_message: "Initial commit from Specify template"
+  init_commit_message: "[Spec Kit] Initial commit"

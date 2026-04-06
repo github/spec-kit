@@ -6,7 +6,7 @@
 # Check if we have git available at the repo root
 has_git() {
     local repo_root="${1:-$(pwd)}"
-    [ -d "$repo_root/.git" ] || [ -f "$repo_root/.git" ] && \
+    { [ -d "$repo_root/.git" ] || [ -f "$repo_root/.git" ]; } && \
         command -v git >/dev/null 2>&1 && \
         git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
