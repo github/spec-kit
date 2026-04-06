@@ -610,6 +610,10 @@ def _locate_bundled_extension(extension_id: str) -> Path | None:
     Checks the wheel's core_pack first, then falls back to the
     source-checkout ``extensions/<id>/`` directory.
     """
+    import re as _re
+    if not _re.match(r'^[a-z0-9-]+$', extension_id):
+        return None
+
     core = _locate_core_pack()
     if core is not None:
         candidate = core / "extensions" / extension_id

@@ -134,6 +134,7 @@ tags:
   - "branching"
   - "workflow"
 
-defaults:
-  branch_numbering: sequential
-  init_commit_message: "[Spec Kit] Initial commit"
+config:
+  defaults:
+    branch_numbering: sequential
+    init_commit_message: "[Spec Kit] Initial commit"
