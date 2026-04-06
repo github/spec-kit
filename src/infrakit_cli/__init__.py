@@ -1613,7 +1613,9 @@ def init(
         "--ai-commands-dir",
         help="Directory for agent command files (required with --ai generic, e.g. .myagent/commands/)",
     ),
-    iac_tool: str = typer.Option(None, "--iac", help="IaC tool to use: crossplane"),
+    iac_tool: str = typer.Option(
+        None, "--iac", help="IaC tool to use: crossplane or terraform"
+    ),
     script_type: str = typer.Option(
         None, "--script", help="Script type to use: sh or ps"
     ),
@@ -1669,6 +1671,9 @@ def init(
         infrakit init my-project --ai claude --iac crossplane --no-git
         infrakit init --here --ai claude --iac crossplane
         infrakit init . --ai claude --iac crossplane
+        infrakit init my-project --ai claude --iac terraform
+        infrakit init my-project --ai claude --iac terraform --no-git
+        infrakit init --here --ai claude --iac terraform
         infrakit init my-project --ai generic --ai-commands-dir .myagent/commands/  # Unsupported agent
     """
 

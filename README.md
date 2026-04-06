@@ -40,7 +40,7 @@ InfraKit is an infrastructure-first toolkit that applies **Constraint-Driven Dev
 
 Each infrastructure resource gets its own **track**: a directory under `.infrakit/tracks/` that holds the spec, plan, and task list. Multiple tracks can be in progress at once, and every step is transparent and reversible.
 
-At launch InfraKit supports **Crossplane** (Kubernetes-native IaC). Support for Terraform, Pulumi, CloudFormation, and OpenTofu is on the roadmap.
+InfraKit supports **Crossplane** (Kubernetes-native IaC) and **Terraform** (HashiCorp IaC). Support for Pulumi, CloudFormation, and OpenTofu is on the roadmap.
 
 ---
 
@@ -80,10 +80,16 @@ In your AI agent, run `/infrakit:setup` to define your cloud provider, API group
 
 ### 4. Create a new resource
 
-Use `/infrakit:new_composition` to kick off the multi-persona solutioning workflow: the Cloud Solutions Engineer gathers requirements and writes a spec, the Cloud Architect reviews it, and the Cloud Security Engineer checks compliance.
+Use the IaC-native creation command to kick off the multi-persona solutioning workflow: the Cloud Solutions Engineer gathers requirements and writes a spec, the Cloud Architect reviews it, and the Cloud Security Engineer checks compliance.
 
+**Crossplane:**
 ```
 /infrakit:new_composition PostgreSQL database for application teams
+```
+
+**Terraform:**
+```
+/infrakit:create_terraform_code database ./modules/database
 ```
 
 ### 5. Generate the implementation plan
@@ -92,7 +98,7 @@ Use `/infrakit:new_composition` to kick off the multi-persona solutioning workfl
 /infrakit:plan <track-name>
 ```
 
-The Crossplane Engineer generates a detailed plan: XRD schema design, managed resource API versions (verified against doc.crds.dev), patch mappings, and tag requirements.
+The IaC Engineer generates a detailed plan: resource schema design, provider API versions (verified against official documentation), argument mappings, and tag requirements.
 
 ### 6. Generate tasks and implement
 
@@ -101,7 +107,7 @@ The Crossplane Engineer generates a detailed plan: XRD schema design, managed re
 /infrakit:implement <track-name>
 ```
 
-The Crossplane Engineer works through each task, marking it complete as it goes. All code follows your `coding-style.md` and `tagging.md` exactly.
+The IaC Engineer works through each task, marking it complete as it goes. All code follows your `coding-style.md` and `tagging.md` exactly.
 
 ### 7. Review
 
@@ -109,7 +115,7 @@ The Crossplane Engineer works through each task, marking it complete as it goes.
 /infrakit:review <resource-directory>
 ```
 
-The Crossplane Engineer reviews the generated YAML against coding standards, tagging requirements, and patch coverage.
+The IaC Engineer reviews the generated code against coding standards, tagging requirements, and argument coverage.
 
 For a detailed walkthrough, see the [Quick Start Guide](./docs/quickstart.md).
 
@@ -160,7 +166,7 @@ For a detailed walkthrough, see the [Quick Start Guide](./docs/quickstart.md).
 | `<project-name>` | Name for your new project directory (or use `.` / `--here`) |
 | `--ai` | AI assistant: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `codebuddy`, `amp`, `shai`, `q`, `agy`, `bob`, `qodercli`, or `generic` |
 | `--ai-commands-dir` | Command files directory (required with `--ai generic`) |
-| `--iac` | IaC tool: `crossplane` |
+| `--iac` | IaC tool: `crossplane` or `terraform` |
 | `--script` | Script type to use: `sh` or `ps` |
 | `--ignore-agent-tools` | Skip AI agent tool checks |
 | `--no-git` | Skip git repository initialization |
@@ -176,6 +182,9 @@ For a detailed walkthrough, see the [Quick Start Guide](./docs/quickstart.md).
 ```bash
 # New project with Claude and Crossplane
 infrakit init my-infra --ai claude --iac crossplane
+
+# New project with Claude and Terraform
+infrakit init my-infra --ai claude --iac terraform
 
 # Initialize in the current directory
 infrakit init --here --ai claude --iac crossplane
@@ -227,14 +236,23 @@ After `infrakit init`, your AI agent will have access to these slash commands.
 | `/infrakit:plan <track>` | Crossplane Engineer generates implementation plan from spec |
 | `/infrakit:review <directory>` | Crossplane Engineer code review against coding standards and tagging |
 
+### Terraform Commands
+
+| Command | Description |
+|---------|-------------|
+| `/infrakit:create_terraform_code` | Multi-persona workflow: solutioning → architect review → security review → spec |
+| `/infrakit:update_terraform_code` | Update an existing Terraform module with the same review workflow |
+| `/infrakit:plan <track>` | Terraform Engineer generates HCL implementation plan from spec |
+| `/infrakit:review <directory>` | Terraform Engineer code review against coding standards and tagging |
+
 ---
 
 ## Core Philosophy
 
-- **Spec before YAML** — define *what* the resource must do before any code is written
-- **Multi-persona review** — Cloud Solutions Engineer gathers requirements, Cloud Architect reviews for architecture/cost/reliability, Cloud Security Engineer checks compliance, Crossplane Engineer implements
-- **Never guess schemas** — all `apiVersion` and field names are verified against provider documentation before any YAML is written
-- **Standards enforced** — mandatory tagging, Pipeline mode, `providerConfigRef` patterns baked into every resource from the start
+- **Spec before code** — define *what* the resource must do before any code is written
+- **Multi-persona review** — Cloud Solutions Engineer gathers requirements, Cloud Architect reviews for architecture/cost/reliability, Cloud Security Engineer checks compliance, IaC Engineer implements
+- **Never guess schemas** — all resource argument names and API versions are verified against official provider documentation before any code is written
+- **Standards enforced** — mandatory tagging, security defaults, and coding conventions baked into every resource from the start
 
 ---
 
@@ -255,6 +273,7 @@ After `infrakit init`, your AI agent will have access to these slash commands.
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
 - `kubectl` (for Crossplane projects)
+- `terraform` (for Terraform projects)
 
 ---
 

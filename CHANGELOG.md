@@ -7,6 +7,22 @@ Recent changes to the InfraKit CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-04-07
+
+### Added
+
+- **Terraform IaC Support**: Added full Terraform support as a second IaC tool alongside Crossplane
+  - New `--iac terraform` option in `infrakit init` bootstraps projects with Terraform-specific workflows
+  - New commands: `create_terraform_code`, `update_terraform_code`, `plan`, `review`
+  - `create_terraform_code`: Multi-phase Cloud Solutions Engineer → Architect Review → Security Review → spec confirmation workflow for new Terraform modules
+  - `update_terraform_code`: Scans existing `.tf` files to reconstruct context, classifies changes (Additive/Behavioral/Breaking), generates `spec.md` and `migration.md` for breaking changes
+  - `plan`: Looks up resource arguments on `registry.terraform.io`, designs variable→resource and output→attribute mappings, writes `plan.md`
+  - `review`: Reviews HCL for hardcoded secrets, encryption, tagging completeness, version pinning, variable/output descriptions, and file structure
+  - New `terraform_engineer.md` agent persona for the `/implement` command
+  - New `coding-style-template.md` with Terraform conventions (naming, tagging, backend, security defaults)
+  - New `terraform.md` technical reference documentation
+  - Updated `create-release-packages.sh` to include terraform in release packages
+
 ## [0.1.6] - 2026-02-23
 
 ### Fixed

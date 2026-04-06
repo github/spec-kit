@@ -1,3 +1,6 @@
+# Agents
+.kilo/
+
 # Python
 .coverage
 __pycache__/

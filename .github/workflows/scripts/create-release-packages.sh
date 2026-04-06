@@ -8,9 +8,10 @@ set -euo pipefail
 #   Optionally set AGENTS, SCRIPTS, and/or IAC env vars to limit what gets built.
 #     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf codex amp shai bob generic (default: all)
 #     SCRIPTS : space or comma separated subset of: sh ps (default: both)
-#     IAC     : space or comma separated subset of: crossplane (default: all)
+#     IAC     : space or comma separated subset of: crossplane terraform (default: all)
 #   Examples:
 #     AGENTS=claude SCRIPTS=sh IAC=crossplane $0 v0.2.0
+#     AGENTS=claude SCRIPTS=sh IAC=terraform $0 v0.2.0
 #     AGENTS="copilot,gemini" $0 v0.2.0
 #     SCRIPTS=ps $0 v0.2.0
 
@@ -266,7 +267,7 @@ build_variant() {
 
 # Determine agent, IaC, and script lists
 ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q agy bob qodercli generic)
-ALL_IAC=(crossplane)
+ALL_IAC=(crossplane terraform)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
