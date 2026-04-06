@@ -345,6 +345,19 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="must provide at least one command"):
             ExtensionManifest(manifest_path)
 
+    def test_non_dict_hook_entry_raises_validation_error(self, temp_dir, valid_manifest_data):
+        """Non-mapping hook entries must raise ValidationError, not silently skip."""
+        import yaml
+
+        valid_manifest_data["hooks"]["after_tasks"] = "speckit.test-ext.hello"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Hook 'after_tasks' must be a mapping"):
+            ExtensionManifest(manifest_path)
+
     def test_manifest_hash(self, extension_dir):
         """Test manifest hash calculation."""
         manifest_path = extension_dir / "extension.yml"

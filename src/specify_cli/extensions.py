@@ -244,7 +244,9 @@ class ExtensionManifest:
         # the reference is changed so extension authors know to update the manifest.
         for hook_name, hook_data in self.data.get("hooks", {}).items():
             if not isinstance(hook_data, dict):
-                continue
+                raise ValidationError(
+                    f"Hook '{hook_name}' must be a mapping, got {type(hook_data).__name__}"
+                )
             command_ref = hook_data.get("command")
             if not isinstance(command_ref, str):
                 continue
