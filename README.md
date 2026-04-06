@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="./media/logo_large.webp" alt="InfraKit Logo" width="200" height="200"/>
+    <img src="./media/logo.svg" alt="InfraKit Logo" width="200" height="200"/>
     <h1>InfraKit</h1>
     <h3><em>Build production-ready infrastructure faster.</em></h3>
 </div>
@@ -28,6 +28,7 @@
 - [Prerequisites](#prerequisites)
 - [Learn More](#learn-more)
 - [Troubleshooting](#troubleshooting)
+- [Credits](#credits)
 - [Support](#support)
 - [License](#license)
 
@@ -149,15 +150,18 @@ For a detailed walkthrough, see the [Quick Start Guide](./docs/quickstart.md).
 |---------|-------------|
 | `init` | Initialize a new InfraKit project from the latest template |
 | `check` | Check for installed tools (`git`, `claude`, `gemini`, `kubectl`, etc.) |
+| `mcp` | Install a pre-defined MCP server recipe into your agent's MCP config |
+| `version` | Display version and system information |
 
 ### `infrakit init` Options
 
 | Option | Description |
 |--------|-------------|
 | `<project-name>` | Name for your new project directory (or use `.` / `--here`) |
-| `--ai` | AI assistant: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, `shai`, `q`, `agy`, `bob`, `qodercli`, or `generic` |
+| `--ai` | AI assistant: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `codebuddy`, `amp`, `shai`, `q`, `agy`, `bob`, `qodercli`, or `generic` |
 | `--ai-commands-dir` | Command files directory (required with `--ai generic`) |
 | `--iac` | IaC tool: `crossplane` |
+| `--script` | Script type to use: `sh` or `ps` |
 | `--ignore-agent-tools` | Skip AI agent tool checks |
 | `--no-git` | Skip git repository initialization |
 | `--here` | Initialize in the current directory |
@@ -190,6 +194,9 @@ infrakit init my-infra --ai generic --ai-commands-dir .myagent/commands/ --iac c
 
 # Check system requirements
 infrakit check
+
+# Install an MCP server
+infrakit mcp
 ```
 
 ---
@@ -209,6 +216,7 @@ After `infrakit init`, your AI agent will have access to these slash commands.
 | `/infrakit:architect-review <track>` | Cloud Architect review of spec and plan |
 | `/infrakit:security-review <track>` | Cloud Security Engineer compliance review (SOC2, HIPAA, etc.) |
 | `/infrakit:tasks <track>` | Generate ordered task breakdown from spec and plan |
+| `/infrakit:checklist <track>` | Generate a verification checklist for the track |
 
 ### Crossplane Commands
 
@@ -271,6 +279,12 @@ sudo dpkg -i gcm-linux_amd64.2.6.1.deb
 git config --global credential.helper manager
 rm gcm-linux_amd64.2.6.1.deb
 ```
+
+---
+
+## Credits
+
+InfraKit is inspired by and built upon the foundational work of the [speckit](https://github.com/github/speckit) project. We credit `speckit` for providing the base for this project's architecture and methodology.
 
 ---
 

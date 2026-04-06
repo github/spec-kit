@@ -334,7 +334,7 @@ class TestInstallAiSkills:
         assert result is False
 
     def test_additive_does_not_overwrite_other_files(self, project_dir, templates_dir):
-        """Installing skills should not remove non-speckit files in the skills dir."""
+        """Installing skills should not remove non-infrakit files in the skills dir."""
         # Pre-create a custom skill
         custom_dir = project_dir / ".claude" / "skills" / "my-custom-skill"
         custom_dir.mkdir(parents=True)

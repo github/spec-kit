@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable MD024 -->
 
-Recent changes to the Specify CLI and templates are documented here.
+Recent changes to the InfraKit CLI and templates are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -15,33 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added validation to detect when `--ai` or `--ai-commands-dir` incorrectly consume following flags like `--here` or `--ai-skills`
   - Now provides clear error messages: "Invalid value for --ai: '--here'"
   - Includes helpful hints suggesting proper usage and listing available agents
-  - Commands like `specify init --ai-skills --ai --here` now fail with actionable feedback instead of confusing "Must specify project name" errors
+  - Commands like `infrakit init --ai-skills --ai --here` now fail with actionable feedback instead of confusing "Must specify project name" errors
   - Added comprehensive test suite (5 new tests) to prevent regressions
 
-## [0.1.5] - 2026-02-21
+  ## [0.1.5] - 2026-02-21
 
-### Fixed
+  ### Fixed
 
-- **AI Skills Installation Bug (#1658)**: Fixed `--ai-skills` flag not generating skill files for GitHub Copilot and other agents with non-standard command directory structures
+  - **AI Skills Installation Bug (#1658)**: Fixed `--ai-skills` flag not generating skill files for GitHub Copilot and other agents with non-standard command directory structures
   - Added `commands_subdir` field to `AGENT_CONFIG` to explicitly specify the subdirectory name for each agent
   - Affected agents now work correctly: copilot (`.github/agents/`), opencode (`.opencode/command/`), windsurf (`.windsurf/workflows/`), codex (`.codex/prompts/`), kilocode (`.kilocode/workflows/`), q (`.amazonq/prompts/`), and agy (`.agent/workflows/`)
   - The `install_ai_skills()` function now uses the correct path for all agents instead of assuming `commands/` for everyone
 
-## [0.1.4] - 2026-02-20
+  ## [0.1.4] - 2026-02-20
 
-### Fixed
+  ### Fixed
 
-- **Qoder CLI detection**: Renamed `AGENT_CONFIG` key from `"qoder"` to `"qodercli"` to match the actual executable name, fixing `specify check` and `specify init --ai` detection failures
+  - **Qoder CLI detection**: Renamed `AGENT_CONFIG` key from `"qoder"` to `"qodercli"` to match the actual executable name, fixing `infrakit check` and `infrakit init --ai` detection failures
 
-## [0.1.3] - 2026-02-20
+  ## [0.1.3] - 2026-02-20
 
-### Added
+  ### Added
 
-- **Generic Agent Support**: Added `--ai generic` option for unsupported AI agents ("bring your own agent")
+  - **Generic Agent Support**: Added `--ai generic` option for unsupported AI agents ("bring your own agent")
   - Requires `--ai-commands-dir <path>` to specify where the agent reads commands from
   - Generates Markdown commands with `$ARGUMENTS` format (compatible with most agents)
-  - Example: `specify init my-project --ai generic --ai-commands-dir .myagent/commands/`
-  - Enables users to start with Spec Kit immediately while their agent awaits formal support
+  - Example: `infrakit init my-project --ai generic --ai-commands-dir .myagent/commands/`
+  - Enables users to start with InfraKit immediately while their agent awaits formal support
+
 
 ## [0.0.102] - 2026-02-20
 

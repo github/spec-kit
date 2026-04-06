@@ -1,0 +1,23 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00c6ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0072ff;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background Circle -->
+  <circle cx="100" cy="100" r="90" fill="url(#grad1)" />
+  
+  <!-- Stylized "IK" or Infrastructure Blocks -->
+  <!-- Block 1 (Left) -->
+  <rect x="50" y="70" width="30" height="60" rx="4" fill="white" fill-opacity="0.9" />
+  <!-- Block 2 (Center-Top) -->
+  <rect x="85" y="50" width="30" height="40" rx="4" fill="white" fill-opacity="0.9" />
+  <!-- Block 3 (Center-Bottom) -->
+  <rect x="85" y="95" width="30" height="55" rx="4" fill="white" fill-opacity="0.9" />
+  <!-- Block 4 (Right) -->
+  <rect x="120" y="75" width="30" height="75" rx="4" fill="white" fill-opacity="0.9" />
+  
+  <!-- Subtle Gear/Tool accent -->
+  <path d="M100 25 L105 35 L115 35 L110 45 L115 55 L105 55 L100 65 L95 55 L85 55 L90 45 L85 35 L95 35 Z" fill="white" fill-opacity="0.5" transform="rotate(15 100 100)" />
+</svg>

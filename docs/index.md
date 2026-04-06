@@ -50,6 +50,10 @@ InfraKit uses four specialized AI personas, each with a distinct scope:
 
 See the [Contributing Guide](https://github.com/neelneelpurk/infrakit/blob/main/CONTRIBUTING.md) for how to contribute.
 
+## Credits
+
+InfraKit is inspired by and built upon the foundational work of the [speckit](https://github.com/github/speckit) project. We credit `speckit` for providing the base for this project's architecture and methodology.
+
 ## Support
 
 Open a [GitHub issue](https://github.com/neelneelpurk/infrakit/issues/new) for support, bug reports, or feature requests.
