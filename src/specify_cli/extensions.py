@@ -239,14 +239,28 @@ class ExtensionManifest:
                             "must follow pattern 'speckit.{extension}.{command}'"
                         )
 
-        # Rewrite any hook command references that pointed at a renamed command.
+        # Rewrite any hook command references that pointed at a renamed command or
+        # an alias-form ref (ext.cmd → speckit.ext.cmd).  Always emit a warning when
+        # the reference is changed so extension authors know to update the manifest.
         for hook_name, hook_data in self.data.get("hooks", {}).items():
-            if isinstance(hook_data, dict) and hook_data.get("command") in rename_map:
-                old_ref = hook_data["command"]
-                hook_data["command"] = rename_map[old_ref]
+            if not isinstance(hook_data, dict):
+                continue
+            command_ref = hook_data.get("command")
+            if not isinstance(command_ref, str):
+                continue
+            # Step 1: apply any rename from the auto-correction pass.
+            after_rename = rename_map.get(command_ref, command_ref)
+            # Step 2: lift alias-form '{ext_id}.cmd' to canonical 'speckit.{ext_id}.cmd'.
+            parts = after_rename.split(".")
+            if len(parts) == 2 and parts[0] == ext["id"]:
+                final_ref = f"speckit.{ext['id']}.{parts[1]}"
+            else:
+                final_ref = after_rename
+            if final_ref != command_ref:
+                hook_data["command"] = final_ref
                 self.warnings.append(
-                    f"Hook '{hook_name}' referenced renamed command '{old_ref}'; "
-                    f"updated to '{rename_map[old_ref]}'. "
+                    f"Hook '{hook_name}' referenced command '{command_ref}'; "
+                    f"updated to canonical form '{final_ref}'. "
                     f"The extension author should update the manifest."
                 )
 
