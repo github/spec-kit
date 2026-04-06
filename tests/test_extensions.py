@@ -255,18 +255,41 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="Invalid command name"):
             ExtensionManifest(manifest_path)
 
-    def test_no_commands(self, temp_dir, valid_manifest_data):
-        """Test manifest with no commands provided."""
+    def test_no_commands_no_hooks(self, temp_dir, valid_manifest_data):
+        """Test manifest with no commands and no hooks provided."""
         import yaml
 
         valid_manifest_data["provides"]["commands"] = []
+        valid_manifest_data.pop("hooks", None)
 
         manifest_path = temp_dir / "extension.yml"
         with open(manifest_path, 'w') as f:
             yaml.dump(valid_manifest_data, f)
 
-        with pytest.raises(ValidationError, match="must provide at least one command"):
+        with pytest.raises(ValidationError, match="must provide at least one command or hook"):
             ExtensionManifest(manifest_path)
+
+    def test_hooks_only_extension(self, temp_dir, valid_manifest_data):
+        """Test manifest with hooks but no commands is valid."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"] = []
+        valid_manifest_data["hooks"] = {
+            "after_specify": {
+                "command": "speckit.test-ext.notify",
+                "optional": True,
+                "prompt": "Run notification?",
+            }
+        }
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+        assert manifest.id == valid_manifest_data["extension"]["id"]
+        assert len(manifest.commands) == 0
+        assert len(manifest.hooks) == 1
 
     def test_manifest_hash(self, extension_dir):
         """Test manifest hash calculation."""

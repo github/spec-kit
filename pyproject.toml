@@ -39,6 +39,8 @@ packages = ["src/specify_cli"]
 "templates/commands" = "specify_cli/core_pack/commands"
 "scripts/bash" = "specify_cli/core_pack/scripts/bash"
 "scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
+# Bundled extensions (installable via `specify extension add <name>`)
+"extensions/git" = "specify_cli/core_pack/extensions/git"
 
 [project.optional-dependencies]
 test = [

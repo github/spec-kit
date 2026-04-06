@@ -183,11 +183,16 @@ class ExtensionManifest:
 
         # Validate provides section
         provides = self.data["provides"]
-        if "commands" not in provides or not provides["commands"]:
-            raise ValidationError("Extension must provide at least one command")
+        has_commands = "commands" in provides and provides["commands"]
+        has_hooks = bool(self.data.get("hooks"))
 
-        # Validate commands
-        for cmd in provides["commands"]:
+        if not has_commands and not has_hooks:
+            raise ValidationError(
+                "Extension must provide at least one command or hook"
+            )
+
+        # Validate commands (if present)
+        for cmd in provides.get("commands", []):
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
 
