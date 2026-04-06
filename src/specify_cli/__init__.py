@@ -3713,8 +3713,10 @@ def extension_remove(
     reg_meta = manager.registry.get(extension_id)
     # Derive cmd_count from the registry's registered_commands (includes aliases,
     # covers all agents) rather than from the manifest (primary commands only).
-    registered_commands = reg_meta.get("registered_commands", {}) if isinstance(reg_meta, dict) else {}
-    if registered_commands and isinstance(registered_commands, dict):
+    # Use get() without a default so we can distinguish "key missing" (fall back
+    # to manifest) from "key present but empty dict" (zero commands registered).
+    registered_commands = reg_meta.get("registered_commands") if isinstance(reg_meta, dict) else None
+    if isinstance(registered_commands, dict):
         cmd_count = max(
             (len(v) for v in registered_commands.values() if isinstance(v, list)),
             default=0,
