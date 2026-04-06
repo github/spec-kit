@@ -1067,7 +1067,7 @@
       "created_at": "2026-03-14T00:00:00Z",
       "updated_at": "2026-03-14T00:00:00Z"
     },
-    "repoindex":{
+    "repoindex": {
       "name": "Repository Index",
       "id": "repoindex",
       "description": "Generate index of your repo for overview, architecture and module",
@@ -1082,7 +1082,7 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-         {
+          {
             "name": "no need",
             "version": ">=1.0.0",
             "required": false
@@ -1436,8 +1436,8 @@
       "id": "v-model",
       "description": "Enforces V-Model paired generation of development specs and test specs with full traceability.",
       "author": "leocamello",
-      "version": "0.4.0",
-      "download_url": "https://github.com/leocamello/spec-kit-v-model/archive/refs/tags/v0.4.0.zip",
+      "version": "0.5.0",
+      "download_url": "https://github.com/leocamello/spec-kit-v-model/archive/refs/tags/v0.5.0.zip",
       "repository": "https://github.com/leocamello/spec-kit-v-model",
       "homepage": "https://github.com/leocamello/spec-kit-v-model",
       "documentation": "https://github.com/leocamello/spec-kit-v-model/blob/main/README.md",
@@ -1447,7 +1447,7 @@
         "speckit_version": ">=0.1.0"
       },
       "provides": {
-        "commands": 9,
+        "commands": 14,
         "hooks": 1
       },
       "tags": [
@@ -1461,7 +1461,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-02-20T00:00:00Z",
-      "updated_at": "2026-02-22T00:00:00Z"
+      "updated_at": "2026-04-06T00:00:00Z"
     },
     "verify": {
       "name": "Verify Extension",
@@ -1526,6 +1526,5 @@
       "created_at": "2026-03-16T00:00:00Z",
       "updated_at": "2026-03-16T00:00:00Z"
     }
-    
   }
 }
