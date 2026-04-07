@@ -201,6 +201,8 @@ get_feature_paths() {
     local feature_dir
     if [[ -n "${SPECIFY_FEATURE_DIRECTORY:-}" ]]; then
         feature_dir="$SPECIFY_FEATURE_DIRECTORY"
+        # Normalize relative paths to absolute under repo root
+        [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
     elif [[ -f "$repo_root/.specify/feature.json" ]]; then
         local _fd
         if command -v jq >/dev/null 2>&1; then
@@ -211,6 +213,8 @@ get_feature_paths() {
         fi
         if [[ -n "$_fd" ]]; then
             feature_dir="$_fd"
+            # Normalize relative paths to absolute under repo root
+            [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
         elif ! feature_dir=$(find_feature_dir_by_prefix "$repo_root" "$current_branch"); then
             echo "ERROR: Failed to resolve feature directory" >&2
             return 1

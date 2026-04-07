@@ -168,11 +168,19 @@ function Get-FeaturePathsEnv {
     $featureJson = Join-Path $repoRoot '.specify/feature.json'
     if ($env:SPECIFY_FEATURE_DIRECTORY) {
         $featureDir = $env:SPECIFY_FEATURE_DIRECTORY
+        # Normalize relative paths to absolute under repo root
+        if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
+            $featureDir = Join-Path $repoRoot $featureDir
+        }
     } elseif (Test-Path $featureJson) {
         try {
             $featureConfig = Get-Content $featureJson -Raw | ConvertFrom-Json
             if ($featureConfig.feature_directory) {
                 $featureDir = $featureConfig.feature_directory
+                # Normalize relative paths to absolute under repo root
+                if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
+                    $featureDir = Join-Path $repoRoot $featureDir
+                }
             } else {
                 $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
             }
