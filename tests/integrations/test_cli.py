@@ -151,6 +151,53 @@ class TestInitIntegrationFlag:
         assert (templates_dir / "plan-template.md").exists()
 
 
+class TestForceExistingDirectory:
+    """Tests for --force merging into an existing named directory."""
+
+    def test_force_merges_into_existing_dir(self, tmp_path):
+        """specify init <dir> --force succeeds when the directory already exists."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        target = tmp_path / "existing-proj"
+        target.mkdir()
+        # Place a pre-existing file to verify it survives the merge
+        marker = target / "user-file.txt"
+        marker.write_text("keep me", encoding="utf-8")
+
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "init", str(target), "--integration", "copilot", "--force",
+            "--no-git", "--script", "sh",
+        ], catch_exceptions=False)
+
+        assert result.exit_code == 0, f"init --force failed: {result.output}"
+
+        # Pre-existing file should survive
+        assert marker.read_text(encoding="utf-8") == "keep me"
+
+        # Spec Kit files should be installed
+        assert (target / ".specify" / "init-options.json").exists()
+        assert (target / ".specify" / "templates" / "spec-template.md").exists()
+
+    def test_without_force_errors_on_existing_dir(self, tmp_path):
+        """specify init <dir> without --force errors when directory exists."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        target = tmp_path / "existing-proj"
+        target.mkdir()
+
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "init", str(target), "--integration", "copilot",
+            "--no-git", "--script", "sh",
+        ], catch_exceptions=False)
+
+        assert result.exit_code == 1
+        assert "already exists" in result.output
+
+
 class TestGitExtensionAutoInstall:
     """Tests for auto-installation of the git extension during specify init."""
 

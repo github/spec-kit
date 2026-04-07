@@ -879,3 +879,56 @@ class TestFeatureDirectoryResolution:
                 break
         else:
             pytest.fail("FEATURE_DIR not found in output")
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_ps_env_var_overrides_branch_lookup(self, git_repo: Path):
+        """PowerShell: SPECIFY_FEATURE_DIRECTORY env var takes priority."""
+        common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
+        custom_dir = git_repo / "my-custom-specs" / "ps-feature"
+        custom_dir.mkdir(parents=True)
+
+        ps_cmd = f'. "{common_ps}"; $r = Get-FeaturePathsEnv; Write-Output "FEATURE_DIR=$($r.FEATURE_DIR)"'
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-Command", ps_cmd],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "SPECIFY_FEATURE_DIRECTORY": str(custom_dir)},
+        )
+        assert result.returncode == 0, result.stderr
+        for line in result.stdout.splitlines():
+            if line.startswith("FEATURE_DIR="):
+                val = line.split("=", 1)[1].strip("'\"")
+                assert val == str(custom_dir)
+                break
+        else:
+            pytest.fail("FEATURE_DIR not found in PowerShell output")
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_ps_feature_json_overrides_branch_lookup(self, git_repo: Path):
+        """PowerShell: feature.json takes priority over branch-based lookup."""
+        common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
+        custom_dir = git_repo / "specs" / "ps-json-feature"
+        custom_dir.mkdir(parents=True)
+
+        feature_json = git_repo / ".specify" / "feature.json"
+        feature_json.write_text(
+            f'{{"feature_directory": "{custom_dir}"}}\n',
+            encoding="utf-8",
+        )
+
+        ps_cmd = f'. "{common_ps}"; $r = Get-FeaturePathsEnv; Write-Output "FEATURE_DIR=$($r.FEATURE_DIR)"'
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-Command", ps_cmd],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        for line in result.stdout.splitlines():
+            if line.startswith("FEATURE_DIR="):
+                val = line.split("=", 1)[1].strip("'\"")
+                assert val == str(custom_dir)
+                break
+        else:
+            pytest.fail("FEATURE_DIR not found in PowerShell output")
