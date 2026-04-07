@@ -259,9 +259,10 @@ function Get-BranchName {
 # Check for GIT_BRANCH_NAME env var override (exact branch name, no prefix/suffix)
 if ($env:GIT_BRANCH_NAME) {
     $branchName = $env:GIT_BRANCH_NAME
-    # Check 244-byte limit for override names
-    if ($branchName.Length -gt 244) {
-        throw "GIT_BRANCH_NAME must be 244 bytes or fewer. Provided value is $($branchName.Length) characters; please supply a shorter override branch name."
+    # Check 244-byte limit (UTF-8) for override names
+    $branchNameUtf8ByteCount = [System.Text.Encoding]::UTF8.GetByteCount($branchName)
+    if ($branchNameUtf8ByteCount -gt 244) {
+        throw "GIT_BRANCH_NAME must be 244 bytes or fewer in UTF-8. Provided value is $branchNameUtf8ByteCount bytes; please supply a shorter override branch name."
     }
     # Extract FEATURE_NUM from the branch name if it starts with a numeric prefix
     # Check timestamp pattern first (YYYYMMDD-HHMMSS-) since it also matches the simpler ^\d+ pattern
