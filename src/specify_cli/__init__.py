@@ -35,7 +35,7 @@ import json5
 import stat
 import yaml
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 import typer
 from rich.console import Console
