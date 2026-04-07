@@ -18,7 +18,7 @@
 
 .PARAMETER Iac
     Comma or space separated subset of IaC tools to build (default: all)
-    Valid IaC tools: crossplane
+    Valid IaC tools: crossplane, terraform
 
 .PARAMETER Scripts
     Comma or space separated subset of script types to build (default: both)
@@ -273,6 +273,38 @@ function Build-Variant {
             Copy-Item -Path $_.FullName -Destination $destFile -Force
         }
         Write-Host "Copied templates -> .infrakit/templates"
+    }
+
+    # Copy generic agent personas to .infrakit/agent_personas
+    $genericPersonasDir = "templates/agent_personas"
+    if (Test-Path $genericPersonasDir) {
+        $personasDestDir = Join-Path $specDir "agent_personas"
+        New-Item -ItemType Directory -Path $personasDestDir -Force | Out-Null
+        Get-ChildItem -Path $genericPersonasDir -File | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination $personasDestDir -Force
+        }
+        Write-Host "Copied generic agent_personas -> .infrakit/agent_personas"
+    }
+
+    # Copy IaC-specific agent personas to .infrakit/agent_personas
+    $iacPersonasDir = "templates/iac/$IacTool/agent_personas"
+    if (Test-Path $iacPersonasDir) {
+        $personasDestDir = Join-Path $specDir "agent_personas"
+        New-Item -ItemType Directory -Path $personasDestDir -Force | Out-Null
+        Get-ChildItem -Path $iacPersonasDir -File | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination $personasDestDir -Force
+        }
+        Write-Host "Copied $IacTool agent_personas -> .infrakit/agent_personas"
+    }
+
+    # Copy IaC-specific assets to .infrakit/ (e.g. coding-style.md)
+    $iacAssetsDir = "templates/iac/$IacTool/assets"
+    if (Test-Path $iacAssetsDir) {
+        Get-ChildItem -Path $iacAssetsDir -Filter "*.md" -File | ForEach-Object {
+            $destName = $_.Name -replace 'coding-style-template', 'coding-style' -replace 'context-template', 'context'
+            Copy-Item -Path $_.FullName -Destination (Join-Path $specDir $destName) -Force
+        }
+        Write-Host "Copied $IacTool assets -> .infrakit/"
     }
 
     $iacTemplatesDir = "templates/iac/$IacTool/commands"

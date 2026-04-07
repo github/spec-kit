@@ -41,10 +41,10 @@ Verify required files exist:
 |------|------|----------|
 | Project Context | `.infrakit/context.md` | ✅ Yes |
 | Coding Style | `.infrakit/coding-style.md` | ✅ Yes |
-| Tagging | `.infrakit/tagging.md` | ✅ Yes |
+| Tagging | `.infrakit/tagging-standard.md` | ✅ Yes |
 | Spec | `.infrakit/tracks/<track-name>/spec.md` | ✅ Yes |
 
-**If context.md, coding-style.md, or tagging.md is missing:**
+**If context.md, coding-style.md, or tagging-standard.md is missing:**
 > "❌ Project not fully initialized. Run `/infrakit:setup` first."
 **HALT**
 
@@ -60,7 +60,7 @@ Read the following files:
 
 1. `.infrakit/context.md` — cloud provider defaults, naming conventions, workspace strategy
 2. `.infrakit/coding-style.md` — Mandatory coding standards (naming, tagging, backend, security defaults)
-3. `.infrakit/tagging.md` — Required tags for all resources
+3. `.infrakit/tagging-standard.md` — Required tags for all resources
 4. `.infrakit/tracks/<track-name>/spec.md` — Requirements, input variables, outputs, security
 
 ---
@@ -110,7 +110,7 @@ Map each spec output to the Terraform output value source:
 
 ## Step 6: Design Tagging Strategy
 
-Based on the cloud provider and `.infrakit/tagging.md`, define the tagging approach:
+Based on the cloud provider and `.infrakit/tagging-standard.md`, define the tagging approach:
 
 **For AWS** — use `default_tags` in the provider block (preferred) or per-resource `tags` map:
 

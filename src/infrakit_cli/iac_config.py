@@ -17,7 +17,6 @@ IAC_CONFIG = {
             "setup",
             "status",
             "analyze",
-            "implement",
             "architect-review",
             "security-review",
             "tasks",
@@ -25,6 +24,7 @@ IAC_CONFIG = {
         "iac_commands": [
             "new_composition",
             "update_composition",
+            "implement",
             "review",
             "plan",
         ],
@@ -40,7 +40,6 @@ IAC_CONFIG = {
             "setup",
             "status",
             "analyze",
-            "implement",
             "architect-review",
             "security-review",
             "tasks",
@@ -48,6 +47,7 @@ IAC_CONFIG = {
         "iac_commands": [
             "create_terraform_code",
             "update_terraform_code",
+            "implement",
             "review",
             "plan",
         ],

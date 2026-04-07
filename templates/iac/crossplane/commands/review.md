@@ -42,7 +42,7 @@ Verify required configuration files exist:
 |------|------|----------|
 | Project Context | `.infrakit/context.md` | ✅ Yes |
 | Coding Style | `.infrakit/coding-style.md` | ✅ Yes |
-| Tagging | `.infrakit/tagging.md` | ✅ Yes |
+| Tagging | `.infrakit/tagging-standard.md` | ✅ Yes |
 
 **If any file is missing:**
 > "❌ Project not fully initialized. Run `/infrakit:setup` first."
@@ -77,7 +77,7 @@ Read in this order:
 
 1. `.infrakit/context.md` — API group, naming conventions, cloud provider
 2. `.infrakit/coding-style.md` — All mandatory coding standards
-3. `.infrakit/tagging.md` — Required tags for every managed resource
+3. `.infrakit/tagging-standard.md` — Required tags for every managed resource
 4. `<resource_directory>/definition.yaml` — XRD
 5. `<resource_directory>/composition.yaml` — Composition
 6. `<resource_directory>/claim.yaml` — Example claim (if present)
@@ -95,7 +95,7 @@ Read in this order:
 - [ ] `functionRef.name: crossplane-contrib-function-patch-and-transform` is used
 - [ ] No `mode: Resources` present
 
-### B. Tagging Check (per tagging.md)
+### B. Tagging Check (per tagging-standard.md)
 
 For **every** managed resource in the Composition:
 

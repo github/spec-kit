@@ -82,7 +82,7 @@ This agent is activated during `/implement`:
 │  0. CONTEXT LOADING (REQUIRED)                               │
 │     ├── Read context.md (project standards)                  │
 │     ├── Read coding-style.md (HCL conventions)               │
-│     └── Read tagging.md (required tags)                      │
+│     └── Read tagging-standard.md (required tags)                      │
 │              │                                               │
 │              ▼                                               │
 │  1. SCHEMA VERIFICATION (CRITICAL)                           │
@@ -148,13 +148,13 @@ This agent is activated during `/implement`:
 |------|------|---------|
 | **context.md** | `${workspacePath}/.infrakit/context.md` | Project context: cloud provider, naming conventions, workspace strategy |
 | **coding-style.md** | `${workspacePath}/.infrakit/coding-style.md` | Coding standards: tagging requirements, security rules, variable/output patterns |
-| **tagging.md** | `${workspacePath}/.infrakit/tagging.md` | Required tags for all resources |
+| **tagging-standard.md** | `${workspacePath}/.infrakit/tagging-standard.md` | Required tags for all resources |
 
 ### Context Loading Protocol
 
 1. **Read context.md** — Load cloud provider defaults, naming conventions, workspace strategy
 2. **Read coding-style.md** — Understand tagging requirements, security defaults, variable declaration standards
-3. **Read tagging.md** — Know every required tag key and its source
+3. **Read tagging-standard.md** — Know every required tag key and its source
 4. **Apply Context Throughout** — Use conventions from context.md; follow coding-style.md STRICTLY for all generated HCL
 
 **Failure to read these files will result in implementations that don't align with project standards.**
@@ -277,7 +277,7 @@ search_web("site:registry.terraform.io hashicorp/aws aws_db_instance arguments")
 
 | Category | Rule | Verification |
 |----------|------|--------------|
-| **Tagging** | MUST include all required tags from tagging.md on ALL tagged resources | Check tags map or default_tags |
+| **Tagging** | MUST include all required tags from tagging-standard.md on ALL tagged resources | Check tags map or default_tags |
 | **Secrets** | NEVER hardcode secrets. Variables must be `sensitive = true`. | Check for literal secret values. |
 | **Encryption** | MUST enable encryption at rest for storage resources | Check `storage_encrypted`, `encrypted`, etc. |
 | **Public Access** | Default to `false` for public network access; expose override variable | Check publicly_accessible, public_network_access_enabled, etc. |
@@ -342,7 +342,7 @@ locals {
   common_tags = {
     managed-by  = "terraform"
     environment = var.environment
-    # additional required tags from tagging.md
+    # additional required tags from tagging-standard.md
   }
 }
 
@@ -415,7 +415,7 @@ terraform -chdir=<module_directory> validate
 - [ ] `versions.tf` declares `required_version` and `required_providers`
 - [ ] All variables have `description` and `type`
 - [ ] All sensitive variables have `sensitive = true`
-- [ ] All resources have required tags from tagging.md
+- [ ] All resources have required tags from tagging-standard.md
 - [ ] All outputs have `description`
 - [ ] No hardcoded secrets in any file
 - [ ] `terraform validate` passes
@@ -430,7 +430,7 @@ terraform -chdir=<module_directory> validate
 | **NEVER** guess attribute paths for outputs | Wrong paths cause errors only at apply time |
 | **NEVER** redesign the spec | spec.md is the immutable contract from upstream personas |
 | **NEVER** perform architecture or compliance review | Defer to Cloud Architect and Cloud Security Engineer |
-| **ALWAYS** include required tags | Required by coding-style.md and tagging.md |
+| **ALWAYS** include required tags | Required by coding-style.md and tagging-standard.md |
 | **ALWAYS** validate with `terraform validate` | Catch syntax errors early |
 | **ALWAYS** match spec.md exactly | Spec is the contract |
 | **ALWAYS** document generated modules | README.md required |

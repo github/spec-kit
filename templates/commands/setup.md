@@ -1,5 +1,5 @@
 ---
-description: "Initialize or update the InfraKit project configuration: project context, coding style, and tagging constraints."
+description: "Initialize or update the InfraKit project configuration: project context, coding style, and tagging standards."
 argument-hint: "[optional: describe your project briefly]"
 handoffs:
   - label: "Create New Composition"
@@ -24,7 +24,7 @@ You are initializing or updating the InfraKit project configuration. Your task i
 
 1. `.infrakit/context.md` — Project context (cloud provider, architecture decisions, network topology, naming conventions, compliance)
 2. `.infrakit/coding-style.md` — Coding standards (IaC tool versions, tagging, connection secrets, security rules, patch patterns)
-3. `.infrakit/tagging.md` — Tagging constraints (required tags, tag formats, enforcement rules)
+3. `.infrakit/tagging-standard.md` — Tagging standards (required tags, tag formats, enforcement rules)
 
 **CRITICAL**: If any of these files already exist, load their current content first and offer the user a chance to update rather than replace.
 
@@ -40,7 +40,7 @@ Check whether each configuration file exists:
 |------|------|--------|
 | Project Context | `.infrakit/context.md` | Check |
 | Coding Style | `.infrakit/coding-style.md` | Check |
-| Tagging Constraints | `.infrakit/tagging.md` | Check |
+| Tagging Constraints | `.infrakit/tagging-standard.md` | Check |
 | Resource Registry | `.infrakit/tracks.md` | Check |
 
 ### 1.2 Report Current State
@@ -53,7 +53,7 @@ Present findings to the user:
 > |------|--------|
 > | `.infrakit/context.md` | ✅ Exists / ❌ Missing |
 > | `.infrakit/coding-style.md` | ✅ Exists / ❌ Missing |
-> | `.infrakit/tagging.md` | ✅ Exists / ❌ Missing |
+> | `.infrakit/tagging-standard.md` | ✅ Exists / ❌ Missing |
 > | `.infrakit/tracks.md` | ✅ Exists / ❌ Missing |
 >
 > What would you like to do?
@@ -281,7 +281,7 @@ Based on the gathered information, generate `.infrakit/context.md`:
 ## Organization Standards
 
 - All resources must follow the naming conventions above
-- All managed resources must include required tags (see tagging.md)
+- All managed resources must include required tags (see `.infrakit/tagging-standard.md`)
 - All production resources must meet security requirements above
 - Connection secrets must be published for all resources that have endpoints
 ```
@@ -551,82 +551,38 @@ writeConnectionSecretToRef:
 
 ---
 
-## Phase 5: Generate .infrakit/tagging.md
+## Phase 5: Update .infrakit/tagging-standard.md
 
-Generate `.infrakit/tagging.md`:
+`.infrakit/tagging-standard.md` was pre-populated from the IaC-specific template when you ran `infrakit init`. Your task here is to add project-specific required tags.
 
-```markdown
-# Tagging Constraints
+### 5.1 Read Existing File
 
-## Overview
+Read `.infrakit/tagging-standard.md` and present its current content to the user.
 
-This document defines mandatory tagging requirements for all cloud resources managed by Crossplane compositions in this project.
+### 5.2 Gather Project-Specific Tags
 
----
+Ask the user:
 
-## Required Tags (ALL resources)
+> "Your `tagging-standard.md` is pre-configured with baseline required tags.
+>
+> What **project-specific** tags should every managed resource carry?
+>
+> Examples:
+> - `cost-center` — from `var.cost_center` / `spec.parameters.costCenter`
+> - `team` — from `var.team` / `spec.parameters.teamName`
+> - `project` — static value (e.g., `acme-platform`)
+> - `environment` — from `var.environment` / `spec.parameters.environment`
+>
+> List your project-specific tags and their value sources (or press Enter to keep as-is):"
 
-Every managed resource MUST include these tags:
+**WAIT** for response.
 
-| Tag Key | Value Source | Description |
-|---------|-------------|-------------|
-| `crossplane.io/claim-name` | `metadata.name` (from composite) | Name of the Claim |
-| `crossplane.io/claim-namespace` | `metadata.namespace` (from composite) | Namespace of the Claim |
-| `managed-by` | Static: `crossplane` | Identifies Crossplane-managed resources |
+### 5.3 Update the File
 
----
-
-## Environment Tag
-
-Resources supporting multiple environments MUST include:
-
-| Tag Key | Allowed Values | Description |
-|---------|---------------|-------------|
-| `environment` | `dev`, `staging`, `prod` | Target environment |
-
----
-
-## Provider-Specific Tag Field Paths
-
-| Provider | Tag Field Path | Notes |
-|----------|---------------|-------|
-| **AWS** | `spec.forProvider.tags` | Map of key/value pairs |
-| **Azure** | `spec.forProvider.tags` | Map of key/value pairs |
-| **GCP** | `spec.forProvider.labels` | GCP uses labels not tags |
-
----
-
-## Crossplane System Labels
-
-In addition to cloud resource tags, all Crossplane objects MUST carry these labels in `metadata.labels`:
-
-| Label | Value | Purpose |
-|-------|-------|---------|
-| `crossplane.io/composite` | Composite name | Links managed resource to XR |
-
-This is set automatically by Crossplane. Do not manually override.
-
----
-
-## Tagging Enforcement
-
-The Crossplane Engineer MUST:
-1. Add the required tag patches to **every** managed resource in every composition
-2. Verify tags are present in the compliance check (Phase 2.5) before submitting for review
-3. Never submit a composition without the required tags — this is a `HIGH` severity violation
-
----
-
-## Validation
-
-Run this check to confirm tags are applied:
-```bash
-crossplane render claim.yaml composition.yaml definition.yaml | grep -A5 "tags:"
-```
-```
+Replace the `[REQUIRED_TAGS]` placeholder with the project-specific tags the user provided. Keep all other content from the pre-populated template intact.
 
 **Present to user:**
-> "I've generated `.infrakit/tagging.md`. Please review:
+> "I've updated `.infrakit/tagging-standard.md`. Please review:
 >
 > A) **Accept** — Looks good
 > B) **Edit** — Make changes, say 'done' when ready
@@ -674,7 +630,7 @@ Track all infrastructure compositions and their current status.
 > **Files configured:**
 > - `.infrakit/context.md` — Project context ✅
 > - `.infrakit/coding-style.md` — Coding standards ✅
-> - `.infrakit/tagging.md` — Tagging constraints ✅
+> - `.infrakit/tagging-standard.md` — Tagging standards ✅
 > - `.infrakit/tracks.md` — Resource registry ✅
 >
 > **Next Steps:**

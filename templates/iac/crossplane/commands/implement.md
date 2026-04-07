@@ -1,5 +1,5 @@
 ---
-description: "Execute the implementation plan for a track by working through all tasks in tasks.md."
+description: "Execute the implementation plan for a Crossplane track by working through all tasks in tasks.md."
 argument-hint: "<track-name>"
 handoffs:
   - label: "Review Implementation"
@@ -25,7 +25,9 @@ You **MUST** parse the track name from `$ARGUMENTS`. If not provided, ask:
 
 ## System Directive
 
-You are executing the implementation for an infrastructure track. You will adopt the appropriate engineering persona based on the IaC tool configured for this project, then work through the tasks in `tasks.md` one by one, marking each complete as you go.
+You are the **Crossplane Engineer** executing the implementation for an infrastructure track. Work through the tasks in `tasks.md` one by one, marking each complete as you go.
+
+Read `.infrakit/agent_personas/crossplane_engineer.md` for detailed persona behavior (if present).
 
 ---
 
@@ -37,7 +39,7 @@ Verify required configuration files exist:
 |------|------|----------|
 | Project Context | `.infrakit/context.md` | ✅ Yes |
 | Coding Style | `.infrakit/coding-style.md` | ✅ Yes |
-| Tagging | `.infrakit/tagging.md` | ✅ Yes |
+| Tagging | `.infrakit/tagging-standard.md` | ✅ Yes |
 | IaC Config | `.infrakit/config.yaml` | ✅ Yes |
 
 **If any setup file is missing:**
@@ -70,21 +72,15 @@ Verify the track has all required artifacts:
 
 ---
 
-## Step 3: Detect IaC Tool and Adopt Persona
-
-Read `.infrakit/config.yaml` to detect the IaC tool.
-
-**If `iac_tool: crossplane`:**
-
-> "Adopting the **Crossplane Engineer** persona for implementation."
+## Step 3: Load Standards and Adopt Persona
 
 Read these files before writing any code:
-- `.infrakit/coding-style.md` — **MANDATORY**: all code must follow these standards exactly
-- `.infrakit/tagging.md` — **MANDATORY**: all managed resources must include required tags
+
+- `.infrakit/coding-style.md` — **MANDATORY**: all YAML must follow these standards exactly
+- `.infrakit/tagging-standard.md` — **MANDATORY**: all managed resources must include required tags
 - `.infrakit/agent_personas/crossplane_engineer.md` — detailed persona behavior (if present)
 
-**If IaC tool is not recognized:**
-> "⚠️ Unknown IaC tool in `.infrakit/config.yaml`. Proceeding in generic mode."
+> "Adopting the **Crossplane Engineer** persona for implementation."
 
 ---
 
@@ -92,9 +88,9 @@ Read these files before writing any code:
 
 Read all track files:
 
-1. `.infrakit/context.md` — Project standards
-2. `.infrakit/tracks/<track-name>/spec.md` — What to build
-3. `.infrakit/tracks/<track-name>/plan.md` — Architecture and file structure
+1. `.infrakit/context.md` — API group, naming conventions, cloud provider defaults
+2. `.infrakit/tracks/<track-name>/spec.md` — What to build (XR Kind, parameters, outputs, security)
+3. `.infrakit/tracks/<track-name>/plan.md` — XRD schema, patch mappings, file structure
 4. `.infrakit/tracks/<track-name>/tasks.md` — Ordered task list
 
 ---
@@ -138,9 +134,13 @@ Before starting, display the task summary:
 **MANDATORY** — apply to every file written:
 
 - Follow all patterns in `.infrakit/coding-style.md` exactly
-- Apply all required tags from `.infrakit/tagging.md` to every managed resource
-- Use Pipeline mode for all Crossplane compositions — never Resources mode
+- Apply all required tags from `.infrakit/tagging-standard.md` to every managed resource
+- Use **Pipeline mode** for all Crossplane compositions — **never Resources mode**
 - Add `providerConfigRef` to every managed resource
+- Apply all three required tag patches to every managed resource:
+  - `crossplane.io/claim-name` via `FromCompositeFieldPath`
+  - `crossplane.io/claim-namespace` via `FromCompositeFieldPath`
+  - `managed-by: crossplane` via transform
 - Never hardcode secrets, passwords, or API keys
 
 If a task appears to conflict with coding standards, flag it **before** writing:
@@ -159,9 +159,7 @@ After all tasks are marked `[x]`:
 >
 > Proceeding to implementation review..."
 
-**For Crossplane projects**: Hand off to `/infrakit:review <resource-directory>` for code review.
-
-**For other IaC tools**: Hand off to `/infrakit:architect-review <track-name>` for review.
+Hand off to `/infrakit:review <resource-directory>` for Crossplane code review.
 
 ---
 
@@ -185,7 +183,7 @@ After the review is approved, generate or update `.infrakit_context.md` in the r
 | File | Description |
 |------|-------------|
 | `definition.yaml` | XRD: <brief description> |
-| `composition.yaml` | Composition: <brief description> |
+| `composition.yaml` | Composition (Pipeline mode): <brief description> |
 | `claim.yaml` | Example claim |
 | `README.md` | Usage documentation |
 
@@ -194,21 +192,28 @@ After the review is approved, generate or update `.infrakit_context.md` in the r
 - <decision 2>
 
 ## XRD
-- **Kind**: <XR Kind> / <Claim Kind>
+- **XR Kind**: <XR Kind>
+- **Claim Kind**: <Claim Kind>
 - **API Group**: <group>
 - **Version**: <version>
 
 ## Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| <param> | <type> | <default> | <desc> |
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| <param> | <type> | <bool> | <default> | <desc> |
 
 ## Outputs
 
 | Field | Description |
 |-------|-------------|
 | <field> | <desc> |
+
+## Connection Secret Keys
+
+| Key | Description |
+|-----|-------------|
+| <key> | <desc> |
 ```
 
 ---
@@ -233,7 +238,8 @@ Find the row for `<track-name>` and update Status to `✅ done`.
 | Error | Action |
 |-------|--------|
 | Setup files missing | Halt, direct to `/infrakit:setup` |
+| spec.md missing | Halt, direct to `/infrakit:new_composition <track-name>` |
 | tasks.md missing | Halt, direct to `/infrakit:tasks <track-name>` |
 | Task execution fails | Report error, halt, ask user how to proceed |
 | Coding style conflict | Flag before writing, wait for user |
-| Unknown IaC tool | Warn, proceed in generic mode |
+| Resources mode detected | Refuse — Pipeline mode is mandatory in Crossplane |

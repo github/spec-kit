@@ -1440,7 +1440,9 @@ def initialize_iac_config(
             if asset_file.is_file():
                 dest = infrakit_dir / asset_file.name.replace(
                     "context_template", "context"
-                ).replace("default_coding_style", "coding-style")
+                ).replace("default_coding_style", "coding-style").replace(
+                    "coding-style-template", "coding-style"
+                )
                 if not dest.exists():
                     shutil.copy2(asset_file, dest)
 
@@ -1467,14 +1469,18 @@ def initialize_iac_config(
             encoding="utf-8",
         )
 
-    # tagging.md — tagging constraints (populated by /infrakit:setup)
-    tagging_md = infrakit_dir / "tagging.md"
-    if not tagging_md.exists():
-        tagging_md.write_text(
-            "# Tagging Constraints\n\n"
-            "> Run `/infrakit:setup` to configure your tagging requirements.\n",
-            encoding="utf-8",
-        )
+    # tagging-standard.md — shared IaC-agnostic tagging standard (updated by /infrakit:setup)
+    tagging_std_md = infrakit_dir / "tagging-standard.md"
+    if not tagging_std_md.exists():
+        shared_tagging_template = script_dir / "templates" / "tagging-standard-template.md"
+        if shared_tagging_template.is_file():
+            shutil.copy2(shared_tagging_template, tagging_std_md)
+        else:
+            tagging_std_md.write_text(
+                "# Tagging Standard\n\n"
+                "> Run `/infrakit:setup` to configure your project-specific tagging requirements.\n",
+                encoding="utf-8",
+            )
 
     # mcp-use.md — installed MCP server index
     mcp_use_md = infrakit_dir / "mcp-use.md"

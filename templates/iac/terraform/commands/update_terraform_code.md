@@ -34,14 +34,14 @@ You are guiding the user through updating an existing Terraform module. This com
 |------|------|----------|
 | Project Context | `.infrakit/context.md` | ✅ Yes |
 | Coding Style | `.infrakit/coding-style.md` | ✅ Yes |
-| Tagging | `.infrakit/tagging.md` | ✅ Yes |
+| Tagging | `.infrakit/tagging-standard.md` | ✅ Yes |
 | Track Registry | `.infrakit/tracks.md` | ✅ Yes |
 
 **If any file is missing:**
 > "❌ Project not fully initialized. Run `/infrakit:setup` to initialize."
 **HALT**
 
-Read `.infrakit/context.md`, `.infrakit/coding-style.md`, and `.infrakit/tagging.md` before proceeding.
+Read `.infrakit/context.md`, `.infrakit/coding-style.md`, and `.infrakit/tagging-standard.md` before proceeding.
 
 ---
 
