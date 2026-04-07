@@ -357,7 +357,10 @@ fi
 
 # GitHub enforces a 244-byte limit on branch names
 MAX_BRANCH_LENGTH=244
-if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
+if [ -n "${GIT_BRANCH_NAME:-}" ] && [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
+    >&2 echo "Error: GIT_BRANCH_NAME must be 244 bytes or fewer. Provided value is ${#BRANCH_NAME} bytes."
+    exit 1
+elif [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     PREFIX_LENGTH=$(( ${#FEATURE_NUM} + 1 ))
     MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - PREFIX_LENGTH))
 

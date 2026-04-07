@@ -238,5 +238,6 @@ class TestGitExtensionAutoInstall:
 
         # Git extension commands should be registered with the agent
         claude_skills = project / ".claude" / "skills"
+        assert claude_skills.exists(), "Claude skills directory was not created"
         git_skills = [f for f in claude_skills.iterdir() if f.name.startswith("speckit-git-")]
         assert len(git_skills) > 0, "no git extension commands registered"

@@ -938,9 +938,11 @@ def init(
         console.print(f"[red]Error:[/red] Invalid --branch-numbering value '{branch_numbering}'. Choose from: {', '.join(sorted(BRANCH_NUMBERING_CHOICES))}")
         raise typer.Exit(1)
 
+    dir_existed_before = False
     if here:
         project_name = Path.cwd().name
         project_path = Path.cwd()
+        dir_existed_before = True
 
         existing_items = list(project_path.iterdir())
         if existing_items:
@@ -955,6 +957,7 @@ def init(
                     raise typer.Exit(0)
     else:
         project_path = Path(project_name).resolve()
+        dir_existed_before = project_path.exists()
         if project_path.exists():
             existing_items = list(project_path.iterdir())
             if force:
@@ -1213,7 +1216,7 @@ def init(
                 _label_width = max(len(k) for k, _ in _env_pairs)
                 env_lines = [f"{k.ljust(_label_width)} → [bright_black]{v}[/bright_black]" for k, v in _env_pairs]
                 console.print(Panel("\n".join(env_lines), title="Debug Environment", border_style="magenta"))
-            if not here and project_path.exists():
+            if not here and project_path.exists() and not dir_existed_before:
                 shutil.rmtree(project_path)
             raise typer.Exit(1)
         finally:
