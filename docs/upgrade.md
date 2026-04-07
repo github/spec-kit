@@ -9,7 +9,7 @@
 | What to Upgrade | Command | When |
 |----------------|---------|------|
 | **CLI only** | `uv tool install infrakit-cli --force --from git+https://github.com/neelneelpurk/infrakit.git` | Get latest CLI features |
-| **Project files** | `infrakit init --here --force --ai <agent> --iac crossplane` | Get updated slash commands and templates |
+| **Project files** | `infrakit init --here --force --ai <agent> --iac <crossplane\|terraform>` | Get updated slash commands and templates |
 | **Both** | Run CLI upgrade, then project update | Recommended for major versions |
 
 ---
