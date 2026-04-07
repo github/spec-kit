@@ -53,6 +53,31 @@
         "spec-first"
       ]
     },
+    "explicit-task-dependencies": {
+      "name": "Explicit Task Dependencies",
+      "id": "explicit-task-dependencies",
+      "version": "1.0.0",
+      "description": "Adds explicit (depends on T###) dependency declarations and an Execution Wave DAG to tasks.md for dependency-resolved parallel scheduling",
+      "author": "Quratulain-bilal",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 1
+      },
+      "tags": [
+        "dependencies",
+        "parallel",
+        "scheduling",
+        "wave-dag"
+      ]
+    },
     "pirate": {
       "name": "Pirate Speak (Full)",
       "id": "pirate",
