@@ -186,14 +186,6 @@ build_variant() {
     echo "Copied ${iac} assets -> .infrakit/"
   fi
 
-  # Copy IaC-specific technical reference to technical-docs/
-  local iac_techref_dir="templates/iac/${iac}/technical-reference"
-  if [[ -d "$iac_techref_dir" ]]; then
-    mkdir -p "$base_dir/technical-docs"
-    cp -r "$iac_techref_dir"/* "$base_dir/technical-docs/"
-    echo "Copied ${iac} technical reference -> technical-docs/"
-  fi
-
   case $agent in
     claude)
       mkdir -p "$base_dir/.claude/commands"

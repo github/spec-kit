@@ -307,17 +307,6 @@ function Build-Variant {
         Write-Host "Copied $IacTool assets -> .infrakit/"
     }
 
-    # Copy IaC-specific technical reference to technical-docs/
-    $iacTechRefDir = "templates/iac/$IacTool/technical-reference"
-    if (Test-Path $iacTechRefDir) {
-        $techDocsDir = Join-Path $baseDir "technical-docs"
-        New-Item -ItemType Directory -Path $techDocsDir -Force | Out-Null
-        Get-ChildItem -Path $iacTechRefDir -File | ForEach-Object {
-            Copy-Item -Path $_.FullName -Destination $techDocsDir -Force
-        }
-        Write-Host "Copied $IacTool technical reference -> technical-docs/"
-    }
-
     $iacTemplatesDir = "templates/iac/$IacTool/commands"
 
     # Generate agent-specific command files (generic + IaC-specific)
