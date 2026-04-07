@@ -958,6 +958,9 @@ def init(
         if project_path.exists():
             existing_items = list(project_path.iterdir())
             if force:
+                if existing_items:
+                    console.print(f"[yellow]Warning:[/yellow] Directory '{project_name}' is not empty ({len(existing_items)} items)")
+                    console.print("[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]")
                 console.print(f"[cyan]--force supplied: merging into existing directory '[cyan]{project_name}[/cyan]'[/cyan]")
             else:
                 error_panel = Panel(
@@ -1131,10 +1134,13 @@ def init(
                     bundled_path = _locate_bundled_extension("git")
                     if bundled_path:
                         manager = ExtensionManager(project_path)
-                        manager.install_from_directory(
-                            bundled_path, get_speckit_version()
-                        )
-                        tracker.complete("git", "git extension installed")
+                        if manager.registry.is_installed("git"):
+                            tracker.skip("git", "git extension already installed")
+                        else:
+                            manager.install_from_directory(
+                                bundled_path, get_speckit_version()
+                            )
+                            tracker.complete("git", "git extension installed")
                     else:
                         tracker.skip("git", "bundled git extension not found")
                 except Exception as ext_err:

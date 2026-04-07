@@ -306,12 +306,16 @@ generate_branch_name() {
 if [ -n "${GIT_BRANCH_NAME:-}" ]; then
     BRANCH_NAME="$GIT_BRANCH_NAME"
     # Extract FEATURE_NUM from the branch name if it starts with a numeric prefix
-    if echo "$BRANCH_NAME" | grep -Eq '^[0-9]+-'; then
-        FEATURE_NUM=$(echo "$BRANCH_NAME" | grep -Eo '^[0-9]+')
-    elif echo "$BRANCH_NAME" | grep -Eq '^[0-9]{8}-[0-9]{6}-'; then
+    # Check timestamp pattern first (YYYYMMDD-HHMMSS-) since it also matches the simpler ^[0-9]+ pattern
+    if echo "$BRANCH_NAME" | grep -Eq '^[0-9]{8}-[0-9]{6}-'; then
         FEATURE_NUM=$(echo "$BRANCH_NAME" | grep -Eo '^[0-9]{8}-[0-9]{6}')
+        BRANCH_SUFFIX="${BRANCH_NAME#${FEATURE_NUM}-}"
+    elif echo "$BRANCH_NAME" | grep -Eq '^[0-9]+-'; then
+        FEATURE_NUM=$(echo "$BRANCH_NAME" | grep -Eo '^[0-9]+')
+        BRANCH_SUFFIX="${BRANCH_NAME#${FEATURE_NUM}-}"
     else
         FEATURE_NUM="$BRANCH_NAME"
+        BRANCH_SUFFIX="$BRANCH_NAME"
     fi
 else
     # Generate branch name
