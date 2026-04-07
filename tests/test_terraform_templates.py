@@ -81,6 +81,7 @@ class TestTerraformCommandFilesExist:
             "update_terraform_code.md",
             "plan.md",
             "review.md",
+            "implement.md",
         ],
     )
     def test_command_file_exists(self, filename):
@@ -95,6 +96,7 @@ class TestTerraformCommandFilesExist:
             "update_terraform_code.md",
             "plan.md",
             "review.md",
+            "implement.md",
         ],
     )
     def test_command_file_non_empty(self, filename):
@@ -114,6 +116,7 @@ class TestTerraformCommandFileFrontmatter:
             "update_terraform_code.md",
             "plan.md",
             "review.md",
+            "implement.md",
         ],
     )
     def test_frontmatter_present(self, filename):
@@ -130,6 +133,7 @@ class TestTerraformCommandFileFrontmatter:
             "update_terraform_code.md",
             "plan.md",
             "review.md",
+            "implement.md",
         ],
     )
     def test_frontmatter_has_description(self, filename):
@@ -146,6 +150,7 @@ class TestTerraformCommandFileFrontmatter:
             "update_terraform_code.md",
             "plan.md",
             "review.md",
+            "implement.md",
         ],
     )
     def test_frontmatter_has_argument_hint(self, filename):
@@ -162,6 +167,7 @@ class TestTerraformCommandFileFrontmatter:
             "update_terraform_code.md",
             "plan.md",
             "review.md",
+            "implement.md",
         ],
     )
     def test_command_body_contains_arguments_placeholder(self, filename):

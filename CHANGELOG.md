@@ -7,6 +7,21 @@ Recent changes to the InfraKit CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Terraform Release Artifacts**: Fixed Terraform zip packages not being uploaded to GitHub Releases
+  - `create-github-release.sh` was hard-coded with 38 Crossplane-only file paths; Terraform packages
+    built by `create-release-packages.sh` were silently omitted from every release since v0.1.7
+  - Replaced hard-coded list with dynamic discovery: uploads all `infrakit-template-*-$VERSION.zip`
+    files from `.genreleases/`, covering all agents × IaC tools × script types automatically
+  - Added guard that exits with a clear error if no packages are found in `.genreleases/`
+
+- **Test Coverage**: Added `implement.md` to all parametrized test lists in `TestTerraformCommandFilesExist`
+  and `TestTerraformCommandFileFrontmatter` — the file existed and was registered in `iac_config.py`
+  but was absent from the test suite
+
 ## [0.1.9] - 2026-04-07
 
 ### Added
@@ -16,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated `README.md` and `AGENTS.md` with latest agent directories and formats
   - Updated `docs/index.md` and others to reflect full Terraform support
   - Updated `infrakit init` help text with all supported agents
+
+## [0.1.8] - 2026-04-07
+
+### Changed
+
+- **Release Script Cleanup**: Removed dead `technical-reference` copy blocks from release scripts
+  (PR #11) — technical reference docs no longer exist in the repository
 
 ## [0.1.7] - 2026-04-07
 
