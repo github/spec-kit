@@ -34,7 +34,7 @@ You are guiding the user through creating a new Crossplane resource composition.
 |------|------|----------|
 | Project Context | `.infrakit/context.md` | ✅ Yes |
 | Coding Style | `.infrakit/coding-style.md` | ✅ Yes |
-| Tagging | `.infrakit/tagging.md` | ✅ Yes |
+| Tagging | `.infrakit/tagging-standard.md` | ✅ Yes |
 | Track Registry | `.infrakit/tracks.md` | ✅ Yes |
 
 **If any file is missing:**
@@ -43,7 +43,7 @@ You are guiding the user through creating a new Crossplane resource composition.
 
 ### 1.2 Read Configuration
 
-Read `.infrakit/context.md`, `.infrakit/coding-style.md`, and `.infrakit/tagging.md` before proceeding.
+Read `.infrakit/context.md`, `.infrakit/coding-style.md`, and `.infrakit/tagging-standard.md` before proceeding.
 
 ---
 

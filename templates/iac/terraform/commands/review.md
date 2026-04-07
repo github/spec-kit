@@ -42,7 +42,7 @@ Verify required configuration files exist:
 |------|------|----------|
 | Project Context | `.infrakit/context.md` | ✅ Yes |
 | Coding Style | `.infrakit/coding-style.md` | ✅ Yes |
-| Tagging | `.infrakit/tagging.md` | ✅ Yes |
+| Tagging | `.infrakit/tagging-standard.md` | ✅ Yes |
 
 **If any file is missing:**
 > "❌ Project not fully initialized. Run `/infrakit:setup` first."
@@ -78,7 +78,7 @@ Read in this order:
 
 1. `.infrakit/context.md` — naming conventions, cloud provider, workspace strategy
 2. `.infrakit/coding-style.md` — All mandatory coding standards
-3. `.infrakit/tagging.md` — Required tags for every resource
+3. `.infrakit/tagging-standard.md` — Required tags for every resource
 4. `<module_directory>/versions.tf` — Provider and Terraform version constraints (if present)
 5. `<module_directory>/variables.tf` — Variable declarations (if present)
 6. `<module_directory>/main.tf` — Resource definitions
@@ -114,20 +114,20 @@ For **every** variable in `variables.tf`:
 - [ ] No plaintext default values for secrets (no `default = "mypassword"`)
 - [ ] Validation blocks used for constrained values (environments, sizes, etc.)
 
-### D. Tagging Check (per tagging.md)
+### D. Tagging Check (per tagging-standard.md)
 
 For **every** resource that supports tags/labels in `main.tf`:
 
-- AWS resources: `tags` map present with required keys from tagging.md
+- AWS resources: `tags` map present with required keys from tagging-standard.md
 - Azure resources: `tags` map present with required keys
 - GCP resources: `labels` map present with required keys
 
 Preferred pattern for AWS — check if `default_tags` is used in provider block:
 - [ ] `default_tags` block in `provider "aws"` (preferred) OR per-resource `tags` merge pattern
 
-Required tag keys (per tagging.md):
+Required tag keys (per tagging-standard.md):
 - [ ] `managed-by = "terraform"` (or equivalent)
-- [ ] Project/environment tags as specified in tagging.md
+- [ ] Project/environment tags as specified in tagging-standard.md
 
 ### E. Security Check
 

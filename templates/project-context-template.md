@@ -91,35 +91,6 @@ security, compliance, and DR policies. -->
 | Cloud resource | {env}-{team}-{resource-type} | prod-payments-rds-primary, dev-data-s3-raw |
 -->
 
-### Tagging Strategy
-
-**Required Tags** (every managed resource MUST carry these):
-
-| Tag Key | Value Source | Description |
-|---------|-------------|-------------|
-| `crossplane.io/claim-name` | Crossplane label | Name of the originating Claim |
-| `crossplane.io/claim-namespace` | Crossplane label | Namespace of the originating Claim |
-| `managed-by` | Static: `crossplane` | Identifies Crossplane-managed resources |
-[REQUIRED_TAGS]
-
-<!-- Example additional required tags:
-| `environment` | spec.parameters.environment | Target environment (dev/staging/prod) |
-| `cost-center` | spec.parameters.costCenter | Billing allocation |
-| `team` | spec.parameters.teamName | Owning team |
--->
-
-**Optional Tags** (propagated from Claim if provided):
-
-| Tag Key | Description |
-|---------|-------------|
-[OPTIONAL_TAGS]
-
-<!-- Example:
-| `project` | Project name for grouping costs |
-| `owner` | Individual owner for escalation |
-| `created-by` | CI/CD pipeline or user who initiated |
--->
-
 ---
 
 ## Security & Compliance
@@ -195,30 +166,6 @@ EKS state backed up via Velero to S3 every 6h. -->
 - Prod P1/P2 alerts: PagerDuty (on-call rotation required)
 - Non-critical alerts: Slack #infra-alerts channel
 - Crossplane health dashboard: Datadog — monitors XR sync status, provider health, reconciliation errors
--->
-
----
-
-## Governance & Change Management
-
-### Change Process
-
-[CHANGE_PROCESS]
-<!-- Example:
-- All changes via GitHub PR against the infra-platform monorepo
-- Prod changes: 2 approvals required (1 from platform team, 1 from security team for security-impacting changes)
-- Dev/staging changes: 1 approval from platform team
-- Emergency break-glass: documented in runbook; post-incident review required within 48h
-- No direct kubectl apply or AWS console changes in prod; all changes audited via CloudTrail + ArgoCD
--->
-
-### Enforcement
-
-[ENFORCEMENT_RULES]
-<!-- Example:
-- This constitution supersedes all other team conventions; amendments require platform team vote and documentation
-- All PRs must verify compliance with naming conventions, tagging, and security baseline
-- Crossplane compositions that violate this constitution will not be merged
 -->
 
 ---

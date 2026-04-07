@@ -41,10 +41,10 @@ Verify required files exist:
 |------|------|----------|
 | Project Context | `.infrakit/context.md` | ✅ Yes |
 | Coding Style | `.infrakit/coding-style.md` | ✅ Yes |
-| Tagging | `.infrakit/tagging.md` | ✅ Yes |
+| Tagging | `.infrakit/tagging-standard.md` | ✅ Yes |
 | Spec | `.infrakit/tracks/<track-name>/spec.md` | ✅ Yes |
 
-**If context.md, coding-style.md, or tagging.md is missing:**
+**If context.md, coding-style.md, or tagging-standard.md is missing:**
 > "❌ Project not fully initialized. Run `/infrakit:setup` first."
 **HALT**
 
@@ -60,7 +60,7 @@ Read the following files:
 
 1. `.infrakit/context.md` — API group, naming conventions, cloud provider defaults
 2. `.infrakit/coding-style.md` — Mandatory coding standards (Pipeline mode, tagging, secrets)
-3. `.infrakit/tagging.md` — Required tags for all managed resources
+3. `.infrakit/tagging-standard.md` — Required tags for all managed resources
 4. `.infrakit/tracks/<track-name>/spec.md` — Requirements, parameters, outputs, security
 
 ---
@@ -112,7 +112,7 @@ For each status output ← managed resource:
 |--------------|------------|-----------------|
 | `<resource>.status.atProvider.<field>` | `ToCompositeFieldPath` | `status.<output>` |
 
-For required tags (per tagging.md):
+For required tags (per tagging-standard.md):
 
 | Tag Key | Patch Type | Source | Target |
 |---------|------------|--------|--------|
@@ -197,7 +197,7 @@ Write to `.infrakit/tracks/<track-name>/plan.md`:
 |--------------|------------|-----------------|
 | `<resource>.status.atProvider.<field>` | `ToCompositeFieldPath` | `status.<output>` |
 
-#### Required Tag Patches (per tagging.md)
+#### Required Tag Patches (per tagging-standard.md)
 
 Applied to **every** managed resource:
 

@@ -175,6 +175,25 @@ build_variant() {
     cp -r "$iac_personas_dir"/* "$SPEC_DIR/agent_personas/"
   fi
 
+  # Copy IaC-specific assets to .infrakit/ (e.g. coding-style.md)
+  local iac_assets_dir="templates/iac/${iac}/assets"
+  if [[ -d "$iac_assets_dir" ]]; then
+    for f in "$iac_assets_dir"/*.md; do
+      [[ -f "$f" ]] || continue
+      dest_name=$(basename "$f" | sed 's/coding-style-template/coding-style/; s/context-template/context/')
+      cp "$f" "$SPEC_DIR/$dest_name"
+    done
+    echo "Copied ${iac} assets -> .infrakit/"
+  fi
+
+  # Copy IaC-specific technical reference to technical-docs/
+  local iac_techref_dir="templates/iac/${iac}/technical-reference"
+  if [[ -d "$iac_techref_dir" ]]; then
+    mkdir -p "$base_dir/technical-docs"
+    cp -r "$iac_techref_dir"/* "$base_dir/technical-docs/"
+    echo "Copied ${iac} technical reference -> technical-docs/"
+  fi
+
   case $agent in
     claude)
       mkdir -p "$base_dir/.claude/commands"

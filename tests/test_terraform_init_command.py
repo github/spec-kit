@@ -67,7 +67,7 @@ class TestInitRejectsInvalidIacTool:
         """Passing an unknown IaC tool should exit with code 1."""
         result = runner.invoke(
             app,
-            ["init", "my-project", "--ai", "claude", "--iac", "nonexistent-tool"],
+            ["init", "my-project", "--ai", "claude", "--iac", "nonexistent-tool", "--ignore-agent-tools"],
         )
         assert result.exit_code == 1
         assert "nonexistent-tool" in result.output or "invalid" in result.output.lower()
@@ -77,7 +77,7 @@ class TestInitRejectsInvalidIacTool:
         """Error message for unknown IaC tool should list valid options."""
         result = runner.invoke(
             app,
-            ["init", "my-project", "--ai", "claude", "--iac", "pulumi"],
+            ["init", "my-project", "--ai", "claude", "--iac", "pulumi", "--ignore-agent-tools"],
         )
         assert result.exit_code == 1
         # Should hint at valid options
@@ -138,10 +138,10 @@ class TestInitializeIacConfigTerraform:
         initialize_iac_config(project_dir, "terraform", "claude")
         assert (project_dir / ".infrakit" / "tracks.md").is_file()
 
-    def test_creates_tagging_md(self, project_dir):
-        """initialize_iac_config must create .infrakit/tagging.md."""
+    def test_creates_tagging_standard_md(self, project_dir):
+        """initialize_iac_config must create .infrakit/tagging-standard.md."""
         initialize_iac_config(project_dir, "terraform", "claude")
-        assert (project_dir / ".infrakit" / "tagging.md").is_file()
+        assert (project_dir / ".infrakit" / "tagging-standard.md").is_file()
 
     def test_creates_mcp_use_md(self, project_dir):
         """initialize_iac_config must create .infrakit/mcp-use.md."""
@@ -181,7 +181,7 @@ class TestInitializeIacConfigTerraform:
         )
 
     def test_copies_coding_style_template_from_terraform_assets(self, project_dir):
-        """coding-style-template.md must be copied from terraform assets (if running from source)."""
+        """coding-style-template.md must be copied and renamed to coding-style.md in .infrakit/ (if running from source)."""
         initialize_iac_config(project_dir, "terraform", "claude")
         # Only assert if the template source exists (skips when installed via pip)
         src = (
@@ -193,9 +193,9 @@ class TestInitializeIacConfigTerraform:
             / "coding-style-template.md"
         )
         if src.is_file():
-            dest = project_dir / ".infrakit" / "coding-style-template.md"
+            dest = project_dir / ".infrakit" / "coding-style.md"
             assert dest.is_file(), (
-                "coding-style-template.md was not copied to .infrakit/"
+                "coding-style-template.md was not renamed and copied to .infrakit/coding-style.md"
             )
 
     def test_copies_terraform_engineer_persona(self, project_dir):
@@ -273,8 +273,8 @@ class TestTerraformIacConfigValues:
         assert "terraform" in IAC_CONFIG["terraform"]["requires_tools"]
 
     def test_terraform_iac_commands_count(self):
-        """Terraform must have exactly 4 IaC-native commands."""
-        assert len(IAC_CONFIG["terraform"]["iac_commands"]) == 4
+        """Terraform must have exactly 5 IaC-native commands (implement is IaC-specific)."""
+        assert len(IAC_CONFIG["terraform"]["iac_commands"]) == 5
 
     def test_all_iac_tools_distinct_output_formats(self):
         """Crossplane (yaml) and Terraform (hcl) have distinct output formats."""

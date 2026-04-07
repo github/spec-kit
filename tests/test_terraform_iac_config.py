@@ -78,7 +78,6 @@ class TestTerraformIacConfig:
             "setup",
             "status",
             "analyze",
-            "implement",
             "architect-review",
             "security-review",
             "tasks",
@@ -86,6 +85,9 @@ class TestTerraformIacConfig:
         generic = IAC_CONFIG["terraform"]["generic_commands"]
         for cmd in expected:
             assert cmd in generic, f"terraform generic_commands missing '{cmd}'"
+        # implement is IaC-specific, not generic
+        assert "implement" not in generic, "implement must be in iac_commands, not generic_commands"
+        assert "implement" in IAC_CONFIG["terraform"]["iac_commands"]
 
     def test_terraform_iac_commands_present(self):
         """Terraform IaC-native commands list must be non-empty."""

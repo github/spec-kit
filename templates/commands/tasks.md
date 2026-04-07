@@ -61,7 +61,7 @@ Read the following files:
 
 1. `.infrakit/context.md` — Project standards and naming conventions
 2. `.infrakit/coding-style.md` — Coding standards (for task constraints)
-3. `.infrakit/tagging.md` — Tagging requirements (for tag tasks)
+3. `.infrakit/tagging-standard.md` — Tagging requirements (for tag tasks)
 4. `.infrakit/tracks/<track-name>/spec.md` — Requirements and acceptance criteria
 5. `.infrakit/tracks/<track-name>/plan.md` — File structure, managed resources, patch mappings
 
@@ -92,7 +92,7 @@ Break the plan into discrete, ordered tasks across 5 phases:
 - For each managed resource in plan.md: define with correct `apiVersion`, `kind`, and `forProvider` fields
 - Add `FromCompositeFieldPath` patches for each input parameter → managed resource field mapping
 - Add `ToCompositeFieldPath` patches for each status output ← `status.atProvider` field
-- Add required tag patches per tagging.md:
+- Add required tag patches per tagging-standard.md:
   - `crossplane.io/claim-name` from `metadata.name`
   - `crossplane.io/claim-namespace` from `metadata.namespace`
   - `managed-by: crossplane`
@@ -150,7 +150,7 @@ Generated from:
 - [ ] T004 [P] Add `ToCompositeFieldPath` patches for all status outputs
   <list each: <managed-resource>.status.atProvider.<field> → status.<field>>
 
-- [ ] T005 Add required tag patches per tagging.md to every managed resource
+- [ ] T005 Add required tag patches per tagging-standard.md to every managed resource
   - `crossplane.io/claim-name` from metadata.name
   - `crossplane.io/claim-namespace` from metadata.namespace
   - `managed-by: crossplane`
@@ -182,7 +182,7 @@ Generated from:
 - All code must follow `.infrakit/coding-style.md`
 - Pipeline mode is mandatory — never use Resources mode
 - Never hardcode secrets or credentials
-- Apply all tags from `.infrakit/tagging.md` to every managed resource
+- Apply all tags from `.infrakit/tagging-standard.md` to every managed resource
 ```
 
 ---
