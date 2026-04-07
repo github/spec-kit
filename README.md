@@ -140,7 +140,6 @@ For a detailed walkthrough, see the [Quick Start Guide](./docs/quickstart.md).
 | [Roo Code](https://roocode.com/) | ✅ | |
 | [SHAI (OVHcloud)](https://github.com/ovh/shai) | ✅ | |
 | [Qoder CLI](https://qoder.com/cli) | ✅ | |
-| [Jules](https://jules.google.com/) | ✅ | |
 | [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/) | ⚠️ | Does not support custom arguments for slash commands |
 | [Antigravity (agy)](https://agy.ai/) | ✅ | |
 | [IBM Bob](https://www.ibm.com/products/bob) | ✅ | |
@@ -164,7 +163,7 @@ For a detailed walkthrough, see the [Quick Start Guide](./docs/quickstart.md).
 | Option | Description |
 |--------|-------------|
 | `<project-name>` | Name for your new project directory (or use `.` / `--here`) |
-| `--ai` | AI assistant: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `codebuddy`, `amp`, `shai`, `q`, `agy`, `bob`, `qodercli`, or `generic` |
+| `--ai` | AI assistant: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `kilocode`, `auggie`, `codebuddy`, `amp`, `shai`, `q`, `agy`, `bob`, `qodercli`, `roo`, or `generic` |
 | `--ai-commands-dir` | Command files directory (required with `--ai generic`) |
 | `--iac` | IaC tool: `crossplane` or `terraform` |
 | `--script` | Script type to use: `sh` or `ps` |

@@ -8,6 +8,7 @@
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
 - `kubectl` (for Crossplane projects)
+- `terraform` (for Terraform projects)
 
 ---
 
@@ -93,6 +94,12 @@ You should see the following commands available in your AI agent:
 - `/infrakit:new_composition` — Multi-persona new resource workflow
 - `/infrakit:update_composition` — Update an existing composition
 - `/infrakit:plan` — Generate implementation plan
+- `/infrakit:review` — Code review against coding standards
+
+**Terraform:**
+- `/infrakit:create_terraform_code` — Multi-persona new resource workflow
+- `/infrakit:update_terraform_code` — Update existing module
+- `/infrakit:plan` — Generate HCL implementation plan
 - `/infrakit:review` — Code review against coding standards
 
 ---
