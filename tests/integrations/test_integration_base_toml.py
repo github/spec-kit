@@ -205,7 +205,7 @@ class TomlIntegrationTests:
         assert "---" not in parsed["prompt"]
 
     def test_toml_no_ambiguous_closing_quotes(self, tmp_path, monkeypatch):
-        """Body ending with `"` must not produce `""""` (#2113)."""
+        """Multiline body ending with `"` must not produce `""""` (#2113)."""
         i = get_integration(self.KEY)
         template = tmp_path / "sample.md"
         template.write_text(
@@ -214,7 +214,8 @@ class TomlIntegrationTests:
             "scripts:\n"
             "  sh: echo ok\n"
             "---\n"
-            'Is "X clearly specified?"\n',
+            "Check the following:\n"
+            '- Correct: "Is X clearly specified?"\n',
             encoding="utf-8",
         )
         monkeypatch.setattr(i, "list_command_templates", lambda: [template])
@@ -226,8 +227,10 @@ class TomlIntegrationTests:
 
         raw = cmd_files[0].read_text(encoding="utf-8")
         assert '""""' not in raw, "closing delimiter must not merge with body quote"
+        assert '"""\n' in raw, "body must use multiline basic string"
         parsed = tomllib.loads(raw)
         assert parsed["prompt"].endswith('specified?"')
+        assert not parsed["prompt"].endswith("\n"), "parsed value must not gain a trailing newline"
 
     def test_toml_closing_delimiter_inline_when_safe(self, tmp_path, monkeypatch):
         """Body NOT ending with `"` keeps closing `\"\"\"` inline (no extra newline)."""

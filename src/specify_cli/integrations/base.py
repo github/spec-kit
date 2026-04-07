@@ -597,11 +597,11 @@ class TomlIntegration(IntegrationBase):
 
         escaped = value.replace("\\", "\\\\")
         if '"""' not in escaped:
-            sep = "\n" if escaped.endswith('"') else ""
-            return '"""\n' + escaped + sep + '"""'
-        if "'''" not in value:
-            sep = "\n" if value.endswith("'") else ""
-            return "'''\n" + value + sep + "'''"
+            if escaped.endswith('"'):
+                return '"""\n' + escaped + '\\\n"""'
+            return '"""\n' + escaped + '"""'
+        if "'''" not in value and not value.endswith("'"):
+            return "'''\n" + value + "'''"
 
         return '"' + (
             value.replace("\\", "\\\\")
