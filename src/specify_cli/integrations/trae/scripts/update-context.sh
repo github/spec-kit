@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# update-context.sh — Trae integration: create/update .trae/rules/AGENTS.md
+# update-context.sh — Trae integration: create/update .trae/rules/project_rules.md
 #
 # Thin wrapper that delegates to the shared update-agent-context script.
 # Activated in Stage 7 when the shared script uses integration.json dispatch.

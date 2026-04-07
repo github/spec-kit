@@ -717,7 +717,7 @@ class PresetManager:
         ai_skills_enabled = bool(init_opts.get("ai_skills"))
         registrar = CommandRegistrar()
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
-        # Native skill agents (e.g. codex/kimi/agy) materialize brand-new
+        # Native skill agents (e.g. codex/kimi/agy/trae) materialize brand-new
         # preset skills in _register_commands() because their detected agent
         # directory is already the skills directory. This flag is only for
         # command-backed agents that also mirror commands into skills.

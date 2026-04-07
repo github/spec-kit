@@ -65,7 +65,7 @@ $AGY_FILE      = Join-Path $REPO_ROOT '.agent/rules/specify-rules.md'
 $BOB_FILE      = Join-Path $REPO_ROOT 'AGENTS.md'
 $VIBE_FILE     = Join-Path $REPO_ROOT '.vibe/agents/specify-agents.md'
 $KIMI_FILE     = Join-Path $REPO_ROOT 'KIMI.md'
-$TRAE_FILE     = Join-Path $REPO_ROOT '.trae/rules/AGENTS.md'
+$TRAE_FILE     = Join-Path $REPO_ROOT '.trae/rules/project_rules.md'
 $IFLOW_FILE    = Join-Path $REPO_ROOT 'IFLOW.md'
 $FORGE_FILE    = Join-Path $REPO_ROOT 'AGENTS.md'
 

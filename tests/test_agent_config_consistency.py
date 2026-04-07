@@ -139,7 +139,7 @@ class TestAgentConfigConsistency:
         """AGENT_CONFIG should include trae with correct folder and commands_subdir."""
         assert "trae" in AGENT_CONFIG
         assert AGENT_CONFIG["trae"]["folder"] == ".trae/"
-        assert AGENT_CONFIG["trae"]["commands_subdir"] == "rules"
+        assert AGENT_CONFIG["trae"]["commands_subdir"] == "skills"
         assert AGENT_CONFIG["trae"]["requires_cli"] is False
         assert AGENT_CONFIG["trae"]["install_url"] is None
 
@@ -151,7 +151,7 @@ class TestAgentConfigConsistency:
         trae_cfg = cfg["trae"]
         assert trae_cfg["format"] == "markdown"
         assert trae_cfg["args"] == "$ARGUMENTS"
-        assert trae_cfg["extension"] == ".md"
+        assert trae_cfg["extension"] == "SKILL.md"
 
     def test_trae_in_agent_context_scripts(self):
         """Agent context scripts should support trae agent type."""

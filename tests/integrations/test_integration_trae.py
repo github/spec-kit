@@ -8,4 +8,4 @@ class TestTraeIntegration(MarkdownIntegrationTests):
     FOLDER = ".trae/"
     COMMANDS_SUBDIR = "rules"
     REGISTRAR_DIR = ".trae/rules"
-    CONTEXT_FILE = ".trae/rules/AGENTS.md"
+    CONTEXT_FILE = ".trae/rules/project_rules.md"
