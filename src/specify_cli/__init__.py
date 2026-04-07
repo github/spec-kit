@@ -1184,8 +1184,6 @@ def init(
             _install_shared_infra(project_path, selected_script, tracker=tracker)
             tracker.complete("shared-infra", f"scripts ({selected_script}) + templates")
 
-            ensure_executable_scripts(project_path, tracker=tracker)
-
             ensure_constitution_from_template(project_path, tracker=tracker)
 
             if not no_git:
@@ -1199,8 +1197,10 @@ def init(
                     if success:
                         git_messages.append("initialized")
                     else:
+                        # Sanitize multi-line error_msg to single line for tracker
                         if error_msg:
-                            git_messages.append(f"init failed: {error_msg}")
+                            sanitized = error_msg.replace('\n', ' ').strip()
+                            git_messages.append(f"init failed: {sanitized[:120]}")
                         else:
                             git_messages.append("init failed")
                 else:
@@ -1225,6 +1225,9 @@ def init(
                 tracker.complete("git", "; ".join(git_messages))
             else:
                 tracker.skip("git", "--no-git flag")
+
+            # Fix permissions after all installs (scripts + extensions)
+            ensure_executable_scripts(project_path, tracker=tracker)
 
             # Persist the CLI options so later operations (e.g. preset add)
             # can adapt their behaviour without re-scanning the filesystem.
