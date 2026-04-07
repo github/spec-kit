@@ -124,16 +124,17 @@ if git diff --quiet HEAD 2>/dev/null && git diff --cached --quiet 2>/dev/null &&
 fi
 
 # Derive a human-readable command name from the event
-# e.g., after_specify -> specify, after_plan -> plan
-_command_name=$(echo "$EVENT_NAME" | sed 's/^after_//')
+# e.g., after_specify -> specify, before_plan -> plan
+_command_name=$(echo "$EVENT_NAME" | sed 's/^after_//' | sed 's/^before_//')
+_phase=$(echo "$EVENT_NAME" | grep -q '^before_' && echo 'before' || echo 'after')
 
 # Use custom message if configured, otherwise default
 if [ -z "$_commit_msg" ]; then
-    _commit_msg="[Spec Kit] Auto-commit after ${_command_name}"
+    _commit_msg="[Spec Kit] Auto-commit ${_phase} ${_command_name}"
 fi
 
 # Stage and commit
 _git_out=$(git add . 2>&1) || { echo "[specify] Error: git add failed: $_git_out" >&2; exit 1; }
 _git_out=$(git commit -q -m "$_commit_msg" 2>&1) || { echo "[specify] Error: git commit failed: $_git_out" >&2; exit 1; }
 
-echo "✓ Changes committed after ${_command_name}" >&2
+echo "✓ Changes committed ${_phase} ${_command_name}" >&2

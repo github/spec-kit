@@ -57,6 +57,7 @@ branch_numbering: sequential
 init_commit_message: "[Spec Kit] Initial commit"
 
 # Auto-commit per command (all disabled by default)
+# Example: enable auto-commit after specify
 auto_commit:
   default: false
   after_specify:

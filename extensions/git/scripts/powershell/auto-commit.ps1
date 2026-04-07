@@ -127,11 +127,12 @@ if ($d1 -eq 0 -and $d2 -eq 0 -and -not $untracked) {
 }
 
 # Derive a human-readable command name from the event
-$commandName = $EventName -replace '^after_', ''
+$commandName = $EventName -replace '^after_', '' -replace '^before_', ''
+$phase = if ($EventName -match '^before_') { 'before' } else { 'after' }
 
 # Use custom message if configured, otherwise default
 if (-not $commitMsg) {
-    $commitMsg = "[Spec Kit] Auto-commit after $commandName"
+    $commitMsg = "[Spec Kit] Auto-commit $phase $commandName"
 }
 
 # Stage and commit
@@ -145,4 +146,4 @@ try {
     exit 1
 }
 
-Write-Host "✓ Changes committed after $commandName"
+Write-Host "✓ Changes committed $phase $commandName"
