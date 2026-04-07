@@ -272,7 +272,7 @@ generate_branch_name() {
         if ! echo "$word" | grep -qiE "$stop_words"; then
             if [ ${#word} -ge 3 ]; then
                 meaningful_words+=("$word")
-            elif echo "$description" | grep -q "\b${word^^}\b"; then
+            elif echo "$description" | grep -qw -- "${word^^}"; then
                 meaningful_words+=("$word")
             fi
         fi
