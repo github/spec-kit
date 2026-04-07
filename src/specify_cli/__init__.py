@@ -1195,7 +1195,10 @@ def init(
                     if success:
                         git_messages.append("initialized")
                     else:
-                        git_messages.append("init failed")
+                        if error_msg:
+                            git_messages.append(f"init failed: {error_msg}")
+                        else:
+                            git_messages.append("init failed")
                 else:
                     git_messages.append("git not available")
                 # Step 2: Install bundled git extension
