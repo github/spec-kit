@@ -51,6 +51,10 @@ while [ $i -le $# ]; do
                 exit 1
             fi
             BRANCH_NUMBER="$next_arg"
+            if [[ ! "$BRANCH_NUMBER" =~ ^[0-9]+$ ]]; then
+                echo 'Error: --number must be a non-negative integer' >&2
+                exit 1
+            fi
             ;;
         --timestamp)
             USE_TIMESTAMP=true

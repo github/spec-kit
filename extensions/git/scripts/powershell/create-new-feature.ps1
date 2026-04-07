@@ -350,7 +350,11 @@ if (-not $DryRun) {
             }
         }
     } else {
-        Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
+        if ($Json) {
+            [Console]::Error.WriteLine("[specify] Warning: Git repository not detected; skipped branch creation for $branchName")
+        } else {
+            Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
+        }
     }
 
     New-Item -ItemType Directory -Path $featureDir -Force | Out-Null

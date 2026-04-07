@@ -203,6 +203,18 @@ class ExtensionManifest:
                 "Extension must provide at least one command or hook"
             )
 
+        # Validate hook values (if present)
+        if hooks:
+            for hook_name, hook_config in hooks.items():
+                if not isinstance(hook_config, dict):
+                    raise ValidationError(
+                        f"Invalid hook '{hook_name}': expected a mapping"
+                    )
+                if not hook_config.get("command"):
+                    raise ValidationError(
+                        f"Hook '{hook_name}' missing required 'command' field"
+                    )
+
         # Validate commands (if present)
         for cmd in commands:
             if "name" not in cmd or "file" not in cmd:
