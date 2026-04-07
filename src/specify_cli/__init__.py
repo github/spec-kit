@@ -1189,6 +1189,7 @@ def init(
             if not no_git:
                 tracker.start("git")
                 git_messages = []
+                git_has_error = False
                 # Step 1: Initialize git repo if needed
                 if is_git_repo(project_path):
                     git_messages.append("existing repo detected")
@@ -1197,6 +1198,7 @@ def init(
                     if success:
                         git_messages.append("initialized")
                     else:
+                        git_has_error = True
                         # Sanitize multi-line error_msg to single line for tracker
                         if error_msg:
                             sanitized = error_msg.replace('\n', ' ').strip()
@@ -1219,10 +1221,16 @@ def init(
                             )
                             git_messages.append("extension installed")
                     else:
+                        git_has_error = True
                         git_messages.append("bundled extension not found")
                 except Exception as ext_err:
+                    git_has_error = True
                     git_messages.append(f"extension install failed: {ext_err}")
-                tracker.complete("git", "; ".join(git_messages))
+                summary = "; ".join(git_messages)
+                if git_has_error:
+                    tracker.error("git", summary)
+                else:
+                    tracker.complete("git", summary)
             else:
                 tracker.skip("git", "--no-git flag")
 
