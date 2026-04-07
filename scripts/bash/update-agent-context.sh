@@ -125,9 +125,11 @@ cleanup() {
     local exit_code=$?
     # Disarm traps to prevent re-entrant loop
     trap - EXIT INT TERM
-    for f in "${_CLEANUP_FILES[@]+"${_CLEANUP_FILES[@]}"}"; do
-        rm -f "$f" "$f.bak" "$f.tmp"
-    done
+    if [ ${#_CLEANUP_FILES[@]} -gt 0 ]; then
+        for f in "${_CLEANUP_FILES[@]}"; do
+            rm -f "$f" "$f.bak" "$f.tmp"
+        done
+    fi
     exit $exit_code
 }
 
