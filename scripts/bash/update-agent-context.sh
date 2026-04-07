@@ -285,11 +285,15 @@ get_language_conventions() {
     echo "$lang: Follow standard conventions"
 }
 
+# Escape sed replacement-side specials for | delimiter.
+# & and \ are replacement-side specials; | is our sed delimiter.
+_esc_sed() { printf '%s\n' "$1" | sed 's/[\\&|]/\\&/g'; }
+
 create_new_agent_file() {
     local target_file="$1"
     local temp_file="$2"
     local project_name
-    project_name=$(printf '%s\n' "$3" | sed 's/[\\&|]/\\&/g')
+    project_name=$(_esc_sed "$3")
     local current_date="$4"
     
     if [[ ! -f "$TEMPLATE_FILE" ]]; then
@@ -312,7 +316,7 @@ create_new_agent_file() {
     # Replace template placeholders
     local project_structure
     project_structure=$(get_project_structure "$NEW_PROJECT_TYPE")
-    project_structure=$(printf '%s\n' "$project_structure" | sed 's/[\\&|]/\\&/g')
+    project_structure=$(_esc_sed "$project_structure")
     
     local commands
     commands=$(get_commands_for_language "$NEW_LANG")
@@ -320,13 +324,11 @@ create_new_agent_file() {
     local language_conventions
     language_conventions=$(get_language_conventions "$NEW_LANG")
 
-    # Escape special characters for sed replacement strings (right side of s|pattern|replacement|)
-    # & and \ are replacement-side specials; | must also be escaped because it's our sed delimiter
-    local escaped_lang=$(printf '%s\n' "$NEW_LANG" | sed 's/[\\&|]/\\&/g')
-    local escaped_framework=$(printf '%s\n' "$NEW_FRAMEWORK" | sed 's/[\\&|]/\\&/g')
-    commands=$(printf '%s\n' "$commands" | sed 's/[\\&|]/\\&/g')
-    language_conventions=$(printf '%s\n' "$language_conventions" | sed 's/[\\&|]/\\&/g')
-    local escaped_branch=$(printf '%s\n' "$CURRENT_BRANCH" | sed 's/[\\&|]/\\&/g')
+    local escaped_lang=$(_esc_sed "$NEW_LANG")
+    local escaped_framework=$(_esc_sed "$NEW_FRAMEWORK")
+    commands=$(_esc_sed "$commands")
+    language_conventions=$(_esc_sed "$language_conventions")
+    local escaped_branch=$(_esc_sed "$CURRENT_BRANCH")
     
     # Build technology stack and recent change strings conditionally
     local tech_stack
