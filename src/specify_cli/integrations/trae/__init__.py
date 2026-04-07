@@ -24,7 +24,7 @@ class TraeIntegration(SkillsIntegration):
         "dir": ".trae/skills",
         "format": "markdown",
         "args": "$ARGUMENTS",
-        "extension": "SKILL.md",
+        "extension": "/SKILL.md",
     }
     context_file = ".trae/rules/project_rules.md"
 

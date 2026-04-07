@@ -151,7 +151,7 @@ class TestAgentConfigConsistency:
         trae_cfg = cfg["trae"]
         assert trae_cfg["format"] == "markdown"
         assert trae_cfg["args"] == "$ARGUMENTS"
-        assert trae_cfg["extension"] == "SKILL.md"
+        assert trae_cfg["extension"] == "/SKILL.md"
 
     def test_trae_in_agent_context_scripts(self):
         """Agent context scripts should support trae agent type."""
