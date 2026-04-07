@@ -84,7 +84,7 @@ AGY_FILE="$REPO_ROOT/.agent/rules/specify-rules.md"
 BOB_FILE="$AGENTS_FILE"
 VIBE_FILE="$REPO_ROOT/.vibe/agents/specify-agents.md"
 KIMI_FILE="$REPO_ROOT/KIMI.md"
-TRAE_FILE="$REPO_ROOT/.trae/rules/AGENTS.md"
+TRAE_FILE="$REPO_ROOT/.trae/rules/project_rules.md"
 IFLOW_FILE="$REPO_ROOT/IFLOW.md"
 FORGE_FILE="$AGENTS_FILE"
 

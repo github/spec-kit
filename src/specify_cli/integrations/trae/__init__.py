@@ -8,14 +8,14 @@ class TraeIntegration(MarkdownIntegration):
     config = {
         "name": "Trae",
         "folder": ".trae/",
-        "commands_subdir": "rules",
+        "commands_subdir": "skills",
         "install_url": None,
         "requires_cli": False,
     }
     registrar_config = {
-        "dir": ".trae/rules",
+        "dir": ".trae/skills",
         "format": "markdown",
         "args": "$ARGUMENTS",
-        "extension": ".md",
+        "extension": "SKILL.md",
     }
-    context_file = ".trae/rules/AGENTS.md"
+    context_file = ".trae/rules/project_rules.md"

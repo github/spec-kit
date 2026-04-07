@@ -25,7 +25,7 @@ class AgyIntegration(SkillsIntegration):
         "dir": ".agent/skills",
         "format": "markdown",
         "args": "$ARGUMENTS",
-        "extension": "/SKILL.md",
+        "extension": "/agy.md",
     }
     context_file = "AGENTS.md"
 
