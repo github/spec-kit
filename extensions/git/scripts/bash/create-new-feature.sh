@@ -71,10 +71,14 @@ while [ $i -le $# ]; do
             echo "  --timestamp         Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
             echo "  --help, -h          Show this help message"
             echo ""
+            echo "Environment variables:"
+            echo "  GIT_BRANCH_NAME     Use this exact branch name, bypassing all prefix/suffix generation"
+            echo ""
             echo "Examples:"
             echo "  $0 'Add user authentication system' --short-name 'user-auth'"
             echo "  $0 'Implement OAuth2 integration for API' --number 5"
             echo "  $0 --timestamp --short-name 'user-auth' 'Add user authentication'"
+            echo "  GIT_BRANCH_NAME=my-branch $0 'feature description'"
             exit 0
             ;;
         *)
@@ -258,9 +262,6 @@ fi
 cd "$REPO_ROOT"
 
 SPECS_DIR="$REPO_ROOT/specs"
-if [ "$DRY_RUN" != true ]; then
-    mkdir -p "$SPECS_DIR"
-fi
 
 # Function to generate branch name with stop word filtering
 generate_branch_name() {
@@ -301,40 +302,53 @@ generate_branch_name() {
     fi
 }
 
-# Generate branch name
-if [ -n "$SHORT_NAME" ]; then
-    BRANCH_SUFFIX=$(clean_branch_name "$SHORT_NAME")
+# Check for GIT_BRANCH_NAME env var override (exact branch name, no prefix/suffix)
+if [ -n "${GIT_BRANCH_NAME:-}" ]; then
+    BRANCH_NAME="$GIT_BRANCH_NAME"
+    # Extract FEATURE_NUM from the branch name if it starts with a numeric prefix
+    if echo "$BRANCH_NAME" | grep -Eq '^[0-9]+-'; then
+        FEATURE_NUM=$(echo "$BRANCH_NAME" | grep -Eo '^[0-9]+')
+    elif echo "$BRANCH_NAME" | grep -Eq '^[0-9]{8}-[0-9]{6}-'; then
+        FEATURE_NUM=$(echo "$BRANCH_NAME" | grep -Eo '^[0-9]{8}-[0-9]{6}')
+    else
+        FEATURE_NUM="$BRANCH_NAME"
+    fi
 else
-    BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
-fi
-
-# Warn if --number and --timestamp are both specified
-if [ "$USE_TIMESTAMP" = true ] && [ -n "$BRANCH_NUMBER" ]; then
-    >&2 echo "[specify] Warning: --number is ignored when --timestamp is used"
-    BRANCH_NUMBER=""
-fi
-
-# Determine branch prefix
-if [ "$USE_TIMESTAMP" = true ]; then
-    FEATURE_NUM=$(date +%Y%m%d-%H%M%S)
-    BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
-else
-    if [ -z "$BRANCH_NUMBER" ]; then
-        if [ "$DRY_RUN" = true ] && [ "$HAS_GIT" = true ]; then
-            BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR" true)
-        elif [ "$DRY_RUN" = true ]; then
-            HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
-            BRANCH_NUMBER=$((HIGHEST + 1))
-        elif [ "$HAS_GIT" = true ]; then
-            BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
-        else
-            HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
-            BRANCH_NUMBER=$((HIGHEST + 1))
-        fi
+    # Generate branch name
+    if [ -n "$SHORT_NAME" ]; then
+        BRANCH_SUFFIX=$(clean_branch_name "$SHORT_NAME")
+    else
+        BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
     fi
 
-    FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
-    BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+    # Warn if --number and --timestamp are both specified
+    if [ "$USE_TIMESTAMP" = true ] && [ -n "$BRANCH_NUMBER" ]; then
+        >&2 echo "[specify] Warning: --number is ignored when --timestamp is used"
+        BRANCH_NUMBER=""
+    fi
+
+    # Determine branch prefix
+    if [ "$USE_TIMESTAMP" = true ]; then
+        FEATURE_NUM=$(date +%Y%m%d-%H%M%S)
+        BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+    else
+        if [ -z "$BRANCH_NUMBER" ]; then
+            if [ "$DRY_RUN" = true ] && [ "$HAS_GIT" = true ]; then
+                BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR" true)
+            elif [ "$DRY_RUN" = true ]; then
+                HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
+                BRANCH_NUMBER=$((HIGHEST + 1))
+            elif [ "$HAS_GIT" = true ]; then
+                BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
+            else
+                HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
+                BRANCH_NUMBER=$((HIGHEST + 1))
+            fi
+        fi
+
+        FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
+        BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+    fi
 fi
 
 # GitHub enforces a 244-byte limit on branch names
@@ -353,9 +367,6 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"
     >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
 fi
-
-FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
-SPEC_FILE="$FEATURE_DIR/spec.md"
 
 if [ "$DRY_RUN" != true ]; then
     if [ "$HAS_GIT" = true ]; then
@@ -391,22 +402,6 @@ if [ "$DRY_RUN" != true ]; then
         >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
     fi
 
-    mkdir -p "$FEATURE_DIR"
-
-    if [ ! -f "$SPEC_FILE" ]; then
-        if type resolve_template >/dev/null 2>&1; then
-            TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT") || true
-        else
-            TEMPLATE=""
-        fi
-        if [ -n "$TEMPLATE" ] && [ -f "$TEMPLATE" ]; then
-            cp "$TEMPLATE" "$SPEC_FILE"
-        else
-            echo "Warning: Spec template not found; created empty spec file" >&2
-            touch "$SPEC_FILE"
-        fi
-    fi
-
     printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
 fi
 
@@ -415,35 +410,30 @@ if $JSON_MODE; then
         if [ "$DRY_RUN" = true ]; then
             jq -cn \
                 --arg branch_name "$BRANCH_NAME" \
-                --arg spec_file "$SPEC_FILE" \
                 --arg feature_num "$FEATURE_NUM" \
-                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num,DRY_RUN:true}'
+                '{BRANCH_NAME:$branch_name,FEATURE_NUM:$feature_num,DRY_RUN:true}'
         else
             jq -cn \
                 --arg branch_name "$BRANCH_NAME" \
-                --arg spec_file "$SPEC_FILE" \
                 --arg feature_num "$FEATURE_NUM" \
-                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num}'
+                '{BRANCH_NAME:$branch_name,FEATURE_NUM:$feature_num}'
         fi
     else
         if type json_escape >/dev/null 2>&1; then
             _je_branch=$(json_escape "$BRANCH_NAME")
-            _je_spec=$(json_escape "$SPEC_FILE")
             _je_num=$(json_escape "$FEATURE_NUM")
         else
             _je_branch="$BRANCH_NAME"
-            _je_spec="$SPEC_FILE"
             _je_num="$FEATURE_NUM"
         fi
         if [ "$DRY_RUN" = true ]; then
-            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","DRY_RUN":true}\n' "$_je_branch" "$_je_spec" "$_je_num"
+            printf '{"BRANCH_NAME":"%s","FEATURE_NUM":"%s","DRY_RUN":true}\n' "$_je_branch" "$_je_num"
         else
-            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$_je_branch" "$_je_spec" "$_je_num"
+            printf '{"BRANCH_NAME":"%s","FEATURE_NUM":"%s"}\n' "$_je_branch" "$_je_num"
         fi
     fi
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
-    echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
     if [ "$DRY_RUN" != true ]; then
         printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"

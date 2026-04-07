@@ -774,3 +774,108 @@ class TestPowerShellDryRun:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert "DRY_RUN" not in data, f"DRY_RUN should not be in normal JSON: {data}"
+
+
+# ── Feature Directory Resolution Tests ───────────────────────────────────────
+
+
+class TestFeatureDirectoryResolution:
+    """Tests for SPECIFY_FEATURE_DIRECTORY and .specify/feature.json resolution."""
+
+    def test_env_var_overrides_branch_lookup(self, git_repo: Path):
+        """SPECIFY_FEATURE_DIRECTORY env var takes priority over branch-based lookup."""
+        custom_dir = git_repo / "my-custom-specs" / "my-feature"
+        custom_dir.mkdir(parents=True)
+
+        result = subprocess.run(
+            ["bash", "-c", f'source "{COMMON_SH}" && get_feature_paths'],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "SPECIFY_FEATURE_DIRECTORY": str(custom_dir)},
+        )
+        assert result.returncode == 0, result.stderr
+        assert str(custom_dir) in result.stdout
+        for line in result.stdout.splitlines():
+            if line.startswith("FEATURE_DIR="):
+                val = line.split("=", 1)[1].strip("'\"")
+                assert val == str(custom_dir)
+                break
+        else:
+            pytest.fail("FEATURE_DIR not found in output")
+
+    def test_feature_json_overrides_branch_lookup(self, git_repo: Path):
+        """feature.json feature_directory takes priority over branch-based lookup."""
+        custom_dir = git_repo / "specs" / "custom-feature"
+        custom_dir.mkdir(parents=True)
+
+        feature_json = git_repo / ".specify" / "feature.json"
+        feature_json.write_text(
+            f'{{"feature_directory": "{custom_dir}"}}\n',
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            ["bash", "-c", f'source "{COMMON_SH}" && get_feature_paths'],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        for line in result.stdout.splitlines():
+            if line.startswith("FEATURE_DIR="):
+                val = line.split("=", 1)[1].strip("'\"")
+                assert val == str(custom_dir)
+                break
+        else:
+            pytest.fail("FEATURE_DIR not found in output")
+
+    def test_env_var_takes_priority_over_feature_json(self, git_repo: Path):
+        """Env var wins over feature.json."""
+        env_dir = git_repo / "specs" / "env-feature"
+        env_dir.mkdir(parents=True)
+        json_dir = git_repo / "specs" / "json-feature"
+        json_dir.mkdir(parents=True)
+
+        feature_json = git_repo / ".specify" / "feature.json"
+        feature_json.write_text(
+            f'{{"feature_directory": "{json_dir}"}}\n',
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            ["bash", "-c", f'source "{COMMON_SH}" && get_feature_paths'],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "SPECIFY_FEATURE_DIRECTORY": str(env_dir)},
+        )
+        assert result.returncode == 0, result.stderr
+        for line in result.stdout.splitlines():
+            if line.startswith("FEATURE_DIR="):
+                val = line.split("=", 1)[1].strip("'\"")
+                assert val == str(env_dir)
+                break
+        else:
+            pytest.fail("FEATURE_DIR not found in output")
+
+    def test_fallback_to_branch_lookup(self, git_repo: Path):
+        """Without env var or feature.json, falls back to branch-based lookup."""
+        subprocess.run(["git", "checkout", "-q", "-b", "001-test-feat"], cwd=git_repo, check=True)
+        spec_dir = git_repo / "specs" / "001-test-feat"
+        spec_dir.mkdir(parents=True)
+
+        result = subprocess.run(
+            ["bash", "-c", f'source "{COMMON_SH}" && get_feature_paths'],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        for line in result.stdout.splitlines():
+            if line.startswith("FEATURE_DIR="):
+                val = line.split("=", 1)[1].strip("'\"")
+                assert val == str(spec_dir)
+                break
+        else:
+            pytest.fail("FEATURE_DIR not found in output")

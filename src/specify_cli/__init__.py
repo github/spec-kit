@@ -384,61 +384,6 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
 
     return found
 
-def is_git_repo(path: Path = None) -> bool:
-    """Check if the specified path is inside a git repository."""
-    if path is None:
-        path = Path.cwd()
-
-    if not path.is_dir():
-        return False
-
-    try:
-        # Use git command to check if inside a work tree
-        subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            check=True,
-            capture_output=True,
-            cwd=path,
-        )
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
-
-def init_git_repo(project_path: Path, quiet: bool = False) -> Tuple[bool, Optional[str]]:
-    """Initialize a git repository in the specified path.
-
-    Args:
-        project_path: Path to initialize git repository in
-        quiet: if True suppress console output (tracker handles status)
-
-    Returns:
-        Tuple of (success: bool, error_message: Optional[str])
-    """
-    try:
-        original_cwd = Path.cwd()
-        os.chdir(project_path)
-        if not quiet:
-            console.print("[cyan]Initializing git repository...[/cyan]")
-        subprocess.run(["git", "init"], check=True, capture_output=True, text=True)
-        subprocess.run(["git", "add", "."], check=True, capture_output=True, text=True)
-        subprocess.run(["git", "commit", "-m", "Initial commit from Specify template"], check=True, capture_output=True, text=True)
-        if not quiet:
-            console.print("[green]✓[/green] Git repository initialized")
-        return True, None
-
-    except subprocess.CalledProcessError as e:
-        error_msg = f"Command: {' '.join(e.cmd)}\nExit code: {e.returncode}"
-        if e.stderr:
-            error_msg += f"\nError: {e.stderr.strip()}"
-        elif e.stdout:
-            error_msg += f"\nOutput: {e.stdout.strip()}"
-
-        if not quiet:
-            console.print(f"[red]Error initializing git repository:[/red] {e}")
-        return False, error_msg
-    finally:
-        os.chdir(original_cwd)
-
 def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker=None) -> None:
     """Handle merging or copying of .vscode/settings.json files.
 
@@ -1011,16 +956,21 @@ def init(
     else:
         project_path = Path(project_name).resolve()
         if project_path.exists():
-            error_panel = Panel(
-                f"Directory '[cyan]{project_name}[/cyan]' already exists\n"
-                "Please choose a different project name or remove the existing directory.",
-                title="[red]Directory Conflict[/red]",
-                border_style="red",
-                padding=(1, 2)
-            )
-            console.print()
-            console.print(error_panel)
-            raise typer.Exit(1)
+            existing_items = list(project_path.iterdir())
+            if force:
+                console.print(f"[cyan]--force supplied: merging into existing directory '[cyan]{project_name}[/cyan]'[/cyan]")
+            else:
+                error_panel = Panel(
+                    f"Directory '[cyan]{project_name}[/cyan]' already exists\n"
+                    "Please choose a different project name or remove the existing directory.\n"
+                    "Use [bold]--force[/bold] to merge into the existing directory.",
+                    title="[red]Directory Conflict[/red]",
+                    border_style="red",
+                    padding=(1, 2)
+                )
+                console.print()
+                console.print(error_panel)
+                raise typer.Exit(1)
 
     if ai_assistant:
         if ai_assistant not in AGENT_CONFIG:
@@ -1066,11 +1016,7 @@ def init(
 
     console.print(Panel("\n".join(setup_lines), border_style="cyan", padding=(1, 2)))
 
-    should_init_git = False
-    if not no_git:
-        should_init_git = check_tool("git")
-        if not should_init_git:
-            console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
+
 
     if not ignore_agent_tools:
         agent_config = AGENT_CONFIG.get(selected_ai)
@@ -1123,13 +1069,10 @@ def init(
     for key, label in [
         ("chmod", "Ensure scripts executable"),
         ("constitution", "Constitution setup"),
-        ("git", "Initialize git repository"),
+        ("git", "Install git extension"),
         ("final", "Finalize"),
     ]:
         tracker.add(key, label)
-
-    # Track git error message outside Live context so it persists
-    git_error_message = None
 
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
@@ -1183,17 +1126,19 @@ def init(
 
             if not no_git:
                 tracker.start("git")
-                if is_git_repo(project_path):
-                    tracker.complete("git", "existing repo detected")
-                elif should_init_git:
-                    success, error_msg = init_git_repo(project_path, quiet=True)
-                    if success:
-                        tracker.complete("git", "initialized")
+                try:
+                    from .extensions import ExtensionManager
+                    bundled_path = _locate_bundled_extension("git")
+                    if bundled_path:
+                        manager = ExtensionManager(project_path)
+                        manager.install_from_directory(
+                            bundled_path, get_speckit_version()
+                        )
+                        tracker.complete("git", "git extension installed")
                     else:
-                        tracker.error("git", "init failed")
-                        git_error_message = error_msg
-                else:
-                    tracker.skip("git", "git not available")
+                        tracker.skip("git", "bundled git extension not found")
+                except Exception as ext_err:
+                    tracker.error("git", f"install failed: {ext_err}")
             else:
                 tracker.skip("git", "--no-git flag")
 
@@ -1270,23 +1215,6 @@ def init(
 
     console.print(tracker.render())
     console.print("\n[bold green]Project ready.[/bold green]")
-
-    # Show git error details if initialization failed
-    if git_error_message:
-        console.print()
-        git_error_panel = Panel(
-            f"[yellow]Warning:[/yellow] Git repository initialization failed\n\n"
-            f"{git_error_message}\n\n"
-            f"[dim]You can initialize git manually later with:[/dim]\n"
-            f"[cyan]cd {project_path if not here else '.'}[/cyan]\n"
-            f"[cyan]git init[/cyan]\n"
-            f"[cyan]git add .[/cyan]\n"
-            f"[cyan]git commit -m \"Initial commit\"[/cyan]",
-            title="[red]Git Initialization Failed[/red]",
-            border_style="red",
-            padding=(1, 2)
-        )
-        console.print(git_error_panel)
 
     # Agent folder security notice
     agent_config = AGENT_CONFIG.get(selected_ai)

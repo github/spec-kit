@@ -280,7 +280,6 @@ class TestCreateFeatureBash:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "001-user-auth"
-        assert "SPEC_FILE" in data
         assert data["FEATURE_NUM"] == "001"
 
     def test_creates_branch_timestamp(self, tmp_path: Path):
@@ -293,18 +292,6 @@ class TestCreateFeatureBash:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert re.match(r"^\d{8}-\d{6}-feat$", data["BRANCH_NAME"])
-
-    def test_creates_spec_dir(self, tmp_path: Path):
-        """create-new-feature.sh creates specs directory and spec.md."""
-        project = _setup_project(tmp_path)
-        result = _run_bash(
-            "create-new-feature.sh", project,
-            "--json", "--short-name", "test-feat", "Test feature",
-        )
-        assert result.returncode == 0, result.stderr
-        data = json.loads(result.stdout)
-        spec_file = Path(data["SPEC_FILE"])
-        assert spec_file.exists(), f"spec.md not created at {spec_file}"
 
     def test_increments_from_existing_specs(self, tmp_path: Path):
         """Sequential numbering increments past existing spec directories."""
@@ -321,7 +308,7 @@ class TestCreateFeatureBash:
         assert data["FEATURE_NUM"] == "003"
 
     def test_no_git_graceful_degradation(self, tmp_path: Path):
-        """create-new-feature.sh works without git (creates spec dir only)."""
+        """create-new-feature.sh works without git (outputs branch name, skips branch creation)."""
         project = _setup_project(tmp_path, git=False)
         result = _run_bash(
             "create-new-feature.sh", project,
@@ -330,8 +317,8 @@ class TestCreateFeatureBash:
         assert result.returncode == 0, result.stderr
         assert "Warning" in result.stderr
         data = json.loads(result.stdout)
-        spec_file = Path(data["SPEC_FILE"])
-        assert spec_file.exists()
+        assert "BRANCH_NAME" in data
+        assert "FEATURE_NUM" in data
 
     def test_dry_run(self, tmp_path: Path):
         """--dry-run computes branch name without creating anything."""
@@ -382,7 +369,8 @@ class TestCreateFeaturePowerShell:
         json_line = [l for l in result.stdout.splitlines() if l.strip().startswith("{")]
         assert json_line, f"No JSON in output: {result.stdout}"
         data = json.loads(json_line[-1])
-        assert Path(data["SPEC_FILE"]).exists()
+        assert "BRANCH_NAME" in data
+        assert "FEATURE_NUM" in data
 
 
 # ── auto-commit.sh Tests ─────────────────────────────────────────────────────

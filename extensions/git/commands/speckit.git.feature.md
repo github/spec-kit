@@ -4,7 +4,7 @@ description: "Create a feature branch with sequential or timestamp numbering"
 
 # Create Feature Branch
 
-Create a new feature branch for the given specification.
+Create and switch to a new git feature branch for the given specification. This command handles **branch creation only** — the spec directory and files are created by the core `/speckit.specify` workflow.
 
 ## User Input
 
@@ -14,10 +14,17 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Environment Variable Override
+
+If the user explicitly provided `GIT_BRANCH_NAME` (e.g., via environment variable, argument, or in their request), pass it through to the script by setting the `GIT_BRANCH_NAME` environment variable before invoking the script. When `GIT_BRANCH_NAME` is set:
+- The script uses the exact value as the branch name, bypassing all prefix/suffix generation
+- `--short-name`, `--number`, and `--timestamp` flags are ignored
+- `FEATURE_NUM` is extracted from the name if it starts with a numeric prefix, otherwise set to the full branch name
+
 ## Prerequisites
 
 - Verify Git is available by running `git rev-parse --is-inside-work-tree 2>/dev/null`
-- If Git is not available, warn the user and skip branch creation (spec directory will still be created)
+- If Git is not available, warn the user and skip branch creation
 
 ## Branch Numbering Mode
 
@@ -45,22 +52,16 @@ Run the appropriate script based on your platform:
 - Do NOT pass `--number` — the script determines the correct next number automatically
 - Always include the JSON flag (`--json` for Bash, `-Json` for PowerShell) so the output can be parsed reliably
 - You must only ever run this script once per feature
-- The JSON output will contain BRANCH_NAME and SPEC_FILE paths
-
-If the extension scripts are not found at the `.specify/extensions/git/` path, fall back to:
-- **Bash**: `scripts/bash/create-new-feature.sh`
-- **PowerShell**: `scripts/powershell/create-new-feature.ps1`
+- The JSON output will contain `BRANCH_NAME` and `FEATURE_NUM`
 
 ## Graceful Degradation
 
 If Git is not installed or the current directory is not a Git repository:
-- The script will still create the spec directory under `specs/`
-- A warning will be printed: `[specify] Warning: Git repository not detected; skipped branch creation`
-- The workflow continues normally without branch creation
+- Branch creation is skipped with a warning: `[specify] Warning: Git repository not detected; skipped branch creation`
+- The script still outputs `BRANCH_NAME` and `FEATURE_NUM` so the caller can reference them
 
 ## Output
 
 The script outputs JSON with:
-- `BRANCH_NAME`: The created branch name (e.g., `003-user-auth` or `20260319-143022-user-auth`)
-- `SPEC_FILE`: Path to the created spec file
+- `BRANCH_NAME`: The branch name (e.g., `003-user-auth` or `20260319-143022-user-auth`)
 - `FEATURE_NUM`: The numeric or timestamp prefix used
