@@ -4,6 +4,7 @@ Pytest tests for timestamp-based branch naming in create-new-feature.sh and comm
 Converted from tests/test_timestamp_branches.sh so they are discovered by `uv run pytest`.
 """
 
+import json
 import os
 import re
 import shutil
@@ -16,6 +17,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CREATE_FEATURE = PROJECT_ROOT / "scripts" / "bash" / "create-new-feature.sh"
 CREATE_FEATURE_PS = PROJECT_ROOT / "scripts" / "powershell" / "create-new-feature.ps1"
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
+EXT_CREATE_FEATURE = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
+EXT_CREATE_FEATURE_PS = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
 
 
 @pytest.fixture
@@ -38,6 +41,62 @@ def git_repo(tmp_path: Path) -> Path:
     shutil.copy(CREATE_FEATURE, scripts_dir / "create-new-feature.sh")
     shutil.copy(COMMON_SH, scripts_dir / "common.sh")
     (tmp_path / ".specify" / "templates").mkdir(parents=True)
+    return tmp_path
+
+
+@pytest.fixture
+def ext_git_repo(tmp_path: Path) -> Path:
+    """Create a temp git repo with extension scripts (for GIT_BRANCH_NAME tests)."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "--allow-empty", "-m", "init", "-q"], cwd=tmp_path, check=True)
+    # Extension script needs common.sh at .specify/scripts/bash/
+    specify_scripts = tmp_path / ".specify" / "scripts" / "bash"
+    specify_scripts.mkdir(parents=True)
+    shutil.copy(COMMON_SH, specify_scripts / "common.sh")
+    # Also install core scripts for compatibility
+    core_scripts = tmp_path / "scripts" / "bash"
+    core_scripts.mkdir(parents=True)
+    shutil.copy(COMMON_SH, core_scripts / "common.sh")
+    # Copy extension script
+    ext_dir = tmp_path / ".specify" / "extensions" / "git" / "scripts" / "bash"
+    ext_dir.mkdir(parents=True)
+    shutil.copy(EXT_CREATE_FEATURE, ext_dir / "create-new-feature.sh")
+    # Also copy git-common.sh if it exists
+    git_common = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+    if git_common.exists():
+        shutil.copy(git_common, ext_dir / "git-common.sh")
+    (tmp_path / ".specify" / "templates").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "specs").mkdir(exist_ok=True)
+    return tmp_path
+
+
+@pytest.fixture
+def ext_ps_git_repo(tmp_path: Path) -> Path:
+    """Create a temp git repo with PowerShell extension scripts."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "--allow-empty", "-m", "init", "-q"], cwd=tmp_path, check=True)
+    # Install core PS scripts
+    ps_dir = tmp_path / "scripts" / "powershell"
+    ps_dir.mkdir(parents=True)
+    common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
+    shutil.copy(common_ps, ps_dir / "common.ps1")
+    # Also install at .specify/scripts/powershell/ for extension resolution
+    specify_ps = tmp_path / ".specify" / "scripts" / "powershell"
+    specify_ps.mkdir(parents=True)
+    shutil.copy(common_ps, specify_ps / "common.ps1")
+    # Copy extension script
+    ext_ps = tmp_path / ".specify" / "extensions" / "git" / "scripts" / "powershell"
+    ext_ps.mkdir(parents=True)
+    shutil.copy(EXT_CREATE_FEATURE_PS, ext_ps / "create-new-feature.ps1")
+    git_common_ps = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "git-common.ps1"
+    if git_common_ps.exists():
+        shutil.copy(git_common_ps, ext_ps / "git-common.ps1")
+    (tmp_path / ".specify" / "templates").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "specs").mkdir(exist_ok=True)
     return tmp_path
 
 
@@ -774,6 +833,107 @@ class TestPowerShellDryRun:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert "DRY_RUN" not in data, f"DRY_RUN should not be in normal JSON: {data}"
+
+
+# ── GIT_BRANCH_NAME Override Tests ──────────────────────────────────────────
+
+
+class TestGitBranchNameOverrideBash:
+    """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature.sh."""
+
+    def _run_ext(self, ext_git_repo: Path, env_extras: dict, *extra_args: str):
+        script = ext_git_repo / ".specify" / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
+        cmd = ["bash", str(script), "--json", *extra_args, "ignored"]
+        return subprocess.run(cmd, cwd=ext_git_repo, capture_output=True, text=True,
+                              env={**os.environ, **env_extras})
+
+    def test_exact_name_no_prefix(self, ext_git_repo: Path):
+        """GIT_BRANCH_NAME is used verbatim with no numeric prefix added."""
+        result = self._run_ext(ext_git_repo, {"GIT_BRANCH_NAME": "my-exact-branch"})
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "my-exact-branch"
+        assert data["FEATURE_NUM"] == "my-exact-branch"
+
+    def test_sequential_prefix_extraction(self, ext_git_repo: Path):
+        """FEATURE_NUM extracted from sequential-style prefix (digits before dash)."""
+        result = self._run_ext(ext_git_repo, {"GIT_BRANCH_NAME": "042-custom-branch"})
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "042-custom-branch"
+        assert data["FEATURE_NUM"] == "042"
+
+    def test_timestamp_prefix_extraction(self, ext_git_repo: Path):
+        """FEATURE_NUM extracted as full YYYYMMDD-HHMMSS for timestamp-style names."""
+        result = self._run_ext(ext_git_repo, {"GIT_BRANCH_NAME": "20260407-143022-my-feature"})
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "20260407-143022-my-feature"
+        assert data["FEATURE_NUM"] == "20260407-143022"
+
+    def test_overlong_name_rejected(self, ext_git_repo: Path):
+        """GIT_BRANCH_NAME exceeding 244 bytes is rejected with an error."""
+        long_name = "a" * 245
+        result = self._run_ext(ext_git_repo, {"GIT_BRANCH_NAME": long_name})
+        assert result.returncode != 0
+        assert "244" in result.stderr
+
+    def test_dry_run_with_override(self, ext_git_repo: Path):
+        """GIT_BRANCH_NAME works with --dry-run (no branch created)."""
+        result = self._run_ext(ext_git_repo, {"GIT_BRANCH_NAME": "dry-run-override"}, "--dry-run")
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "dry-run-override"
+        assert data.get("DRY_RUN") is True
+        branches = subprocess.run(
+            ["git", "branch", "--list", "dry-run-override"],
+            cwd=ext_git_repo, capture_output=True, text=True,
+        )
+        assert "dry-run-override" not in branches.stdout
+
+
+@pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+class TestGitBranchNameOverridePowerShell:
+    """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature.ps1."""
+
+    def _run_ext(self, ext_ps_git_repo: Path, env_extras: dict):
+        script = ext_ps_git_repo / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
+        return subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(script), "-Json", "ignored"],
+            cwd=ext_ps_git_repo, capture_output=True, text=True,
+            env={**os.environ, **env_extras},
+        )
+
+    def test_exact_name_no_prefix(self, ext_ps_git_repo: Path):
+        """GIT_BRANCH_NAME is used verbatim with no numeric prefix added."""
+        result = self._run_ext(ext_ps_git_repo, {"GIT_BRANCH_NAME": "ps-exact-branch"})
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "ps-exact-branch"
+        assert data["FEATURE_NUM"] == "ps-exact-branch"
+
+    def test_sequential_prefix_extraction(self, ext_ps_git_repo: Path):
+        """FEATURE_NUM extracted from sequential-style prefix."""
+        result = self._run_ext(ext_ps_git_repo, {"GIT_BRANCH_NAME": "099-ps-numbered"})
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "099-ps-numbered"
+        assert data["FEATURE_NUM"] == "099"
+
+    def test_timestamp_prefix_extraction(self, ext_ps_git_repo: Path):
+        """FEATURE_NUM extracted as full YYYYMMDD-HHMMSS for timestamp-style names."""
+        result = self._run_ext(ext_ps_git_repo, {"GIT_BRANCH_NAME": "20260407-143022-ps-feature"})
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "20260407-143022-ps-feature"
+        assert data["FEATURE_NUM"] == "20260407-143022"
+
+    def test_overlong_name_rejected(self, ext_ps_git_repo: Path):
+        """GIT_BRANCH_NAME exceeding 244 bytes is rejected."""
+        long_name = "a" * 245
+        result = self._run_ext(ext_ps_git_repo, {"GIT_BRANCH_NAME": long_name})
+        assert result.returncode != 0
+        assert "244" in result.stderr
 
 
 # ── Feature Directory Resolution Tests ───────────────────────────────────────
