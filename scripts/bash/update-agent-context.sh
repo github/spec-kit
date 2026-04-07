@@ -372,7 +372,8 @@ create_new_agent_file() {
     done
     
     # Convert literal \n sequences to actual newlines (portable — works on BSD + GNU)
-    awk '{gsub(/\\n/,"\n")}1' "$temp_file" > "$temp_file.tmp" && mv "$temp_file.tmp" "$temp_file"
+    awk '{gsub(/\\n/,"\n")}1' "$temp_file" > "$temp_file.tmp"
+    mv "$temp_file.tmp" "$temp_file"
 
     # Clean up backup files from sed -i.bak
     rm -f "$temp_file.bak"
