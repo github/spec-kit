@@ -204,6 +204,58 @@ class TomlIntegrationTests:
         assert "scripts:" not in parsed["prompt"]
         assert "---" not in parsed["prompt"]
 
+    def test_toml_no_ambiguous_closing_quotes(self, tmp_path, monkeypatch):
+        """Body ending with `"` must not produce `""""` (#2113)."""
+        i = get_integration(self.KEY)
+        template = tmp_path / "sample.md"
+        template.write_text(
+            "---\n"
+            "description: Test\n"
+            "scripts:\n"
+            "  sh: echo ok\n"
+            "---\n"
+            'Is "X clearly specified?"\n',
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(i, "list_command_templates", lambda: [template])
+
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        cmd_files = [f for f in created if "scripts" not in f.parts]
+        assert len(cmd_files) == 1
+
+        raw = cmd_files[0].read_text(encoding="utf-8")
+        assert '""""' not in raw, "closing delimiter must not merge with body quote"
+        parsed = tomllib.loads(raw)
+        assert parsed["prompt"].endswith('specified?"')
+
+    def test_toml_closing_delimiter_inline_when_safe(self, tmp_path, monkeypatch):
+        """Body NOT ending with `"` keeps closing `\"\"\"` inline (no extra newline)."""
+        i = get_integration(self.KEY)
+        template = tmp_path / "sample.md"
+        template.write_text(
+            "---\n"
+            "description: Test\n"
+            "scripts:\n"
+            "  sh: echo ok\n"
+            "---\n"
+            "Line one\n"
+            "Plain body content\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(i, "list_command_templates", lambda: [template])
+
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        cmd_files = [f for f in created if "scripts" not in f.parts]
+        assert len(cmd_files) == 1
+
+        raw = cmd_files[0].read_text(encoding="utf-8")
+        parsed = tomllib.loads(raw)
+        assert parsed["prompt"] == "Line one\nPlain body content"
+        assert raw.rstrip().endswith('content"""'), \
+            "closing delimiter should be inline when body does not end with a quote"
+
     def test_toml_is_valid(self, tmp_path):
         """Every generated TOML file must parse without errors."""
         i = get_integration(self.KEY)
