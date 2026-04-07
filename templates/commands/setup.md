@@ -1,7 +1,9 @@
 ---
-description: "Initialize or update the InfraKit project configuration: project context, coding style, and tagging standards."
+description: "Initialize or update the InfraKit project configuration: project context, tagging standards, and resource registry."
 argument-hint: "[optional: describe your project briefly]"
 handoffs:
+  - label: "Configure Coding Style"
+    agent: "infrakit:setup-coding-style"
   - label: "Create New Composition"
     agent: "infrakit:new_composition"
   - label: "Check Status"
@@ -20,11 +22,12 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## System Directive
 
-You are initializing or updating the InfraKit project configuration. Your task is to create or update three configuration files that every other InfraKit command depends on:
+You are initializing or updating the InfraKit project configuration. Your task is to create or update two core configuration files that every other InfraKit command depends on:
 
 1. `.infrakit/context.md` — Project context (cloud provider, architecture decisions, network topology, naming conventions, compliance)
-2. `.infrakit/coding-style.md` — Coding standards (IaC tool versions, tagging, connection secrets, security rules, patch patterns)
-3. `.infrakit/tagging-standard.md` — Tagging standards (required tags, tag formats, enforcement rules)
+2. `.infrakit/tagging-standard.md` — Tagging standards (required tags, tag formats, enforcement rules)
+
+> **Note:** Coding style (`.infrakit/coding-style.md`) is configured separately via `/infrakit:setup-coding-style`. Run that command after this one completes.
 
 **CRITICAL**: If any of these files already exist, load their current content first and offer the user a chance to update rather than replace.
 
@@ -39,8 +42,7 @@ Check whether each configuration file exists:
 | File | Path | Status |
 |------|------|--------|
 | Project Context | `.infrakit/context.md` | Check |
-| Coding Style | `.infrakit/coding-style.md` | Check |
-| Tagging Constraints | `.infrakit/tagging-standard.md` | Check |
+| Tagging Standard | `.infrakit/tagging-standard.md` | Check |
 | Resource Registry | `.infrakit/tracks.md` | Check |
 
 ### 1.2 Report Current State
@@ -52,7 +54,6 @@ Present findings to the user:
 > | File | Status |
 > |------|--------|
 > | `.infrakit/context.md` | ✅ Exists / ❌ Missing |
-> | `.infrakit/coding-style.md` | ✅ Exists / ❌ Missing |
 > | `.infrakit/tagging-standard.md` | ✅ Exists / ❌ Missing |
 > | `.infrakit/tracks.md` | ✅ Exists / ❌ Missing |
 >
@@ -145,7 +146,7 @@ If `<iac-tool>` is **crossplane**, ask:
 >
 > Examples:
 > - 'Crossplane v1.15.2 with function-go-template; ArgoCD for GitOps from main branch; no direct kubectl apply in prod'
-> - 'Crossplane v1.14 with function-patch-and-transform; Flux CD; state in EKS etcd with Velero backups to S3'
+> - 'Terraform >= 1.6.0; S3 backend with DynamoDB locking; GitHub Actions for plan/apply; no direct terraform apply in prod'
 >
 > Describe your IaC tool version, primary pipeline function, GitOps workflow, and state management strategy (or press Enter to leave as TODO):"
 
@@ -305,171 +306,15 @@ Based on the gathered information, generate `.infrakit/context.md`:
 
 ---
 
-## Phase 3.5: Transition to Coding Style
-
-Once the user accepts `.infrakit/context.md`, display this message before continuing:
-
-> "Your project context is complete. ✅
->
-> Now let's configure your IaC coding style — this defines the standards all engineers
-> on this project must follow when generating infrastructure code. I have a few quick
-> questions about your project-specific conventions before updating
-> `.infrakit/coding-style.md`."
-
-**WAIT** for acknowledgment or proceed after displaying.
-
----
-
-## Phase 3.6: Gather Coding Style Information
-
-The questions to ask depend on the IaC tool detected in Phase 2.0.
-
-Ask these questions **one at a time**. Wait for each response before asking the next.
-
-### If `<iac-tool>` is **crossplane**:
-
-**Coding Style Q1: Crossplane Version & Functions**
-> "Which Crossplane version and pipeline functions does this project use?
->
-> Examples:
-> - 'Crossplane v1.15.2; function-go-template v0.7.0 (prefer source: Inline)'
-> - 'Crossplane v1.14; function-patch-and-transform only'
->
-> Specify the Crossplane version and your preferred pipeline function (or press Enter to use defaults):"
-
-**WAIT** for response.
-
-**Coding Style Q2: File Organization**
-> "What is your project's directory structure for Crossplane resources?
->
-> Default structure:
->
->     apis/<group>/<version>/
->     compositions/
->     examples/<kind>/
->
-> Describe any deviations from the default structure (or press Enter to use the default):"
-
-**WAIT** for response.
-
-**Coding Style Q3: Project-Specific Tags**
-> "Beyond the required Crossplane tags (`claim-name`, `claim-namespace`, `managed-by`),
-> what additional tags should all managed resources carry?
->
-> Examples:
-> - `cost-center` — from `spec.parameters.costCenter`
-> - `team` — from `spec.parameters.teamName`
-> - `project` — static value (e.g., `acme-platform`)
-> - `environment` — from `spec.parameters.environment`
->
-> List your project-specific tags and their sources (or press Enter to skip):"
-
-**WAIT** for response.
-
-**Coding Style Q4: Security Defaults**
-> "What are your project-specific security defaults for Crossplane managed resources?
->
-> Examples:
-> - `storageEncrypted: true` always (even in dev)
-> - `publiclyAccessible: false` always, override requires security team approval
-> - `deletionProtection: true` in prod, false elsewhere
-> - `multiAZ: true` required in prod for databases and caches
->
-> Describe your security defaults (or press Enter to use the baseline from context.md):"
-
-**WAIT** for response.
-
-### If `<iac-tool>` is **terraform**:
-
-**Coding Style Q1: Terraform Version & Providers**
-> "Which Terraform version and provider(s) does this project use?
->
-> Examples:
-> - 'Terraform >= 1.6.0; hashicorp/aws ~> 5.0'
-> - 'Terraform >= 1.5.0; hashicorp/azurerm ~> 3.0, hashicorp/random ~> 3.6'
->
-> Specify the minimum Terraform version and your provider(s) with version constraints (or press Enter to use defaults):"
-
-**WAIT** for response.
-
-**Coding Style Q2: Backend & State Management**
-> "What backend does this project use for Terraform state?
->
-> Examples:
-> - 'S3 backend with DynamoDB locking (bucket name parameterized per workspace)'
-> - 'Terraform Cloud / HCP Terraform — remote execution'
-> - 'Azure Blob Storage backend'
->
-> Describe your backend and state strategy (or press Enter to leave as TODO):"
-
-**WAIT** for response.
-
-**Coding Style Q3: Project-Specific Tags**
-> "What tags should all managed resources carry?
->
-> Examples:
-> - `managed-by = "terraform"` (required)
-> - `cost-center` — from `var.cost_center`
-> - `team` — from `var.team`
-> - `environment` — from `var.environment`
->
-> List your required tags and their value sources (or press Enter to use `managed-by` only):"
-
-**WAIT** for response.
-
-**Coding Style Q4: Security Defaults**
-> "What are your project-specific security defaults for Terraform resources?
->
-> Examples:
-> - `encrypted = true` always for all EBS/RDS/S3
-> - Public access variables must default to `false`
-> - `deletion_protection = true` for databases in prod
-> - `multi_az = true` required in prod
->
-> Describe your security defaults (or press Enter to use the baseline from context.md):"
-
-**WAIT** for response.
-
----
-
-## Phase 4: Update .infrakit/coding-style.md
-
-`.infrakit/coding-style.md` was pre-populated from the IaC-specific template when you ran `infrakit init`. Your task here is to fill in the project-specific `[PLACEHOLDER]` values using the information gathered in Phase 2 and Phase 3.6.
-
-### 4.1 Read Existing File
-
-Read `.infrakit/coding-style.md` and identify all `[PLACEHOLDER]` sections (e.g., `[PROJECT_NAME]`, `[CROSSPLANE_VERSION]`, `[TERRAFORM_VERSION]`, `[REQUIRED_TAGS]`, `[SECURITY_DEFAULTS]`, etc.).
-
-### 4.2 Fill Placeholders
-
-Replace each `[PLACEHOLDER]` with the appropriate value from Phase 2 and Phase 3.6 answers:
-
-- `[PROJECT_NAME]` → project name from Q1
-- For **Crossplane**: `[CROSSPLANE_VERSION]` → from CS Q1; `[PRIMARY_FUNCTION]` → from CS Q1; `[FILE_STRUCTURE]` → from CS Q2; `[REQUIRED_TAGS]` → from CS Q3; `[SECURITY_DEFAULTS]` → from CS Q4
-- For **Terraform**: `[TERRAFORM_VERSION]` → from CS Q1; `[PROVIDER_VERSIONS]` → from CS Q1; `[BACKEND_CONFIG]` → from CS Q2; `[REQUIRED_TAGS]` → from CS Q3; `[SECURITY_DEFAULTS]` → from CS Q4
-
-Keep all non-placeholder content intact.
-
-**Present to user:**
-> "I've updated `.infrakit/coding-style.md`. Please review:
->
-> A) **Accept** — Looks good
-> B) **Edit** — Make changes, say 'done' when ready
-> C) **Regenerate** — Tell me what to change"
-
-**WAIT** for response. **Loop until user accepts.**
-
----
-
-## Phase 5: Update .infrakit/tagging-standard.md
+## Phase 4: Update .infrakit/tagging-standard.md
 
 `.infrakit/tagging-standard.md` was pre-populated from the IaC-specific template when you ran `infrakit init`. Your task here is to add project-specific required tags.
 
-### 5.1 Read Existing File
+### 4.1 Read Existing File
 
 Read `.infrakit/tagging-standard.md` and present its current content to the user.
 
-### 5.2 Gather Project-Specific Tags
+### 4.2 Gather Project-Specific Tags
 
 Ask the user:
 
@@ -478,16 +323,16 @@ Ask the user:
 > What **project-specific** tags should every managed resource carry?
 >
 > Examples:
-> - `cost-center` — from `var.cost_center` / `spec.parameters.costCenter`
-> - `team` — from `var.team` / `spec.parameters.teamName`
+> - `cost-center` — governance owner, from `var.cost_center` / `spec.parameters.costCenter`
+> - `team` — owning team, from `var.team` / `spec.parameters.teamName`
 > - `project` — static value (e.g., `acme-platform`)
-> - `environment` — from `var.environment` / `spec.parameters.environment`
+> - `environment` — target environment, from `var.environment` / `spec.parameters.environment`
 >
 > List your project-specific tags and their value sources (or press Enter to keep as-is):"
 
 **WAIT** for response.
 
-### 5.3 Update the File
+### 4.3 Update the File
 
 Replace the `[REQUIRED_TAGS]` placeholder with the project-specific tags the user provided. Keep all other content from the pre-populated template intact.
 
@@ -502,7 +347,7 @@ Replace the `[REQUIRED_TAGS]` placeholder with the project-specific tags the use
 
 ---
 
-## Phase 6: Initialize tracks.md
+## Phase 5: Initialize tracks.md
 
 If `.infrakit/tracks.md` does not exist, create it:
 
@@ -533,19 +378,23 @@ Track all infrastructure compositions and their current status.
 
 ---
 
-## Phase 7: Completion
+## Phase 6: Completion
 
 > "✅ **InfraKit setup complete!**
 >
 > **Files configured:**
 > - `.infrakit/context.md` — Project context ✅
-> - `.infrakit/coding-style.md` — Coding standards ✅
 > - `.infrakit/tagging-standard.md` — Tagging standards ✅
 > - `.infrakit/tracks.md` — Resource registry ✅
 >
-> **Next Steps:**
-> - **Crossplane**: Run `/infrakit:new_composition` to create your first infrastructure resource
-> - **Terraform**: Run `/infrakit:create_terraform_code` to create your first module
+> **Required Next Step — Configure Coding Style:**
+>
+> Run `/infrakit:setup-coding-style` to define your IaC coding standards.
+> This populates `.infrakit/coding-style.md`, which all code generation commands depend on.
+>
+> **Once coding style is configured, start building:**
+> - **Crossplane**: Run `/infrakit:new_composition`
+> - **Terraform**: Run `/infrakit:create_terraform_code`
 > - Run `/infrakit:status` to see all track statuses"
 
 ---

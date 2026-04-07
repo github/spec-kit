@@ -2,7 +2,7 @@
 <!-- Example: Acme Platform Terraform Coding Style Guide -->
 
 > This document captures both universal Terraform standards (non-negotiable) and
-> project-specific conventions for this platform. Run `/infrakit:setup` to populate
+> project-specific conventions for this platform. Run `/infrakit:setup-coding-style` to populate
 > the placeholder sections.
 
 All Terraform engineers **MUST** follow these standards when generating infrastructure code.

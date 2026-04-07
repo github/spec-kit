@@ -2,7 +2,7 @@
 <!-- Example: Acme Platform Crossplane Coding Style Guide -->
 
 > This document captures both universal Crossplane standards (non-negotiable) and
-> project-specific conventions for this platform. Run `/infrakit:setup` to populate
+> project-specific conventions for this platform. Run `/infrakit:setup-coding-style` to populate
 > the placeholder sections.
 
 All Crossplane engineers **MUST** follow these standards when generating infrastructure code.
