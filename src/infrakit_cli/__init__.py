@@ -1390,7 +1390,6 @@ def initialize_iac_config(
     - .infrakit/tracks.md — master resource registry
     - .infrakit/agent_personas/ — IaC-specific agent definitions
     - .infrakit/tracks/ — track directories
-    - technical-docs/ — provider and tool documentation
     - IaC-native commands in the agent's commands directory
     """
     iac_cfg = IAC_CONFIG.get(iac_tool, {})
@@ -1576,25 +1575,6 @@ def initialize_iac_config(
             "iac-commands",
             f"{generic_count} generic + {iac_count} IaC commands → {cmds_dest.relative_to(project_path)}",
         )
-
-    # --- 3. Copy technical documentation ---
-    if tracker:
-        tracker.start("iac-docs")
-
-    docs_src = iac_templates_dir / "docs"
-    docs_dest = project_path / "technical-docs"
-    doc_count = 0
-    if docs_src.is_dir():
-        docs_dest.mkdir(parents=True, exist_ok=True)
-        for doc_file in docs_src.iterdir():
-            if doc_file.is_file():
-                dest = docs_dest / doc_file.name
-                if not dest.exists():
-                    shutil.copy2(doc_file, dest)
-                    doc_count += 1
-
-    if tracker:
-        tracker.complete("iac-docs", f"{doc_count} docs → technical-docs/")
 
 
 @app.command()
@@ -1893,7 +1873,6 @@ def init(
         ("project_context", "Project Context setup"),
         ("iac-config", "IaC configuration"),
         ("iac-commands", "IaC-native commands"),
-        ("iac-docs", "Technical documentation"),
     ]:
         tracker.add(key, label)
     if ai_skills:
@@ -2227,8 +2206,7 @@ def mcp():
     )
 
     # 4. Install
-    mcp_config_file = agent_cfg.get("mcp_config_file")
-    agent_folder = agent_cfg.get("folder")
+    mcp_install_path = agent_cfg.get("mcp_install_path")
 
     tracker = StepTracker(f"Install MCP: {selected_key}")
     tracker.add("resolve", "Resolve config path")
@@ -2243,9 +2221,9 @@ def mcp():
     ) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
 
-        if mcp_config_file and agent_folder:
+        if mcp_install_path:
             # Path A: native JSON config (Claude, Cursor)
-            mcp_json_path = project_root / agent_folder.rstrip("/") / mcp_config_file
+            mcp_json_path = project_root / mcp_install_path
             tracker.complete("resolve", str(mcp_json_path.relative_to(project_root)))
 
             tracker.start("merge")

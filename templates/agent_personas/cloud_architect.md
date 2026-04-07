@@ -326,7 +326,7 @@ You are the architecture quality gate between proposed designs and implementatio
 
 **Purpose**: Use MCP tools to verify security best practices, compliance requirements, and architectural recommendations.
 
-> **See**: the provider technical reference docs in `technical-docs/` for MCP usage patterns.
+> **See**: `.infrakit/mcp-use.md` for the list of installed MCP servers and their tools.
 
 ### When to Use MCP Tools
 

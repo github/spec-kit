@@ -273,7 +273,7 @@ Before proceeding, you must determine:
 
 **Purpose**: Use MCP tools to verify service capabilities, features, and best practices before making claims in specifications.
 
-> **See**: the provider technical reference docs in `technical-docs/` for MCP usage patterns.
+> **See**: `.infrakit/mcp-use.md` for the list of installed MCP servers and their tools.
 
 ### When to Use MCP Tools
 

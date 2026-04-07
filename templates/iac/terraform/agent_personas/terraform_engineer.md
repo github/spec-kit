@@ -65,7 +65,7 @@ This agent is activated during `/implement`:
 | **Implementation Planning** | Creates detailed terraform_implementation.md |
 | **Best Practices Validation** | Self-reviews against best practices before user review |
 | **Spec-Based Coding** | Strictly follows approved variables and outputs |
-| **Context-Driven Lookup** | Uses technical-docs and search tools for exact provider docs |
+| **Context-Driven Lookup** | Uses MCP tools and installed servers from .infrakit/mcp-use.md for exact provider docs |
 | **HCL Generation** | Uses coding-style.md to implement all modules |
 | **Validation** | Ensures all references and attribute paths are correct |
 | **Documentation** | Updates contract.md, implementation.md |
@@ -93,7 +93,6 @@ This agent is activated during `/implement`:
 │              ▼                                               │
 │  2. STUDY SPECIFICATION                                      │
 │     ├── Read spec.md (fully understand it)                   │
-│     ├── Read technical-docs/terraform/terraform.md           │
 │     └── Map spec variables → HCL variables                   │
 │              │                                               │
 │              ▼                                               │
@@ -218,7 +217,6 @@ search_web("site:registry.terraform.io hashicorp/aws aws_db_instance arguments")
 | `<track_path>/spec.md` | Full specification — variables, outputs, security requirements |
 | `.infrakit/context.md` | Cloud provider, naming conventions, project standards |
 | `.infrakit/coding-style.md` | Tagging, security, variable/output requirements |
-| `technical-docs/terraform/terraform.md` | Provider patterns, best practices |
 
 ### Extract Key Information
 

@@ -9,7 +9,6 @@ Tests cover:
 - Frontmatter argument-hint fields are present
 - coding-style-template.md contains expected Terraform placeholders
 - terraform_engineer.md agent persona has correct frontmatter
-- technical-reference/terraform.md is non-empty
 """
 
 import re
@@ -70,10 +69,6 @@ class TestTerraformTemplateDirectoryStructure:
     def test_agent_personas_directory_exists(self):
         """templates/iac/terraform/agent_personas/ must exist."""
         assert (TERRAFORM_TEMPLATES_DIR / "agent_personas").is_dir()
-
-    def test_technical_reference_directory_exists(self):
-        """templates/iac/terraform/technical-reference/ must exist."""
-        assert (TERRAFORM_TEMPLATES_DIR / "technical-reference").is_dir()
 
 
 class TestTerraformCommandFilesExist:
@@ -430,47 +425,3 @@ class TestTerraformAgentPersona:
         assert "spec.md" in content
         assert "immutable" in content.lower() or "contract" in content.lower()
 
-
-class TestTerraformTechnicalReference:
-    """Tests for templates/iac/terraform/technical-reference/terraform.md."""
-
-    def test_technical_reference_exists(self):
-        """terraform.md technical reference must exist."""
-        path = TERRAFORM_TEMPLATES_DIR / "technical-reference" / "terraform.md"
-        assert path.is_file(), f"Missing: {path}"
-
-    def test_technical_reference_non_empty(self):
-        """terraform.md must contain substantial content."""
-        content = _read(
-            TERRAFORM_TEMPLATES_DIR / "technical-reference" / "terraform.md"
-        )
-        # At minimum should have a meaningful amount of content
-        assert len(content.strip()) > 500
-
-    def test_technical_reference_covers_variables(self):
-        """Technical reference must cover Terraform variables."""
-        content = _read(
-            TERRAFORM_TEMPLATES_DIR / "technical-reference" / "terraform.md"
-        )
-        assert "variable" in content.lower()
-
-    def test_technical_reference_covers_outputs(self):
-        """Technical reference must cover Terraform outputs."""
-        content = _read(
-            TERRAFORM_TEMPLATES_DIR / "technical-reference" / "terraform.md"
-        )
-        assert "output" in content.lower()
-
-    def test_technical_reference_covers_providers(self):
-        """Technical reference must cover Terraform providers."""
-        content = _read(
-            TERRAFORM_TEMPLATES_DIR / "technical-reference" / "terraform.md"
-        )
-        assert "provider" in content.lower()
-
-    def test_technical_reference_covers_resources(self):
-        """Technical reference must cover Terraform resources."""
-        content = _read(
-            TERRAFORM_TEMPLATES_DIR / "technical-reference" / "terraform.md"
-        )
-        assert "resource" in content.lower()
