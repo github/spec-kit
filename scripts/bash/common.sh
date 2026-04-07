@@ -207,8 +207,11 @@ get_feature_paths() {
         local _fd
         if command -v jq >/dev/null 2>&1; then
             _fd=$(jq -r '.feature_directory // empty' "$repo_root/.specify/feature.json" 2>/dev/null)
+        elif command -v python3 >/dev/null 2>&1; then
+            # Fallback: use Python to parse JSON so pretty-printed/multi-line files work
+            _fd=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('feature_directory',''))" "$repo_root/.specify/feature.json" 2>/dev/null)
         else
-            # Minimal fallback: extract value with grep/sed when jq is unavailable
+            # Last resort: single-line grep fallback (won't work on multi-line JSON)
             _fd=$(grep -o '"feature_directory"[[:space:]]*:[[:space:]]*"[^"]*"' "$repo_root/.specify/feature.json" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
         fi
         if [[ -n "$_fd" ]]; then

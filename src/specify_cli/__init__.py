@@ -384,6 +384,53 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
 
     return found
 
+
+def is_git_repo(path: Path = None) -> bool:
+    """Check if the specified path is inside a git repository."""
+    if path is None:
+        path = Path.cwd()
+
+    if not path.is_dir():
+        return False
+
+    try:
+        subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            check=True,
+            capture_output=True,
+            cwd=path,
+        )
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
+def init_git_repo(project_path: Path, quiet: bool = False) -> tuple[bool, Optional[str]]:
+    """Initialize a git repository in the specified path."""
+    try:
+        original_cwd = Path.cwd()
+        os.chdir(project_path)
+        if not quiet:
+            console.print("[cyan]Initializing git repository...[/cyan]")
+        subprocess.run(["git", "init"], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "add", "."], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "commit", "-m", "Initial commit from Specify template"], check=True, capture_output=True, text=True)
+        if not quiet:
+            console.print("[green]✓[/green] Git repository initialized")
+        return True, None
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Command: {' '.join(e.cmd)}\nExit code: {e.returncode}"
+        if e.stderr:
+            error_msg += f"\nError: {e.stderr.strip()}"
+        elif e.stdout:
+            error_msg += f"\nOutput: {e.stdout.strip()}"
+        if not quiet:
+            console.print(f"[red]Error initializing git repository:[/red] {e}")
+        return False, error_msg
+    finally:
+        os.chdir(original_cwd)
+
+
 def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker=None) -> None:
     """Handle merging or copying of .vscode/settings.json files.
 
@@ -959,6 +1006,9 @@ def init(
         project_path = Path(project_name).resolve()
         dir_existed_before = project_path.exists()
         if project_path.exists():
+            if not project_path.is_dir():
+                console.print(f"[red]Error:[/red] '{project_name}' exists but is not a directory.")
+                raise typer.Exit(1)
             existing_items = list(project_path.iterdir())
             if force:
                 if existing_items:
@@ -1022,7 +1072,11 @@ def init(
 
     console.print(Panel("\n".join(setup_lines), border_style="cyan", padding=(1, 2)))
 
-
+    should_init_git = False
+    if not no_git:
+        should_init_git = check_tool("git")
+        if not should_init_git:
+            console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
 
     if not ignore_agent_tools:
         agent_config = AGENT_CONFIG.get(selected_ai)
@@ -1132,22 +1186,36 @@ def init(
 
             if not no_git:
                 tracker.start("git")
+                git_messages = []
+                # Step 1: Initialize git repo if needed
+                if is_git_repo(project_path):
+                    git_messages.append("existing repo detected")
+                elif should_init_git:
+                    success, error_msg = init_git_repo(project_path, quiet=True)
+                    if success:
+                        git_messages.append("initialized")
+                    else:
+                        git_messages.append("init failed")
+                else:
+                    git_messages.append("git not available")
+                # Step 2: Install bundled git extension
                 try:
                     from .extensions import ExtensionManager
                     bundled_path = _locate_bundled_extension("git")
                     if bundled_path:
                         manager = ExtensionManager(project_path)
                         if manager.registry.is_installed("git"):
-                            tracker.skip("git", "git extension already installed")
+                            git_messages.append("extension already installed")
                         else:
                             manager.install_from_directory(
                                 bundled_path, get_speckit_version()
                             )
-                            tracker.complete("git", "git extension installed")
+                            git_messages.append("extension installed")
                     else:
-                        tracker.skip("git", "bundled git extension not found")
+                        git_messages.append("bundled extension not found")
                 except Exception as ext_err:
-                    tracker.error("git", f"install failed: {ext_err}")
+                    git_messages.append(f"extension install failed: {ext_err}")
+                tracker.complete("git", "; ".join(git_messages))
             else:
                 tracker.skip("git", "--no-git flag")
 
