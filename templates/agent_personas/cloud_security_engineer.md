@@ -277,7 +277,7 @@ Wait for the user's response before proceeding.
 
 **Purpose**: Verify compliance requirements against authoritative sources before flagging gaps or accepting claims.
 
-> **See**: the provider technical reference docs in `technical-docs/` for MCP usage patterns.
+> **See**: `.infrakit/mcp-use.md` for the list of installed MCP servers and their tools.
 
 ### When to Use MCP Tools
 
