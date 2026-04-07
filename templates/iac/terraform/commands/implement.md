@@ -95,7 +95,9 @@ Read all track files:
 
 ---
 
-## Step 5: Present Task Summary
+## Step 5: Present Task Summary and Set Status
+
+Update `.infrakit/tracks.md` — change the track's Status to `⚙️ in-progress`.
 
 Before starting, display the task summary:
 
@@ -150,15 +152,13 @@ If a task appears to conflict with coding standards, flag it **before** writing:
 
 ---
 
-## Step 8: Post-Implementation Review
+## Step 8: Post-Implementation Summary
 
 After all tasks are marked `[x]`:
 
 > "✅ All tasks complete for track `<track-name>`.
 >
-> Proceeding to implementation review..."
-
-Hand off to `/infrakit:review <track-name>` for Terraform code review.
+> **Suggested next step**: Run `/infrakit:review <module-directory>` to review the implementation against coding standards."
 
 ---
 
@@ -169,49 +169,44 @@ After the review is approved, generate or update `.infrakit_context.md` in the m
 ```markdown
 # InfraKit Context: <module-name>
 
-## Track
-- **Track Name**: <track-name>
-- **Type**: create_terraform_code / update_terraform_code
-- **Completed**: <YYYY-MM-DD>
+**Purpose**: <one-line description of what this module provisions>
+**Track**: `<track-name>` | **Completed**: <YYYY-MM-DD>
+**Module**: `<module-directory>/`
 
-## What Was Built
-<Brief description of what was implemented>
+## Provider
 
-## Module Directory
-`<module-directory>/`
+| Component | Version |
+|-----------|---------|
+| Terraform | `>= <version>` |
+| Provider  | `hashicorp/<provider> ~> <version>` |
 
 ## Files
 
-| File | Description |
-|------|-------------|
-| `main.tf` | Resource definitions: <brief description> |
-| `variables.tf` | Input variable declarations |
-| `outputs.tf` | Output value declarations |
-| `versions.tf` | Required providers and Terraform version constraints |
-| `README.md` | Usage documentation |
-
-## Key Design Decisions
-- <decision 1>
-- <decision 2>
+| File | Contents |
+|------|----------|
+| `main.tf` | Resources: <list resource types provisioned> |
+| `variables.tf` | <N> input variables |
+| `outputs.tf` | <N> outputs |
+| `versions.tf` | Provider + Terraform version constraints |
+| `README.md` | Usage docs |
 
 ## Input Variables
 
 | Variable | Type | Required | Default | Description |
 |----------|------|----------|---------|-------------|
-| <var> | <type> | <bool> | <default> | <desc> |
+| <var> | <type> | <yes/no> | <default> | <desc> |
 
 ## Outputs
 
 | Output | Source | Description |
 |--------|--------|-------------|
-| <name> | <resource_type>.<name>.<attribute> | <desc> |
+| <name> | `<resource_type>.<name>.<attribute>` | <desc> |
 
-## Provider & Version
+## Resources Provisioned
 
-| Component | Version |
-|-----------|---------|
-| Terraform | `>= <version>` |
-| Provider | `hashicorp/<provider> ~> <version>` |
+| Resource Type | Name | Purpose |
+|---------------|------|---------|
+| `<resource_type>` | `<name>` | <purpose> |
 ```
 
 ---

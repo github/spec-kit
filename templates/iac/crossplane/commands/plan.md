@@ -262,7 +262,9 @@ After writing plan.md:
 
 ---
 
-## Step 8: Next Actions
+## Step 8: Update Track Status and Next Actions
+
+Update `.infrakit/tracks.md` — change the track's Status to `📋 planned`.
 
 > "✅ Plan complete for `<track-name>`.
 >

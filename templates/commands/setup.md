@@ -70,6 +70,10 @@ Present findings to the user:
 
 **Trigger**: User chooses A (Full Setup) or a file is missing.
 
+### 2.0 Detect IaC Tool
+
+Read `.infrakit/config.yaml` to determine which IaC tool this project uses (e.g., `iac: crossplane` or `iac: terraform`). Store this as `<iac-tool>` for use in later phases.
+
 Ask these questions **one at a time**. Wait for each response before asking the next.
 
 **Question 1: Project Name**
@@ -89,7 +93,9 @@ Ask these questions **one at a time**. Wait for each response before asking the 
 
 **WAIT** for response.
 
-**Question 3: API Group**
+**Question 3: API Group** *(Crossplane projects only — skip for Terraform)*
+
+If `<iac-tool>` is **crossplane**, ask:
 > "What is the base API group for your Crossplane resources?
 >
 > Example: `platform.example.com`, `infra.mycompany.io`
@@ -305,9 +311,9 @@ Once the user accepts `.infrakit/context.md`, display this message before contin
 
 > "Your project context is complete. ✅
 >
-> Now let's configure your IaC coding style — this defines the standards all Crossplane
-> engineers on this project must follow when generating infrastructure code. I have a few
-> quick questions about your project-specific conventions before generating
+> Now let's configure your IaC coding style — this defines the standards all engineers
+> on this project must follow when generating infrastructure code. I have a few quick
+> questions about your project-specific conventions before updating
 > `.infrakit/coding-style.md`."
 
 **WAIT** for acknowledgment or proceed after displaying.
@@ -316,7 +322,11 @@ Once the user accepts `.infrakit/context.md`, display this message before contin
 
 ## Phase 3.6: Gather Coding Style Information
 
+The questions to ask depend on the IaC tool detected in Phase 2.0.
+
 Ask these questions **one at a time**. Wait for each response before asking the next.
+
+### If `<iac-tool>` is **crossplane**:
 
 **Coding Style Q1: Crossplane Version & Functions**
 > "Which Crossplane version and pipeline functions does this project use?
@@ -333,11 +343,10 @@ Ask these questions **one at a time**. Wait for each response before asking the 
 > "What is your project's directory structure for Crossplane resources?
 >
 > Default structure:
-> ```
-> apis/<group>/<version>/
-> compositions/
-> examples/<kind>/
-> ```
+>
+>     apis/<group>/<version>/
+>     compositions/
+>     examples/<kind>/
 >
 > Describe any deviations from the default structure (or press Enter to use the default):"
 
@@ -365,7 +374,57 @@ Ask these questions **one at a time**. Wait for each response before asking the 
 > - `publiclyAccessible: false` always, override requires security team approval
 > - `deletionProtection: true` in prod, false elsewhere
 > - `multiAZ: true` required in prod for databases and caches
-> - `backupRetentionPeriod: 7` days in prod, 1 in staging, 0 in dev
+>
+> Describe your security defaults (or press Enter to use the baseline from context.md):"
+
+**WAIT** for response.
+
+### If `<iac-tool>` is **terraform**:
+
+**Coding Style Q1: Terraform Version & Providers**
+> "Which Terraform version and provider(s) does this project use?
+>
+> Examples:
+> - 'Terraform >= 1.6.0; hashicorp/aws ~> 5.0'
+> - 'Terraform >= 1.5.0; hashicorp/azurerm ~> 3.0, hashicorp/random ~> 3.6'
+>
+> Specify the minimum Terraform version and your provider(s) with version constraints (or press Enter to use defaults):"
+
+**WAIT** for response.
+
+**Coding Style Q2: Backend & State Management**
+> "What backend does this project use for Terraform state?
+>
+> Examples:
+> - 'S3 backend with DynamoDB locking (bucket name parameterized per workspace)'
+> - 'Terraform Cloud / HCP Terraform — remote execution'
+> - 'Azure Blob Storage backend'
+>
+> Describe your backend and state strategy (or press Enter to leave as TODO):"
+
+**WAIT** for response.
+
+**Coding Style Q3: Project-Specific Tags**
+> "What tags should all managed resources carry?
+>
+> Examples:
+> - `managed-by = "terraform"` (required)
+> - `cost-center` — from `var.cost_center`
+> - `team` — from `var.team`
+> - `environment` — from `var.environment`
+>
+> List your required tags and their value sources (or press Enter to use `managed-by` only):"
+
+**WAIT** for response.
+
+**Coding Style Q4: Security Defaults**
+> "What are your project-specific security defaults for Terraform resources?
+>
+> Examples:
+> - `encrypted = true` always for all EBS/RDS/S3
+> - Public access variables must default to `false`
+> - `deletion_protection = true` for databases in prod
+> - `multi_az = true` required in prod
 >
 > Describe your security defaults (or press Enter to use the baseline from context.md):"
 
@@ -373,175 +432,26 @@ Ask these questions **one at a time**. Wait for each response before asking the 
 
 ---
 
-## Phase 4: Generate .infrakit/coding-style.md
+## Phase 4: Update .infrakit/coding-style.md
 
-Generate `.infrakit/coding-style.md` using the project information from Phase 2 and coding style answers from Phase 3.6:
+`.infrakit/coding-style.md` was pre-populated from the IaC-specific template when you ran `infrakit init`. Your task here is to fill in the project-specific `[PLACEHOLDER]` values using the information gathered in Phase 2 and Phase 3.6.
 
-```markdown
-# <project_name> Crossplane Coding Style Guide
+### 4.1 Read Existing File
 
-All Crossplane engineers **MUST** follow these standards when generating infrastructure code.
+Read `.infrakit/coding-style.md` and identify all `[PLACEHOLDER]` sections (e.g., `[PROJECT_NAME]`, `[CROSSPLANE_VERSION]`, `[TERRAFORM_VERSION]`, `[REQUIRED_TAGS]`, `[SECURITY_DEFAULTS]`, etc.).
 
----
+### 4.2 Fill Placeholders
 
-## 1. IaC Tool & Version
+Replace each `[PLACEHOLDER]` with the appropriate value from Phase 2 and Phase 3.6 answers:
 
-| Setting | Value |
-|---------|-------|
-| **Crossplane Version** | <crossplane_version_from_CS_Q1> |
-| **Primary Pipeline Function** | <primary_function_from_CS_Q1> |
-| **Provider Package(s)** | <providers_from_context> |
+- `[PROJECT_NAME]` → project name from Q1
+- For **Crossplane**: `[CROSSPLANE_VERSION]` → from CS Q1; `[PRIMARY_FUNCTION]` → from CS Q1; `[FILE_STRUCTURE]` → from CS Q2; `[REQUIRED_TAGS]` → from CS Q3; `[SECURITY_DEFAULTS]` → from CS Q4
+- For **Terraform**: `[TERRAFORM_VERSION]` → from CS Q1; `[PROVIDER_VERSIONS]` → from CS Q1; `[BACKEND_CONFIG]` → from CS Q2; `[REQUIRED_TAGS]` → from CS Q3; `[SECURITY_DEFAULTS]` → from CS Q4
 
----
-
-## 2. Pipeline Mode (MANDATORY)
-
-All compositions MUST use Pipeline mode:
-
-```yaml
-spec:
-  mode: Pipeline
-  pipeline:
-    - step: patch-and-transform
-      functionRef:
-        name: <preferred_function>
-```
-
-**NEVER use Resources mode.** Pipeline mode is mandatory for all new compositions.
-
----
-
-## 3. File Organization
-
-```
-<file_structure_from_CS_Q2_or_default>
-```
-
-- File naming: `kebab-case` for all YAML files
-- One composition per file
-- XRD and Composition in separate files
-
----
-
-## 4. Naming Conventions
-
-**Base API Group**: `<api_group>`
-
-| Resource | Pattern | Example |
-|----------|---------|---------|
-| XRD Kind | PascalCase, X-prefixed | `XSQLInstance` |
-| Claim Kind | PascalCase, no X | `SQLInstance` |
-| Composition Name | kebab-case | `sql-instance-aws` |
-
-### API Versioning
-
-| Version | Policy |
-|---------|--------|
-| `v1alpha1` | Experimental / new |
-| `v1beta1` | Stable, minor changes OK |
-| `v1` | Production stable, no breaking changes |
-
----
-
-## 5. Required Tagging
-
-Every managed resource MUST include these tags/labels:
-
-```yaml
-tags:
-  - key: managed-by
-    value: crossplane
-  - key: crossplane.io/claim-name
-    value: <from-claim>
-  - key: crossplane.io/claim-namespace
-    value: <from-claim>
-```
-
-**Project-specific required tags:**
-
-| Tag Key | Value Source | Description |
-|---------|-------------|-------------|
-<project_specific_tags_from_CS_Q3>
-
----
-
-## 6. Provider Configuration
-
-Every managed resource MUST include `providerConfigRef`:
-
-```yaml
-spec:
-  providerConfigRef:
-    name: default
-```
-
----
-
-## 7. Connection Secrets
-
-All resources with network endpoints MUST publish connection details:
-
-```yaml
-writeConnectionSecretToRef:
-  name: $(claim-name)-connection
-  namespace: $(claim-namespace)
-```
-
-**Required connection secret keys** (for applicable resource types):
-
-| Resource Type | Keys |
-|---------------|------|
-| Databases | `endpoint`, `port`, `username`, `password`, `database` |
-| Caches | `endpoint`, `port` |
-| Object Storage | `endpoint`, `bucket` |
-| Message Queues | `endpoint`, `queue-url` |
-
----
-
-## 8. Security Rules
-
-- **NEVER** hardcode secrets, passwords, or API keys in YAML
-- **NEVER** set `publicNetworkAccess: Enabled` in production without explicit override
-- **ALWAYS** enable encryption at rest for storage resources in staging/prod
-- **ALWAYS** use `deletionPolicy: Delete` unless explicitly overridden
-
-**Project-specific security defaults:**
-
-<project_security_defaults_from_CS_Q4>
-
----
-
-## 9. Patch Patterns
-
-### Input patch (Composite → Managed Resource)
-```yaml
-- type: FromCompositeFieldPath
-  fromFieldPath: spec.parameters.<field>
-  toFieldPath: spec.forProvider.<field>
-```
-
-### Output patch (Managed Resource → Composite Status)
-```yaml
-- type: ToCompositeFieldPath
-  fromFieldPath: status.atProvider.<field>
-  toFieldPath: status.<field>
-```
-
-### String format transform
-```yaml
-- type: FromCompositeFieldPath
-  fromFieldPath: metadata.name
-  toFieldPath: spec.forProvider.name
-  transforms:
-    - type: string
-      string:
-        type: Format
-        fmt: "%s-<suffix>"
-```
-```
+Keep all non-placeholder content intact.
 
 **Present to user:**
-> "I've generated `.infrakit/coding-style.md`. Please review:
+> "I've updated `.infrakit/coding-style.md`. Please review:
 >
 > A) **Accept** — Looks good
 > B) **Edit** — Make changes, say 'done' when ready
@@ -634,7 +544,8 @@ Track all infrastructure compositions and their current status.
 > - `.infrakit/tracks.md` — Resource registry ✅
 >
 > **Next Steps:**
-> - Run `/infrakit:new_composition` to create your first infrastructure resource
+> - **Crossplane**: Run `/infrakit:new_composition` to create your first infrastructure resource
+> - **Terraform**: Run `/infrakit:create_terraform_code` to create your first module
 > - Run `/infrakit:status` to see all track statuses"
 
 ---
