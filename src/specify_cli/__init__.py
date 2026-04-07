@@ -3054,7 +3054,7 @@ def extension_add(
                 if bundled_path is not None:
                     manifest = manager.install_from_directory(bundled_path, speckit_version, priority=priority)
                 else:
-                    # Install from catalog
+                    # Install from catalog (also resolves display names to IDs)
                     catalog = ExtensionCatalog(project_root)
 
                     # Check if extension exists in catalog (supports both ID and display name)
@@ -3068,31 +3068,39 @@ def extension_add(
                         console.print("  specify extension search")
                         raise typer.Exit(1)
 
-                    # Enforce install_allowed policy
-                    if not ext_info.get("_install_allowed", True):
-                        catalog_name = ext_info.get("_catalog_name", "community")
-                        console.print(
-                            f"[red]Error:[/red] '{extension}' is available in the "
-                            f"'{catalog_name}' catalog but installation is not allowed from that catalog."
-                        )
-                        console.print(
-                            f"\nTo enable installation, add '{extension}' to an approved catalog "
-                            f"(install_allowed: true) in .specify/extension-catalogs.yml."
-                        )
-                        raise typer.Exit(1)
+                    # If catalog resolved a display name to an ID, check bundled again
+                    resolved_id = ext_info['id']
+                    if resolved_id != extension:
+                        bundled_path = _locate_bundled_extension(resolved_id)
+                        if bundled_path is not None:
+                            manifest = manager.install_from_directory(bundled_path, speckit_version, priority=priority)
 
-                    # Download extension ZIP (use resolved ID, not original argument which may be display name)
-                    extension_id = ext_info['id']
-                    console.print(f"Downloading {ext_info['name']} v{ext_info.get('version', 'unknown')}...")
-                    zip_path = catalog.download_extension(extension_id)
+                    if bundled_path is None:
+                        # Enforce install_allowed policy
+                        if not ext_info.get("_install_allowed", True):
+                            catalog_name = ext_info.get("_catalog_name", "community")
+                            console.print(
+                                f"[red]Error:[/red] '{extension}' is available in the "
+                                f"'{catalog_name}' catalog but installation is not allowed from that catalog."
+                            )
+                            console.print(
+                                f"\nTo enable installation, add '{extension}' to an approved catalog "
+                                f"(install_allowed: true) in .specify/extension-catalogs.yml."
+                            )
+                            raise typer.Exit(1)
 
-                    try:
-                        # Install from downloaded ZIP
-                        manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
-                    finally:
-                        # Clean up downloaded ZIP
-                        if zip_path.exists():
-                            zip_path.unlink()
+                        # Download extension ZIP (use resolved ID, not original argument which may be display name)
+                        extension_id = ext_info['id']
+                        console.print(f"Downloading {ext_info['name']} v{ext_info.get('version', 'unknown')}...")
+                        zip_path = catalog.download_extension(extension_id)
+
+                        try:
+                            # Install from downloaded ZIP
+                            manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
+                        finally:
+                            # Clean up downloaded ZIP
+                            if zip_path.exists():
+                                zip_path.unlink()
 
         console.print("\n[green]✓[/green] Extension installed successfully!")
         console.print(f"\n[bold]{manifest.name}[/bold] (v{manifest.version})")
