@@ -95,7 +95,9 @@ Read all track files:
 
 ---
 
-## Step 5: Present Task Summary
+## Step 5: Present Task Summary and Set Status
+
+Update `.infrakit/tracks.md` — change the track's Status to `⚙️ in-progress`.
 
 Before starting, display the task summary:
 
@@ -151,15 +153,13 @@ If a task appears to conflict with coding standards, flag it **before** writing:
 
 ---
 
-## Step 8: Post-Implementation Review
+## Step 8: Post-Implementation Summary
 
 After all tasks are marked `[x]`:
 
 > "✅ All tasks complete for track `<track-name>`.
 >
-> Proceeding to implementation review..."
-
-Hand off to `/infrakit:review <resource-directory>` for Crossplane code review.
+> **Suggested next step**: Run `/infrakit:review <resource-directory>` to review the implementation against coding standards."
 
 ---
 
@@ -170,46 +170,37 @@ After the review is approved, generate or update `.infrakit_context.md` in the r
 ```markdown
 # InfraKit Context: <resource-name>
 
-## Track
-- **Track Name**: <track-name>
-- **Type**: new_composition / update_composition
-- **Completed**: <YYYY-MM-DD>
+**Purpose**: <one-line description of what this resource provides>
+**Track**: `<track-name>` | **Completed**: <YYYY-MM-DD>
 
-## What Was Built
-<Brief description of what was implemented>
+## XRD
+
+| XR Kind | Claim Kind | API Group | Version |
+|---------|-----------|-----------|---------|
+| `<XKind>` | `<Kind>` | `<group>` | `<version>` |
 
 ## Files
 
-| File | Description |
-|------|-------------|
+| File | Contents |
+|------|----------|
 | `definition.yaml` | XRD: <brief description> |
-| `composition.yaml` | Composition (Pipeline mode): <brief description> |
+| `composition.yaml` | Pipeline Composition: <managed resources list> |
 | `claim.yaml` | Example claim |
-| `README.md` | Usage documentation |
-
-## Key Design Decisions
-- <decision 1>
-- <decision 2>
-
-## XRD
-- **XR Kind**: <XR Kind>
-- **Claim Kind**: <Claim Kind>
-- **API Group**: <group>
-- **Version**: <version>
+| `README.md` | Usage docs |
 
 ## Parameters
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| <param> | <type> | <bool> | <default> | <desc> |
+| <param> | <type> | <yes/no> | <default> | <desc> |
 
-## Outputs
+## Status Outputs
 
-| Field | Description |
-|-------|-------------|
-| <field> | <desc> |
+| Field | Source | Description |
+|-------|--------|-------------|
+| <field> | `<resource>.status.atProvider.<path>` | <desc> |
 
-## Connection Secret Keys
+## Connection Secrets
 
 | Key | Description |
 |-----|-------------|

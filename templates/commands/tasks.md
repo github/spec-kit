@@ -46,7 +46,11 @@ Verify required files exist:
 **HALT**
 
 **If spec.md is missing:**
-> "❌ `spec.md` not found. Run `/infrakit:new_composition <track-name>` to create the spec."
+> "❌ `spec.md` not found.
+>
+> Run the spec generation command for your IaC tool:
+> - Crossplane: `/infrakit:new_composition <track-name>`
+> - Terraform: `/infrakit:create_terraform_code <track-name>`"
 **HALT**
 
 **If plan.md is missing:**
@@ -109,15 +113,43 @@ Break the plan into discrete, ordered tasks across 5 phases:
 - Run `crossplane render claim.yaml composition.yaml definition.yaml` to validate output
 - Verify all patches resolve correctly and no errors appear
 
-### For Other IaC Tools
+### For Terraform Projects
 
-Adapt task phases based on the IaC tool's conventions (modules, templates, etc.).
+Break the plan into discrete, ordered tasks across 5 phases:
+
+**Phase 1: Provider & Version Constraints (versions.tf)**
+- Create `versions.tf` declaring:
+  - `terraform { required_version = "..." }` from plan.md
+  - Provider source and version constraint (e.g., `hashicorp/aws ~> 5.0`)
+
+**Phase 2: Input Variables (variables.tf)**
+- Create `variables.tf` with all input variables from plan.md:
+  - Each variable must have `type`, `description`, and `default` (if applicable)
+  - Sensitive variables (passwords, tokens) must include `sensitive = true`
+  - Add `validation` blocks for constrained values (environments, sizes, etc.)
+
+**Phase 3: Resources (main.tf)**
+- Create `main.tf` with all resource definitions from plan.md:
+  - Apply required tags from `tagging-standard.md` (via `default_tags` for AWS or per-resource `tags`/`labels`)
+  - Enable encryption at rest for all storage/database resources
+  - Set public access to `false` by default; require explicit variable to override
+
+**Phase 4: Outputs (outputs.tf)**
+- Create `outputs.tf` with all output values from plan.md:
+  - Each output must have a `description`
+  - Sensitive outputs (credentials, endpoints with tokens) must include `sensitive = true`
+
+**Phase 5: Documentation and Validation (README.md)**
+- Create `README.md` documenting the module purpose, all variables, outputs, and usage examples
+- Run `terraform init && terraform validate` to verify the module is syntactically correct
 
 ---
 
 ## Step 5: Write tasks.md
 
-Write to `.infrakit/tracks/<track-name>/tasks.md` using this format:
+Write to `.infrakit/tracks/<track-name>/tasks.md`. Use the format matching the IaC tool from Step 3.
+
+### Crossplane format:
 
 ```markdown
 # Tasks: <track-name>
@@ -185,12 +217,73 @@ Generated from:
 - Apply all tags from `.infrakit/tagging-standard.md` to every managed resource
 ```
 
+### Terraform format:
+
+```markdown
+# Tasks: <track-name>
+
+Generated from:
+- `.infrakit/tracks/<track-name>/spec.md`
+- `.infrakit/tracks/<track-name>/plan.md`
+
+---
+
+## Phase 1: Provider & Version Constraints
+
+- [ ] T001 Create `<module-dir>/versions.tf` — Terraform and provider version constraints
+  - Terraform required_version: `<version>` (from plan.md)
+  - Provider: `<provider>` version `<constraint>` (from plan.md)
+
+---
+
+## Phase 2: Input Variables
+
+- [ ] T002 Create `<module-dir>/variables.tf` — All input variable declarations
+  <list each variable with type, default, description, sensitive flag>
+
+---
+
+## Phase 3: Resources
+
+- [ ] T003 Create `<module-dir>/main.tf` — All resource definitions
+  <list each resource_type.name from plan.md>
+
+- [ ] T004 [P] Apply required tags per tagging-standard.md to all resources
+  - AWS: configure `default_tags` in provider block or per-resource `tags`
+  - Azure/GCP: per-resource `tags` / `labels`
+
+- [ ] T005 [P] Enable encryption at rest for all storage/database resources
+
+---
+
+## Phase 4: Outputs
+
+- [ ] T006 Create `<module-dir>/outputs.tf` — All output value declarations
+  <list each output with source expression and description>
+
+---
+
+## Phase 5: Documentation and Validation
+
+- [ ] T007 Create `<module-dir>/README.md` — Module purpose, variable reference, outputs, usage examples
+- [ ] T008 Run `terraform init && terraform validate` in `<module-dir>` and verify no errors
+
+---
+
+## Notes
+
+- All code must follow `.infrakit/coding-style.md`
+- Never hardcode secrets, passwords, or API keys — use `sensitive = true` variables
+- Apply all tags from `.infrakit/tagging-standard.md` to every resource that supports tagging
+```
+
 ---
 
 ## Step 6: Present Summary and Confirm
 
-After writing tasks.md:
+After writing tasks.md, show a phase summary appropriate for the IaC tool:
 
+**Crossplane:**
 > "✅ Tasks generated for track `<track-name>`.
 >
 > | Phase | Tasks | Description |
@@ -206,6 +299,22 @@ After writing tasks.md:
 >
 > Run `/infrakit:implement <track-name>` to begin implementation."
 
+**Terraform:**
+> "✅ Tasks generated for track `<track-name>`.
+>
+> | Phase | Tasks | Description |
+> |-------|-------|-------------|
+> | Phase 1: Versions | 1 | versions.tf |
+> | Phase 2: Variables | 1 | variables.tf |
+> | Phase 3: Resources | N | main.tf with tags and encryption |
+> | Phase 4: Outputs | 1 | outputs.tf |
+> | Phase 5: Docs & Validation | 2 | README.md + terraform validate |
+> | **Total** | **N** | |
+>
+> **File**: `.infrakit/tracks/<track-name>/tasks.md`
+>
+> Run `/infrakit:implement <track-name>` to begin implementation."
+
 ---
 
 ## Error Handling
@@ -213,6 +322,6 @@ After writing tasks.md:
 | Error | Action |
 |-------|--------|
 | Setup files missing | Halt, direct to `/infrakit:setup` |
-| spec.md missing | Halt, direct to `/infrakit:new_composition <track-name>` |
+| spec.md missing | Halt — Crossplane: direct to `/infrakit:new_composition <track-name>`; Terraform: direct to `/infrakit:create_terraform_code <track-name>` |
 | plan.md missing | Halt, direct to `/infrakit:plan <track-name>` |
 | tasks.md already exists | Ask: overwrite or append? |

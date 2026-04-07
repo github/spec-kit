@@ -22,6 +22,7 @@ IAC_CONFIG = {
             "tasks",
         ],
         "iac_commands": [
+            "setup-coding-style",
             "new_composition",
             "update_composition",
             "implement",
@@ -45,6 +46,7 @@ IAC_CONFIG = {
             "tasks",
         ],
         "iac_commands": [
+            "setup-coding-style",
             "create_terraform_code",
             "update_terraform_code",
             "implement",

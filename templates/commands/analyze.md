@@ -49,7 +49,11 @@ Verify required files exist:
 **HALT**
 
 **If spec.md is missing:**
-> "❌ `spec.md` not found in `.infrakit/tracks/<track-name>/`. Run `/infrakit:new_composition <track-name>` to create the spec."
+> "❌ `spec.md` not found in `.infrakit/tracks/<track-name>/`.
+>
+> Run the spec generation command for your IaC tool:
+> - Crossplane: `/infrakit:new_composition <track-name>`
+> - Terraform: `/infrakit:create_terraform_code <track-name>`"
 **HALT**
 
 **If plan.md is missing:**

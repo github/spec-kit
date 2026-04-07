@@ -120,4 +120,6 @@ If no tracks are registered yet:
 
 > "No tracks registered yet.
 >
-> Run `/infrakit:new_composition` to create your first infrastructure resource."
+> Run the resource creation command for your IaC tool:
+> - Crossplane: `/infrakit:new_composition`
+> - Terraform: `/infrakit:create_terraform_code`"
