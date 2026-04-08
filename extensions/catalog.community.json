@@ -322,6 +322,38 @@
       "created_at": "2026-03-29T00:00:00Z",
       "updated_at": "2026-03-29T00:00:00Z"
     },
+    "diagram": {
+      "name": "Spec Diagram",
+      "id": "diagram",
+      "description": "Auto-generate Mermaid diagrams of SDD workflow state, feature progress, and task dependencies.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-diagram-/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-diagram-",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-diagram-",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-diagram-/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-diagram-/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "diagram",
+        "mermaid",
+        "visualization",
+        "workflow",
+        "dependencies"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-08T00:00:00Z",
+      "updated_at": "2026-04-08T00:00:00Z"
+    },
     "docguard": {
       "name": "DocGuard — CDD Enforcement",
       "id": "docguard",
