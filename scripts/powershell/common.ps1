@@ -423,6 +423,8 @@ except Exception:
                 $content = $layerContent
             }
             if ($strat -ne 'replace') {
+                # No base content to compose onto
+                if ($null -eq $content) { return $null }
                 $started = $true
                 switch ($strat) {
                     'prepend' { $content = "$layerContent`n`n$content" }

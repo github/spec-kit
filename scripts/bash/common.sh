@@ -468,6 +468,7 @@ except Exception:
 
     # Compose bottom-up: start from lowest priority
     local content=""
+    local has_base=false
     local started=false
     local i
     for (( i=count-1; i>=0; i-- )); do
@@ -479,9 +480,12 @@ except Exception:
         if [ "$started" = false ]; then
             if [ "$strat" = "replace" ]; then
                 content="$layer_content"
+                has_base=true
             fi
             # Keep consuming replace layers from the bottom until we hit a non-replace
             if [ "$strat" != "replace" ]; then
+                # No base content to compose onto
+                [ "$has_base" = false ] && return 1
                 started=true
                 case "$strat" in
                     prepend) content="${layer_content}\n\n${content}" ;;

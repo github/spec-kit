@@ -2918,8 +2918,11 @@ class TestCompositionStrategyValidation:
         assert manifest.templates[0]["strategy"] == "wrap"
 
     def test_default_strategy_is_replace(self, pack_dir):
-        """Test that omitting strategy defaults to replace."""
+        """Test that omitting strategy defaults to replace (key is absent)."""
         manifest = PresetManifest(pack_dir / "preset.yml")
+        # Strategy key should not be present in the manifest data
+        assert "strategy" not in manifest.templates[0]
+        # But consumers should treat missing strategy as "replace"
         assert manifest.templates[0].get("strategy", "replace") == "replace"
 
     def test_invalid_strategy_rejected(self, temp_dir, valid_pack_data):
