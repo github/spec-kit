@@ -167,3 +167,62 @@ class TestClaudeAgentDeployment:
             project_root,
         )
         assert not agent_file.exists()
+
+
+class TestCopilotAgentDeployment:
+    """behavior.execution:agent on Copilot injects mode: and tools: into .agent.md frontmatter."""
+
+    def _setup_copilot_project(self, tmp_path):
+        root = tmp_path / "proj"
+        (root / ".github" / "agents").mkdir(parents=True)
+        (root / ".github" / "prompts").mkdir(parents=True)
+        (root / ".specify").mkdir()
+        (root / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "copilot", "script": "sh"})
+        )
+        return root
+
+    def test_copilot_type_agent_injects_mode(self, tmp_path):
+        root = self._setup_copilot_project(tmp_path)
+        src = tmp_path / "ext" / "commands"
+        src.mkdir(parents=True)
+        (src / "analyzer.md").write_text(dedent("""\
+            ---
+            description: Analyze codebase
+            behavior:
+              execution: agent
+              tools: read-only
+            ---
+            Analyze $ARGUMENTS
+        """))
+        registrar = CommandRegistrar()
+        registrar.register_commands(
+            "copilot",
+            [{"name": "speckit.test-ext.analyzer", "file": "analyzer.md"}],
+            "test-ext", src, root,
+        )
+        agent_file = root / ".github" / "agents" / "speckit.test-ext.analyzer.agent.md"
+        assert agent_file.exists()
+        content = agent_file.read_text()
+        parts = content.split("---")
+        fm = yaml.safe_load(parts[1])
+        assert fm.get("mode") == "agent"
+        assert "read_file" in fm.get("tools", [])
+
+    def test_copilot_type_command_no_tools_injected(self, tmp_path):
+        root = self._setup_copilot_project(tmp_path)
+        src = tmp_path / "ext" / "commands"
+        src.mkdir(parents=True)
+        (src / "hello.md").write_text("---\ndescription: Hello\n---\nHello")
+        registrar = CommandRegistrar()
+        registrar.register_commands(
+            "copilot",
+            [{"name": "speckit.test-ext.hello", "file": "hello.md"}],
+            "test-ext", src, root,
+        )
+        agent_file = root / ".github" / "agents" / "speckit.test-ext.hello.agent.md"
+        content = agent_file.read_text()
+        parts = content.split("---")
+        fm = yaml.safe_load(parts[1]) or {}
+        assert "mode" not in fm
+        assert "tools" not in fm
