@@ -260,6 +260,7 @@ class CommandRegistrar:
             skill_name,
             description,
             f"{source_id}:{source_file}",
+            project_root=project_root,
         )
         return self.render_frontmatter(skill_frontmatter) + "\n" + body
 
@@ -269,8 +270,21 @@ class CommandRegistrar:
         skill_name: str,
         description: str,
         source: str,
+        project_root: Path | None = None,
     ) -> dict:
-        """Build consistent SKILL.md frontmatter across all skill generators."""
+        """Build consistent SKILL.md frontmatter across all skill generators.
+
+        Args:
+            agent_name: Agent identifier (e.g., "claude", "codex").
+            skill_name: Skill name for the frontmatter.
+            description: Skill description.
+            source: Source identifier for metadata.
+            project_root: Project root path to read init-options.json from.
+                         If None, defaults apply.
+
+        Returns:
+            Frontmatter dict with appropriate agent-specific flags.
+        """
         skill_frontmatter = {
             "name": skill_name,
             "description": description,
@@ -282,9 +296,22 @@ class CommandRegistrar:
         }
         if agent_name == "claude":
             # Claude skills should be user-invocable (accessible via /command)
-            # and only run when explicitly invoked (not auto-triggered by the model).
             skill_frontmatter["user-invocable"] = True
-            skill_frontmatter["disable-model-invocation"] = True
+
+            # Check if model invocation is allowed from init-options.json
+            allow_model_invocation = False
+            if project_root is not None:
+                try:
+                    from . import load_init_options
+                    opts = load_init_options(project_root)
+                    if isinstance(opts, dict):
+                        allow_model_invocation = opts.get("allow_model_invocation", False)
+                except (ImportError, OSError):
+                    pass
+
+            # By default, skills run only when explicitly invoked (not auto-triggered).
+            # Set to False to allow model-driven invocation for agent orchestration.
+            skill_frontmatter["disable-model-invocation"] = not allow_model_invocation
         return skill_frontmatter
 
     @staticmethod

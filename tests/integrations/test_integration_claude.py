@@ -400,3 +400,169 @@ class TestClaudeArgumentHints:
         lines = result.splitlines()
         hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
         assert hint_count == 1
+
+
+class TestAllowModelInvocation:
+    """Tests for --allow-model-invocation flag."""
+
+    def test_default_disables_model_invocation(self, tmp_path):
+        """By default, disable-model-invocation should be true."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "default-disable"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    "claude",
+                    "--script",
+                    "sh",
+                    "--no-git",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+
+        skill_file = project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
+        assert skill_file.exists()
+        content = skill_file.read_text(encoding="utf-8")
+        assert "disable-model-invocation: true" in content
+
+        init_options = json.loads(
+            (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
+        )
+        assert init_options.get("allow_model_invocation") is None
+
+    def test_allow_model_invocation_flag_enables_model_invocation(self, tmp_path):
+        """With --allow-model-invocation, disable-model-invocation should be false."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "allow-invocation"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    "claude",
+                    "--script",
+                    "sh",
+                    "--no-git",
+                    "--ignore-agent-tools",
+                    "--allow-model-invocation",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+
+        skill_file = project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
+        assert skill_file.exists()
+        content = skill_file.read_text(encoding="utf-8")
+        assert "disable-model-invocation: false" in content
+
+        init_options = json.loads(
+            (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
+        )
+        assert init_options["allow_model_invocation"] is True
+
+    def test_build_skill_frontmatter_respects_init_options(self, tmp_path):
+        """build_skill_frontmatter should read allow_model_invocation from init-options.json."""
+        from specify_cli import save_init_options
+        from specify_cli.agents import CommandRegistrar
+
+        # Test with default (no flag set)
+        project_default = tmp_path / "default"
+        project_default.mkdir()
+        save_init_options(project_default, {"ai": "claude", "script": "sh"})
+
+        fm_default = CommandRegistrar.build_skill_frontmatter(
+            "claude", "test-skill", "Test description", "test", project_root=project_default
+        )
+        assert fm_default["disable-model-invocation"] is True
+
+        # Test with allow_model_invocation = true
+        project_allow = tmp_path / "allow"
+        project_allow.mkdir()
+        save_init_options(project_allow, {"ai": "claude", "script": "sh", "allow_model_invocation": True})
+
+        fm_allow = CommandRegistrar.build_skill_frontmatter(
+            "claude", "test-skill", "Test description", "test", project_root=project_allow
+        )
+        assert fm_allow["disable-model-invocation"] is False
+
+    def test_preset_install_respects_allow_model_invocation(self, tmp_path):
+        """Preset skills should respect allow_model_invocation from init-options.json."""
+        from specify_cli import save_init_options
+        from specify_cli.presets import PresetManager
+
+        project = tmp_path / "preset-project"
+        project.mkdir()
+        save_init_options(project, {"ai": "claude", "ai_skills": True, "script": "sh", "allow_model_invocation": True})
+
+        skills_dir = project / ".claude" / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create existing skill directory to trigger preset update
+        specify_skill = skills_dir / "speckit-specify"
+        specify_skill.mkdir()
+
+        preset_dir = tmp_path / "test-preset"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.specify.md").write_text(
+            "---\n"
+            "description: Specify workflow\n"
+            "---\n\n"
+            "preset test\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "test-preset",
+                "name": "Test Preset",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.specify",
+                        "file": "commands/speckit.specify.md",
+                    }
+                ]
+            },
+        }
+        import yaml
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert skill_file.exists()
+        content = skill_file.read_text(encoding="utf-8")
+        assert "disable-model-invocation: false" in content
