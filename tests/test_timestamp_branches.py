@@ -15,6 +15,12 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CREATE_FEATURE = PROJECT_ROOT / "scripts" / "bash" / "create-new-feature.sh"
 CREATE_FEATURE_PS = PROJECT_ROOT / "scripts" / "powershell" / "create-new-feature.ps1"
+EXT_CREATE_FEATURE = (
+    PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
+)
+EXT_CREATE_FEATURE_PS = (
+    PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
+)
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
 
 
@@ -428,6 +434,43 @@ class TestAllowExistingBranch:
         )
         assert result.returncode == 0, result.stderr
 
+    def test_allow_existing_surfaces_checkout_error(self, git_repo: Path):
+        """Checkout failures on an existing branch should include Git's stderr."""
+        shared_file = git_repo / "shared.txt"
+        shared_file.write_text("base\n")
+        subprocess.run(
+            ["git", "add", "shared.txt"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "add shared file", "-q"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-b", "010-checkout-failure"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        shared_file.write_text("branch version\n")
+        subprocess.run(
+            ["git", "commit", "-am", "branch change", "-q"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        shared_file.write_text("uncommitted main change\n")
+
+        result = run_script(
+            git_repo, "--allow-existing-branch", "--short-name", "checkout-failure",
+            "--number", "10", "Checkout failure",
+        )
+
+        assert result.returncode != 0, "checkout should fail with conflicting local changes"
+        assert "Failed to switch to existing branch '010-checkout-failure'" in result.stderr
+        assert "would be overwritten by checkout" in result.stderr
+        assert "shared.txt" in result.stderr
+
 
 class TestAllowExistingBranchPowerShell:
     def test_powershell_supports_allow_existing_branch_flag(self):
@@ -436,6 +479,26 @@ class TestAllowExistingBranchPowerShell:
         assert "-AllowExistingBranch" in contents
         # Ensure the flag is referenced in script logic, not just declared
         assert "AllowExistingBranch" in contents.replace("-AllowExistingBranch", "")
+
+    def test_powershell_surfaces_checkout_errors(self):
+        """Static guard: PS script preserves checkout stderr on existing-branch failures."""
+        contents = CREATE_FEATURE_PS.read_text(encoding="utf-8")
+        assert "$switchBranchError = git checkout -q $branchName 2>&1 | Out-String" in contents
+        assert "exists but could not be checked out.`n$($switchBranchError.Trim())" in contents
+
+
+class TestGitExtensionParity:
+    def test_bash_extension_surfaces_checkout_errors(self):
+        """Static guard: git extension bash script preserves checkout stderr."""
+        contents = EXT_CREATE_FEATURE.read_text(encoding="utf-8")
+        assert 'switch_branch_error=$(git checkout -q "$BRANCH_NAME" 2>&1)' in contents
+        assert "Failed to switch to existing branch '$BRANCH_NAME'" in contents
+
+    def test_powershell_extension_surfaces_checkout_errors(self):
+        """Static guard: git extension PowerShell script preserves checkout stderr."""
+        contents = EXT_CREATE_FEATURE_PS.read_text(encoding="utf-8")
+        assert "$switchBranchError = git checkout -q $branchName 2>&1 | Out-String" in contents
+        assert "exists but could not be checked out.`n$($switchBranchError.Trim())" in contents
 
 
 # ── Dry-Run Tests ────────────────────────────────────────────────────────────

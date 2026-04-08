@@ -327,9 +327,13 @@ if (-not $DryRun) {
                     if ($currentBranch -eq $branchName) {
                         # Already on the target branch
                     } else {
-                        git checkout -q $branchName 2>$null | Out-Null
+                        $switchBranchError = git checkout -q $branchName 2>&1 | Out-String
                         if ($LASTEXITCODE -ne 0) {
-                            Write-Error "Error: Branch '$branchName' exists but could not be checked out. Resolve any uncommitted changes or conflicts and try again."
+                            if ($switchBranchError) {
+                                Write-Error "Error: Branch '$branchName' exists but could not be checked out.`n$($switchBranchError.Trim())"
+                            } else {
+                                Write-Error "Error: Branch '$branchName' exists but could not be checked out. Resolve any uncommitted changes or conflicts and try again."
+                            }
                             exit 1
                         }
                     }
