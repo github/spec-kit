@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-09T00:00:00Z",
+  "updated_at": "2026-04-09T14:30:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1515,6 +1515,36 @@
       "stars": 0,
       "created_at": "2026-03-16T00:00:00Z",
       "updated_at": "2026-03-16T00:00:00Z"
+    },
+    "status-report": {
+      "name": "Status Report",
+      "id": "status-report",
+      "description": "Project status, feature progress, and next-action recommendations for spec-driven workflows.",
+      "author": "Open-Agent-Tools",
+      "version": "1.2.5",
+      "download_url": "https://github.com/Open-Agent-Tools/spec-kit-status/archive/refs/tags/v1.2.5.zip",
+      "repository": "https://github.com/Open-Agent-Tools/spec-kit-status",
+      "homepage": "https://github.com/Open-Agent-Tools/spec-kit-status",
+      "documentation": "https://github.com/Open-Agent-Tools/spec-kit-status/blob/main/README.md",
+      "changelog": "https://github.com/Open-Agent-Tools/spec-kit-status/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "workflow",
+        "project-management",
+        "status"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-08T15:05:14Z",
+      "updated_at": "2026-04-08T15:05:14Z"
     },
     "superb": {
       "name": "Superpowers Bridge",
