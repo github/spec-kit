@@ -1225,7 +1225,10 @@ def init(
                         git_messages.append("bundled extension not found")
                 except Exception as ext_err:
                     git_has_error = True
-                    git_messages.append(f"extension install failed: {ext_err}")
+                    sanitized_ext = str(ext_err).replace('\n', ' ').strip()
+                    git_messages.append(
+                        f"extension install failed: {sanitized_ext[:120]}"
+                    )
                 summary = "; ".join(git_messages)
                 if git_has_error:
                     tracker.error("git", summary)
