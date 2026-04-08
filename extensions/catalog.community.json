@@ -106,6 +106,38 @@
       "created_at": "2026-03-03T00:00:00Z",
       "updated_at": "2026-03-03T00:00:00Z"
     },
+    "branch-convention": {
+      "name": "Branch Convention",
+      "id": "branch-convention",
+      "description": "Configurable branch and folder naming conventions for /specify with presets and custom patterns.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-branch-convention/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-branch-convention",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-branch-convention",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-branch-convention/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-branch-convention/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "branch",
+        "naming",
+        "convention",
+        "gitflow",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-08T00:00:00Z",
+      "updated_at": "2026-04-08T00:00:00Z"
+    },
     "canon": {
       "name": "Canon",
       "id": "canon",
