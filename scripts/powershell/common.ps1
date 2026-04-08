@@ -228,6 +228,56 @@ function Test-DirHasFiles {
     }
 }
 
+# Discover nested independent git repositories under RepoRoot.
+# Searches up to 2 directory levels deep for subdirectories containing .git
+# (directory or file, covering worktrees/submodules). Excludes the root repo
+# itself and common non-project directories.
+# Returns an array of absolute paths.
+function Find-NestedGitRepos {
+    param([string]$RepoRoot = (Get-RepoRoot))
+
+    $skipDirs = @('.specify', '.git', 'node_modules', 'vendor', '.venv', 'venv',
+                  '__pycache__', '.gradle', 'build', 'dist', 'target', '.idea',
+                  '.vscode', 'specs')
+
+    $results = @()
+
+    # Level 1
+    $children = Get-ChildItem -Path $RepoRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $skipDirs -notcontains $_.Name }
+
+    foreach ($child in $children) {
+        $gitMarker = Join-Path $child.FullName '.git'
+        if (Test-Path -LiteralPath $gitMarker) {
+            # Verify it is a valid git work tree
+            try {
+                $null = git -C $child.FullName rev-parse --is-inside-work-tree 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    $results += $child.FullName
+                }
+            } catch { }
+        } else {
+            # Level 2
+            $grandchildren = Get-ChildItem -Path $child.FullName -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $skipDirs -notcontains $_.Name }
+
+            foreach ($gc in $grandchildren) {
+                $gcGitMarker = Join-Path $gc.FullName '.git'
+                if (Test-Path -LiteralPath $gcGitMarker) {
+                    try {
+                        $null = git -C $gc.FullName rev-parse --is-inside-work-tree 2>$null
+                        if ($LASTEXITCODE -eq 0) {
+                            $results += $gc.FullName
+                        }
+                    } catch { }
+                }
+            }
+        }
+    }
+
+    return $results
+}
+
 # Resolve a template name to a file path using the priority stack:
 #   1. .specify/templates/overrides/
 #   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)

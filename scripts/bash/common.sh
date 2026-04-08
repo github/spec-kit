@@ -278,6 +278,58 @@ json_escape() {
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
+# Discover nested independent git repositories under REPO_ROOT.
+# Searches up to 2 directory levels deep for subdirectories containing .git
+# (directory or file, covering worktrees/submodules). Excludes the root repo
+# itself and common non-project directories.
+# Outputs one absolute path per line.
+find_nested_git_repos() {
+    local repo_root="${1:-$(get_repo_root)}"
+    # Directories to skip during traversal
+    local -a skip_dirs=(".specify" ".git" "node_modules" "vendor" ".venv" "venv"
+                        "__pycache__" ".gradle" "build" "dist" "target" ".idea"
+                        ".vscode" "specs")
+
+    _should_skip() {
+        local name="$1"
+        for skip in "${skip_dirs[@]}"; do
+            [ "$name" = "$skip" ] && return 0
+        done
+        return 1
+    }
+
+    # Level 1
+    for child in "$repo_root"/*/; do
+        [ -d "$child" ] || continue
+        child="${child%/}"
+        local child_name
+        child_name="$(basename "$child")"
+        _should_skip "$child_name" && continue
+
+        if [ -e "$child/.git" ]; then
+            # Verify it is a valid git work tree
+            if git -C "$child" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                echo "$child"
+            fi
+        else
+            # Level 2
+            for grandchild in "$child"/*/; do
+                [ -d "$grandchild" ] || continue
+                grandchild="${grandchild%/}"
+                local gc_name
+                gc_name="$(basename "$grandchild")"
+                _should_skip "$gc_name" && continue
+
+                if [ -e "$grandchild/.git" ]; then
+                    if git -C "$grandchild" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                        echo "$grandchild"
+                    fi
+                fi
+            done
+        fi
+    done
+}
+
 # Resolve a template name to a file path using the priority stack:
 #   1. .specify/templates/overrides/
 #   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)

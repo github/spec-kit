@@ -360,12 +360,70 @@ if (-not $DryRun) {
     $env:SPECIFY_FEATURE = $branchName
 }
 
+# Create matching feature branches in nested independent git repositories
+$nestedReposResult = @()
+if ($hasGit) {
+    $nestedRepos = Find-NestedGitRepos -RepoRoot $repoRoot
+    foreach ($nestedPath in $nestedRepos) {
+        $relPath = $nestedPath.Substring($repoRoot.Length).TrimStart('\', '/')
+        $nestedStatus = 'skipped'
+
+        if ($DryRun) {
+            $nestedStatus = 'dry_run'
+        } else {
+            try {
+                git -C $nestedPath checkout -q -b $branchName 2>$null | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    $nestedStatus = 'created'
+                } else {
+                    throw "branch creation failed"
+                }
+            } catch {
+                # Check if branch already exists
+                $existingNested = git -C $nestedPath branch --list $branchName 2>$null
+                if ($existingNested) {
+                    if ($AllowExistingBranch) {
+                        $currentNested = git -C $nestedPath rev-parse --abbrev-ref HEAD 2>$null
+                        if ($currentNested -eq $branchName) {
+                            $nestedStatus = 'existing'
+                        } else {
+                            try {
+                                git -C $nestedPath checkout -q $branchName 2>$null | Out-Null
+                                if ($LASTEXITCODE -eq 0) {
+                                    $nestedStatus = 'existing'
+                                } else {
+                                    $nestedStatus = 'failed'
+                                    Write-Warning "[specify] Failed to switch nested repo '$relPath' to branch '$branchName'"
+                                }
+                            } catch {
+                                $nestedStatus = 'failed'
+                                Write-Warning "[specify] Failed to switch nested repo '$relPath' to branch '$branchName'"
+                            }
+                        }
+                    } else {
+                        $nestedStatus = 'existing'
+                    }
+                } else {
+                    $nestedStatus = 'failed'
+                    Write-Warning "[specify] Failed to create branch '$branchName' in nested repo '$relPath'"
+                }
+            }
+        }
+
+        $nestedReposResult += [PSCustomObject]@{
+            path = $relPath
+            status = $nestedStatus
+        }
+    }
+}
+
 if ($Json) {
     $obj = [PSCustomObject]@{
         BRANCH_NAME = $branchName
         SPEC_FILE = $specFile
         FEATURE_NUM = $featureNum
         HAS_GIT = $hasGit
+        NESTED_REPOS = $nestedReposResult
     }
     if ($DryRun) {
         $obj | Add-Member -NotePropertyName 'DRY_RUN' -NotePropertyValue $true
@@ -376,6 +434,12 @@ if ($Json) {
     Write-Output "SPEC_FILE: $specFile"
     Write-Output "FEATURE_NUM: $featureNum"
     Write-Output "HAS_GIT: $hasGit"
+    if ($nestedReposResult.Count -gt 0) {
+        Write-Output "NESTED_REPOS:"
+        foreach ($nr in $nestedReposResult) {
+            Write-Output "  $($nr.path): $($nr.status)"
+        }
+    }
     if (-not $DryRun) {
         Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
     }

@@ -381,32 +381,101 @@ if [ "$DRY_RUN" != true ]; then
     printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
 fi
 
+# Create matching feature branches in nested independent git repositories
+NESTED_REPOS_JSON=""
+if [ "$HAS_GIT" = true ]; then
+    nested_repos=$(find_nested_git_repos "$REPO_ROOT")
+    if [ -n "$nested_repos" ]; then
+        NESTED_REPOS_JSON="["
+        first=true
+        while IFS= read -r nested_path; do
+            [ -z "$nested_path" ] && continue
+            # Normalize: remove trailing slash
+            nested_path="${nested_path%/}"
+            # Compute relative path for output
+            rel_path="${nested_path#"$REPO_ROOT/"}"
+            rel_path="${rel_path%/}"
+            status="skipped"
+
+            if [ "$DRY_RUN" = true ]; then
+                status="dry_run"
+            else
+                # Attempt to create the branch in the nested repo
+                if git -C "$nested_path" checkout -q -b "$BRANCH_NAME" 2>/dev/null; then
+                    status="created"
+                else
+                    # Check if the branch already exists
+                    if git -C "$nested_path" branch --list "$BRANCH_NAME" 2>/dev/null | grep -q .; then
+                        if [ "$ALLOW_EXISTING" = true ]; then
+                            current_nested="$(git -C "$nested_path" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+                            if [ "$current_nested" = "$BRANCH_NAME" ]; then
+                                status="existing"
+                            elif git -C "$nested_path" checkout -q "$BRANCH_NAME" 2>/dev/null; then
+                                status="existing"
+                            else
+                                status="failed"
+                                >&2 echo "[specify] Warning: Failed to switch nested repo '$rel_path' to branch '$BRANCH_NAME'"
+                            fi
+                        else
+                            status="existing"
+                        fi
+                    else
+                        status="failed"
+                        >&2 echo "[specify] Warning: Failed to create branch '$BRANCH_NAME' in nested repo '$rel_path'"
+                    fi
+                fi
+            fi
+
+            if [ "$first" = true ]; then
+                first=false
+            else
+                NESTED_REPOS_JSON+=","
+            fi
+            NESTED_REPOS_JSON+="{\"path\":\"$(json_escape "$rel_path")\",\"status\":\"$status\"}"
+        done <<< "$nested_repos"
+        NESTED_REPOS_JSON+="]"
+    fi
+fi
+
 if $JSON_MODE; then
+    # Build the nested repos portion for JSON output
+    nested_json_field=""
+    if [ -n "$NESTED_REPOS_JSON" ]; then
+        nested_json_field="$NESTED_REPOS_JSON"
+    else
+        nested_json_field="[]"
+    fi
+
     if command -v jq >/dev/null 2>&1; then
         if [ "$DRY_RUN" = true ]; then
             jq -cn \
                 --arg branch_name "$BRANCH_NAME" \
                 --arg spec_file "$SPEC_FILE" \
                 --arg feature_num "$FEATURE_NUM" \
-                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num,DRY_RUN:true}'
+                --argjson nested_repos "$nested_json_field" \
+                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num,DRY_RUN:true,NESTED_REPOS:$nested_repos}'
         else
             jq -cn \
                 --arg branch_name "$BRANCH_NAME" \
                 --arg spec_file "$SPEC_FILE" \
                 --arg feature_num "$FEATURE_NUM" \
-                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num}'
+                --argjson nested_repos "$nested_json_field" \
+                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num,NESTED_REPOS:$nested_repos}'
         fi
     else
         if [ "$DRY_RUN" = true ]; then
-            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","DRY_RUN":true}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")"
+            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","DRY_RUN":true,"NESTED_REPOS":%s}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")" "$nested_json_field"
         else
-            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")"
+            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","NESTED_REPOS":%s}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")" "$nested_json_field"
         fi
     fi
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
+    if [ -n "$NESTED_REPOS_JSON" ] && [ "$NESTED_REPOS_JSON" != "[]" ]; then
+        echo "NESTED_REPOS: $NESTED_REPOS_JSON"
+    fi
     if [ "$DRY_RUN" != true ]; then
         printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"
     fi
