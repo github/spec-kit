@@ -53,6 +53,9 @@ class PresetCompatibilityError(PresetError):
 
 
 VALID_PRESET_TEMPLATE_TYPES = {"template", "command", "script"}
+VALID_PRESET_STRATEGIES = {"replace", "prepend", "append", "wrap"}
+# Scripts only support replace and wrap (prepend/append don't make semantic sense for executable code)
+VALID_SCRIPT_STRATEGIES = {"replace", "wrap"}
 
 
 class PresetManifest:
@@ -149,6 +152,19 @@ class PresetManifest:
                 raise PresetValidationError(
                     f"Invalid template file path '{file_path}': "
                     "must be a relative path within the preset directory"
+                )
+
+            # Validate strategy field (optional, defaults to "replace")
+            strategy = tmpl.get("strategy", "replace")
+            if strategy not in VALID_PRESET_STRATEGIES:
+                raise PresetValidationError(
+                    f"Invalid strategy '{strategy}': "
+                    f"must be one of {sorted(VALID_PRESET_STRATEGIES)}"
+                )
+            if tmpl["type"] == "script" and strategy not in VALID_SCRIPT_STRATEGIES:
+                raise PresetValidationError(
+                    f"Invalid strategy '{strategy}' for script: "
+                    f"scripts only support {sorted(VALID_SCRIPT_STRATEGIES)}"
                 )
 
             # Validate template name format
@@ -502,6 +518,10 @@ class PresetManager:
         file, and writes it to every detected agent directory using the
         CommandRegistrar from the agents module.
 
+        When a command uses a composition strategy (prepend, append, wrap),
+        the content is composed with the lower-priority command before
+        registration.
+
         Args:
             manifest: Preset manifest
             preset_dir: Installed preset directory
@@ -531,6 +551,31 @@ class PresetManager:
         if not filtered:
             return {}
 
+        # Handle composition strategies: resolve composed content for non-replace commands
+        resolver = PresetResolver(self.project_root)
+        composed_dir = None
+        commands_to_register = []
+        for cmd in filtered:
+            strategy = cmd.get("strategy", "replace")
+            if strategy != "replace":
+                # Resolve composed content using the full priority stack
+                composed = resolver.resolve_content(cmd["name"], "command")
+                if composed:
+                    # Write composed content to a temporary subdirectory
+                    if composed_dir is None:
+                        composed_dir = preset_dir / ".composed"
+                        composed_dir.mkdir(parents=True, exist_ok=True)
+                    composed_file = composed_dir / f"{cmd['name']}.md"
+                    composed_file.write_text(composed, encoding="utf-8")
+                    commands_to_register.append({
+                        **cmd,
+                        "file": f".composed/{cmd['name']}.md",
+                    })
+                else:
+                    commands_to_register.append(cmd)
+            else:
+                commands_to_register.append(cmd)
+
         try:
             from .agents import CommandRegistrar
         except ImportError:
@@ -538,7 +583,7 @@ class PresetManager:
 
         registrar = CommandRegistrar()
         return registrar.register_commands_for_all_agents(
-            filtered, manifest.id, preset_dir, self.project_root
+            commands_to_register, manifest.id, preset_dir, self.project_root
         )
 
     def _unregister_commands(self, registered_commands: Dict[str, List[str]]) -> None:
@@ -1847,3 +1892,200 @@ class PresetResolver:
                 continue
 
         return {"path": resolved_str, "source": "core"}
+
+    def _collect_all_layers(
+        self,
+        template_name: str,
+        template_type: str = "template",
+    ) -> List[Dict[str, Any]]:
+        """Collect all layers in the priority stack for a template.
+
+        Returns layers from highest priority (checked first) to lowest priority.
+        Each layer is a dict with 'path', 'source', and 'strategy' keys.
+
+        Args:
+            template_name: Template name (e.g., "spec-template")
+            template_type: Template type ("template", "command", or "script")
+
+        Returns:
+            List of layer dicts ordered highest-to-lowest priority.
+        """
+        if template_type == "template":
+            subdirs = ["templates", ""]
+        elif template_type == "command":
+            subdirs = ["commands"]
+        elif template_type == "script":
+            subdirs = ["scripts"]
+        else:
+            subdirs = [""]
+
+        ext = ".md"
+        if template_type == "script":
+            ext = ".sh"
+
+        layers: List[Dict[str, Any]] = []
+
+        def _find_in_subdirs(base_dir: Path) -> Optional[Path]:
+            for subdir in subdirs:
+                if subdir:
+                    candidate = base_dir / subdir / f"{template_name}{ext}"
+                else:
+                    candidate = base_dir / f"{template_name}{ext}"
+                if candidate.exists():
+                    return candidate
+            return None
+
+        # Priority 1: Project-local overrides (always "replace" strategy)
+        if template_type == "script":
+            override = self.overrides_dir / "scripts" / f"{template_name}{ext}"
+        else:
+            override = self.overrides_dir / f"{template_name}{ext}"
+        if override.exists():
+            layers.append({
+                "path": override,
+                "source": "project override",
+                "strategy": "replace",
+            })
+
+        # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
+        if self.presets_dir.exists():
+            registry = PresetRegistry(self.presets_dir)
+            for pack_id, metadata in registry.list_by_priority():
+                pack_dir = self.presets_dir / pack_id
+                candidate = _find_in_subdirs(pack_dir)
+                if candidate:
+                    # Read strategy from preset manifest
+                    strategy = "replace"
+                    manifest_path = pack_dir / "preset.yml"
+                    if manifest_path.exists():
+                        try:
+                            manifest = PresetManifest(manifest_path)
+                            for tmpl in manifest.templates:
+                                if (tmpl.get("name") == template_name
+                                        and tmpl.get("type") == template_type):
+                                    strategy = tmpl.get("strategy", "replace")
+                                    break
+                        except PresetValidationError:
+                            pass
+                    version = metadata.get("version", "?") if metadata else "?"
+                    layers.append({
+                        "path": candidate,
+                        "source": f"{pack_id} v{version}",
+                        "strategy": strategy,
+                    })
+
+        # Priority 3: Extension-provided templates (always "replace")
+        for _priority, ext_id, ext_meta in self._get_all_extensions_by_priority():
+            ext_dir = self.extensions_dir / ext_id
+            if not ext_dir.is_dir():
+                continue
+            candidate = _find_in_subdirs(ext_dir)
+            if candidate:
+                if ext_meta:
+                    version = ext_meta.get("version", "?")
+                    source = f"extension:{ext_id} v{version}"
+                else:
+                    source = f"extension:{ext_id} (unregistered)"
+                layers.append({
+                    "path": candidate,
+                    "source": source,
+                    "strategy": "replace",
+                })
+
+        # Priority 4: Core templates (always "replace")
+        core = None
+        if template_type == "template":
+            c = self.templates_dir / f"{template_name}.md"
+            if c.exists():
+                core = c
+        elif template_type == "command":
+            c = self.templates_dir / "commands" / f"{template_name}.md"
+            if c.exists():
+                core = c
+        elif template_type == "script":
+            c = self.templates_dir / "scripts" / f"{template_name}{ext}"
+            if c.exists():
+                core = c
+        if core:
+            layers.append({
+                "path": core,
+                "source": "core",
+                "strategy": "replace",
+            })
+
+        return layers
+
+    def resolve_content(
+        self,
+        template_name: str,
+        template_type: str = "template",
+    ) -> Optional[str]:
+        """Resolve a template name and return composed content.
+
+        Walks the priority stack and composes content using strategies:
+        - replace (default): highest-priority content wins entirely
+        - prepend: content is placed before lower-priority content
+        - append: content is placed after lower-priority content
+        - wrap: content contains {CORE_TEMPLATE} placeholder replaced
+                with lower-priority content (or $CORE_SCRIPT for scripts)
+
+        Composition is recursive — multiple composing presets chain.
+
+        Args:
+            template_name: Template name (e.g., "spec-template")
+            template_type: Template type ("template", "command", or "script")
+
+        Returns:
+            Composed content string, or None if not found
+        """
+        layers = self._collect_all_layers(template_name, template_type)
+        if not layers:
+            return None
+
+        # Check if any layer uses a non-replace strategy
+        has_composition = any(layer["strategy"] != "replace" for layer in layers)
+
+        if not has_composition:
+            # Pure replacement — just read the highest-priority file
+            return layers[0]["path"].read_text(encoding="utf-8")
+
+        # Composition: build content bottom-up (lowest priority first)
+        # Start from the lowest-priority "replace" layer as the base,
+        # then apply composition layers on top.
+        #
+        # layers is ordered highest-priority first. We process in reverse.
+        reversed_layers = list(reversed(layers))
+
+        # Find the base content: the first "replace" layer from the bottom
+        content = None
+        start_idx = 0
+        for i, layer in enumerate(reversed_layers):
+            if layer["strategy"] == "replace":
+                content = layer["path"].read_text(encoding="utf-8")
+                start_idx = i + 1
+            else:
+                # Once we hit a non-replace layer, stop looking for base
+                break
+
+        # If no base content found, there's nothing to compose onto
+        if content is None:
+            return None
+
+        # Apply composition layers from bottom to top
+        for layer in reversed_layers[start_idx:]:
+            layer_content = layer["path"].read_text(encoding="utf-8")
+            strategy = layer["strategy"]
+
+            if strategy == "replace":
+                content = layer_content
+            elif strategy == "prepend":
+                content = layer_content + "\n\n" + content
+            elif strategy == "append":
+                content = content + "\n\n" + layer_content
+            elif strategy == "wrap":
+                if template_type == "script":
+                    content = layer_content.replace("$CORE_SCRIPT", content)
+                else:
+                    content = layer_content.replace("{CORE_TEMPLATE}", content)
+
+        return content

@@ -2259,6 +2259,17 @@ def preset_resolve(
     if result:
         console.print(f"  [bold]{template_name}[/bold]: {result['path']}")
         console.print(f"    [dim](from: {result['source']})[/dim]")
+
+        # Show composition chain if any layers use non-replace strategies
+        layers = resolver._collect_all_layers(template_name)
+        has_composition = any(layer["strategy"] != "replace" for layer in layers)
+        if has_composition:
+            console.print("\n  [bold]Composition chain:[/bold]")
+            for i, layer in enumerate(reversed(layers)):
+                strategy_label = layer["strategy"]
+                if strategy_label == "replace":
+                    strategy_label = "base"
+                console.print(f"    {i + 1}. [{strategy_label}] {layer['source']} → {layer['path']}")
     else:
         console.print(f"  [yellow]{template_name}[/yellow]: not found")
         console.print("    [dim]No template with this name exists in the resolution stack[/dim]")

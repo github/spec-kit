@@ -360,3 +360,146 @@ except Exception:
     return 1
 }
 
+# Resolve a template name to composed content using composition strategies.
+# Reads strategy metadata from preset manifests and composes content
+# from multiple layers using prepend, append, or wrap strategies.
+#
+# Usage: CONTENT=$(resolve_template_content "template-name" "$REPO_ROOT")
+# Returns composed content string on stdout; exit code 1 if not found.
+resolve_template_content() {
+    local template_name="$1"
+    local repo_root="$2"
+    local base="$repo_root/.specify/templates"
+
+    # Collect all layers (highest priority first)
+    local -a layer_paths=()
+    local -a layer_strategies=()
+
+    # Priority 1: Project overrides (always "replace")
+    local override="$base/overrides/${template_name}.md"
+    if [ -f "$override" ]; then
+        layer_paths+=("$override")
+        layer_strategies+=("replace")
+    fi
+
+    # Priority 2: Installed presets (sorted by priority from .registry)
+    local presets_dir="$repo_root/.specify/presets"
+    if [ -d "$presets_dir" ]; then
+        local registry_file="$presets_dir/.registry"
+        local sorted_presets=""
+        if [ -f "$registry_file" ] && command -v python3 >/dev/null 2>&1; then
+            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" python3 -c "
+import json, sys, os
+try:
+    with open(os.environ['SPECKIT_REGISTRY']) as f:
+        data = json.load(f)
+    presets = data.get('presets', {})
+    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10)):
+        print(pid)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null); then
+                if [ -n "$sorted_presets" ]; then
+                    while IFS= read -r preset_id; do
+                        local candidate="$presets_dir/$preset_id/templates/${template_name}.md"
+                        if [ -f "$candidate" ]; then
+                            # Read strategy from preset manifest
+                            local strategy="replace"
+                            local manifest="$presets_dir/$preset_id/preset.yml"
+                            if [ -f "$manifest" ] && command -v python3 >/dev/null 2>&1; then
+                                local s
+                                s=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" python3 -c "
+import yaml, sys, os
+try:
+    with open(os.environ['SPECKIT_MANIFEST']) as f:
+        data = yaml.safe_load(f)
+    for t in data.get('provides', {}).get('templates', []):
+        if t.get('name') == os.environ['SPECKIT_TMPL'] and t.get('type', 'template') == 'template':
+            print(t.get('strategy', 'replace'))
+            sys.exit(0)
+    print('replace')
+except Exception:
+    print('replace')
+" 2>/dev/null) && strategy="$s"
+                            fi
+                            layer_paths+=("$candidate")
+                            layer_strategies+=("$strategy")
+                        fi
+                    done <<< "$sorted_presets"
+                fi
+            fi
+        fi
+    fi
+
+    # Priority 3: Extension-provided templates (always "replace")
+    local ext_dir="$repo_root/.specify/extensions"
+    if [ -d "$ext_dir" ]; then
+        for ext in "$ext_dir"/*/; do
+            [ -d "$ext" ] || continue
+            case "$(basename "$ext")" in .*) continue;; esac
+            local candidate="$ext/templates/${template_name}.md"
+            if [ -f "$candidate" ]; then
+                layer_paths+=("$candidate")
+                layer_strategies+=("replace")
+            fi
+        done
+    fi
+
+    # Priority 4: Core templates (always "replace")
+    local core="$base/${template_name}.md"
+    if [ -f "$core" ]; then
+        layer_paths+=("$core")
+        layer_strategies+=("replace")
+    fi
+
+    local count=${#layer_paths[@]}
+    [ "$count" -eq 0 ] && return 1
+
+    # Check if any layer uses a non-replace strategy
+    local has_composition=false
+    for s in "${layer_strategies[@]}"; do
+        [ "$s" != "replace" ] && has_composition=true && break
+    done
+
+    if [ "$has_composition" = false ]; then
+        cat "${layer_paths[0]}"
+        return 0
+    fi
+
+    # Compose bottom-up: start from lowest priority
+    local content=""
+    local started=false
+    local i
+    for (( i=count-1; i>=0; i-- )); do
+        local path="${layer_paths[$i]}"
+        local strat="${layer_strategies[$i]}"
+        local layer_content
+        layer_content=$(cat "$path")
+
+        if [ "$started" = false ]; then
+            if [ "$strat" = "replace" ]; then
+                content="$layer_content"
+            fi
+            # Keep consuming replace layers from the bottom until we hit a non-replace
+            if [ "$strat" != "replace" ]; then
+                started=true
+                case "$strat" in
+                    prepend) content="${layer_content}\n\n${content}" ;;
+                    append)  content="${content}\n\n${layer_content}" ;;
+                    wrap)    content="${layer_content//\{CORE_TEMPLATE\}/$content}" ;;
+                esac
+            fi
+        else
+            case "$strat" in
+                replace) content="$layer_content" ;;
+                prepend) content="${layer_content}\n\n${content}" ;;
+                append)  content="${content}\n\n${layer_content}" ;;
+                wrap)    content="${layer_content//\{CORE_TEMPLATE\}/$content}" ;;
+            esac
+        fi
+    done
+
+    printf '%s' "$content"
+    return 0
+}
+

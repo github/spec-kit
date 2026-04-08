@@ -2865,3 +2865,556 @@ class TestPresetEnableDisable:
 
         assert result.exit_code == 1
         assert "corrupted state" in result.output.lower()
+
+
+# ===== Composition Strategy Tests =====
+
+
+class TestCompositionStrategyValidation:
+    """Test strategy field validation in PresetManifest."""
+
+    def test_valid_replace_strategy(self, temp_dir, valid_pack_data):
+        """Test that replace strategy is accepted."""
+        valid_pack_data["provides"]["templates"][0]["strategy"] = "replace"
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        (temp_dir / "templates").mkdir(exist_ok=True)
+        (temp_dir / "templates" / "spec-template.md").write_text("test")
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "replace"
+
+    def test_valid_prepend_strategy(self, temp_dir, valid_pack_data):
+        """Test that prepend strategy is accepted for templates."""
+        valid_pack_data["provides"]["templates"][0]["strategy"] = "prepend"
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        (temp_dir / "templates").mkdir(exist_ok=True)
+        (temp_dir / "templates" / "spec-template.md").write_text("test")
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "prepend"
+
+    def test_valid_append_strategy(self, temp_dir, valid_pack_data):
+        """Test that append strategy is accepted for templates."""
+        valid_pack_data["provides"]["templates"][0]["strategy"] = "append"
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        (temp_dir / "templates").mkdir(exist_ok=True)
+        (temp_dir / "templates" / "spec-template.md").write_text("test")
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "append"
+
+    def test_valid_wrap_strategy(self, temp_dir, valid_pack_data):
+        """Test that wrap strategy is accepted for templates."""
+        valid_pack_data["provides"]["templates"][0]["strategy"] = "wrap"
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        (temp_dir / "templates").mkdir(exist_ok=True)
+        (temp_dir / "templates" / "spec-template.md").write_text("test")
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "wrap"
+
+    def test_default_strategy_is_replace(self, pack_dir):
+        """Test that omitting strategy defaults to replace."""
+        manifest = PresetManifest(pack_dir / "preset.yml")
+        assert manifest.templates[0].get("strategy", "replace") == "replace"
+
+    def test_invalid_strategy_rejected(self, temp_dir, valid_pack_data):
+        """Test that invalid strategy values are rejected."""
+        valid_pack_data["provides"]["templates"][0]["strategy"] = "merge"
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        with pytest.raises(PresetValidationError, match="Invalid strategy"):
+            PresetManifest(manifest_path)
+
+    def test_prepend_rejected_for_scripts(self, temp_dir, valid_pack_data):
+        """Test that prepend strategy is rejected for scripts."""
+        valid_pack_data["provides"]["templates"] = [{
+            "type": "script",
+            "name": "create-new-feature",
+            "file": "scripts/create-new-feature.sh",
+            "strategy": "prepend",
+        }]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        with pytest.raises(PresetValidationError, match="Invalid strategy.*for script"):
+            PresetManifest(manifest_path)
+
+    def test_append_rejected_for_scripts(self, temp_dir, valid_pack_data):
+        """Test that append strategy is rejected for scripts."""
+        valid_pack_data["provides"]["templates"] = [{
+            "type": "script",
+            "name": "create-new-feature",
+            "file": "scripts/create-new-feature.sh",
+            "strategy": "append",
+        }]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        with pytest.raises(PresetValidationError, match="Invalid strategy.*for script"):
+            PresetManifest(manifest_path)
+
+    def test_wrap_accepted_for_scripts(self, temp_dir, valid_pack_data):
+        """Test that wrap strategy is accepted for scripts."""
+        valid_pack_data["provides"]["templates"] = [{
+            "type": "script",
+            "name": "create-new-feature",
+            "file": "scripts/create-new-feature.sh",
+            "strategy": "wrap",
+        }]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "wrap"
+
+    def test_replace_accepted_for_scripts(self, temp_dir, valid_pack_data):
+        """Test that replace strategy is accepted for scripts."""
+        valid_pack_data["provides"]["templates"] = [{
+            "type": "script",
+            "name": "create-new-feature",
+            "file": "scripts/create-new-feature.sh",
+            "strategy": "replace",
+        }]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "replace"
+
+    def test_prepend_accepted_for_commands(self, temp_dir, valid_pack_data):
+        """Test that prepend strategy is accepted for commands."""
+        valid_pack_data["provides"]["templates"] = [{
+            "type": "command",
+            "name": "speckit.specify",
+            "file": "commands/speckit.specify.md",
+            "strategy": "prepend",
+        }]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "prepend"
+
+
+class TestResolveContent:
+    """Test PresetResolver.resolve_content() composition."""
+
+    def test_resolve_content_core_template(self, project_dir):
+        """Test resolve_content returns core template when no composition."""
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        assert "Core Spec Template" in content
+
+    def test_resolve_content_nonexistent(self, project_dir):
+        """Test resolve_content returns None for nonexistent template."""
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("nonexistent")
+        assert content is None
+
+    def test_resolve_content_replace_strategy(self, project_dir, temp_dir, valid_pack_data):
+        """Test resolve_content with default replace strategy."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(
+            _create_pack(temp_dir, valid_pack_data, "replace-pack",
+                         "# Replaced Content\n"),
+            "0.1.5"
+        )
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        assert "Replaced Content" in content
+        assert "Core Spec Template" not in content
+
+    def test_resolve_content_append_strategy(self, project_dir, temp_dir, valid_pack_data):
+        """Test resolve_content with append strategy."""
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "append-pack", "name": "Append"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "append-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Appended Section\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        assert "Core Spec Template" in content
+        assert "Appended Section" in content
+        # Core should come first, appended after
+        assert content.index("Core Spec Template") < content.index("Appended Section")
+
+    def test_resolve_content_prepend_strategy(self, project_dir, temp_dir, valid_pack_data):
+        """Test resolve_content with prepend strategy."""
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "prepend-pack", "name": "Prepend"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "prepend",
+            }]
+        }
+        pack_dir = temp_dir / "prepend-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Security Header\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        assert "Security Header" in content
+        assert "Core Spec Template" in content
+        # Prepended content should come first
+        assert content.index("Security Header") < content.index("Core Spec Template")
+
+    def test_resolve_content_wrap_strategy(self, project_dir, temp_dir, valid_pack_data):
+        """Test resolve_content with wrap strategy for templates."""
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "wrap-pack", "name": "Wrap"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "wrap",
+            }]
+        }
+        pack_dir = temp_dir / "wrap-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text(
+            "# Wrapper Start\n\n{CORE_TEMPLATE}\n\n# Wrapper End\n"
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        assert "Wrapper Start" in content
+        assert "Core Spec Template" in content
+        assert "Wrapper End" in content
+        # Wrapper should surround core
+        assert content.index("Wrapper Start") < content.index("Core Spec Template")
+        assert content.index("Core Spec Template") < content.index("Wrapper End")
+
+    def test_resolve_content_wrap_strategy_script(self, project_dir, temp_dir, valid_pack_data):
+        """Test resolve_content with wrap strategy for scripts uses $CORE_SCRIPT."""
+        # Create core script
+        scripts_dir = project_dir / ".specify" / "templates" / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "test-script.sh").write_text("echo 'core script'\n")
+
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "script-wrap", "name": "Script Wrap"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "script",
+                "name": "test-script",
+                "file": "scripts/test-script.sh",
+                "strategy": "wrap",
+            }]
+        }
+        pack_dir = temp_dir / "script-wrap"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "scripts").mkdir()
+        (pack_dir / "scripts" / "test-script.sh").write_text(
+            "#!/bin/bash\necho 'before'\n$CORE_SCRIPT\necho 'after'\n"
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("test-script", "script")
+        assert content is not None
+        assert "echo 'before'" in content
+        assert "echo 'core script'" in content
+        assert "echo 'after'" in content
+
+    def test_resolve_content_multi_preset_chain(self, project_dir, temp_dir, valid_pack_data):
+        """Test multi-preset composition chain: prepend + append stacking."""
+        # Create preset A (priority 1): prepend security header
+        pack_a_data = {**valid_pack_data}
+        pack_a_data["preset"] = {**valid_pack_data["preset"], "id": "preset-a", "name": "A"}
+        pack_a_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "prepend",
+            }]
+        }
+        pack_a_dir = temp_dir / "preset-a"
+        pack_a_dir.mkdir()
+        with open(pack_a_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_a_data, f)
+        (pack_a_dir / "templates").mkdir()
+        (pack_a_dir / "templates" / "spec-template.md").write_text("## Security Header\n")
+
+        # Create preset B (priority 2): append compliance footer
+        pack_b_data = {**valid_pack_data}
+        pack_b_data["preset"] = {**valid_pack_data["preset"], "id": "preset-b", "name": "B"}
+        pack_b_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_b_dir = temp_dir / "preset-b"
+        pack_b_dir.mkdir()
+        with open(pack_b_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_b_data, f)
+        (pack_b_dir / "templates").mkdir()
+        (pack_b_dir / "templates" / "spec-template.md").write_text("## Compliance Footer\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_a_dir, "0.1.5", priority=1)
+        manager.install_from_directory(pack_b_dir, "0.1.5", priority=2)
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        # Result: <security header> + <core> + <compliance footer>
+        assert "Security Header" in content
+        assert "Core Spec Template" in content
+        assert "Compliance Footer" in content
+        assert content.index("Security Header") < content.index("Core Spec Template")
+        assert content.index("Core Spec Template") < content.index("Compliance Footer")
+
+    def test_resolve_content_override_trumps_composition(self, project_dir, temp_dir, valid_pack_data):
+        """Test that project overrides trump composition (replace at top priority)."""
+        # Install a composing preset
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "append-pack", "name": "Append"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "append-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Appended\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        # Create project override (replaces everything)
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "spec-template.md").write_text("# Override Only\n")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        assert "Override Only" in content
+        # Override replaces, so appended content should not be visible
+        assert "Core Spec Template" not in content
+
+    def test_resolve_content_command_type(self, project_dir, temp_dir, valid_pack_data):
+        """Test resolve_content with command template type."""
+        # Create core command
+        commands_dir = project_dir / ".specify" / "templates" / "commands"
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        (commands_dir / "speckit.plan.md").write_text("# Core Plan Command\n")
+
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "cmd-append", "name": "CmdAppend"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "command",
+                "name": "speckit.plan",
+                "file": "commands/speckit.plan.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "cmd-append"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "commands").mkdir()
+        (pack_dir / "commands" / "speckit.plan.md").write_text("## Additional Instructions\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("speckit.plan", "command")
+        assert content is not None
+        assert "Core Plan Command" in content
+        assert "Additional Instructions" in content
+
+    def test_resolve_content_blank_line_separator(self, project_dir, temp_dir, valid_pack_data):
+        """Test that prepend/append use blank line separator."""
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "sep-test", "name": "SepTest"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "sep-test"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("appended")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        # Should have blank line separator
+        assert "\n\n" in content
+
+
+class TestCollectAllLayers:
+    """Test PresetResolver._collect_all_layers() method."""
+
+    def test_single_core_layer(self, project_dir):
+        """Test collecting layers with only core template."""
+        resolver = PresetResolver(project_dir)
+        layers = resolver._collect_all_layers("spec-template")
+        assert len(layers) == 1
+        assert layers[0]["source"] == "core"
+        assert layers[0]["strategy"] == "replace"
+
+    def test_layers_include_presets(self, project_dir, temp_dir, valid_pack_data):
+        """Test that layers include installed preset."""
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(temp_dir, valid_pack_data, "test-pack",
+                                "# From Pack\n")
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver._collect_all_layers("spec-template")
+        assert len(layers) == 2
+        # Highest priority first
+        assert "test-pack" in layers[0]["source"]
+        assert layers[1]["source"] == "core"
+
+    def test_layers_order_matches_priority(self, project_dir, temp_dir, valid_pack_data):
+        """Test that layers are ordered by priority (highest first)."""
+        manager = PresetManager(project_dir)
+        for pid, prio in [("pack-lo", 10), ("pack-hi", 1)]:
+            d = {**valid_pack_data}
+            d["preset"] = {**valid_pack_data["preset"], "id": pid, "name": pid}
+            p = temp_dir / pid
+            p.mkdir()
+            with open(p / "preset.yml", 'w') as f:
+                yaml.dump(d, f)
+            (p / "templates").mkdir()
+            (p / "templates" / "spec-template.md").write_text(f"# {pid}\n")
+            manager.install_from_directory(p, "0.1.5", priority=prio)
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver._collect_all_layers("spec-template")
+        assert len(layers) == 3  # pack-hi, pack-lo, core
+        assert "pack-hi" in layers[0]["source"]
+        assert "pack-lo" in layers[1]["source"]
+        assert layers[2]["source"] == "core"
+
+    def test_layers_read_strategy_from_manifest(self, project_dir, temp_dir, valid_pack_data):
+        """Test that layers read strategy from preset manifest."""
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "strat-pack", "name": "Strat"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "strat-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Footer\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver._collect_all_layers("spec-template")
+        # Preset layer should have strategy=append
+        assert layers[0]["strategy"] == "append"
+        # Core layer should be replace
+        assert layers[1]["strategy"] == "replace"
+
+
+def _create_pack(temp_dir, valid_pack_data, pack_id, content,
+                 strategy="replace", template_type="template",
+                 template_name="spec-template"):
+    """Helper to create a preset pack directory."""
+    pack_data = {**valid_pack_data}
+    pack_data["preset"] = {**valid_pack_data["preset"], "id": pack_id, "name": pack_id}
+
+    tmpl_entry = {
+        "type": template_type,
+        "name": template_name,
+        "file": f"templates/{template_name}.md" if template_type != "script" else f"scripts/{template_name}.sh",
+    }
+    if strategy != "replace":
+        tmpl_entry["strategy"] = strategy
+    pack_data["provides"] = {"templates": [tmpl_entry]}
+
+    pack_dir = temp_dir / pack_id
+    pack_dir.mkdir(exist_ok=True)
+    with open(pack_dir / "preset.yml", 'w') as f:
+        yaml.dump(pack_data, f)
+
+    if template_type == "script":
+        subdir = pack_dir / "scripts"
+        subdir.mkdir(exist_ok=True)
+        (subdir / f"{template_name}.sh").write_text(content)
+    else:
+        subdir = pack_dir / "templates"
+        subdir.mkdir(exist_ok=True)
+        (subdir / f"{template_name}.md").write_text(content)
+
+    return pack_dir
