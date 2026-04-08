@@ -278,3 +278,94 @@ class TestCopilotAgentDeployment:
         parts = content.split("---")
         fm = yaml.safe_load(parts[1]) or {}
         assert fm.get("someCustomKey") == "someValue"
+
+
+class TestEndToEnd:
+    """Full pipeline: extension with behavior.execution:agent → correct files deployed."""
+
+    def test_extension_with_agent_command_deploys_correctly(self, tmp_path):
+        """An extension declaring execution:agent deploys to .claude/agents/, not skills."""
+        from specify_cli.extensions import ExtensionManager
+
+        project_root = tmp_path / "proj"
+        (project_root / ".claude" / "skills").mkdir(parents=True)
+        (project_root / ".claude" / "agents").mkdir(parents=True)
+        (project_root / ".specify").mkdir()
+        (project_root / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "claude", "script": "sh"})
+        )
+
+        # Create extension directory with manifest + command
+        ext_dir = tmp_path / "revenge"
+        (ext_dir / "commands").mkdir(parents=True)
+        (ext_dir / "extension.yml").write_text(yaml.dump({
+            "schema_version": "1.0",
+            "extension": {
+                "id": "revenge",
+                "name": "Revenge",
+                "version": "1.0.0",
+                "description": "Reverse engineering extension",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.revenge.extract",
+                        "file": "commands/extract.md",
+                        "description": "Run extraction pipeline",
+                    },
+                    {
+                        "name": "speckit.revenge.analyzer",
+                        "file": "commands/analyzer.md",
+                        "description": "Codebase analyzer subagent",
+                    },
+                ]
+            },
+        }))
+
+        # Orchestrator command (no execution: → stays a skill)
+        (ext_dir / "commands" / "extract.md").write_text(dedent("""\
+            ---
+            description: Run extraction pipeline
+            behavior:
+              invocation: automatic
+            ---
+            Run the extraction pipeline for $ARGUMENTS
+        """))
+
+        # Analyzer subagent (execution:agent → .claude/agents/)
+        (ext_dir / "commands" / "analyzer.md").write_text(dedent("""\
+            ---
+            description: Codebase analyzer subagent
+            behavior:
+              execution: agent
+              capability: strong
+              tools: read-only
+            ---
+            You are a codebase analysis specialist.
+            Analyze the codebase at $ARGUMENTS and return structured findings.
+        """))
+
+        # Install extension
+        manager = ExtensionManager(project_root)
+        manager.install_from_directory(ext_dir, speckit_version="0.1.0")
+
+        # extract → .claude/skills/ (no execution: → command type)
+        skill_file = project_root / ".claude" / "skills" / "speckit-revenge-extract" / "SKILL.md"
+        assert skill_file.exists(), "extract should deploy as skill"
+        skill_fm = yaml.safe_load(skill_file.read_text().split("---")[1])
+        assert skill_fm.get("disable-model-invocation") is False  # behavior: invocation: automatic
+
+        # analyzer → .claude/agents/ (execution:agent)
+        agent_file = project_root / ".claude" / "agents" / "speckit-revenge-analyzer.md"
+        assert agent_file.exists(), "analyzer should deploy as agent definition"
+        agent_fm = yaml.safe_load(agent_file.read_text().split("---")[1])
+        assert agent_fm.get("model") == "claude-opus-4-6"      # capability: strong
+        assert agent_fm.get("tools") == "Read Grep Glob"        # tools: read-only
+        assert "user-invocable" not in agent_fm
+        assert "disable-model-invocation" not in agent_fm
+        assert "behavior" not in agent_fm
+
+        # analyzer must NOT also be in skills dir
+        skill_analyzer = project_root / ".claude" / "skills" / "speckit-revenge-analyzer" / "SKILL.md"
+        assert not skill_analyzer.exists()
