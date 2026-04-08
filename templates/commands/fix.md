@@ -102,8 +102,14 @@ If the input contains more than one distinct error (multiple FAILED tests, multi
 ### 0.3 — Recurrent error check
 
 If `specs/[feature]/fix.md` exists, scan it (titles only — do not read full entries) before diagnosing:
-- If a previous `FIX-NNN` entry addresses the same error → read that entry's `ROOT CAUSE` and `Decisions` sections before building the TRIAGE.
-- If a previous fix was applied and the error recurred → the root cause was misidentified. Flag this explicitly in Phase 2: `RECURRENT: YES — previous fix FIX-NNN did not resolve the root cause`.
+- If a previous `FIX-NNN` entry addresses the same error → read that entry's `ROOT CAUSE`, `Decisions`, and `POST-FIX VERIFICATION` sections before building the TRIAGE.
+- If a previous fix was applied and the error recurred → **the root cause was misidentified**. This is critical. Flag this explicitly in Phase 2: `RECURRENT: YES — previous fix FIX-NNN did not resolve the root cause`.
+
+**Recurrence rules:**
+- Do NOT re-apply the same category of fix (e.g., if FIX-001 added a null check and the error recurred, do NOT add another null check)
+- The new diagnosis MUST go at least one WHY deeper than the previous attempt
+- Read the previous fix's causal chain to understand where it went wrong
+- State explicitly: _"FIX-NNN targeted WHY-[N]. The error persisted because the true root cause is deeper: WHY-[N+1]: [explanation]."_
 
 ### 0.4 — Trivial fast path
 
@@ -178,9 +184,235 @@ After reading (if applicable):
 
 ---
 
-## Phase 2 — Structured diagnosis
+## Phase 2 — Smart Diagnosis
 
-Produce a layered diagnosis before writing anything:
+Follow the full diagnostic workflow below. **Do not skip steps.** Each step narrows the search space; skipping leads to speculative fixes.
+
+### Diagnostic checklist
+
+```
+Debugging progression:
+- [ ] Step 1 : Collect additional information (if needed)
+- [ ] Step 2 : Reproduce the problem
+- [ ] Step 3 : Isolate the failure zone
+- [ ] Step 4 : Deep error analysis
+- [ ] Step 5 : Formulate ranked hypotheses
+- [ ] Step 6 : Test hypotheses
+- [ ] Step 7 : Produce layered diagnosis
+```
+
+### Step 1 : Collect additional information
+
+Beyond what was gathered in Phase 0/1, ensure you have:
+
+| Information | Why it's critical |
+|---|---|
+| **Exact** and complete error message | A missing word can change the diagnosis |
+| Complete stack trace | Identifies the precise execution path |
+| Language, framework, versions | Bugs are often version-specific |
+| OS and environment (dev/staging/prod) | Behavior can vary by environment |
+| Steps to reproduce | Without reproduction, diagnosis is speculative |
+| Expected vs observed behavior | Reveals the delta |
+| Recent changes (`git diff`, latest commits) | The bug is often in the most recent code |
+| Complete logs around the error (not just the error line) | Context often reveals the cause |
+| Did it work before? If so, what changed? | Bisection technique |
+
+**If the user has not provided critical information**, ask for it. Do not guess.
+
+### Step 2 : Reproduce the problem
+
+A bug you cannot reproduce is a bug you cannot reliably fix.
+
+- Attempt reproduction with the provided steps
+- If not reproducible: check environmental conditions (specific data, timing, concurrency, database state)
+- For intermittent bugs: look for race conditions, state dependencies, or timing issues
+
+### Step 3 : Isolate the failure zone
+
+Use the **functional role** from the TRIAGE block (Phase 1.2) to narrow the scope:
+
+1. **Which file?** — The stack trace indicates the originating file
+2. **Which function?** — Identify the function in the stack trace
+3. **Which line?** — The line number in the error message
+4. **Which state?** — What variables had what values at that point?
+
+**Isolation techniques**:
+- Read the code around the error line (±20 lines minimum)
+- Walk up the call chain in the stack trace
+- Check function inputs (parameters, global variables, database state)
+- Look for recent changes on this file (`git log --oneline -10 file.ext`)
+
+### Step 4 : Deep error analysis
+
+#### Reading the stack trace
+
+Read from **bottom to top** (the cause is often at the bottom, the effect at the top):
+
+```
+Traceback (most recent call last):          ← Most recent call is at the bottom
+  File "main.py", line 42, in run          ← Entry point
+    result = process(data)
+  File "processor.py", line 18, in process ← Intermediate call
+    return transform(item)
+  File "transform.py", line 7, in transform ← ROOT CAUSE HERE
+    return item.name.upper()
+AttributeError: 'NoneType' object has no attribute 'name'
+                                            ← Final message = the symptom
+```
+
+**Analysis**: `item` is `None` at line 7 of `transform.py`. Why? Trace back: where does `item` come from? From `process()` line 18. And `data`? From `run()` line 42.
+
+#### Common error patterns by language
+
+<details>
+<summary><strong>Python</strong></summary>
+
+| Error | Likely cause | Investigation |
+|---|---|---|
+| `TypeError: 'NoneType' object is not subscriptable` | Function returns `None` instead of dict/list | Check return value of the calling function |
+| `ImportError: No module named 'x'` | Module not installed or wrong virtualenv | `pip list \| grep x`, check `which python` |
+| `KeyError: 'x'` | Missing key in a dictionary | Use `.get('x', default)` or verify data source |
+| `IndentationError` | Tabs and spaces mixed | Configure editor for spaces only |
+| `RecursionError: maximum recursion depth exceeded` | Infinite recursion, missing base case | Check the stop condition of the recursive function |
+| `FileNotFoundError` | Relative vs absolute path, missing file | Check `os.getcwd()` and the exact path |
+| `UnicodeDecodeError` | File encoding mismatch | Specify `encoding='utf-8'` or identify real encoding |
+
+</details>
+
+<details>
+<summary><strong>JavaScript / TypeScript</strong></summary>
+
+| Error | Likely cause | Investigation |
+|---|---|---|
+| `TypeError: Cannot read properties of undefined (reading 'x')` | Property access on `undefined` | Check access chain: `a?.b?.c` |
+| `ReferenceError: x is not defined` | Undeclared variable or out of scope | Check import, scope, and closures |
+| `SyntaxError: Unexpected token` | Malformed JSON, missing parenthesis, invalid JSX | Check parsed input and syntax |
+| `ERR_MODULE_NOT_FOUND` | Wrong import or missing package | Check `node_modules`, `package.json`, `.js`/`.mjs` extensions |
+| `Maximum call stack size exceeded` | Infinite recursion | Look for circular calls |
+| `CORS error` | Server not returning CORS headers | Configure the server, not the client |
+| `Unhandled Promise rejection` | Missing `await` or absent `.catch()` | Add async error handling |
+
+</details>
+
+<details>
+<summary><strong>Java</strong></summary>
+
+| Error | Likely cause | Investigation |
+|---|---|---|
+| `NullPointerException` | Access to a null object | Identify which object is null on the line |
+| `ClassNotFoundException` | Incorrect classpath, missing dependency | Check Maven/Gradle dependencies |
+| `ConcurrentModificationException` | Modifying a collection during iteration | Use an Iterator or a copy |
+| `OutOfMemoryError: Java heap space` | Memory leak or data too large | Analyze with a profiler, increase heap |
+| `StackOverflowError` | Infinite recursion | Check the stop condition |
+
+</details>
+
+<details>
+<summary><strong>C# / .NET</strong></summary>
+
+| Error | Likely cause | Investigation |
+|---|---|---|
+| `NullReferenceException` | Access to a null object | Identify the null object, use `?.` |
+| `InvalidOperationException: Sequence contains no elements` | `.First()` on an empty collection | Use `.FirstOrDefault()` |
+| `System.IO.FileNotFoundException` | Incorrect path | Check relative path vs Build Output directory |
+| `HttpRequestException` | Network problem or incorrect URL | Check URL, DNS, firewall |
+
+</details>
+
+<details>
+<summary><strong>PHP</strong></summary>
+
+| Error | Likely cause | Investigation |
+|---|---|---|
+| `Fatal error: Call to undefined function` | Function doesn't exist or extension not loaded | Check `phpinfo()`, extension, namespace |
+| `Warning: Undefined array key` | Access to non-existent key | Use `isset()` or `??` |
+| `Fatal error: Maximum execution time exceeded` | Infinite loop or processing too long | Check loops, optimize or increase `max_execution_time` |
+| `PDOException: SQLSTATE[42S02]` | Non-existent table | Check table name and connected database |
+
+</details>
+
+<details>
+<summary><strong>Go / Rust / Ruby</strong></summary>
+
+| Language | Error | Likely cause | Investigation |
+|---|---|---|---|
+| Go | `nil pointer dereference` | Dereferencing a nil pointer | Check nil before access |
+| Go | `index out of range` | Slice access beyond length | Verify slice length before indexing |
+| Go | `deadlock! all goroutines are asleep` | Channel or mutex deadlock | Check goroutine synchronization |
+| Rust | `borrow checker` errors | Ownership/lifetime violation | Restructure borrows or use `clone()` |
+| Rust | `unwrap()` on `None`/`Err` | Unchecked Option/Result | Use `match`, `if let`, or `?` operator |
+| Ruby | `NoMethodError: undefined method for nil:NilClass` | Calling a method on nil | Check nil with `&.` safe navigation |
+| Ruby | `LoadError: cannot load such file` | Missing gem or wrong require path | Check Gemfile and require path |
+
+</details>
+
+<details>
+<summary><strong>SQL</strong></summary>
+
+| Error | Likely cause | Investigation |
+|---|---|---|
+| `Deadlock detected` | Two transactions blocking each other | Analyze lock order, reduce transaction duration |
+| `Column 'x' is ambiguous` | Join with same-name columns | Prefix with table name `table.column` |
+| `Subquery returns more than 1 row` | Subquery returns multiple results where one is expected | Add `LIMIT 1` or use `IN` instead of `=` |
+
+</details>
+
+### Step 5 : Formulate ranked hypotheses
+
+Always rank by **decreasing probability** and **ease of verification**:
+
+1. **Simple, recent errors** (90% of bugs)
+   - Typo, misspelled variable
+   - Recent change that broke something
+   - Copy-paste with an unadapted variable
+
+2. **Data and state errors** (frequent)
+   - Unexpected null/undefined value
+   - Input data in unexpected format
+   - Inconsistent database state
+   - Stale cache
+
+3. **Logic errors** (moderately frequent)
+   - Inverted condition (`>` instead of `<`, `&&` instead of `||`)
+   - Off-by-one (loop iterates one too many or too few times)
+   - Wrong order of operations
+   - Unhandled edge case
+
+4. **Import and dependency errors**
+   - Module not installed
+   - Incompatible version
+   - Circular import
+   - Dependency conflict
+
+5. **Concurrency and timing errors**
+   - Race condition
+   - Deadlock
+   - Unawaited async operation
+   - Timeout
+
+6. **Environment errors**
+   - Dev/prod differences
+   - Missing environment variables
+   - File permissions
+   - Network/DNS
+
+### Step 6 : Test hypotheses
+
+For each hypothesis, starting from the most probable:
+- Identify a quick test to confirm or rule it out
+- If confirmed → proceed to the fix
+- If ruled out → move to the next hypothesis
+
+**Testing techniques**:
+- Add a `print()` / `console.log()` / `var_dump()` at key points
+- Check values in the debugger
+- Execute part of the code in isolation
+- Test with simplified data
+- Compare with a working version (`git diff`, `git stash`)
+
+### Step 7 : Produce the layered diagnosis
+
+After completing Steps 1–6, produce the layered diagnosis before writing anything:
 
 ```
 LAYER        : [functional role in this project — e.g. data-access | validation | business-logic | entry-point | guard | routing | ui | api-bridge | config | test]
@@ -191,9 +423,79 @@ NEW FEATURE  : [YES / NO — does a full resolution require behavior absent from
 SCOPE        : [2–5 files maximum — code files only unless spec read was triggered]
 ```
 
+#### 5-Whys causal chain (mandatory)
+
+**Do NOT stop at the first "why".** The location of the error is NOT the root cause. The root cause is the deepest reason the error exists. Apply the "5 Whys" technique:
+
+```
+WHY-1 : [What failed? — the immediate error]
+WHY-2 : [Why did that happen? — the condition that caused it]
+WHY-3 : [Why did that condition exist? — the upstream origin]
+WHY-4 : [Why was the upstream origin possible? — the missing guard or logic gap]
+WHY-5 : [Why was there no guard? — the architectural or design gap]
+```
+
+Stop when the next "why" would leave the scope of a fix (→ architecture / new feature).
+
+**Example — superficial vs deep diagnosis:**
+
+❌ Superficial (will NOT fix the bug durably):
+```
+ROOT CAUSE: `user.name` is None at line 42 of views.py
+FIX: add `if user.name is not None` guard
+```
+
+✅ Deep (fixes the actual cause):
+```
+WHY-1 : `user.name` is None at line 42 of views.py → AttributeError
+WHY-2 : `get_user()` returns a User object with name=None
+WHY-3 : The database row has NULL in the name column
+WHY-4 : The registration endpoint does not validate that name is non-empty
+WHY-5 : The serializer has no `required` constraint on the name field
+ROOT CAUSE: Missing validation in serializers.py:UserSerializer — name field allows blank/null
+FIX: Add `required=True, allow_blank=False` to the name field in UserSerializer
+```
+
+**The fix must target the WHY where the chain breaks — not the line where the error surfaces.**
+
+#### Self-check: symptom vs root cause
+
+Before proceeding, answer these 3 questions. If any answer is "yes", your diagnosis is incomplete — go deeper.
+
+| Question | If YES → action |
+|---|---|
+| Does my fix add a null check / try-catch / default value at the crash site? | You are masking the symptom. Ask WHY the value is null/invalid in the first place. |
+| Could the same error reappear with slightly different input? | Your fix is input-specific, not cause-specific. Generalize by fixing the producer, not the consumer. |
+| Am I fixing the file where the error *surfaces* rather than where the bad data *originates*? | Trace back the call chain. The fix belongs upstream. |
+
 **If `SCOPE` lists more than 5 files → this is not a fix, it is a refactoring. Stop. Recommend `/speckit.plan` to revisit the architecture before proceeding.**
 
 **If `NEW FEATURE = YES` → stop immediately and go to Phase 2b. Do not modify any file.**
+
+---
+
+## Phase 2c — Pre-fix proof (mandatory gate)
+
+**Do NOT open any file for editing until this gate is passed.**
+
+Before writing a single line of code, produce this proof block:
+
+```
+PRE-FIX PROOF
+  Error reproduction : [exact command or action that triggers the error NOW]
+  Causal chain       : [WHY-1 → WHY-2 → ... → WHY-N from the 5-Whys above]
+  Fix target         : [exact file:line:function where the change will be made]
+  What changes        : [1-sentence description of the code change]
+  Why this fixes it   : [explain how this change BREAKS the causal chain — which WHY does it eliminate?]
+  Why nothing else    : [explain why no other file needs to change for the error to disappear]
+  Prediction          : [after applying the fix, re-running the reproduction → what EXACT output do you expect?]
+```
+
+**Rules:**
+- `Fix target` must be at the level identified by the 5-Whys, NOT at the crash site (unless they are the same)
+- `Why this fixes it` must reference a specific WHY from the causal chain
+- `Prediction` must be falsifiable — a concrete expected output, not "it should work"
+- If you cannot fill `Prediction` with confidence → your diagnosis is incomplete, go back to Phase 2 Step 3
 
 ---
 
@@ -328,6 +630,72 @@ Apply changes directly. For each modified file, state:
 - The exact problem
 - The change applied (clear mental diff)
 
+**Format for each code correction**:
+
+```
+ROOT CAUSE  : [explanation in one sentence]
+FILE        : [path/file.ext], line [N]
+
+BEFORE (buggy code):
+[original code]
+
+AFTER (fix):
+[corrected code]
+
+EXPLANATION : [why this fixes the problem — reference which WHY from the causal chain is eliminated]
+```
+
+### 3.1 — Mandatory post-fix verification (EXECUTE, do not just state)
+
+**This is not optional. Do not skip. Do not just describe what to run — actually run it.**
+
+After applying the fix:
+
+1. **Re-run the exact reproduction** from `PRE-FIX PROOF → Error reproduction`
+2. **Compare output** to `PRE-FIX PROOF → Prediction`
+3. **Produce the verification block**:
+
+```
+POST-FIX VERIFICATION
+  Command run   : [exact command or action executed]
+  Expected      : [from Prediction]
+  Actual        : [what actually happened]
+  Status        : PASS ✅ | FAIL ❌
+```
+
+**If `Status = FAIL ❌`** → **do NOT try another quick fix**. Go to **Phase 3.2 — Fix-Failed Protocol**.
+
+**If `Status = PASS ✅`** → proceed to Phase 4.
+
+### 3.2 — Fix-Failed Protocol
+
+When a fix does not resolve the error, the diagnosis was wrong. Do NOT:
+- ❌ Add another guard/check on top of the first fix
+- ❌ Try a "slightly different" version of the same fix
+- ❌ Wrap the area in try/catch to suppress the error
+- ❌ Apply multiple changes hoping one will stick
+
+**Instead, follow this escalation:**
+
+```
+FIX-FAILED ESCALATION
+  Attempt #     : [1, 2, or 3]
+  What was tried : [the fix that was just applied]
+  Why it failed  : [the actual output vs expected — what does the persisting error tell us?]
+  New insight    : [what does this failure REVEAL about the true root cause?]
+  Revised WHY    : [update the 5-Whys chain with this new information]
+```
+
+**Escalation rules:**
+
+| Attempt | Action |
+|---|---|
+| Attempt 1 failed | The 5-Whys chain was incomplete. Go one WHY deeper. Re-read the call chain from scratch. Re-run Phase 2 Steps 3–7 with the new insight. |
+| Attempt 2 failed | The functional role was misidentified. Go back to Phase 1.2 TRIAGE and reassign the `Role`. The error likely originates in a different layer than assumed. Expand `Read set` to include the adjacent layer. |
+| Attempt 3 failed | **STOP fixing. This is not a simple bug.** Revert all attempted fixes. Report: _"After 3 attempts, the root cause could not be reliably identified. The error may involve multiple interacting systems or a design flaw. Recommend `/speckit.plan` to investigate the architecture, or `/speckit.clarify` to re-examine the expected behavior."_ |
+
+**Critical rule: each attempt must fix at a DIFFERENT level of the causal chain.** If attempt 1 fixed at the crash site, attempt 2 must fix upstream. Repeating the same level = repeating the same mistake.
+
 ---
 
 ## Phase 4 — Break the Logic
@@ -403,5 +771,116 @@ After writing to `fix.md`, display this summary in the conversation:
 **Edge cases not covered**:
 - [list — full honesty]
 ```
+
+---
+
+## Appendix A — Bug Categories Deep-Dive
+
+### Runtime Errors
+
+The most common. The program starts but crashes during execution.
+
+**NullPointerException / TypeError: Cannot read property of undefined** — systematic diagnostic:
+1. Identify the object that is null on the error line
+2. Trace back: where does this object come from? Who initialized it?
+3. Check all paths to this line: is there a path where the object is not initialized?
+4. Check function returns: can the calling function return null?
+5. Check external data: can the database, API, or file return null?
+
+**Division by zero / Index out of bounds**:
+- Check divisor/index values before the operation
+- Trace the provenance of these values
+- Add guards: `if (divisor !== 0)`, `if (index < array.length)`
+
+**Stack Overflow (infinite recursion)**:
+- Does the recursive function have a base case (stop condition)?
+- Is the base case reachable? (do arguments converge toward the base case?)
+- Are there mutual recursive calls (A calls B which calls A)?
+
+### Logic Errors
+
+The program doesn't crash but produces an incorrect result. The hardest to diagnose.
+
+**Diagnostic method**:
+1. Identify the input and expected output vs obtained output
+2. Trace execution step by step with prints/logs at each stage
+3. Compare intermediate values with what is expected
+4. The first divergence point = the bug zone
+
+**Condition bugs**: `>` vs `>=`, `&&` vs `||` (De Morgan's laws: `!(A && B)` = `!A || !B`), `==` vs `===` in JS, missing parentheses in compound conditions.
+
+**Off-by-one bugs**: `for (i = 0; i < n; i++)` vs `for (i = 0; i <= n; i++)` — one element difference. Array index: first = 0, last = length - 1. Substring/slice: inclusive vs exclusive bound depends on the language.
+
+**Order of operations bugs**: initialization after use, resource close before processing ends, return placed too early cutting the remaining logic.
+
+### Performance Problems
+
+The program works but is too slow.
+
+**Structured diagnosis**:
+1. **Measure before optimizing**: identify the real bottleneck, not a supposed one
+2. **N+1 queries**: a query in a loop that should be a single query with a join
+3. **Algorithmic complexity**: O(n²) in a nested loop → can a hashmap achieve O(n)?
+4. **Memory leaks**: undetached listeners, circular references, unbounded caches, unclosed connections
+5. **Missing cache**: an expensive computation or query is repeated needlessly
+6. **Missing database index**: `EXPLAIN` / `EXPLAIN ANALYZE` on slow queries
+
+### Environment & Deployment Problems
+
+Code works locally but not in production (or vice-versa).
+
+**Systematic checklist**:
+
+| Verification | Command / Action |
+|---|---|
+| Identical versions? | Compare runtime, framework, dependency versions |
+| Environment variables? | Verify all required vars are defined in prod |
+| File permissions? | `ls -la` on affected files |
+| Network/DNS? | `ping`, `curl`, `nslookup` to verify connectivity |
+| SSL certificates? | Check validity and certificate chain |
+| Database? | Identical schema? Migrations up to date? Test vs prod data? |
+| Memory/CPU? | Are limits sufficient? |
+| Prod logs? | Temporarily enable detailed logging |
+
+### Async & Concurrency Problems
+
+The most subtle bugs. Occur intermittently.
+
+**Race conditions**: two async operations modify the same resource; execution order is not guaranteed. Fix: mutex, locks, transactions, or restructure to avoid concurrent access.
+
+**Promises / async-await**: missing `await` → function continues without waiting for result; `.then()` that doesn't return the promise → broken promise chain; `try/catch` that doesn't wrap the `await`.
+
+**Deadlocks (SQL/threads)**: two transactions lock resources in different order. Fix: always lock in the same order, reduce transaction duration.
+
+---
+
+## Appendix B — Debugging Tools by Language
+
+| Language | Debugger | Profiler | Linter |
+|---|---|---|---|
+| Python | `pdb`, VS Code debugger | `cProfile`, `py-spy` | `pylint`, `ruff`, `mypy` |
+| JavaScript | Chrome DevTools, VS Code | Chrome Performance, `clinic.js` | `eslint`, `typescript` |
+| TypeScript | VS Code debugger, Chrome DevTools | `clinic.js`, `0x` | `eslint`, `tsc --noEmit` |
+| Java | IntelliJ/Eclipse debugger | `JProfiler`, `VisualVM` | `SpotBugs`, `SonarQube` |
+| C# | Visual Studio debugger | `dotTrace`, `PerfView` | `Roslyn analyzers` |
+| PHP | `xdebug` | `Blackfire`, `xhprof` | `phpstan`, `psalm` |
+| Go | `dlv` (Delve) | `pprof` | `golangci-lint` |
+| Rust | `gdb`/`lldb`, VS Code | `perf`, `flamegraph` | `clippy` |
+| Ruby | `debug` gem, `byebug` | `stackprof`, `rack-mini-profiler` | `rubocop` |
+| SQL | `EXPLAIN ANALYZE` | Query analyzer (DBMS) | — |
+
+---
+
+## Appendix C — Debugging Anti-Patterns
+
+| Anti-pattern | Why it's harmful | Good practice |
+|---|---|---|
+| Modify code randomly | Can introduce new bugs | Understand first, fix second |
+| Ignore the error message | The message almost always contains the answer | Read every word of the error message |
+| Comment out code to "see if it works" | Hides the problem instead of solving it | Use the debugger or logs |
+| Fix the symptom | The bug will return in another form | Find and fix the root cause |
+| Don't test the fix | The fix may be incomplete or introduce a regression | Always verify + add a test |
+| Change multiple things at once | Impossible to know which change fixed the bug | One change at a time |
+| "It works on my machine" | The prod environment is different | Reproduce in an environment close to prod |
 
 
