@@ -138,6 +138,38 @@
       "created_at": "2026-04-08T00:00:00Z",
       "updated_at": "2026-04-08T00:00:00Z"
     },
+    "bugfix": {
+      "name": "Bugfix Workflow",
+      "id": "bugfix",
+      "description": "Structured bugfix workflow — capture bugs, trace to spec artifacts, and patch specs surgically.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-bugfix/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-bugfix",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-bugfix",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-bugfix/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-bugfix/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "bugfix",
+        "debugging",
+        "workflow",
+        "traceability",
+        "maintenance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-09T00:00:00Z",
+      "updated_at": "2026-04-09T00:00:00Z"
+    },
     "canon": {
       "name": "Canon",
       "id": "canon",
