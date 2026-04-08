@@ -740,3 +740,60 @@ class TestExtensionSkillEdgeCases:
         assert result is True
         assert not (skills_dir / "speckit-test-ext-hello").exists()
         assert not (skills_dir / "speckit-test-ext-world").exists()
+
+
+class TestPassthroughFrontmatter:
+    """Source frontmatter keys in _SKILL_PASSTHROUGH_KEYS survive into generated SKILL.md."""
+
+    def _make_project(self, tmp_path):
+        """Create project root with claude skills dir."""
+        project_root = tmp_path / "proj"
+        (project_root / ".claude" / "skills").mkdir(parents=True)
+        (project_root / ".specify").mkdir()
+        (project_root / ".specify" / "init-options.json").write_text(
+            '{"ai": "claude", "ai_skills": true, "script": "sh"}'
+        )
+        return project_root
+
+    def test_context_fork_passed_through(self, tmp_path):
+        import yaml
+        from specify_cli.agents import CommandRegistrar
+        project_root = self._make_project(tmp_path)
+        registrar = CommandRegistrar()
+        result = registrar.render_skill_command(
+            "claude", "speckit-test-ext-hello",
+            {"name": "speckit.test-ext.hello", "description": "Test", "context": "fork", "agent": "general-purpose"},
+            "Hello world", "test-ext", "commands/hello.md", project_root,
+        )
+        fm_text = result.split("---")[1]
+        fm = yaml.safe_load(fm_text)
+        assert fm.get("context") == "fork"
+        assert fm.get("agent") == "general-purpose"
+
+    def test_disable_model_invocation_override(self, tmp_path):
+        import yaml
+        from specify_cli.agents import CommandRegistrar
+        project_root = self._make_project(tmp_path)
+        registrar = CommandRegistrar()
+        result = registrar.render_skill_command(
+            "claude", "speckit-test-ext-hello",
+            {"description": "Test", "disable-model-invocation": False},
+            "Hello", "test-ext", "commands/hello.md", project_root,
+        )
+        fm_text = result.split("---")[1]
+        fm = yaml.safe_load(fm_text)
+        assert fm.get("disable-model-invocation") is False
+
+    def test_non_passthrough_key_not_leaked(self, tmp_path):
+        import yaml
+        from specify_cli.agents import CommandRegistrar
+        project_root = self._make_project(tmp_path)
+        registrar = CommandRegistrar()
+        result = registrar.render_skill_command(
+            "claude", "speckit-test-ext-hello",
+            {"description": "Test", "scripts": {"sh": "run.sh"}},
+            "Hello", "test-ext", "commands/hello.md", project_root,
+        )
+        fm_text = result.split("---")[1]
+        fm = yaml.safe_load(fm_text)
+        assert "scripts" not in fm
