@@ -35,12 +35,16 @@ behavior:
 | `effort` | any | `effort: {value}` | — | `effort: {value}` | — |
 | `tools` | `read-only` | `allowed-tools: Read Grep Glob` | `tools: [read_file, list_directory, search_files]` | — | — |
 | `tools` | `none` | `allowed-tools: ""` | — | — | — |
+| `tools` | `full` | — | — | — | — |
 | `invocation` | `explicit` | `disable-model-invocation: true` | — | — | — |
 | `invocation` | `automatic` | `disable-model-invocation: false` | — | — | — |
 | `visibility` | `user` | `user-invocable: true` | — | — | — |
 | `visibility` | `model` | `user-invocable: false` | — | — | — |
+| `visibility` | `both` | — | — | — | — |
 
 Cells marked `—` mean "no concept, field omitted silently."
+
+> **Note:** For Claude agent definitions (`execution: agent`), the `allowed-tools` key is automatically remapped to `tools` by spec-kit during deployment. The table above shows the `allowed-tools` form used in skill files (SKILL.md); the agent definition example below shows the resulting `tools` key after remapping.
 
 ---
 
