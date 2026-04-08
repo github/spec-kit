@@ -226,3 +226,55 @@ class TestCopilotAgentDeployment:
         fm = yaml.safe_load(parts[1]) or {}
         assert "mode" not in fm
         assert "tools" not in fm
+
+    def test_copilot_agent_no_tools_key_omits_tools(self, tmp_path):
+        root = self._setup_copilot_project(tmp_path)
+        src = tmp_path / "ext" / "commands"
+        src.mkdir(parents=True)
+        (src / "worker.md").write_text(dedent("""\
+            ---
+            description: Worker agent
+            behavior:
+              execution: agent
+            ---
+            Do work
+        """))
+        registrar = CommandRegistrar()
+        registrar.register_commands(
+            "copilot",
+            [{"name": "speckit.test-ext.worker", "file": "worker.md"}],
+            "test-ext", src, root,
+        )
+        agent_file = root / ".github" / "agents" / "speckit.test-ext.worker.agent.md"
+        content = agent_file.read_text()
+        parts = content.split("---")
+        fm = yaml.safe_load(parts[1]) or {}
+        assert fm.get("mode") == "agent"
+        assert "tools" not in fm
+
+    def test_copilot_agents_override_survives(self, tmp_path):
+        root = self._setup_copilot_project(tmp_path)
+        src = tmp_path / "ext" / "commands"
+        src.mkdir(parents=True)
+        (src / "custom.md").write_text(dedent("""\
+            ---
+            description: Custom agent
+            behavior:
+              execution: agent
+            agents:
+              copilot:
+                someCustomKey: someValue
+            ---
+            Do custom work
+        """))
+        registrar = CommandRegistrar()
+        registrar.register_commands(
+            "copilot",
+            [{"name": "speckit.test-ext.custom", "file": "custom.md"}],
+            "test-ext", src, root,
+        )
+        agent_file = root / ".github" / "agents" / "speckit.test-ext.custom.agent.md"
+        content = agent_file.read_text()
+        parts = content.split("---")
+        fm = yaml.safe_load(parts[1]) or {}
+        assert fm.get("someCustomKey") == "someValue"
