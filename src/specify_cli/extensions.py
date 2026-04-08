@@ -523,10 +523,11 @@ class ExtensionManager:
         """Collect command and alias names declared by a manifest.
 
         Performs install-time validation for extension-specific constraints:
-        - commands and aliases must use the canonical `speckit.{extension}.{command}` shape
-        - commands and aliases must use this extension's namespace
+        - primary commands must use the canonical `speckit.{extension}.{command}` shape
+        - primary commands must use this extension's namespace
         - command namespaces must not shadow core commands
         - duplicate command/alias names inside one manifest are rejected
+        - aliases are validated for type and uniqueness only (no pattern enforcement)
 
         Args:
             manifest: Parsed extension manifest
@@ -563,23 +564,26 @@ class ExtensionManager:
                         f"{kind.capitalize()} for command '{primary_name}' must be a string"
                     )
 
-                match = EXTENSION_COMMAND_NAME_PATTERN.match(name)
-                if match is None:
-                    raise ValidationError(
-                        f"Invalid {kind} '{name}': "
-                        "must follow pattern 'speckit.{extension}.{command}'"
-                    )
+                # Enforce canonical pattern only for primary command names;
+                # aliases are free-form to preserve community extension compat.
+                if kind == "command":
+                    match = EXTENSION_COMMAND_NAME_PATTERN.match(name)
+                    if match is None:
+                        raise ValidationError(
+                            f"Invalid {kind} '{name}': "
+                            "must follow pattern 'speckit.{extension}.{command}'"
+                        )
 
-                namespace = match.group(1)
-                if namespace != manifest.id:
-                    raise ValidationError(
-                        f"{kind.capitalize()} '{name}' must use extension namespace '{manifest.id}'"
-                    )
+                    namespace = match.group(1)
+                    if namespace != manifest.id:
+                        raise ValidationError(
+                            f"{kind.capitalize()} '{name}' must use extension namespace '{manifest.id}'"
+                        )
 
-                if namespace in CORE_COMMAND_NAMES:
-                    raise ValidationError(
-                        f"{kind.capitalize()} '{name}' conflicts with core command namespace '{namespace}'"
-                    )
+                    if namespace in CORE_COMMAND_NAMES:
+                        raise ValidationError(
+                            f"{kind.capitalize()} '{name}' conflicts with core command namespace '{namespace}'"
+                        )
 
                 if name in declared_names:
                     raise ValidationError(

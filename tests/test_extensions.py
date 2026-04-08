@@ -686,8 +686,8 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="conflicts with core command namespace"):
             manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
-    def test_install_rejects_alias_without_extension_namespace(self, temp_dir, project_dir):
-        """Install should reject legacy short aliases that can shadow core commands."""
+    def test_install_accepts_short_alias(self, temp_dir, project_dir):
+        """Install should accept legacy short aliases for community extension compat."""
         import yaml
 
         ext_dir = temp_dir / "alias-shortcut"
@@ -718,8 +718,8 @@ class TestExtensionManager:
         (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nBody")
 
         manager = ExtensionManager(project_dir)
-        with pytest.raises(ValidationError, match="Invalid alias 'speckit.shortcut'"):
-            manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+        # Should not raise — short aliases are allowed
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
     def test_install_rejects_namespace_squatting(self, temp_dir, project_dir):
         """Install should reject commands and aliases outside the extension namespace."""
