@@ -1,4 +1,4 @@
-# Spec Kit – March 2026 Newsletter
+# Spec Kit - March 2026 Newsletter
 
 This edition covers Spec Kit activity in March 2026. Versions v0.2.0 through v0.4.3 shipped during the month — nine releases — introducing major capabilities including simultaneous multi-catalog extension support, a pluggable preset system, air-gapped offline deployment, and automatic skill registration for extensions. Seven new AI coding assistants were integrated, bringing total platform support past 22. Community activity included over twenty new extensions, independent walkthroughs and blog posts, and a wave of industry coverage debating whether "vibe coding" is dead. A category summary is in the table below, followed by details.
 
