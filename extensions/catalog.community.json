@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-06T06:30:00Z",
+  "updated_at": "2026-04-08T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1066,6 +1066,38 @@
       "stars": 0,
       "created_at": "2026-03-14T00:00:00Z",
       "updated_at": "2026-03-14T00:00:00Z"
+    },
+    "refine": {
+      "name": "Spec Refine",
+      "id": "refine",
+      "description": "Update specs in-place, propagate changes to plan and tasks, and diff impact across artifacts.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-refine/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-refine",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-refine",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-refine/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-refine/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 2
+      },
+      "tags": [
+        "refine",
+        "iterate",
+        "propagation",
+        "workflow",
+        "specifications"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-08T00:00:00Z",
+      "updated_at": "2026-04-08T00:00:00Z"
     },
     "repoindex": {
       "name": "Repository Index",
