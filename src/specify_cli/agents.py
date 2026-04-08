@@ -15,6 +15,28 @@ from copy import deepcopy
 import yaml
 
 
+# Agent-specific frontmatter keys that extension/preset authors may declare in
+# source command frontmatter and have passed through verbatim to the generated
+# skill file.  Keys not in this set are ignored during skill rendering.
+_SKILL_PASSTHROUGH_KEYS: dict[str, frozenset[str]] = {
+    "claude": frozenset({
+        "context",                    # fork execution model
+        "agent",                      # subagent type when context: fork
+        "model",                      # model override
+        "effort",                     # effort level
+        "allowed-tools",              # tool restriction list
+        "paths",                      # path-based activation glob
+        "argument-hint",              # UI hint in slash-command menu
+        "disable-model-invocation",   # override default True
+        "user-invocable",             # override default True
+    }),
+    "codex": frozenset({
+        "model",
+        "effort",
+    }),
+}
+
+
 def _build_agent_configs() -> dict[str, Any]:
     """Derive CommandRegistrar.AGENT_CONFIGS from INTEGRATION_REGISTRY."""
     from specify_cli.integrations import INTEGRATION_REGISTRY
@@ -329,7 +351,7 @@ class CommandRegistrar:
         if not isinstance(frontmatter, dict):
             frontmatter = {}
 
-        if source_dir is not None:
+        if source_dir is not None and (source_dir / "extension.yml").exists():
             body = self.rewrite_extension_paths(body, source_id, source_dir)
 
         if agent_name in {"codex", "kimi"}:
@@ -345,6 +367,7 @@ class CommandRegistrar:
             skill_name,
             description,
             f"{source_id}:{source_file}",
+            source_frontmatter=frontmatter,
         )
         return self.render_frontmatter(skill_frontmatter) + "\n" + body
 
@@ -354,9 +377,22 @@ class CommandRegistrar:
         skill_name: str,
         description: str,
         source: str,
+        source_frontmatter: dict | None = None,
     ) -> dict:
-        """Build consistent SKILL.md frontmatter across all skill generators."""
-        skill_frontmatter = {
+        """Build consistent SKILL.md frontmatter across all skill generators.
+
+        Args:
+            agent_name: Target agent key (e.g. "claude", "codex").
+            skill_name: Generated skill name (e.g. "speckit-revenge-extract").
+            description: Human-readable description.
+            source: Source tracking string (e.g. "revenge:commands/extract.md").
+            source_frontmatter: Original command frontmatter. Keys present in
+                ``_SKILL_PASSTHROUGH_KEYS[agent_name]`` are merged after
+                defaults, allowing source authors to override injected values.
+        """
+        source_frontmatter = source_frontmatter or {}
+
+        skill_frontmatter: dict = {
             "name": skill_name,
             "description": description,
             "compatibility": "Requires spec-kit project structure with .specify/ directory",
@@ -366,10 +402,14 @@ class CommandRegistrar:
             },
         }
         if agent_name == "claude":
-            # Claude skills should be user-invocable (accessible via /command)
-            # and only run when explicitly invoked (not auto-triggered by the model).
             skill_frontmatter["user-invocable"] = True
             skill_frontmatter["disable-model-invocation"] = True
+
+        # Merge passthrough keys from source (wins over defaults above)
+        for key in _SKILL_PASSTHROUGH_KEYS.get(agent_name, frozenset()):
+            if key in source_frontmatter:
+                skill_frontmatter[key] = source_frontmatter[key]
+
         return skill_frontmatter
 
     @staticmethod
