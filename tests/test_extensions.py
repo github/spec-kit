@@ -2218,9 +2218,8 @@ class TestExtensionCatalog:
         assert req.get_header("Authorization") == "token ghp_testtoken"
 
     def test_fetch_single_catalog_sends_auth_header(self, temp_dir, monkeypatch):
-        """_fetch_single_catalog passes Authorization header to urlopen for GitHub URLs."""
+        """_fetch_single_catalog passes Authorization header via opener for GitHub URLs."""
         from unittest.mock import patch, MagicMock
-        import io
 
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
         catalog = self._make_catalog(temp_dir)
@@ -2232,10 +2231,13 @@ class TestExtensionCatalog:
         mock_response.__exit__ = MagicMock(return_value=False)
 
         captured = {}
+        mock_opener = MagicMock()
 
-        def fake_urlopen(req, timeout=None):
+        def fake_open(req, timeout=None):
             captured["req"] = req
             return mock_response
+
+        mock_opener.open.side_effect = fake_open
 
         entry = CatalogEntry(
             url="https://raw.githubusercontent.com/org/repo/main/catalog.json",
@@ -2244,11 +2246,10 @@ class TestExtensionCatalog:
             install_allowed=True,
         )
 
-        with patch("urllib.request.urlopen", fake_urlopen):
+        with patch("urllib.request.build_opener", return_value=mock_opener):
             catalog._fetch_single_catalog(entry, force_refresh=True)
 
-        assert "Authorization" in captured["req"].headers
-        assert captured["req"].headers["Authorization"] == "token ghp_testtoken"
+        assert captured["req"].get_header("Authorization") == "token ghp_testtoken"
 
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
         """download_extension passes Authorization header to urlopen for GitHub URLs."""
@@ -2271,9 +2272,13 @@ class TestExtensionCatalog:
 
         captured = {}
 
-        def fake_urlopen(req, timeout=None):
+        mock_opener = MagicMock()
+
+        def fake_open(req, timeout=None):
             captured["req"] = req
             return mock_response
+
+        mock_opener.open.side_effect = fake_open
 
         ext_info = {
             "id": "test-ext",
@@ -2283,11 +2288,11 @@ class TestExtensionCatalog:
         }
 
         with patch.object(catalog, "get_extension_info", return_value=ext_info), \
-             patch("urllib.request.urlopen", fake_urlopen):
+             patch("urllib.request.build_opener", return_value=mock_opener):
             catalog.download_extension("test-ext", target_dir=temp_dir)
 
-        assert "Authorization" in captured["req"].headers
-        assert captured["req"].headers["Authorization"] == "token ghp_testtoken"
+        assert captured["req"].get_header("Authorization") == "token ghp_testtoken"
+
 
 
 # ===== CatalogEntry Tests =====

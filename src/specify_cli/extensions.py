@@ -1432,6 +1432,36 @@ class ExtensionCatalog:
             headers["Authorization"] = f"token {token}"
         return urllib.request.Request(url, headers=headers)
 
+    def _open_url(self, url: str, timeout: int = 10):
+        """Open a URL using _make_request, stripping auth on cross-host redirects.
+
+        When the request carries an Authorization header, a custom redirect
+        handler is used to drop that header if the redirect target is not a
+        GitHub-hosted domain, preventing token leakage to CDNs or other
+        third-party hosts that GitHub may redirect to.
+        """
+        import urllib.request
+        from urllib.parse import urlparse
+
+        req = self._make_request(url)
+
+        if not req.get_header("Authorization"):
+            return urllib.request.urlopen(req, timeout=timeout)
+
+        _github_hosts = {"raw.githubusercontent.com", "github.com", "api.github.com"}
+
+        class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(_self, req, fp, code, msg, headers, newurl):
+                new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+                if new_req is not None:
+                    hostname = (urlparse(newurl).hostname or "").lower()
+                    if hostname not in _github_hosts:
+                        new_req.headers.pop("Authorization", None)
+                return new_req
+
+        opener = urllib.request.build_opener(_StripAuthOnRedirect)
+        return opener.open(req, timeout=timeout)
+
     def _load_catalog_config(self, config_path: Path) -> Optional[List[CatalogEntry]]:
         """Load catalog stack configuration from a YAML file.
 
@@ -1622,7 +1652,7 @@ class ExtensionCatalog:
 
         # Fetch from network
         try:
-            with urllib.request.urlopen(self._make_request(entry.url), timeout=10) as response:
+            with self._open_url(entry.url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
             if "schema_version" not in catalog_data or "extensions" not in catalog_data:
@@ -1739,7 +1769,7 @@ class ExtensionCatalog:
             import urllib.request
             import urllib.error
 
-            with urllib.request.urlopen(self._make_request(catalog_url), timeout=10) as response:
+            with self._open_url(catalog_url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
             # Validate catalog structure
@@ -1882,7 +1912,7 @@ class ExtensionCatalog:
 
         # Download the ZIP file
         try:
-            with urllib.request.urlopen(self._make_request(download_url), timeout=60) as response:
+            with self._open_url(download_url, timeout=60) as response:
                 zip_data = response.read()
 
             zip_path.write_bytes(zip_data)
