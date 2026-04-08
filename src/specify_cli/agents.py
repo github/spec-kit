@@ -14,6 +14,8 @@ import re
 from copy import deepcopy
 import yaml
 
+from specify_cli.behavior import translate_behavior, strip_behavior_keys, get_deployment_type, get_copilot_tools
+
 
 # Agent-specific frontmatter keys that extension/preset authors may declare in
 # source command frontmatter and have passed through verbatim to the generated
@@ -318,14 +320,35 @@ class CommandRegistrar:
         if agent_name in {"codex", "kimi"}:
             body = self.resolve_skill_placeholders(agent_name, frontmatter, body, project_root)
 
-        description = frontmatter.get("description", f"Spec-kit workflow command: {skill_name}")
+        # Extract and translate behavior + agents escape hatch
+        behavior = frontmatter.get("behavior") or {}
+        agents_overrides = frontmatter.get("agents") or {}
+        behavior_fields: dict = {}
+        if isinstance(behavior, dict):
+            behavior_fields = translate_behavior(
+                agent_name, behavior,
+                agents_overrides if isinstance(agents_overrides, dict) else {}
+            )
+
+        # Strip behavior/agents keys before building skill frontmatter
+        clean_frontmatter = strip_behavior_keys(frontmatter)
+
+        description = clean_frontmatter.get("description", f"Spec-kit workflow command: {skill_name}")
         skill_frontmatter = self.build_skill_frontmatter(
             agent_name,
             skill_name,
             description,
             f"{source_id}:{source_file}",
-            source_frontmatter=frontmatter,
+            source_frontmatter=clean_frontmatter,
         )
+        # Merge behavior translation — passthrough (already in skill_frontmatter) wins
+        # because we only set behavior fields if they are not already set via passthrough,
+        # EXCEPT for the set of fields that behavior can legitimately override defaults for.
+        _behavior_overridable = {"disable-model-invocation", "user-invocable", "model", "effort", "context", "agent", "allowed-tools"}
+        for k, v in behavior_fields.items():
+            if k not in skill_frontmatter or k in _behavior_overridable:
+                skill_frontmatter[k] = v
+
         return self.render_frontmatter(skill_frontmatter) + "\n" + body
 
     @staticmethod

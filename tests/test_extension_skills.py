@@ -797,3 +797,72 @@ class TestPassthroughFrontmatter:
         fm_text = result.split("---")[1]
         fm = yaml.safe_load(fm_text)
         assert "scripts" not in fm
+
+
+class TestBehaviorTranslationInRender:
+    """behavior: and agents: blocks are stripped and translated during rendering."""
+
+    def _render(self, source_frontmatter: dict, body: str = "Hello") -> dict:
+        import yaml
+        import json
+        import tempfile
+        from specify_cli.agents import CommandRegistrar
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            (project_root / ".specify").mkdir()
+            (project_root / ".specify" / "init-options.json").write_text(
+                json.dumps({"ai": "claude", "ai_skills": True, "script": "sh"})
+            )
+            registrar = CommandRegistrar()
+            result = registrar.render_skill_command(
+                "claude", "speckit-test-cmd",
+                source_frontmatter, body, "test-ext", "commands/test.md", project_root,
+            )
+        parts = result.split("---")
+        return yaml.safe_load(parts[1])
+
+    def test_behavior_key_stripped_from_output(self):
+        fm = self._render({"description": "Test", "behavior": {"execution": "isolated"}})
+        assert "behavior" not in fm
+
+    def test_agents_key_stripped_from_output(self):
+        fm = self._render({"description": "Test", "agents": {"claude": {"paths": "src/**"}}})
+        assert "agents" not in fm
+
+    def test_execution_isolated_injects_context_fork(self):
+        fm = self._render({"description": "Test", "behavior": {"execution": "isolated"}})
+        assert fm.get("context") == "fork"
+
+    def test_capability_strong_injects_model(self):
+        fm = self._render({"description": "Test", "behavior": {"capability": "strong"}})
+        assert fm.get("model") == "claude-opus-4-6"
+
+    def test_effort_high_injected(self):
+        fm = self._render({"description": "Test", "behavior": {"effort": "high"}})
+        assert fm.get("effort") == "high"
+
+    def test_tools_read_only_injects_allowed_tools(self):
+        fm = self._render({"description": "Test", "behavior": {"tools": "read-only"}})
+        assert fm.get("allowed-tools") == "Read Grep Glob"
+
+    def test_invocation_automatic_overrides_default(self):
+        fm = self._render({"description": "Test", "behavior": {"invocation": "automatic"}})
+        assert fm.get("disable-model-invocation") is False
+
+    def test_agents_escape_hatch_applied(self):
+        fm = self._render({
+            "description": "Test",
+            "behavior": {"capability": "fast"},
+            "agents": {"claude": {"model": "claude-opus-4-6", "paths": "src/**"}},
+        })
+        assert fm.get("model") == "claude-opus-4-6"
+        assert fm.get("paths") == "src/**"
+
+    def test_passthrough_wins_over_behavior(self):
+        # Explicit context: fork in source FM (passthrough) should still work alongside behavior
+        fm = self._render({
+            "description": "Test",
+            "context": "fork",
+            "behavior": {"execution": "isolated"},
+        })
+        assert fm.get("context") == "fork"
