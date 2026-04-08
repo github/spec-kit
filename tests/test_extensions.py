@@ -2189,6 +2189,27 @@ class TestExtensionCatalog:
         req = catalog._make_request("https://internal.example.com/catalog.json")
         assert "Authorization" not in req.headers
 
+    def test_make_request_token_not_added_for_github_lookalike_host(self, temp_dir, monkeypatch):
+        """Auth header is not attached to hosts that include github.com as a suffix."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://github.com.evil.com/org/repo/releases/download/v1/ext.zip")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_token_not_added_for_github_in_path(self, temp_dir, monkeypatch):
+        """Auth header is not attached when github.com appears only in the URL path."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://evil.example.com/github.com/org/repo/releases/download/v1/ext.zip")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_token_not_added_for_github_in_query(self, temp_dir, monkeypatch):
+        """Auth header is not attached when github.com appears only in the query string."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://evil.example.com/download?source=https://github.com/org/repo/v1/ext.zip")
+        assert "Authorization" not in req.headers
+
     def test_make_request_token_added_for_api_github_com(self, temp_dir, monkeypatch):
         """GITHUB_TOKEN is attached for api.github.com URLs."""
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")

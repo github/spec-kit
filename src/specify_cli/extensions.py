@@ -1422,13 +1422,13 @@ class ExtensionCatalog:
         """
         import os
         import urllib.request
+        from urllib.parse import urlparse
 
         headers: Dict[str, str] = {}
         token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-        if token and any(
-            host in url
-            for host in ("raw.githubusercontent.com", "github.com", "api.github.com")
-        ):
+        hostname = (urlparse(url).hostname or "").lower()
+        github_hosts = {"raw.githubusercontent.com", "github.com", "api.github.com"}
+        if token and hostname in github_hosts:
             headers["Authorization"] = f"token {token}"
         return urllib.request.Request(url, headers=headers)
 
