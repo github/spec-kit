@@ -369,11 +369,15 @@ if [ "$HAS_GIT" = true ]; then
         # Check if branch already exists
         if branch_exists "$BRANCH_NAME"; then
             # Attach worktree to existing branch (without -b flag)
-            if git worktree add "$WORKTREE_PATH" "$BRANCH_NAME" 2>/dev/null; then
+            worktree_add_error=""
+            if worktree_add_error=$(git worktree add "$WORKTREE_PATH" "$BRANCH_NAME" 2>&1); then
                 CREATION_MODE="worktree"
                 FEATURE_ROOT="$WORKTREE_PATH"
             else
                 >&2 echo "[specify] Error: Failed to create worktree for existing branch '$BRANCH_NAME' at $WORKTREE_PATH"
+                if [ -n "$worktree_add_error" ]; then
+                    >&2 printf '%s\n' "$worktree_add_error"
+                fi
                 >&2 echo "[specify] Suggestions:"
                 >&2 echo "[specify]   - Check existing worktrees: git worktree list"
                 >&2 echo "[specify]   - Remove stale worktree: git worktree remove <path>"

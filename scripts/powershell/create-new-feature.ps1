@@ -372,8 +372,9 @@ if ($hasGit) {
         # Check if branch already exists
         if (Test-BranchExists -BranchName $branchName) {
             # Attach worktree to existing branch (without -b flag)
+            $worktreeAddError = ''
             try {
-                git worktree add $worktreePath $branchName 2>$null | Out-Null
+                $worktreeAddError = git worktree add $worktreePath $branchName 2>&1 | Out-String
                 if ($LASTEXITCODE -eq 0) {
                     $creationMode = "worktree"
                     $featureRoot = $worktreePath
@@ -384,6 +385,9 @@ if ($hasGit) {
             }
             catch {
                 Write-Error "[specify] Error: Failed to create worktree for existing branch '$branchName' at $worktreePath"
+                if ($worktreeAddError) {
+                    Write-Error $worktreeAddError.Trim()
+                }
                 Write-Error "[specify] Suggestions:"
                 Write-Error "[specify]   - Check existing worktrees: git worktree list"
                 Write-Error "[specify]   - Remove stale worktree: git worktree remove <path>"
