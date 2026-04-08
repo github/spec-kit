@@ -1624,7 +1624,9 @@ def _resolve_script_type(project_root: Path, script_type: str | None) -> str:
 
 
 @integration_app.command("list")
-def integration_list():
+def integration_list(
+    catalog: bool = typer.Option(False, "--catalog", help="Browse full catalog (built-in + community)"),
+):
     """List available integrations and installed status."""
     from .integrations import INTEGRATION_REGISTRY
 
@@ -1638,6 +1640,47 @@ def integration_list():
 
     current = _read_integration_json(project_root)
     installed_key = current.get("integration")
+
+    if catalog:
+        from .integrations.catalog import IntegrationCatalog, IntegrationCatalogError
+
+        ic = IntegrationCatalog(project_root)
+        try:
+            entries = ic.search()
+        except IntegrationCatalogError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(1)
+
+        if not entries:
+            console.print("[yellow]No integrations found in catalog.[/yellow]")
+            return
+
+        table = Table(title="Integration Catalog (built-in + community)")
+        table.add_column("ID", style="cyan")
+        table.add_column("Name")
+        table.add_column("Version")
+        table.add_column("Source")
+        table.add_column("Status")
+
+        for entry in sorted(entries, key=lambda e: e["id"]):
+            eid = entry["id"]
+            cat_name = entry.get("_catalog_name", "")
+            if eid == installed_key:
+                status = "[green]installed[/green]"
+            elif eid in INTEGRATION_REGISTRY:
+                status = "built-in"
+            else:
+                status = ""
+            table.add_row(
+                eid,
+                entry.get("name", eid),
+                entry.get("version", ""),
+                cat_name,
+                status,
+            )
+
+        console.print(table)
+        return
 
     table = Table(title="AI Agent Integrations")
     table.add_column("Key", style="cyan")
@@ -2023,6 +2066,111 @@ def integration_switch(
 
     name = (target_integration.config or {}).get("name", target)
     console.print(f"\n[green]✓[/green] Switched to integration '{name}'")
+
+
+@integration_app.command("upgrade")
+def integration_upgrade(
+    key: str = typer.Argument(None, help="Integration key to upgrade (default: current integration)"),
+    force: bool = typer.Option(False, "--force", help="Force upgrade even if files are modified"),
+    script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
+    integration_options: str | None = typer.Option(None, "--integration-options", help="Options for the integration"),
+):
+    """Upgrade an integration by reinstalling with diff-aware file handling.
+
+    Compares manifest hashes to detect locally modified files and
+    preserves them unless --force is used.
+    """
+    from .integrations import get_integration
+    from .integrations.manifest import IntegrationManifest
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    current = _read_integration_json(project_root)
+    installed_key = current.get("integration")
+
+    if key is None:
+        if not installed_key:
+            console.print("[yellow]No integration is currently installed.[/yellow]")
+            raise typer.Exit(0)
+        key = installed_key
+
+    if installed_key and installed_key != key:
+        console.print(
+            f"[red]Error:[/red] Integration '{key}' is not the currently installed integration ('{installed_key}')."
+        )
+        console.print(f"Use [cyan]specify integration switch {key}[/cyan] instead.")
+        raise typer.Exit(1)
+
+    integration = get_integration(key)
+    if integration is None:
+        console.print(f"[red]Error:[/red] Unknown integration '{key}'")
+        raise typer.Exit(1)
+
+    manifest_path = project_root / ".specify" / "integrations" / f"{key}.manifest.json"
+    if not manifest_path.exists():
+        console.print(f"[yellow]No manifest found for integration '{key}'. Nothing to upgrade.[/yellow]")
+        console.print(f"Run [cyan]specify integration install {key}[/cyan] to perform a fresh install.")
+        raise typer.Exit(0)
+
+    try:
+        old_manifest = IntegrationManifest.load(key, project_root)
+    except (ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]Error:[/red] Integration manifest for '{key}' is unreadable: {exc}")
+        raise typer.Exit(1)
+
+    # Detect modified files via manifest hashes
+    modified = old_manifest.check_modified()
+    if modified and not force:
+        console.print(f"[yellow]⚠[/yellow]  {len(modified)} file(s) have been modified since installation:")
+        for rel in modified:
+            console.print(f"    {rel}")
+        console.print("\nUse [cyan]--force[/cyan] to overwrite modified files, or resolve manually.")
+        raise typer.Exit(1)
+
+    selected_script = _resolve_script_type(project_root, script)
+
+    # Phase 1: Teardown old files
+    console.print(f"Upgrading integration: [cyan]{key}[/cyan]")
+    removed, skipped = old_manifest.uninstall(project_root, force=force)
+    if removed:
+        console.print(f"  Removed {len(removed)} old file(s)")
+    if skipped:
+        console.print(f"  [yellow]Preserved {len(skipped)} modified file(s)[/yellow]")
+
+    # Phase 2: Reinstall
+    new_manifest = IntegrationManifest(key, project_root, version=get_speckit_version())
+
+    parsed_options: dict[str, Any] | None = None
+    if integration_options:
+        parsed_options = _parse_integration_options(integration, integration_options)
+
+    try:
+        integration.setup(
+            project_root,
+            new_manifest,
+            parsed_options=parsed_options,
+            script_type=selected_script,
+            raw_options=integration_options,
+        )
+        new_manifest.save()
+        _write_integration_json(project_root, key, selected_script)
+        _update_init_options_for_integration(project_root, integration, script_type=selected_script)
+    except Exception as exc:
+        try:
+            integration.teardown(project_root, new_manifest, force=True)
+        except Exception:
+            pass
+        console.print(f"[red]Error:[/red] Failed to upgrade integration: {exc}")
+        raise typer.Exit(1)
+
+    name = (integration.config or {}).get("name", key)
+    console.print(f"\n[green]✓[/green] Integration '{name}' upgraded successfully")
 
 
 # ===== Preset Commands =====

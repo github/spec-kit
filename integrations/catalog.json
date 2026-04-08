@@ -1,0 +1,250 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-04-08T00:00:00Z",
+  "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/integrations/catalog.json",
+  "integrations": {
+    "claude": {
+      "id": "claude",
+      "name": "Claude Code",
+      "version": "1.0.0",
+      "description": "Anthropic Claude Code CLI integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "anthropic"]
+    },
+    "copilot": {
+      "id": "copilot",
+      "name": "GitHub Copilot",
+      "version": "1.0.0",
+      "description": "GitHub Copilot IDE integration with agent commands and prompt files",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide", "github"]
+    },
+    "gemini": {
+      "id": "gemini",
+      "name": "Gemini CLI",
+      "version": "1.0.0",
+      "description": "Google Gemini CLI integration with TOML command format",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "google"]
+    },
+    "cursor-agent": {
+      "id": "cursor-agent",
+      "name": "Cursor",
+      "version": "1.0.0",
+      "description": "Cursor IDE integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide"]
+    },
+    "windsurf": {
+      "id": "windsurf",
+      "name": "Windsurf",
+      "version": "1.0.0",
+      "description": "Windsurf IDE workflow integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide"]
+    },
+    "amp": {
+      "id": "amp",
+      "name": "Amp",
+      "version": "1.0.0",
+      "description": "Amp CLI integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
+    "codex": {
+      "id": "codex",
+      "name": "Codex CLI",
+      "version": "1.0.0",
+      "description": "Codex CLI skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills"]
+    },
+    "qwen": {
+      "id": "qwen",
+      "name": "Qwen Code",
+      "version": "1.0.0",
+      "description": "Alibaba Qwen Code CLI integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "alibaba"]
+    },
+    "opencode": {
+      "id": "opencode",
+      "name": "opencode",
+      "version": "1.0.0",
+      "description": "opencode CLI integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
+    "forge": {
+      "id": "forge",
+      "name": "Forge",
+      "version": "1.0.0",
+      "description": "Forge CLI integration with parameter-based commands",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
+    "kiro-cli": {
+      "id": "kiro-cli",
+      "name": "Kiro CLI",
+      "version": "1.0.0",
+      "description": "Kiro CLI prompt-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
+    "junie": {
+      "id": "junie",
+      "name": "Junie",
+      "version": "1.0.0",
+      "description": "Junie by JetBrains CLI integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "jetbrains"]
+    },
+    "auggie": {
+      "id": "auggie",
+      "name": "Auggie CLI",
+      "version": "1.0.0",
+      "description": "Auggie CLI integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
+    "shai": {
+      "id": "shai",
+      "name": "SHAI",
+      "version": "1.0.0",
+      "description": "SHAI CLI integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
+    "tabnine": {
+      "id": "tabnine",
+      "name": "Tabnine CLI",
+      "version": "1.0.0",
+      "description": "Tabnine CLI integration with TOML command format",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
+    "kilocode": {
+      "id": "kilocode",
+      "name": "Kilo Code",
+      "version": "1.0.0",
+      "description": "Kilo Code IDE workflow integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide"]
+    },
+    "roo": {
+      "id": "roo",
+      "name": "Roo Code",
+      "version": "1.0.0",
+      "description": "Roo Code IDE integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide"]
+    },
+    "bob": {
+      "id": "bob",
+      "name": "IBM Bob",
+      "version": "1.0.0",
+      "description": "IBM Bob IDE integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide", "ibm"]
+    },
+    "trae": {
+      "id": "trae",
+      "name": "Trae",
+      "version": "1.0.0",
+      "description": "Trae IDE rules-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide"]
+    },
+    "codebuddy": {
+      "id": "codebuddy",
+      "name": "CodeBuddy",
+      "version": "1.0.0",
+      "description": "CodeBuddy CLI integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
+    "qodercli": {
+      "id": "qodercli",
+      "name": "Qoder CLI",
+      "version": "1.0.0",
+      "description": "Qoder CLI integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
+    "kimi": {
+      "id": "kimi",
+      "name": "Kimi Code",
+      "version": "1.0.0",
+      "description": "Kimi Code CLI skills-based integration by Moonshot AI",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills"]
+    },
+    "pi": {
+      "id": "pi",
+      "name": "Pi Coding Agent",
+      "version": "1.0.0",
+      "description": "Pi terminal coding agent prompt-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
+    "iflow": {
+      "id": "iflow",
+      "name": "iFlow CLI",
+      "version": "1.0.0",
+      "description": "iFlow CLI integration by iflow-ai",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
+    "vibe": {
+      "id": "vibe",
+      "name": "Mistral Vibe",
+      "version": "1.0.0",
+      "description": "Mistral Vibe CLI prompt-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "mistral"]
+    },
+    "agy": {
+      "id": "agy",
+      "name": "Antigravity",
+      "version": "1.0.0",
+      "description": "Antigravity IDE skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide", "skills"]
+    },
+    "generic": {
+      "id": "generic",
+      "name": "Generic (bring your own agent)",
+      "version": "1.0.0",
+      "description": "Generic integration for any agent via --ai-commands-dir",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["generic"]
+    }
+  }
+}
