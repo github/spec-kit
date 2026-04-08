@@ -730,22 +730,7 @@ class CommandRegistrar:
                             source_dir=source_dir,
                         )
                     elif agent_config["format"] == "markdown":
-                        # For Copilot execution:agent, inject behavior-derived fields into frontmatter
-                        if agent_name == "copilot" and cmd_type == "agent":
-                            behavior = alias_frontmatter.get("behavior") or {}
-                            agents_overrides = alias_frontmatter.get("agents") or {}
-                            extra_fields = translate_behavior(
-                                agent_name, behavior,
-                                agents_overrides if isinstance(agents_overrides, dict) else {}
-                            )
-                            copilot_tools = get_copilot_tools(behavior if isinstance(behavior, dict) else {})
-                            if copilot_tools:
-                                extra_fields["tools"] = copilot_tools
-                            alias_copilot_fm = strip_behavior_keys(alias_frontmatter)
-                            alias_copilot_fm.update(extra_fields)
-                            alias_output = self.render_markdown_command(alias_copilot_fm, body, source_id, context_note)
-                        else:
-                            alias_output = self.render_markdown_command(alias_frontmatter, body, source_id, context_note)
+                        alias_output = self.render_markdown_command(alias_frontmatter, body, source_id, context_note)
                     elif agent_config["format"] == "toml":
                         alias_output = self.render_toml_command(
                             alias_frontmatter, body, source_id
