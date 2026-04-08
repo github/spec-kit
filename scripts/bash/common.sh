@@ -279,12 +279,16 @@ check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
 # Discover nested independent git repositories under REPO_ROOT.
-# Searches up to 2 directory levels deep for subdirectories containing .git
-# (directory or file, covering worktrees/submodules). Excludes the root repo
-# itself and common non-project directories.
+# Searches up to $max_depth directory levels deep for subdirectories containing
+# .git (directory or file, covering worktrees/submodules). Excludes the root
+# repo itself and common non-project directories.
+# Usage: find_nested_git_repos [repo_root] [max_depth]
+#   repo_root  — defaults to $(get_repo_root)
+#   max_depth  — defaults to 2
 # Outputs one absolute path per line.
 find_nested_git_repos() {
     local repo_root="${1:-$(get_repo_root)}"
+    local max_depth="${2:-2}"
     # Directories to skip during traversal
     local -a skip_dirs=(".specify" ".git" "node_modules" "vendor" ".venv" "venv"
                         "__pycache__" ".gradle" "build" "dist" "target" ".idea"
@@ -298,36 +302,27 @@ find_nested_git_repos() {
         return 1
     }
 
-    # Level 1
-    for child in "$repo_root"/*/; do
-        [ -d "$child" ] || continue
-        child="${child%/}"
-        local child_name
-        child_name="$(basename "$child")"
-        _should_skip "$child_name" && continue
+    _scan_dir() {
+        local dir="$1"
+        local current_depth="$2"
+        for child in "$dir"/*/; do
+            [ -d "$child" ] || continue
+            child="${child%/}"
+            local child_name
+            child_name="$(basename "$child")"
+            _should_skip "$child_name" && continue
 
-        if [ -e "$child/.git" ]; then
-            # Verify it is a valid git work tree
-            if git -C "$child" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-                echo "$child"
-            fi
-        else
-            # Level 2
-            for grandchild in "$child"/*/; do
-                [ -d "$grandchild" ] || continue
-                grandchild="${grandchild%/}"
-                local gc_name
-                gc_name="$(basename "$grandchild")"
-                _should_skip "$gc_name" && continue
-
-                if [ -e "$grandchild/.git" ]; then
-                    if git -C "$grandchild" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-                        echo "$grandchild"
-                    fi
+            if [ -e "$child/.git" ]; then
+                if git -C "$child" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                    echo "$child"
                 fi
-            done
-        fi
-    done
+            elif [ "$current_depth" -lt "$max_depth" ]; then
+                _scan_dir "$child" $((current_depth + 1))
+            fi
+        done
+    }
+
+    _scan_dir "$repo_root" 1
 }
 
 # Resolve a template name to a file path using the priority stack:

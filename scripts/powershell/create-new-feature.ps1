@@ -9,6 +9,8 @@ param(
     [Parameter()]
     [long]$Number = 0,
     [switch]$Timestamp,
+    [string]$Repos,
+    [int]$ScanDepth = 0,
     [switch]$Help,
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
@@ -17,7 +19,7 @@ $ErrorActionPreference = 'Stop'
 
 # Show help if requested
 if ($Help) {
-    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
+    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] [-Repos <paths>] [-ScanDepth N] <feature description>"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Json               Output in JSON format"
@@ -26,12 +28,15 @@ if ($Help) {
     Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
     Write-Host "  -Number N           Specify branch number manually (overrides auto-detection)"
     Write-Host "  -Timestamp          Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
+    Write-Host "  -Repos <paths>      Comma-separated list of nested repo relative paths to branch (default: all discovered)"
+    Write-Host "  -ScanDepth N        Max directory depth to scan for nested repos (default: 2)"
     Write-Host "  -Help               Show this help message"
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  ./create-new-feature.ps1 'Add user authentication system' -ShortName 'user-auth'"
     Write-Host "  ./create-new-feature.ps1 'Implement OAuth2 integration for API'"
     Write-Host "  ./create-new-feature.ps1 -Timestamp -ShortName 'user-auth' 'Add user authentication'"
+    Write-Host "  ./create-new-feature.ps1 -Repos 'components/api,components/auth' 'Add API auth support'"
     exit 0
 }
 
@@ -363,7 +368,18 @@ if (-not $DryRun) {
 # Create matching feature branches in nested independent git repositories
 $nestedReposResult = @()
 if ($hasGit) {
-    $nestedRepos = Find-NestedGitRepos -RepoRoot $repoRoot
+    $effectiveDepth = if ($ScanDepth -gt 0) { $ScanDepth } else { 2 }
+    $nestedRepos = Find-NestedGitRepos -RepoRoot $repoRoot -MaxDepth $effectiveDepth
+
+    # Filter by -Repos if specified: only branch repos in the requested list
+    if ($Repos) {
+        $requestedRepos = $Repos -split ',' | ForEach-Object { $_.Trim().TrimEnd('\', '/') } | Where-Object { $_ -ne '' }
+        $nestedRepos = $nestedRepos | Where-Object {
+            $relPath = $_.Substring($repoRoot.Length).TrimStart('\', '/')
+            $requestedRepos -contains $relPath
+        }
+    }
+
     foreach ($nestedPath in $nestedRepos) {
         $relPath = $nestedPath.Substring($repoRoot.Length).TrimStart('\', '/')
         $nestedStatus = 'skipped'

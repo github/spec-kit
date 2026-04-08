@@ -3,6 +3,8 @@ Pytest tests for nested independent git repository support in create-new-feature
 
 Tests cover:
 - Discovery of nested git repos via find_nested_git_repos (bash) / Find-NestedGitRepos (PS)
+- Configurable scan depth for nested repo discovery
+- Selective branching via --repos flag
 - Branch creation in nested repos during feature creation
 - JSON output includes NESTED_REPOS field
 - --dry-run reports nested repos without creating branches
@@ -320,3 +322,174 @@ class TestNestedRepoBranchCreation:
         paths = [e["path"] for e in nested]
         assert "lib" in paths
         assert not any("node_modules" in p for p in paths)
+
+
+# ── Configurable Depth Tests ─────────────────────────────────────────────────
+
+
+class TestConfigurableDepth:
+    def test_depth_1_misses_level2_repos(self, git_repo_with_nested: Path):
+        """Depth 1 only scans immediate children; level-2 repos under components/ are missed."""
+        result = source_and_call(
+            f'find_nested_git_repos "{git_repo_with_nested}" 1',
+            cwd=git_repo_with_nested,
+        )
+        assert result.returncode == 0, result.stderr
+        paths = [p.strip().rstrip("/") for p in result.stdout.strip().splitlines() if p.strip()]
+        # components/core and components/api are at depth 2, so depth=1 should find nothing
+        assert len(paths) == 0
+
+    def test_depth_2_finds_level2_repos(self, git_repo_with_nested: Path):
+        """Depth 2 (default) discovers repos at level 2."""
+        result = source_and_call(
+            f'find_nested_git_repos "{git_repo_with_nested}" 2',
+            cwd=git_repo_with_nested,
+        )
+        assert result.returncode == 0, result.stderr
+        paths = [p.strip().rstrip("/") for p in result.stdout.strip().splitlines() if p.strip()]
+        assert len(paths) == 2
+        basenames = sorted(os.path.basename(p) for p in paths)
+        assert basenames == ["api", "core"]
+
+    def test_depth_3_finds_deep_repos(self, tmp_path: Path):
+        """Depth 3 discovers repos at level 3."""
+        _init_git_repo(tmp_path)
+        (tmp_path / ".specify").mkdir()
+        scripts_dir = tmp_path / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        shutil.copy(COMMON_SH, scripts_dir / "common.sh")
+
+        # Level 3 nested repo: services/backend/auth
+        deep_dir = tmp_path / "services" / "backend" / "auth"
+        deep_dir.mkdir(parents=True)
+        _init_git_repo(deep_dir)
+
+        # With depth=2, should NOT find it
+        result2 = source_and_call(
+            f'find_nested_git_repos "{tmp_path}" 2',
+            cwd=tmp_path,
+        )
+        assert result2.returncode == 0
+        paths2 = [p.strip().rstrip("/") for p in result2.stdout.strip().splitlines() if p.strip()]
+        assert len(paths2) == 0
+
+        # With depth=3, should find it
+        result3 = source_and_call(
+            f'find_nested_git_repos "{tmp_path}" 3',
+            cwd=tmp_path,
+        )
+        assert result3.returncode == 0
+        paths3 = [p.strip().rstrip("/") for p in result3.stdout.strip().splitlines() if p.strip()]
+        assert len(paths3) == 1
+        assert os.path.basename(paths3[0]) == "auth"
+
+    def test_scan_depth_flag(self, tmp_path: Path):
+        """--scan-depth flag controls discovery depth in create-new-feature."""
+        _init_git_repo(tmp_path)
+        scripts_dir = tmp_path / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        shutil.copy(CREATE_FEATURE, scripts_dir / "create-new-feature.sh")
+        shutil.copy(COMMON_SH, scripts_dir / "common.sh")
+        (tmp_path / ".specify" / "templates").mkdir(parents=True)
+
+        # Level 3 repo
+        deep_dir = tmp_path / "services" / "backend" / "auth"
+        deep_dir.mkdir(parents=True)
+        _init_git_repo(deep_dir)
+
+        # Default depth (2): should not find level-3 repo
+        result = run_script(tmp_path, "--json", "--short-name", "depth-test", "Depth test")
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout.strip())
+        assert data["NESTED_REPOS"] == []
+
+        # Depth 3: should find it (need a new branch name since first run took 001)
+        result3 = run_script(
+            tmp_path, "--json", "--scan-depth", "3",
+            "--short-name", "depth-test3", "Depth test 3",
+        )
+        assert result3.returncode == 0, result3.stderr
+        data3 = json.loads(result3.stdout.strip())
+        assert len(data3["NESTED_REPOS"]) == 1
+        assert data3["NESTED_REPOS"][0]["path"] == "services/backend/auth"
+        assert data3["NESTED_REPOS"][0]["status"] == "created"
+
+
+# ── Selective Branching Tests ────────────────────────────────────────────────
+
+
+class TestSelectiveBranching:
+    def test_repos_flag_filters_to_selected(self, git_repo_with_nested: Path):
+        """--repos flag causes only selected repos to be branched."""
+        result = run_script(
+            git_repo_with_nested,
+            "--json",
+            "--repos", "components/core",
+            "--short-name", "sel-feat",
+            "Selective feature",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout.strip())
+
+        nested = data["NESTED_REPOS"]
+        assert len(nested) == 1
+        assert nested[0]["path"] == "components/core"
+        assert nested[0]["status"] == "created"
+
+        # api should NOT have the branch
+        api_branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=git_repo_with_nested / "components" / "api",
+            capture_output=True, text=True,
+        )
+        assert api_branch.stdout.strip() != "001-sel-feat"
+
+    def test_repos_flag_multiple_repos(self, git_repo_with_nested: Path):
+        """--repos with comma-separated list branches only those repos."""
+        result = run_script(
+            git_repo_with_nested,
+            "--json",
+            "--repos", "components/core,components/api",
+            "--short-name", "multi-sel",
+            "Multi select",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout.strip())
+
+        nested = sorted(data["NESTED_REPOS"], key=lambda x: x["path"])
+        assert len(nested) == 2
+        assert nested[0]["path"] == "components/api"
+        assert nested[0]["status"] == "created"
+        assert nested[1]["path"] == "components/core"
+        assert nested[1]["status"] == "created"
+
+    def test_repos_flag_nonexistent_repo_excluded(self, git_repo_with_nested: Path):
+        """--repos with a path that doesn't match any discovered repo produces empty result."""
+        result = run_script(
+            git_repo_with_nested,
+            "--json",
+            "--repos", "nonexistent/repo",
+            "--short-name", "no-match",
+            "No match feature",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout.strip())
+        assert data["NESTED_REPOS"] == []
+
+    def test_repos_flag_with_dry_run(self, git_repo_with_nested: Path):
+        """--repos combined with --dry-run filters and reports dry_run status."""
+        result = run_script(
+            git_repo_with_nested,
+            "--json",
+            "--dry-run",
+            "--repos", "components/api",
+            "--short-name", "dry-sel",
+            "Dry selective",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout.strip())
+
+        nested = data["NESTED_REPOS"]
+        assert len(nested) == 1
+        assert nested[0]["path"] == "components/api"
+        assert nested[0]["status"] == "dry_run"

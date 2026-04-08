@@ -8,6 +8,8 @@ ALLOW_EXISTING=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
 USE_TIMESTAMP=false
+NESTED_REPOS_FILTER=""
+SCAN_DEPTH=""
 ARGS=()
 i=1
 while [ $i -le $# ]; do
@@ -52,8 +54,34 @@ while [ $i -le $# ]; do
         --timestamp)
             USE_TIMESTAMP=true
             ;;
+        --repos)
+            if [ $((i + 1)) -gt $# ]; then
+                echo 'Error: --repos requires a value (comma-separated list of repo paths)' >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            next_arg="${!i}"
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --repos requires a value (comma-separated list of repo paths)' >&2
+                exit 1
+            fi
+            NESTED_REPOS_FILTER="$next_arg"
+            ;;
+        --scan-depth)
+            if [ $((i + 1)) -gt $# ]; then
+                echo 'Error: --scan-depth requires a value' >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            next_arg="${!i}"
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --scan-depth requires a value' >&2
+                exit 1
+            fi
+            SCAN_DEPTH="$next_arg"
+            ;;
         --help|-h)
-            echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] <feature_description>"
+            echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] [--repos <paths>] [--scan-depth N] <feature_description>"
             echo ""
             echo "Options:"
             echo "  --json              Output in JSON format"
@@ -62,12 +90,15 @@ while [ $i -le $# ]; do
             echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
             echo "  --number N          Specify branch number manually (overrides auto-detection)"
             echo "  --timestamp         Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
+            echo "  --repos <paths>     Comma-separated list of nested repo relative paths to branch (default: all discovered)"
+            echo "  --scan-depth N      Max directory depth to scan for nested repos (default: 2)"
             echo "  --help, -h          Show this help message"
             echo ""
             echo "Examples:"
             echo "  $0 'Add user authentication system' --short-name 'user-auth'"
             echo "  $0 'Implement OAuth2 integration for API' --number 5"
             echo "  $0 --timestamp --short-name 'user-auth' 'Add user authentication'"
+            echo "  $0 --repos 'components/api,components/auth' 'Add API auth support'"
             exit 0
             ;;
         *)
@@ -384,7 +415,31 @@ fi
 # Create matching feature branches in nested independent git repositories
 NESTED_REPOS_JSON=""
 if [ "$HAS_GIT" = true ]; then
-    nested_repos=$(find_nested_git_repos "$REPO_ROOT")
+    scan_depth="${SCAN_DEPTH:-2}"
+    nested_repos=$(find_nested_git_repos "$REPO_ROOT" "$scan_depth")
+
+    # Filter by --repos if specified: only branch repos in the requested list
+    if [ -n "$NESTED_REPOS_FILTER" ] && [ -n "$nested_repos" ]; then
+        IFS=',' read -ra requested_repos <<< "$NESTED_REPOS_FILTER"
+        filtered=""
+        while IFS= read -r nested_path; do
+            [ -z "$nested_path" ] && continue
+            nested_path="${nested_path%/}"
+            rel_path="${nested_path#"$REPO_ROOT/"}"
+            rel_path="${rel_path%/}"
+            for req in "${requested_repos[@]}"; do
+                req="$(echo "$req" | xargs)"
+                req="${req%/}"
+                if [ "$rel_path" = "$req" ]; then
+                    [ -n "$filtered" ] && filtered+=$'\n'
+                    filtered+="$nested_path"
+                    break
+                fi
+            done
+        done <<< "$nested_repos"
+        nested_repos="$filtered"
+    fi
+
     if [ -n "$nested_repos" ]; then
         NESTED_REPOS_JSON="["
         first=true
