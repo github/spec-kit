@@ -232,7 +232,7 @@ function Test-DirHasFiles {
 # Searches up to 2 directory levels deep for subdirectories containing .git
 # (directory or file, covering worktrees/submodules). Excludes the root repo
 # itself and common non-project directories.
-# Returns an array of absolute paths.
+# Returns an array of absolute paths. Scan depth is configurable (default 2).
 function Find-NestedGitRepos {
     param(
         [string]$RepoRoot = (Get-RepoRoot),

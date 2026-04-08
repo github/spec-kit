@@ -294,35 +294,40 @@ find_nested_git_repos() {
                         "__pycache__" ".gradle" "build" "dist" "target" ".idea"
                         ".vscode" "specs")
 
-    _should_skip() {
-        local name="$1"
-        for skip in "${skip_dirs[@]}"; do
-            [ "$name" = "$skip" ] && return 0
-        done
-        return 1
-    }
+    # Run in a subshell to avoid leaking helper functions into global scope
+    (
+        _should_skip() {
+            local name="$1"
+            local skip
+            for skip in "${skip_dirs[@]}"; do
+                [ "$name" = "$skip" ] && return 0
+            done
+            return 1
+        }
 
-    _scan_dir() {
-        local dir="$1"
-        local current_depth="$2"
-        for child in "$dir"/*/; do
-            [ -d "$child" ] || continue
-            child="${child%/}"
+        _scan_dir() {
+            local dir="$1"
+            local current_depth="$2"
+            local child
             local child_name
-            child_name="$(basename "$child")"
-            _should_skip "$child_name" && continue
+            for child in "$dir"/*/; do
+                [ -d "$child" ] || continue
+                child="${child%/}"
+                child_name="$(basename "$child")"
+                _should_skip "$child_name" && continue
 
-            if [ -e "$child/.git" ]; then
-                if git -C "$child" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-                    echo "$child"
+                if [ -e "$child/.git" ]; then
+                    if git -C "$child" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                        echo "$child"
+                    fi
+                elif [ "$current_depth" -lt "$max_depth" ]; then
+                    _scan_dir "$child" $((current_depth + 1))
                 fi
-            elif [ "$current_depth" -lt "$max_depth" ]; then
-                _scan_dir "$child" $((current_depth + 1))
-            fi
-        done
-    }
+            done
+        }
 
-    _scan_dir "$repo_root" 1
+        _scan_dir "$repo_root" 1
+    )
 }
 
 # Resolve a template name to a file path using the priority stack:

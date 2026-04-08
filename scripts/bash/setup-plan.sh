@@ -32,8 +32,19 @@ for arg in "$@"; do
             ;;
     esac
 done
-# Reset sentinel if --scan-depth was passed without a value
-[ "$SCAN_DEPTH" = "__NEXT__" ] && SCAN_DEPTH=""
+# Validate --scan-depth argument
+if [ "$SCAN_DEPTH" = "__NEXT__" ]; then
+    echo "ERROR: --scan-depth requires a positive integer value" >&2
+    exit 1
+fi
+if [ -n "$SCAN_DEPTH" ]; then
+    case "$SCAN_DEPTH" in
+        ''|*[!0-9]*|0)
+            echo "ERROR: --scan-depth must be a positive integer, got '$SCAN_DEPTH'" >&2
+            exit 1
+            ;;
+    esac
+fi
 
 # Get script directory and load common functions
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
