@@ -105,11 +105,19 @@ log_warning() {
     echo "WARNING: $1" >&2
 }
 
+# Track temporary files for cleanup on interrupt
+_CLEANUP_FILES=()
+
 # Cleanup function for temporary files
 cleanup() {
     local exit_code=$?
-    rm -f /tmp/agent_update_*_$$
-    rm -f /tmp/manual_additions_$$
+    # Disarm traps to prevent re-entrant loop
+    trap - EXIT INT TERM
+    if [ ${#_CLEANUP_FILES[@]} -gt 0 ]; then
+        for f in "${_CLEANUP_FILES[@]}"; do
+            rm -f "$f" "$f.bak" "$f.tmp"
+        done
+    fi
     exit $exit_code
 }
 
@@ -254,7 +262,7 @@ get_commands_for_language() {
             echo "cargo test && cargo clippy"
             ;;
         *"JavaScript"*|*"TypeScript"*)
-            echo "npm test \\&\\& npm run lint"
+            echo "npm test && npm run lint"
             ;;
         *)
             echo "# Add commands for $lang"
@@ -267,10 +275,15 @@ get_language_conventions() {
     echo "$lang: Follow standard conventions"
 }
 
+# Escape sed replacement-side specials for | delimiter.
+# & and \ are replacement-side specials; | is our sed delimiter.
+_esc_sed() { printf '%s\n' "$1" | sed 's/[\\&|]/\\&/g'; }
+
 create_new_agent_file() {
     local target_file="$1"
     local temp_file="$2"
-    local project_name="$3"
+    local project_name
+    project_name=$(_esc_sed "$3")
     local current_date="$4"
     
     if [[ ! -f "$TEMPLATE_FILE" ]]; then
@@ -293,18 +306,19 @@ create_new_agent_file() {
     # Replace template placeholders
     local project_structure
     project_structure=$(get_project_structure "$NEW_PROJECT_TYPE")
+    project_structure=$(_esc_sed "$project_structure")
     
     local commands
     commands=$(get_commands_for_language "$NEW_LANG")
-    
+
     local language_conventions
     language_conventions=$(get_language_conventions "$NEW_LANG")
-    
-    # Perform substitutions with error checking using safer approach
-    # Escape special characters for sed by using a different delimiter or escaping
-    local escaped_lang=$(printf '%s\n' "$NEW_LANG" | sed 's/[\[\.*^$()+{}|]/\\&/g')
-    local escaped_framework=$(printf '%s\n' "$NEW_FRAMEWORK" | sed 's/[\[\.*^$()+{}|]/\\&/g')
-    local escaped_branch=$(printf '%s\n' "$CURRENT_BRANCH" | sed 's/[\[\.*^$()+{}|]/\\&/g')
+
+    local escaped_lang=$(_esc_sed "$NEW_LANG")
+    local escaped_framework=$(_esc_sed "$NEW_FRAMEWORK")
+    commands=$(_esc_sed "$commands")
+    language_conventions=$(_esc_sed "$language_conventions")
+    local escaped_branch=$(_esc_sed "$CURRENT_BRANCH")
     
     # Build technology stack and recent change strings conditionally
     local tech_stack
@@ -347,13 +361,12 @@ create_new_agent_file() {
         fi
     done
     
-    # Convert \n sequences to actual newlines
-    newline=$(printf '\n')
-    sed -i.bak2 "s/\\\\n/${newline}/g" "$temp_file"
-    
-    # Clean up backup files
-    rm -f "$temp_file.bak" "$temp_file.bak2"
-    
+    # Convert literal \n sequences to actual newlines (portable — works on BSD + GNU)
+    awk '{gsub(/\\n/,"\n")}1' "$temp_file" > "$temp_file.tmp"
+    mv "$temp_file.tmp" "$temp_file"
+
+    # Clean up backup files from sed -i.bak
+    rm -f "$temp_file.bak"
     return 0
 }
 
@@ -372,6 +385,7 @@ update_existing_agent_file() {
         log_error "Failed to create temporary file"
         return 1
     }
+    _CLEANUP_FILES+=("$temp_file")
     
     # Process the file in one pass
     local tech_stack=$(format_technology_stack "$NEW_LANG" "$NEW_FRAMEWORK")
@@ -537,6 +551,7 @@ update_agent_file() {
             log_error "Failed to create temporary file"
             return 1
         }
+        _CLEANUP_FILES+=("$temp_file")
         
         if create_new_agent_file "$target_file" "$temp_file" "$project_name" "$current_date"; then
             if mv "$temp_file" "$target_file"; then
@@ -796,4 +811,3 @@ main() {
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
-
