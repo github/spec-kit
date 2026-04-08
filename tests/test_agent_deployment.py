@@ -291,6 +291,9 @@ class TestEndToEnd:
         (project_root / ".claude" / "skills").mkdir(parents=True)
         (project_root / ".claude" / "agents").mkdir(parents=True)
         (project_root / ".specify").mkdir()
+        # ai_skills is intentionally omitted: skill deployment in this test goes through
+        # CommandRegistrar.register_commands (which routes based on behavior.execution),
+        # not the _register_extension_skills path that requires ai_skills to be True.
         (project_root / ".specify" / "init-options.json").write_text(
             json.dumps({"ai": "claude", "script": "sh"})
         )
