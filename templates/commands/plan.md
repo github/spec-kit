@@ -60,11 +60,19 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH, and NESTED_REPOS. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+
+   **Nested repo scan depth**: Check `.specify/init-options.json` for `nested_repo_scan_depth`. If present, pass `--scan-depth N` (Bash) or `-ScanDepth N` (PowerShell) to the script.
 
 2. **Load context**: Read FEATURE_SPEC and `/memory/constitution.md`. Load IMPL_PLAN template (already copied).
 
-3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
+3. **Identify affected nested repositories**: If NESTED_REPOS is non-empty:
+   - Read the feature spec (FEATURE_SPEC)
+   - For each nested repo in NESTED_REPOS, determine whether this feature requires changes in that repo based on the spec's requirements, user stories, and technical scope
+   - Document the affected repos in the plan's **Project Structure** section under a subsection called "Affected Nested Repositories", listing each repo path and a brief reason why it's affected
+   - This information will be used by `/speckit.tasks` to generate a setup task for creating feature branches in the affected repos
+
+4. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
    - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
    - Fill Constitution Check section from constitution
    - Evaluate gates (ERROR if violations unjustified)
@@ -73,7 +81,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Phase 1: Update agent context by running the agent script
    - Re-evaluate Constitution Check post-design
 
-4. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
+5. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, generated artifacts, and affected nested repos (if any).
 
 5. **Check for extension hooks**: After reporting, check if `.specify/extensions.yml` exists in the project root.
    - If it exists, read it and look for entries under the `hooks.after_plan` key

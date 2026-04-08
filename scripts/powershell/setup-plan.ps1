@@ -4,6 +4,7 @@
 [CmdletBinding()]
 param(
     [switch]$Json,
+    [int]$ScanDepth = 0,
     [switch]$Help
 )
 
@@ -11,9 +12,10 @@ $ErrorActionPreference = 'Stop'
 
 # Show help if requested
 if ($Help) {
-    Write-Output "Usage: ./setup-plan.ps1 [-Json] [-Help]"
-    Write-Output "  -Json     Output results in JSON format"
-    Write-Output "  -Help     Show this help message"
+    Write-Output "Usage: ./setup-plan.ps1 [-Json] [-ScanDepth N] [-Help]"
+    Write-Output "  -Json        Output results in JSON format"
+    Write-Output "  -ScanDepth N Max directory depth for nested repo discovery (default: 2)"
+    Write-Output "  -Help        Show this help message"
     exit 0
 }
 
@@ -42,6 +44,17 @@ if ($template -and (Test-Path $template)) {
     New-Item -ItemType File -Path $paths.IMPL_PLAN -Force | Out-Null
 }
 
+# Discover nested independent git repositories (for AI agent to analyze)
+$nestedReposResult = @()
+if ($paths.HAS_GIT -eq 'true' -or $paths.HAS_GIT -eq $true) {
+    $effectiveDepth = if ($ScanDepth -gt 0) { $ScanDepth } else { 2 }
+    $nestedRepos = Find-NestedGitRepos -RepoRoot $paths.REPO_ROOT -MaxDepth $effectiveDepth
+    foreach ($nestedPath in $nestedRepos) {
+        $relPath = $nestedPath.Substring($paths.REPO_ROOT.Length).TrimStart('\', '/')
+        $nestedReposResult += [PSCustomObject]@{ path = $relPath }
+    }
+}
+
 # Output results
 if ($Json) {
     $result = [PSCustomObject]@{ 
@@ -50,6 +63,7 @@ if ($Json) {
         SPECS_DIR = $paths.FEATURE_DIR
         BRANCH = $paths.CURRENT_BRANCH
         HAS_GIT = $paths.HAS_GIT
+        NESTED_REPOS = $nestedReposResult
     }
     $result | ConvertTo-Json -Compress
 } else {
@@ -58,4 +72,10 @@ if ($Json) {
     Write-Output "SPECS_DIR: $($paths.FEATURE_DIR)"
     Write-Output "BRANCH: $($paths.CURRENT_BRANCH)"
     Write-Output "HAS_GIT: $($paths.HAS_GIT)"
+    if ($nestedReposResult.Count -gt 0) {
+        Write-Output "NESTED_REPOS:"
+        foreach ($nr in $nestedReposResult) {
+            Write-Output "  $($nr.path)"
+        }
+    }
 }

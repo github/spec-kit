@@ -8,8 +8,6 @@ ALLOW_EXISTING=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
 USE_TIMESTAMP=false
-NESTED_REPOS_FILTER=""
-SCAN_DEPTH=""
 ARGS=()
 i=1
 while [ $i -le $# ]; do
@@ -54,34 +52,8 @@ while [ $i -le $# ]; do
         --timestamp)
             USE_TIMESTAMP=true
             ;;
-        --repos)
-            if [ $((i + 1)) -gt $# ]; then
-                echo 'Error: --repos requires a value (comma-separated list of repo paths)' >&2
-                exit 1
-            fi
-            i=$((i + 1))
-            next_arg="${!i}"
-            if [[ "$next_arg" == --* ]]; then
-                echo 'Error: --repos requires a value (comma-separated list of repo paths)' >&2
-                exit 1
-            fi
-            NESTED_REPOS_FILTER="$next_arg"
-            ;;
-        --scan-depth)
-            if [ $((i + 1)) -gt $# ]; then
-                echo 'Error: --scan-depth requires a value' >&2
-                exit 1
-            fi
-            i=$((i + 1))
-            next_arg="${!i}"
-            if [[ "$next_arg" == --* ]]; then
-                echo 'Error: --scan-depth requires a value' >&2
-                exit 1
-            fi
-            SCAN_DEPTH="$next_arg"
-            ;;
         --help|-h)
-            echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] [--repos <paths>] [--scan-depth N] <feature_description>"
+            echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] <feature_description>"
             echo ""
             echo "Options:"
             echo "  --json              Output in JSON format"
@@ -90,15 +62,12 @@ while [ $i -le $# ]; do
             echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
             echo "  --number N          Specify branch number manually (overrides auto-detection)"
             echo "  --timestamp         Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
-            echo "  --repos <paths>     Comma-separated list of nested repo relative paths to branch (default: all discovered)"
-            echo "  --scan-depth N      Max directory depth to scan for nested repos (default: 2)"
             echo "  --help, -h          Show this help message"
             echo ""
             echo "Examples:"
             echo "  $0 'Add user authentication system' --short-name 'user-auth'"
             echo "  $0 'Implement OAuth2 integration for API' --number 5"
             echo "  $0 --timestamp --short-name 'user-auth' 'Add user authentication'"
-            echo "  $0 --repos 'components/api,components/auth' 'Add API auth support'"
             exit 0
             ;;
         *)
@@ -412,125 +381,32 @@ if [ "$DRY_RUN" != true ]; then
     printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
 fi
 
-# Create matching feature branches in nested independent git repositories
-NESTED_REPOS_JSON=""
-if [ "$HAS_GIT" = true ]; then
-    scan_depth="${SCAN_DEPTH:-2}"
-    nested_repos=$(find_nested_git_repos "$REPO_ROOT" "$scan_depth")
-
-    # Filter by --repos if specified: only branch repos in the requested list
-    if [ -n "$NESTED_REPOS_FILTER" ] && [ -n "$nested_repos" ]; then
-        IFS=',' read -ra requested_repos <<< "$NESTED_REPOS_FILTER"
-        filtered=""
-        while IFS= read -r nested_path; do
-            [ -z "$nested_path" ] && continue
-            nested_path="${nested_path%/}"
-            rel_path="${nested_path#"$REPO_ROOT/"}"
-            rel_path="${rel_path%/}"
-            for req in "${requested_repos[@]}"; do
-                req="$(echo "$req" | xargs)"
-                req="${req%/}"
-                if [ "$rel_path" = "$req" ]; then
-                    [ -n "$filtered" ] && filtered+=$'\n'
-                    filtered+="$nested_path"
-                    break
-                fi
-            done
-        done <<< "$nested_repos"
-        nested_repos="$filtered"
-    fi
-
-    if [ -n "$nested_repos" ]; then
-        NESTED_REPOS_JSON="["
-        first=true
-        while IFS= read -r nested_path; do
-            [ -z "$nested_path" ] && continue
-            # Normalize: remove trailing slash
-            nested_path="${nested_path%/}"
-            # Compute relative path for output
-            rel_path="${nested_path#"$REPO_ROOT/"}"
-            rel_path="${rel_path%/}"
-            status="skipped"
-
-            if [ "$DRY_RUN" = true ]; then
-                status="dry_run"
-            else
-                # Attempt to create the branch in the nested repo
-                if git -C "$nested_path" checkout -q -b "$BRANCH_NAME" 2>/dev/null; then
-                    status="created"
-                else
-                    # Check if the branch already exists
-                    if git -C "$nested_path" branch --list "$BRANCH_NAME" 2>/dev/null | grep -q .; then
-                        if [ "$ALLOW_EXISTING" = true ]; then
-                            current_nested="$(git -C "$nested_path" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-                            if [ "$current_nested" = "$BRANCH_NAME" ]; then
-                                status="existing"
-                            elif git -C "$nested_path" checkout -q "$BRANCH_NAME" 2>/dev/null; then
-                                status="existing"
-                            else
-                                status="failed"
-                                >&2 echo "[specify] Warning: Failed to switch nested repo '$rel_path' to branch '$BRANCH_NAME'"
-                            fi
-                        else
-                            status="existing"
-                        fi
-                    else
-                        status="failed"
-                        >&2 echo "[specify] Warning: Failed to create branch '$BRANCH_NAME' in nested repo '$rel_path'"
-                    fi
-                fi
-            fi
-
-            if [ "$first" = true ]; then
-                first=false
-            else
-                NESTED_REPOS_JSON+=","
-            fi
-            NESTED_REPOS_JSON+="{\"path\":\"$(json_escape "$rel_path")\",\"status\":\"$status\"}"
-        done <<< "$nested_repos"
-        NESTED_REPOS_JSON+="]"
-    fi
-fi
-
 if $JSON_MODE; then
-    # Build the nested repos portion for JSON output
-    nested_json_field=""
-    if [ -n "$NESTED_REPOS_JSON" ]; then
-        nested_json_field="$NESTED_REPOS_JSON"
-    else
-        nested_json_field="[]"
-    fi
-
     if command -v jq >/dev/null 2>&1; then
         if [ "$DRY_RUN" = true ]; then
             jq -cn \
                 --arg branch_name "$BRANCH_NAME" \
                 --arg spec_file "$SPEC_FILE" \
                 --arg feature_num "$FEATURE_NUM" \
-                --argjson nested_repos "$nested_json_field" \
-                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num,DRY_RUN:true,NESTED_REPOS:$nested_repos}'
+                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num,DRY_RUN:true}'
         else
             jq -cn \
                 --arg branch_name "$BRANCH_NAME" \
                 --arg spec_file "$SPEC_FILE" \
                 --arg feature_num "$FEATURE_NUM" \
-                --argjson nested_repos "$nested_json_field" \
-                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num,NESTED_REPOS:$nested_repos}'
+                '{BRANCH_NAME:$branch_name,SPEC_FILE:$spec_file,FEATURE_NUM:$feature_num}'
         fi
     else
         if [ "$DRY_RUN" = true ]; then
-            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","DRY_RUN":true,"NESTED_REPOS":%s}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")" "$nested_json_field"
+            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","DRY_RUN":true}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")"
         else
-            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s","NESTED_REPOS":%s}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")" "$nested_json_field"
+            printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$(json_escape "$BRANCH_NAME")" "$(json_escape "$SPEC_FILE")" "$(json_escape "$FEATURE_NUM")"
         fi
     fi
 else
     echo "BRANCH_NAME: $BRANCH_NAME"
     echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
-    if [ -n "$NESTED_REPOS_JSON" ] && [ "$NESTED_REPOS_JSON" != "[]" ]; then
-        echo "NESTED_REPOS: $NESTED_REPOS_JSON"
-    fi
     if [ "$DRY_RUN" != true ]; then
         printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"
     fi

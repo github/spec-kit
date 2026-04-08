@@ -9,8 +9,6 @@ param(
     [Parameter()]
     [long]$Number = 0,
     [switch]$Timestamp,
-    [string]$Repos,
-    [int]$ScanDepth = 0,
     [switch]$Help,
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$FeatureDescription
@@ -19,7 +17,7 @@ $ErrorActionPreference = 'Stop'
 
 # Show help if requested
 if ($Help) {
-    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] [-Repos <paths>] [-ScanDepth N] <feature description>"
+    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Json               Output in JSON format"
@@ -28,15 +26,12 @@ if ($Help) {
     Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
     Write-Host "  -Number N           Specify branch number manually (overrides auto-detection)"
     Write-Host "  -Timestamp          Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
-    Write-Host "  -Repos <paths>      Comma-separated list of nested repo relative paths to branch (default: all discovered)"
-    Write-Host "  -ScanDepth N        Max directory depth to scan for nested repos (default: 2)"
     Write-Host "  -Help               Show this help message"
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  ./create-new-feature.ps1 'Add user authentication system' -ShortName 'user-auth'"
     Write-Host "  ./create-new-feature.ps1 'Implement OAuth2 integration for API'"
     Write-Host "  ./create-new-feature.ps1 -Timestamp -ShortName 'user-auth' 'Add user authentication'"
-    Write-Host "  ./create-new-feature.ps1 -Repos 'components/api,components/auth' 'Add API auth support'"
     exit 0
 }
 
@@ -365,81 +360,12 @@ if (-not $DryRun) {
     $env:SPECIFY_FEATURE = $branchName
 }
 
-# Create matching feature branches in nested independent git repositories
-$nestedReposResult = @()
-if ($hasGit) {
-    $effectiveDepth = if ($ScanDepth -gt 0) { $ScanDepth } else { 2 }
-    $nestedRepos = Find-NestedGitRepos -RepoRoot $repoRoot -MaxDepth $effectiveDepth
-
-    # Filter by -Repos if specified: only branch repos in the requested list
-    if ($Repos) {
-        $requestedRepos = $Repos -split ',' | ForEach-Object { $_.Trim().TrimEnd('\', '/') } | Where-Object { $_ -ne '' }
-        $nestedRepos = $nestedRepos | Where-Object {
-            $relPath = $_.Substring($repoRoot.Length).TrimStart('\', '/')
-            $requestedRepos -contains $relPath
-        }
-    }
-
-    foreach ($nestedPath in $nestedRepos) {
-        $relPath = $nestedPath.Substring($repoRoot.Length).TrimStart('\', '/')
-        $nestedStatus = 'skipped'
-
-        if ($DryRun) {
-            $nestedStatus = 'dry_run'
-        } else {
-            try {
-                git -C $nestedPath checkout -q -b $branchName 2>$null | Out-Null
-                if ($LASTEXITCODE -eq 0) {
-                    $nestedStatus = 'created'
-                } else {
-                    throw "branch creation failed"
-                }
-            } catch {
-                # Check if branch already exists
-                $existingNested = git -C $nestedPath branch --list $branchName 2>$null
-                if ($existingNested) {
-                    if ($AllowExistingBranch) {
-                        $currentNested = git -C $nestedPath rev-parse --abbrev-ref HEAD 2>$null
-                        if ($currentNested -eq $branchName) {
-                            $nestedStatus = 'existing'
-                        } else {
-                            try {
-                                git -C $nestedPath checkout -q $branchName 2>$null | Out-Null
-                                if ($LASTEXITCODE -eq 0) {
-                                    $nestedStatus = 'existing'
-                                } else {
-                                    $nestedStatus = 'failed'
-                                    Write-Warning "[specify] Failed to switch nested repo '$relPath' to branch '$branchName'"
-                                }
-                            } catch {
-                                $nestedStatus = 'failed'
-                                Write-Warning "[specify] Failed to switch nested repo '$relPath' to branch '$branchName'"
-                            }
-                        }
-                    } else {
-                        $nestedStatus = 'existing'
-                    }
-                } else {
-                    $nestedStatus = 'failed'
-                    Write-Warning "[specify] Failed to create branch '$branchName' in nested repo '$relPath'"
-                }
-            }
-        }
-
-        $nestedReposResult += [PSCustomObject]@{
-            path = $relPath
-            status = $nestedStatus
-        }
-    }
-}
-
 if ($Json) {
     $obj = [PSCustomObject]@{
         BRANCH_NAME = $branchName
         SPEC_FILE = $specFile
         FEATURE_NUM = $featureNum
         HAS_GIT = $hasGit
-        NESTED_REPOS = $nestedReposResult
     }
     if ($DryRun) {
         $obj | Add-Member -NotePropertyName 'DRY_RUN' -NotePropertyValue $true
@@ -450,12 +376,6 @@ if ($Json) {
     Write-Output "SPEC_FILE: $specFile"
     Write-Output "FEATURE_NUM: $featureNum"
     Write-Output "HAS_GIT: $hasGit"
-    if ($nestedReposResult.Count -gt 0) {
-        Write-Output "NESTED_REPOS:"
-        foreach ($nr in $nestedReposResult) {
-            Write-Output "  $($nr.path): $($nr.status)"
-        }
-    }
     if (-not $DryRun) {
         Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
     }

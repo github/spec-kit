@@ -94,6 +94,21 @@ ios/ or android/
 **Structure Decision**: [Document the selected structure and reference the real
 directories captured above]
 
+### Affected Nested Repositories
+<!--
+  OPTIONAL: Only include this section if the project has nested independent git
+  repositories (reported by setup-plan's NESTED_REPOS output). List each nested
+  repo that this feature needs to modify and why. The /speckit.tasks command uses
+  this section to generate a setup task for creating feature branches.
+  
+  If there are no nested repos, delete this section entirely.
+-->
+
+| Repo Path | Reason |
+|-----------|--------|
+| [e.g., components/auth] | [e.g., New OAuth2 provider needs auth module changes] |
+| [e.g., components/api] | [e.g., New REST endpoints for OAuth2 flow] |
+
 ## Complexity Tracking
 
 > **Fill ONLY if Constitution Check has violations that must be justified**

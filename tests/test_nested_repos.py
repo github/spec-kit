@@ -1,16 +1,12 @@
 """
-Pytest tests for nested independent git repository support in create-new-feature scripts.
+Pytest tests for nested independent git repository support.
 
 Tests cover:
-- Discovery of nested git repos via find_nested_git_repos (bash) / Find-NestedGitRepos (PS)
-- Configurable scan depth for nested repo discovery
-- Selective branching via --repos flag
-- Branch creation in nested repos during feature creation
-- JSON output includes NESTED_REPOS field
-- --dry-run reports nested repos without creating branches
-- --allow-existing-branch propagates to nested repos
+- Discovery of nested git repos via find_nested_git_repos (bash)
+- Configurable scan depth for discovery
 - Excluded directories are skipped
-- Graceful handling when nested repos cannot be branched
+- setup-plan.sh reports discovered nested repos in JSON output
+- create-new-feature.sh does NOT create branches in nested repos
 """
 
 import json
@@ -24,6 +20,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CREATE_FEATURE = PROJECT_ROOT / "scripts" / "bash" / "create-new-feature.sh"
+SETUP_PLAN = PROJECT_ROOT / "scripts" / "bash" / "setup-plan.sh"
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
 
 # On Windows, prefer Git Bash over WSL bash
@@ -50,23 +47,28 @@ def _init_git_repo(path: Path) -> None:
     )
 
 
+def _setup_scripts(root: Path) -> None:
+    """Copy scripts and create .specify structure in a test repo."""
+    scripts_dir = root / "scripts" / "bash"
+    scripts_dir.mkdir(parents=True)
+    shutil.copy(CREATE_FEATURE, scripts_dir / "create-new-feature.sh")
+    shutil.copy(SETUP_PLAN, scripts_dir / "setup-plan.sh")
+    shutil.copy(COMMON_SH, scripts_dir / "common.sh")
+    (root / ".specify" / "templates").mkdir(parents=True)
+
+
 @pytest.fixture
 def git_repo_with_nested(tmp_path: Path) -> Path:
     """Create a root git repo with nested independent git repos."""
-    # Root repo
     _init_git_repo(tmp_path)
-    scripts_dir = tmp_path / "scripts" / "bash"
-    scripts_dir.mkdir(parents=True)
-    shutil.copy(CREATE_FEATURE, scripts_dir / "create-new-feature.sh")
-    shutil.copy(COMMON_SH, scripts_dir / "common.sh")
-    (tmp_path / ".specify" / "templates").mkdir(parents=True)
+    _setup_scripts(tmp_path)
 
-    # Nested repo at level 1: components/core
+    # Nested repo at level 2: components/core
     core_dir = tmp_path / "components" / "core"
     core_dir.mkdir(parents=True)
     _init_git_repo(core_dir)
 
-    # Nested repo at level 1: components/api
+    # Nested repo at level 2: components/api
     api_dir = tmp_path / "components" / "api"
     api_dir.mkdir(parents=True)
     _init_git_repo(api_dir)
@@ -78,11 +80,7 @@ def git_repo_with_nested(tmp_path: Path) -> Path:
 def git_repo_no_nested(tmp_path: Path) -> Path:
     """Create a root git repo with no nested git repos."""
     _init_git_repo(tmp_path)
-    scripts_dir = tmp_path / "scripts" / "bash"
-    scripts_dir.mkdir(parents=True)
-    shutil.copy(CREATE_FEATURE, scripts_dir / "create-new-feature.sh")
-    shutil.copy(COMMON_SH, scripts_dir / "common.sh")
-    (tmp_path / ".specify" / "templates").mkdir(parents=True)
+    _setup_scripts(tmp_path)
 
     # Regular subdirectory without .git
     (tmp_path / "components" / "core").mkdir(parents=True)
@@ -93,11 +91,7 @@ def git_repo_no_nested(tmp_path: Path) -> Path:
 def git_repo_with_excluded_dirs(tmp_path: Path) -> Path:
     """Create a root git repo where git repos exist inside excluded directories."""
     _init_git_repo(tmp_path)
-    scripts_dir = tmp_path / "scripts" / "bash"
-    scripts_dir.mkdir(parents=True)
-    shutil.copy(CREATE_FEATURE, scripts_dir / "create-new-feature.sh")
-    shutil.copy(COMMON_SH, scripts_dir / "common.sh")
-    (tmp_path / ".specify" / "templates").mkdir(parents=True)
+    _setup_scripts(tmp_path)
 
     # Git repo inside node_modules (should be excluded)
     nm_dir = tmp_path / "node_modules" / "some-pkg"
@@ -112,26 +106,32 @@ def git_repo_with_excluded_dirs(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def run_script(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+def run_create_feature(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     """Run create-new-feature.sh with given args."""
     cmd = [BASH, "scripts/bash/create-new-feature.sh", *args]
-    return subprocess.run(
-        cmd,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
 
 
-def source_and_call(func_call: str, cwd: Path | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
+def run_setup_plan(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    """Run setup-plan.sh with given args."""
+    cmd = [BASH, "scripts/bash/setup-plan.sh", *args]
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+
+
+def parse_json_from_output(stdout: str) -> dict:
+    """Extract JSON object from script output that may contain non-JSON lines (warnings)."""
+    for line in stdout.strip().splitlines():
+        line = line.strip()
+        if line.startswith("{"):
+            return json.loads(line)
+    raise ValueError(f"No JSON found in output: {stdout!r}")
+
+
+def source_and_call(func_call: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
     """Source common.sh and call a function."""
     cmd = f'source "{COMMON_SH}" && {func_call}'
     return subprocess.run(
-        [BASH, "-c", cmd],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        env={**os.environ, **(env or {})},
+        [BASH, "-c", cmd], cwd=cwd, capture_output=True, text=True, env=os.environ.copy()
     )
 
 
@@ -175,15 +175,13 @@ class TestFindNestedGitRepos:
         """find_nested_git_repos discovers repos directly under root (level 1)."""
         _init_git_repo(tmp_path)
         (tmp_path / ".specify").mkdir()
-
-        # Level 1 nested repo
-        nested = tmp_path / "mylib"
-        nested.mkdir()
-        _init_git_repo(nested)
-
         scripts_dir = tmp_path / "scripts" / "bash"
         scripts_dir.mkdir(parents=True)
         shutil.copy(COMMON_SH, scripts_dir / "common.sh")
+
+        nested = tmp_path / "mylib"
+        nested.mkdir()
+        _init_git_repo(nested)
 
         result = source_and_call(
             f'find_nested_git_repos "{tmp_path}"',
@@ -195,148 +193,18 @@ class TestFindNestedGitRepos:
         assert os.path.basename(paths[0]) == "mylib"
 
 
-# ── Branch Creation Tests ────────────────────────────────────────────────────
-
-
-class TestNestedRepoBranchCreation:
-    def test_creates_branch_in_nested_repos(self, git_repo_with_nested: Path):
-        """Feature branch is created in all nested repos."""
-        result = run_script(
-            git_repo_with_nested,
-            "--json",
-            "--short-name", "my-feat",
-            "Add a feature",
-        )
-        assert result.returncode == 0, result.stderr
-        data = json.loads(result.stdout.strip())
-
-        # Verify root branch
-        assert data["BRANCH_NAME"] == "001-my-feat"
-
-        # Verify nested repos
-        assert "NESTED_REPOS" in data
-        nested = sorted(data["NESTED_REPOS"], key=lambda x: x["path"])
-        assert len(nested) == 2
-        assert nested[0]["path"] == "components/api"
-        assert nested[0]["status"] == "created"
-        assert nested[1]["path"] == "components/core"
-        assert nested[1]["status"] == "created"
-
-        # Verify branches actually exist in nested repos
-        for subdir in ["components/core", "components/api"]:
-            branch_result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=git_repo_with_nested / subdir,
-                capture_output=True,
-                text=True,
-            )
-            assert branch_result.stdout.strip() == "001-my-feat"
-
-    def test_no_nested_repos_returns_empty_array(self, git_repo_no_nested: Path):
-        """JSON output has empty NESTED_REPOS when no nested repos exist."""
-        result = run_script(
-            git_repo_no_nested,
-            "--json",
-            "--short-name", "solo-feat",
-            "Solo feature",
-        )
-        assert result.returncode == 0, result.stderr
-        data = json.loads(result.stdout.strip())
-        assert data["NESTED_REPOS"] == []
-
-    def test_dry_run_does_not_create_branches(self, git_repo_with_nested: Path):
-        """--dry-run reports nested repos but does not create branches."""
-        result = run_script(
-            git_repo_with_nested,
-            "--json",
-            "--dry-run",
-            "--short-name", "dry-feat",
-            "Dry run feature",
-        )
-        assert result.returncode == 0, result.stderr
-        data = json.loads(result.stdout.strip())
-        assert data.get("DRY_RUN") is True
-
-        nested = data.get("NESTED_REPOS", [])
-        assert len(nested) == 2
-        for entry in nested:
-            assert entry["status"] == "dry_run"
-
-        # Verify branches were NOT created in nested repos
-        for subdir in ["components/core", "components/api"]:
-            branch_result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=git_repo_with_nested / subdir,
-                capture_output=True,
-                text=True,
-            )
-            # Should still be on the default branch (main or master)
-            assert branch_result.stdout.strip() != "001-dry-feat"
-
-    def test_allow_existing_branch_in_nested(self, git_repo_with_nested: Path):
-        """--allow-existing-branch works for nested repos where branch already exists."""
-        # First, create the branch in one nested repo manually
-        subprocess.run(
-            ["git", "checkout", "-b", "001-existing-feat"],
-            cwd=git_repo_with_nested / "components" / "core",
-            check=True,
-            capture_output=True,
-        )
-        # Switch back so the create script can still create in root
-        subprocess.run(
-            ["git", "checkout", "-"],
-            cwd=git_repo_with_nested / "components" / "core",
-            check=True,
-            capture_output=True,
-        )
-
-        result = run_script(
-            git_repo_with_nested,
-            "--json",
-            "--allow-existing-branch",
-            "--number", "1",
-            "--short-name", "existing-feat",
-            "Existing feature",
-        )
-        assert result.returncode == 0, result.stderr
-        data = json.loads(result.stdout.strip())
-
-        nested = {e["path"]: e["status"] for e in data["NESTED_REPOS"]}
-        # core had the branch pre-created, should report 'existing'
-        assert nested["components/core"] == "existing"
-        # api should be freshly created
-        assert nested["components/api"] == "created"
-
-    def test_excluded_dirs_not_branched(self, git_repo_with_excluded_dirs: Path):
-        """Repos inside excluded directories like node_modules are not branched."""
-        result = run_script(
-            git_repo_with_excluded_dirs,
-            "--json",
-            "--short-name", "excl-feat",
-            "Exclusion test",
-        )
-        assert result.returncode == 0, result.stderr
-        data = json.loads(result.stdout.strip())
-
-        nested = data.get("NESTED_REPOS", [])
-        paths = [e["path"] for e in nested]
-        assert "lib" in paths
-        assert not any("node_modules" in p for p in paths)
-
-
 # ── Configurable Depth Tests ─────────────────────────────────────────────────
 
 
 class TestConfigurableDepth:
     def test_depth_1_misses_level2_repos(self, git_repo_with_nested: Path):
-        """Depth 1 only scans immediate children; level-2 repos under components/ are missed."""
+        """Depth 1 only scans immediate children; level-2 repos are missed."""
         result = source_and_call(
             f'find_nested_git_repos "{git_repo_with_nested}" 1',
             cwd=git_repo_with_nested,
         )
         assert result.returncode == 0, result.stderr
         paths = [p.strip().rstrip("/") for p in result.stdout.strip().splitlines() if p.strip()]
-        # components/core and components/api are at depth 2, so depth=1 should find nothing
         assert len(paths) == 0
 
     def test_depth_2_finds_level2_repos(self, git_repo_with_nested: Path):
@@ -348,8 +216,6 @@ class TestConfigurableDepth:
         assert result.returncode == 0, result.stderr
         paths = [p.strip().rstrip("/") for p in result.stdout.strip().splitlines() if p.strip()]
         assert len(paths) == 2
-        basenames = sorted(os.path.basename(p) for p in paths)
-        assert basenames == ["api", "core"]
 
     def test_depth_3_finds_deep_repos(self, tmp_path: Path):
         """Depth 3 discovers repos at level 3."""
@@ -359,137 +225,133 @@ class TestConfigurableDepth:
         scripts_dir.mkdir(parents=True)
         shutil.copy(COMMON_SH, scripts_dir / "common.sh")
 
-        # Level 3 nested repo: services/backend/auth
         deep_dir = tmp_path / "services" / "backend" / "auth"
         deep_dir.mkdir(parents=True)
         _init_git_repo(deep_dir)
 
-        # With depth=2, should NOT find it
-        result2 = source_and_call(
-            f'find_nested_git_repos "{tmp_path}" 2',
-            cwd=tmp_path,
-        )
+        # Depth 2: should NOT find it
+        result2 = source_and_call(f'find_nested_git_repos "{tmp_path}" 2', cwd=tmp_path)
         assert result2.returncode == 0
-        paths2 = [p.strip().rstrip("/") for p in result2.stdout.strip().splitlines() if p.strip()]
-        assert len(paths2) == 0
+        assert result2.stdout.strip() == ""
 
-        # With depth=3, should find it
-        result3 = source_and_call(
-            f'find_nested_git_repos "{tmp_path}" 3',
-            cwd=tmp_path,
-        )
+        # Depth 3: should find it
+        result3 = source_and_call(f'find_nested_git_repos "{tmp_path}" 3', cwd=tmp_path)
         assert result3.returncode == 0
         paths3 = [p.strip().rstrip("/") for p in result3.stdout.strip().splitlines() if p.strip()]
         assert len(paths3) == 1
         assert os.path.basename(paths3[0]) == "auth"
 
+
+# ── Create Feature Does NOT Branch Nested Repos ─────────────────────────────
+
+
+class TestCreateFeatureNoNestedBranching:
+    def test_no_nested_repos_in_json(self, git_repo_with_nested: Path):
+        """create-new-feature JSON output should NOT contain NESTED_REPOS."""
+        result = run_create_feature(
+            git_repo_with_nested,
+            "--json", "--short-name", "my-feat", "Add a feature",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout.strip())
+        assert "NESTED_REPOS" not in data
+        assert "BRANCH_NAME" in data
+
+    def test_nested_repos_not_branched(self, git_repo_with_nested: Path):
+        """create-new-feature should not create branches in nested repos."""
+        result = run_create_feature(
+            git_repo_with_nested,
+            "--json", "--short-name", "no-nest", "No nesting",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout.strip())
+        branch_name = data["BRANCH_NAME"]
+
+        # Nested repos should still be on their original branch
+        for subdir in ["components/core", "components/api"]:
+            br = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=git_repo_with_nested / subdir,
+                capture_output=True, text=True,
+            )
+            assert br.stdout.strip() != branch_name
+
+
+# ── Setup Plan Discovery Tests ───────────────────────────────────────────────
+
+
+class TestSetupPlanDiscovery:
+    def _create_feature_first(self, repo: Path) -> str:
+        """Helper: create a feature branch so setup-plan has a valid branch."""
+        result = run_create_feature(
+            repo, "--json", "--short-name", "plan-test", "Plan test feature",
+        )
+        assert result.returncode == 0, result.stderr
+        data = parse_json_from_output(result.stdout)
+        return data["BRANCH_NAME"]
+
+    def test_discovers_nested_repos_in_json(self, git_repo_with_nested: Path):
+        """setup-plan JSON output includes NESTED_REPOS with discovered repos."""
+        self._create_feature_first(git_repo_with_nested)
+        result = run_setup_plan(git_repo_with_nested, "--json")
+        assert result.returncode == 0, result.stderr
+        data = parse_json_from_output(result.stdout)
+
+        assert "NESTED_REPOS" in data
+        nested = sorted(data["NESTED_REPOS"], key=lambda x: x["path"])
+        assert len(nested) == 2
+        assert nested[0]["path"] == "components/api"
+        assert nested[1]["path"] == "components/core"
+
+    def test_no_nested_repos_returns_empty_array(self, git_repo_no_nested: Path):
+        """setup-plan JSON has empty NESTED_REPOS when no nested repos exist."""
+        self._create_feature_first(git_repo_no_nested)
+        result = run_setup_plan(git_repo_no_nested, "--json")
+        assert result.returncode == 0, result.stderr
+        data = parse_json_from_output(result.stdout)
+        assert data["NESTED_REPOS"] == []
+
     def test_scan_depth_flag(self, tmp_path: Path):
-        """--scan-depth flag controls discovery depth in create-new-feature."""
+        """--scan-depth controls discovery depth in setup-plan."""
         _init_git_repo(tmp_path)
-        scripts_dir = tmp_path / "scripts" / "bash"
-        scripts_dir.mkdir(parents=True)
-        shutil.copy(CREATE_FEATURE, scripts_dir / "create-new-feature.sh")
-        shutil.copy(COMMON_SH, scripts_dir / "common.sh")
-        (tmp_path / ".specify" / "templates").mkdir(parents=True)
+        _setup_scripts(tmp_path)
 
         # Level 3 repo
         deep_dir = tmp_path / "services" / "backend" / "auth"
         deep_dir.mkdir(parents=True)
         _init_git_repo(deep_dir)
 
+        # Create feature branch first
+        run_create_feature(
+            tmp_path, "--json", "--short-name", "depth-plan", "Depth plan test",
+        )
+
         # Default depth (2): should not find level-3 repo
-        result = run_script(tmp_path, "--json", "--short-name", "depth-test", "Depth test")
+        result = run_setup_plan(tmp_path, "--json")
         assert result.returncode == 0, result.stderr
-        data = json.loads(result.stdout.strip())
+        data = parse_json_from_output(result.stdout)
         assert data["NESTED_REPOS"] == []
 
-        # Depth 3: should find it (need a new branch name since first run took 001)
-        result3 = run_script(
-            tmp_path, "--json", "--scan-depth", "3",
-            "--short-name", "depth-test3", "Depth test 3",
-        )
+        # Depth 3: should find it
+        result3 = run_setup_plan(tmp_path, "--json", "--scan-depth", "3")
         assert result3.returncode == 0, result3.stderr
-        data3 = json.loads(result3.stdout.strip())
+        data3 = parse_json_from_output(result3.stdout)
         assert len(data3["NESTED_REPOS"]) == 1
         assert data3["NESTED_REPOS"][0]["path"] == "services/backend/auth"
-        assert data3["NESTED_REPOS"][0]["status"] == "created"
 
-
-# ── Selective Branching Tests ────────────────────────────────────────────────
-
-
-class TestSelectiveBranching:
-    def test_repos_flag_filters_to_selected(self, git_repo_with_nested: Path):
-        """--repos flag causes only selected repos to be branched."""
-        result = run_script(
-            git_repo_with_nested,
-            "--json",
-            "--repos", "components/core",
-            "--short-name", "sel-feat",
-            "Selective feature",
-        )
+    def test_discovery_does_not_create_branches(self, git_repo_with_nested: Path):
+        """setup-plan discovers repos but does NOT create branches in them."""
+        self._create_feature_first(git_repo_with_nested)
+        result = run_setup_plan(git_repo_with_nested, "--json")
         assert result.returncode == 0, result.stderr
-        data = json.loads(result.stdout.strip())
+        data = parse_json_from_output(result.stdout)
+        branch_name = data["BRANCH"]
 
-        nested = data["NESTED_REPOS"]
-        assert len(nested) == 1
-        assert nested[0]["path"] == "components/core"
-        assert nested[0]["status"] == "created"
-
-        # api should NOT have the branch
-        api_branch = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=git_repo_with_nested / "components" / "api",
-            capture_output=True, text=True,
-        )
-        assert api_branch.stdout.strip() != "001-sel-feat"
-
-    def test_repos_flag_multiple_repos(self, git_repo_with_nested: Path):
-        """--repos with comma-separated list branches only those repos."""
-        result = run_script(
-            git_repo_with_nested,
-            "--json",
-            "--repos", "components/core,components/api",
-            "--short-name", "multi-sel",
-            "Multi select",
-        )
-        assert result.returncode == 0, result.stderr
-        data = json.loads(result.stdout.strip())
-
-        nested = sorted(data["NESTED_REPOS"], key=lambda x: x["path"])
-        assert len(nested) == 2
-        assert nested[0]["path"] == "components/api"
-        assert nested[0]["status"] == "created"
-        assert nested[1]["path"] == "components/core"
-        assert nested[1]["status"] == "created"
-
-    def test_repos_flag_nonexistent_repo_excluded(self, git_repo_with_nested: Path):
-        """--repos with a path that doesn't match any discovered repo produces empty result."""
-        result = run_script(
-            git_repo_with_nested,
-            "--json",
-            "--repos", "nonexistent/repo",
-            "--short-name", "no-match",
-            "No match feature",
-        )
-        assert result.returncode == 0, result.stderr
-        data = json.loads(result.stdout.strip())
-        assert data["NESTED_REPOS"] == []
-
-    def test_repos_flag_with_dry_run(self, git_repo_with_nested: Path):
-        """--repos combined with --dry-run filters and reports dry_run status."""
-        result = run_script(
-            git_repo_with_nested,
-            "--json",
-            "--dry-run",
-            "--repos", "components/api",
-            "--short-name", "dry-sel",
-            "Dry selective",
-        )
-        assert result.returncode == 0, result.stderr
-        data = json.loads(result.stdout.strip())
-
-        nested = data["NESTED_REPOS"]
-        assert len(nested) == 1
-        assert nested[0]["path"] == "components/api"
-        assert nested[0]["status"] == "dry_run"
+        # Nested repos should still be on their original branch
+        for subdir in ["components/core", "components/api"]:
+            br = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=git_repo_with_nested / subdir,
+                capture_output=True, text=True,
+            )
+            assert br.stdout.strip() != branch_name

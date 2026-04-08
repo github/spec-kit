@@ -68,6 +68,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 3. **Execute task generation workflow**:
    - Load plan.md and extract tech stack, libraries, project structure
    - Load spec.md and extract user stories with their priorities (P1, P2, P3, etc.)
+   - If plan.md contains an "Affected Nested Repositories" section: extract the repo paths and reasons. Generate a setup task (in Phase 1) to create the feature branch in each affected nested repo using `git -C <repo_path> checkout -b <BRANCH_NAME>`. The branch name comes from the current feature branch.
    - If data-model.md exists: Extract entities and map to user stories
    - If contracts/ exists: Map interface contracts to user stories
    - If research.md exists: Extract decisions for setup tasks

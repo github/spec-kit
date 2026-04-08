@@ -4,6 +4,7 @@ set -e
 
 # Parse command line arguments
 JSON_MODE=false
+SCAN_DEPTH=""
 ARGS=()
 
 for arg in "$@"; do
@@ -11,17 +12,28 @@ for arg in "$@"; do
         --json) 
             JSON_MODE=true 
             ;;
+        --scan-depth)
+            # Next argument is the depth value — handled below
+            SCAN_DEPTH="__NEXT__"
+            ;;
         --help|-h) 
-            echo "Usage: $0 [--json]"
-            echo "  --json    Output results in JSON format"
-            echo "  --help    Show this help message"
+            echo "Usage: $0 [--json] [--scan-depth N]"
+            echo "  --json         Output results in JSON format"
+            echo "  --scan-depth N Max directory depth for nested repo discovery (default: 2)"
+            echo "  --help         Show this help message"
             exit 0 
             ;;
         *) 
-            ARGS+=("$arg") 
+            if [ "$SCAN_DEPTH" = "__NEXT__" ]; then
+                SCAN_DEPTH="$arg"
+            else
+                ARGS+=("$arg")
+            fi
             ;;
     esac
 done
+# Reset sentinel if --scan-depth was passed without a value
+[ "$SCAN_DEPTH" = "__NEXT__" ] && SCAN_DEPTH=""
 
 # Get script directory and load common functions
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,6 +61,30 @@ else
     touch "$IMPL_PLAN"
 fi
 
+# Discover nested independent git repositories (for AI agent to analyze)
+NESTED_REPOS_JSON="[]"
+if [ "$HAS_GIT" = true ]; then
+    scan_depth="${SCAN_DEPTH:-2}"
+    nested_repos=$(find_nested_git_repos "$REPO_ROOT" "$scan_depth")
+    if [ -n "$nested_repos" ]; then
+        NESTED_REPOS_JSON="["
+        first=true
+        while IFS= read -r nested_path; do
+            [ -z "$nested_path" ] && continue
+            nested_path="${nested_path%/}"
+            rel_path="${nested_path#"$REPO_ROOT/"}"
+            rel_path="${rel_path%/}"
+            if [ "$first" = true ]; then
+                first=false
+            else
+                NESTED_REPOS_JSON+=","
+            fi
+            NESTED_REPOS_JSON+="{\"path\":\"$(json_escape "$rel_path")\"}"
+        done <<< "$nested_repos"
+        NESTED_REPOS_JSON+="]"
+    fi
+fi
+
 # Output results
 if $JSON_MODE; then
     if has_jq; then
@@ -58,10 +94,11 @@ if $JSON_MODE; then
             --arg specs_dir "$FEATURE_DIR" \
             --arg branch "$CURRENT_BRANCH" \
             --arg has_git "$HAS_GIT" \
-            '{FEATURE_SPEC:$feature_spec,IMPL_PLAN:$impl_plan,SPECS_DIR:$specs_dir,BRANCH:$branch,HAS_GIT:$has_git}'
+            --argjson nested_repos "$NESTED_REPOS_JSON" \
+            '{FEATURE_SPEC:$feature_spec,IMPL_PLAN:$impl_plan,SPECS_DIR:$specs_dir,BRANCH:$branch,HAS_GIT:$has_git,NESTED_REPOS:$nested_repos}'
     else
-        printf '{"FEATURE_SPEC":"%s","IMPL_PLAN":"%s","SPECS_DIR":"%s","BRANCH":"%s","HAS_GIT":"%s"}\n' \
-            "$(json_escape "$FEATURE_SPEC")" "$(json_escape "$IMPL_PLAN")" "$(json_escape "$FEATURE_DIR")" "$(json_escape "$CURRENT_BRANCH")" "$(json_escape "$HAS_GIT")"
+        printf '{"FEATURE_SPEC":"%s","IMPL_PLAN":"%s","SPECS_DIR":"%s","BRANCH":"%s","HAS_GIT":"%s","NESTED_REPOS":%s}\n' \
+            "$(json_escape "$FEATURE_SPEC")" "$(json_escape "$IMPL_PLAN")" "$(json_escape "$FEATURE_DIR")" "$(json_escape "$CURRENT_BRANCH")" "$(json_escape "$HAS_GIT")" "$NESTED_REPOS_JSON"
     fi
 else
     echo "FEATURE_SPEC: $FEATURE_SPEC"
@@ -69,5 +106,8 @@ else
     echo "SPECS_DIR: $FEATURE_DIR"
     echo "BRANCH: $CURRENT_BRANCH"
     echo "HAS_GIT: $HAS_GIT"
+    if [ "$NESTED_REPOS_JSON" != "[]" ]; then
+        echo "NESTED_REPOS: $NESTED_REPOS_JSON"
+    fi
 fi
 

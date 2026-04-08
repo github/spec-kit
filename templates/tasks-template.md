@@ -52,6 +52,14 @@ description: "Task list template for feature implementation"
 - [ ] T002 Initialize [language] project with [framework] dependencies
 - [ ] T003 [P] Configure linting and formatting tools
 
+<!--
+  If plan.md contains "Affected Nested Repositories", add a task here to create
+  the feature branch in each affected nested repo. Example:
+  - [ ] T00X [P] Create feature branch in nested repos: `git -C components/auth checkout -b <BRANCH>` and `git -C components/api checkout -b <BRANCH>`
+  This must be one of the first tasks so that subsequent work can target the
+  correct branch in each nested repo.
+-->
+
 ---
 
 ## Phase 2: Foundational (Blocking Prerequisites)

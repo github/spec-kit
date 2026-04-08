@@ -106,6 +106,7 @@ Given that feature description, do this:
    - You must only create one feature per `/speckit.specify` invocation
    - The spec directory name and the git branch name are independent — they may be the same but that is the user's choice
    - The spec directory and file are always created by this command, never by the hook
+   - **Note**: Nested git repository branching is handled during the `/speckit.plan` and `/speckit.tasks` phases, not here. The plan identifies affected repos and tasks generates a setup task for branch creation.
 
 4. Load `templates/spec-template.md` to understand required sections.
 
