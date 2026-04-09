@@ -180,7 +180,9 @@ def _register_builtins() -> None:
 
 ### 4. Add scripts
 
-Create two thin wrapper scripts in `src/specify_cli/integrations/<key>/scripts/` that delegate to the shared context-update scripts. Each is ~25 lines of boilerplate.
+Create two thin wrapper scripts in `src/specify_cli/integrations/<package_dir>/scripts/` that delegate to the shared context-update scripts. Each is ~25 lines of boilerplate.
+
+> **Note on `<package_dir>` vs `<key>`:** `<package_dir>` is the Python-safe directory name for your integration — it matches `<key>` exactly when the key contains no hyphens (e.g., key `"gemini"` → `gemini/`), but uses underscores when it does (e.g., key `"kiro-cli"` → `kiro_cli/`). The `IntegrationBase.key` class attribute always retains the original hyphenated value (e.g., `key = "kiro-cli"`), since that is what the CLI and registry use.
 
 **`update-context.sh`:**
 
