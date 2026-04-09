@@ -468,38 +468,6 @@ specify init my-project --ai claude --branch-numbering timestamp
 specify check
 ```
 
-### Available Slash Commands
-
-After running `specify init`, your AI coding agent will have access to these structured development commands.
-
-Most agents expose the traditional dotted slash commands shown below, like `/speckit.plan`.
-
-Claude Code installs spec-kit as skills and invokes them as `/speckit-constitution`, `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`, and `/speckit-implement`.
-
-For Codex CLI, `--ai-skills` installs spec-kit as agent skills instead of slash-command prompt files. In Codex skills mode, invoke spec-kit as `$speckit-constitution`, `$speckit-specify`, `$speckit-plan`, `$speckit-tasks`, and `$speckit-implement`.
-
-#### Core Commands
-
-Essential commands for the Spec-Driven Development workflow:
-
-| Command                 | Description                                                              |
-| ----------------------- | ------------------------------------------------------------------------ |
-| `/speckit.constitution` | Create or update project governing principles and development guidelines |
-| `/speckit.specify`      | Define what you want to build (requirements and user stories)            |
-| `/speckit.plan`         | Create technical implementation plans with your chosen tech stack        |
-| `/speckit.tasks`        | Generate actionable task lists for implementation                        |
-| `/speckit.implement`    | Execute all tasks to build the feature according to the plan             |
-
-#### Optional Commands
-
-Additional commands for enhanced quality and validation:
-
-| Command              | Description                                                                                                                          |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`)                                                |
-| `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`)                             |
-| `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
-
 ### Environment Variables
 
 | Variable          | Description                                                                                                                                                                                                                                                                                            |
