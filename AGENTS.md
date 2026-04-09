@@ -55,7 +55,7 @@ Most agents only need `MarkdownIntegration` — a minimal subclass with zero met
 
 ### 2. Create the subpackage
 
-Create `src/specify_cli/integrations/<key>/__init__.py`. For CLI-based integrations (`requires_cli: True`), the `key` should match the actual CLI tool name (the executable users install and run) so CLI checks can resolve it correctly. For IDE-based integrations (`requires_cli: False`), use the canonical integration identifier instead. Use a Python-safe directory name if the key contains hyphens (e.g., `kiro_cli/` for key `"kiro-cli"`).
+Create `src/specify_cli/integrations/<package_dir>/__init__.py`, where `<package_dir>` is the Python-safe directory name derived from `<key>`: use the key as-is when it contains no hyphens (e.g., key `"gemini"` → `gemini/`), or replace hyphens with underscores when it does (e.g., key `"kiro-cli"` → `kiro_cli/`). The `IntegrationBase.key` class attribute always retains the original hyphenated value, since that is what the CLI and registry use. For CLI-based integrations (`requires_cli: True`), the `key` should match the actual CLI tool name (the executable users install and run) so CLI checks can resolve it correctly. For IDE-based integrations (`requires_cli: False`), use the canonical integration identifier instead.
 
 **Minimal example — Markdown agent (Windsurf):**
 
