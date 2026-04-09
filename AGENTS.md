@@ -344,6 +344,25 @@ Command content with {SCRIPT} and {{args}} placeholders.
 """
 ```
 
+### YAML Format
+
+Used by: Goose
+
+```yaml
+version: 1.0.0
+title: "Command Title"
+description: "Command description"
+author:
+  contact: spec-kit
+extensions:
+  - type: builtin
+    name: developer
+activities:
+  - Spec-Driven Development
+prompt: |
+  Command content with {SCRIPT} and {{args}} placeholders.
+```
+
 ## Argument Patterns
 
 Different agents use different argument placeholders. The placeholder used in command files is always taken from `registrar_config["args"]` for each integration — check there first when in doubt:
