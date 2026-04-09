@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(gh api:*)",
-      "Bash(read d:*)"
-    ]
-  }
-}
