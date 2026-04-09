@@ -7,7 +7,7 @@ command files into agent-specific directories in the correct format.
 """
 
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 import platform
 import re
@@ -150,6 +150,50 @@ class CommandRegistrar:
 
         return text.replace(".specify/.specify/", ".specify/").replace(".specify.specify/", ".specify/")
 
+    @staticmethod
+    def rewrite_extension_paths(text: str, extension_id: str, extension_dir: Path) -> str:
+        """Rewrite extension-relative paths to their installed project locations.
+
+        Extension command bodies reference files using paths relative to the
+        extension root (e.g. ``agents/control/commander.md``).  After install,
+        those files live at ``.specify/extensions/<id>/...``.  This method
+        rewrites such references so that AI agents can locate them after install.
+
+        Only directories that actually exist inside *extension_dir* are rewritten,
+        keeping the behaviour conservative and avoiding false positives on prose.
+
+        Args:
+            text: Body text of the command file.
+            extension_id: The extension identifier (e.g. ``"echelon"``).
+            extension_dir: Path to the installed extension directory.
+
+        Returns:
+            Body text with extension-relative paths expanded.
+        """
+        if not isinstance(text, str) or not text:
+            return text
+
+        _SKIP = {"commands", ".git"}
+        try:
+            subdirs = [
+                d.name
+                for d in extension_dir.iterdir()
+                if d.is_dir() and d.name not in _SKIP
+            ]
+        except OSError:
+            return text
+
+        base_prefix = f".specify/extensions/{extension_id}/"
+        for subdir in subdirs:
+            escaped = re.escape(subdir)
+            text = re.sub(
+                r"(^|[\s`\"'(])(?:\.?/)?" + escaped + r"/",
+                r"\1" + base_prefix + subdir + "/",
+                text,
+            )
+
+        return text
+
     def render_markdown_command(
         self,
         frontmatter: dict,
@@ -235,6 +279,7 @@ class CommandRegistrar:
         source_id: str,
         source_file: str,
         project_root: Path,
+        source_dir: Optional[Path] = None,
     ) -> str:
         """Render a command override as a SKILL.md file.
 
@@ -250,6 +295,9 @@ class CommandRegistrar:
         """
         if not isinstance(frontmatter, dict):
             frontmatter = {}
+
+        if source_dir is not None:
+            body = self.rewrite_extension_paths(body, source_id, source_dir)
 
         if agent_name in {"codex", "kimi"}:
             body = self.resolve_skill_placeholders(agent_name, frontmatter, body, project_root)
@@ -432,7 +480,8 @@ class CommandRegistrar:
 
             if agent_config["extension"] == "/SKILL.md":
                 output = self.render_skill_command(
-                    agent_name, output_name, frontmatter, body, source_id, cmd_file, project_root
+                    agent_name, output_name, frontmatter, body, source_id, cmd_file, project_root,
+                    source_dir=source_dir,
                 )
             elif agent_config["format"] == "markdown":
                 output = self.render_markdown_command(frontmatter, body, source_id, context_note)
@@ -462,7 +511,8 @@ class CommandRegistrar:
 
                     if agent_config["extension"] == "/SKILL.md":
                         alias_output = self.render_skill_command(
-                            agent_name, alias_output_name, alias_frontmatter, body, source_id, cmd_file, project_root
+                            agent_name, alias_output_name, alias_frontmatter, body, source_id, cmd_file, project_root,
+                            source_dir=source_dir,
                         )
                     elif agent_config["format"] == "markdown":
                         alias_output = self.render_markdown_command(alias_frontmatter, body, source_id, context_note)
@@ -475,7 +525,8 @@ class CommandRegistrar:
                     alias_output = output
                     if agent_config["extension"] == "/SKILL.md":
                         alias_output = self.render_skill_command(
-                            agent_name, alias_output_name, frontmatter, body, source_id, cmd_file, project_root
+                            agent_name, alias_output_name, frontmatter, body, source_id, cmd_file, project_root,
+                            source_dir=source_dir,
                         )
 
                 alias_file = commands_dir / f"{alias_output_name}{agent_config['extension']}"
