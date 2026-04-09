@@ -2,6 +2,19 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.6.0] - 2026-04-09
+
+### Changed
+
+- Add Bugfix Workflow community extension to catalog and README (#2135)
+- Add Worktree Isolation extension to community catalog (#2143)
+- Add multi-repo-branching preset to community catalog (#2139)
+- Readme clarity (#2013)
+- Rewrite AGENTS.md for integration architecture (#2119)
+- docs: add SpecKit Companion to Community Friends section (#2140)
+- feat: add memorylint extension to community catalog (#2138)
+- chore: release 0.5.1, begin 0.5.2.dev0 development (#2137)
+
 ## [0.5.1] - 2026-04-08
 
 ### Changed
