@@ -233,25 +233,43 @@ function Test-DirHasFiles {
 # (directory or file, covering worktrees/submodules). Excludes the root repo
 # itself and common non-project directories.
 # Returns an array of absolute paths. Scan depth is configurable (default 2).
+# If ExplicitPaths are provided, validates and returns those directly (no scanning).
 function Find-NestedGitRepos {
     param(
         [string]$RepoRoot = (Get-RepoRoot),
-        [int]$MaxDepth = 2
+        [int]$MaxDepth = 2,
+        [string[]]$ExplicitPaths = @()
     )
 
-    $skipDirs = @('.specify', '.git', 'node_modules', 'vendor', '.venv', 'venv',
-                  '__pycache__', '.gradle', 'build', 'dist', 'target', '.idea',
-                  '.vscode', 'specs')
+    # If explicit paths are provided, validate and return them directly
+    if ($ExplicitPaths.Count -gt 0) {
+        $found = @()
+        foreach ($relPath in $ExplicitPaths) {
+            $absPath = Join-Path $RepoRoot $relPath
+            $gitMarker = Join-Path $absPath '.git'
+            if (Test-Path -LiteralPath $gitMarker) {
+                try {
+                    $null = git -C $absPath rev-parse --is-inside-work-tree 2>$null
+                    if ($LASTEXITCODE -eq 0) {
+                        $found += $absPath
+                    }
+                } catch { }
+            }
+        }
+        return $found
+    }
 
+    # Fallback: scan using .gitignore-based filtering
     function ScanDir {
         param([string]$Dir, [int]$CurrentDepth)
         $found = @()
         $children = Get-ChildItem -Path $Dir -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $skipDirs -notcontains $_.Name }
+            Where-Object { $_.Name -ne '.git' }
 
         foreach ($child in $children) {
             $gitMarker = Join-Path $child.FullName '.git'
             if (Test-Path -LiteralPath $gitMarker) {
+                # Directory has its own .git — it's a nested repo (even if gitignored in parent)
                 try {
                     $null = git -C $child.FullName rev-parse --is-inside-work-tree 2>$null
                     if ($LASTEXITCODE -eq 0) {
@@ -259,6 +277,9 @@ function Find-NestedGitRepos {
                     }
                 } catch { }
             } elseif ($CurrentDepth -lt $MaxDepth) {
+                # Skip gitignored directories (they won't contain nested repos)
+                $null = git -C $RepoRoot check-ignore -q $child.FullName 2>$null
+                if ($LASTEXITCODE -eq 0) { continue }
                 $found += ScanDir -Dir $child.FullName -CurrentDepth ($CurrentDepth + 1)
             }
         }

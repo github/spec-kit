@@ -282,29 +282,36 @@ check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" |
 # Searches up to $max_depth directory levels deep for subdirectories containing
 # .git (directory or file, covering worktrees/submodules). Excludes the root
 # repo itself and common non-project directories.
-# Usage: find_nested_git_repos [repo_root] [max_depth]
-#   repo_root  — defaults to $(get_repo_root)
-#   max_depth  — defaults to 2
+# Usage: find_nested_git_repos [repo_root] [max_depth] [explicit_paths...]
+#   repo_root       — defaults to $(get_repo_root)
+#   max_depth       — defaults to 2
+#   explicit_paths  — if provided (3rd arg onward), validate and return these directly (no scanning)
 # Outputs one absolute path per line.
 find_nested_git_repos() {
     local repo_root="${1:-$(get_repo_root)}"
     local max_depth="${2:-2}"
-    # Directories to skip during traversal
-    local -a skip_dirs=(".specify" ".git" "node_modules" "vendor" ".venv" "venv"
-                        "__pycache__" ".gradle" "build" "dist" "target" ".idea"
-                        ".vscode" "specs")
 
+    # Collect explicit paths from 3rd argument onward
+    local -a explicit_paths=()
+    if [ $# -ge 3 ]; then
+        shift 2
+        explicit_paths=("$@")
+    fi
+
+    # If explicit paths are provided, validate and return them directly
+    if [ ${#explicit_paths[@]} -gt 0 ]; then
+        for rel_path in "${explicit_paths[@]}"; do
+            local abs_path="$repo_root/$rel_path"
+            if [ -e "$abs_path/.git" ] && git -C "$abs_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                echo "$abs_path"
+            fi
+        done
+        return
+    fi
+
+    # Fallback: scan using .gitignore-based filtering
     # Run in a subshell to avoid leaking helper functions into global scope
     (
-        _should_skip() {
-            local name="$1"
-            local skip
-            for skip in "${skip_dirs[@]}"; do
-                [ "$name" = "$skip" ] && return 0
-            done
-            return 1
-        }
-
         _scan_dir() {
             local dir="$1"
             local current_depth="$2"
@@ -314,13 +321,19 @@ find_nested_git_repos() {
                 [ -d "$child" ] || continue
                 child="${child%/}"
                 child_name="$(basename "$child")"
-                _should_skip "$child_name" && continue
+                # Always skip .git directory
+                [ "$child_name" = ".git" ] && continue
 
                 if [ -e "$child/.git" ]; then
+                    # Directory has its own .git — it's a nested repo (even if gitignored in parent)
                     if git -C "$child" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
                         echo "$child"
                     fi
                 elif [ "$current_depth" -lt "$max_depth" ]; then
+                    # Skip gitignored directories (they won't contain nested repos)
+                    if git -C "$repo_root" check-ignore -q "$child" 2>/dev/null; then
+                        continue
+                    fi
                     _scan_dir "$child" $((current_depth + 1))
                 fi
             done

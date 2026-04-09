@@ -48,7 +48,24 @@ if ($template -and (Test-Path $template)) {
 $nestedReposResult = @()
 if ($paths.HAS_GIT -eq 'true' -or $paths.HAS_GIT -eq $true) {
     $effectiveDepth = if ($ScanDepth -gt 0) { $ScanDepth } else { 2 }
-    $nestedRepos = Find-NestedGitRepos -RepoRoot $paths.REPO_ROOT -MaxDepth $effectiveDepth
+    $initOptions = Join-Path $paths.REPO_ROOT '.specify' 'init-options.json'
+    $explicitPaths = @()
+
+    # Read explicit nested_repos from init-options.json if available
+    if (Test-Path -LiteralPath $initOptions) {
+        try {
+            $opts = Get-Content $initOptions -Raw | ConvertFrom-Json
+            if ($opts.nested_repos -and $opts.nested_repos.Count -gt 0) {
+                $explicitPaths = @($opts.nested_repos)
+            }
+        } catch { }
+    }
+
+    if ($explicitPaths.Count -gt 0) {
+        $nestedRepos = Find-NestedGitRepos -RepoRoot $paths.REPO_ROOT -MaxDepth $effectiveDepth -ExplicitPaths $explicitPaths
+    } else {
+        $nestedRepos = Find-NestedGitRepos -RepoRoot $paths.REPO_ROOT -MaxDepth $effectiveDepth
+    }
     foreach ($nestedPath in $nestedRepos) {
         $relPath = $nestedPath.Substring($paths.REPO_ROOT.Length).TrimStart('\', '/')
         $nestedReposResult += [PSCustomObject]@{ path = $relPath }

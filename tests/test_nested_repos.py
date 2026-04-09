@@ -4,7 +4,8 @@ Pytest tests for nested independent git repository support.
 Tests cover:
 - Discovery of nested git repos via find_nested_git_repos (bash)
 - Configurable scan depth for discovery
-- Excluded directories are skipped
+- .gitignore-based directory filtering (replaces hardcoded skip list)
+- Explicit paths from init-options.json
 - setup-plan.sh reports discovered nested repos in JSON output
 - create-new-feature.sh does NOT create branches in nested repos
 """
@@ -88,17 +89,21 @@ def git_repo_no_nested(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def git_repo_with_excluded_dirs(tmp_path: Path) -> Path:
-    """Create a root git repo where git repos exist inside excluded directories."""
+def git_repo_with_gitignored_dirs(tmp_path: Path) -> Path:
+    """Create a root git repo with gitignored dirs containing git repos."""
     _init_git_repo(tmp_path)
     _setup_scripts(tmp_path)
 
-    # Git repo inside node_modules (should be excluded)
+    # Add .gitignore that ignores node_modules and build
+    (tmp_path / ".gitignore").write_text("node_modules/\nbuild/\n")
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "add gitignore", "-q"], cwd=tmp_path, check=True)
+
+    # Non-repo dir inside gitignored path (should be skipped during traversal)
     nm_dir = tmp_path / "node_modules" / "some-pkg"
     nm_dir.mkdir(parents=True)
-    _init_git_repo(nm_dir)
 
-    # Valid nested repo
+    # Valid nested repo (not gitignored)
     lib_dir = tmp_path / "lib"
     lib_dir.mkdir(parents=True)
     _init_git_repo(lib_dir)
@@ -160,11 +165,11 @@ class TestFindNestedGitRepos:
         assert result.returncode == 0
         assert result.stdout.strip() == ""
 
-    def test_excludes_node_modules(self, git_repo_with_excluded_dirs: Path):
-        """find_nested_git_repos skips repos inside excluded directories."""
+    def test_skips_gitignored_directories(self, git_repo_with_gitignored_dirs: Path):
+        """find_nested_git_repos skips traversal into gitignored directories."""
         result = source_and_call(
-            f'find_nested_git_repos "{git_repo_with_excluded_dirs}"',
-            cwd=git_repo_with_excluded_dirs,
+            f'find_nested_git_repos "{git_repo_with_gitignored_dirs}"',
+            cwd=git_repo_with_gitignored_dirs,
         )
         assert result.returncode == 0
         paths = [p.strip().rstrip("/") for p in result.stdout.strip().splitlines() if p.strip()]
@@ -191,6 +196,67 @@ class TestFindNestedGitRepos:
         paths = [p.strip().rstrip("/") for p in result.stdout.strip().splitlines() if p.strip()]
         assert len(paths) == 1
         assert os.path.basename(paths[0]) == "mylib"
+
+    def test_nested_repo_found_even_if_gitignored(self, tmp_path: Path):
+        """A directory with its own .git is reported even if it's gitignored in the parent."""
+        _init_git_repo(tmp_path)
+        (tmp_path / ".specify").mkdir()
+
+        # Gitignore the nested repo path
+        (tmp_path / ".gitignore").write_text("nested-lib/\n")
+        subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "commit", "-m", "ignore", "-q"], cwd=tmp_path, check=True)
+
+        # Create nested repo at the gitignored path
+        nested = tmp_path / "nested-lib"
+        nested.mkdir()
+        _init_git_repo(nested)
+
+        result = source_and_call(
+            f'find_nested_git_repos "{tmp_path}"',
+            cwd=tmp_path,
+        )
+        assert result.returncode == 0
+        paths = [p.strip().rstrip("/") for p in result.stdout.strip().splitlines() if p.strip()]
+        assert len(paths) == 1
+        assert os.path.basename(paths[0]) == "nested-lib"
+
+
+# ── Explicit Paths Tests ─────────────────────────────────────────────────────
+
+
+class TestExplicitPaths:
+    def test_explicit_paths_returns_only_valid(self, git_repo_with_nested: Path):
+        """When explicit paths are given, only valid nested repos are returned."""
+        result = source_and_call(
+            f'find_nested_git_repos "{git_repo_with_nested}" 2 "components/core" "nonexistent/repo"',
+            cwd=git_repo_with_nested,
+        )
+        assert result.returncode == 0, result.stderr
+        paths = [p.strip().rstrip("/") for p in result.stdout.strip().splitlines() if p.strip()]
+        assert len(paths) == 1
+        assert os.path.basename(paths[0]) == "core"
+
+    def test_explicit_paths_skips_scanning(self, git_repo_with_nested: Path):
+        """When explicit paths are given, only those are checked — no scanning."""
+        result = source_and_call(
+            f'find_nested_git_repos "{git_repo_with_nested}" 2 "components/core"',
+            cwd=git_repo_with_nested,
+        )
+        assert result.returncode == 0, result.stderr
+        paths = [p.strip().rstrip("/") for p in result.stdout.strip().splitlines() if p.strip()]
+        # Only core should be returned, not api (even though it exists)
+        assert len(paths) == 1
+        assert os.path.basename(paths[0]) == "core"
+
+    def test_explicit_empty_returns_nothing(self, git_repo_with_nested: Path):
+        """When explicit paths are all invalid, nothing is returned."""
+        result = source_and_call(
+            f'find_nested_git_repos "{git_repo_with_nested}" 2 "does/not/exist"',
+            cwd=git_repo_with_nested,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
 
 
 # ── Configurable Depth Tests ─────────────────────────────────────────────────
@@ -355,3 +421,19 @@ class TestSetupPlanDiscovery:
                 capture_output=True, text=True,
             )
             assert br.stdout.strip() != branch_name
+
+    def test_explicit_nested_repos_from_init_options(self, git_repo_with_nested: Path):
+        """setup-plan reads nested_repos from init-options.json and uses explicit paths."""
+        self._create_feature_first(git_repo_with_nested)
+
+        # Write init-options.json with explicit nested_repos (only core, not api)
+        init_options = git_repo_with_nested / ".specify" / "init-options.json"
+        init_options.write_text(json.dumps({"nested_repos": ["components/core"]}))
+
+        result = run_setup_plan(git_repo_with_nested, "--json")
+        assert result.returncode == 0, result.stderr
+        data = parse_json_from_output(result.stdout)
+
+        assert "NESTED_REPOS" in data
+        assert len(data["NESTED_REPOS"]) == 1
+        assert data["NESTED_REPOS"][0]["path"] == "components/core"
