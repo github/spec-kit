@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-08T00:00:00Z",
+  "updated_at": "2026-04-09T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -869,6 +869,38 @@
       "stars": 0,
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
+    },
+    "memorylint": {
+      "name": "MemoryLint",
+      "id": "memorylint",
+      "description": "Agent memory governance tool: Automatically audits and fixes boundary conflicts between AGENTS.md and the constitution.",
+      "author": "RbBtSn0w",
+      "version": "1.0.0",
+      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/RbBtSn0w/spec-kit-extensions",
+      "homepage": "https://github.com/RbBtSn0w/spec-kit-extensions/tree/main/memorylint",
+      "documentation": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/memorylint/README.md",
+      "changelog": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/memorylint/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.5.1"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "memory",
+        "governance",
+        "constitution",
+        "agents-md",
+        "process"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-09T00:00:00Z",
+      "updated_at": "2026-04-09T00:00:00Z"
     },
     "onboard": {
       "name": "Onboard",
