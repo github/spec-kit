@@ -12,7 +12,7 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 ## Integration Architecture
 
-Each AI agent is a self-contained **integration subpackage** under `src/specify_cli/integrations/<key>/`. The package exposes a single class that declares all metadata, inherits setup/teardown logic from a base class, and registers itself in the global `INTEGRATION_REGISTRY` at import time.
+Each AI agent is a self-contained **integration subpackage** under `src/specify_cli/integrations/<key>/`. The subpackage exposes a single class that declares all metadata and inherits setup/teardown logic from a base class. Built-in integrations are then instantiated and added to the global `INTEGRATION_REGISTRY` by `src/specify_cli/integrations/__init__.py` via `_register_builtins()`.
 
 ```
 src/specify_cli/integrations/
@@ -55,7 +55,7 @@ Most agents only need `MarkdownIntegration` — a minimal subclass with zero met
 
 ### 2. Create the subpackage
 
-Create `src/specify_cli/integrations/<key>/__init__.py`. The `key` **must match the actual CLI tool name** (the executable users install and run). Use a Python-safe directory name if the key contains hyphens (e.g., `kiro_cli/` for key `"kiro-cli"`).
+Create `src/specify_cli/integrations/<key>/__init__.py`. For CLI-based integrations (`requires_cli: True`), the `key` should match the actual CLI tool name (the executable users install and run) so CLI checks can resolve it correctly. For IDE-based integrations (`requires_cli: False`), use the canonical integration identifier instead. Use a Python-safe directory name if the key contains hyphens (e.g., `kiro_cli/` for key `"kiro-cli"`).
 
 **Minimal example — Markdown agent (Windsurf):**
 
@@ -152,12 +152,12 @@ class CodexIntegration(SkillsIntegration):
 
 | Field | Location | Purpose |
 |---|---|---|
-| `key` | Class attribute | Unique identifier; must match the CLI executable name |
+| `key` | Class attribute | Unique identifier; for CLI-based integrations (`requires_cli: True`), must match the CLI executable name |
 | `config` | Class attribute (dict) | Agent metadata: `name`, `folder`, `commands_subdir`, `install_url`, `requires_cli` |
 | `registrar_config` | Class attribute (dict) | Command output config: `dir`, `format`, `args` placeholder, file `extension` |
 | `context_file` | Class attribute (str or None) | Path to agent context/instructions file (e.g., `"CLAUDE.md"`, `".github/copilot-instructions.md"`) |
 
-**Key design rule:** `key` must be the actual executable name (e.g., `"cursor-agent"` not `"cursor"`). This ensures `shutil.which(key)` works for CLI-tool checks without special-case mappings.
+**Key design rule:** For CLI-based integrations (`requires_cli: True`), `key` must be the actual executable name (e.g., `"cursor-agent"` not `"cursor"`). This ensures `shutil.which(key)` works for CLI-tool checks without special-case mappings. IDE-based integrations (`requires_cli: False`) should use their canonical identifier (e.g., `"windsurf"`, `"copilot"`).
 
 ### 3. Register it
 
@@ -240,14 +240,15 @@ You must also add the agent to the shared context-update scripts so the shared d
 # Install into a test project
 specify init my-project --integration <key>
 
-# Verify files were created
-ls -R my-project/<commands_dir>/
+# Verify files were created in the commands directory configured by
+# config["folder"] + config["commands_subdir"] (for example, .windsurf/workflows/)
+ls -R my-project/.windsurf/workflows/
 
 # Uninstall cleanly
 cd my-project && specify integration uninstall <key>
 ```
 
-Each integration also has a dedicated test file at `tests/integrations/test_integration_<key>.py`. Run it with:
+Each integration also has a dedicated test file at `tests/integrations/test_integration_<key>.py`. Note that hyphens in the key are replaced with underscores in the filename (e.g., key `cursor-agent` → `test_integration_cursor_agent.py`, key `kiro-cli` → `test_integration_kiro_cli.py`). Run it with:
 
 ```bash
 pytest tests/integrations/test_integration_<key>.py -v
@@ -342,16 +343,17 @@ Command content with {SCRIPT} and {{args}} placeholders.
 
 ## Argument Patterns
 
-Different agents use different argument placeholders:
+Different agents use different argument placeholders. The placeholder used in command files is always taken from `registrar_config["args"]` for each integration — check there first when in doubt:
 
-- **Markdown/prompt-based**: `$ARGUMENTS`
-- **TOML-based**: `{{args}}`
+- **Markdown/prompt-based**: `$ARGUMENTS` (default for most markdown agents)
+- **TOML-based**: `{{args}}` (e.g., Gemini)
+- **Custom**: some agents override the default (e.g., Forge uses `{{parameters}}`)
 - **Script placeholders**: `{SCRIPT}` (replaced with actual script path)
 - **Agent placeholders**: `__AGENT__` (replaced with agent name)
 
 ## Common Pitfalls
 
-1. **Using shorthand keys instead of actual CLI tool names**: The integration `key` must match the executable name (e.g., `"cursor-agent"` not `"cursor"`). `shutil.which(key)` is used for CLI tool checks — mismatches require special-case mappings.
+1. **Using shorthand keys for CLI-based integrations**: For CLI-based integrations (`requires_cli: True`), the `key` must match the executable name (e.g., `"cursor-agent"` not `"cursor"`). `shutil.which(key)` is used for CLI tool checks — mismatches require special-case mappings. IDE-based integrations (`requires_cli: False`) are not subject to this constraint.
 2. **Forgetting update scripts**: Both bash and PowerShell thin wrappers and the shared context-update scripts must be updated.
 3. **Incorrect `requires_cli` value**: Set to `True` only for agents that have a CLI tool; set to `False` for IDE-based agents.
 4. **Wrong argument format**: Use `$ARGUMENTS` for Markdown agents, `{{args}}` for TOML agents.
