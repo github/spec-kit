@@ -819,7 +819,7 @@
       "changelog": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/memorylint/CHANGELOG.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.5.1"
       },
       "provides": {
         "commands": 1,
