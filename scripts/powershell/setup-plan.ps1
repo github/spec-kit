@@ -4,8 +4,8 @@
 [CmdletBinding()]
 param(
     [switch]$Json,
-    [ValidateRange(0, [int]::MaxValue)]
-    [int]$ScanDepth = 0,
+    [ValidateRange(1, [int]::MaxValue)]
+    [int]$ScanDepth,
     [switch]$Help
 )
 
@@ -48,19 +48,25 @@ if ($template -and (Test-Path $template)) {
 # Discover nested independent git repositories (for AI agent to analyze)
 $nestedReposResult = @()
 if ($paths.HAS_GIT -eq 'true' -or $paths.HAS_GIT -eq $true) {
-    $effectiveDepth = if ($ScanDepth -gt 0) { $ScanDepth } else { 2 }
     $initOptions = Join-Path $paths.REPO_ROOT '.specify' 'init-options.json'
     $explicitPaths = @()
+    $configDepth = $null
 
-    # Read explicit nested_repos from init-options.json if available
+    # Read explicit nested_repos and nested_repo_scan_depth from init-options.json if available
     if (Test-Path -LiteralPath $initOptions) {
         try {
             $opts = Get-Content $initOptions -Raw | ConvertFrom-Json
             if ($opts.nested_repos -and $opts.nested_repos.Count -gt 0) {
                 $explicitPaths = @($opts.nested_repos)
             }
+            if ($null -ne $opts.nested_repo_scan_depth) {
+                $configDepth = [int]$opts.nested_repo_scan_depth
+            }
         } catch { }
     }
+
+    # Priority: CLI -ScanDepth > init-options nested_repo_scan_depth > default 2
+    $effectiveDepth = if ($PSBoundParameters.ContainsKey('ScanDepth')) { $ScanDepth } elseif ($configDepth) { $configDepth } else { 2 }
 
     if ($explicitPaths.Count -gt 0) {
         $nestedRepos = Find-NestedGitRepos -RepoRoot $paths.REPO_ROOT -MaxDepth $effectiveDepth -ExplicitPaths $explicitPaths

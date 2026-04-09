@@ -229,11 +229,19 @@ function Test-DirHasFiles {
 }
 
 # Discover nested independent git repositories under RepoRoot.
-# Searches up to 2 directory levels deep for subdirectories containing .git
-# (directory or file, covering worktrees/submodules). Excludes the root repo
-# itself and common non-project directories.
 # Returns an array of absolute paths. Scan depth is configurable (default 2).
 # If ExplicitPaths are provided, validates and returns those directly (no scanning).
+#
+# Discovery modes:
+#   Explicit — validates paths from init-options.json `nested_repos`; no scanning.
+#   Scan     — recursively searches child directories up to MaxDepth.
+#              Skips .git directories. Uses `git check-ignore` to prune
+#              gitignored directories during traversal. A directory with
+#              its own .git marker is always reported (even if gitignored).
+#
+# Note: Scanning will NOT descend into gitignored parent directories, so a
+# nested repo beneath one (e.g., vendor/foo/.git when vendor/ is ignored)
+# will not be discovered. Use init-options.json `nested_repos` for those.
 function Find-NestedGitRepos {
     param(
         [string]$RepoRoot = (Get-RepoRoot),
@@ -278,7 +286,8 @@ function Find-NestedGitRepos {
                     }
                 } catch { }
             } elseif ($CurrentDepth -lt $MaxDepth) {
-                # Skip gitignored directories (they won't contain nested repos)
+                # Skip gitignored directories — won't descend into them.
+                # Repos under gitignored parents require explicit init-options config.
                 $null = git -C $RepoRoot check-ignore -q $child.FullName 2>$null
                 if ($LASTEXITCODE -eq 0) { continue }
                 $found += ScanDir -Dir $child.FullName -CurrentDepth ($CurrentDepth + 1)

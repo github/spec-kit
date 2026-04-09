@@ -287,6 +287,17 @@ check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" |
 #   max_depth       — defaults to 2
 #   explicit_paths  — if provided (3rd arg onward), validate and return these directly (no scanning)
 # Outputs one absolute path per line.
+#
+# Discovery modes:
+#   Explicit — validates paths from init-options.json `nested_repos`; no scanning.
+#   Scan     — recursively searches child directories up to max_depth.
+#              Skips .git directories. Uses `git check-ignore` to prune
+#              gitignored directories during traversal. A directory with
+#              its own .git marker is always reported (even if gitignored).
+#
+# Note: Scanning will NOT descend into gitignored parent directories, so a
+# nested repo beneath one (e.g., vendor/foo/.git when vendor/ is ignored)
+# will not be discovered. Use init-options.json `nested_repos` for those.
 find_nested_git_repos() {
     local repo_root="${1:-$(get_repo_root)}"
     local max_depth="${2:-2}"
@@ -334,7 +345,8 @@ find_nested_git_repos() {
                         echo "$child"
                     fi
                 elif [ "$current_depth" -lt "$max_depth" ]; then
-                    # Skip gitignored directories (they won't contain nested repos)
+                    # Skip gitignored directories — won't descend into them.
+                    # Repos under gitignored parents require explicit init-options config.
                     if git -C "$repo_root" check-ignore -q "$child" 2>/dev/null; then
                         continue
                     fi

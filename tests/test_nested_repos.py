@@ -221,6 +221,48 @@ class TestFindNestedGitRepos:
         assert len(paths) == 1
         assert os.path.basename(paths[0]) == "nested-lib"
 
+    def test_repo_under_gitignored_parent_not_discovered_by_scan(self, tmp_path: Path):
+        """A nested repo beneath a gitignored parent dir is NOT found by scanning.
+
+        When vendor/ is gitignored and vendor/foo/.git exists, the scan will not
+        descend into vendor/ so vendor/foo won't be discovered. Users should use
+        init-options.json `nested_repos` for this case.
+        """
+        _init_git_repo(tmp_path)
+        (tmp_path / ".specify").mkdir()
+        scripts_dir = tmp_path / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        shutil.copy(COMMON_SH, scripts_dir / "common.sh")
+
+        # Gitignore vendor/
+        (tmp_path / ".gitignore").write_text("vendor/\n")
+        subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "commit", "-m", "ignore vendor", "-q"], cwd=tmp_path, check=True)
+
+        # Create nested repo under gitignored parent: vendor/foo
+        vendor_foo = tmp_path / "vendor" / "foo"
+        vendor_foo.mkdir(parents=True)
+        _init_git_repo(vendor_foo)
+
+        # Scan with depth 3 — should still not find it because vendor/ is pruned
+        result = source_and_call(
+            f'find_nested_git_repos "{tmp_path}" 3',
+            cwd=tmp_path,
+        )
+        assert result.returncode == 0
+        paths = [p.strip().rstrip("/") for p in result.stdout.strip().splitlines() if p.strip()]
+        assert len(paths) == 0
+
+        # But explicit paths mode WILL find it
+        result2 = source_and_call(
+            f'find_nested_git_repos "{tmp_path}" 3 "vendor/foo"',
+            cwd=tmp_path,
+        )
+        assert result2.returncode == 0
+        paths2 = [p.strip().rstrip("/") for p in result2.stdout.strip().splitlines() if p.strip()]
+        assert len(paths2) == 1
+        assert os.path.basename(paths2[0]) == "foo"
+
 
 # ── Explicit Paths Tests ─────────────────────────────────────────────────────
 
@@ -340,6 +382,7 @@ class TestCreateFeatureNoNestedBranching:
                 cwd=git_repo_with_nested / subdir,
                 capture_output=True, text=True,
             )
+            assert br.returncode == 0, br.stderr
             assert br.stdout.strip() != branch_name
 
 
@@ -437,3 +480,35 @@ class TestSetupPlanDiscovery:
         assert "NESTED_REPOS" in data
         assert len(data["NESTED_REPOS"]) == 1
         assert data["NESTED_REPOS"][0]["path"] == "components/core"
+
+    def test_scan_depth_from_init_options(self, tmp_path: Path):
+        """setup-plan reads nested_repo_scan_depth from init-options.json as default."""
+        _init_git_repo(tmp_path)
+        _setup_scripts(tmp_path)
+
+        # Level 3 repo
+        deep_dir = tmp_path / "services" / "backend" / "auth"
+        deep_dir.mkdir(parents=True)
+        _init_git_repo(deep_dir)
+
+        # Create feature branch first
+        run_create_feature(
+            tmp_path, "--json", "--short-name", "cfg-depth", "Config depth test",
+        )
+
+        # Without config: default depth 2, should not find level-3 repo
+        result = run_setup_plan(tmp_path, "--json")
+        assert result.returncode == 0, result.stderr
+        data = parse_json_from_output(result.stdout)
+        assert data["NESTED_REPOS"] == []
+
+        # Add nested_repo_scan_depth=3 in init-options.json
+        init_options = tmp_path / ".specify" / "init-options.json"
+        init_options.write_text(json.dumps({"nested_repo_scan_depth": 3}))
+
+        # Now should discover the level-3 repo
+        result2 = run_setup_plan(tmp_path, "--json")
+        assert result2.returncode == 0, result2.stderr
+        data2 = parse_json_from_output(result2.stdout)
+        assert len(data2["NESTED_REPOS"]) == 1
+        assert data2["NESTED_REPOS"][0]["path"] == "services/backend/auth"

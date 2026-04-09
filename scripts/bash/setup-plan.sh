@@ -75,16 +75,18 @@ fi
 # Discover nested independent git repositories (for AI agent to analyze)
 NESTED_REPOS_JSON="[]"
 if [ "$HAS_GIT" = true ]; then
-    scan_depth="${SCAN_DEPTH:-2}"
     INIT_OPTIONS="$REPO_ROOT/.specify/init-options.json"
     explicit_repos=()
+    config_depth=""
 
-    # Read explicit nested_repos from init-options.json if available
+    # Read explicit nested_repos and nested_repo_scan_depth from init-options.json if available
     if [ -f "$INIT_OPTIONS" ]; then
         if has_jq; then
             while IFS= read -r rp; do
                 [ -n "$rp" ] && explicit_repos+=("$rp")
             done < <(jq -r '.nested_repos // [] | .[]' "$INIT_OPTIONS" 2>/dev/null)
+            _cd=$(jq -r '.nested_repo_scan_depth // empty' "$INIT_OPTIONS" 2>/dev/null)
+            [ -n "$_cd" ] && config_depth="$_cd"
         else
             _py=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "")
             if [ -n "$_py" ]; then
@@ -95,9 +97,19 @@ if [ "$HAS_GIT" = true ]; then
 try:
  [print(p) for p in json.load(open(sys.argv[1])).get('nested_repos',[])]
 except: pass" "$INIT_OPTIONS" 2>/dev/null)
+                _cd=$("$_py" -c "import json,sys
+try:
+ v=json.load(open(sys.argv[1])).get('nested_repo_scan_depth')
+ if v is not None: print(v)
+except: pass" "$INIT_OPTIONS" 2>/dev/null)
+                _cd="${_cd%$'\r'}"
+                [ -n "$_cd" ] && config_depth="$_cd"
             fi
         fi
     fi
+
+    # Priority: CLI --scan-depth > init-options nested_repo_scan_depth > default 2
+    scan_depth="${SCAN_DEPTH:-${config_depth:-2}}"
 
     if [ ${#explicit_repos[@]} -gt 0 ]; then
         nested_repos=$(find_nested_git_repos "$REPO_ROOT" "$scan_depth" "${explicit_repos[@]}")
