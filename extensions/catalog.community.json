@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-09T00:00:00Z",
+  "updated_at": "2026-04-10T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1590,6 +1590,38 @@
       "stars": 0,
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
+    },
+    "tinyspec": {
+      "name": "TinySpec",
+      "id": "tinyspec",
+      "description": "Lightweight single-file workflow for small tasks — skip the heavy multi-step SDD process.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-tinyspec/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-tinyspec",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-tinyspec",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-tinyspec/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-tinyspec/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "lightweight",
+        "small-tasks",
+        "workflow",
+        "productivity",
+        "efficiency"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-10T00:00:00Z",
+      "updated_at": "2026-04-10T00:00:00Z"
     },
     "v-model": {
       "name": "V-Model Extension Pack",
