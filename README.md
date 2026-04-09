@@ -350,7 +350,7 @@ Additional commands for enhanced quality and validation:
 The `specify` tool is invoked as
 
 ```text
-specify <COMMAND> <OPTIONAL_SUBCOMMAND> <OPTIONS>
+specify <COMMAND> [SUBCOMMAND] [OPTIONS]
 ```
 
 and supports the following commands:
