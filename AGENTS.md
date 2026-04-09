@@ -253,7 +253,7 @@ cd my-project && specify integration uninstall <key>
 Each integration also has a dedicated test file at `tests/integrations/test_integration_<key>.py`. Note that hyphens in the key are replaced with underscores in the filename (e.g., key `cursor-agent` → `test_integration_cursor_agent.py`, key `kiro-cli` → `test_integration_kiro_cli.py`). Run it with:
 
 ```bash
-pytest tests/integrations/test_integration_<key>.py -v
+pytest tests/integrations/test_integration_<key_with_underscores>.py -v
 ```
 
 ### 6. Optional overrides
