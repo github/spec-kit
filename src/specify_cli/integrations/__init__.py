@@ -51,8 +51,8 @@ def _register_builtins() -> None:
     from .auggie import AuggieIntegration
     from .bob import BobIntegration
     from .claude import ClaudeIntegration
-    from .codex import CodexIntegration
     from .codebuddy import CodebuddyIntegration
+    from .codex import CodexIntegration
     from .copilot import CopilotIntegration
     from .cursor_agent import CursorAgentIntegration
     from .forge import ForgeIntegration
@@ -80,8 +80,8 @@ def _register_builtins() -> None:
     _register(AuggieIntegration())
     _register(BobIntegration())
     _register(ClaudeIntegration())
-    _register(CodexIntegration())
     _register(CodebuddyIntegration())
+    _register(CodexIntegration())
     _register(CopilotIntegration())
     _register(CursorAgentIntegration())
     _register(ForgeIntegration())
