@@ -234,7 +234,7 @@ Replace `<key>` with your integration key and `<Agent Name>` / `<context_file>` 
 You must also add the agent to the shared context-update scripts so the shared dispatcher recognises the new key:
 
 - **`scripts/bash/update-agent-context.sh`** — add a file-path variable and a case in `update_specific_agent()`.
-- **`scripts/powershell/update-agent-context.ps1`** — add a file-path variable, a switch case in `Update-SpecificAgent`, and an entry in `Update-AllExistingAgents`.
+- **`scripts/powershell/update-agent-context.ps1`** — add a file-path variable, add the new key to the `AgentType` parameter's `[ValidateSet(...)]`, add a switch case in `Update-SpecificAgent`, and add an entry in `Update-AllExistingAgents`.
 
 ### 5. Test it
 
