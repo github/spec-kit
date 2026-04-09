@@ -562,6 +562,12 @@ class CommandRegistrar:
                 alias_file = (
                     commands_dir / f"{alias_output_name}{agent_config['extension']}"
                 )
+                try:
+                    alias_file.resolve().relative_to(commands_dir.resolve())
+                except ValueError:
+                    raise ValueError(
+                        f"Alias output path escapes commands directory: {alias_file!r}"
+                    )
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
                 alias_file.write_text(alias_output, encoding="utf-8")
                 if agent_name == "copilot":
