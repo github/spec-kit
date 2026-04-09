@@ -22,6 +22,7 @@ ARGUMENT_HINTS: dict[str, str] = {
     "constitution": "Principles or values for the project constitution",
     "checklist": "Domain or focus area for the checklist",
     "taskstoissues": "Optional filter or label for GitHub issues",
+    "reverse": "Path or keyword to scope the analysis (optional — omit for full-repo)",
 }
 
 
