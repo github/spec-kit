@@ -242,42 +242,18 @@ class CommandRegistrar:
         Returns:
             Formatted YAML recipe file content
         """
-
-        def _human_title(identifier: str) -> str:
-            text = identifier
-            if text.startswith("speckit."):
-                text = text[len("speckit.") :]
-            return text.replace(".", " ").replace("-", " ").replace("_", " ").title()
+        from specify_cli.integrations.base import YamlIntegration
 
         title = frontmatter.get("title", "") or frontmatter.get("name", "")
         if not title and cmd_name:
-            title = _human_title(cmd_name)
+            title = YamlIntegration._human_title(cmd_name)
         if not title and source_id:
-            title = _human_title(Path(str(source_id)).stem)
+            title = YamlIntegration._human_title(Path(str(source_id)).stem)
         if not title:
             title = "Command"
 
         description = frontmatter.get("description", "")
-
-        header = {
-            "version": "1.0.0",
-            "title": title,
-            "description": description,
-            "author": {"contact": "spec-kit"},
-            "extensions": [{"type": "builtin", "name": "developer"}],
-            "activities": ["Spec-Driven Development"],
-        }
-
-        header_yaml = yaml.safe_dump(
-            header,
-            sort_keys=False,
-            allow_unicode=True,
-            default_flow_style=False,
-        ).strip()
-
-        indented = "\n".join(f"  {line}" for line in body.split("\n"))
-        lines = [header_yaml, "prompt: |", indented, "", f"# Source: {source_id}"]
-        return "\n".join(lines)
+        return YamlIntegration._render_yaml(title, description, body, source_id)
 
     def render_skill_command(
         self,
