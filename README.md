@@ -349,7 +349,7 @@ Additional commands for enhanced quality and validation:
 
 The `specify` tool is invoked as
 
-```bash
+```text
 specify <COMMAND> <OPTIONAL_SUBCOMMAND> <OPTIONS>
 ```
 
