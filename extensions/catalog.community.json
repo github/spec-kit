@@ -1653,6 +1653,38 @@
       "stars": 0,
       "created_at": "2026-03-16T00:00:00Z",
       "updated_at": "2026-03-16T00:00:00Z"
+    },
+    "worktree": {
+      "name": "Worktree Isolation",
+      "id": "worktree",
+      "description": "Spawn isolated git worktrees for parallel feature development without checkout switching.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-worktree/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-worktree",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-worktree",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-worktree/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-worktree/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "worktree",
+        "git",
+        "parallel",
+        "isolation",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-09T00:00:00Z",
+      "updated_at": "2026-04-09T00:00:00Z"
     }
   }
 }
