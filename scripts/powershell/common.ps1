@@ -237,6 +237,7 @@ function Test-DirHasFiles {
 function Find-NestedGitRepos {
     param(
         [string]$RepoRoot = (Get-RepoRoot),
+        [ValidateRange(1, [int]::MaxValue)]
         [int]$MaxDepth = 2,
         [string[]]$ExplicitPaths = @()
     )

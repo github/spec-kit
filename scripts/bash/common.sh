@@ -290,6 +290,10 @@ check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" |
 find_nested_git_repos() {
     local repo_root="${1:-$(get_repo_root)}"
     local max_depth="${2:-2}"
+    if ! [[ "$max_depth" =~ ^[0-9]+$ ]] || [ "$max_depth" -eq 0 ]; then
+        echo "find_nested_git_repos: max_depth must be a positive integer" >&2
+        return 1
+    fi
 
     # Collect explicit paths from 3rd argument onward
     local -a explicit_paths=()

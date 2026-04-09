@@ -4,6 +4,7 @@
 [CmdletBinding()]
 param(
     [switch]$Json,
+    [ValidateRange(0, [int]::MaxValue)]
     [int]$ScanDepth = 0,
     [switch]$Help
 )
