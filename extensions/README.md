@@ -24,6 +24,9 @@ specify extension search  # Now uses your organization's catalog instead of the 
 
 ### Community Reference Catalog (`catalog.community.json`)
 
+> [!NOTE]
+> Community extensions are independently created and maintained by their respective authors. GitHub and the Spec Kit maintainers may review pull requests that add entries to the community catalog for formatting, catalog structure, or policy compliance, but they do **not review, audit, endorse, or support the extension code itself**. Review extension source code before installation and use at your own discretion.
+
 - **Purpose**: Browse available community-contributed extensions
 - **Status**: Active - contains extensions submitted by the community
 - **Location**: `extensions/catalog.community.json`
@@ -59,7 +62,7 @@ Populate your `catalog.json` with approved extensions:
 Skip catalog curation - team members install directly using URLs:
 
 ```bash
-specify extension add --from https://github.com/org/spec-kit-ext/archive/refs/tags/v1.0.0.zip
+specify extension add <extension-name> --from https://github.com/org/spec-kit-ext/archive/refs/tags/v1.0.0.zip
 ```
 
 **Benefits**: Quick for one-off testing or private extensions
@@ -67,6 +70,11 @@ specify extension add --from https://github.com/org/spec-kit-ext/archive/refs/ta
 **Tradeoff**: Extensions installed this way won't appear in `specify extension search` for other team members unless you also add them to your `catalog.json`.
 
 ## Available Community Extensions
+
+> [!NOTE]
+> Community extensions are independently created and maintained by their respective authors. GitHub and the Spec Kit maintainers may review pull requests that add entries to the community catalog for formatting, catalog structure, or policy compliance, but they do **not review, audit, endorse, or support the extension code itself**. The Community Extensions website is also a third-party resource. Review extension source code before installation and use at your own discretion.
+
+🔍 **Browse and search community extensions on the [Community Extensions website](https://speckit-community.github.io/extensions/).**
 
 See the [Community Extensions](../README.md#-community-extensions) section in the main README for the full list of available community-contributed extensions.
 
@@ -108,7 +116,7 @@ specify extension search                  # See what's in your catalog
 specify extension add <extension-name>    # Install by name
 
 # Direct from URL (bypasses catalog)
-specify extension add --from https://github.com/<org>/<repo>/archive/refs/tags/<version>.zip
+specify extension add <extension-name> --from https://github.com/<org>/<repo>/archive/refs/tags/<version>.zip
 
 # List installed extensions
 specify extension list

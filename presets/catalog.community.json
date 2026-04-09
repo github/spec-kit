@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-24T00:00:00Z",
+  "updated_at": "2026-04-06T06:30:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "aide-in-place": {
@@ -29,6 +29,55 @@
         "aide"
       ]
     },
+    "canon-core": {
+      "name": "Canon Core",
+      "id": "canon-core",
+      "version": "0.1.0",
+      "description": "Adapts original Spec Kit workflow to work together with Canon extension.",
+      "author": "Maxim Stupakov",
+      "download_url": "https://github.com/maximiliamus/spec-kit-canon/releases/download/v0.1.0/spec-kit-canon-core-v0.1.0.zip",
+      "repository": "https://github.com/maximiliamus/spec-kit-canon",
+      "homepage": "https://github.com/maximiliamus/spec-kit-canon",
+      "documentation": "https://github.com/maximiliamus/spec-kit-canon/blob/master/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.3"
+      },
+      "provides": {
+        "templates": 2,
+        "commands": 8
+      },
+      "tags": [
+        "baseline",
+        "canon",
+        "spec-first"
+      ]
+    },
+    "explicit-task-dependencies": {
+      "name": "Explicit Task Dependencies",
+      "id": "explicit-task-dependencies",
+      "version": "1.0.0",
+      "description": "Adds explicit (depends on T###) dependency declarations and an Execution Wave DAG to tasks.md for dependency-resolved parallel scheduling",
+      "author": "Quratulain-bilal",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 1
+      },
+      "tags": [
+        "dependencies",
+        "parallel",
+        "scheduling",
+        "wave-dag"
+      ]
+    },
     "pirate": {
       "name": "Pirate Speak (Full)",
       "id": "pirate",
@@ -52,6 +101,55 @@
         "theme",
         "fun",
         "experimental"
+      ]
+    },
+    "toc-navigation": {
+      "name": "Table of Contents Navigation",
+      "id": "toc-navigation",
+      "version": "1.0.0",
+      "description": "Adds a navigable Table of Contents to generated spec.md, plan.md, and tasks.md documents",
+      "author": "Quratulain-bilal",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "templates": 3,
+        "commands": 3
+      },
+      "tags": [
+        "navigation",
+        "toc",
+        "documentation"
+      ]
+    },
+    "vscode-ask-questions": {
+      "name": "VS Code Ask Questions",
+      "id": "vscode-ask-questions",
+      "version": "1.0.0",
+      "description": "Enhances the clarify command to use vscode/askQuestions for batched interactive questioning, reducing API request costs in GitHub Copilot.",
+      "author": "fdcastel",
+      "repository": "https://github.com/fdcastel/spec-kit-presets",
+      "download_url": "https://github.com/fdcastel/spec-kit-presets/releases/download/vscode-ask-questions-v1.0.0/vscode-ask-questions.zip",
+      "homepage": "https://github.com/fdcastel/spec-kit-presets",
+      "documentation": "https://github.com/fdcastel/spec-kit-presets/blob/main/vscode-ask-questions/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 1
+      },
+      "tags": [
+        "vscode",
+        "askquestions",
+        "clarify",
+        "interactive"
       ]
     }
   }

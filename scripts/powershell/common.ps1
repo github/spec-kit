@@ -83,8 +83,8 @@ function Get-CurrentBranch {
                     $latestTimestamp = $ts
                     $latestFeature = $_.Name
                 }
-            } elseif ($_.Name -match '^(\d{3})-') {
-                $num = [int]$matches[1]
+            } elseif ($_.Name -match '^(\d{3,})-') {
+                $num = [long]$matches[1]
                 if ($num -gt $highest) {
                     $highest = $num
                     # Only update if no timestamp branch found yet
@@ -139,9 +139,13 @@ function Test-FeatureBranch {
         return $true
     }
     
-    if ($Branch -notmatch '^[0-9]{3}-' -and $Branch -notmatch '^\d{8}-\d{6}-') {
+    # Accept sequential prefix (3+ digits) but exclude malformed timestamps
+    # Malformed: 7-or-8 digit date + 6-digit time with no trailing slug (e.g. "2026031-143022" or "20260319-143022")
+    $hasMalformedTimestamp = ($Branch -match '^[0-9]{7}-[0-9]{6}-') -or ($Branch -match '^(?:\d{7}|\d{8})-\d{6}$')
+    $isSequential = ($Branch -match '^[0-9]{3,}-') -and (-not $hasMalformedTimestamp)
+    if (-not $isSequential -and $Branch -notmatch '^\d{8}-\d{6}-') {
         Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
-        Write-Output "Feature branches should be named like: 001-feature-name or 20260319-143022-feature-name"
+        Write-Output "Feature branches should be named like: 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name"
         return $false
     }
     return $true
@@ -156,7 +160,36 @@ function Get-FeaturePathsEnv {
     $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
     $hasGit = Test-HasGit
-    $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
+
+    # Resolve feature directory.  Priority:
+    #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit override)
+    #   2. .specify/feature.json "feature_directory" key (persisted by /speckit.specify)
+    #   3. Exact branch-to-directory mapping via Get-FeatureDir (legacy fallback)
+    $featureJson = Join-Path $repoRoot '.specify/feature.json'
+    if ($env:SPECIFY_FEATURE_DIRECTORY) {
+        $featureDir = $env:SPECIFY_FEATURE_DIRECTORY
+        # Normalize relative paths to absolute under repo root
+        if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
+            $featureDir = Join-Path $repoRoot $featureDir
+        }
+    } elseif (Test-Path $featureJson) {
+        try {
+            $featureConfig = Get-Content $featureJson -Raw | ConvertFrom-Json
+            if ($featureConfig.feature_directory) {
+                $featureDir = $featureConfig.feature_directory
+                # Normalize relative paths to absolute under repo root
+                if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
+                    $featureDir = Join-Path $repoRoot $featureDir
+                }
+            } else {
+                $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
+            }
+        } catch {
+            $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
+        }
+    } else {
+        $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
+    }
     
     [PSCustomObject]@{
         REPO_ROOT     = $repoRoot
