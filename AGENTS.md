@@ -36,7 +36,7 @@ src/specify_cli/integrations/
 └── ...                    # One subpackage per supported agent
 ```
 
-The registry is the **single source of truth**. Supported agents, their directories, formats, and capabilities are all derived from the integration classes — no separate tables or config dicts to maintain.
+The registry is the **single source of truth for Python integration metadata**. Supported agents, their directories, formats, and capabilities are derived from the integration classes for the Python integration layer. However, context-update behavior still requires explicit cases in the shared dispatcher scripts (`scripts/bash/update-agent-context.sh` and `scripts/powershell/update-agent-context.ps1`), which currently maintain their own supported-agent lists and agent-key→context-file mappings until they are migrated to registry-based dispatch.
 
 ---
 
