@@ -78,6 +78,33 @@
         "wave-dag"
       ]
     },
+    "nested-repos": {
+      "name": "Nested Repository Support",
+      "id": "nested-repos",
+      "version": "1.0.0",
+      "description": "Adds multi-module nested repository support for independent repos and git submodules during plan and task phases.",
+      "author": "sakitA",
+      "repository": "https://github.com/sakitA/spec-kit-preset-nested-repos",
+      "download_url": "https://github.com/sakitA/spec-kit-preset-nested-repos/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/sakitA/spec-kit-preset-nested-repos",
+      "documentation": "https://github.com/sakitA/spec-kit-preset-nested-repos/blob/master/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "templates": 2,
+        "commands": 2
+      },
+      "tags": [
+        "multi-module",
+        "nested-repos",
+        "submodules",
+        "monorepo"
+      ],
+      "created_at": "2026-04-09T00:00:00Z",
+      "updated_at": "2026-04-09T00:00:00Z"
+    },
     "pirate": {
       "name": "Pirate Speak (Full)",
       "id": "pirate",
