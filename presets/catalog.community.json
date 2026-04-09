@@ -93,7 +93,6 @@
         "speckit_version": ">=0.4.0"
       },
       "provides": {
-        "templates": 0,
         "commands": 2
       },
       "tags": [
