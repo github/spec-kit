@@ -60,7 +60,12 @@ if ($paths.HAS_GIT -eq 'true' -or $paths.HAS_GIT -eq $true) {
                 $explicitPaths = @($opts.nested_repos)
             }
             if ($null -ne $opts.nested_repo_scan_depth) {
-                $configDepth = [int]$opts.nested_repo_scan_depth
+                $parsedConfigDepth = [int]$opts.nested_repo_scan_depth
+                if ($parsedConfigDepth -ge 1) {
+                    $configDepth = $parsedConfigDepth
+                } else {
+                    Write-Warning "nested_repo_scan_depth in init-options.json must be >= 1, got $parsedConfigDepth — using default"
+                }
             }
         } catch { }
     }
@@ -69,9 +74,19 @@ if ($paths.HAS_GIT -eq 'true' -or $paths.HAS_GIT -eq $true) {
     $effectiveDepth = if ($PSBoundParameters.ContainsKey('ScanDepth')) { $ScanDepth } elseif ($configDepth) { $configDepth } else { 2 }
 
     if ($explicitPaths.Count -gt 0) {
-        $nestedRepos = Find-NestedGitRepos -RepoRoot $paths.REPO_ROOT -MaxDepth $effectiveDepth -ExplicitPaths $explicitPaths
+        try {
+            $nestedRepos = Find-NestedGitRepos -RepoRoot $paths.REPO_ROOT -MaxDepth $effectiveDepth -ExplicitPaths $explicitPaths
+        } catch {
+            Write-Warning "Nested repo discovery failed: $_"
+            $nestedRepos = @()
+        }
     } else {
-        $nestedRepos = Find-NestedGitRepos -RepoRoot $paths.REPO_ROOT -MaxDepth $effectiveDepth
+        try {
+            $nestedRepos = Find-NestedGitRepos -RepoRoot $paths.REPO_ROOT -MaxDepth $effectiveDepth
+        } catch {
+            Write-Warning "Nested repo discovery failed: $_"
+            $nestedRepos = @()
+        }
     }
     foreach ($nestedPath in $nestedRepos) {
         $relPath = $nestedPath.Substring($paths.REPO_ROOT.Length).TrimStart('\', '/')

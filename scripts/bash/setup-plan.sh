@@ -109,12 +109,21 @@ except: pass" "$INIT_OPTIONS" 2>/dev/null)
     fi
 
     # Priority: CLI --scan-depth > init-options nested_repo_scan_depth > default 2
+    # Validate config_depth the same way as --scan-depth (must be positive integer)
+    if [ -n "$config_depth" ]; then
+        case "$config_depth" in
+            ''|*[!0-9]*|0)
+                echo "WARNING: nested_repo_scan_depth in init-options.json must be a positive integer, got '$config_depth' — using default" >&2
+                config_depth=""
+                ;;
+        esac
+    fi
     scan_depth="${SCAN_DEPTH:-${config_depth:-2}}"
 
     if [ ${#explicit_repos[@]} -gt 0 ]; then
-        nested_repos=$(find_nested_git_repos "$REPO_ROOT" "$scan_depth" "${explicit_repos[@]}")
+        nested_repos=$(find_nested_git_repos "$REPO_ROOT" "$scan_depth" "${explicit_repos[@]}") || nested_repos=""
     else
-        nested_repos=$(find_nested_git_repos "$REPO_ROOT" "$scan_depth")
+        nested_repos=$(find_nested_git_repos "$REPO_ROOT" "$scan_depth") || nested_repos=""
     fi
     if [ -n "$nested_repos" ]; then
         NESTED_REPOS_JSON="["

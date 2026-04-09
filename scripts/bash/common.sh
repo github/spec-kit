@@ -281,7 +281,8 @@ check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" |
 # Discover nested independent git repositories under REPO_ROOT.
 # Searches up to $max_depth directory levels deep for subdirectories containing
 # .git (directory or file, covering worktrees/submodules). Excludes the root
-# repo itself and common non-project directories.
+# repo itself; scanning skips .git directories and prunes gitignored
+# directories via `git check-ignore`.
 # Usage: find_nested_git_repos [repo_root] [max_depth] [explicit_paths...]
 #   repo_root       — defaults to $(get_repo_root)
 #   max_depth       — defaults to 2
