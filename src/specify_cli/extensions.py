@@ -1872,10 +1872,10 @@ class ExtensionCatalog:
         if not ext_info:
             raise ExtensionError(f"Extension '{extension_id}' not found in catalog")
 
-        # Bundled extensions must never be downloaded, even if a URL is present
-        if ext_info.get("bundled"):
+        # Bundled extensions without a download URL must be installed locally
+        if ext_info.get("bundled") and not ext_info.get("download_url"):
             raise ExtensionError(
-                f"Extension '{extension_id}' is bundled with spec-kit and cannot be downloaded. "
+                f"Extension '{extension_id}' is bundled with spec-kit and has no download URL. "
                 f"It should be installed from the local package. "
                 f"Try reinstalling: {REINSTALL_COMMAND}"
             )

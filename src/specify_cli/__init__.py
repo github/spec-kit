@@ -3103,8 +3103,8 @@ def extension_add(
                             manifest = manager.install_from_directory(bundled_path, speckit_version, priority=priority)
 
                     if bundled_path is None:
-                        # Bundled extensions must be installed from the local package
-                        if ext_info.get("bundled"):
+                        # Bundled extensions without a download URL must come from the local package
+                        if ext_info.get("bundled") and not ext_info.get("download_url"):
                             console.print(
                                 f"[red]Error:[/red] Extension '{ext_info['id']}' is bundled with spec-kit "
                                 f"but could not be found in the installed package."

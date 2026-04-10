@@ -3039,7 +3039,7 @@ class TestDownloadExtensionBundled:
     """Tests for download_extension handling of bundled extensions."""
 
     def test_download_extension_raises_for_bundled(self, temp_dir):
-        """download_extension should raise a clear error for bundled extensions."""
+        """download_extension should raise a clear error for bundled extensions without a URL."""
         from unittest.mock import patch
 
         project_dir = temp_dir / "project"
@@ -3059,6 +3059,36 @@ class TestDownloadExtensionBundled:
         with patch.object(catalog, "get_extension_info", return_value=bundled_ext_info):
             with pytest.raises(ExtensionError, match="bundled with spec-kit"):
                 catalog.download_extension("git")
+
+    def test_download_extension_allows_bundled_with_url(self, temp_dir):
+        """download_extension should allow bundled extensions that have a download_url (newer version)."""
+        from unittest.mock import patch, MagicMock
+        import urllib.request
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        catalog = ExtensionCatalog(project_dir)
+
+        bundled_with_url = {
+            "name": "Git Branching Workflow",
+            "id": "git",
+            "version": "2.0.0",
+            "description": "Git workflow",
+            "bundled": True,
+            "download_url": "https://example.com/git-2.0.0.zip",
+        }
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"fake zip data"
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "get_extension_info", return_value=bundled_with_url), \
+             patch.object(urllib.request, "urlopen", return_value=mock_response):
+            result = catalog.download_extension("git")
+            assert result.name == "git-2.0.0.zip"
 
     def test_download_extension_raises_no_url_for_non_bundled(self, temp_dir):
         """download_extension should raise 'no download URL' for non-bundled extensions without URL."""
