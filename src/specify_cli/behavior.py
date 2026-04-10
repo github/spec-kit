@@ -39,6 +39,7 @@ BEHAVIOR_KEYS: frozenset[str] = frozenset({
     "tools",        # none | read-only | write | full | custom list (str or list[str])
     "invocation",   # explicit | automatic
     "visibility",   # user | model | both
+    "color",        # red | blue | green | yellow | purple | orange | pink | cyan (Claude Code UI color)
 })
 
 # Per-agent translation tables.
@@ -114,6 +115,12 @@ def translate_behavior(
 
     for key, value in behavior.items():
         if key not in BEHAVIOR_KEYS:
+            continue
+
+        # color: pass through directly to Claude Code agent frontmatter.
+        # Valid values: red | blue | green | yellow | purple | orange | pink | cyan
+        if key == "color" and agent_name == "claude":
+            result["color"] = str(value)
             continue
 
         # tools: accept a list or a space-separated string of tool names as a
