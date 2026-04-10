@@ -27,35 +27,63 @@ jobs:
       - name: Check if release already exists
         id: check_release
         run: |
-          chmod +x .github/workflows/scripts/check-release-exists.sh
-          .github/workflows/scripts/check-release-exists.sh ${{ steps.version.outputs.tag }}
+          VERSION="${{ steps.version.outputs.tag }}"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release $VERSION already exists, skipping..."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Release $VERSION does not exist, proceeding..."
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create release package variants
-        if: steps.check_release.outputs.exists == 'false'
-        run: |
-          chmod +x .github/workflows/scripts/create-release-packages.sh
-          .github/workflows/scripts/create-release-packages.sh ${{ steps.version.outputs.tag }}
-
       - name: Generate release notes
         if: steps.check_release.outputs.exists == 'false'
-        id: release_notes
         run: |
-          chmod +x .github/workflows/scripts/generate-release-notes.sh
-          # Get the previous tag for changelog generation
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 ${{ steps.version.outputs.tag }}^ 2>/dev/null || echo "")
-          # Default to v0.0.0 if no previous tag is found (e.g., first release)
+          VERSION="${{ steps.version.outputs.tag }}"
+          VERSION_NO_V=${VERSION#v}
+
+          # Find previous tag
+          PREVIOUS_TAG=$(git tag -l 'v*' --sort=-version:refname | grep -v "^${VERSION}$" | head -n 1)
           if [ -z "$PREVIOUS_TAG" ]; then
-            PREVIOUS_TAG="v0.0.0"
+            PREVIOUS_TAG=""
           fi
-          .github/workflows/scripts/generate-release-notes.sh ${{ steps.version.outputs.tag }} "$PREVIOUS_TAG"
+
+          # Get commits since previous tag
+          if [ -z "$PREVIOUS_TAG" ]; then
+            COMMIT_COUNT=$(git rev-list --count HEAD)
+            if [ "$COMMIT_COUNT" -gt 20 ]; then
+              COMMITS=$(git log --oneline --pretty=format:"- %s" --no-merges HEAD~20..HEAD)
+            else
+              COMMITS=$(git log --oneline --pretty=format:"- %s" --no-merges)
+            fi
+          else
+            COMMITS=$(git log --oneline --pretty=format:"- %s" --no-merges "$PREVIOUS_TAG"..HEAD)
+          fi
+
+          cat > release_notes.md << NOTES_EOF
+          ## Install
+
+          \`\`\`bash
+          uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@${VERSION}
+          specify init my-project
+          \`\`\`
+
+          NOTES_EOF
+
+          echo "## What's Changed" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "$COMMITS" >> release_notes.md
 
       - name: Create GitHub Release
         if: steps.check_release.outputs.exists == 'false'
         run: |
-          chmod +x .github/workflows/scripts/create-github-release.sh
-          .github/workflows/scripts/create-github-release.sh ${{ steps.version.outputs.tag }}
+          VERSION="${{ steps.version.outputs.tag }}"
+          VERSION_NO_V=${VERSION#v}
+          gh release create "$VERSION" \
+            --title "Spec Kit - $VERSION_NO_V" \
+            --notes-file release_notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

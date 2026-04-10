@@ -25,6 +25,51 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
+_FALLBACK_CORE_COMMAND_NAMES = frozenset({
+    "analyze",
+    "checklist",
+    "clarify",
+    "constitution",
+    "implement",
+    "plan",
+    "specify",
+    "tasks",
+    "taskstoissues",
+})
+EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
+
+REINSTALL_COMMAND = "uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git"
+
+
+def _load_core_command_names() -> frozenset[str]:
+    """Discover bundled core command names from the packaged templates.
+
+    Prefer the wheel-time ``core_pack`` bundle when present, and fall back to
+    the source checkout when running from the repository. If neither is
+    available, use the baked-in fallback set so validation still works.
+    """
+    candidate_dirs = [
+        Path(__file__).parent / "core_pack" / "commands",
+        Path(__file__).resolve().parent.parent.parent / "templates" / "commands",
+    ]
+
+    for commands_dir in candidate_dirs:
+        if not commands_dir.is_dir():
+            continue
+
+        command_names = {
+            command_file.stem
+            for command_file in commands_dir.iterdir()
+            if command_file.is_file() and command_file.suffix == ".md"
+        }
+        if command_names:
+            return frozenset(command_names)
+
+    return _FALLBACK_CORE_COMMAND_NAMES
+
+
+CORE_COMMAND_NAMES = _load_core_command_names()
+
 
 class ExtensionError(Exception):
     """Base exception for extension-related errors."""
@@ -140,16 +185,45 @@ class ExtensionManifest:
 
         # Validate provides section
         provides = self.data["provides"]
-        if "commands" not in provides or not provides["commands"]:
-            raise ValidationError("Extension must provide at least one command")
+        commands = provides.get("commands", [])
+        hooks = self.data.get("hooks")
 
-        # Validate commands
-        for cmd in provides["commands"]:
+        if "commands" in provides and not isinstance(commands, list):
+            raise ValidationError(
+                "Invalid provides.commands: expected a list"
+            )
+        if "hooks" in self.data and not isinstance(hooks, dict):
+            raise ValidationError(
+                "Invalid hooks: expected a mapping"
+            )
+
+        has_commands = bool(commands)
+        has_hooks = bool(hooks)
+
+        if not has_commands and not has_hooks:
+            raise ValidationError(
+                "Extension must provide at least one command or hook"
+            )
+
+        # Validate hook values (if present)
+        if hooks:
+            for hook_name, hook_config in hooks.items():
+                if not isinstance(hook_config, dict):
+                    raise ValidationError(
+                        f"Invalid hook '{hook_name}': expected a mapping"
+                    )
+                if not hook_config.get("command"):
+                    raise ValidationError(
+                        f"Hook '{hook_name}' missing required 'command' field"
+                    )
+
+        # Validate commands (if present)
+        for cmd in commands:
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
 
             # Validate command name format
-            if not re.match(r'^speckit\.[a-z0-9-]+\.[a-z0-9-]+$', cmd["name"]):
+            if EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]) is None:
                 raise ValidationError(
                     f"Invalid command name '{cmd['name']}': "
                     "must follow pattern 'speckit.{extension}.{command}'"
@@ -183,7 +257,7 @@ class ExtensionManifest:
     @property
     def commands(self) -> List[Dict[str, Any]]:
         """Get list of provided commands."""
-        return self.data["provides"]["commands"]
+        return self.data.get("provides", {}).get("commands", [])
 
     @property
     def hooks(self) -> Dict[str, Any]:
@@ -447,6 +521,130 @@ class ExtensionManager:
         self.registry = ExtensionRegistry(self.extensions_dir)
 
     @staticmethod
+    def _collect_manifest_command_names(manifest: ExtensionManifest) -> Dict[str, str]:
+        """Collect command and alias names declared by a manifest.
+
+        Performs install-time validation for extension-specific constraints:
+        - primary commands must use the canonical `speckit.{extension}.{command}` shape
+        - primary commands must use this extension's namespace
+        - command namespaces must not shadow core commands
+        - duplicate command/alias names inside one manifest are rejected
+        - aliases are validated for type and uniqueness only (no pattern enforcement)
+
+        Args:
+            manifest: Parsed extension manifest
+
+        Returns:
+            Mapping of declared command/alias name -> kind ("command"/"alias")
+
+        Raises:
+            ValidationError: If any declared name is invalid
+        """
+        if manifest.id in CORE_COMMAND_NAMES:
+            raise ValidationError(
+                f"Extension ID '{manifest.id}' conflicts with core command namespace '{manifest.id}'"
+            )
+
+        declared_names: Dict[str, str] = {}
+
+        for cmd in manifest.commands:
+            primary_name = cmd["name"]
+            aliases = cmd.get("aliases", [])
+
+            if aliases is None:
+                aliases = []
+            if not isinstance(aliases, list):
+                raise ValidationError(
+                    f"Aliases for command '{primary_name}' must be a list"
+                )
+
+            for kind, name in [("command", primary_name)] + [
+                ("alias", alias) for alias in aliases
+            ]:
+                if not isinstance(name, str):
+                    raise ValidationError(
+                        f"{kind.capitalize()} for command '{primary_name}' must be a string"
+                    )
+
+                # Enforce canonical pattern only for primary command names;
+                # aliases are free-form to preserve community extension compat.
+                if kind == "command":
+                    match = EXTENSION_COMMAND_NAME_PATTERN.match(name)
+                    if match is None:
+                        raise ValidationError(
+                            f"Invalid {kind} '{name}': "
+                            "must follow pattern 'speckit.{extension}.{command}'"
+                        )
+
+                    namespace = match.group(1)
+                    if namespace != manifest.id:
+                        raise ValidationError(
+                            f"{kind.capitalize()} '{name}' must use extension namespace '{manifest.id}'"
+                        )
+
+                    if namespace in CORE_COMMAND_NAMES:
+                        raise ValidationError(
+                            f"{kind.capitalize()} '{name}' conflicts with core command namespace '{namespace}'"
+                        )
+
+                if name in declared_names:
+                    raise ValidationError(
+                        f"Duplicate command or alias '{name}' in extension manifest"
+                    )
+
+                declared_names[name] = kind
+
+        return declared_names
+
+    def _get_installed_command_name_map(
+        self,
+        exclude_extension_id: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """Return registered command and alias names for installed extensions."""
+        installed_names: Dict[str, str] = {}
+
+        for ext_id in self.registry.keys():
+            if ext_id == exclude_extension_id:
+                continue
+
+            manifest = self.get_extension(ext_id)
+            if manifest is None:
+                continue
+
+            for cmd in manifest.commands:
+                cmd_name = cmd.get("name")
+                if isinstance(cmd_name, str):
+                    installed_names.setdefault(cmd_name, ext_id)
+
+                aliases = cmd.get("aliases", [])
+                if not isinstance(aliases, list):
+                    continue
+
+                for alias in aliases:
+                    if isinstance(alias, str):
+                        installed_names.setdefault(alias, ext_id)
+
+        return installed_names
+
+    def _validate_install_conflicts(self, manifest: ExtensionManifest) -> None:
+        """Reject installs that would shadow core or installed extension commands."""
+        declared_names = self._collect_manifest_command_names(manifest)
+        installed_names = self._get_installed_command_name_map(
+            exclude_extension_id=manifest.id
+        )
+
+        collisions = [
+            f"{name} (already provided by extension '{installed_names[name]}')"
+            for name in sorted(declared_names)
+            if name in installed_names
+        ]
+        if collisions:
+            raise ValidationError(
+                "Extension commands conflict with installed extensions:\n- "
+                + "\n- ".join(collisions)
+            )
+
+    @staticmethod
     def _load_extensionignore(source_dir: Path) -> Optional[Callable[[str, List[str]], Set[str]]]:
         """Load .extensionignore and return an ignore function for shutil.copytree.
 
@@ -638,15 +836,12 @@ class ExtensionManager:
             original_desc = frontmatter.get("description", "")
             description = original_desc or f"Extension command: {cmd_name}"
 
-            frontmatter_data = {
-                "name": skill_name,
-                "description": description,
-                "compatibility": "Requires spec-kit project structure with .specify/ directory",
-                "metadata": {
-                    "author": "github-spec-kit",
-                    "source": f"extension:{manifest.id}",
-                },
-            }
+            frontmatter_data = registrar.build_skill_frontmatter(
+                selected_ai,
+                skill_name,
+                description,
+                f"extension:{manifest.id}",
+            )
             frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
 
             # Derive a human-friendly title from the command name
@@ -860,6 +1055,9 @@ class ExtensionManager:
                 f"Extension '{manifest.id}' is already installed. "
                 f"Use 'specify extension remove {manifest.id}' first."
             )
+
+        # Reject manifests that would shadow core commands or installed extensions.
+        self._validate_install_conflicts(manifest)
 
         # Install extension
         dest_dir = self.extensions_dir / manifest.id
@@ -1674,6 +1872,14 @@ class ExtensionCatalog:
         if not ext_info:
             raise ExtensionError(f"Extension '{extension_id}' not found in catalog")
 
+        # Bundled extensions without a download URL must be installed locally
+        if ext_info.get("bundled") and not ext_info.get("download_url"):
+            raise ExtensionError(
+                f"Extension '{extension_id}' is bundled with spec-kit and has no download URL. "
+                f"It should be installed from the local package. "
+                f"Try reinstalling: {REINSTALL_COMMAND}"
+            )
+
         download_url = ext_info.get("download_url")
         if not download_url:
             raise ExtensionError(f"Extension '{extension_id}' has no download URL")
@@ -1972,13 +2178,19 @@ class HookExecutor:
         init_options = self._load_init_options()
         selected_ai = init_options.get("ai")
         codex_skill_mode = selected_ai == "codex" and bool(init_options.get("ai_skills"))
+        claude_skill_mode = selected_ai == "claude" and bool(init_options.get("ai_skills"))
         kimi_skill_mode = selected_ai == "kimi"
+        cursor_skill_mode = selected_ai == "cursor-agent" and bool(init_options.get("ai_skills"))
 
         skill_name = self._skill_name_from_command(command_id)
         if codex_skill_mode and skill_name:
             return f"${skill_name}"
+        if claude_skill_mode and skill_name:
+            return f"/{skill_name}"
         if kimi_skill_mode and skill_name:
             return f"/skill:{skill_name}"
+        if cursor_skill_mode and skill_name:
+            return f"/{skill_name}"
 
         return f"/{command_id}"
 

@@ -1,0 +1,62 @@
+# Git Branching Workflow Extension Configuration
+# Copied to .specify/extensions/git/git-config.yml on install
+
+# Branch numbering strategy: "sequential" (001, 002, ...) or "timestamp" (YYYYMMDD-HHMMSS)
+branch_numbering: sequential
+
+# Commit message used by `git commit` during repository initialization
+init_commit_message: "[Spec Kit] Initial commit"
+
+# Auto-commit before/after core commands.
+# Set "default" to enable for all commands, then override per-command.
+# Each key can be true/false. Message is customizable per-command.
+auto_commit:
+  default: false
+  before_clarify:
+    enabled: false
+    message: "[Spec Kit] Save progress before clarification"
+  before_plan:
+    enabled: false
+    message: "[Spec Kit] Save progress before planning"
+  before_tasks:
+    enabled: false
+    message: "[Spec Kit] Save progress before task generation"
+  before_implement:
+    enabled: false
+    message: "[Spec Kit] Save progress before implementation"
+  before_checklist:
+    enabled: false
+    message: "[Spec Kit] Save progress before checklist"
+  before_analyze:
+    enabled: false
+    message: "[Spec Kit] Save progress before analysis"
+  before_taskstoissues:
+    enabled: false
+    message: "[Spec Kit] Save progress before issue sync"
+  after_constitution:
+    enabled: false
+    message: "[Spec Kit] Add project constitution"
+  after_specify:
+    enabled: false
+    message: "[Spec Kit] Add specification"
+  after_clarify:
+    enabled: false
+    message: "[Spec Kit] Clarify specification"
+  after_plan:
+    enabled: false
+    message: "[Spec Kit] Add implementation plan"
+  after_tasks:
+    enabled: false
+    message: "[Spec Kit] Add tasks"
+  after_implement:
+    enabled: false
+    message: "[Spec Kit] Implementation progress"
+  after_checklist:
+    enabled: false
+    message: "[Spec Kit] Add checklist"
+  after_analyze:
+    enabled: false
+    message: "[Spec Kit] Add analysis report"
+  after_taskstoissues:
+    enabled: false
+    message: "[Spec Kit] Sync tasks to issues"
