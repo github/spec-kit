@@ -1331,8 +1331,8 @@
       "id": "review",
       "description": "Post-implementation comprehensive code review with specialized agents for code quality, comments, tests, error handling, type design, and simplification.",
       "author": "ismaelJimenez",
-      "version": "1.0.0",
-      "download_url": "https://github.com/ismaelJimenez/spec-kit-review/archive/refs/tags/v1.0.0.zip",
+      "version": "1.0.1",
+      "download_url": "https://github.com/ismaelJimenez/spec-kit-review/archive/refs/tags/v1.0.1.zip",
       "repository": "https://github.com/ismaelJimenez/spec-kit-review",
       "homepage": "https://github.com/ismaelJimenez/spec-kit-review",
       "documentation": "https://github.com/ismaelJimenez/spec-kit-review/blob/main/README.md",
@@ -1358,7 +1358,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-06T00:00:00Z",
-      "updated_at": "2026-03-06T00:00:00Z"
+      "updated_at": "2026-04-09T00:00:00Z"
     },
     "security-review": {
       "name": "Security Review",
@@ -1516,6 +1516,36 @@
       "created_at": "2026-03-16T00:00:00Z",
       "updated_at": "2026-03-16T00:00:00Z"
     },
+    "status-report": {
+      "name": "Status Report",
+      "id": "status-report",
+      "description": "Project status, feature progress, and next-action recommendations for spec-driven workflows.",
+      "author": "Open-Agent-Tools",
+      "version": "1.2.5",
+      "download_url": "https://github.com/Open-Agent-Tools/spec-kit-status/archive/refs/tags/v1.2.5.zip",
+      "repository": "https://github.com/Open-Agent-Tools/spec-kit-status",
+      "homepage": "https://github.com/Open-Agent-Tools/spec-kit-status",
+      "documentation": "https://github.com/Open-Agent-Tools/spec-kit-status/blob/main/README.md",
+      "changelog": "https://github.com/Open-Agent-Tools/spec-kit-status/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "workflow",
+        "project-management",
+        "status"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-08T15:05:14Z",
+      "updated_at": "2026-04-08T15:05:14Z"
+    },
     "superb": {
       "name": "Superpowers Bridge",
       "id": "superb",
@@ -1660,8 +1690,8 @@
       "id": "verify",
       "description": "Post-implementation quality gate that validates implemented code against specification artifacts.",
       "author": "ismaelJimenez",
-      "version": "1.0.0",
-      "download_url": "https://github.com/ismaelJimenez/spec-kit-verify/archive/refs/tags/v1.0.0.zip",
+      "version": "1.0.3",
+      "download_url": "https://github.com/ismaelJimenez/spec-kit-verify/archive/refs/tags/v1.0.3.zip",
       "repository": "https://github.com/ismaelJimenez/spec-kit-verify",
       "homepage": "https://github.com/ismaelJimenez/spec-kit-verify",
       "documentation": "https://github.com/ismaelJimenez/spec-kit-verify/blob/main/README.md",
@@ -1685,7 +1715,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-03T00:00:00Z",
-      "updated_at": "2026-03-03T00:00:00Z"
+      "updated_at": "2026-04-09T00:00:00Z"
     },
     "verify-tasks": {
       "name": "Verify Tasks Extension",
