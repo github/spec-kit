@@ -27,6 +27,7 @@
 16. [Resolved Questions](#resolved-questions)
 17. [Open Questions (Remaining)](#open-questions-remaining)
 18. [Appendices](#appendices)
+19. [RFC Addenda](#rfc-addenda)
 
 ---
 
@@ -596,6 +597,8 @@ def convert_to_claude(
     # Write Claude command
     dest.write_text(render_frontmatter(frontmatter) + "\n" + body)
 ```
+
+> **See also:** [RFC-EXTENSION-BEHAVIOR-DEPLOYMENT.md](RFC-EXTENSION-BEHAVIOR-DEPLOYMENT.md) — addendum covering agent-neutral `behavior:` vocabulary, per-agent translation, `agents:` escape hatch, and deployment routing (`behavior.execution: agent` → `.claude/agents/`).
 
 ---
 
@@ -1960,3 +1963,13 @@ This RFC proposes a comprehensive extension system for Spec Kit that:
 3. Should we support extension dependencies (extension A requires extension B)?
 4. How should we handle extension deprecation/removal from catalog?
 5. What level of sandboxing/permissions do we need in v1.0?
+
+---
+
+## RFC Addenda
+
+Addenda extend this RFC with post-initial-implementation decisions. They are authoritative and supersede any conflicting content in the main RFC.
+
+| Addendum | Topic | Status |
+|---|---|---|
+| [RFC-EXTENSION-BEHAVIOR-DEPLOYMENT.md](RFC-EXTENSION-BEHAVIOR-DEPLOYMENT.md) | Agent-neutral `behavior:` vocabulary, deployment routing from `behavior.execution`, `agents:` escape hatch | Implemented (2026-04-08) |
