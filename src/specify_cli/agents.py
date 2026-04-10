@@ -245,6 +245,8 @@ class CommandRegistrar:
         from specify_cli.integrations.base import YamlIntegration
 
         title = frontmatter.get("title", "") or frontmatter.get("name", "")
+        if not isinstance(title, str):
+            title = str(title) if title is not None else ""
         if not title and cmd_name:
             title = YamlIntegration._human_title(cmd_name)
         if not title and source_id:
@@ -253,6 +255,8 @@ class CommandRegistrar:
             title = "Command"
 
         description = frontmatter.get("description", "")
+        if not isinstance(description, str):
+            description = str(description) if description is not None else ""
         return YamlIntegration._render_yaml(title, description, body, source_id)
 
     def render_skill_command(
