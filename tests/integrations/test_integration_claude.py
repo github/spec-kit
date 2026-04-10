@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import yaml
 
+from specify_cli import CONSTITUTION_REL_PATH
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from specify_cli.integrations.base import IntegrationBase
 from specify_cli.integrations.claude import ARGUMENT_HINTS
@@ -308,7 +309,7 @@ class TestClaudeMdCreation:
 
     def test_ensure_context_file_creates_claude_md_when_constitution_exists(self, tmp_path):
         integration = get_integration("claude")
-        constitution = tmp_path / ".specify" / "memory" / "constitution.md"
+        constitution = tmp_path / CONSTITUTION_REL_PATH
         constitution.parent.mkdir(parents=True, exist_ok=True)
         constitution.write_text("# Constitution\n", encoding="utf-8")
 
@@ -319,7 +320,7 @@ class TestClaudeMdCreation:
         assert claude_md.exists()
         assert created == claude_md
         content = claude_md.read_text(encoding="utf-8")
-        assert ".specify/memory/constitution.md" in content
+        assert CONSTITUTION_REL_PATH.as_posix() in content
         for section in EXPECTED_CLAUDE_MD_SECTIONS:
             assert section in content, f"missing section header: {section}"
         for command in EXPECTED_CLAUDE_MD_COMMANDS:
@@ -335,7 +336,7 @@ class TestClaudeMdCreation:
 
     def test_ensure_context_file_preserves_existing_claude_md(self, tmp_path):
         integration = get_integration("claude")
-        constitution = tmp_path / ".specify" / "memory" / "constitution.md"
+        constitution = tmp_path / CONSTITUTION_REL_PATH
         constitution.parent.mkdir(parents=True, exist_ok=True)
         constitution.write_text("# Constitution\n", encoding="utf-8")
 
@@ -381,14 +382,14 @@ class TestClaudeMdCreation:
         assert result.exit_code == 0, result.output
 
         # Constitution must have been created by the init flow (not pre-seeded)
-        constitution = project / ".specify" / "memory" / "constitution.md"
+        constitution = project / CONSTITUTION_REL_PATH
         assert constitution.exists(), "init did not create the constitution"
 
         # CLAUDE.md must exist and point at the constitution
         claude_md = project / "CLAUDE.md"
         assert claude_md.exists(), "init did not create CLAUDE.md"
         content = claude_md.read_text(encoding="utf-8")
-        assert ".specify/memory/constitution.md" in content
+        assert CONSTITUTION_REL_PATH.as_posix() in content
         for section in EXPECTED_CLAUDE_MD_SECTIONS:
             assert section in content, f"missing section header: {section}"
         for command in EXPECTED_CLAUDE_MD_COMMANDS:

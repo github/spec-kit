@@ -189,9 +189,7 @@ class ClaudeIntegration(SkillsIntegration):
             "If a spec is missing, incomplete, or conflicts with the constitution — stop and ask. "
             "Do not infer. Do not proceed.\n\n"
         )
-        context_file.write_text(content, encoding="utf-8")
-        self.record_file_in_manifest(context_file, project_root, manifest)
-        return context_file
+        return self.write_file_and_record(content, context_file, project_root, manifest)
 
     def setup(
         self,
