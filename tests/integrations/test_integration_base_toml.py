@@ -207,7 +207,7 @@ class TomlIntegrationTests:
         assert "---" not in parsed["prompt"]
 
     def test_toml_no_ambiguous_closing_quotes(self, tmp_path, monkeypatch):
-        """Multiline body ending with `"` must not produce `""" "` (#2113)." ""
+        """Multiline body ending with a double quote must not produce an ambiguous TOML multiline-string closing delimiter (#2113)."""
         i = get_integration(self.KEY)
         template = tmp_path / "sample.md"
         template.write_text(
