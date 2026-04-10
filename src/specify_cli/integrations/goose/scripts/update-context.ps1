@@ -20,4 +20,14 @@ if (-not $repoRoot -or -not (Test-Path (Join-Path $repoRoot '.specify'))) {
     }
 }
 
-& "$repoRoot/.specify/scripts/powershell/update-agent-context.ps1" -AgentType goose
+$sharedScript = "$repoRoot/.specify/scripts/powershell/update-agent-context.ps1"
+
+# Always delegate to the shared updater; fail clearly if it is unavailable.
+if (-not (Test-Path $sharedScript)) {
+    Write-Error "Error: shared agent context updater not found: $sharedScript"
+    Write-Error "Goose integration requires support in scripts/powershell/update-agent-context.ps1."
+    exit 1
+}
+
+& $sharedScript -AgentType goose
+exit $LASTEXITCODE
