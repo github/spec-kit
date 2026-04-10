@@ -2912,11 +2912,15 @@ class TestLeanPreset:
             assert tmpl_path.exists(), f"Missing command file: {tmpl['file']}"
 
     def test_lean_commands_have_no_scripts(self):
-        """Verify lean commands do not reference scripts (no git branching dependency)."""
+        """Verify lean commands have no scripts or agent_scripts in frontmatter."""
+        from specify_cli.agents import CommandRegistrar
+
         for name in LEAN_COMMAND_NAMES:
             cmd_path = LEAN_PRESET_DIR / "commands" / f"speckit.{name.split('.')[-1]}.md"
             content = cmd_path.read_text()
-            assert "scripts:" not in content, f"{name} should not have scripts frontmatter"
+            frontmatter, _ = CommandRegistrar.parse_frontmatter(content)
+            assert "scripts" not in frontmatter, f"{name} should not have scripts in frontmatter"
+            assert "agent_scripts" not in frontmatter, f"{name} should not have agent_scripts in frontmatter"
 
     def test_lean_commands_have_no_hooks(self):
         """Verify lean commands do not contain extension hook boilerplate."""
