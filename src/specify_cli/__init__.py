@@ -3103,6 +3103,19 @@ def extension_add(
                             manifest = manager.install_from_directory(bundled_path, speckit_version, priority=priority)
 
                     if bundled_path is None:
+                        # Bundled extensions must be installed from the local package
+                        if ext_info.get("bundled"):
+                            console.print(
+                                f"[red]Error:[/red] Extension '{ext_info['id']}' is bundled with spec-kit "
+                                f"but could not be found in the installed package."
+                            )
+                            console.print(
+                                "\nThis usually means the spec-kit installation is incomplete or corrupted."
+                            )
+                            console.print("Try reinstalling spec-kit:")
+                            console.print("  uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git")
+                            raise typer.Exit(1)
+
                         # Enforce install_allowed policy
                         if not ext_info.get("_install_allowed", True):
                             catalog_name = ext_info.get("_catalog_name", "community")

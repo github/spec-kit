@@ -1872,6 +1872,12 @@ class ExtensionCatalog:
 
         download_url = ext_info.get("download_url")
         if not download_url:
+            if ext_info.get("bundled"):
+                raise ExtensionError(
+                    f"Extension '{extension_id}' is bundled with spec-kit and cannot be downloaded. "
+                    f"It should be installed from the local package. "
+                    f"Try reinstalling: uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git"
+                )
             raise ExtensionError(f"Extension '{extension_id}' has no download URL")
 
         # Validate download URL requires HTTPS (prevent man-in-the-middle attacks)
