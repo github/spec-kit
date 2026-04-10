@@ -148,34 +148,44 @@ class ClaudeIntegration(SkillsIntegration):
             out.append(line)
         return "".join(out)
 
-    @staticmethod
-    def ensure_claude_md(project_root: Path) -> Path | None:
-        """Create a minimal root ``CLAUDE.md`` if missing.
+    @classmethod
+    def ensure_claude_md(cls, project_root: Path) -> Path | None:
+        """Create a minimal root context file (``CLAUDE.md``) if missing.
 
-        Claude Code expects ``CLAUDE.md`` at the project root; this file
-        acts as a bridge to ``.specify/memory/constitution.md``.
+        Claude Code expects ``context_file`` at the project root; this file
+        acts as a bridge to the constitution at ``CONSTITUTION_REL_PATH``.
         Returns the path if created, ``None`` otherwise.
         """
-        constitution = project_root / ".specify" / "memory" / "constitution.md"
-        claude_file = project_root / "CLAUDE.md"
-        if claude_file.exists() or not constitution.exists():
+        from specify_cli import CONSTITUTION_REL_PATH
+
+        if cls.context_file is None:
             return None
 
+        constitution = project_root / CONSTITUTION_REL_PATH
+        context_file = project_root / cls.context_file
+        if context_file.exists() or not constitution.exists():
+            return None
+
+        constitution_rel = CONSTITUTION_REL_PATH.as_posix()
         content = (
             "## Claude's Role\n"
-            "Read `.specify/memory/constitution.md` first. It is the authoritative source of truth for this project. "
+            f"Read `{constitution_rel}` first. It is the authoritative source of truth for this project. "
             "Everything in it is non-negotiable.\n\n"
             "## SpecKit Commands\n"
+            "- `/speckit.constitution` — establish or amend project principles\n"
             "- `/speckit.specify` — generate spec\n"
+            "- `/speckit.clarify` — ask structured de-risking questions (before `/speckit.plan`)\n"
             "- `/speckit.plan` — generate plan\n"
             "- `/speckit.tasks` — generate task list\n"
+            "- `/speckit.analyze` — cross-artifact consistency report (after `/speckit.tasks`)\n"
+            "- `/speckit.checklist` — generate quality checklists\n"
             "- `/speckit.implement` — execute plan\n\n"
             "## On Ambiguity\n"
             "If a spec is missing, incomplete, or conflicts with the constitution — stop and ask. "
             "Do not infer. Do not proceed.\n\n"
         )
-        claude_file.write_text(content, encoding="utf-8")
-        return claude_file
+        context_file.write_text(content, encoding="utf-8")
+        return context_file
 
     def setup(
         self,

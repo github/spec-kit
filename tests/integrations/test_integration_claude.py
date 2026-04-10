@@ -286,6 +286,23 @@ class TestClaudeIntegration:
         assert "speckit-research" in metadata.get("registered_skills", [])
 
 
+EXPECTED_CLAUDE_MD_COMMANDS = (
+    "/speckit.constitution",
+    "/speckit.specify",
+    "/speckit.clarify",
+    "/speckit.plan",
+    "/speckit.tasks",
+    "/speckit.analyze",
+    "/speckit.checklist",
+    "/speckit.implement",
+)
+EXPECTED_CLAUDE_MD_SECTIONS = (
+    "## Claude's Role",
+    "## SpecKit Commands",
+    "## On Ambiguity",
+)
+
+
 class TestClaudeMdCreation:
     """Verify that CLAUDE.md is created during setup when constitution exists."""
 
@@ -303,6 +320,10 @@ class TestClaudeMdCreation:
         content = claude_md.read_text(encoding="utf-8")
         assert ".specify/memory/constitution.md" in content
         assert claude_md in created
+        for section in EXPECTED_CLAUDE_MD_SECTIONS:
+            assert section in content, f"missing section header: {section}"
+        for command in EXPECTED_CLAUDE_MD_COMMANDS:
+            assert f"`{command}`" in content, f"missing command: {command}"
 
     def test_setup_skips_claude_md_when_constitution_missing(self, tmp_path):
         integration = get_integration("claude")
@@ -354,6 +375,10 @@ class TestClaudeMdCreation:
         assert claude_md.exists()
         content = claude_md.read_text(encoding="utf-8")
         assert ".specify/memory/constitution.md" in content
+        for section in EXPECTED_CLAUDE_MD_SECTIONS:
+            assert section in content, f"missing section header: {section}"
+        for command in EXPECTED_CLAUDE_MD_COMMANDS:
+            assert f"`{command}`" in content, f"missing command: {command}"
 
 
 class TestClaudeArgumentHints:
