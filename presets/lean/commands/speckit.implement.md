@@ -12,7 +12,7 @@ $ARGUMENTS
 
 1. Read `.specify/feature.json` to get the feature directory path.
 
-2. **Load context**: `constitution.md` and `spec.md` and `plan.md` and `tasks.md`.
+2. **Load context**: `.specify/memory/constitution.md` and `spec.md` and `plan.md` and `tasks.md`.
 
 3. **Execute tasks** phase by phase:
    - Complete each phase before moving to the next

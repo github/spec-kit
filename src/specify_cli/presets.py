@@ -1589,11 +1589,12 @@ class PresetCatalog:
 
         # Bundled presets without a download URL must be installed locally
         if pack_info.get("bundled") and not pack_info.get("download_url"):
+            from .extensions import REINSTALL_COMMAND
             raise PresetError(
                 f"Preset '{pack_id}' is bundled with spec-kit and has no download URL. "
                 f"It should be installed from the local package. "
                 f"Use 'specify preset add {pack_id}' to install from the bundled package, "
-                f"or reinstall spec-kit if the bundled files are missing."
+                f"or reinstall spec-kit if the bundled files are missing: {REINSTALL_COMMAND}"
             )
 
         if not pack_info.get("_install_allowed", True):
