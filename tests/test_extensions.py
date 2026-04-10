@@ -1408,6 +1408,44 @@ Agent __AGENT__
         assert "agents/control/commander.md" in content
         assert "templates/report.md" in content
 
+    def test_preset_skill_registration_does_not_rewrite_paths(self, project_dir, temp_dir):
+        """Preset source dirs (no extension.yml) must not have paths rewritten to .specify/extensions/..."""
+        import yaml
+
+        preset_dir = temp_dir / "my-preset"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        # Preset dirs may have a templates/ subdir — must not be rewritten.
+        (preset_dir / "templates").mkdir()
+        # No extension.yml — this is a preset, not an extension.
+        (preset_dir / "preset.yml").write_text("id: my-preset\n")
+
+        commands = [
+            {
+                "name": "speckit.my-preset.run",
+                "file": "commands/run.md",
+                "description": "Run",
+            }
+        ]
+        (preset_dir / "commands" / "run.md").write_text(
+            "---\ndescription: Run\n---\n\nSee templates/report.md for output format.\n"
+        )
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        AgentCommandRegistrar().register_commands_for_all_agents(
+            commands, "my-preset", preset_dir, project_dir
+        )
+
+        content = (skills_dir / "speckit-my-preset-run" / "SKILL.md").read_text()
+        # Paths must NOT be rewritten to extension-style locations.
+        assert ".specify/extensions/" not in content
+        # Original reference must remain intact.
+        assert "templates/report.md" in content
+
     def test_codex_skill_alias_frontmatter_matches_alias_name(self, project_dir, temp_dir):
         """Codex alias skills should render their own matching `name:` frontmatter."""
         import yaml
