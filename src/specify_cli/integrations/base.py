@@ -277,7 +277,7 @@ class IntegrationBase(ABC):
         2. Replace ``{SCRIPT}`` with the extracted script command
         3. Extract ``agent_scripts.<script_type>`` and replace ``{AGENT_SCRIPT}``
         4. Strip ``scripts:`` and ``agent_scripts:`` sections from frontmatter
-        5. Replace ``{ARGS}`` with *arg_placeholder*
+        5. Replace ``{ARGS}`` and ``$ARGUMENTS`` with *arg_placeholder*
         6. Replace ``__AGENT__`` with *agent_name*
         7. Rewrite paths: ``scripts/`` → ``.specify/scripts/`` etc.
         """
@@ -350,8 +350,9 @@ class IntegrationBase(ABC):
             output_lines.append(line)
         content = "".join(output_lines)
 
-        # 5. Replace {ARGS}
+        # 5. Replace {ARGS} and $ARGUMENTS
         content = content.replace("{ARGS}", arg_placeholder)
+        content = content.replace("$ARGUMENTS", arg_placeholder)
 
         # 6. Replace __AGENT__
         content = content.replace("__AGENT__", agent_name)
