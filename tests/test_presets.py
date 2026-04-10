@@ -2929,14 +2929,14 @@ class TestLeanPreset:
     def test_install_lean_preset(self, project_dir):
         """Test installing the lean preset from its directory."""
         manager = PresetManager(project_dir)
-        manifest = manager.install_from_directory(LEAN_PRESET_DIR, "0.1.5")
+        manifest = manager.install_from_directory(LEAN_PRESET_DIR, "0.6.0")
         assert manifest.id == "lean"
         assert manager.registry.is_installed("lean")
 
     def test_lean_overrides_commands(self, project_dir):
         """Test that lean preset overrides are resolved correctly."""
         manager = PresetManager(project_dir)
-        manager.install_from_directory(LEAN_PRESET_DIR, "0.1.5")
+        manager.install_from_directory(LEAN_PRESET_DIR, "0.6.0")
 
         resolver = PresetResolver(project_dir)
         for name in LEAN_COMMAND_NAMES:
@@ -2980,7 +2980,8 @@ class TestBundledPresetLocator:
         from specify_cli import app
 
         runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="0.6.0"):
             result = runner.invoke(app, ["preset", "add", "lean"])
 
         assert result.exit_code == 0, result.output
@@ -2999,24 +3000,15 @@ class TestBundledPresetLocator:
         """download_pack raises PresetError for bundled presets without download_url."""
         catalog = PresetCatalog(project_dir)
 
-        # Write a catalog with a bundled preset (no download_url)
-        cache_dir = project_dir / ".specify" / "presets" / ".cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
         catalog_data = {
-            "schema_version": "1.0",
-            "updated_at": "2026-01-01T00:00:00Z",
-            "presets": {
-                "test-bundled": {
-                    "name": "Test Bundled",
-                    "version": "1.0.0",
-                    "bundled": True,
-                }
+            "test-bundled": {
+                "name": "Test Bundled",
+                "version": "1.0.0",
+                "bundled": True,
             }
         }
-        # Use the catalog's internal cache mechanism
-        from unittest.mock import patch, MagicMock
-        with patch.object(catalog, "_get_merged_packs", return_value=catalog_data["presets"]):
+        from unittest.mock import patch
+        with patch.object(catalog, "_get_merged_packs", return_value=catalog_data):
             with pytest.raises(PresetError, match="bundled with spec-kit"):
                 catalog.download_pack("test-bundled")
 
@@ -3028,10 +3020,23 @@ class TestBundledPresetLocator:
 
         runner = CliRunner()
         # Patch _locate_bundled_preset to return None (simulating missing files)
-        # and provide a catalog that marks "lean" as bundled
+        # and mock the catalog to return a bundled entry for "lean"
+        fake_pack_info = {
+            "id": "lean",
+            "name": "Lean Workflow",
+            "version": "1.0.0",
+            "bundled": True,
+            "_install_allowed": True,
+        }
         with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("specify_cli._locate_bundled_preset", return_value=None):
+             patch("specify_cli._locate_bundled_preset", return_value=None), \
+             patch("specify_cli.presets.PresetCatalog") as MockCatalog:
+            MockCatalog.return_value.get_pack_info.return_value = fake_pack_info
             result = runner.invoke(app, ["preset", "add", "lean"])
 
-        # Should fail with a helpful error (either "not found" or "bundled...not found locally")
+        # Should fail with a helpful error explaining this is a bundled preset
+        # and suggesting how to recover.
         assert result.exit_code == 1
+        output = strip_ansi(result.output).lower()
+        assert "bundled" in output, result.output
+        assert "reinstall" in output, result.output
