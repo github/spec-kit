@@ -41,6 +41,8 @@ packages = ["src/specify_cli"]
 "scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
 # Bundled extensions (installable via `specify extension add <name>`)
 "extensions/git" = "specify_cli/core_pack/extensions/git"
+# Bundled presets (installable via `specify preset add <name>` or `specify init --preset <name>`)
+"presets/lean" = "specify_cli/core_pack/presets/lean"
 
 [project.optional-dependencies]
 test = [
