@@ -65,6 +65,7 @@ _TRANSLATIONS: dict[str, dict[str, dict[str, tuple[str | None, object]]]] = {
         "tools": {
             "none": ("allowed-tools", ""),
             "read-only": ("allowed-tools", "Read Grep Glob"),
+            "write": ("allowed-tools", "Read Write Edit Grep Glob"),
             "full": (None, None),
         },
         "invocation": {
