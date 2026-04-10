@@ -862,7 +862,11 @@ class YamlIntegration(IntegrationBase):
             raw = src_file.read_text(encoding="utf-8")
             fm = self._extract_frontmatter(raw)
             description = fm.get("description", "")
+            if not isinstance(description, str):
+                description = str(description) if description is not None else ""
             title = fm.get("title", "") or fm.get("name", "")
+            if not isinstance(title, str):
+                title = str(title) if title is not None else ""
             if not title:
                 title = self._human_title(src_file.stem)
 
