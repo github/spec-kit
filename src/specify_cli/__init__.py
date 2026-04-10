@@ -3001,7 +3001,7 @@ def extension_add(
     priority: int = typer.Option(10, "--priority", help="Resolution priority (lower = higher precedence, default 10)"),
 ):
     """Install an extension."""
-    from .extensions import ExtensionManager, ExtensionCatalog, ExtensionError, ValidationError, CompatibilityError
+    from .extensions import ExtensionManager, ExtensionCatalog, ExtensionError, ValidationError, CompatibilityError, REINSTALL_COMMAND
 
     project_root = Path.cwd()
 
@@ -3113,7 +3113,7 @@ def extension_add(
                                 "\nThis usually means the spec-kit installation is incomplete or corrupted."
                             )
                             console.print("Try reinstalling spec-kit:")
-                            console.print("  uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git")
+                            console.print(f"  {REINSTALL_COMMAND}")
                             raise typer.Exit(1)
 
                         # Enforce install_allowed policy
