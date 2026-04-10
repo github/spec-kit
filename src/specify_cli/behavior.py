@@ -36,7 +36,7 @@ BEHAVIOR_KEYS: frozenset[str] = frozenset({
     "execution",    # command | isolated | agent
     "capability",   # fast | balanced | strong
     "effort",       # low | medium | high | max
-    "tools",        # none | read-only | full
+    "tools",        # none | read-only | write | full | custom list (str or list[str])
     "invocation",   # explicit | automatic
     "visibility",   # user | model | both
 })
@@ -115,6 +115,23 @@ def translate_behavior(
     for key, value in behavior.items():
         if key not in BEHAVIOR_KEYS:
             continue
+
+        # tools: accept a list or a space-separated string of tool names as a
+        # custom literal, bypassing the preset lookup entirely.
+        if key == "tools" and agent_name == "claude":
+            if isinstance(value, list):
+                result["allowed-tools"] = " ".join(str(t) for t in value)
+                continue
+            preset = _TRANSLATIONS.get(agent_name, {}).get("tools", {}).get(str(value))
+            if preset is None:
+                # Unrecognised preset — treat as a literal tool list string
+                result["allowed-tools"] = str(value)
+                continue
+            fm_key, fm_value = preset
+            if fm_key is not None:
+                result[fm_key] = fm_value
+            continue
+
         key_table = agent_table.get(key, {})
         fm_key, fm_value = key_table.get(str(value), (None, None))
         if fm_key is not None:
