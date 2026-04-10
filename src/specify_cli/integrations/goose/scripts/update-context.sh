@@ -25,4 +25,14 @@ if [ -z "${REPO_ROOT:-}" ]; then
   fi
 fi
 
-exec "$REPO_ROOT/.specify/scripts/bash/update-agent-context.sh" goose
+shared_script="$REPO_ROOT/.specify/scripts/bash/update-agent-context.sh"
+
+# Always delegate to the shared updater; fail clearly if it is unavailable.
+if [ ! -x "$shared_script" ]; then
+  echo "Error: shared agent context updater not found or not executable:" >&2
+  echo "  $shared_script" >&2
+  echo "Goose integration requires support in scripts/bash/update-agent-context.sh." >&2
+  exit 1
+fi
+
+exec "$shared_script" goose
