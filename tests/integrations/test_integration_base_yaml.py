@@ -134,6 +134,12 @@ class YamlIntegrationTests:
         cmd_files = [f for f in created if "scripts" not in f.parts]
         has_args = any("{{args}}" in f.read_text(encoding="utf-8") for f in cmd_files)
         assert has_args, "No YAML recipe contains {{args}} placeholder"
+        has_dollar_args = any(
+            "$ARGUMENTS" in f.read_text(encoding="utf-8") for f in cmd_files
+        )
+        assert not has_dollar_args, (
+            "YAML recipe still contains $ARGUMENTS instead of {{args}}"
+        )
 
     def test_yaml_is_valid(self, tmp_path):
         """Every generated YAML file must parse without errors."""
