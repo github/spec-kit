@@ -1315,17 +1315,20 @@ def init(
                                 )
                                 console.print(f"Try reinstalling: {REINSTALL_COMMAND}")
                             else:
+                                zip_path = None
                                 try:
                                     zip_path = preset_catalog.download_pack(preset)
                                     preset_manager.install_from_zip(zip_path, speckit_ver)
-                                    # Clean up downloaded ZIP to avoid cache accumulation
-                                    try:
-                                        zip_path.unlink(missing_ok=True)
-                                    except OSError:
-                                        # Best-effort cleanup; failure to delete is non-fatal
-                                        pass
                                 except PresetError as preset_err:
                                     console.print(f"[yellow]Warning:[/yellow] Failed to install preset '{preset}': {preset_err}")
+                                finally:
+                                    if zip_path is not None:
+                                        # Clean up downloaded ZIP to avoid cache accumulation
+                                        try:
+                                            zip_path.unlink(missing_ok=True)
+                                        except OSError:
+                                            # Best-effort cleanup; failure to delete is non-fatal
+                                            pass
                 except Exception as preset_err:
                     console.print(f"[yellow]Warning:[/yellow] Failed to install preset: {preset_err}")
 
