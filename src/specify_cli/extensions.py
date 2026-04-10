@@ -38,6 +38,8 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset({
 })
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
 
+REINSTALL_COMMAND = "uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git"
+
 
 def _load_core_command_names() -> frozenset[str]:
     """Discover bundled core command names from the packaged templates.
@@ -1869,6 +1871,14 @@ class ExtensionCatalog:
         ext_info = self.get_extension_info(extension_id)
         if not ext_info:
             raise ExtensionError(f"Extension '{extension_id}' not found in catalog")
+
+        # Bundled extensions without a download URL must be installed locally
+        if ext_info.get("bundled") and not ext_info.get("download_url"):
+            raise ExtensionError(
+                f"Extension '{extension_id}' is bundled with spec-kit and has no download URL. "
+                f"It should be installed from the local package. "
+                f"Try reinstalling: {REINSTALL_COMMAND}"
+            )
 
         download_url = ext_info.get("download_url")
         if not download_url:

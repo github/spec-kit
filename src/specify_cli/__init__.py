@@ -3007,7 +3007,7 @@ def extension_add(
     priority: int = typer.Option(10, "--priority", help="Resolution priority (lower = higher precedence, default 10)"),
 ):
     """Install an extension."""
-    from .extensions import ExtensionManager, ExtensionCatalog, ExtensionError, ValidationError, CompatibilityError
+    from .extensions import ExtensionManager, ExtensionCatalog, ExtensionError, ValidationError, CompatibilityError, REINSTALL_COMMAND
 
     project_root = Path.cwd()
 
@@ -3109,6 +3109,19 @@ def extension_add(
                             manifest = manager.install_from_directory(bundled_path, speckit_version, priority=priority)
 
                     if bundled_path is None:
+                        # Bundled extensions without a download URL must come from the local package
+                        if ext_info.get("bundled") and not ext_info.get("download_url"):
+                            console.print(
+                                f"[red]Error:[/red] Extension '{ext_info['id']}' is bundled with spec-kit "
+                                f"but could not be found in the installed package."
+                            )
+                            console.print(
+                                "\nThis usually means the spec-kit installation is incomplete or corrupted."
+                            )
+                            console.print("Try reinstalling spec-kit:")
+                            console.print(f"  {REINSTALL_COMMAND}")
+                            raise typer.Exit(1)
+
                         # Enforce install_allowed policy
                         if not ext_info.get("_install_allowed", True):
                             catalog_name = ext_info.get("_catalog_name", "community")

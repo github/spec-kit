@@ -2995,6 +2995,122 @@ class TestExtensionAddCLI:
             f"but was called with '{download_called_with[0]}'"
         )
 
+    def test_add_bundled_extension_not_found_gives_clear_error(self, tmp_path):
+        """extension add should give a clear error when a bundled extension is not found locally."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        # Create project structure
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        # Mock catalog that returns a bundled extension without download_url
+        mock_catalog = MagicMock()
+        mock_catalog.get_extension_info.return_value = {
+            "id": "git",
+            "name": "Git Branching Workflow",
+            "version": "1.0.0",
+            "description": "Git branching extension",
+            "bundled": True,
+            "_install_allowed": True,
+        }
+        mock_catalog.search.return_value = []
+
+        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog), \
+             patch("specify_cli._locate_bundled_extension", return_value=None), \
+             patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "git"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code != 0
+        assert "bundled with spec-kit" in result.output
+        assert "reinstall" in result.output.lower()
+
+
+class TestDownloadExtensionBundled:
+    """Tests for download_extension handling of bundled extensions."""
+
+    def test_download_extension_raises_for_bundled(self, temp_dir):
+        """download_extension should raise a clear error for bundled extensions without a URL."""
+        from unittest.mock import patch
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        catalog = ExtensionCatalog(project_dir)
+
+        bundled_ext_info = {
+            "name": "Git Branching Workflow",
+            "id": "git",
+            "version": "1.0.0",
+            "description": "Git workflow",
+            "bundled": True,
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=bundled_ext_info):
+            with pytest.raises(ExtensionError, match="bundled with spec-kit"):
+                catalog.download_extension("git")
+
+    def test_download_extension_allows_bundled_with_url(self, temp_dir):
+        """download_extension should allow bundled extensions that have a download_url (newer version)."""
+        from unittest.mock import patch, MagicMock
+        import urllib.request
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        catalog = ExtensionCatalog(project_dir)
+
+        bundled_with_url = {
+            "name": "Git Branching Workflow",
+            "id": "git",
+            "version": "2.0.0",
+            "description": "Git workflow",
+            "bundled": True,
+            "download_url": "https://example.com/git-2.0.0.zip",
+        }
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"fake zip data"
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "get_extension_info", return_value=bundled_with_url), \
+             patch.object(urllib.request, "urlopen", return_value=mock_response):
+            result = catalog.download_extension("git")
+            assert result.name == "git-2.0.0.zip"
+
+    def test_download_extension_raises_no_url_for_non_bundled(self, temp_dir):
+        """download_extension should raise 'no download URL' for non-bundled extensions without URL."""
+        from unittest.mock import patch
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        catalog = ExtensionCatalog(project_dir)
+
+        non_bundled_ext_info = {
+            "name": "Some Extension",
+            "id": "some-ext",
+            "version": "1.0.0",
+            "description": "Test",
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=non_bundled_ext_info):
+            with pytest.raises(ExtensionError, match="has no download URL"):
+                catalog.download_extension("some-ext")
+
 
 class TestExtensionUpdateCLI:
     """CLI integration tests for extension update command."""
