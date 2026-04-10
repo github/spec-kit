@@ -89,6 +89,21 @@ class IntegrationBase(ABC):
         """Return options this integration accepts. Default: none."""
         return []
 
+    def ensure_context_file(
+        self,
+        project_root: Path,
+        manifest: "IntegrationManifest",
+    ) -> Path | None:
+        """Post-constitution hook: create the agent's root context file.
+
+        Called from ``init()`` after ``ensure_constitution_from_template``
+        has run, so the constitution is guaranteed to exist when this is
+        invoked. Default: no-op. Integrations that need a root file
+        (e.g. ``CLAUDE.md``) should override this. Returns the created
+        path (to be recorded in the manifest) or ``None``.
+        """
+        return None
+
     # -- Primitives — building blocks for setup() -------------------------
 
     def shared_commands_dir(self) -> Path | None:

@@ -148,21 +148,26 @@ class ClaudeIntegration(SkillsIntegration):
             out.append(line)
         return "".join(out)
 
-    @classmethod
-    def ensure_claude_md(cls, project_root: Path) -> Path | None:
-        """Create a minimal root context file (``CLAUDE.md``) if missing.
+    def ensure_context_file(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+    ) -> Path | None:
+        """Create a minimal root ``CLAUDE.md`` if missing.
 
-        Claude Code expects ``context_file`` at the project root; this file
-        acts as a bridge to the constitution at ``CONSTITUTION_REL_PATH``.
-        Returns the path if created, ``None`` otherwise.
+        Called from ``init()`` AFTER ``ensure_constitution_from_template``
+        so the constitution file is guaranteed to exist at this point.
+        This file acts as a bridge to the constitution at
+        ``CONSTITUTION_REL_PATH``. Returns the created path or ``None``
+        (existing file, or prerequisites not met).
         """
         from specify_cli import CONSTITUTION_REL_PATH
 
-        if cls.context_file is None:
+        if self.context_file is None:
             return None
 
         constitution = project_root / CONSTITUTION_REL_PATH
-        context_file = project_root / cls.context_file
+        context_file = project_root / self.context_file
         if context_file.exists() or not constitution.exists():
             return None
 
@@ -185,6 +190,7 @@ class ClaudeIntegration(SkillsIntegration):
             "Do not infer. Do not proceed.\n\n"
         )
         context_file.write_text(content, encoding="utf-8")
+        self.record_file_in_manifest(context_file, project_root, manifest)
         return context_file
 
     def setup(
@@ -194,14 +200,8 @@ class ClaudeIntegration(SkillsIntegration):
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
-        """Install Claude skills, create CLAUDE.md, then inject frontmatter flags and argument-hints."""
+        """Install Claude skills, then inject user-invocable, disable-model-invocation, and argument-hint."""
         created = super().setup(project_root, manifest, parsed_options, **opts)
-
-        # Create root CLAUDE.md pointing to the constitution
-        claude_md = self.ensure_claude_md(project_root)
-        if claude_md is not None:
-            created.append(claude_md)
-            self.record_file_in_manifest(claude_md, project_root, manifest)
 
         # Post-process generated skill files
         skills_dir = self.skills_dest(project_root).resolve()

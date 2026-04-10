@@ -304,35 +304,36 @@ EXPECTED_CLAUDE_MD_SECTIONS = (
 
 
 class TestClaudeMdCreation:
-    """Verify that CLAUDE.md is created during setup when constitution exists."""
+    """Verify that CLAUDE.md is created after the constitution is in place."""
 
-    def test_setup_creates_claude_md_when_constitution_exists(self, tmp_path):
+    def test_ensure_context_file_creates_claude_md_when_constitution_exists(self, tmp_path):
         integration = get_integration("claude")
         constitution = tmp_path / ".specify" / "memory" / "constitution.md"
         constitution.parent.mkdir(parents=True, exist_ok=True)
         constitution.write_text("# Constitution\n", encoding="utf-8")
 
         manifest = IntegrationManifest("claude", tmp_path)
-        created = integration.setup(tmp_path, manifest, script_type="sh")
+        created = integration.ensure_context_file(tmp_path, manifest)
 
         claude_md = tmp_path / "CLAUDE.md"
         assert claude_md.exists()
+        assert created == claude_md
         content = claude_md.read_text(encoding="utf-8")
         assert ".specify/memory/constitution.md" in content
-        assert claude_md in created
         for section in EXPECTED_CLAUDE_MD_SECTIONS:
             assert section in content, f"missing section header: {section}"
         for command in EXPECTED_CLAUDE_MD_COMMANDS:
             assert f"`{command}`" in content, f"missing command: {command}"
 
-    def test_setup_skips_claude_md_when_constitution_missing(self, tmp_path):
+    def test_ensure_context_file_skips_when_constitution_missing(self, tmp_path):
         integration = get_integration("claude")
         manifest = IntegrationManifest("claude", tmp_path)
-        integration.setup(tmp_path, manifest, script_type="sh")
+        result = integration.ensure_context_file(tmp_path, manifest)
 
+        assert result is None
         assert not (tmp_path / "CLAUDE.md").exists()
 
-    def test_setup_preserves_existing_claude_md(self, tmp_path):
+    def test_ensure_context_file_preserves_existing_claude_md(self, tmp_path):
         integration = get_integration("claude")
         constitution = tmp_path / ".specify" / "memory" / "constitution.md"
         constitution.parent.mkdir(parents=True, exist_ok=True)
@@ -342,21 +343,28 @@ class TestClaudeMdCreation:
         claude_md.write_text("# Custom content\n", encoding="utf-8")
 
         manifest = IntegrationManifest("claude", tmp_path)
-        integration.setup(tmp_path, manifest, script_type="sh")
+        result = integration.ensure_context_file(tmp_path, manifest)
 
+        assert result is None
         assert claude_md.read_text(encoding="utf-8") == "# Custom content\n"
 
-    def test_init_cli_creates_claude_md(self, tmp_path):
+    def test_setup_does_not_create_claude_md_without_constitution(self, tmp_path):
+        """``setup()`` alone must not create CLAUDE.md — that's the context-file hook's job,
+        and it only runs after the constitution exists."""
+        integration = get_integration("claude")
+        manifest = IntegrationManifest("claude", tmp_path)
+        integration.setup(tmp_path, manifest, script_type="sh")
+        assert not (tmp_path / "CLAUDE.md").exists()
+
+    def test_init_cli_creates_claude_md_on_fresh_project(self, tmp_path):
+        """End-to-end: a fresh ``specify init --ai claude`` must produce
+        BOTH the constitution AND CLAUDE.md, proving the init-flow ordering
+        is correct (context file created after constitution)."""
         from typer.testing import CliRunner
         from specify_cli import app
 
         project = tmp_path / "claude-md-test"
         project.mkdir()
-
-        # Pre-create constitution so ensure_claude_md has something to gate on
-        constitution = project / ".specify" / "memory" / "constitution.md"
-        constitution.parent.mkdir(parents=True, exist_ok=True)
-        constitution.write_text("# Constitution\n", encoding="utf-8")
 
         old_cwd = os.getcwd()
         try:
@@ -364,15 +372,21 @@ class TestClaudeMdCreation:
             runner = CliRunner()
             result = runner.invoke(
                 app,
-                ["init", "--here", "--force", "--ai", "claude", "--script", "sh", "--no-git", "--ignore-agent-tools"],
+                ["init", "--here", "--ai", "claude", "--script", "sh", "--no-git", "--ignore-agent-tools"],
                 catch_exceptions=False,
             )
         finally:
             os.chdir(old_cwd)
 
         assert result.exit_code == 0, result.output
+
+        # Constitution must have been created by the init flow (not pre-seeded)
+        constitution = project / ".specify" / "memory" / "constitution.md"
+        assert constitution.exists(), "init did not create the constitution"
+
+        # CLAUDE.md must exist and point at the constitution
         claude_md = project / "CLAUDE.md"
-        assert claude_md.exists()
+        assert claude_md.exists(), "init did not create CLAUDE.md"
         content = claude_md.read_text(encoding="utf-8")
         assert ".specify/memory/constitution.md" in content
         for section in EXPECTED_CLAUDE_MD_SECTIONS:

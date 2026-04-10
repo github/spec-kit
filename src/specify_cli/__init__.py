@@ -1191,6 +1191,12 @@ def init(
 
             ensure_constitution_from_template(project_path, tracker=tracker)
 
+            # Post-constitution hook: let the integration create its root
+            # context file (e.g. CLAUDE.md) now that the constitution exists.
+            context_file = resolved_integration.ensure_context_file(project_path, manifest)
+            if context_file is not None:
+                manifest.save()
+
             if not no_git:
                 tracker.start("git")
                 git_messages = []
