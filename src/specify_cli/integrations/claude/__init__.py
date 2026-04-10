@@ -155,11 +155,11 @@ class ClaudeIntegration(SkillsIntegration):
     ) -> Path | None:
         """Create a minimal root ``CLAUDE.md`` if missing.
 
-        Called from ``init()`` AFTER ``ensure_constitution_from_template``
-        so the constitution file is guaranteed to exist at this point.
-        This file acts as a bridge to the constitution at
-        ``CONSTITUTION_REL_PATH``. Returns the created path or ``None``
-        (existing file, or prerequisites not met).
+        Typically called from ``init()`` after
+        ``ensure_constitution_from_template``. This file acts as a bridge
+        to the constitution at ``CONSTITUTION_REL_PATH`` and is only
+        created if that constitution file exists. Returns the created
+        path or ``None`` (existing file, or prerequisites not met).
         """
         from specify_cli import CONSTITUTION_REL_PATH
 
