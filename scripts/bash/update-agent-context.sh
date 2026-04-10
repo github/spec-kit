@@ -30,12 +30,12 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Junie, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Tabnine CLI, Kiro CLI, Mistral Vibe, Kimi Code, Pi Coding Agent, iFlow CLI, Antigravity or Generic
+#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Junie, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Tabnine CLI, Kiro CLI, Mistral Vibe, Kimi Code, Pi Coding Agent, iFlow CLI, Forge, Antigravity or Generic
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|junie|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|iflow|generic
+# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|junie|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|iflow|forge|generic
 # Leave empty to update all existing agent files
 
 set -e
@@ -74,7 +74,7 @@ AUGGIE_FILE="$REPO_ROOT/.augment/rules/specify-rules.md"
 ROO_FILE="$REPO_ROOT/.roo/rules/specify-rules.md"
 CODEBUDDY_FILE="$REPO_ROOT/CODEBUDDY.md"
 QODER_FILE="$REPO_ROOT/QODER.md"
-# Amp, Kiro CLI, IBM Bob, and Pi all share AGENTS.md — use AGENTS_FILE to avoid
+# Amp, Kiro CLI, IBM Bob, Pi, and Forge all share AGENTS.md — use AGENTS_FILE to avoid
 # updating the same file multiple times.
 AMP_FILE="$AGENTS_FILE"
 SHAI_FILE="$REPO_ROOT/SHAI.md"
@@ -84,8 +84,9 @@ AGY_FILE="$REPO_ROOT/.agent/rules/specify-rules.md"
 BOB_FILE="$AGENTS_FILE"
 VIBE_FILE="$REPO_ROOT/.vibe/agents/specify-agents.md"
 KIMI_FILE="$REPO_ROOT/KIMI.md"
-TRAE_FILE="$REPO_ROOT/.trae/rules/AGENTS.md"
+TRAE_FILE="$REPO_ROOT/.trae/rules/project_rules.md"
 IFLOW_FILE="$REPO_ROOT/IFLOW.md"
+FORGE_FILE="$AGENTS_FILE"
 
 # Template file
 TEMPLATE_FILE="$REPO_ROOT/.specify/templates/agent-file-template.md"
@@ -116,13 +117,19 @@ log_warning() {
     echo "WARNING: $1" >&2
 }
 
+# Track temporary files for cleanup on interrupt
+_CLEANUP_FILES=()
+
 # Cleanup function for temporary files
 cleanup() {
     local exit_code=$?
     # Disarm traps to prevent re-entrant loop
     trap - EXIT INT TERM
-    rm -f /tmp/agent_update_*_$$
-    rm -f /tmp/manual_additions_$$
+    if [ ${#_CLEANUP_FILES[@]} -gt 0 ]; then
+        for f in "${_CLEANUP_FILES[@]}"; do
+            rm -f "$f" "$f.bak" "$f.tmp"
+        done
+    fi
     exit $exit_code
 }
 
@@ -267,7 +274,7 @@ get_commands_for_language() {
             echo "cargo test && cargo clippy"
             ;;
         *"JavaScript"*|*"TypeScript"*)
-            echo "npm test \\&\\& npm run lint"
+            echo "npm test && npm run lint"
             ;;
         *)
             echo "# Add commands for $lang"
@@ -280,10 +287,15 @@ get_language_conventions() {
     echo "$lang: Follow standard conventions"
 }
 
+# Escape sed replacement-side specials for | delimiter.
+# & and \ are replacement-side specials; | is our sed delimiter.
+_esc_sed() { printf '%s\n' "$1" | sed 's/[\\&|]/\\&/g'; }
+
 create_new_agent_file() {
     local target_file="$1"
     local temp_file="$2"
-    local project_name="$3"
+    local project_name
+    project_name=$(_esc_sed "$3")
     local current_date="$4"
     
     if [[ ! -f "$TEMPLATE_FILE" ]]; then
@@ -306,18 +318,19 @@ create_new_agent_file() {
     # Replace template placeholders
     local project_structure
     project_structure=$(get_project_structure "$NEW_PROJECT_TYPE")
+    project_structure=$(_esc_sed "$project_structure")
     
     local commands
     commands=$(get_commands_for_language "$NEW_LANG")
-    
+
     local language_conventions
     language_conventions=$(get_language_conventions "$NEW_LANG")
-    
-    # Perform substitutions with error checking using safer approach
-    # Escape special characters for sed by using a different delimiter or escaping
-    local escaped_lang=$(printf '%s\n' "$NEW_LANG" | sed 's/[\[\.*^$()+{}|]/\\&/g')
-    local escaped_framework=$(printf '%s\n' "$NEW_FRAMEWORK" | sed 's/[\[\.*^$()+{}|]/\\&/g')
-    local escaped_branch=$(printf '%s\n' "$CURRENT_BRANCH" | sed 's/[\[\.*^$()+{}|]/\\&/g')
+
+    local escaped_lang=$(_esc_sed "$NEW_LANG")
+    local escaped_framework=$(_esc_sed "$NEW_FRAMEWORK")
+    commands=$(_esc_sed "$commands")
+    language_conventions=$(_esc_sed "$language_conventions")
+    local escaped_branch=$(_esc_sed "$CURRENT_BRANCH")
     
     # Build technology stack and recent change strings conditionally
     local tech_stack
@@ -360,17 +373,18 @@ create_new_agent_file() {
         fi
     done
     
-    # Convert \n sequences to actual newlines
-    newline=$(printf '\n')
-    sed -i.bak2 "s/\\\\n/${newline}/g" "$temp_file"
+    # Convert literal \n sequences to actual newlines (portable — works on BSD + GNU)
+    awk '{gsub(/\\n/,"\n")}1' "$temp_file" > "$temp_file.tmp"
+    mv "$temp_file.tmp" "$temp_file"
 
-    # Clean up backup files
-    rm -f "$temp_file.bak" "$temp_file.bak2"
+    # Clean up backup files from sed -i.bak
+    rm -f "$temp_file.bak"
 
     # Prepend Cursor frontmatter for .mdc files so rules are auto-included
     if [[ "$target_file" == *.mdc ]]; then
         local frontmatter_file
         frontmatter_file=$(mktemp) || return 1
+        _CLEANUP_FILES+=("$frontmatter_file")
         printf '%s\n' "---" "description: Project Development Guidelines" "globs: [\"**/*\"]" "alwaysApply: true" "---" "" > "$frontmatter_file"
         cat "$temp_file" >> "$frontmatter_file"
         mv "$frontmatter_file" "$temp_file"
@@ -394,6 +408,7 @@ update_existing_agent_file() {
         log_error "Failed to create temporary file"
         return 1
     }
+    _CLEANUP_FILES+=("$temp_file")
     
     # Process the file in one pass
     local tech_stack=$(format_technology_stack "$NEW_LANG" "$NEW_FRAMEWORK")
@@ -518,6 +533,7 @@ update_existing_agent_file() {
         if ! head -1 "$temp_file" | grep -q '^---'; then
             local frontmatter_file
             frontmatter_file=$(mktemp) || { rm -f "$temp_file"; return 1; }
+            _CLEANUP_FILES+=("$frontmatter_file")
             printf '%s\n' "---" "description: Project Development Guidelines" "globs: [\"**/*\"]" "alwaysApply: true" "---" "" > "$frontmatter_file"
             cat "$temp_file" >> "$frontmatter_file"
             mv "$frontmatter_file" "$temp_file"
@@ -570,6 +586,7 @@ update_agent_file() {
             log_error "Failed to create temporary file"
             return 1
         }
+        _CLEANUP_FILES+=("$temp_file")
         
         if create_new_agent_file "$target_file" "$temp_file" "$project_name" "$current_date"; then
             if mv "$temp_file" "$target_file"; then
@@ -690,12 +707,15 @@ update_specific_agent() {
         iflow)
             update_agent_file "$IFLOW_FILE" "iFlow CLI" || return 1
             ;;
+        forge)
+            update_agent_file "$AGENTS_FILE" "Forge" || return 1
+            ;;
         generic)
             log_info "Generic agent: no predefined context file. Use the agent-specific update script for your agent."
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|junie|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|iflow|generic"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|junie|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|iflow|forge|generic"
             exit 1
             ;;
     esac
@@ -739,10 +759,7 @@ update_all_existing_agents() {
     _update_if_new "$COPILOT_FILE" "GitHub Copilot"        || _all_ok=false
     _update_if_new "$CURSOR_FILE" "Cursor IDE"             || _all_ok=false
     _update_if_new "$QWEN_FILE" "Qwen Code"                || _all_ok=false
-    _update_if_new "$AGENTS_FILE" "Codex/opencode"         || _all_ok=false
-    _update_if_new "$AMP_FILE" "Amp"                       || _all_ok=false
-    _update_if_new "$KIRO_FILE" "Kiro CLI"                 || _all_ok=false
-    _update_if_new "$BOB_FILE" "IBM Bob"                   || _all_ok=false
+    _update_if_new "$AGENTS_FILE" "Codex/opencode/Amp/Kiro/Bob/Pi/Forge" || _all_ok=false
     _update_if_new "$WINDSURF_FILE" "Windsurf"             || _all_ok=false
     _update_if_new "$JUNIE_FILE" "Junie"                || _all_ok=false
     _update_if_new "$KILOCODE_FILE" "Kilo Code"            || _all_ok=false
@@ -783,7 +800,7 @@ print_summary() {
     fi
     
     echo
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|junie|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|iflow|generic]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|junie|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|iflow|forge|generic]"
 }
 
 #==============================================================================
