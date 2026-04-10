@@ -97,6 +97,11 @@ SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".bin" / "claude"
 
+# Relative path (from project root) to the authoritative constitution file.
+# Shared by init-time scaffolding and integration-specific context-file
+# generation so the two cannot drift.
+CONSTITUTION_REL_PATH = Path(".specify") / "memory" / "constitution.md"
+
 BANNER = """
 ███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
 ██╔════╝██╔══██╗██╔════╝██╔════╝██║██╔════╝╚██╗ ██╔╝
@@ -778,7 +783,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
 
 def ensure_constitution_from_template(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Copy constitution template to memory if it doesn't exist (preserves existing constitution on reinitialization)."""
-    memory_constitution = project_path / ".specify" / "memory" / "constitution.md"
+    memory_constitution = project_path / CONSTITUTION_REL_PATH
     template_constitution = project_path / ".specify" / "templates" / "constitution-template.md"
 
     # If constitution already exists in memory, preserve it
@@ -1210,6 +1215,12 @@ def init(
             tracker.complete("shared-infra", f"scripts ({selected_script}) + templates")
 
             ensure_constitution_from_template(project_path, tracker=tracker)
+
+            # Post-constitution hook: let the integration create its root
+            # context file (e.g. CLAUDE.md) now that the constitution exists.
+            context_file = resolved_integration.ensure_context_file(project_path, manifest)
+            if context_file is not None:
+                manifest.save()
 
             if not no_git:
                 tracker.start("git")

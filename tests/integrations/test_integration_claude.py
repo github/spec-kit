@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import yaml
 
+from specify_cli import CONSTITUTION_REL_PATH
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from specify_cli.integrations.base import IntegrationBase
 from specify_cli.integrations.claude import ARGUMENT_HINTS
@@ -284,6 +285,115 @@ class TestClaudeIntegration:
 
         metadata = manager.registry.get("claude-skill-command")
         assert "speckit-research" in metadata.get("registered_skills", [])
+
+
+EXPECTED_CLAUDE_MD_COMMANDS = (
+    "/speckit.constitution",
+    "/speckit.specify",
+    "/speckit.clarify",
+    "/speckit.plan",
+    "/speckit.tasks",
+    "/speckit.analyze",
+    "/speckit.checklist",
+    "/speckit.implement",
+)
+EXPECTED_CLAUDE_MD_SECTIONS = (
+    "## Claude's Role",
+    "## SpecKit Commands",
+    "## On Ambiguity",
+)
+
+
+class TestClaudeMdCreation:
+    """Verify that CLAUDE.md is created after the constitution is in place."""
+
+    def test_ensure_context_file_creates_claude_md_when_constitution_exists(self, tmp_path):
+        integration = get_integration("claude")
+        constitution = tmp_path / CONSTITUTION_REL_PATH
+        constitution.parent.mkdir(parents=True, exist_ok=True)
+        constitution.write_text("# Constitution\n", encoding="utf-8")
+
+        manifest = IntegrationManifest("claude", tmp_path)
+        created = integration.ensure_context_file(tmp_path, manifest)
+
+        claude_md = tmp_path / "CLAUDE.md"
+        assert claude_md.exists()
+        assert created == claude_md
+        content = claude_md.read_text(encoding="utf-8")
+        assert CONSTITUTION_REL_PATH.as_posix() in content
+        for section in EXPECTED_CLAUDE_MD_SECTIONS:
+            assert section in content, f"missing section header: {section}"
+        for command in EXPECTED_CLAUDE_MD_COMMANDS:
+            assert f"`{command}`" in content, f"missing command: {command}"
+
+    def test_ensure_context_file_skips_when_constitution_missing(self, tmp_path):
+        integration = get_integration("claude")
+        manifest = IntegrationManifest("claude", tmp_path)
+        result = integration.ensure_context_file(tmp_path, manifest)
+
+        assert result is None
+        assert not (tmp_path / "CLAUDE.md").exists()
+
+    def test_ensure_context_file_preserves_existing_claude_md(self, tmp_path):
+        integration = get_integration("claude")
+        constitution = tmp_path / CONSTITUTION_REL_PATH
+        constitution.parent.mkdir(parents=True, exist_ok=True)
+        constitution.write_text("# Constitution\n", encoding="utf-8")
+
+        claude_md = tmp_path / "CLAUDE.md"
+        claude_md.write_text("# Custom content\n", encoding="utf-8")
+
+        manifest = IntegrationManifest("claude", tmp_path)
+        result = integration.ensure_context_file(tmp_path, manifest)
+
+        assert result is None
+        assert claude_md.read_text(encoding="utf-8") == "# Custom content\n"
+
+    def test_setup_does_not_create_claude_md_without_constitution(self, tmp_path):
+        """``setup()`` alone must not create CLAUDE.md — that's the context-file hook's job,
+        and it only runs after the constitution exists."""
+        integration = get_integration("claude")
+        manifest = IntegrationManifest("claude", tmp_path)
+        integration.setup(tmp_path, manifest, script_type="sh")
+        assert not (tmp_path / "CLAUDE.md").exists()
+
+    def test_init_cli_creates_claude_md_on_fresh_project(self, tmp_path):
+        """End-to-end: a fresh ``specify init --ai claude`` must produce
+        BOTH the constitution AND CLAUDE.md, proving the init-flow ordering
+        is correct (context file created after constitution)."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "claude-md-test"
+        project.mkdir()
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(
+                app,
+                ["init", "--here", "--ai", "claude", "--script", "sh", "--no-git", "--ignore-agent-tools"],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+
+        # Constitution must have been created by the init flow (not pre-seeded)
+        constitution = project / CONSTITUTION_REL_PATH
+        assert constitution.exists(), "init did not create the constitution"
+
+        # CLAUDE.md must exist and point at the constitution
+        claude_md = project / "CLAUDE.md"
+        assert claude_md.exists(), "init did not create CLAUDE.md"
+        content = claude_md.read_text(encoding="utf-8")
+        assert CONSTITUTION_REL_PATH.as_posix() in content
+        for section in EXPECTED_CLAUDE_MD_SECTIONS:
+            assert section in content, f"missing section header: {section}"
+        for command in EXPECTED_CLAUDE_MD_COMMANDS:
+            assert f"`{command}`" in content, f"missing command: {command}"
 
 
 class TestClaudeArgumentHints:
