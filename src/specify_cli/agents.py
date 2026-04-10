@@ -27,6 +27,7 @@ _SKILL_PASSTHROUGH_KEYS: dict[str, frozenset[str]] = {
         "model",                      # model override
         "effort",                     # effort level
         "allowed-tools",              # tool restriction list
+        "color",                      # UI color in Claude Code task list
         "paths",                      # path-based activation glob
         "argument-hint",              # UI hint in slash-command menu
         "disable-model-invocation",   # override default True
@@ -208,6 +209,10 @@ class CommandRegistrar:
             return text
 
         base_prefix = f".specify/extensions/{extension_id}/"
+
+        # Replace $EXTENSION_PATH shell variable with the actual installed path.
+        text = text.replace("$EXTENSION_PATH", base_prefix.rstrip("/"))
+
         for subdir in subdirs:
             escaped = re.escape(subdir)
             text = re.sub(
@@ -574,6 +579,13 @@ class CommandRegistrar:
 
             content = source_file.read_text(encoding="utf-8")
             frontmatter, body = self.parse_frontmatter(content)
+
+            # Merge manifest-level fields into frontmatter — source file wins.
+            # This lets extension.yml declare behavior/description for agent files
+            # that carry no frontmatter of their own (e.g. pure persona prompts).
+            for key in ("description", "behavior", "agents"):
+                if key in cmd_info and key not in frontmatter:
+                    frontmatter[key] = cmd_info[key]
 
             frontmatter = self._adjust_script_paths(frontmatter)
 

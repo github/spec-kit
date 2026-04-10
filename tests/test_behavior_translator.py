@@ -53,6 +53,23 @@ class TestTranslateBehavior:
         result = translate_behavior("copilot", {"execution": "agent"})
         assert result == {"mode": "agent"}
 
+    def test_tools_write_claude(self):
+        result = translate_behavior("claude", {"tools": "write"})
+        assert result == {"allowed-tools": "Read Write Edit Grep Glob"}
+
+    def test_color_passthrough_claude(self):
+        result = translate_behavior("claude", {"color": "blue"})
+        assert result == {"color": "blue"}
+
+    def test_color_any_value_passthrough_claude(self):
+        for color in ("red", "green", "yellow", "purple", "orange", "pink", "cyan"):
+            result = translate_behavior("claude", {"color": color})
+            assert result == {"color": color}
+
+    def test_color_ignored_for_non_claude_agents(self):
+        result = translate_behavior("copilot", {"color": "blue"})
+        assert "color" not in result
+
     def test_unknown_key_ignored(self):
         result = translate_behavior("claude", {"unknown-key": "value"})
         assert result == {}
