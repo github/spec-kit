@@ -12,6 +12,10 @@ class DoWhileStep(StepBase):
 
     Continues while condition is truthy.  ``max_iterations`` is
     required as a safety cap.
+
+    The first invocation always returns the nested steps for execution.
+    The ``condition`` field is stored in the output so the engine can
+    evaluate it after the body runs and decide whether to re-invoke.
     """
 
     type_key = "do-while"
@@ -19,12 +23,14 @@ class DoWhileStep(StepBase):
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         max_iterations = config.get("max_iterations", 10)
         nested_steps = config.get("steps", [])
+        condition = config.get("condition", "false")
 
-        # Always execute at least once
+        # Always execute body at least once; the engine layer evaluates
+        # `condition` after each iteration to decide whether to loop.
         return StepResult(
             status=StepStatus.COMPLETED,
             output={
-                "condition_result": True,
+                "condition": condition,
                 "max_iterations": max_iterations,
                 "loop_type": "do-while",
             },

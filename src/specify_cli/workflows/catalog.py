@@ -319,8 +319,18 @@ class WorkflowCatalog:
             except (json.JSONDecodeError, OSError):
                 pass
 
-        # Fetch from URL
+        # Fetch from URL — validate scheme before opening
+        from urllib.parse import urlparse
         from urllib.request import urlopen
+
+        parsed = urlparse(entry.url)
+        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        if parsed.scheme != "https" and not (
+            parsed.scheme == "http" and is_localhost
+        ):
+            raise WorkflowCatalogError(
+                f"Refusing to fetch catalog from non-HTTPS URL: {entry.url}"
+            )
 
         try:
             with urlopen(entry.url, timeout=30) as resp:  # noqa: S310

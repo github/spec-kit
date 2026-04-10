@@ -640,6 +640,7 @@ class TestDoWhileStep:
         result = step.execute(config, ctx)
         assert len(result.next_steps) == 1
         assert result.output["loop_type"] == "do-while"
+        assert result.output["condition"] == "{{ false }}"
 
 
 class TestFanOutStep:
