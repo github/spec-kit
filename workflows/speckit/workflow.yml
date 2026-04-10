@@ -1,0 +1,59 @@
+schema_version: "1.0"
+workflow:
+  id: "speckit"
+  name: "Full SDD Cycle"
+  version: "1.0.0"
+  author: "github"
+  description: "Runs specify → plan → tasks → implement with review gates"
+  integration: claude
+
+requires:
+  speckit_version: ">=0.15.0"
+  integrations:
+    any: ["claude", "gemini"]
+
+inputs:
+  feature_name:
+    type: string
+    required: true
+    prompt: "Feature name"
+  scope:
+    type: string
+    default: "full"
+    enum: ["full", "backend-only", "frontend-only"]
+
+steps:
+  - id: specify
+    command: speckit.specify
+    input:
+      args: "{{ inputs.feature_name }}"
+    output:
+      spec_file: "{{ result.file }}"
+
+  - id: review-spec
+    type: gate
+    message: "Review the generated spec before planning."
+    show_file: "{{ steps.specify.output.spec_file }}"
+    options: [approve, edit, reject]
+    on_reject: abort
+
+  - id: plan
+    command: speckit.plan
+    input:
+      args: "{{ steps.specify.output.spec_file }}"
+
+  - id: review-plan
+    type: gate
+    message: "Review the plan before generating tasks."
+    options: [approve, reject]
+    on_reject: abort
+
+  - id: tasks
+    command: speckit.tasks
+    input:
+      args: "{{ steps.plan.output.plan_file }}"
+
+  - id: implement
+    command: speckit.implement
+    input:
+      args: "{{ steps.tasks.output.task_file }}"
