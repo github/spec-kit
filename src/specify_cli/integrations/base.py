@@ -94,13 +94,15 @@ class IntegrationBase(ABC):
         project_root: Path,
         manifest: "IntegrationManifest",
     ) -> Path | None:
-        """Post-constitution hook: create the agent's root context file.
+        """Post-constitution-setup hook: create the agent's root context file.
 
         Called from ``init()`` after ``ensure_constitution_from_template``
-        has run, so the constitution is guaranteed to exist when this is
-        invoked. Default: no-op. Integrations that need a root file
-        (e.g. ``CLAUDE.md``) should override this. Returns the created
-        path (to be recorded in the manifest) or ``None``.
+        has run. Integrations that depend on the constitution should still
+        verify that it exists before using it, since the setup step may
+        complete without creating the file. Default: no-op. Integrations
+        that need a root file (e.g. ``CLAUDE.md``) should override this.
+        Returns the created path (to be recorded in the manifest) or
+        ``None``.
         """
         return None
 
