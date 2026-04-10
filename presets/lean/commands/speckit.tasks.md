@@ -1,5 +1,5 @@
 ---
-description: Create the tasks needed for implementation and store it in tasks.md.
+description: Create the tasks needed for implementation and store them in tasks.md.
 ---
 
 ## User Input
