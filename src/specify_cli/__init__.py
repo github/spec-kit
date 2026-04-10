@@ -4072,6 +4072,506 @@ def extension_set_priority(
     console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
 
 
+# ===== Workflow Commands =====
+
+workflow_app = typer.Typer(
+    name="workflow",
+    help="Manage and run automation workflows",
+    add_completion=False,
+)
+app.add_typer(workflow_app, name="workflow")
+
+workflow_catalog_app = typer.Typer(
+    name="catalog",
+    help="Manage workflow catalogs",
+    add_completion=False,
+)
+workflow_app.add_typer(workflow_catalog_app, name="catalog")
+
+
+@workflow_app.command("run")
+def workflow_run(
+    source: str = typer.Argument(..., help="Workflow ID or YAML file path"),
+    input_values: list[str] = typer.Option(
+        None, "--input", "-i", help="Input values as key=value pairs"
+    ),
+):
+    """Run a workflow from an installed ID or local YAML path."""
+    from .workflows.engine import WorkflowEngine
+
+    project_root = Path.cwd()
+    engine = WorkflowEngine(project_root)
+
+    try:
+        definition = engine.load_workflow(source)
+    except FileNotFoundError:
+        console.print(f"[red]Error:[/red] Workflow not found: {source}")
+        raise typer.Exit(1)
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] Invalid workflow: {exc}")
+        raise typer.Exit(1)
+
+    # Validate
+    errors = engine.validate(definition)
+    if errors:
+        console.print("[red]Workflow validation failed:[/red]")
+        for err in errors:
+            console.print(f"  • {err}")
+        raise typer.Exit(1)
+
+    # Parse inputs
+    inputs: dict[str, Any] = {}
+    if input_values:
+        for kv in input_values:
+            if "=" not in kv:
+                console.print(f"[red]Error:[/red] Invalid input format: {kv!r} (expected key=value)")
+                raise typer.Exit(1)
+            key, _, value = kv.partition("=")
+            inputs[key.strip()] = value.strip()
+
+    console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
+    console.print(f"[dim]Version: {definition.version}[/dim]\n")
+
+    try:
+        state = engine.execute(definition, inputs)
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+    except Exception as exc:
+        console.print(f"[red]Workflow failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+    status_colors = {
+        "completed": "green",
+        "paused": "yellow",
+        "failed": "red",
+        "aborted": "red",
+    }
+    color = status_colors.get(state.status.value, "white")
+    console.print(f"\n[{color}]Status: {state.status.value}[/{color}]")
+    console.print(f"[dim]Run ID: {state.run_id}[/dim]")
+
+    if state.status.value == "paused":
+        console.print(f"\nResume with: [cyan]specify workflow resume {state.run_id}[/cyan]")
+
+
+@workflow_app.command("resume")
+def workflow_resume(
+    run_id: str = typer.Argument(..., help="Run ID to resume"),
+):
+    """Resume a paused or failed workflow run."""
+    from .workflows.engine import WorkflowEngine
+
+    project_root = Path.cwd()
+    engine = WorkflowEngine(project_root)
+
+    try:
+        state = engine.resume(run_id)
+    except FileNotFoundError:
+        console.print(f"[red]Error:[/red] Run not found: {run_id}")
+        raise typer.Exit(1)
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+    except Exception as exc:
+        console.print(f"[red]Resume failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+    status_colors = {
+        "completed": "green",
+        "paused": "yellow",
+        "failed": "red",
+        "aborted": "red",
+    }
+    color = status_colors.get(state.status.value, "white")
+    console.print(f"\n[{color}]Status: {state.status.value}[/{color}]")
+
+
+@workflow_app.command("status")
+def workflow_status(
+    run_id: str = typer.Argument(None, help="Run ID to inspect (shows all if omitted)"),
+):
+    """Show workflow run status."""
+    from .workflows.engine import WorkflowEngine
+
+    project_root = Path.cwd()
+    engine = WorkflowEngine(project_root)
+
+    if run_id:
+        try:
+            from .workflows.engine import RunState
+            state = RunState.load(run_id, project_root)
+        except FileNotFoundError:
+            console.print(f"[red]Error:[/red] Run not found: {run_id}")
+            raise typer.Exit(1)
+
+        status_colors = {
+            "completed": "green",
+            "paused": "yellow",
+            "failed": "red",
+            "aborted": "red",
+            "running": "blue",
+            "created": "dim",
+        }
+        color = status_colors.get(state.status.value, "white")
+
+        console.print(f"\n[bold cyan]Workflow Run: {state.run_id}[/bold cyan]")
+        console.print(f"  Workflow: {state.workflow_id}")
+        console.print(f"  Status:   [{color}]{state.status.value}[/{color}]")
+        console.print(f"  Created:  {state.created_at}")
+        console.print(f"  Updated:  {state.updated_at}")
+
+        if state.current_step_id:
+            console.print(f"  Current:  {state.current_step_id}")
+
+        if state.step_results:
+            console.print(f"\n  [bold]Steps ({len(state.step_results)}):[/bold]")
+            for step_id, step_data in state.step_results.items():
+                s = step_data.get("status", "unknown")
+                sc = {"completed": "green", "failed": "red", "paused": "yellow"}.get(s, "white")
+                console.print(f"    [{sc}]●[/{sc}] {step_id}: {s}")
+    else:
+        runs = engine.list_runs()
+        if not runs:
+            console.print("[yellow]No workflow runs found.[/yellow]")
+            return
+
+        console.print("\n[bold cyan]Workflow Runs:[/bold cyan]\n")
+        for run_data in runs:
+            s = run_data.get("status", "unknown")
+            sc = {"completed": "green", "failed": "red", "paused": "yellow", "running": "blue"}.get(s, "white")
+            console.print(
+                f"  [{sc}]●[/{sc}] {run_data['run_id']}  "
+                f"{run_data.get('workflow_id', '?')}  "
+                f"[{sc}]{s}[/{sc}]  "
+                f"[dim]{run_data.get('updated_at', '?')}[/dim]"
+            )
+
+
+@workflow_app.command("list")
+def workflow_list():
+    """List installed workflows."""
+    from .workflows.catalog import WorkflowRegistry
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    registry = WorkflowRegistry(project_root)
+    installed = registry.list()
+
+    if not installed:
+        console.print("[yellow]No workflows installed.[/yellow]")
+        console.print("\nInstall a workflow with:")
+        console.print("  [cyan]specify workflow add <workflow-id>[/cyan]")
+        return
+
+    console.print("\n[bold cyan]Installed Workflows:[/bold cyan]\n")
+    for wf_id, wf_data in installed.items():
+        console.print(f"  [bold]{wf_data.get('name', wf_id)}[/bold] ({wf_id}) v{wf_data.get('version', '?')}")
+        desc = wf_data.get("description", "")
+        if desc:
+            console.print(f"    {desc}")
+        console.print()
+
+
+@workflow_app.command("add")
+def workflow_add(
+    source: str = typer.Argument(..., help="Workflow ID, URL, or local path"),
+):
+    """Install a workflow from catalog, URL, or local path."""
+    from .workflows.catalog import WorkflowCatalog, WorkflowRegistry, WorkflowCatalogError
+    from .workflows.engine import WorkflowDefinition
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    registry = WorkflowRegistry(project_root)
+    workflows_dir = project_root / ".specify" / "workflows"
+
+    # Try as a local file/directory
+    source_path = Path(source)
+    if source_path.exists():
+        if source_path.is_file() and source_path.suffix in (".yml", ".yaml"):
+            # Install from local YAML file
+            try:
+                definition = WorkflowDefinition.from_yaml(source_path)
+            except (ValueError, yaml.YAMLError) as exc:
+                console.print(f"[red]Error:[/red] Invalid workflow YAML: {exc}")
+                raise typer.Exit(1)
+
+            dest_dir = workflows_dir / definition.id
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            import shutil
+            shutil.copy2(source_path, dest_dir / "workflow.yml")
+
+            registry.add(definition.id, {
+                "name": definition.name,
+                "version": definition.version,
+                "description": definition.description,
+                "source": str(source_path),
+            })
+            console.print(f"[green]✓[/green] Workflow '{definition.name}' ({definition.id}) installed")
+            return
+        elif source_path.is_dir():
+            wf_file = source_path / "workflow.yml"
+            if not wf_file.exists():
+                console.print(f"[red]Error:[/red] No workflow.yml found in {source}")
+                raise typer.Exit(1)
+            try:
+                definition = WorkflowDefinition.from_yaml(wf_file)
+            except (ValueError, yaml.YAMLError) as exc:
+                console.print(f"[red]Error:[/red] Invalid workflow YAML: {exc}")
+                raise typer.Exit(1)
+
+            dest_dir = workflows_dir / definition.id
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            import shutil
+            shutil.copy2(wf_file, dest_dir / "workflow.yml")
+
+            registry.add(definition.id, {
+                "name": definition.name,
+                "version": definition.version,
+                "description": definition.description,
+                "source": str(source_path),
+            })
+            console.print(f"[green]✓[/green] Workflow '{definition.name}' ({definition.id}) installed")
+            return
+
+    # Try from catalog
+    catalog = WorkflowCatalog(project_root)
+    try:
+        info = catalog.get_workflow_info(source)
+    except WorkflowCatalogError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    if not info:
+        console.print(f"[red]Error:[/red] Workflow '{source}' not found in catalog")
+        raise typer.Exit(1)
+
+    if not info.get("_install_allowed", True):
+        console.print(f"[yellow]Warning:[/yellow] Workflow '{source}' is from a discovery-only catalog")
+        console.print("Direct installation is not enabled for this catalog source.")
+        raise typer.Exit(1)
+
+    # Register as available (actual download would happen from the URL)
+    registry.add(source, {
+        "name": info.get("name", source),
+        "version": info.get("version", "0.0.0"),
+        "description": info.get("description", ""),
+        "source": "catalog",
+        "catalog_name": info.get("_catalog_name", ""),
+    })
+    console.print(f"[green]✓[/green] Workflow '{info.get('name', source)}' registered from catalog")
+
+
+@workflow_app.command("remove")
+def workflow_remove(
+    workflow_id: str = typer.Argument(..., help="Workflow ID to uninstall"),
+):
+    """Uninstall a workflow."""
+    from .workflows.catalog import WorkflowRegistry
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    registry = WorkflowRegistry(project_root)
+
+    if not registry.is_installed(workflow_id):
+        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' is not installed")
+        raise typer.Exit(1)
+
+    # Remove workflow files
+    workflow_dir = project_root / ".specify" / "workflows" / workflow_id
+    if workflow_dir.exists():
+        import shutil
+        shutil.rmtree(workflow_dir)
+
+    registry.remove(workflow_id)
+    console.print(f"[green]✓[/green] Workflow '{workflow_id}' removed")
+
+
+@workflow_app.command("search")
+def workflow_search(
+    query: str = typer.Argument(None, help="Search query"),
+    tag: str = typer.Option(None, "--tag", help="Filter by tag"),
+):
+    """Search workflow catalogs."""
+    from .workflows.catalog import WorkflowCatalog, WorkflowCatalogError
+
+    project_root = Path.cwd()
+    catalog = WorkflowCatalog(project_root)
+
+    try:
+        results = catalog.search(query=query, tag=tag)
+    except WorkflowCatalogError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    if not results:
+        console.print("[yellow]No workflows found.[/yellow]")
+        return
+
+    console.print(f"\n[bold cyan]Workflows ({len(results)}):[/bold cyan]\n")
+    for wf in results:
+        console.print(f"  [bold]{wf.get('name', wf.get('id', '?'))}[/bold] ({wf.get('id', '?')}) v{wf.get('version', '?')}")
+        desc = wf.get("description", "")
+        if desc:
+            console.print(f"    {desc}")
+        tags = wf.get("tags", [])
+        if tags:
+            console.print(f"    [dim]Tags: {', '.join(tags)}[/dim]")
+        console.print()
+
+
+@workflow_app.command("info")
+def workflow_info(
+    workflow_id: str = typer.Argument(..., help="Workflow ID"),
+):
+    """Show workflow details and step graph."""
+    from .workflows.catalog import WorkflowCatalog, WorkflowRegistry, WorkflowCatalogError
+    from .workflows.engine import WorkflowEngine
+
+    project_root = Path.cwd()
+
+    # Check installed first
+    registry = WorkflowRegistry(project_root)
+    installed = registry.get(workflow_id)
+
+    engine = WorkflowEngine(project_root)
+
+    definition = None
+    try:
+        definition = engine.load_workflow(workflow_id)
+    except FileNotFoundError:
+        pass
+
+    if definition:
+        console.print(f"\n[bold cyan]{definition.name}[/bold cyan] ({definition.id})")
+        console.print(f"  Version:     {definition.version}")
+        if definition.author:
+            console.print(f"  Author:      {definition.author}")
+        if definition.description:
+            console.print(f"  Description: {definition.description}")
+        if definition.default_integration:
+            console.print(f"  Integration: {definition.default_integration}")
+        if installed:
+            console.print("  [green]Installed[/green]")
+
+        if definition.inputs:
+            console.print("\n  [bold]Inputs:[/bold]")
+            for name, inp in definition.inputs.items():
+                if isinstance(inp, dict):
+                    req = "required" if inp.get("required") else "optional"
+                    console.print(f"    {name} ({inp.get('type', 'string')}) — {req}")
+
+        if definition.steps:
+            console.print(f"\n  [bold]Steps ({len(definition.steps)}):[/bold]")
+            for step in definition.steps:
+                stype = step.get("type", "command")
+                console.print(f"    → {step.get('id', '?')} [{stype}]")
+        return
+
+    # Try catalog
+    catalog = WorkflowCatalog(project_root)
+    try:
+        info = catalog.get_workflow_info(workflow_id)
+    except WorkflowCatalogError:
+        info = None
+
+    if info:
+        console.print(f"\n[bold cyan]{info.get('name', workflow_id)}[/bold cyan] ({workflow_id})")
+        console.print(f"  Version:     {info.get('version', '?')}")
+        if info.get("description"):
+            console.print(f"  Description: {info['description']}")
+        if info.get("tags"):
+            console.print(f"  Tags:        {', '.join(info['tags'])}")
+        console.print("  [yellow]Not installed[/yellow]")
+    else:
+        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' not found")
+        raise typer.Exit(1)
+
+
+@workflow_catalog_app.command("list")
+def workflow_catalog_list():
+    """List configured workflow catalog sources."""
+    from .workflows.catalog import WorkflowCatalog, WorkflowCatalogError
+
+    project_root = Path.cwd()
+    catalog = WorkflowCatalog(project_root)
+
+    try:
+        configs = catalog.get_catalog_configs()
+    except WorkflowCatalogError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print("\n[bold cyan]Workflow Catalog Sources:[/bold cyan]\n")
+    for i, cfg in enumerate(configs):
+        install_status = "[green]install allowed[/green]" if cfg["install_allowed"] else "[yellow]discovery only[/yellow]"
+        console.print(f"  [{i}] [bold]{cfg['name']}[/bold] — {install_status}")
+        console.print(f"      {cfg['url']}")
+        if cfg.get("description"):
+            console.print(f"      [dim]{cfg['description']}[/dim]")
+        console.print()
+
+
+@workflow_catalog_app.command("add")
+def workflow_catalog_add(
+    url: str = typer.Argument(..., help="Catalog URL to add"),
+    name: str = typer.Option(None, "--name", help="Catalog name"),
+):
+    """Add a workflow catalog source."""
+    from .workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    catalog = WorkflowCatalog(project_root)
+    try:
+        catalog.add_catalog(url, name)
+    except WorkflowValidationError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓[/green] Catalog source added: {url}")
+
+
+@workflow_catalog_app.command("remove")
+def workflow_catalog_remove(
+    index: int = typer.Argument(..., help="Catalog index to remove (from 'catalog list')"),
+):
+    """Remove a workflow catalog source by index."""
+    from .workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    catalog = WorkflowCatalog(project_root)
+    try:
+        removed_name = catalog.remove_catalog(index)
+    except WorkflowValidationError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓[/green] Catalog source '{removed_name}' removed")
+
+
 def main():
     app()
 
