@@ -3190,8 +3190,10 @@ def extension_remove(
     # Get extension info for command and skill counts
     ext_manifest = manager.get_extension(extension_id)
     reg_meta = manager.registry.get(extension_id)
-    # Derive cmd_count from the registry's registered_commands (includes aliases,
-    # covers all agents) rather than from the manifest (primary commands only).
+    # Derive cmd_count from the registry's registered_commands (includes aliases)
+    # rather than from the manifest (primary commands only). Use max() across
+    # agents to get the per-agent count; sum() would double-count since users
+    # think in logical commands, not per-agent file counts.
     # Use get() without a default so we can distinguish "key missing" (fall back
     # to manifest) from "key present but empty dict" (zero commands registered).
     registered_commands = reg_meta.get("registered_commands") if isinstance(reg_meta, dict) else None
