@@ -3833,3 +3833,58 @@ class TestHookInvocationRendering:
         assert "Executing: `/<missing command>`" in message
         assert "EXECUTE_COMMAND: <missing command>" in message
         assert "EXECUTE_COMMAND_INVOCATION: /<missing command>" in message
+
+
+class TestExtensionRemoveCLI:
+    """CLI tests for `specify extension remove` confirmation prompt wording."""
+
+    def _install_ext(self, project_dir, ext_dir):
+        """Install extension and return the manager."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+        return manager
+
+    def test_remove_confirmation_singular_command(self, tmp_path, extension_dir):
+        """Confirmation prompt should say '1 command' (singular) when one command registered."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        manager = self._install_ext(project_dir, extension_dir)
+        # Inject registered_commands with 1 entry so cmd_count == 1
+        manager.registry.update("test-ext", {"registered_commands": {"claude": ["speckit.test-ext.hello"]}})
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["extension", "remove", "test-ext"], input="n\n", catch_exceptions=False
+            )
+
+        assert "1 command" in result.output
+        assert "1 commands" not in result.output
+
+    def test_remove_confirmation_plural_commands(self, tmp_path, extension_dir):
+        """Confirmation prompt should say '2 commands' (plural) when two commands registered."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        manager = self._install_ext(project_dir, extension_dir)
+        # Inject registered_commands with 2 entries so cmd_count == 2
+        manager.registry.update("test-ext", {"registered_commands": {"claude": ["speckit.test-ext.hello", "speckit.test-ext.run"]}})
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["extension", "remove", "test-ext"], input="n\n", catch_exceptions=False
+            )
+
+        assert "2 commands" in result.output
