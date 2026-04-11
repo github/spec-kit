@@ -372,3 +372,111 @@ class TestEndToEnd:
         # analyzer must NOT also be in skills dir
         skill_analyzer = project_root / ".claude" / "skills" / "speckit-revenge-analyzer" / "SKILL.md"
         assert not skill_analyzer.exists()
+
+
+class TestManifestBehaviorMerge:
+    """Manifest-level behavior: field is merged into source frontmatter before rendering."""
+
+    def _setup(self, tmp_path):
+        root = tmp_path / "proj"
+        (root / ".claude" / "skills").mkdir(parents=True)
+        (root / ".claude" / "agents").mkdir(parents=True)
+        (root / ".specify").mkdir()
+        (root / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "claude", "ai_skills": True, "script": "sh"})
+        )
+        src = tmp_path / "ext" / "commands"
+        src.mkdir(parents=True)
+        return root, src
+
+    def test_manifest_behavior_merged_when_source_has_no_behavior(self, tmp_path):
+        """behavior declared in manifest cmd_info reaches the rendered skill when source has none."""
+        root, src = self._setup(tmp_path)
+        # Source file has no behavior block (pure persona prompt with only description)
+        (src / "agent.md").write_text(dedent("""\
+            ---
+            description: A persona agent
+            ---
+            You are a helpful assistant.
+        """))
+        registrar = CommandRegistrar()
+        registrar.register_commands(
+            "claude",
+            [{
+                "name": "speckit.test-ext.agent",
+                "file": "agent.md",
+                "behavior": {"invocation": "automatic"},
+            }],
+            "test-ext", src, root,
+        )
+        skill_file = root / ".claude" / "skills" / "speckit-test-ext-agent" / "SKILL.md"
+        assert skill_file.exists()
+        fm = yaml.safe_load(skill_file.read_text().split("---")[1])
+        assert fm.get("disable-model-invocation") is False
+
+    def test_manifest_capability_merged_to_model(self, tmp_path):
+        """capability in manifest cmd_info produces correct model in the skill."""
+        root, src = self._setup(tmp_path)
+        (src / "cmd.md").write_text("---\ndescription: Strong cmd\n---\nBody")
+        registrar = CommandRegistrar()
+        registrar.register_commands(
+            "claude",
+            [{
+                "name": "speckit.test-ext.cmd",
+                "file": "cmd.md",
+                "behavior": {"capability": "strong"},
+            }],
+            "test-ext", src, root,
+        )
+        skill_file = root / ".claude" / "skills" / "speckit-test-ext-cmd" / "SKILL.md"
+        fm = yaml.safe_load(skill_file.read_text().split("---")[1])
+        assert fm.get("model") == "claude-opus-4-6"
+
+    def test_source_behavior_wins_over_manifest(self, tmp_path):
+        """When source file declares behavior, it takes precedence over manifest."""
+        root, src = self._setup(tmp_path)
+        (src / "cmd.md").write_text(dedent("""\
+            ---
+            description: Source wins
+            behavior:
+              invocation: explicit
+            ---
+            Body
+        """))
+        registrar = CommandRegistrar()
+        registrar.register_commands(
+            "claude",
+            [{
+                "name": "speckit.test-ext.cmd",
+                "file": "cmd.md",
+                # manifest says automatic, but source says explicit — source wins
+                "behavior": {"invocation": "automatic"},
+            }],
+            "test-ext", src, root,
+        )
+        skill_file = root / ".claude" / "skills" / "speckit-test-ext-cmd" / "SKILL.md"
+        fm = yaml.safe_load(skill_file.read_text().split("---")[1])
+        assert fm.get("disable-model-invocation") is True
+
+    def test_manifest_execution_agent_routes_to_agents_dir(self, tmp_path):
+        """execution:agent in manifest cmd_info routes a no-frontmatter file to .claude/agents/."""
+        root, src = self._setup(tmp_path)
+        # Pure persona prompt — no frontmatter at all
+        (src / "persona.md").write_text("You are a specialist agent. $ARGUMENTS")
+        registrar = CommandRegistrar()
+        registrar.register_commands(
+            "claude",
+            [{
+                "name": "speckit.test-ext.persona",
+                "file": "persona.md",
+                "description": "Specialist persona",
+                "behavior": {"execution": "agent", "capability": "balanced"},
+            }],
+            "test-ext", src, root,
+        )
+        agent_file = root / ".claude" / "agents" / "speckit-test-ext-persona.md"
+        skill_file = root / ".claude" / "skills" / "speckit-test-ext-persona" / "SKILL.md"
+        assert agent_file.exists()
+        assert not skill_file.exists()
+        fm = yaml.safe_load(agent_file.read_text().split("---")[1])
+        assert fm.get("model") == "claude-sonnet-4-6"   # capability: balanced
