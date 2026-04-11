@@ -646,6 +646,233 @@ def _locate_bundled_preset(preset_id: str) -> Path | None:
     return None
 
 
+def _looks_like_local_path(value: str) -> bool:
+    """Return True when *value* appears to be a filesystem path."""
+    return (
+        value.startswith((".", "~", os.sep))
+        or "/" in value
+        or "\\" in value
+    )
+
+
+def _is_url(value: str) -> bool:
+    """Return True when *value* is an HTTP(S) URL."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _validate_extension_url(url: str) -> None:
+    """Validate an extension download URL before fetching it."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+
+    if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+        from .extensions import ExtensionError
+
+        raise ExtensionError(
+            "Extension URLs must use HTTPS. HTTP is only allowed for localhost URLs."
+        )
+
+
+def _install_extension_archive(
+    manager: Any,
+    archive_path: Path,
+    speckit_version: str,
+    priority: int = 10,
+) -> Any:
+    """Install an extension from a ZIP or tar archive."""
+    import tarfile
+    from .extensions import ValidationError
+
+    if zipfile.is_zipfile(archive_path):
+        return manager.install_from_zip(
+            archive_path, speckit_version, priority=priority
+        )
+
+    if not tarfile.is_tarfile(archive_path):
+        raise ValidationError("Extension archive must be a ZIP, .tar.gz, or .tgz file")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        temp_path = Path(tmpdir)
+        temp_path_resolved = temp_path.resolve()
+
+        with tarfile.open(archive_path, "r:*") as tf:
+            for member in tf.getmembers():
+                if member.issym() or member.islnk():
+                    raise ValidationError(
+                        f"Unsafe link in TAR archive: {member.name}"
+                    )
+                member_path = (temp_path / member.name).resolve()
+                try:
+                    member_path.relative_to(temp_path_resolved)
+                except ValueError:
+                    raise ValidationError(
+                        f"Unsafe path in TAR archive: {member.name} "
+                        "(potential path traversal)"
+                    ) from None
+
+            tf.extractall(temp_path)
+
+        extension_dir = temp_path
+        manifest_path = extension_dir / "extension.yml"
+        if not manifest_path.exists():
+            subdirs = [d for d in temp_path.iterdir() if d.is_dir()]
+            if len(subdirs) == 1:
+                extension_dir = subdirs[0]
+                manifest_path = extension_dir / "extension.yml"
+
+        if not manifest_path.exists():
+            raise ValidationError("No extension.yml found in archive")
+
+        return manager.install_from_directory(
+            extension_dir, speckit_version, priority=priority
+        )
+
+
+def _download_and_install_extension_url(
+    manager: Any,
+    project_path: Path,
+    source_url: str,
+    speckit_version: str,
+    priority: int = 10,
+) -> Any:
+    """Download and install an extension archive from a validated URL."""
+    import urllib.error
+    import urllib.request
+    from urllib.parse import urlparse
+    from .extensions import ExtensionError
+
+    _validate_extension_url(source_url)
+
+    download_dir = project_path / ".specify" / "extensions" / ".cache" / "downloads"
+    download_dir.mkdir(parents=True, exist_ok=True)
+
+    url_path = urlparse(source_url).path
+    if url_path.endswith(".tar.gz"):
+        suffix = ".tar.gz"
+    elif url_path.endswith(".tgz"):
+        suffix = ".tgz"
+    else:
+        suffix = Path(url_path).suffix or ".zip"
+
+    archive_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="init-extension-",
+            suffix=suffix,
+            dir=download_dir,
+            delete=False,
+        ) as fh:
+            archive_path = Path(fh.name)
+
+        console.print("[yellow]Warning:[/yellow] Installing extension from external URL.")
+        console.print("Only install extensions from sources you trust.")
+        console.print(f"Downloading from {source_url}...")
+
+        try:
+            with urllib.request.urlopen(source_url, timeout=60) as response:
+                archive_path.write_bytes(response.read())
+        except urllib.error.URLError as exc:
+            raise ExtensionError(
+                f"Failed to download extension from {source_url}: {exc}"
+            ) from exc
+
+        return _install_extension_archive(
+            manager, archive_path, speckit_version, priority=priority
+        )
+    finally:
+        if archive_path and archive_path.exists():
+            archive_path.unlink()
+
+
+def _install_extension_for_init(
+    project_path: Path,
+    source: str,
+    speckit_version: str,
+    priority: int = 10,
+) -> Any:
+    """Install an init-time extension from a name, local path, or URL."""
+    from .extensions import (
+        ExtensionCatalog,
+        ExtensionError,
+        ExtensionManager,
+        REINSTALL_COMMAND,
+    )
+
+    manager = ExtensionManager(project_path)
+
+    if priority < 1:
+        raise ExtensionError("Priority must be a positive integer (1 or higher)")
+
+    if _is_url(source):
+        return _download_and_install_extension_url(
+            manager, project_path, source, speckit_version, priority=priority
+        )
+
+    source_path = Path(source).expanduser()
+    if source_path.exists():
+        source_path = source_path.resolve()
+        if not source_path.is_dir():
+            raise ExtensionError(f"Extension path is not a directory: {source_path}")
+        if not (source_path / "extension.yml").exists():
+            raise ExtensionError(f"No extension.yml found in {source_path}")
+        return manager.install_from_directory(
+            source_path, speckit_version, priority=priority
+        )
+
+    if _looks_like_local_path(source):
+        raise ExtensionError(f"Extension path not found: {source_path}")
+
+    bundled_path = _locate_bundled_extension(source)
+    if bundled_path is not None:
+        return manager.install_from_directory(
+            bundled_path, speckit_version, priority=priority
+        )
+
+    catalog = ExtensionCatalog(project_path)
+    ext_info, catalog_error = _resolve_catalog_extension(source, catalog, "add")
+    if catalog_error:
+        raise ExtensionError(f"Could not query extension catalog: {catalog_error}")
+    if not ext_info:
+        raise ExtensionError(
+            f"Extension '{source}' not found in catalog. "
+            "Run 'specify extension search' to browse available extensions."
+        )
+
+    resolved_id = ext_info["id"]
+    if resolved_id != source:
+        bundled_path = _locate_bundled_extension(resolved_id)
+        if bundled_path is not None:
+            return manager.install_from_directory(
+                bundled_path, speckit_version, priority=priority
+            )
+
+    if ext_info.get("bundled") and not ext_info.get("download_url"):
+        raise ExtensionError(
+            f"Extension '{resolved_id}' is bundled with spec-kit but could not "
+            "be found in the installed package. This usually means the spec-kit "
+            f"installation is incomplete or corrupted. Try reinstalling: {REINSTALL_COMMAND}"
+        )
+
+    if not ext_info.get("_install_allowed", True):
+        catalog_name = ext_info.get("_catalog_name", "community")
+        raise ExtensionError(
+            f"'{source}' is available in the '{catalog_name}' catalog but "
+            "installation is not allowed from that catalog."
+        )
+
+    zip_path = catalog.download_extension(resolved_id)
+    try:
+        return manager.install_from_zip(zip_path, speckit_version, priority=priority)
+    finally:
+        if zip_path.exists():
+            zip_path.unlink()
+
+
 def _install_shared_infra(
     project_path: Path,
     script_type: str,
@@ -873,19 +1100,20 @@ SKILL_DESCRIPTIONS = {
 @app.command()
 def init(
     project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
-    ai_assistant: str = typer.Option(None, "--ai", help=AI_ASSISTANT_HELP),
-    ai_commands_dir: str = typer.Option(None, "--ai-commands-dir", help="Directory for agent command files (required with --ai generic, e.g. .myagent/commands/)"),
+    ai_assistant: str = typer.Option(None, "--ai", help=f"Deprecated; use --integration. {AI_ASSISTANT_HELP}"),
+    ai_commands_dir: str = typer.Option(None, "--ai-commands-dir", help='Deprecated; use --integration generic --integration-options="--commands-dir <dir>".'),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
     ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
-    no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
+    no_git: bool = typer.Option(False, "--no-git", help="Deprecated; skip git repository initialization and default git-extension installation"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
     force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
     skip_tls: bool = typer.Option(False, "--skip-tls", help="Deprecated (no-op). Previously: skip SSL/TLS verification.", hidden=True),
     debug: bool = typer.Option(False, "--debug", help="Deprecated (no-op). Previously: show verbose diagnostic output.", hidden=True),
     github_token: str = typer.Option(None, "--github-token", help="Deprecated (no-op). Previously: GitHub token for API requests.", hidden=True),
-    ai_skills: bool = typer.Option(False, "--ai-skills", help="Install Prompt.MD templates as agent skills (requires --ai)"),
+    ai_skills: bool = typer.Option(False, "--ai-skills", help="Deprecated; skills are selected by the integration"),
     offline: bool = typer.Option(False, "--offline", help="Deprecated (no-op). All scaffolding now uses bundled assets.", hidden=True),
     preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
+    extensions: Optional[list[str]] = typer.Option(None, "--extension", help="Install an extension during initialization (repeatable; accepts bundled IDs, local paths, or archive URLs)"),
     branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, …, 1000, … — expands past 999 automatically) or 'timestamp' (YYYYMMDD-HHMMSS)"),
     integration: str = typer.Option(None, "--integration", help="Use the new integration system (e.g. --integration copilot). Mutually exclusive with --ai."),
     integration_options: str = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
@@ -893,45 +1121,40 @@ def init(
     """
     Initialize a new Specify project.
 
-    By default, project files are downloaded from the latest GitHub release.
-    Use --offline to scaffold from assets bundled inside the specify-cli
-    package instead (no internet access required, ideal for air-gapped or
-    enterprise environments).
-
-    NOTE: Starting with v0.6.0, bundled assets will be used by default and
-    the --offline flag will be removed. The GitHub download path will be
-    retired because bundled assets eliminate the need for network access,
-    avoid proxy/firewall issues, and guarantee that templates always match
-    the installed CLI version.
+    Project files are scaffolded from assets bundled inside the specify-cli
+    package, so initialization does not need release ZIP downloads.
 
     This command will:
     1. Check that required tools are installed (git is optional)
     2. Let you choose your AI assistant
-    3. Download template from GitHub (or use bundled assets with --offline)
+    3. Install the selected integration and shared Spec Kit assets
     4. Initialize a fresh git repository (if not --no-git and no existing repo)
-    5. Optionally set up AI assistant commands
+    5. Optionally install presets and extensions
 
     Examples:
         specify init my-project
-        specify init my-project --ai claude
-        specify init my-project --ai copilot --no-git
+        specify init my-project --integration claude
+        specify init my-project --integration copilot --no-git
         specify init --ignore-agent-tools my-project
-        specify init . --ai claude         # Initialize in current directory
+        specify init . --integration claude         # Initialize in current directory
         specify init .                     # Initialize in current directory (interactive AI selection)
-        specify init --here --ai claude    # Alternative syntax for current directory
-        specify init --here --ai codex --ai-skills
-        specify init --here --ai codebuddy
-        specify init --here --ai vibe      # Initialize with Mistral Vibe support
+        specify init --here --integration claude    # Alternative syntax for current directory
+        specify init --here --integration codex
+        specify init --here --integration codebuddy
+        specify init --here --integration vibe      # Initialize with Mistral Vibe support
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
-        specify init my-project --ai claude   # Claude installs skills by default
-        specify init --here --ai gemini --ai-skills
-        specify init my-project --ai generic --ai-commands-dir .myagent/commands/  # Unsupported agent
+        specify init my-project --integration claude   # Claude installs skills by default
+        specify init --here --integration gemini
+        specify init my-project --integration generic --integration-options="--commands-dir .myagent/commands/"  # Unsupported agent
         specify init my-project --offline  # Use bundled assets (no network access)
-        specify init my-project --ai claude --preset healthcare-compliance  # With preset
+        specify init my-project --integration claude --preset healthcare-compliance  # With preset
+        specify init my-project --integration copilot --extension git  # With extension
     """
 
     show_banner()
+    used_ai_flag = ai_assistant is not None
+    init_extensions = list(dict.fromkeys(extensions or []))
 
     # Detect when option values are likely misinterpreted flags (parameter ordering issue)
     if ai_assistant and ai_assistant.startswith("--"):
@@ -954,6 +1177,18 @@ def init(
     if integration and ai_assistant:
         console.print("[red]Error:[/red] --integration and --ai are mutually exclusive")
         raise typer.Exit(1)
+
+    if used_ai_flag and ai_assistant:
+        console.print(
+            "[yellow]Warning:[/yellow] --ai is deprecated and will be removed in v1.0.0. "
+            f"Use --integration {ai_assistant} instead."
+        )
+
+    if no_git:
+        console.print(
+            "[yellow]Warning:[/yellow] --no-git is deprecated and will be removed in v1.0.0. "
+            "The git extension will no longer be enabled by default; use --extension git to opt in."
+        )
 
     # Resolve the integration — either from --integration or --ai
     from .integrations import INTEGRATION_REGISTRY, get_integration
@@ -1155,13 +1390,20 @@ def init(
     tracker.add("integration", "Install integration")
     tracker.add("shared-infra", "Install shared infrastructure")
 
-    for key, label in [
+    init_steps = [
         ("chmod", "Ensure scripts executable"),
         ("constitution", "Constitution setup"),
+    ]
+    if init_extensions:
+        init_steps.append(("extensions", "Install requested extensions"))
+    init_steps.extend([
         ("git", "Install git extension"),
         ("final", "Finalize"),
-    ]:
+    ])
+    for key, label in init_steps:
         tracker.add(key, label)
+
+    git_default_notice = False
 
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
@@ -1211,6 +1453,44 @@ def init(
 
             ensure_constitution_from_template(project_path, tracker=tracker)
 
+            # Persist the CLI options so later operations (e.g. extension/preset
+            # add) can adapt their behaviour without re-scanning the filesystem.
+            # Must be saved BEFORE extension/preset install so skills-aware
+            # registration can read the selected integration.
+            init_opts = {
+                "ai": selected_ai,
+                "integration": resolved_integration.key,
+                "branch_numbering": branch_numbering or "sequential",
+                "here": here,
+                "preset": preset,
+                "extensions": init_extensions,
+                "script": selected_script,
+                "speckit_version": get_speckit_version(),
+            }
+            # Ensure ai_skills is set for SkillsIntegration so downstream
+            # tools (extensions, presets) emit SKILL.md overrides correctly.
+            from .integrations.base import SkillsIntegration as _SkillsPersist
+            if isinstance(resolved_integration, _SkillsPersist):
+                init_opts["ai_skills"] = True
+            save_init_options(project_path, init_opts)
+
+            if init_extensions:
+                tracker.start("extensions")
+                installed_extensions = []
+                try:
+                    for extension_source in init_extensions:
+                        manifest = _install_extension_for_init(
+                            project_path,
+                            extension_source,
+                            get_speckit_version(),
+                        )
+                        installed_extensions.append(manifest.id)
+                except Exception as ext_err:
+                    sanitized_ext = str(ext_err).replace('\n', ' ').strip()
+                    tracker.error("extensions", sanitized_ext[:120])
+                    raise
+                tracker.complete("extensions", ", ".join(installed_extensions))
+
             if not no_git:
                 tracker.start("git")
                 git_messages = []
@@ -1244,6 +1524,7 @@ def init(
                             manager.install_from_directory(
                                 bundled_path, get_speckit_version()
                             )
+                            git_default_notice = True
                             git_messages.append("extension installed")
                     else:
                         git_has_error = True
@@ -1264,25 +1545,6 @@ def init(
 
             # Fix permissions after all installs (scripts + extensions)
             ensure_executable_scripts(project_path, tracker=tracker)
-
-            # Persist the CLI options so later operations (e.g. preset add)
-            # can adapt their behaviour without re-scanning the filesystem.
-            # Must be saved BEFORE preset install so _get_skills_dir() works.
-            init_opts = {
-                "ai": selected_ai,
-                "integration": resolved_integration.key,
-                "branch_numbering": branch_numbering or "sequential",
-                "here": here,
-                "preset": preset,
-                "script": selected_script,
-                "speckit_version": get_speckit_version(),
-            }
-            # Ensure ai_skills is set for SkillsIntegration so downstream
-            # tools (extensions, presets) emit SKILL.md overrides correctly.
-            from .integrations.base import SkillsIntegration as _SkillsPersist
-            if isinstance(resolved_integration, _SkillsPersist):
-                init_opts["ai_skills"] = True
-            save_init_options(project_path, init_opts)
 
             # Install preset if specified
             if preset:
@@ -1355,6 +1617,19 @@ def init(
 
     console.print(tracker.render())
     console.print("\n[bold green]Project ready.[/bold green]")
+
+    if git_default_notice:
+        git_notice = Panel(
+            "The git extension is currently enabled by default. Starting with "
+            "v1.0.0, it will require explicit opt-in via "
+            "[cyan]specify init --extension git[/cyan] or post-init with "
+            "[cyan]specify extension add git[/cyan].",
+            title="[yellow]Git Extension Default Changing[/yellow]",
+            border_style="yellow",
+            padding=(1, 2),
+        )
+        console.print()
+        console.print(git_notice)
 
     # Agent folder security notice
     agent_config = AGENT_CONFIG.get(selected_ai)
