@@ -866,3 +866,82 @@ class TestBehaviorTranslationInRender:
             "behavior": {"execution": "isolated"},
         })
         assert fm.get("context") == "fork"
+
+
+# ===== Agent-Routing Skip in _register_extension_skills =====
+
+class TestExtensionSkillAgentRoutingSkip:
+    """_register_extension_skills() must not create SKILL.md for execution:agent commands."""
+
+    def _make_ext(self, temp_dir: Path, ext_id: str, commands: list) -> Path:
+        ext_dir = temp_dir / ext_id
+        (ext_dir / "commands").mkdir(parents=True)
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": ext_id,
+                "name": ext_id,
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": commands},
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        return ext_dir
+
+    def test_agent_command_not_registered_as_skill(self, skills_project, temp_dir):
+        """Command with behavior: execution: agent must not create a SKILL.md."""
+        project_dir, skills_dir = skills_project
+        ext_dir = self._make_ext(temp_dir, "routing-ext", [
+            {
+                "name": "speckit.routing-ext.orchestrator",
+                "file": "commands/orchestrator.md",
+                "description": "Orchestrator command (plain skill)",
+            },
+            {
+                "name": "speckit.routing-ext.specialist",
+                "file": "commands/specialist.md",
+                "description": "Specialist subagent",
+            },
+        ])
+        (ext_dir / "commands" / "orchestrator.md").write_text(
+            "---\ndescription: Orchestrator\nbehavior:\n  invocation: automatic\n---\nOrchestrate.\n"
+        )
+        (ext_dir / "commands" / "specialist.md").write_text(
+            "---\ndescription: Specialist\nbehavior:\n  execution: agent\n---\nYou are a specialist.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        # orchestrator → SKILL.md created
+        assert (skills_dir / "speckit-routing-ext-orchestrator" / "SKILL.md").exists()
+        # specialist → NO SKILL.md (routed to agents dir instead)
+        assert not (skills_dir / "speckit-routing-ext-specialist" / "SKILL.md").exists()
+
+        metadata = manager.registry.get(manifest.id)
+        assert "speckit-routing-ext-orchestrator" in metadata["registered_skills"]
+        assert "speckit-routing-ext-specialist" not in metadata["registered_skills"]
+
+    def test_agent_command_from_manifest_behavior_not_registered_as_skill(self, skills_project, temp_dir):
+        """execution:agent declared in manifest cmd_info (not source) also skips SKILL.md creation."""
+        project_dir, skills_dir = skills_project
+        ext_dir = self._make_ext(temp_dir, "manifest-routing-ext", [
+            {
+                "name": "speckit.manifest-routing-ext.agent",
+                "file": "commands/agent.md",
+                "description": "Agent from manifest behavior",
+                "behavior": {"execution": "agent"},
+            },
+        ])
+        # Source file has NO frontmatter — pure persona prompt
+        (ext_dir / "commands" / "agent.md").write_text("You are a helpful agent.\n")
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        assert not (skills_dir / "speckit-manifest-routing-ext-agent" / "SKILL.md").exists()
+        metadata = manager.registry.get(manifest.id)
+        assert "speckit-manifest-routing-ext-agent" not in metadata["registered_skills"]
