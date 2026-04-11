@@ -1,0 +1,516 @@
+"""Integration catalog — discovery, validation, and upgrade support.
+
+Provides:
+- ``IntegrationCatalogEntry`` — single catalog source metadata.
+- ``IntegrationCatalog``      — fetches, caches, and searches integration
+  catalogs (built-in + community).
+- ``IntegrationDescriptor``   — loads and validates ``integration.yml``.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import yaml
+from packaging import version as pkg_version
+
+
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
+
+class IntegrationCatalogError(Exception):
+    """Raised when a catalog operation fails."""
+
+
+class IntegrationDescriptorError(Exception):
+    """Raised when an integration.yml descriptor is invalid."""
+
+
+# ---------------------------------------------------------------------------
+# IntegrationCatalogEntry
+# ---------------------------------------------------------------------------
+
+@dataclass
+class IntegrationCatalogEntry:
+    """Represents a single catalog source in the catalog stack."""
+
+    url: str
+    name: str
+    priority: int
+    install_allowed: bool
+    description: str = ""
+
+
+# ---------------------------------------------------------------------------
+# IntegrationCatalog
+# ---------------------------------------------------------------------------
+
+class IntegrationCatalog:
+    """Manages integration catalog fetching, caching, and searching."""
+
+    DEFAULT_CATALOG_URL = (
+        "https://raw.githubusercontent.com/github/spec-kit/main/integrations/catalog.json"
+    )
+    COMMUNITY_CATALOG_URL = (
+        "https://raw.githubusercontent.com/github/spec-kit/main/integrations/catalog.community.json"
+    )
+    CACHE_DURATION = 3600  # 1 hour
+
+    def __init__(self, project_root: Path) -> None:
+        self.project_root = project_root
+        self.cache_dir = project_root / ".specify" / "integrations" / ".cache"
+        self.cache_file = self.cache_dir / "catalog.json"
+        self.cache_metadata_file = self.cache_dir / "catalog-metadata.json"
+
+    # -- URL validation ---------------------------------------------------
+
+    @staticmethod
+    def _validate_catalog_url(url: str) -> None:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+            raise IntegrationCatalogError(
+                f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
+                "HTTP is only allowed for localhost."
+            )
+        if not parsed.netloc:
+            raise IntegrationCatalogError(
+                "Catalog URL must be a valid URL with a host."
+            )
+
+    # -- Catalog stack ----------------------------------------------------
+
+    def _load_catalog_config(
+        self, config_path: Path
+    ) -> Optional[List[IntegrationCatalogEntry]]:
+        """Load catalog stack from a YAML file.
+
+        Returns None when the file does not exist.
+
+        Raises:
+            IntegrationCatalogError: on invalid content
+        """
+        if not config_path.exists():
+            return None
+        try:
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except (yaml.YAMLError, OSError, UnicodeError) as exc:
+            raise IntegrationCatalogError(
+                f"Failed to read catalog config {config_path}: {exc}"
+            )
+        catalogs_data = data.get("catalogs", [])
+        if not catalogs_data:
+            raise IntegrationCatalogError(
+                f"Catalog config {config_path} exists but contains no 'catalogs' entries. "
+                f"Remove the file to use built-in defaults, or add valid catalog entries."
+            )
+        if not isinstance(catalogs_data, list):
+            raise IntegrationCatalogError(
+                f"Invalid catalog config: 'catalogs' must be a list, "
+                f"got {type(catalogs_data).__name__}"
+            )
+        entries: List[IntegrationCatalogEntry] = []
+        skipped: List[int] = []
+        for idx, item in enumerate(catalogs_data):
+            if not isinstance(item, dict):
+                raise IntegrationCatalogError(
+                    f"Invalid catalog entry at index {idx}: "
+                    f"expected a mapping, got {type(item).__name__}"
+                )
+            url = str(item.get("url", "")).strip()
+            if not url:
+                skipped.append(idx)
+                continue
+            self._validate_catalog_url(url)
+            try:
+                priority = int(item.get("priority", idx + 1))
+            except (TypeError, ValueError):
+                raise IntegrationCatalogError(
+                    f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
+                    f"expected integer, got {item.get('priority')!r}"
+                )
+            raw_install = item.get("install_allowed", False)
+            if isinstance(raw_install, str):
+                install_allowed = raw_install.strip().lower() in ("true", "yes", "1")
+            else:
+                install_allowed = bool(raw_install)
+            entries.append(
+                IntegrationCatalogEntry(
+                    url=url,
+                    name=str(item.get("name", f"catalog-{idx + 1}")),
+                    priority=priority,
+                    install_allowed=install_allowed,
+                    description=str(item.get("description", "")),
+                )
+            )
+        entries.sort(key=lambda e: e.priority)
+        if not entries:
+            raise IntegrationCatalogError(
+                f"Catalog config {config_path} contains {len(catalogs_data)} "
+                f"entries but none have valid URLs (entries at indices {skipped} "
+                f"were skipped). Each catalog entry must have a 'url' field."
+            )
+        return entries
+
+    def get_active_catalogs(self) -> List[IntegrationCatalogEntry]:
+        """Return the ordered list of active integration catalogs.
+
+        Resolution:
+        1. ``SPECKIT_INTEGRATION_CATALOG_URL`` env var
+        2. Project ```.specify/integration-catalogs.yml```
+        3. User ``~/.specify/integration-catalogs.yml``
+        4. Built-in defaults (built-in + community)
+        """
+        import sys
+
+        env_value = os.environ.get("SPECKIT_INTEGRATION_CATALOG_URL", "").strip()
+        if env_value:
+            self._validate_catalog_url(env_value)
+            if env_value != self.DEFAULT_CATALOG_URL:
+                print(
+                    "Warning: Using non-default integration catalog. "
+                    "Only use catalogs from sources you trust.",
+                    file=sys.stderr,
+                )
+            return [
+                IntegrationCatalogEntry(
+                    url=env_value,
+                    name="custom",
+                    priority=1,
+                    install_allowed=True,
+                    description="Custom catalog via SPECKIT_INTEGRATION_CATALOG_URL",
+                )
+            ]
+
+        project_cfg = self.project_root / ".specify" / "integration-catalogs.yml"
+        catalogs = self._load_catalog_config(project_cfg)
+        if catalogs is not None:
+            return catalogs
+
+        user_cfg = Path.home() / ".specify" / "integration-catalogs.yml"
+        catalogs = self._load_catalog_config(user_cfg)
+        if catalogs is not None:
+            return catalogs
+
+        return [
+            IntegrationCatalogEntry(
+                url=self.DEFAULT_CATALOG_URL,
+                name="default",
+                priority=1,
+                install_allowed=True,
+                description="Built-in catalog of installable integrations",
+            ),
+            IntegrationCatalogEntry(
+                url=self.COMMUNITY_CATALOG_URL,
+                name="community",
+                priority=2,
+                install_allowed=False,
+                description="Community-contributed integrations (discovery only)",
+            ),
+        ]
+
+    # -- Fetching ---------------------------------------------------------
+
+    def _fetch_single_catalog(
+        self,
+        entry: IntegrationCatalogEntry,
+        force_refresh: bool = False,
+    ) -> Dict[str, Any]:
+        """Fetch one catalog, with per-URL caching."""
+        import urllib.error
+        import urllib.request
+
+        url_hash = hashlib.sha256(entry.url.encode()).hexdigest()[:16]
+        cache_file = self.cache_dir / f"catalog-{url_hash}.json"
+        cache_meta = self.cache_dir / f"catalog-{url_hash}-metadata.json"
+
+        if not force_refresh and cache_file.exists() and cache_meta.exists():
+            try:
+                meta = json.loads(cache_meta.read_text())
+                cached_at = datetime.fromisoformat(meta.get("cached_at", ""))
+                if cached_at.tzinfo is None:
+                    cached_at = cached_at.replace(tzinfo=timezone.utc)
+                age = (datetime.now(timezone.utc) - cached_at).total_seconds()
+                if age < self.CACHE_DURATION:
+                    return json.loads(cache_file.read_text())
+            except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+                pass
+
+        try:
+            with urllib.request.urlopen(entry.url, timeout=10) as resp:
+                catalog_data = json.loads(resp.read())
+
+            if (
+                "schema_version" not in catalog_data
+                or "integrations" not in catalog_data
+            ):
+                raise IntegrationCatalogError(
+                    f"Invalid catalog format from {entry.url}"
+                )
+
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(catalog_data, indent=2))
+            cache_meta.write_text(
+                json.dumps(
+                    {
+                        "cached_at": datetime.now(timezone.utc).isoformat(),
+                        "catalog_url": entry.url,
+                    },
+                    indent=2,
+                )
+            )
+            return catalog_data
+
+        except urllib.error.URLError as exc:
+            raise IntegrationCatalogError(
+                f"Failed to fetch catalog from {entry.url}: {exc}"
+            )
+        except json.JSONDecodeError as exc:
+            raise IntegrationCatalogError(
+                f"Invalid JSON in catalog from {entry.url}: {exc}"
+            )
+
+    def _get_merged_integrations(
+        self, force_refresh: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Fetch and merge integrations from all active catalogs.
+
+        Higher-priority catalogs win on conflicts.  Each dict is annotated
+        with ``_catalog_name`` and ``_install_allowed``.
+        """
+        import sys
+
+        active = self.get_active_catalogs()
+        merged: Dict[str, Dict[str, Any]] = {}
+        any_success = False
+
+        for entry in active:
+            try:
+                data = self._fetch_single_catalog(entry, force_refresh)
+                any_success = True
+            except IntegrationCatalogError as exc:
+                print(
+                    f"Warning: Could not fetch catalog '{entry.name}': {exc}",
+                    file=sys.stderr,
+                )
+                continue
+
+            for integ_id, integ_data in data.get("integrations", {}).items():
+                if integ_id not in merged:
+                    merged[integ_id] = {
+                        **integ_data,
+                        "id": integ_id,
+                        "_catalog_name": entry.name,
+                        "_install_allowed": entry.install_allowed,
+                    }
+
+        if not any_success and active:
+            raise IntegrationCatalogError(
+                "Failed to fetch any integration catalog"
+            )
+
+        return list(merged.values())
+
+    # -- Search / info ----------------------------------------------------
+
+    def search(
+        self,
+        query: Optional[str] = None,
+        tag: Optional[str] = None,
+        author: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Search catalogs for integrations matching the given filters."""
+        results: List[Dict[str, Any]] = []
+        for item in self._get_merged_integrations():
+            if author and item.get("author", "").lower() != author.lower():
+                continue
+            if tag and tag.lower() not in [
+                t.lower() for t in item.get("tags", [])
+            ]:
+                continue
+            if query:
+                haystack = " ".join(
+                    [
+                        item.get("name", ""),
+                        item.get("description", ""),
+                        item.get("id", ""),
+                    ]
+                    + item.get("tags", [])
+                ).lower()
+                if query.lower() not in haystack:
+                    continue
+            results.append(item)
+        return results
+
+    def get_integration_info(
+        self, integration_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Return catalog metadata for a single integration, or None."""
+        for item in self._get_merged_integrations():
+            if item["id"] == integration_id:
+                return item
+        return None
+
+    # -- Cache management -------------------------------------------------
+
+    def clear_cache(self) -> None:
+        """Remove all cached catalog files."""
+        if self.cache_dir.exists():
+            for f in self.cache_dir.glob("catalog-*.json"):
+                f.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# IntegrationDescriptor  (integration.yml)
+# ---------------------------------------------------------------------------
+
+class IntegrationDescriptor:
+    """Loads and validates an ``integration.yml`` descriptor.
+
+    The descriptor mirrors ``extension.yml`` and ``preset.yml``::
+
+        schema_version: "1.0"
+        integration:
+          id: "my-agent"
+          name: "My Agent"
+          version: "1.0.0"
+          description: "Integration for My Agent"
+          author: "my-org"
+        requires:
+          speckit_version: ">=0.6.0"
+          tools: [...]
+        provides:
+          commands: [...]
+          scripts: [...]
+    """
+
+    SCHEMA_VERSION = "1.0"
+    REQUIRED_TOP_LEVEL = ["schema_version", "integration", "requires", "provides"]
+
+    def __init__(self, descriptor_path: Path) -> None:
+        self.path = descriptor_path
+        self.data = self._load(descriptor_path)
+        self._validate()
+
+    # -- Loading ----------------------------------------------------------
+
+    @staticmethod
+    def _load(path: Path) -> dict:
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                return yaml.safe_load(fh) or {}
+        except yaml.YAMLError as exc:
+            raise IntegrationDescriptorError(f"Invalid YAML in {path}: {exc}")
+        except FileNotFoundError:
+            raise IntegrationDescriptorError(f"Descriptor not found: {path}")
+
+    # -- Validation -------------------------------------------------------
+
+    def _validate(self) -> None:
+        for field in self.REQUIRED_TOP_LEVEL:
+            if field not in self.data:
+                raise IntegrationDescriptorError(
+                    f"Missing required field: {field}"
+                )
+
+        if self.data["schema_version"] != self.SCHEMA_VERSION:
+            raise IntegrationDescriptorError(
+                f"Unsupported schema version: {self.data['schema_version']} "
+                f"(expected {self.SCHEMA_VERSION})"
+            )
+
+        integ = self.data["integration"]
+        for field in ("id", "name", "version", "description"):
+            if field not in integ:
+                raise IntegrationDescriptorError(
+                    f"Missing integration.{field}"
+                )
+
+        if not re.match(r"^[a-z0-9-]+$", integ["id"]):
+            raise IntegrationDescriptorError(
+                f"Invalid integration ID '{integ['id']}': "
+                "must be lowercase alphanumeric with hyphens only"
+            )
+
+        try:
+            pkg_version.Version(integ["version"])
+        except pkg_version.InvalidVersion:
+            raise IntegrationDescriptorError(
+                f"Invalid version: {integ['version']}"
+            )
+
+        requires = self.data["requires"]
+        if "speckit_version" not in requires:
+            raise IntegrationDescriptorError(
+                "Missing requires.speckit_version"
+            )
+
+        provides = self.data["provides"]
+        commands = provides.get("commands", [])
+        scripts = provides.get("scripts", [])
+        if "commands" in provides and not isinstance(commands, list):
+            raise IntegrationDescriptorError(
+                "Invalid provides.commands: expected a list"
+            )
+        if "scripts" in provides and not isinstance(scripts, list):
+            raise IntegrationDescriptorError(
+                "Invalid provides.scripts: expected a list"
+            )
+        if not commands and not scripts:
+            raise IntegrationDescriptorError(
+                "Integration must provide at least one command or script"
+            )
+        for cmd in commands:
+            if "name" not in cmd or "file" not in cmd:
+                raise IntegrationDescriptorError(
+                    "Command entry missing 'name' or 'file'"
+                )
+
+    # -- Property accessors -----------------------------------------------
+
+    @property
+    def id(self) -> str:
+        return self.data["integration"]["id"]
+
+    @property
+    def name(self) -> str:
+        return self.data["integration"]["name"]
+
+    @property
+    def version(self) -> str:
+        return self.data["integration"]["version"]
+
+    @property
+    def description(self) -> str:
+        return self.data["integration"]["description"]
+
+    @property
+    def requires_speckit_version(self) -> str:
+        return self.data["requires"]["speckit_version"]
+
+    @property
+    def commands(self) -> List[Dict[str, Any]]:
+        return self.data.get("provides", {}).get("commands", [])
+
+    @property
+    def scripts(self) -> List[str]:
+        return self.data.get("provides", {}).get("scripts", [])
+
+    @property
+    def tools(self) -> List[Dict[str, Any]]:
+        return self.data.get("requires", {}).get("tools", [])
+
+    def get_hash(self) -> str:
+        """SHA-256 hash of the descriptor file."""
+        with open(self.path, "rb") as fh:
+            return f"sha256:{hashlib.sha256(fh.read()).hexdigest()}"
