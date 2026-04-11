@@ -1715,6 +1715,54 @@ Then {AGENT_SCRIPT}
         prompts_dir = project_dir / ".github" / "prompts"
         assert not prompts_dir.exists()
 
+    def test_unregister_skill_removes_parent_directory(self, project_dir, temp_dir):
+        """Unregistering a SKILL.md command should remove the empty parent subdirectory."""
+        import yaml
+
+        ext_dir = temp_dir / "cleanup-ext"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "cleanup-ext",
+                "name": "Cleanup Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.cleanup-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        (ext_dir / "commands" / "run.md").write_text("---\ndescription: Run\n---\n\nBody")
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        registrar = CommandRegistrar()
+        from specify_cli.extensions import ExtensionManifest
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registered = registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        skill_subdir = skills_dir / "speckit-cleanup-ext-run"
+        assert skill_subdir.exists(), "Skill subdirectory should exist after registration"
+        assert (skill_subdir / "SKILL.md").exists()
+
+        registrar.unregister_commands({"codex": ["speckit.cleanup-ext.run"]}, project_dir)
+
+        assert not (skill_subdir / "SKILL.md").exists(), "SKILL.md should be removed"
+        assert not skill_subdir.exists(), "Empty parent subdirectory should be removed"
+
 
 # ===== Utility Function Tests =====
 
