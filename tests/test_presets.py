@@ -1276,6 +1276,142 @@ class TestPresetCatalog:
         catalog = PresetCatalog(project_dir)
         assert catalog.get_catalog_url() == "https://custom.example.com/catalog.json"
 
+    # --- _make_request / GitHub auth ---
+
+    def test_make_request_no_token_no_auth_header(self, project_dir, monkeypatch):
+        """Without a token, requests carry no Authorization header."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_github_token_added_for_github_url(self, project_dir, monkeypatch):
+        """GITHUB_TOKEN is attached for raw.githubusercontent.com URLs."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
+        assert req.get_header("Authorization") == "token ghp_testtoken"
+
+    def test_make_request_gh_token_fallback(self, project_dir, monkeypatch):
+        """GH_TOKEN is used when GITHUB_TOKEN is absent."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.setenv("GH_TOKEN", "ghp_ghtoken")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://github.com/org/repo/releases/download/v1/pack.zip")
+        assert req.get_header("Authorization") == "token ghp_ghtoken"
+
+    def test_make_request_github_token_takes_precedence(self, project_dir, monkeypatch):
+        """GITHUB_TOKEN takes precedence over GH_TOKEN when both are set."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_primary")
+        monkeypatch.setenv("GH_TOKEN", "ghp_secondary")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://api.github.com/repos/org/repo")
+        assert req.get_header("Authorization") == "token ghp_primary"
+
+    def test_make_request_token_not_added_for_non_github_url(self, project_dir, monkeypatch):
+        """Auth header is never attached to non-GitHub URLs to prevent credential leakage."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://internal.example.com/catalog.json")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_token_not_added_for_github_lookalike_host(self, project_dir, monkeypatch):
+        """Auth header is not attached to hosts that include github.com as a suffix."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://github.com.evil.com/org/repo/releases/download/v1/pack.zip")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_token_not_added_for_github_in_path(self, project_dir, monkeypatch):
+        """Auth header is not attached when github.com appears only in the URL path."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://evil.example.com/github.com/org/repo/releases/download/v1/pack.zip")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_token_not_added_for_github_in_query(self, project_dir, monkeypatch):
+        """Auth header is not attached when github.com appears only in the query string."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://evil.example.com/download?source=https://github.com/org/repo/v1/pack.zip")
+        assert "Authorization" not in req.headers
+
+    def test_fetch_single_catalog_sends_auth_header(self, project_dir, monkeypatch):
+        """_fetch_single_catalog passes Authorization header via opener for GitHub URLs."""
+        from unittest.mock import patch, MagicMock
+
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+
+        catalog_data = {"schema_version": "1.0", "presets": {}}
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(catalog_data).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        captured = {}
+        mock_opener = MagicMock()
+
+        def fake_open(req, timeout=None):
+            captured["req"] = req
+            return mock_response
+
+        mock_opener.open.side_effect = fake_open
+
+        entry = PresetCatalogEntry(
+            url="https://raw.githubusercontent.com/org/repo/main/presets/catalog.json",
+            name="private",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch("urllib.request.build_opener", return_value=mock_opener):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+        assert captured["req"].get_header("Authorization") == "token ghp_testtoken"
+
+    def test_download_pack_sends_auth_header(self, project_dir, monkeypatch):
+        """download_pack passes Authorization header via opener for GitHub URLs."""
+        from unittest.mock import patch, MagicMock
+
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+
+        zip_buf = __import__("io").BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
+        zip_bytes = zip_buf.getvalue()
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = zip_bytes
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        captured = {}
+        mock_opener = MagicMock()
+
+        def fake_open(req, timeout=None):
+            captured["req"] = req
+            return mock_response
+
+        mock_opener.open.side_effect = fake_open
+
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://github.com/org/repo/releases/download/v1/test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch("urllib.request.build_opener", return_value=mock_opener):
+            catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert captured["req"].get_header("Authorization") == "token ghp_testtoken"
+
 
 # ===== Integration Tests =====
 
