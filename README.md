@@ -134,7 +134,15 @@ Use the **`/speckit.plan`** command to provide your tech stack and architecture 
 /speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
-### 5. Break down into tasks
+### 5. Preview changes with what-if analysis (Optional)
+
+Use **`/speckit.whatif`** to preview the impact of requirement changes on complexity, effort, and task breakdown without modifying any files.
+
+```bash
+/speckit.whatif Change the database from SQLite to PostgreSQL
+```
+
+### 6. Break down into tasks
 
 Use **`/speckit.tasks`** to create an actionable task list from your implementation plan.
 
@@ -142,7 +150,7 @@ Use **`/speckit.tasks`** to create an actionable task list from your implementat
 /speckit.tasks
 ```
 
-### 6. Execute implementation
+### 7. Execute implementation
 
 Use **`/speckit.implement`** to execute all tasks and build your feature according to the plan.
 
