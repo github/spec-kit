@@ -3215,6 +3215,10 @@ def extension_add(
         console.print("\n[green]✓[/green] Extension installed successfully!")
         console.print(f"\n[bold]{manifest.name}[/bold] (v{manifest.version})")
         console.print(f"  {manifest.description}")
+
+        for warning in manifest.warnings:
+            console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {warning}")
+
         console.print("\n[bold cyan]Provided commands:[/bold cyan]")
         for cmd in manifest.commands:
             console.print(f"  • {cmd['name']} - {cmd.get('description', '')}")
@@ -3268,15 +3272,28 @@ def extension_remove(
 
     # Get extension info for command and skill counts
     ext_manifest = manager.get_extension(extension_id)
-    cmd_count = len(ext_manifest.commands) if ext_manifest else 0
     reg_meta = manager.registry.get(extension_id)
+    # Derive cmd_count from the registry's registered_commands (includes aliases)
+    # rather than from the manifest (primary commands only). Use max() across
+    # agents to get the per-agent count; sum() would double-count since users
+    # think in logical commands, not per-agent file counts.
+    # Use get() without a default so we can distinguish "key missing" (fall back
+    # to manifest) from "key present but empty dict" (zero commands registered).
+    registered_commands = reg_meta.get("registered_commands") if isinstance(reg_meta, dict) else None
+    if isinstance(registered_commands, dict):
+        cmd_count = max(
+            (len(v) for v in registered_commands.values() if isinstance(v, list)),
+            default=0,
+        )
+    else:
+        cmd_count = len(ext_manifest.commands) if ext_manifest else 0
     raw_skills = reg_meta.get("registered_skills") if reg_meta else None
     skill_count = len(raw_skills) if isinstance(raw_skills, list) else 0
 
     # Confirm removal
     if not force:
         console.print("\n[yellow]⚠  This will remove:[/yellow]")
-        console.print(f"   • {cmd_count} commands from AI agent")
+        console.print(f"   • {cmd_count} command{'s' if cmd_count != 1 else ''} per agent")
         if skill_count:
             console.print(f"   • {skill_count} agent skill(s)")
         console.print(f"   • Extension directory: .specify/extensions/{extension_id}/")
