@@ -28,6 +28,8 @@ To build the documentation locally:
 - `toc.yml` - Table of contents configuration
 - `installation.md` - Installation guide
 - `quickstart.md` - Quick start guide
+- `vscode-usage.md` - VS Code usage guide (where to run commands)
+- `local-development.md` - Local development guide
 - `_site/` - Generated documentation output (ignored by git)
 
 ## Deployment

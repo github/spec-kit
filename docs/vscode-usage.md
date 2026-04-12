@@ -62,9 +62,10 @@ python -m specify_cli --help
 
 Replace `specify_cli` above with the actual module name or entrypoint if different.
 
-### Why commands typed into Copilot Chat don't run
+### Where to run commands: Terminal vs AI Assistant
 
-The chat is a text/AI interface. Typing `/specify` there is treated as part of your message to the assistant, not as a shell invocation. To run the command you must execute it in a terminal, or build a VS Code task/extension that runs it for you.
+- **CLI commands** (e.g., `specify init`, `specify check`): Run in the VS Code integrated terminal. These are shell commands that execute on your machine.
+- **Slash commands** (e.g., `/speckit.specify`, `/speckit.plan`): Run inside an AI assistant chat window (like GitHub Copilot Chat). These are consumed by the AI assistant, not executed as shell commands.
 
 ### Helpful tips for newcomers
 
