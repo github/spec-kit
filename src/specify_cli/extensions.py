@@ -806,6 +806,7 @@ class ExtensionManager:
                 continue
             frontmatter, body = registrar.parse_frontmatter(content)
             frontmatter = registrar._adjust_script_paths(frontmatter)
+            body = registrar.rewrite_extension_paths(body, manifest.id, extension_dir)
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root
             )

@@ -16,6 +16,7 @@ import tempfile
 import shutil
 import yaml
 from pathlib import Path
+from textwrap import dedent
 
 from specify_cli.extensions import (
     ExtensionManifest,
@@ -945,3 +946,33 @@ class TestExtensionSkillAgentRoutingSkip:
         assert not (skills_dir / "speckit-manifest-routing-ext-agent" / "SKILL.md").exists()
         metadata = manager.registry.get(manifest.id)
         assert "speckit-manifest-routing-ext-agent" not in metadata["registered_skills"]
+
+    def test_extension_skill_body_paths_rewritten(self, skills_project, temp_dir):
+        """_register_extension_skills rewrites extension-relative paths before placeholder resolution."""
+        project_dir, skills_dir = skills_project
+        ext_dir = self._make_ext(temp_dir, "path-rewrite-ext", [
+            {
+                "name": "speckit.path-rewrite-ext.cmd",
+                "file": "commands/cmd.md",
+                "description": "Command with extension-relative paths",
+            },
+        ])
+        # Create a subdir so rewrite_extension_paths picks it up
+        (ext_dir / "agents").mkdir()
+        (ext_dir / "commands" / "cmd.md").write_text(dedent("""\
+            ---
+            description: Test command
+            ---
+            See agents/control/commander.md for instructions.
+        """))
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        skill_file = skills_dir / "speckit-path-rewrite-ext-cmd" / "SKILL.md"
+        assert skill_file.exists()
+        content = skill_file.read_text()
+        # Path must be rewritten to the installed extension location
+        assert ".specify/extensions/path-rewrite-ext/agents/control/commander.md" in content
+        # Must NOT appear as a bare relative path without the full prefix
+        assert "See agents/control/commander.md" not in content
