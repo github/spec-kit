@@ -310,31 +310,56 @@ class CommandRegistrar:
             init_opts = {}
 
         script_variant = init_opts.get("script")
+        fallback_order: list[str] = []
         if script_variant not in {"sh", "ps"}:
-            fallback_order = []
+            # Build fallback order: prefer the variant present in BOTH scripts and
+            # agent_scripts so that {SCRIPT} and {AGENT_SCRIPT} resolve consistently.
+            # On Windows the OS default is "ps", but if only "sh" is available in
+            # agent_scripts we must still resolve both placeholders from "sh".
             default_variant = "ps" if platform.system().lower().startswith("win") else "sh"
             secondary_variant = "sh" if default_variant == "ps" else "ps"
 
-            if default_variant in scripts or default_variant in agent_scripts:
-                fallback_order.append(default_variant)
-            if secondary_variant in scripts or secondary_variant in agent_scripts:
-                fallback_order.append(secondary_variant)
+            # Prefer a variant that satisfies both scripts AND agent_scripts.
+            both_variants = set(scripts) & set(agent_scripts)
+            if both_variants:
+                for v in (default_variant, secondary_variant):
+                    if v in both_variants:
+                        fallback_order.append(v)
+                for v in sorted(both_variants):
+                    if v not in fallback_order:
+                        fallback_order.append(v)
 
-            for key in scripts:
-                if key not in fallback_order:
-                    fallback_order.append(key)
-            for key in agent_scripts:
+            # Then add remaining variants from scripts / agent_scripts.
+            for v in (default_variant, secondary_variant):
+                if v not in fallback_order and (v in scripts or v in agent_scripts):
+                    fallback_order.append(v)
+            for key in list(scripts) + list(agent_scripts):
                 if key not in fallback_order:
                     fallback_order.append(key)
 
             script_variant = fallback_order[0] if fallback_order else None
 
+        # Resolve script_command: try script_variant first, then walk fallback_order.
+        # This ensures sh-only extensions work on Windows (where default is "ps").
         script_command = scripts.get(script_variant) if script_variant else None
+        if not script_command:
+            for _variant in fallback_order:
+                candidate = scripts.get(_variant)
+                if candidate:
+                    script_command = candidate
+                    break
         if script_command:
             script_command = script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{SCRIPT}", script_command)
 
+        # Resolve agent_script_command: same cross-platform fallback.
         agent_script_command = agent_scripts.get(script_variant) if script_variant else None
+        if not agent_script_command:
+            for _variant in fallback_order:
+                candidate = agent_scripts.get(_variant)
+                if candidate:
+                    agent_script_command = candidate
+                    break
         if agent_script_command:
             agent_script_command = agent_script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{AGENT_SCRIPT}", agent_script_command)

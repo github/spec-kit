@@ -94,7 +94,15 @@ You **MUST** consider the user input before proceeding (if not empty).
       - Scenario class gap (e.g., "No recovery flows detected—are rollback / partial failure paths in scope?")
 
    Question formatting rules:
-   - If presenting options, generate a compact table with columns: Option | Candidate | Why It Matters
+   - If presenting options, generate a compact table with columns:
+
+<!-- speckit:question-render:begin -->
+     | Option | Candidate | Why It Matters |
+     |--------|-----------|----------------|
+     | A | <Candidate A> | <Why it matters> |
+     | B | <Candidate B> | <Why it matters> |
+<!-- speckit:question-render:end -->
+
    - Limit to A–E options maximum; omit table if a free-form answer is clearer
    - Never ask the user to restate what they already said
    - Avoid speculative categories (no hallucination). If uncertain, ask explicitly: "Confirm whether X belongs in scope."

@@ -400,3 +400,64 @@ class TestClaudeArgumentHints:
         lines = result.splitlines()
         hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
         assert hint_count == 1
+
+
+class TestClaudeQuestionRenderTransform:
+    """Verify question-render markers are transformed in generated Claude skills."""
+
+    def _get_skill(self, tmp_path, name: str) -> str:
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        i.setup(tmp_path, m, script_type="sh")
+        skill = tmp_path / ".claude" / "skills" / f"speckit-{name}" / "SKILL.md"
+        assert skill.exists(), f"speckit-{name}/SKILL.md not found"
+        return skill.read_text(encoding="utf-8")
+
+    def test_clarify_skill_has_no_raw_markers(self, tmp_path):
+        content = self._get_skill(tmp_path, "clarify")
+        assert "speckit:question-render" not in content
+
+    def test_clarify_skill_contains_json_block(self, tmp_path):
+        content = self._get_skill(tmp_path, "clarify")
+        assert "```json" in content
+
+    def test_clarify_skill_json_is_valid(self, tmp_path):
+        content = self._get_skill(tmp_path, "clarify")
+        json_str = content.split("```json\n")[1].split("\n```")[0]
+        parsed = json.loads(json_str)
+        assert parsed["multiSelect"] is False
+        assert isinstance(parsed["options"], list)
+        assert len(parsed["options"]) >= 2  # at least one real option + Other
+
+    def test_clarify_skill_json_has_other_option(self, tmp_path):
+        content = self._get_skill(tmp_path, "clarify")
+        json_str = content.split("```json\n")[1].split("\n```")[0]
+        parsed = json.loads(json_str)
+        labels = [o["label"] for o in parsed["options"]]
+        assert "Other" in labels
+        assert labels[-1] == "Other"
+
+    def test_checklist_skill_has_no_raw_markers(self, tmp_path):
+        content = self._get_skill(tmp_path, "checklist")
+        assert "speckit:question-render" not in content
+
+    def test_checklist_skill_contains_json_block(self, tmp_path):
+        content = self._get_skill(tmp_path, "checklist")
+        assert "```json" in content
+
+    def test_checklist_skill_json_is_valid(self, tmp_path):
+        content = self._get_skill(tmp_path, "checklist")
+        json_str = content.split("```json\n")[1].split("\n```")[0]
+        parsed = json.loads(json_str)
+        assert parsed["multiSelect"] is False
+        assert isinstance(parsed["options"], list)
+
+    def test_non_question_skills_unchanged(self, tmp_path):
+        """Skills without markers must not contain JSON question payloads."""
+        for name in ("plan", "specify", "implement", "tasks"):
+            content = self._get_skill(tmp_path, name)
+            assert "speckit:question-render" not in content
+            # These skills should not have a question JSON block
+            assert '"multiSelect"' not in content, (
+                f"speckit-{name} unexpectedly contains question JSON"
+            )

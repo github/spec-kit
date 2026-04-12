@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from ...core.question_transformer import transform_question_block
 from ..base import SkillsIntegration
 from ..manifest import IntegrationManifest
 
@@ -173,8 +174,11 @@ class ClaudeIntegration(SkillsIntegration):
             content_bytes = path.read_bytes()
             content = content_bytes.decode("utf-8")
 
+            # Transform question blocks if present
+            updated = transform_question_block(content)
+
             # Inject user-invocable: true (Claude skills are accessible via /command)
-            updated = self._inject_frontmatter_flag(content, "user-invocable")
+            updated = self._inject_frontmatter_flag(updated, "user-invocable")
 
             # Inject disable-model-invocation: true (Claude skills run only when invoked)
             updated = self._inject_frontmatter_flag(updated, "disable-model-invocation")

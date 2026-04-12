@@ -145,12 +145,14 @@ Execution steps:
        - Format as: `**Recommended:** Option [X] - <reasoning>`
        - Then render all options as a Markdown table:
 
+<!-- speckit:question-render:begin -->
        | Option | Description |
        |--------|-------------|
        | A | <Option A description> |
        | B | <Option B description> |
        | C | <Option C description> (add D/E as needed up to 5) |
        | Short | Provide a different short answer (<=5 words) (Include only if free-form alternative is appropriate) |
+<!-- speckit:question-render:end -->
 
        - After the table, add: `You can reply with the option letter (e.g., "A"), accept the recommendation by saying "yes" or "recommended", or provide your own short answer.`
     - For short‑answer style (no meaningful discrete options):
