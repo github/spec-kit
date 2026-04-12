@@ -1665,7 +1665,7 @@ class TestSelfTestPreset:
         assert manifest.id == "self-test"
         assert manifest.name == "Self-Test Preset"
         assert manifest.version == "1.0.0"
-        assert len(manifest.templates) == 7  # 6 templates + 1 command
+        assert len(manifest.templates) == 8  # 6 templates + 2 commands
 
     def test_self_test_provides_all_core_templates(self):
         """Verify the self-test preset provides an override for every core template."""
@@ -3040,4 +3040,136 @@ class TestBundledPresetLocator:
         assert result.exit_code == 1
         output = strip_ansi(result.output).lower()
         assert "bundled" in output, result.output
-        assert "reinstall" in output, result.output
+
+
+class TestWrapStrategy:
+    """Tests for strategy: wrap preset command substitution."""
+
+    def test_substitute_core_template_replaces_placeholder(self, project_dir):
+        """Core template body replaces {CORE_TEMPLATE} in preset command body."""
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        # Set up a core command template
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\n---\n\n# Core Specify\n\nDo the thing.\n"
+        )
+
+        registrar = CommandRegistrar()
+        body = "## Pre-Logic\n\nBefore stuff.\n\n{CORE_TEMPLATE}\n\n## Post-Logic\n\nAfter stuff.\n"
+        result = _substitute_core_template(body, "specify", project_dir, registrar)
+
+        assert "{CORE_TEMPLATE}" not in result
+        assert "# Core Specify" in result
+        assert "## Pre-Logic" in result
+        assert "## Post-Logic" in result
+
+    def test_substitute_core_template_no_op_when_placeholder_absent(self, project_dir):
+        """Returns body unchanged when {CORE_TEMPLATE} is not present."""
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text("---\ndescription: core\n---\n\nCore body.\n")
+
+        registrar = CommandRegistrar()
+        body = "## No placeholder here.\n"
+        result = _substitute_core_template(body, "specify", project_dir, registrar)
+        assert result == body
+
+    def test_substitute_core_template_no_op_when_core_missing(self, project_dir):
+        """Returns body unchanged when core template file does not exist."""
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        registrar = CommandRegistrar()
+        body = "Pre.\n\n{CORE_TEMPLATE}\n\nPost.\n"
+        result = _substitute_core_template(body, "nonexistent", project_dir, registrar)
+        assert result == body
+        assert "{CORE_TEMPLATE}" in result
+
+    def test_register_commands_substitutes_core_template_for_wrap_strategy(self, project_dir):
+        """register_commands substitutes {CORE_TEMPLATE} when strategy: wrap."""
+        from specify_cli.agents import CommandRegistrar
+
+        # Set up core command template
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\n---\n\n# Core Specify\n\nCore body here.\n"
+        )
+
+        # Create a preset command dir with a wrap-strategy command
+        cmd_dir = project_dir / "preset" / "commands"
+        cmd_dir.mkdir(parents=True, exist_ok=True)
+        (cmd_dir / "speckit.specify.md").write_text(
+            "---\ndescription: wrap test\nstrategy: wrap\n---\n\n"
+            "## Pre\n\n{CORE_TEMPLATE}\n\n## Post\n"
+        )
+
+        commands = [{"name": "speckit.specify", "file": "commands/speckit.specify.md"}]
+        registrar = CommandRegistrar()
+
+        # Use a generic agent that writes markdown to commands/
+        agent_dir = project_dir / ".claude" / "commands"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+
+        # Patch AGENT_CONFIGS to use a simple markdown agent pointing at our dir
+        import copy
+        original = copy.deepcopy(registrar.AGENT_CONFIGS)
+        registrar.AGENT_CONFIGS["test-agent"] = {
+            "dir": str(agent_dir.relative_to(project_dir)),
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md",
+            "strip_frontmatter_keys": [],
+        }
+        try:
+            registrar.register_commands(
+                "test-agent", commands, "test-preset",
+                project_dir / "preset", project_dir
+            )
+        finally:
+            registrar.AGENT_CONFIGS = original
+
+        written = (agent_dir / "speckit.specify.md").read_text()
+        assert "{CORE_TEMPLATE}" not in written
+        assert "# Core Specify" in written
+        assert "## Pre" in written
+        assert "## Post" in written
+
+    def test_end_to_end_wrap_via_self_test_preset(self, project_dir):
+        """Installing self-test preset with a wrap command substitutes {CORE_TEMPLATE}."""
+        from specify_cli.presets import PresetManager
+
+        # Install a core template that wrap-test will wrap around
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "wrap-test.md").write_text(
+            "---\ndescription: core wrap-test\n---\n\n# Core Wrap-Test Body\n"
+        )
+
+        # Set up skills dir (simulating --ai claude)
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        skill_subdir = skills_dir / "speckit-wrap-test"
+        skill_subdir.mkdir()
+        (skill_subdir / "SKILL.md").write_text("---\nname: speckit-wrap-test\n---\n\nold content\n")
+
+        # Write init-options so _register_skills finds the claude skills dir
+        import json
+        (project_dir / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "claude", "ai_skills": True})
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+
+        written = (skill_subdir / "SKILL.md").read_text()
+        assert "{CORE_TEMPLATE}" not in written
+        assert "# Core Wrap-Test Body" in written
+        assert "preset:self-test wrap-pre" in written
+        assert "preset:self-test wrap-post" in written

@@ -27,6 +27,35 @@ from packaging.specifiers import SpecifierSet, InvalidSpecifier
 from .extensions import ExtensionRegistry, normalize_priority
 
 
+def _substitute_core_template(
+    body: str,
+    short_name: str,
+    project_root: "Path",
+    registrar: "CommandRegistrar",
+) -> str:
+    """Substitute {CORE_TEMPLATE} with the body of the installed core command template.
+
+    Args:
+        body: Preset command body (may contain {CORE_TEMPLATE} placeholder).
+        short_name: Short command name (e.g. "specify" from "speckit.specify").
+        project_root: Project root path.
+        registrar: CommandRegistrar instance for parse_frontmatter.
+
+    Returns:
+        Body with {CORE_TEMPLATE} replaced by core template body, or body unchanged
+        if the placeholder is absent or the core template file does not exist.
+    """
+    if "{CORE_TEMPLATE}" not in body:
+        return body
+
+    core_file = project_root / ".specify" / "templates" / "commands" / f"{short_name}.md"
+    if not core_file.exists():
+        return body
+
+    _, core_body = registrar.parse_frontmatter(core_file.read_text(encoding="utf-8"))
+    return body.replace("{CORE_TEMPLATE}", core_body)
+
+
 @dataclass
 class PresetCatalogEntry:
     """Represents a single entry in the preset catalog stack."""
@@ -760,6 +789,9 @@ class PresetManager:
             # Parse the command file
             content = source_file.read_text(encoding="utf-8")
             frontmatter, body = registrar.parse_frontmatter(content)
+
+            if frontmatter.get("strategy") == "wrap":
+                body = _substitute_core_template(body, short_name, self.project_root, registrar)
 
             original_desc = frontmatter.get("description", "")
             enhanced_desc = SKILL_DESCRIPTIONS.get(

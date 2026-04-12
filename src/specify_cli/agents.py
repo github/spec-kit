@@ -445,6 +445,13 @@ class CommandRegistrar:
             content = source_file.read_text(encoding="utf-8")
             frontmatter, body = self.parse_frontmatter(content)
 
+            if frontmatter.get("strategy") == "wrap":
+                from .presets import _substitute_core_template
+                short_name = cmd_name
+                if short_name.startswith("speckit."):
+                    short_name = short_name[len("speckit."):]
+                body = _substitute_core_template(body, short_name, project_root, self)
+
             frontmatter = self._adjust_script_paths(frontmatter)
 
             for key in agent_config.get("strip_frontmatter_keys", []):

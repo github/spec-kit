@@ -116,5 +116,5 @@ The following enhancements are under consideration for future releases:
   | **command** | ✓ (default) | ✓ | ✓ | ✓ |
   | **script** | ✓ (default) | — | — | ✓ |
 
-  For artifacts and commands (which are LLM directives), `wrap` would inject preset content before and after the core template using a `{CORE_TEMPLATE}` placeholder. For scripts, `wrap` would run custom logic before/after the core script via a `$CORE_SCRIPT` variable.
+  For artifacts and commands (which are LLM directives), `wrap` injects preset content before and after the core template using a `{CORE_TEMPLATE}` placeholder (implemented). For scripts, `wrap` would run custom logic before/after the core script via a `$CORE_SCRIPT` variable (not yet implemented).
 - **Script overrides** — Enable presets to provide alternative versions of core scripts (e.g. `create-new-feature.sh`) for workflow customization. A `strategy: "wrap"` option could allow presets to run custom logic before/after the core script without fully replacing it.
