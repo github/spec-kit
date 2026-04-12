@@ -587,3 +587,79 @@ class TestGitCommonBash:
             capture_output=True, text=True,
         )
         assert result.returncode != 0
+
+
+# ── Deprecation Notice Tests ──────────────────────────────────────────────────
+
+
+class TestGitExtDeprecationNotice:
+    """Tests for the v1.0.0 deprecation notice shown during specify init."""
+
+    def test_deprecation_notice_shown_on_fresh_install(self, tmp_path: Path):
+        """specify init shows the git extension deprecation notice on first install."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        runner = CliRunner()
+
+        mock_registry = MagicMock()
+        mock_registry.is_installed.return_value = False
+
+        mock_manager = MagicMock()
+        mock_manager.registry = mock_registry
+
+        with patch("specify_cli.extensions.ExtensionManager", return_value=mock_manager):
+            result = runner.invoke(
+                app,
+                ["init", str(project_dir), "--ai", "claude", "--ignore-agent-tools", "--script", "sh"],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Upcoming Change: git Extension" in result.output
+        assert "v1.0.0" in result.output
+        assert "specify init --extension git" in result.output
+
+    def test_deprecation_notice_not_shown_when_already_installed(self, tmp_path: Path):
+        """specify init does NOT show the deprecation notice when git extension is already installed."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        runner = CliRunner()
+
+        mock_registry = MagicMock()
+        mock_registry.is_installed.return_value = True
+
+        mock_manager = MagicMock()
+        mock_manager.registry = mock_registry
+
+        with patch("specify_cli.extensions.ExtensionManager", return_value=mock_manager):
+            result = runner.invoke(
+                app,
+                ["init", str(project_dir), "--ai", "claude", "--ignore-agent-tools", "--script", "sh"],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Upcoming Change: git Extension" not in result.output
+
+    def test_deprecation_notice_not_shown_with_no_git_flag(self, tmp_path: Path):
+        """specify init does NOT show the deprecation notice when --no-git is passed."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        runner = CliRunner()
+
+        result = runner.invoke(
+            app,
+            ["init", str(project_dir), "--ai", "claude", "--ignore-agent-tools", "--no-git", "--script", "sh"],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Upcoming Change: git Extension" not in result.output
