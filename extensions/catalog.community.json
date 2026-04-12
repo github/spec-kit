@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-10T17:00:00Z",
+  "updated_at": "2026-04-12T12:06:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -648,6 +648,46 @@
       "stars": 0,
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-03-31T00:00:00Z"
+    },
+    "github-issues": {
+      "name": "GitHub Issues Integration",
+      "id": "github-issues",
+      "description": "Generate spec artifacts from GitHub Issues - import issues, sync updates, and maintain bidirectional traceability",
+      "author": "Fatima367",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Fatima367/spec-kit-github-issues/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Fatima367/spec-kit-github-issues",
+      "homepage": "https://github.com/Fatima367/spec-kit-github-issues",
+      "documentation": "https://github.com/Fatima367/spec-kit-github-issues/blob/main/README.md",
+      "changelog": "https://github.com/Fatima367/spec-kit-github-issues/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "gh",
+            "version": ">=2.0.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 0
+      },
+      "tags": [
+        "integration",
+        "github",
+        "issues",
+        "import",
+        "sync",
+        "traceability"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-12T00:00:00Z",
+      "updated_at": "2026-04-12T00:00:00Z"
     },
     "iterate": {
       "name": "Iterate",
