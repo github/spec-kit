@@ -748,6 +748,10 @@ def _validate_extension_url(url: str) -> None:
         )
 
 
+MAX_EXTENSION_ARCHIVE_BYTES = 100 * 1024 * 1024
+DOWNLOAD_CHUNK_BYTES = 1024 * 1024
+
+
 def _install_extension_archive(
     manager: Any,
     archive_path: Path,
@@ -775,6 +779,10 @@ def _install_extension_archive(
                 if member.issym() or member.islnk():
                     raise ValidationError(
                         f"Unsafe link in TAR archive: {member.name}"
+                    )
+                if not (member.isfile() or member.isdir()):
+                    raise ValidationError(
+                        f"Unsupported TAR member type in archive: {member.name}"
                     )
                 member_path = (temp_path / member.name).resolve()
                 try:
@@ -846,7 +854,36 @@ def _download_and_install_extension_url(
 
         try:
             with urllib.request.urlopen(source_url, timeout=60) as response:
-                archive_path.write_bytes(response.read())
+                content_length = response.headers.get("Content-Length")
+                try:
+                    content_length_bytes = (
+                        int(content_length) if content_length is not None else None
+                    )
+                except ValueError:
+                    content_length_bytes = None
+
+                if (
+                    content_length_bytes
+                    and content_length_bytes > MAX_EXTENSION_ARCHIVE_BYTES
+                ):
+                    raise ExtensionError(
+                        "Extension archive is too large; maximum allowed size "
+                        f"is {MAX_EXTENSION_ARCHIVE_BYTES // (1024 * 1024)} MiB."
+                    )
+
+                downloaded = 0
+                with archive_path.open("wb") as fh:
+                    while True:
+                        chunk = response.read(DOWNLOAD_CHUNK_BYTES)
+                        if not chunk:
+                            break
+                        downloaded += len(chunk)
+                        if downloaded > MAX_EXTENSION_ARCHIVE_BYTES:
+                            raise ExtensionError(
+                                "Extension archive is too large; maximum allowed "
+                                f"size is {MAX_EXTENSION_ARCHIVE_BYTES // (1024 * 1024)} MiB."
+                            )
+                        fh.write(chunk)
         except urllib.error.URLError as exc:
             raise ExtensionError(
                 f"Failed to download extension from {display_url}: {exc}"
