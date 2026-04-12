@@ -2,7 +2,10 @@
 
 import json
 import os
+import tarfile
+from io import BytesIO
 
+import pytest
 import yaml
 
 
@@ -268,6 +271,82 @@ class TestInitExtensionFlag:
         assert result.exit_code == 0, result.output
         assert (project / ".specify" / "extensions" / "git").exists()
         assert not (project / ".git").exists()
+
+    def test_tar_extension_archive_rejects_special_members(self, tmp_path):
+        """TAR extension archives reject non-file and non-directory members."""
+        from specify_cli import _install_extension_archive
+        from specify_cli.extensions import ValidationError
+
+        archive_path = tmp_path / "unsafe-extension.tar"
+        manifest = b"extension:\n  id: test-ext\n  name: Test\n  version: 1.0.0\n"
+
+        with tarfile.open(archive_path, "w") as tf:
+            manifest_info = tarfile.TarInfo("extension.yml")
+            manifest_info.size = len(manifest)
+            tf.addfile(manifest_info, BytesIO(manifest))
+
+            fifo_info = tarfile.TarInfo("unsafe-fifo")
+            fifo_info.type = tarfile.FIFOTYPE
+            tf.addfile(fifo_info)
+
+        with pytest.raises(ValidationError, match="Unsupported TAR member type"):
+            _install_extension_archive(object(), archive_path, "0.0.0")
+
+    def test_extension_url_downloads_in_bounded_chunks(self, tmp_path, monkeypatch):
+        """URL extension downloads stream to disk instead of reading all bytes."""
+        import urllib.request
+        import specify_cli
+
+        payload = b"archive-bytes"
+        read_sizes = []
+
+        class FakeResponse:
+            headers = {"Content-Length": str(len(payload))}
+
+            def __init__(self):
+                self.offset = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self, size=-1):
+                read_sizes.append(size)
+                if self.offset >= len(payload):
+                    return b""
+                end = min(self.offset + size, len(payload))
+                chunk = payload[self.offset:end]
+                self.offset = end
+                return chunk
+
+        def fake_urlopen(url, timeout):
+            assert url == "https://example.com/extension.zip"
+            assert timeout == 60
+            return FakeResponse()
+
+        def fake_install(manager, archive_path, speckit_version, priority=10):
+            assert archive_path.read_bytes() == payload
+            assert speckit_version == "0.0.0"
+            assert priority == 10
+            return "installed"
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(specify_cli, "_install_extension_archive", fake_install)
+
+        result = specify_cli._download_and_install_extension_url(
+            object(),
+            tmp_path,
+            "https://example.com/extension.zip",
+            "0.0.0",
+        )
+
+        assert result == "installed"
+        assert read_sizes == [
+            specify_cli.DOWNLOAD_CHUNK_BYTES,
+            specify_cli.DOWNLOAD_CHUNK_BYTES,
+        ]
 
 
 class TestForceExistingDirectory:
