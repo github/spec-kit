@@ -3586,6 +3586,7 @@ def _print_extension_info(ext_info: dict, manager):
 @extension_app.command("update")
 def extension_update(
     extension: str = typer.Argument(None, help="Extension ID or name to update (or all)"),
+    dev: bool = typer.Option(False, "--dev", help="Update from local directory (re-copies source, preserves config)"),
 ):
     """Update extension(s) to latest version."""
     from .extensions import (
@@ -3610,8 +3611,112 @@ def extension_update(
         raise typer.Exit(1)
 
     manager = ExtensionManager(project_root)
-    catalog = ExtensionCatalog(project_root)
     speckit_version = get_speckit_version()
+
+    # ── Dev mode: update from local directory ──────────────────────────
+    if dev:
+        if not extension:
+            console.print("[red]Error:[/red] --dev requires extension path argument")
+            console.print("Usage: specify extension update --dev /path/to/extension")
+            raise typer.Exit(1)
+
+        source_path = Path(extension).expanduser().resolve()
+        if not source_path.exists():
+            console.print(f"[red]Error:[/red] Directory not found: {source_path}")
+            raise typer.Exit(1)
+
+        manifest_path = source_path / "extension.yml"
+        if not manifest_path.exists():
+            console.print(f"[red]Error:[/red] No extension.yml found in {source_path}")
+            raise typer.Exit(1)
+
+        # Read extension ID from source manifest
+        import yaml
+        with open(manifest_path) as f:
+            manifest_data = yaml.safe_load(f) or {}
+        extension_id = manifest_data.get("extension", {}).get("id")
+        if not extension_id:
+            console.print("[red]Error:[/red] extension.yml missing extension.id")
+            raise typer.Exit(1)
+
+        new_version = manifest_data.get("extension", {}).get("version", "unknown")
+
+        # Check if installed
+        installed = manager.list_installed()
+        installed_ids = {ext["id"] for ext in installed}
+
+        if extension_id not in installed_ids:
+            console.print(f"[yellow]Extension '{extension_id}' not installed — installing fresh[/yellow]")
+            try:
+                manifest = manager.install_from_directory(source_path, speckit_version)
+                console.print(f"\n[green]✓[/green] Installed {extension_id} v{manifest.version} from {source_path}")
+            except Exception as e:
+                console.print(f"[red]Error:[/red] {e}")
+                raise typer.Exit(1)
+            raise typer.Exit(0)
+
+        # Get current metadata to preserve
+        backup_registry_entry = manager.registry.get(extension_id)
+        current_version = backup_registry_entry.get("version", "unknown") if isinstance(backup_registry_entry, dict) else "unknown"
+
+        console.print(f"🔄 Updating {extension_id} from local directory...")
+        console.print(f"   Source: {source_path}")
+        console.print(f"   Version: {current_version} → {new_version}")
+
+        # Backup config files before removal
+        extension_dir = manager.extensions_dir / extension_id
+        backup_config_dir = manager.extensions_dir / ".backup" / f"{extension_id}-dev-update" / "config"
+        if extension_dir.exists():
+            config_files = list(extension_dir.glob("*-config.yml")) + list(
+                extension_dir.glob("*-config.local.yml")
+            ) + list(extension_dir.glob("local-config.yml"))
+            if config_files:
+                backup_config_dir.mkdir(parents=True, exist_ok=True)
+                for cfg_file in config_files:
+                    shutil.copy2(cfg_file, backup_config_dir / cfg_file.name)
+
+        try:
+            # Remove old version (keeps hooks backup internally)
+            manager.remove(extension_id, keep_config=True)
+
+            # Install from local directory
+            manifest = manager.install_from_directory(source_path, speckit_version)
+
+            # Restore config files
+            new_extension_dir = manager.extensions_dir / extension_id
+            if backup_config_dir.exists() and new_extension_dir.exists():
+                for cfg_file in backup_config_dir.iterdir():
+                    if cfg_file.is_file():
+                        shutil.copy2(cfg_file, new_extension_dir / cfg_file.name)
+
+            # Restore preserved metadata (installed_at, priority, enabled state)
+            if backup_registry_entry and isinstance(backup_registry_entry, dict):
+                current_metadata = manager.registry.get(extension_id)
+                if current_metadata and isinstance(current_metadata, dict):
+                    new_metadata = dict(current_metadata)
+                    if "installed_at" in backup_registry_entry:
+                        new_metadata["installed_at"] = backup_registry_entry["installed_at"]
+                    if "priority" in backup_registry_entry:
+                        new_metadata["priority"] = normalize_priority(backup_registry_entry["priority"])
+                    if not backup_registry_entry.get("enabled", True):
+                        new_metadata["enabled"] = False
+                    new_metadata["source"] = "local"
+                    manager.registry.restore(extension_id, new_metadata)
+
+            console.print(f"\n[green]✓[/green] Updated {extension_id} to v{new_version} from {source_path}")
+        except Exception as e:
+            console.print(f"\n[red]✗[/red] Update failed: {e}")
+            raise typer.Exit(1)
+        finally:
+            # Clean up backup
+            backup_base = manager.extensions_dir / ".backup" / f"{extension_id}-dev-update"
+            if backup_base.exists():
+                shutil.rmtree(backup_base)
+
+        raise typer.Exit(0)
+
+    # ── Catalog mode: update from catalog (existing behavior) ─────────
+    catalog = ExtensionCatalog(project_root)
 
     try:
         # Get list of extensions to update
