@@ -279,6 +279,30 @@ class TestCopilotAgentDeployment:
         fm = yaml.safe_load(parts[1]) or {}
         assert fm.get("someCustomKey") == "someValue"
 
+    def test_copilot_non_dict_behavior_does_not_raise(self, tmp_path):
+        """A non-dict behavior value in Copilot execution:agent branch must not raise."""
+        root = self._setup_copilot_project(tmp_path)
+        src = tmp_path / "ext" / "commands"
+        src.mkdir(parents=True)
+        # behavior in source file is a string, not a mapping; manifest provides the execution type
+        (src / "bad.md").write_text(dedent("""\
+            ---
+            description: Bad behavior
+            behavior: "this is not a dict"
+            ---
+            Body text
+        """))
+        registrar = CommandRegistrar()
+        # Should not raise even though source behavior is a string; manifest behavior wins
+        registrar.register_commands(
+            "copilot",
+            [{"name": "speckit.test-ext.bad", "file": "bad.md",
+              "behavior": {"execution": "agent"}}],
+            "test-ext", src, root,
+        )
+        agent_file = root / ".github" / "agents" / "speckit.test-ext.bad.agent.md"
+        assert agent_file.exists()
+
 
 class TestEndToEnd:
     """Full pipeline: extension with behavior.execution:agent → correct files deployed."""
@@ -480,3 +504,33 @@ class TestManifestBehaviorMerge:
         assert not skill_file.exists()
         fm = yaml.safe_load(agent_file.read_text().split("---")[1])
         assert fm.get("model") == "claude-sonnet-4-6"   # capability: balanced
+
+    def test_agent_aliases_generate_agent_files(self, tmp_path):
+        """Aliases on execution:agent commands get their own .claude/agents/<alias>.md files."""
+        root, src = self._setup(tmp_path)
+        (src / "worker.md").write_text(dedent("""\
+            ---
+            description: Worker agent
+            behavior:
+              execution: agent
+            ---
+            You are a worker agent.
+        """))
+        registrar = CommandRegistrar()
+        registrar.register_commands(
+            "claude",
+            [{
+                "name": "speckit.test-ext.worker",
+                "file": "worker.md",
+                "aliases": ["speckit.test-ext.w", "speckit.test-ext.work"],
+            }],
+            "test-ext", src, root,
+        )
+        agents_dir = root / ".claude" / "agents"
+        assert (agents_dir / "speckit-test-ext-worker.md").exists()
+        assert (agents_dir / "speckit-test-ext-w.md").exists()
+        assert (agents_dir / "speckit-test-ext-work.md").exists()
+        # Alias file should use the alias name in its frontmatter
+        fm = yaml.safe_load((agents_dir / "speckit-test-ext-w.md").read_text().split("---")[1])
+        assert fm["name"] == "speckit-test-ext-w"
+

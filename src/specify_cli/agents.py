@@ -667,6 +667,18 @@ class CommandRegistrar:
                 dest_file = agents_dir / f"{output_name}.md"
                 dest_file.write_text(output, encoding="utf-8")
                 registered.append(cmd_name)
+                # Also generate agent definition files for any aliases
+                for alias in cmd_info.get("aliases", []):
+                    alias_output_name = self._compute_output_name(agent_name, alias, agent_config)
+                    alias_frontmatter = deepcopy(frontmatter)
+                    alias_frontmatter["name"] = alias_output_name
+                    alias_output = self.render_agent_definition(
+                        agent_name, alias_output_name, alias_frontmatter, body,
+                        source_id, cmd_file, project_root, source_dir=source_dir,
+                    )
+                    alias_file = agents_dir / f"{alias_output_name}.md"
+                    alias_file.write_text(alias_output, encoding="utf-8")
+                    registered.append(alias)
                 continue  # skip normal skill/command rendering
 
             if agent_config["extension"] == "/SKILL.md":
@@ -683,13 +695,13 @@ class CommandRegistrar:
             elif agent_config["format"] == "markdown":
                 # For Copilot execution:agent, inject behavior-derived fields into frontmatter
                 if agent_name == "copilot" and cmd_type == "agent":
-                    behavior = frontmatter.get("behavior") or {}
+                    behavior = frontmatter.get("behavior") if isinstance(frontmatter.get("behavior"), dict) else {}
                     agents_overrides = frontmatter.get("agents") or {}
                     extra_fields = translate_behavior(
                         agent_name, behavior,
                         agents_overrides if isinstance(agents_overrides, dict) else {}
                     )
-                    copilot_tools = get_copilot_tools(behavior if isinstance(behavior, dict) else {})
+                    copilot_tools = get_copilot_tools(behavior)
                     if copilot_tools:
                         extra_fields["tools"] = copilot_tools
                     # Build modified frontmatter: strip internal keys, add extra
