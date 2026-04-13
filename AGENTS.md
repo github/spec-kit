@@ -33,6 +33,7 @@ Specify supports multiple AI agents by generating agent-specific command files a
 | -------------------------- | ---------------------- | -------- | --------------- | --------------------------- |
 | **Claude Code**            | `.claude/commands/`    | Markdown | `claude`        | Anthropic's Claude Code CLI |
 | **Gemini CLI**             | `.gemini/commands/`    | TOML     | `gemini`        | Google's Gemini CLI         |
+| **Goose**                  | `.goose/recipes/`      | YAML     | `goose`         | Block's Goose CLI           |
 | **GitHub Copilot**         | `.github/agents/`      | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code   |
 | **Cursor**                 | `.cursor/commands/`    | Markdown | `cursor-agent`  | Cursor CLI                  |
 | **Qwen Code**              | `.qwen/commands/`      | TOML     | `qwen`          | Alibaba's Qwen Code CLI     |
@@ -314,6 +315,7 @@ Require a command-line tool to be installed:
 - **Claude Code**: `claude` CLI
 - **Gemini CLI**: `gemini` CLI
 - **Cursor**: `cursor-agent` CLI
+- **Goose**: `goose` CLI
 - **Qwen Code**: `qwen` CLI
 - **opencode**: `opencode` CLI
 - **Amazon Q Developer CLI**: `q` CLI
@@ -369,12 +371,32 @@ Command content with {SCRIPT} and {{args}} placeholders.
 """
 ```
 
+### YAML Format
+
+Used by: Goose
+
+```yaml
+version: "1.0.0"
+title: "Specify"
+description: "Command description"
+author:
+  contact: "spec-kit"
+extensions:
+  - type: "builtin"
+    name: "developer"
+activities:
+  - "Spec-Driven Development"
+prompt: |
+  Command content with {SCRIPT} and {{args}} placeholders.
+```
+
 ## Directory Conventions
 
 - **CLI agents**: Usually `.<agent-name>/commands/`
 - **IDE agents**: Follow IDE-specific patterns:
   - Copilot: `.github/agents/`
   - Cursor: `.cursor/commands/`
+  - Goose: `.goose/recipes/`
   - Windsurf: `.windsurf/workflows/`
 
 ## Argument Patterns
@@ -383,6 +405,7 @@ Different agents use different argument placeholders:
 
 - **Markdown/prompt-based**: `$ARGUMENTS`
 - **TOML-based**: `{{args}}`
+- **YAML-based**: `{{args}}`
 - **Script placeholders**: `{SCRIPT}` (replaced with actual script path)
 - **Agent placeholders**: `__AGENT__` (replaced with agent name)
 

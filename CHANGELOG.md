@@ -7,6 +7,19 @@ Recent changes to the Specify CLI and templates are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-04-13
+
+### Added
+
+- **Goose agent support**
+  - Added `goose` to CLI agent selection and tool checks
+  - Generate Goose recipe files in `.goose/recipes/` using YAML output with `{{args}}`
+  - Added Goose support to extension command registration, agent-context update scripts, release packaging, and docs
+
+### Fixed
+
+- **Import-time type annotation evaluation**: added postponed annotation evaluation in `src/specify_cli/__init__.py` so the module can be imported before `StepTracker` is defined
+
 ## [0.1.7] - 2026-03-04
 
 ### Fixed

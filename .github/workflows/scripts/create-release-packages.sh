@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage: .github/workflows/scripts/create-release-packages.sh <version>
 #   Version argument should include leading 'v'.
 #   Optionally set AGENTS and/or SCRIPTS env vars to limit what gets built.
-#     AGENTS  : space or comma separated subset of: claude gemini copilot cursor-agent qwen opencode windsurf codex amp shai bob (default: all)
+#     AGENTS  : space or comma separated subset of: claude gemini goose copilot cursor-agent qwen opencode windsurf codex amp shai bob (default: all)
 #     SCRIPTS : space or comma separated subset of: sh ps (default: both)
 #   Examples:
 #     AGENTS=claude SCRIPTS=sh $0 v0.2.0
@@ -93,6 +93,23 @@ generate_commands() {
       toml)
         body=$(printf '%s\n' "$body" | sed 's/\\/\\\\/g')
         { echo "description = \"$description\""; echo; echo "prompt = \"\"\""; echo "$body"; echo "\"\"\""; } > "$output_dir/speckit.$name.$ext" ;;
+      yaml)
+        local yaml_body title escaped_title escaped_description
+        yaml_body=$(printf '%s\n' "$body" | awk 'BEGIN { dash=0; has_frontmatter=0 } /^---$/ { if (NR == 1) { has_frontmatter=1; dash++; next } if (has_frontmatter && dash == 1) { dash++; next } } { if (!has_frontmatter || dash >= 2) print }')
+        title=$(printf '%s\n' "$name" | sed 's/[._-]/ /g')
+        escaped_title=${title//"/\\"}
+        escaped_description=${description//"/\\"}
+        {
+          printf 'version: "1.0.0"\n'
+          printf 'title: "%s"\n' "$escaped_title"
+          printf 'description: "%s"\n' "$escaped_description"
+          printf 'author:\n  contact: "spec-kit"\n'
+          printf 'extensions:\n  - type: "builtin"\n    name: "developer"\n'
+          printf 'activities:\n  - "Spec-Driven Development"\n'
+          printf 'prompt: |\n'
+          printf '%s\n' "$yaml_body" | sed 's/^/  /'
+          printf '\n# Source: templates/commands/%s.md\n' "$name"
+        } > "$output_dir/speckit.$name.$ext" ;;
       md)
         echo "$body" > "$output_dir/speckit.$name.$ext" ;;
       agent.md)
@@ -154,7 +171,7 @@ build_variant() {
   
   # NOTE: We substitute {ARGS} internally. Outward tokens differ intentionally:
   #   * Markdown/prompt (claude, copilot, cursor-agent, opencode): $ARGUMENTS
-  #   * TOML (gemini, qwen): {{args}}
+  #   * TOML/YAML (gemini, qwen, goose): {{args}}
   # This keeps formats readable without extra abstraction.
 
   case $agent in
@@ -165,6 +182,9 @@ build_variant() {
       mkdir -p "$base_dir/.gemini/commands"
       generate_commands gemini toml "{{args}}" "$base_dir/.gemini/commands" "$script"
       [[ -f agent_templates/gemini/GEMINI.md ]] && cp agent_templates/gemini/GEMINI.md "$base_dir/GEMINI.md" ;;
+    goose)
+      mkdir -p "$base_dir/.goose/recipes"
+      generate_commands goose yaml "{{args}}" "$base_dir/.goose/recipes" "$script" ;;
     copilot)
       mkdir -p "$base_dir/.github/agents"
       generate_commands copilot agent.md "\$ARGUMENTS" "$base_dir/.github/agents" "$script"
@@ -223,7 +243,7 @@ build_variant() {
 }
 
 # Determine agent list
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q bob qoder)
+ALL_AGENTS=(claude gemini goose copilot cursor-agent qwen opencode windsurf codex kilocode auggie roo codebuddy amp shai q bob qoder)
 ALL_SCRIPTS=(sh ps)
 
 norm_list() {
@@ -270,4 +290,3 @@ done
 
 echo "Archives in $GENRELEASES_DIR:"
 ls -1 "$GENRELEASES_DIR"/spec-kit-template-*-"${NEW_VERSION}".zip
-

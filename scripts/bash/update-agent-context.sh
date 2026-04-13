@@ -30,12 +30,12 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, or Amazon Q Developer CLI
+#    - Supports: Claude, Gemini, Goose, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, or Amazon Q Developer CLI
 #    - Can update single agents or all existing agent files
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|shai|q|bob|qoder
+# Agent types: claude|gemini|goose|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|shai|q|bob|qoder
 # Leave empty to update all existing agent files
 
 set -e
@@ -603,6 +603,9 @@ update_specific_agent() {
         gemini)
             update_agent_file "$GEMINI_FILE" "Gemini CLI"
             ;;
+        goose)
+            update_agent_file "$AGENTS_FILE" "Goose"
+            ;;
         copilot)
             update_agent_file "$COPILOT_FILE" "GitHub Copilot"
             ;;
@@ -650,7 +653,7 @@ update_specific_agent() {
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|bob|qoder"
+            log_error "Expected: claude|gemini|goose|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|amp|shai|q|bob|qoder"
             exit 1
             ;;
     esac
@@ -686,7 +689,7 @@ update_all_existing_agents() {
     fi
     
     if [[ -f "$AGENTS_FILE" ]]; then
-        update_agent_file "$AGENTS_FILE" "Codex/opencode"
+        update_agent_file "$AGENTS_FILE" "Codex/opencode/Goose"
         found_agent=true
     fi
     
@@ -759,7 +762,7 @@ print_summary() {
     
     echo
 
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|shai|q|bob|qoder]"
+    log_info "Usage: $0 [claude|gemini|goose|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|codebuddy|shai|q|bob|qoder]"
 }
 
 #==============================================================================
