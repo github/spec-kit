@@ -87,7 +87,7 @@ Convert a GitHub Issue into a structured spec.md file:
 
 **Output:**
 ```
-✓ Spec generated at: .specify/specs/001-generate-spec-artifacts/spec.md
+✓ Spec generated at: specs/001-generate-spec-artifacts/spec.md
 ✓ Linked to issue: https://github.com/github/spec-kit/issues/2175
 
 Next steps:
