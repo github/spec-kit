@@ -4395,6 +4395,24 @@ def workflow_add(
 
         workflow_dir.mkdir(parents=True, exist_ok=True)
         with urlopen(workflow_url, timeout=30) as response:  # noqa: S310
+            # Validate final URL after redirects
+            final_url = response.geturl()
+            final_parsed = urlparse(final_url)
+            final_host = final_parsed.hostname or ""
+            final_loopback = final_host == "localhost"
+            if not final_loopback:
+                try:
+                    final_loopback = ip_address(final_host).is_loopback
+                except ValueError:
+                    pass
+            if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_loopback):
+                if workflow_dir.exists():
+                    import shutil
+                    shutil.rmtree(workflow_dir, ignore_errors=True)
+                console.print(
+                    f"[red]Error:[/red] Workflow '{source}' redirected to non-HTTPS URL: {final_url}"
+                )
+                raise typer.Exit(1)
             workflow_file.write_bytes(response.read())
     except Exception as exc:
         if workflow_dir.exists():

@@ -128,7 +128,7 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         filter_match = re.match(r"(\w+)\((.+)\)", filter_expr)
         if filter_match:
             fname = filter_match.group(1)
-            farg = filter_match.group(2).strip().strip("'\"")
+            farg = _evaluate_simple_expression(filter_match.group(2).strip(), namespace)
             if fname == "default":
                 return _filter_default(value, farg)
             if fname == "join":

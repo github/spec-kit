@@ -564,6 +564,11 @@ class WorkflowEngine:
                 return
 
             # Execute nested steps (from control flow)
+            # NOTE: Nested steps run with step_offset=-1 so they don't
+            # update current_step_index.  If a nested step pauses,
+            # resume will re-run the parent step and its nested body.
+            # A step-path stack for exact nested resume is a future
+            # enhancement.
             if result.next_steps:
                 self._execute_steps(
                     result.next_steps, context, state, registry,

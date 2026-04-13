@@ -3,7 +3,7 @@ workflow:
   id: "speckit"
   name: "Full SDD Cycle"
   version: "1.0.0"
-  author: "github"
+  author: "GitHub"
   description: "Runs specify → plan → tasks → implement with review gates"
   integration: copilot
 

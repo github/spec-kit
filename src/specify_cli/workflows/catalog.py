@@ -191,7 +191,6 @@ class WorkflowCatalog:
             )
 
         entries: list[WorkflowCatalogEntry] = []
-        skipped: list[int] = []
         for idx, item in enumerate(catalogs_data):
             if not isinstance(item, dict):
                 raise WorkflowValidationError(
@@ -200,7 +199,6 @@ class WorkflowCatalog:
                 )
             url = str(item.get("url", "")).strip()
             if not url:
-                skipped.append(idx)
                 continue
             self._validate_catalog_url(url)
             try:
@@ -416,8 +414,10 @@ class WorkflowCatalog:
                 if q not in searchable:
                     continue
             if tag:
-                tags = wf_data.get("tags", [])
-                if tag.lower() not in [t.lower() for t in tags]:
+                raw_tags = wf_data.get("tags", [])
+                tags = raw_tags if isinstance(raw_tags, list) else []
+                normalized_tags = [t.lower() for t in tags if isinstance(t, str)]
+                if tag.lower() not in normalized_tags:
                     continue
             results.append(wf_data)
         return results
