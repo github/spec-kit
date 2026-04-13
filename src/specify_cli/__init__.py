@@ -4329,6 +4329,7 @@ def workflow_add(
             try:
                 src_loopback = ip_address(src_host).is_loopback
             except ValueError:
+                # Host is not an IP literal (e.g., a DNS name); keep default non-loopback.
                 pass
         if parsed_src.scheme != "https" and not (parsed_src.scheme == "http" and src_loopback):
             console.print("[red]Error:[/red] Only HTTPS URLs are allowed, except HTTP for localhost.")
@@ -4345,6 +4346,7 @@ def workflow_add(
                     try:
                         final_lb = ip_address(final_host).is_loopback
                     except ValueError:
+                        # Redirect host is not an IP literal; keep loopback as determined above.
                         pass
                 if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
                     console.print(f"[red]Error:[/red] URL redirected to non-HTTPS: {final_url}")
