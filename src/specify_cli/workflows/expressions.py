@@ -118,7 +118,14 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     """
     expr = expr.strip()
 
-    # Handle pipe filters first
+    # String literal — check before pipes and operators so quoted strings
+    # containing | or operator keywords are not mis-parsed.
+    if (expr.startswith("'") and expr.endswith("'")) or (
+        expr.startswith('"') and expr.endswith('"')
+    ):
+        return expr[1:-1]
+
+    # Handle pipe filters
     if "|" in expr:
         parts = expr.split("|", 1)
         value = _evaluate_simple_expression(parts[0].strip(), namespace)
@@ -142,13 +149,6 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         if filter_name == "default":
             return _filter_default(value)
         return value
-
-    # String literal — check before operators so quoted strings
-    # containing operator keywords (e.g. 'a in b') are not mis-parsed.
-    if (expr.startswith("'") and expr.endswith("'")) or (
-        expr.startswith('"') and expr.endswith('"')
-    ):
-        return expr[1:-1]
 
     # Boolean operators — parse 'or' first (lower precedence) so that
     # 'a or b and c' is evaluated as 'a or (b and c)'.

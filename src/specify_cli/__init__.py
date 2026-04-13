@@ -4092,7 +4092,7 @@ workflow_app.add_typer(workflow_catalog_app, name="catalog")
 @workflow_app.command("run")
 def workflow_run(
     source: str = typer.Argument(..., help="Workflow ID or YAML file path"),
-    input_values: list[str] = typer.Option(
+    input_values: list[str] | None = typer.Option(
         None, "--input", "-i", help="Input values as key=value pairs"
     ),
 ):
@@ -4191,7 +4191,7 @@ def workflow_resume(
 
 @workflow_app.command("status")
 def workflow_status(
-    run_id: str = typer.Argument(None, help="Run ID to inspect (shows all if omitted)"),
+    run_id: str | None = typer.Argument(None, help="Run ID to inspect (shows all if omitted)"),
 ):
     """Show workflow run status."""
     from .workflows.engine import WorkflowEngine
@@ -4306,6 +4306,15 @@ def workflow_add(
         if not definition.id or not definition.id.strip():
             console.print("[red]Error:[/red] Workflow definition has an empty or missing 'id'")
             raise typer.Exit(1)
+
+        from .workflows.engine import validate_workflow
+        errors = validate_workflow(definition)
+        if errors:
+            console.print("[red]Error:[/red] Workflow validation failed:")
+            for err in errors:
+                console.print(f"  \u2022 {err}")
+            raise typer.Exit(1)
+
         dest_dir = workflows_dir / definition.id
         dest_dir.mkdir(parents=True, exist_ok=True)
         import shutil
