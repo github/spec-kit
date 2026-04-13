@@ -3853,3 +3853,332 @@ class TestHookInvocationRendering:
         assert "Executing: `/<missing command>`" in message
         assert "EXECUTE_COMMAND: <missing command>" in message
         assert "EXECUTE_COMMAND_INVOCATION: /<missing command>" in message
+
+
+# ===== modifies_hooks Tests =====
+
+
+class TestModifiesHooks:
+    """Tests for the modifies_hooks extension.yml feature."""
+
+    @pytest.fixture
+    def project_dir(self, tmp_path):
+        specify_dir = tmp_path / ".specify"
+        specify_dir.mkdir()
+        extensions_dir = specify_dir / "extensions"
+        extensions_dir.mkdir()
+        return tmp_path
+
+    @pytest.fixture
+    def extensions_yml_with_git_hook(self, project_dir):
+        """Seed extensions.yml with a git before_specify hook."""
+        import yaml
+
+        config = {
+            "installed": [],
+            "settings": {"auto_execute_hooks": True},
+            "hooks": {
+                "before_specify": [
+                    {
+                        "extension": "git",
+                        "command": "speckit.git.feature",
+                        "enabled": True,
+                        "optional": False,
+                        "prompt": "Execute speckit.git.feature?",
+                        "description": "Create feature branch before specification",
+                        "condition": None,
+                    }
+                ]
+            },
+        }
+        config_path = project_dir / ".specify" / "extensions.yml"
+        config_path.write_text(yaml.dump(config, default_flow_style=False))
+        return config_path
+
+    @pytest.fixture
+    def manifest_with_modifies(self, tmp_path):
+        """Extension manifest that declares modifies_hooks."""
+        import yaml
+
+        ext_dir = tmp_path / "worktrees-src"
+        ext_dir.mkdir()
+        data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "worktrees",
+                "name": "Worktrees",
+                "version": "1.0.0",
+                "description": "Worktree isolation",
+            },
+            "requires": {"speckit_version": ">=0.4.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.worktrees.create",
+                        "file": "commands/speckit.worktrees.create.md",
+                        "description": "Spawn a worktree",
+                    }
+                ]
+            },
+            "hooks": {
+                "after_specify": {
+                    "command": "speckit.worktrees.create",
+                    "optional": False,
+                    "description": "Auto-spawn worktree",
+                }
+            },
+            "modifies_hooks": [
+                {
+                    "hook": "before_specify",
+                    "extension": "git",
+                    "command": "speckit.git.feature",
+                    "action": "disable",
+                    "reason": "Worktree-parallel model keeps primary checkout stable",
+                }
+            ],
+        }
+        manifest_path = ext_dir / "extension.yml"
+        manifest_path.write_text(yaml.dump(data, default_flow_style=False))
+        # Create the command file so manifest validation passes
+        cmd_dir = ext_dir / "commands"
+        cmd_dir.mkdir()
+        (cmd_dir / "speckit.worktrees.create.md").write_text("# Create worktree")
+        return ExtensionManifest(manifest_path)
+
+    def test_validation_accepts_valid_modifies_hooks(self, manifest_with_modifies):
+        assert len(manifest_with_modifies.modifies_hooks) == 1
+        assert manifest_with_modifies.modifies_hooks[0]["action"] == "disable"
+
+    def test_validation_rejects_missing_fields(self, tmp_path):
+        import yaml
+
+        data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "bad-ext",
+                "name": "Bad",
+                "version": "1.0.0",
+                "description": "Missing fields",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {"name": "speckit.bad-ext.cmd", "file": "cmd.md", "description": "x"}
+                ]
+            },
+            "modifies_hooks": [
+                {"hook": "before_specify", "extension": "git"}
+            ],
+        }
+        path = tmp_path / "extension.yml"
+        path.write_text(yaml.dump(data, default_flow_style=False))
+        with pytest.raises(ValidationError, match="missing required fields"):
+            ExtensionManifest(path)
+
+    def test_validation_rejects_bad_action(self, tmp_path):
+        import yaml
+
+        data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "bad-ext",
+                "name": "Bad",
+                "version": "1.0.0",
+                "description": "Bad action",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {"name": "speckit.bad-ext.cmd", "file": "cmd.md", "description": "x"}
+                ]
+            },
+            "modifies_hooks": [
+                {
+                    "hook": "before_specify",
+                    "extension": "git",
+                    "command": "speckit.git.feature",
+                    "action": "remove",
+                    "reason": "bad",
+                }
+            ],
+        }
+        path = tmp_path / "extension.yml"
+        path.write_text(yaml.dump(data, default_flow_style=False))
+        with pytest.raises(ValidationError, match="invalid action"):
+            ExtensionManifest(path)
+
+    def test_register_hooks_disables_target_with_consent(
+        self, project_dir, extensions_yml_with_git_hook, manifest_with_modifies, monkeypatch
+    ):
+        """When user consents, the target hook is disabled."""
+        import yaml
+
+        monkeypatch.setattr("sys.stdin", type("FakeTTY", (), {"isatty": lambda self: True})())
+        monkeypatch.setattr("builtins.input", lambda _: "y")
+
+        executor = HookExecutor(project_dir)
+        applied = executor.register_hooks(manifest_with_modifies)
+
+        assert len(applied) == 1
+        assert applied[0]["action"] == "disable"
+        assert applied[0]["original_enabled"] is True
+
+        config = yaml.safe_load(extensions_yml_with_git_hook.read_text())
+        git_hook = config["hooks"]["before_specify"][0]
+        assert git_hook["enabled"] is False
+
+    def test_register_hooks_skips_when_consent_declined(
+        self, project_dir, extensions_yml_with_git_hook, manifest_with_modifies, monkeypatch
+    ):
+        """When user declines, the target hook is not modified."""
+        import yaml
+
+        monkeypatch.setattr("sys.stdin", type("FakeTTY", (), {"isatty": lambda self: True})())
+        monkeypatch.setattr("builtins.input", lambda _: "n")
+
+        executor = HookExecutor(project_dir)
+        applied = executor.register_hooks(manifest_with_modifies)
+
+        assert len(applied) == 0
+
+        config = yaml.safe_load(extensions_yml_with_git_hook.read_text())
+        git_hook = config["hooks"]["before_specify"][0]
+        assert git_hook["enabled"] is True
+
+    def test_register_hooks_skips_in_non_tty(
+        self, project_dir, extensions_yml_with_git_hook, manifest_with_modifies, monkeypatch
+    ):
+        """In CI (non-TTY), modifications default to NO."""
+        import yaml
+
+        monkeypatch.setattr("sys.stdin", type("FakeNonTTY", (), {"isatty": lambda self: False})())
+
+        executor = HookExecutor(project_dir)
+        applied = executor.register_hooks(manifest_with_modifies)
+
+        assert len(applied) == 0
+
+        config = yaml.safe_load(extensions_yml_with_git_hook.read_text())
+        git_hook = config["hooks"]["before_specify"][0]
+        assert git_hook["enabled"] is True
+
+    def test_unregister_hooks_restores_original_state(
+        self, project_dir, extensions_yml_with_git_hook, manifest_with_modifies, monkeypatch
+    ):
+        """Removing the extension restores the target hook to its original state."""
+        import yaml
+
+        monkeypatch.setattr("sys.stdin", type("FakeTTY", (), {"isatty": lambda self: True})())
+        monkeypatch.setattr("builtins.input", lambda _: "y")
+
+        executor = HookExecutor(project_dir)
+        applied = executor.register_hooks(manifest_with_modifies)
+
+        config = yaml.safe_load(extensions_yml_with_git_hook.read_text())
+        assert config["hooks"]["before_specify"][0]["enabled"] is False
+
+        executor.unregister_hooks("worktrees", modified_hooks=applied)
+
+        config = yaml.safe_load(extensions_yml_with_git_hook.read_text())
+        git_hook = config["hooks"]["before_specify"][0]
+        assert git_hook["enabled"] is True
+
+    def test_target_hook_not_found_warns_not_errors(
+        self, project_dir, manifest_with_modifies, capsys
+    ):
+        """Missing target hook prints warning but doesn't raise."""
+        import yaml
+
+        empty_config = {
+            "installed": [],
+            "settings": {"auto_execute_hooks": True},
+            "hooks": {},
+        }
+        config_path = project_dir / ".specify" / "extensions.yml"
+        config_path.write_text(yaml.dump(empty_config, default_flow_style=False))
+
+        executor = HookExecutor(project_dir)
+        applied = executor.register_hooks(manifest_with_modifies)
+
+        assert len(applied) == 0
+        captured = capsys.readouterr()
+        assert "not found" in captured.err
+
+    def test_already_disabled_hook_is_noop(
+        self, project_dir, monkeypatch
+    ):
+        """If target hook is already disabled, no consent prompt is shown."""
+        import yaml
+
+        config = {
+            "installed": [],
+            "settings": {"auto_execute_hooks": True},
+            "hooks": {
+                "before_specify": [
+                    {
+                        "extension": "git",
+                        "command": "speckit.git.feature",
+                        "enabled": False,
+                        "optional": False,
+                    }
+                ]
+            },
+        }
+        config_path = project_dir / ".specify" / "extensions.yml"
+        config_path.write_text(yaml.dump(config, default_flow_style=False))
+
+        ext_dir = project_dir / "worktrees-src"
+        ext_dir.mkdir()
+        data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "worktrees",
+                "name": "Worktrees",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {"name": "speckit.worktrees.create", "file": "cmd.md", "description": "x"}
+                ]
+            },
+            "hooks": {
+                "after_specify": {
+                    "command": "speckit.worktrees.create",
+                    "optional": False,
+                    "description": "test",
+                }
+            },
+            "modifies_hooks": [
+                {
+                    "hook": "before_specify",
+                    "extension": "git",
+                    "command": "speckit.git.feature",
+                    "action": "disable",
+                    "reason": "Already disabled test",
+                }
+            ],
+        }
+        manifest_path = ext_dir / "extension.yml"
+        manifest_path.write_text(yaml.dump(data, default_flow_style=False))
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "speckit.worktrees.create.md").write_text("# test")
+        cmd_path = ext_dir / "cmd.md"
+        cmd_path.write_text("# test")
+        manifest = ExtensionManifest(manifest_path)
+
+        input_called = False
+
+        def fail_input(_):
+            nonlocal input_called
+            input_called = True
+            return "n"
+
+        monkeypatch.setattr("builtins.input", fail_input)
+
+        executor = HookExecutor(project_dir)
+        applied = executor.register_hooks(manifest)
+
+        assert len(applied) == 0
+        assert not input_called

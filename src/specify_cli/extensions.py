@@ -9,6 +9,7 @@ without bloating the core framework.
 import json
 import hashlib
 import os
+import sys
 import tempfile
 import zipfile
 import shutil
@@ -217,6 +218,32 @@ class ExtensionManifest:
                         f"Hook '{hook_name}' missing required 'command' field"
                     )
 
+        # Validate modifies_hooks (if present)
+        modifies_hooks = self.data.get("modifies_hooks")
+        if modifies_hooks is not None:
+            if not isinstance(modifies_hooks, list):
+                raise ValidationError(
+                    "Invalid modifies_hooks: expected a list"
+                )
+            _VALID_MODIFY_ACTIONS = {"disable", "set_optional"}
+            _REQUIRED_MODIFY_FIELDS = {"hook", "extension", "command", "action", "reason"}
+            for idx, entry in enumerate(modifies_hooks):
+                if not isinstance(entry, dict):
+                    raise ValidationError(
+                        f"Invalid modifies_hooks[{idx}]: expected a mapping"
+                    )
+                missing = _REQUIRED_MODIFY_FIELDS - set(entry.keys())
+                if missing:
+                    raise ValidationError(
+                        f"modifies_hooks[{idx}] missing required fields: {', '.join(sorted(missing))}"
+                    )
+                action = entry["action"]
+                if action not in _VALID_MODIFY_ACTIONS:
+                    raise ValidationError(
+                        f"modifies_hooks[{idx}] invalid action '{action}': "
+                        f"must be one of {', '.join(sorted(_VALID_MODIFY_ACTIONS))}"
+                    )
+
         # Validate commands (if present)
         for cmd in commands:
             if "name" not in cmd or "file" not in cmd:
@@ -263,6 +290,15 @@ class ExtensionManifest:
     def hooks(self) -> Dict[str, Any]:
         """Get hook definitions."""
         return self.data.get("hooks", {})
+
+    @property
+    def modifies_hooks(self) -> List[Dict[str, Any]]:
+        """Get hook modification declarations.
+
+        Each entry targets a specific hook from another extension and
+        requests a limited action (disable / set_optional) with a reason.
+        """
+        return self.data.get("modifies_hooks", [])
 
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
@@ -1080,9 +1116,9 @@ class ExtensionManager:
         # was used during project initialisation (feature parity).
         registered_skills = self._register_extension_skills(manifest, dest_dir)
 
-        # Register hooks
+        # Register hooks and apply any modifies_hooks declarations
         hook_executor = HookExecutor(self.project_root)
-        hook_executor.register_hooks(manifest)
+        applied_modifications = hook_executor.register_hooks(manifest)
 
         # Update registry
         self.registry.add(manifest.id, {
@@ -1093,6 +1129,7 @@ class ExtensionManager:
             "priority": priority,
             "registered_commands": registered_commands,
             "registered_skills": registered_skills,
+            "_modified_hooks": applied_modifications,
         })
 
         return manifest
@@ -1224,9 +1261,12 @@ class ExtensionManager:
             if extension_dir.exists():
                 shutil.rmtree(extension_dir)
 
-        # Unregister hooks
+        # Unregister hooks and restore any hooks this extension modified
+        modified_hooks = metadata.get("_modified_hooks", []) if metadata else []
+        if not isinstance(modified_hooks, list):
+            modified_hooks = []
         hook_executor = HookExecutor(self.project_root)
-        hook_executor.unregister_hooks(extension_id)
+        hook_executor.unregister_hooks(extension_id, modified_hooks=modified_hooks)
 
         # Update registry
         self.registry.remove(extension_id)
@@ -2228,66 +2268,279 @@ class HookExecutor:
             encoding="utf-8",
         )
 
-    def register_hooks(self, manifest: ExtensionManifest):
+    def register_hooks(
+        self,
+        manifest: ExtensionManifest,
+    ) -> List[Dict[str, Any]]:
         """Register extension hooks in project config.
+
+        Also processes ``modifies_hooks`` declarations: each matching
+        target hook is modified (disable / set_optional) after explicit
+        user consent.  Returns a list of applied modifications so the
+        caller can persist them in the extension registry for rollback.
 
         Args:
             manifest: Extension manifest with hooks to register
+
+        Returns:
+            List of dicts describing applied hook modifications (empty
+            when the extension declares no ``modifies_hooks`` or the
+            user declines).
         """
-        if not hasattr(manifest, "hooks") or not manifest.hooks:
-            return
+        has_hooks = hasattr(manifest, "hooks") and manifest.hooks
+        has_modifies = hasattr(manifest, "modifies_hooks") and manifest.modifies_hooks
+
+        if not has_hooks and not has_modifies:
+            return []
 
         config = self.get_project_config()
 
-        # Ensure hooks dict exists
         if "hooks" not in config:
             config["hooks"] = {}
 
-        # Register each hook
-        for hook_name, hook_config in manifest.hooks.items():
-            if hook_name not in config["hooks"]:
-                config["hooks"][hook_name] = []
+        # --- 1. Register the extension's own hooks ---
+        if has_hooks:
+            for hook_name, hook_config in manifest.hooks.items():
+                if hook_name not in config["hooks"]:
+                    config["hooks"][hook_name] = []
 
-            # Add hook entry
-            hook_entry = {
-                "extension": manifest.id,
-                "command": hook_config.get("command"),
-                "enabled": True,
-                "optional": hook_config.get("optional", True),
-                "prompt": hook_config.get(
-                    "prompt", f"Execute {hook_config.get('command')}?"
-                ),
-                "description": hook_config.get("description", ""),
-                "condition": hook_config.get("condition"),
-            }
+                hook_entry = {
+                    "extension": manifest.id,
+                    "command": hook_config.get("command"),
+                    "enabled": True,
+                    "optional": hook_config.get("optional", True),
+                    "prompt": hook_config.get(
+                        "prompt", f"Execute {hook_config.get('command')}?"
+                    ),
+                    "description": hook_config.get("description", ""),
+                    "condition": hook_config.get("condition"),
+                }
 
-            # Check if already registered
-            existing = [
-                h
-                for h in config["hooks"][hook_name]
-                if h.get("extension") == manifest.id
-            ]
+                existing = [
+                    h
+                    for h in config["hooks"][hook_name]
+                    if h.get("extension") == manifest.id
+                ]
 
-            if not existing:
-                config["hooks"][hook_name].append(hook_entry)
-            else:
-                # Update existing
-                for i, h in enumerate(config["hooks"][hook_name]):
-                    if h.get("extension") == manifest.id:
-                        config["hooks"][hook_name][i] = hook_entry
+                if not existing:
+                    config["hooks"][hook_name].append(hook_entry)
+                else:
+                    for i, h in enumerate(config["hooks"][hook_name]):
+                        if h.get("extension") == manifest.id:
+                            config["hooks"][hook_name][i] = hook_entry
+
+        # --- 2. Process modifies_hooks ---
+        applied_modifications: List[Dict[str, Any]] = []
+
+        if has_modifies:
+            applied_modifications = self._apply_hook_modifications(
+                manifest, config
+            )
 
         self.save_project_config(config)
+        return applied_modifications
 
-    def unregister_hooks(self, extension_id: str):
+    # ------------------------------------------------------------------
+    # Hook modification helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_bundled_extension(extension_id: str) -> bool:
+        """Return True if the extension ships with spec-kit core."""
+        return extension_id == "git"
+
+    def _apply_hook_modifications(
+        self,
+        manifest: ExtensionManifest,
+        config: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Resolve, prompt, and apply ``modifies_hooks`` entries.
+
+        Mutates *config* in-place when the user consents.
+
+        Returns:
+            List of applied modification records (for registry storage).
+        """
+        pending: List[Dict[str, Any]] = []
+
+        for entry in manifest.modifies_hooks:
+            hook_name = entry["hook"]
+            target_ext = entry["extension"]
+            target_cmd = entry["command"]
+            action = entry["action"]
+            reason = entry["reason"]
+
+            hooks_list = config.get("hooks", {}).get(hook_name, [])
+            match_idx = None
+            for idx, h in enumerate(hooks_list):
+                if (
+                    h.get("extension") == target_ext
+                    and h.get("command") == target_cmd
+                ):
+                    match_idx = idx
+                    break
+
+            if match_idx is None:
+                print(
+                    f"[{manifest.id}] Warning: target hook "
+                    f"{hook_name} -> {target_ext}/{target_cmd} not found, skipping.",
+                    file=sys.stderr,
+                )
+                continue
+
+            target_hook = hooks_list[match_idx]
+
+            if action == "disable" and not target_hook.get("enabled", True):
+                continue
+            if action == "set_optional" and target_hook.get("optional", True):
+                continue
+
+            pending.append({
+                "hook": hook_name,
+                "extension": target_ext,
+                "command": target_cmd,
+                "action": action,
+                "reason": reason,
+                "original_enabled": target_hook.get("enabled", True),
+                "original_optional": target_hook.get("optional", True),
+                "_idx": match_idx,
+            })
+
+        if not pending:
+            return []
+
+        if not self._prompt_hook_modifications(manifest.id, pending):
+            print(
+                f"[{manifest.id}] Hook modifications skipped. "
+                "You can apply them manually in .specify/extensions.yml",
+                file=sys.stderr,
+            )
+            return []
+
+        applied: List[Dict[str, Any]] = []
+        for mod in pending:
+            hook_name = mod["hook"]
+            hooks_list = config["hooks"][hook_name]
+            target_hook = hooks_list[mod["_idx"]]
+
+            if mod["action"] == "disable":
+                target_hook["enabled"] = False
+            elif mod["action"] == "set_optional":
+                target_hook["optional"] = True
+
+            applied.append({
+                "hook": mod["hook"],
+                "extension": mod["extension"],
+                "command": mod["command"],
+                "action": mod["action"],
+                "original_enabled": mod["original_enabled"],
+                "original_optional": mod["original_optional"],
+            })
+            print(
+                f"[{manifest.id}] {mod['action']}d hook "
+                f"{mod['hook']} -> {mod['extension']}/{mod['command']}: "
+                f"{mod['reason']}",
+                file=sys.stderr,
+            )
+
+        return applied
+
+    @staticmethod
+    def _prompt_hook_modifications(
+        installing_ext: str,
+        pending: List[Dict[str, Any]],
+    ) -> bool:
+        """Print a summary and ask for explicit consent.
+
+        Returns False if the user declines or stdin is not a TTY (CI).
+        """
+        print(
+            f"\nExtension '{installing_ext}' requests the following "
+            "hook modifications:\n",
+            file=sys.stderr,
+        )
+        header = f"  {'Hook':<22} {'Target Extension':<18} {'Command':<28} {'Action':<12} Reason"
+        print(header, file=sys.stderr)
+        print("  " + "-" * (len(header) - 2), file=sys.stderr)
+        for mod in pending:
+            is_bundled = HookExecutor._is_bundled_extension(mod["extension"])
+            ext_label = mod["extension"]
+            if not is_bundled:
+                ext_label += " (community)"
+            reason_short = mod["reason"][:60] + ("..." if len(mod["reason"]) > 60 else "")
+            print(
+                f"  {mod['hook']:<22} {ext_label:<18} {mod['command']:<28} {mod['action']:<12} {reason_short}",
+                file=sys.stderr,
+            )
+
+        has_community = any(
+            not HookExecutor._is_bundled_extension(m["extension"]) for m in pending
+        )
+        if has_community:
+            print(
+                "\n  Warning: This extension modifies hooks from a community "
+                "extension which may have been configured intentionally.",
+                file=sys.stderr,
+            )
+
+        if not sys.stdin.isatty():
+            print(
+                "\n  Non-interactive mode detected. Defaulting to NO "
+                "(hook modifications not applied).",
+                file=sys.stderr,
+            )
+            return False
+
+        try:
+            answer = input("\nApply these modifications? [Y/n]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return False
+        return answer in ("y", "yes", "")
+
+    def unregister_hooks(
+        self,
+        extension_id: str,
+        modified_hooks: Optional[List[Dict[str, Any]]] = None,
+    ):
         """Remove extension hooks from project config.
+
+        Also restores any hooks that were modified by this extension
+        during installation (tracked in *modified_hooks*).
 
         Args:
             extension_id: ID of extension to unregister
+            modified_hooks: List of modification records from registry
+                ``_modified_hooks`` (may be None)
         """
         config = self.get_project_config()
 
         if "hooks" not in config:
             return
+
+        # Restore hooks that were modified by this extension
+        if modified_hooks:
+            for mod in modified_hooks:
+                hook_name = mod.get("hook")
+                target_ext = mod.get("extension")
+                target_cmd = mod.get("command")
+                if not hook_name or not target_ext or not target_cmd:
+                    continue
+
+                hooks_list = config.get("hooks", {}).get(hook_name, [])
+                for h in hooks_list:
+                    if (
+                        h.get("extension") == target_ext
+                        and h.get("command") == target_cmd
+                    ):
+                        h["enabled"] = mod.get("original_enabled", True)
+                        h["optional"] = mod.get("original_optional", True)
+                        print(
+                            f"[{extension_id}] Restored hook "
+                            f"{hook_name} -> {target_ext}/{target_cmd} "
+                            f"(enabled={h['enabled']}, optional={h['optional']})",
+                            file=sys.stderr,
+                        )
+                        break
 
         # Remove hooks for this extension
         for hook_name in config["hooks"]:
