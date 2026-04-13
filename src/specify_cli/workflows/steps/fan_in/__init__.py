@@ -27,6 +27,7 @@ class FanInStep(StepBase):
             results.append(step_data.get("output", {}))
 
         # Resolve output expressions with fan_in in context
+        prev_fan_in = getattr(context, "fan_in", None)
         context.fan_in = {"results": results}
         resolved_output: dict[str, Any] = {"results": results}
 
@@ -35,6 +36,9 @@ class FanInStep(StepBase):
                 resolved_output[key] = evaluate_expression(expr, context)
             else:
                 resolved_output[key] = expr
+
+        # Restore previous fan_in state
+        context.fan_in = prev_fan_in
 
         return StepResult(
             status=StepStatus.COMPLETED,

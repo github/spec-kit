@@ -150,18 +150,19 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     ):
         return expr[1:-1]
 
-    # Boolean operators
-    if " and " in expr:
-        parts = expr.split(" and ", 1)
-        left = _evaluate_simple_expression(parts[0].strip(), namespace)
-        right = _evaluate_simple_expression(parts[1].strip(), namespace)
-        return bool(left) and bool(right)
-
+    # Boolean operators — parse 'or' first (lower precedence) so that
+    # 'a or b and c' is evaluated as 'a or (b and c)'.
     if " or " in expr:
         parts = expr.split(" or ", 1)
         left = _evaluate_simple_expression(parts[0].strip(), namespace)
         right = _evaluate_simple_expression(parts[1].strip(), namespace)
         return bool(left) or bool(right)
+
+    if " and " in expr:
+        parts = expr.split(" and ", 1)
+        left = _evaluate_simple_expression(parts[0].strip(), namespace)
+        right = _evaluate_simple_expression(parts[1].strip(), namespace)
+        return bool(left) and bool(right)
 
     if expr.startswith("not "):
         inner = _evaluate_simple_expression(expr[4:].strip(), namespace)

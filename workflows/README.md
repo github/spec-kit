@@ -32,10 +32,10 @@ For detailed architecture and internals, see [ARCHITECTURE.md](ARCHITECTURE.md).
 specify workflow search
 
 # Install a workflow from the catalog
-specify workflow add sdd-pipeline
+specify workflow add speckit
 
 # Run a workflow with inputs
-specify workflow run sdd-pipeline --input feature_name="user-auth"
+specify workflow run speckit --input feature_name="user-auth"
 
 # Check run status
 specify workflow status
@@ -44,10 +44,10 @@ specify workflow status
 specify workflow resume <run_id>
 
 # Get detailed workflow info
-specify workflow info sdd-pipeline
+specify workflow info speckit
 
 # Remove a workflow
-specify workflow remove sdd-pipeline
+specify workflow remove speckit
 ```
 
 ## Running Workflows
@@ -55,8 +55,8 @@ specify workflow remove sdd-pipeline
 ### From an Installed Workflow
 
 ```bash
-specify workflow add sdd-pipeline
-specify workflow run sdd-pipeline --input feature_name="user-auth"
+specify workflow add speckit
+specify workflow run speckit --input feature_name="user-auth"
 ```
 
 ### From a Local YAML File
@@ -68,7 +68,7 @@ specify workflow run ./my-workflow.yml --input feature_name="user-auth"
 ### Multiple Inputs
 
 ```bash
-specify workflow run sdd-pipeline \
+specify workflow run speckit \
   --input feature_name="user-auth" \
   --input scope="backend-only"
 ```
@@ -193,7 +193,7 @@ Execute steps at least once, then repeat while condition holds:
 
 ### Fan-Out Steps
 
-Parallel dispatch over a collection:
+Dispatch a step template for each item in a collection (sequential):
 
 ```yaml
 - id: parallel-impl
@@ -207,7 +207,7 @@ Parallel dispatch over a collection:
 
 ### Fan-In Steps
 
-Aggregate results from parallel steps:
+Aggregate results from fan-out steps:
 
 ```yaml
 - id: collect

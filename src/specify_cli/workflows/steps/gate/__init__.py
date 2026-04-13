@@ -103,4 +103,11 @@ class GateStep(StepBase):
                 f"Gate step {config.get('id', '?')!r}: 'on_reject' must be "
                 f"'abort', 'skip', or 'retry'."
             )
+        if on_reject in ("abort", "retry") and isinstance(options, list):
+            reject_choices = {"reject", "abort"}
+            if not any(o.lower() in reject_choices for o in options):
+                errors.append(
+                    f"Gate step {config.get('id', '?')!r}: on_reject={on_reject!r} "
+                    f"but options has no 'reject' or 'abort' choice."
+                )
         return errors

@@ -23,7 +23,7 @@ flowchart TD
     H -- "if" --> L["IfThenStep.execute()"]
     H -- switch --> M["SwitchStep.execute()"]
     H -- "while/do-while" --> N["Loop steps"]
-    H -- "fan-out/fan-in" --> O["Parallel steps"]
+    H -- "fan-out/fan-in" --> O["Fan-out/fan-in"]
 
     I --> P{Result status?}
     J --> P
@@ -198,7 +198,7 @@ src/specify_cli/
 │       ├── switch/          # Multi-branch dispatch
 │       ├── while_loop/      # While loop
 │       ├── do_while/        # Do-while loop
-│       ├── fan_out/         # Parallel dispatch
+│       ├── fan_out/         # Sequential per-item dispatch
 │       └── fan_in/          # Result aggregation
 └── __init__.py              # CLI commands: specify workflow run/resume/status/
                              #   list/add/remove/search/info,

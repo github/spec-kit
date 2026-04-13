@@ -297,6 +297,7 @@ class WorkflowEngine:
 
     def __init__(self, project_root: Path | None = None) -> None:
         self.project_root = project_root or Path(".")
+        self.on_step_start: Any = None  # Callable[[str, str], None] | None
 
     def load_workflow(self, source: str | Path) -> WorkflowDefinition:
         """Load a workflow from an installed ID or a local YAML path.
@@ -504,10 +505,11 @@ class WorkflowEngine:
                 {"event": "step_started", "step_id": step_id, "type": step_type}
             )
 
-            # Print progress so the user sees which step is running
-
+            # Log progress — use the engine's on_step_start callback if set,
+            # otherwise stay silent (library-safe default).
             label = step_config.get("command", "") or step_type
-            print(f"  ▸ [{step_id}] {label} …", flush=True)
+            if self.on_step_start is not None:
+                self.on_step_start(step_id, label)
 
             step_impl = registry.get(step_type)
             if not step_impl:

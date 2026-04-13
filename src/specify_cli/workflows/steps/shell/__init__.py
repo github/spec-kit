@@ -25,6 +25,10 @@ class ShellStep(StepBase):
 
         cwd = context.project_root or "."
 
+        # NOTE: shell=True is required to support pipes, redirects, and
+        # multi-command expressions in workflow YAML.  Workflow authors
+        # control commands; catalog-installed workflows should be reviewed
+        # before use (see PUBLISHING.md for security guidance).
         try:
             proc = subprocess.run(
                 run_cmd,

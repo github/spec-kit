@@ -4101,6 +4101,7 @@ def workflow_run(
 
     project_root = Path.cwd()
     engine = WorkflowEngine(project_root)
+    engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
     try:
         definition = engine.load_workflow(source)
@@ -4164,6 +4165,7 @@ def workflow_resume(
 
     project_root = Path.cwd()
     engine = WorkflowEngine(project_root)
+    engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
     try:
         state = engine.resume(run_id)
