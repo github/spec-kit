@@ -4294,53 +4294,87 @@ def workflow_add(
     registry = WorkflowRegistry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
 
+    def _validate_and_install_local(yaml_path: Path, source_label: str) -> None:
+        """Validate and install a workflow from a local YAML file."""
+        try:
+            definition = WorkflowDefinition.from_yaml(yaml_path)
+        except (ValueError, yaml.YAMLError) as exc:
+            console.print(f"[red]Error:[/red] Invalid workflow YAML: {exc}")
+            raise typer.Exit(1)
+        if not definition.id or not definition.id.strip():
+            console.print("[red]Error:[/red] Workflow definition has an empty or missing 'id'")
+            raise typer.Exit(1)
+        dest_dir = workflows_dir / definition.id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copy2(yaml_path, dest_dir / "workflow.yml")
+        registry.add(definition.id, {
+            "name": definition.name,
+            "version": definition.version,
+            "description": definition.description,
+            "source": source_label,
+        })
+        console.print(f"[green]✓[/green] Workflow '{definition.name}' ({definition.id}) installed")
+
+    # Try as URL (http/https)
+    if source.startswith("http://") or source.startswith("https://"):
+        from ipaddress import ip_address
+        from urllib.parse import urlparse
+        from urllib.request import urlopen  # noqa: S310
+
+        parsed_src = urlparse(source)
+        src_host = parsed_src.hostname or ""
+        src_loopback = src_host == "localhost"
+        if not src_loopback:
+            try:
+                src_loopback = ip_address(src_host).is_loopback
+            except ValueError:
+                pass
+        if parsed_src.scheme != "https" and not (parsed_src.scheme == "http" and src_loopback):
+            console.print("[red]Error:[/red] Only HTTPS URLs are allowed, except HTTP for localhost.")
+            raise typer.Exit(1)
+
+        import tempfile
+        try:
+            with urlopen(source, timeout=30) as resp:  # noqa: S310
+                final_url = resp.geturl()
+                final_parsed = urlparse(final_url)
+                final_host = final_parsed.hostname or ""
+                final_lb = final_host == "localhost"
+                if not final_lb:
+                    try:
+                        final_lb = ip_address(final_host).is_loopback
+                    except ValueError:
+                        pass
+                if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
+                    console.print(f"[red]Error:[/red] URL redirected to non-HTTPS: {final_url}")
+                    raise typer.Exit(1)
+                with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
+                    tmp.write(resp.read())
+                    tmp_path = Path(tmp.name)
+        except typer.Exit:
+            raise
+        except Exception as exc:
+            console.print(f"[red]Error:[/red] Failed to download workflow: {exc}")
+            raise typer.Exit(1)
+        try:
+            _validate_and_install_local(tmp_path, source)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+        return
+
     # Try as a local file/directory
     source_path = Path(source)
     if source_path.exists():
         if source_path.is_file() and source_path.suffix in (".yml", ".yaml"):
-            # Install from local YAML file
-            try:
-                definition = WorkflowDefinition.from_yaml(source_path)
-            except (ValueError, yaml.YAMLError) as exc:
-                console.print(f"[red]Error:[/red] Invalid workflow YAML: {exc}")
-                raise typer.Exit(1)
-
-            dest_dir = workflows_dir / definition.id
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            import shutil
-            shutil.copy2(source_path, dest_dir / "workflow.yml")
-
-            registry.add(definition.id, {
-                "name": definition.name,
-                "version": definition.version,
-                "description": definition.description,
-                "source": str(source_path),
-            })
-            console.print(f"[green]✓[/green] Workflow '{definition.name}' ({definition.id}) installed")
+            _validate_and_install_local(source_path, str(source_path))
             return
         elif source_path.is_dir():
             wf_file = source_path / "workflow.yml"
             if not wf_file.exists():
                 console.print(f"[red]Error:[/red] No workflow.yml found in {source}")
                 raise typer.Exit(1)
-            try:
-                definition = WorkflowDefinition.from_yaml(wf_file)
-            except (ValueError, yaml.YAMLError) as exc:
-                console.print(f"[red]Error:[/red] Invalid workflow YAML: {exc}")
-                raise typer.Exit(1)
-
-            dest_dir = workflows_dir / definition.id
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            import shutil
-            shutil.copy2(wf_file, dest_dir / "workflow.yml")
-
-            registry.add(definition.id, {
-                "name": definition.name,
-                "version": definition.version,
-                "description": definition.description,
-                "source": str(source_path),
-            })
-            console.print(f"[green]✓[/green] Workflow '{definition.name}' ({definition.id}) installed")
+            _validate_and_install_local(wf_file, str(source_path))
             return
 
     # Try from catalog

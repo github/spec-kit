@@ -143,6 +143,13 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
             return _filter_default(value)
         return value
 
+    # String literal — check before operators so quoted strings
+    # containing operator keywords (e.g. 'a in b') are not mis-parsed.
+    if (expr.startswith("'") and expr.endswith("'")) or (
+        expr.startswith('"') and expr.endswith('"')
+    ):
+        return expr[1:-1]
+
     # Boolean operators
     if " and " in expr:
         parts = expr.split(" and ", 1)
@@ -182,12 +189,6 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
                 return left in right if right is not None else False
             if op == " not in ":
                 return left not in right if right is not None else True
-
-    # String literal
-    if (expr.startswith("'") and expr.endswith("'")) or (
-        expr.startswith('"') and expr.endswith('"')
-    ):
-        return expr[1:-1]
 
     # Numeric literal
     try:

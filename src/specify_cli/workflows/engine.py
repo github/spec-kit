@@ -626,10 +626,13 @@ class WorkflowEngine:
                         ):
                             break
                     context.item = None
-                    # Update fan-out step output with collected results
-                    result.output["results"] = fan_out_results
-                    context.steps[step_id]["output"] = result.output
-                    state.step_results[step_id]["output"] = result.output
+                    # Fan-out items are executed sequentially in this engine,
+                    # so do not surface max_concurrency in persisted output.
+                    fan_out_output = dict(result.output)
+                    fan_out_output.pop("max_concurrency", None)
+                    fan_out_output["results"] = fan_out_results
+                    context.steps[step_id]["output"] = fan_out_output
+                    state.step_results[step_id]["output"] = fan_out_output
 
     def _resolve_inputs(
         self,

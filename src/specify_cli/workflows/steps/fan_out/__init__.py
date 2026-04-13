@@ -1,4 +1,4 @@
-"""Fan-out step — parallel dispatch over a collection."""
+"""Fan-out step — dispatch a step template over a collection."""
 
 from __future__ import annotations
 
@@ -9,10 +9,12 @@ from specify_cli.workflows.expressions import evaluate_expression
 
 
 class FanOutStep(StepBase):
-    """Parallel dispatch over ``items:`` collection.
+    """Dispatch a step template for each item in a collection.
 
-    Iterates over items and dispatches the nested ``step:`` template
-    for each item, up to ``max_concurrency:`` at a time.
+    The engine executes the nested ``step:`` template once per item,
+    setting ``context.item`` for each iteration.  Execution is
+    currently sequential; ``max_concurrency`` is accepted but not
+    enforced.
     """
 
     type_key = "fan-out"

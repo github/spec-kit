@@ -31,7 +31,7 @@ steps:
   - id: review-spec
     type: gate
     message: "Review the generated spec before planning."
-    options: [approve, edit, reject]
+    options: [approve, reject]
     on_reject: abort
 
   - id: plan
