@@ -35,32 +35,29 @@ The Copilot Chat input is a conversational interface only — it does not run sh
 
 1. Open the integrated terminal (View > Terminal or Ctrl+\`).
 2. Make sure you're in the project folder (the same folder that contains the repository files).
-3. Activate your Python environment and install the project if needed (example using a virtual environment):
+3. Install and run the CLI (examples using uvx - the recommended way, or use uv for persistent installation):
 
 ```powershell
-# create a venv (first time)
-python -m venv .venv
+# Run once with uvx (no installation needed)
+uvx --from git+https://github.com/github/spec-kit.git specify --help
 
-# allow script execution for the current session if required (temporary)
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
-
-# activate the venv
-.\.venv\Scripts\Activate.ps1
-
-# install the project in editable mode (if the project exposes a CLI entrypoint)
-pip install -e .
-
-# run the CLI (example)
+# Or install persistently with uv (recommended)
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
 specify --help
 ```
 
-If the project exposes a console script named `specify`, the last command will run it. If not, you can often run a module directly:
+To run the CLI from the source repository without installation:
 
 ```powershell
-python -m specify_cli --help
+cd /path/to/spec-kit
+uvx --from . specify --help
 ```
 
-Replace `specify_cli` above with the actual module name or entrypoint if different.
+Or directly via the module:
+
+```powershell
+python -m src.specify_cli --help
+```
 
 ### Where to run commands: Terminal vs AI Assistant
 
