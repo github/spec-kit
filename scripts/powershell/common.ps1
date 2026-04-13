@@ -194,9 +194,23 @@ function Find-FeatureDirByPrefix {
         return $dirMatches[0].FullName
     }
     $names = ($dirMatches | ForEach-Object { $_.Name }) -join ' '
-    Write-Output "ERROR: Multiple spec directories found with prefix '$prefix': $names"
-    Write-Output "Please ensure only one spec directory exists per prefix."
-    throw "Multiple spec directories for prefix '$prefix'"
+    [Console]::Error.WriteLine("ERROR: Multiple spec directories found with prefix '$prefix': $names")
+    [Console]::Error.WriteLine('Please ensure only one spec directory exists per prefix.')
+    return $null
+}
+
+# Branch-based prefix resolution; mirrors bash get_feature_paths failure (stderr + exit 1).
+function Get-FeatureDirFromBranchPrefixOrExit {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$CurrentBranch
+    )
+    $resolved = Find-FeatureDirByPrefix -RepoRoot $RepoRoot -Branch $CurrentBranch
+    if ($null -eq $resolved) {
+        [Console]::Error.WriteLine('ERROR: Failed to resolve feature directory')
+        exit 1
+    }
+    return $resolved
 }
 
 function Get-FeaturePathsEnv {
@@ -216,22 +230,24 @@ function Get-FeaturePathsEnv {
             $featureDir = Join-Path $repoRoot $featureDir
         }
     } elseif (Test-Path $featureJson) {
+        $featureJsonRaw = Get-Content -LiteralPath $featureJson -Raw
         try {
-            $featureConfig = Get-Content $featureJson -Raw | ConvertFrom-Json
-            if ($featureConfig.feature_directory) {
-                $featureDir = $featureConfig.feature_directory
-                # Normalize relative paths to absolute under repo root
-                if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
-                    $featureDir = Join-Path $repoRoot $featureDir
-                }
-            } else {
-                $featureDir = Find-FeatureDirByPrefix -RepoRoot $repoRoot -Branch $currentBranch
-            }
+            $featureConfig = $featureJsonRaw | ConvertFrom-Json
         } catch {
-            $featureDir = Find-FeatureDirByPrefix -RepoRoot $repoRoot -Branch $currentBranch
+            [Console]::Error.WriteLine("ERROR: Failed to parse .specify/feature.json: $_")
+            exit 1
+        }
+        if ($featureConfig.feature_directory) {
+            $featureDir = $featureConfig.feature_directory
+            # Normalize relative paths to absolute under repo root
+            if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
+                $featureDir = Join-Path $repoRoot $featureDir
+            }
+        } else {
+            $featureDir = Get-FeatureDirFromBranchPrefixOrExit -RepoRoot $repoRoot -CurrentBranch $currentBranch
         }
     } else {
-        $featureDir = Find-FeatureDirByPrefix -RepoRoot $repoRoot -Branch $currentBranch
+        $featureDir = Get-FeatureDirFromBranchPrefixOrExit -RepoRoot $repoRoot -CurrentBranch $currentBranch
     }
     
     [PSCustomObject]@{
