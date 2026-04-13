@@ -4404,6 +4404,7 @@ def workflow_add(
                 try:
                     final_loopback = ip_address(final_host).is_loopback
                 except ValueError:
+                    # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
                     pass
             if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_loopback):
                 if workflow_dir.exists():
