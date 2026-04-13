@@ -31,10 +31,13 @@ For detailed architecture and internals, see [ARCHITECTURE.md](ARCHITECTURE.md).
 # Search available workflows
 specify workflow search
 
-# Install a workflow from the catalog
+# Install the built-in SDD workflow
 specify workflow add speckit
 
-# Run a workflow with inputs
+# Or run directly from a local YAML file
+specify workflow run ./workflow.yml --input feature_name="user-auth"
+
+# Run an installed workflow with inputs
 specify workflow run speckit --input feature_name="user-auth"
 
 # Check run status

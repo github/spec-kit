@@ -39,10 +39,10 @@ class ShellStep(StepBase):
                 timeout=300,
             )
             output = {
-                    "exit_code": proc.returncode,
-                    "stdout": proc.stdout,
-                    "stderr": proc.stderr,
-                }
+                "exit_code": proc.returncode,
+                "stdout": proc.stdout,
+                "stderr": proc.stderr,
+            }
             if proc.returncode != 0:
                 return StepResult(
                     status=StepStatus.FAILED,

@@ -467,11 +467,13 @@ class WorkflowCatalog:
                     f"Catalog URL already configured: {url}"
                 )
 
+        # Derive priority from the highest existing priority + 1
+        max_priority = max((cat.get("priority", 0) for cat in catalogs), default=0)
         catalogs.append(
             {
                 "name": name or f"catalog-{len(catalogs) + 1}",
                 "url": url,
-                "priority": len(catalogs) + 1,
+                "priority": max_priority + 1,
                 "install_allowed": True,
                 "description": "",
             }
