@@ -4469,10 +4469,29 @@ def workflow_add(
         console.print(f"[red]Error:[/red] Failed to install workflow '{source}' from catalog: {exc}")
         raise typer.Exit(1)
 
+    # Validate the downloaded workflow before registering
+    try:
+        definition = WorkflowDefinition.from_yaml(workflow_file)
+    except (ValueError, yaml.YAMLError) as exc:
+        import shutil
+        shutil.rmtree(workflow_dir, ignore_errors=True)
+        console.print(f"[red]Error:[/red] Downloaded workflow is invalid: {exc}")
+        raise typer.Exit(1)
+
+    from .workflows.engine import validate_workflow
+    errors = validate_workflow(definition)
+    if errors:
+        import shutil
+        shutil.rmtree(workflow_dir, ignore_errors=True)
+        console.print("[red]Error:[/red] Downloaded workflow validation failed:")
+        for err in errors:
+            console.print(f"  \u2022 {err}")
+        raise typer.Exit(1)
+
     registry.add(source, {
-        "name": info.get("name", source),
-        "version": info.get("version", "0.0.0"),
-        "description": info.get("description", ""),
+        "name": definition.name or info.get("name", source),
+        "version": definition.version or info.get("version", "0.0.0"),
+        "description": definition.description or info.get("description", ""),
         "source": "catalog",
         "catalog_name": info.get("_catalog_name", ""),
         "url": workflow_url,

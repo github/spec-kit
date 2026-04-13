@@ -610,10 +610,10 @@ class WorkflowEngine:
                     fan_out_results = []
                     for item_idx, item_val in enumerate(result.output["items"]):
                         context.item = item_val
-                        # Create a per-item copy with a unique ID
+                        # Create a per-item copy with an ID in a reserved namespace
                         item_step = dict(template)
                         base_id = item_step.get("id", "item")
-                        item_step["id"] = f"{base_id}-{item_idx}"
+                        item_step["id"] = f"_fanout_{step_id}_{base_id}_{item_idx}"
                         self._execute_steps(
                             [item_step], context, state, registry,
                             step_offset=-1,
@@ -635,6 +635,12 @@ class WorkflowEngine:
                     fan_out_output["results"] = fan_out_results
                     context.steps[step_id]["output"] = fan_out_output
                     state.step_results[step_id]["output"] = fan_out_output
+                    if state.status in (
+                        RunStatus.PAUSED,
+                        RunStatus.FAILED,
+                        RunStatus.ABORTED,
+                    ):
+                        return
 
     def _resolve_inputs(
         self,
