@@ -184,9 +184,7 @@ function Find-FeatureDirByPrefix {
 
     $dirMatches = @()
     if (Test-Path -LiteralPath $specsDir -PathType Container) {
-        $escaped = [regex]::Escape($prefix)
-        $dirMatches = @(Get-ChildItem -LiteralPath $specsDir -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match "^$escaped-" })
+        $dirMatches = @(Get-ChildItem -LiteralPath $specsDir -Filter "$prefix-*" -Directory -ErrorAction SilentlyContinue)
     }
 
     if ($dirMatches.Count -eq 0) {
