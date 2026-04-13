@@ -108,12 +108,20 @@ Create a structured `spec.md` file following the spec-kit template format.
 
 ```bash
 # Determine feature directory
-feature_dir=$(ls -d .specify/specs/*/ 2>/dev/null | tail -1)
+feature_dir=""
+if [ -f ".specify/feature.json" ]; then
+  feature_dir=$(jq -r '.feature_dir // empty' .specify/feature.json)
+fi
+
+if [ -z "$feature_dir" ]; then
+  feature_dir=$(ls -d specs/*/ 2>/dev/null | tail -1)
+fi
+
 if [ -z "$feature_dir" ]; then
   # Create new feature
   feature_num="001"
   feature_name=$(echo "$title" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | sed 's/[^a-z0-9-]//g')
-  feature_dir=".specify/specs/${feature_num}-${feature_name}"
+  feature_dir="specs/${feature_num}-${feature_name}"
   mkdir -p "$feature_dir"
 else
   # Use existing feature directory
