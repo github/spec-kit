@@ -18,7 +18,7 @@ class IfThenStep(StepBase):
     type_key = "if"
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
-        condition = config.get("condition", "false")
+        condition = config.get("condition", False)
         result = evaluate_condition(condition, context)
 
         if result:

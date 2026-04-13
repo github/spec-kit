@@ -27,20 +27,17 @@ steps:
     command: speckit.specify
     input:
       args: "{{ inputs.feature_name }}"
-    output:
-      spec_file: "{{ result.file }}"
 
   - id: review-spec
     type: gate
     message: "Review the generated spec before planning."
-    show_file: "{{ steps.specify.output.spec_file }}"
     options: [approve, edit, reject]
     on_reject: abort
 
   - id: plan
     command: speckit.plan
     input:
-      args: "{{ steps.specify.output.spec_file }}"
+      args: "{{ inputs.feature_name }}"
 
   - id: review-plan
     type: gate
@@ -51,9 +48,9 @@ steps:
   - id: tasks
     command: speckit.tasks
     input:
-      args: "{{ steps.plan.output.plan_file }}"
+      args: "{{ inputs.feature_name }}"
 
   - id: implement
     command: speckit.implement
     input:
-      args: "{{ steps.tasks.output.task_file }}"
+      args: "{{ inputs.feature_name }}"

@@ -83,6 +83,7 @@ _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
 VALID_STEP_TYPES = {
     "command",
     "shell",
+    "prompt",
     "gate",
     "if",
     "switch",
@@ -394,6 +395,11 @@ class WorkflowEngine:
         except WorkflowAbortError:
             state.status = RunStatus.ABORTED
             state.append_log({"event": "workflow_aborted"})
+        except KeyboardInterrupt:
+            state.status = RunStatus.PAUSED
+            state.append_log({"event": "workflow_interrupted"})
+            state.save()
+            return state
         except Exception as exc:
             state.status = RunStatus.FAILED
             state.append_log({"event": "workflow_failed", "error": str(exc)})
@@ -432,13 +438,24 @@ class WorkflowEngine:
         state.status = RunStatus.RUNNING
         state.save()
 
-        # Resume from the current step
+        # Resume from the current step — re-execute it so gates
+        # can prompt interactively again.
         remaining_steps = definition.steps[state.current_step_index :]
+        step_offset = state.current_step_index
+
         try:
-            self._execute_steps(remaining_steps, context, state, STEP_REGISTRY)
+            self._execute_steps(
+                remaining_steps, context, state, STEP_REGISTRY,
+                step_offset=step_offset,
+            )
         except WorkflowAbortError:
             state.status = RunStatus.ABORTED
             state.append_log({"event": "workflow_aborted"})
+        except KeyboardInterrupt:
+            state.status = RunStatus.PAUSED
+            state.append_log({"event": "workflow_interrupted"})
+            state.save()
+            return state
         except Exception as exc:
             state.status = RunStatus.FAILED
             state.append_log({"event": "resume_failed", "error": str(exc)})
@@ -456,6 +473,8 @@ class WorkflowEngine:
         context: StepContext,
         state: RunState,
         registry: dict[str, Any],
+        *,
+        step_offset: int = 0,
     ) -> None:
         """Execute a list of steps sequentially."""
         for i, step_config in enumerate(steps):
@@ -463,12 +482,18 @@ class WorkflowEngine:
             step_type = step_config.get("type", "command")
 
             state.current_step_id = step_id
-            state.current_step_index = i
+            if step_offset >= 0:
+                state.current_step_index = step_offset + i
             state.save()
 
             state.append_log(
                 {"event": "step_started", "step_id": step_id, "type": step_type}
             )
+
+            # Print progress so the user sees which step is running
+            import sys
+            label = step_config.get("command", "") or step_type
+            print(f"  ▸ [{step_id}] {label} …", flush=True)
 
             step_impl = registry.get(step_type)
             if not step_impl:
@@ -526,7 +551,10 @@ class WorkflowEngine:
 
             # Execute nested steps (from control flow)
             if result.next_steps:
-                self._execute_steps(result.next_steps, context, state, registry)
+                self._execute_steps(
+                    result.next_steps, context, state, registry,
+                    step_offset=-1,
+                )
                 if state.status in (
                     RunStatus.PAUSED,
                     RunStatus.FAILED,
@@ -545,13 +573,50 @@ class WorkflowEngine:
             if not isinstance(input_def, dict):
                 continue
             if name in provided:
-                resolved[name] = provided[name]
+                resolved[name] = self._coerce_input(
+                    name, provided[name], input_def
+                )
             elif "default" in input_def:
                 resolved[name] = input_def["default"]
             elif input_def.get("required", False):
                 msg = f"Required input {name!r} not provided."
                 raise ValueError(msg)
         return resolved
+
+    @staticmethod
+    def _coerce_input(
+        name: str, value: Any, input_def: dict[str, Any]
+    ) -> Any:
+        """Coerce a provided input value to the declared type."""
+        input_type = input_def.get("type", "string")
+        enum_values = input_def.get("enum")
+
+        if input_type == "number":
+            try:
+                value = float(value)
+                if value == int(value):
+                    value = int(value)
+            except (ValueError, TypeError):
+                msg = f"Input {name!r} expected a number, got {value!r}."
+                raise ValueError(msg) from None
+        elif input_type == "boolean":
+            if isinstance(value, str):
+                if value.lower() in ("true", "1", "yes"):
+                    value = True
+                elif value.lower() in ("false", "0", "no"):
+                    value = False
+                else:
+                    msg = f"Input {name!r} expected a boolean, got {value!r}."
+                    raise ValueError(msg)
+
+        if enum_values is not None and value not in enum_values:
+            msg = (
+                f"Input {name!r} value {value!r} not in allowed "
+                f"values: {enum_values}."
+            )
+            raise ValueError(msg)
+
+        return value
 
     def list_runs(self) -> list[dict[str, Any]]:
         """List all workflow runs in the project."""

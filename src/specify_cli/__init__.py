@@ -4152,7 +4152,7 @@ def workflow_run(
     console.print(f"[dim]Run ID: {state.run_id}[/dim]")
 
     if state.status.value == "paused":
-        console.print(f"\nResume with: [cyan]specify workflow resume {state.run_id}[/cyan]")
+        _handle_gate_pause(state, project_root)
 
 
 @workflow_app.command("resume")
@@ -4360,15 +4360,36 @@ def workflow_add(
         console.print("Direct installation is not enabled for this catalog source.")
         raise typer.Exit(1)
 
-    # Register as available (actual download would happen from the URL)
+    workflow_url = info.get("url")
+    if not workflow_url:
+        console.print(f"[red]Error:[/red] Workflow '{source}' does not have an install URL in the catalog")
+        raise typer.Exit(1)
+
+    workflow_dir = workflows_dir / source
+    workflow_file = workflow_dir / "workflow.yml"
+
+    try:
+        from urllib.request import urlopen  # noqa: S310 — URL comes from catalog
+
+        workflow_dir.mkdir(parents=True, exist_ok=True)
+        with urlopen(workflow_url) as response:  # noqa: S310
+            workflow_file.write_bytes(response.read())
+    except Exception as exc:
+        if workflow_dir.exists():
+            import shutil
+            shutil.rmtree(workflow_dir, ignore_errors=True)
+        console.print(f"[red]Error:[/red] Failed to install workflow '{source}' from catalog: {exc}")
+        raise typer.Exit(1)
+
     registry.add(source, {
         "name": info.get("name", source),
         "version": info.get("version", "0.0.0"),
         "description": info.get("description", ""),
         "source": "catalog",
         "catalog_name": info.get("_catalog_name", ""),
+        "url": workflow_url,
     })
-    console.print(f"[green]✓[/green] Workflow '{info.get('name', source)}' registered from catalog")
+    console.print(f"[green]✓[/green] Workflow '{info.get('name', source)}' installed from catalog")
 
 
 @workflow_app.command("remove")
@@ -4453,6 +4474,8 @@ def workflow_info(
     try:
         definition = engine.load_workflow(workflow_id)
     except FileNotFoundError:
+        # Local workflow definition not found on disk; fall back to
+        # catalog/registry lookup below.
         pass
 
     if definition:

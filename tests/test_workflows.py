@@ -92,13 +92,13 @@ class TestStepRegistry:
     def test_registry_populated(self):
         from specify_cli.workflows import STEP_REGISTRY
 
-        assert len(STEP_REGISTRY) == 9
+        assert len(STEP_REGISTRY) == 10
 
     def test_all_step_types_registered(self):
         from specify_cli.workflows import STEP_REGISTRY
 
         expected = {
-            "command", "shell", "gate", "if", "switch",
+            "command", "shell", "prompt", "gate", "if", "switch",
             "while", "do-while", "fan-out", "fan-in",
         }
         assert set(STEP_REGISTRY.keys()) == expected
@@ -333,6 +333,67 @@ class TestExpressions:
         assert result == "a.md"
 
 
+# ===== Integration Dispatch Tests =====
+
+class TestBuildExecArgs:
+    """Test build_exec_args for CLI-based integrations."""
+
+    def test_claude_exec_args(self):
+        from specify_cli.integrations.claude import ClaudeIntegration
+        impl = ClaudeIntegration()
+        args = impl.build_exec_args("do stuff", model="sonnet-4")
+        assert args[0] == "claude"
+        assert args[1] == "-p"
+        assert args[2] == "do stuff"
+        assert "--model" in args
+        assert "sonnet-4" in args
+        assert "--output-format" in args
+
+    def test_gemini_exec_args(self):
+        from specify_cli.integrations.gemini import GeminiIntegration
+        impl = GeminiIntegration()
+        args = impl.build_exec_args("do stuff", model="gemini-2.5-pro")
+        assert args[0] == "gemini"
+        assert args[1] == "-p"
+        assert "-m" in args
+        assert "gemini-2.5-pro" in args
+
+    def test_codex_exec_args(self):
+        from specify_cli.integrations.codex import CodexIntegration
+        impl = CodexIntegration()
+        args = impl.build_exec_args("do stuff")
+        assert args[0] == "codex"
+        assert args[1] == "exec"
+        assert args[2] == "do stuff"
+        assert "--json" in args
+
+    def test_copilot_exec_args(self):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        impl = CopilotIntegration()
+        args = impl.build_exec_args("do stuff", model="claude-sonnet-4-20250514")
+        assert args[0] == "copilot"
+        assert "-p" in args
+        assert "--allow-all-tools" in args
+        assert "--model" in args
+
+    def test_ide_only_returns_none(self):
+        from specify_cli.integrations.windsurf import WindsurfIntegration
+        impl = WindsurfIntegration()
+        assert impl.build_exec_args("test") is None
+
+    def test_no_model_omits_flag(self):
+        from specify_cli.integrations.claude import ClaudeIntegration
+        impl = ClaudeIntegration()
+        args = impl.build_exec_args("do stuff", model=None)
+        assert "--model" not in args
+
+    def test_no_json_omits_flag(self):
+        from specify_cli.integrations.claude import ClaudeIntegration
+        impl = ClaudeIntegration()
+        args = impl.build_exec_args("do stuff", output_json=False)
+        assert "--output-format" not in args
+
+
 # ===== Step Type Tests =====
 
 class TestCommandStep:
@@ -410,6 +471,192 @@ class TestCommandStep:
         result = step.execute(config, ctx)
         assert result.output["options"]["max-tokens"] == 8000
         assert result.output["options"]["thinking-budget"] == 32768
+
+    def test_dispatch_not_attempted_without_cli(self):
+        """When the CLI tool is not installed, dispatched should be False."""
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        ctx = StepContext(
+            inputs={"name": "login"},
+            default_integration="claude",
+            project_root="/tmp",
+        )
+        config = {
+            "id": "test",
+            "command": "speckit.specify",
+            "input": {"args": "{{ inputs.name }}"},
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["dispatched"] is False
+        assert result.output["exit_code"] == 0
+
+    def test_dispatch_with_mock_cli(self, tmp_path, monkeypatch):
+        """When the CLI is installed, dispatch invokes the command by name."""
+        from unittest.mock import patch, MagicMock
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        ctx = StepContext(
+            inputs={"name": "login"},
+            default_integration="claude",
+            project_root=str(tmp_path),
+        )
+        config = {
+            "id": "test",
+            "command": "speckit.specify",
+            "input": {"args": "{{ inputs.name }}"},
+        }
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = '{"result": "done"}'
+        mock_result.stderr = ""
+
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value="/usr/local/bin/claude"), \
+             patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["dispatched"] is True
+        assert result.output["exit_code"] == 0
+        # Verify the CLI was called with -p and the skill invocation
+        call_args = mock_run.call_args
+        assert call_args[0][0][0] == "claude"
+        assert call_args[0][0][1] == "-p"
+        # Claude is a SkillsIntegration so uses /speckit-specify
+        assert "/speckit-specify login" in call_args[0][0][2]
+
+    def test_dispatch_failure_returns_failed_status(self, tmp_path):
+        """When the CLI exits non-zero, the step should fail."""
+        from unittest.mock import patch, MagicMock
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        ctx = StepContext(
+            inputs={},
+            default_integration="claude",
+            project_root=str(tmp_path),
+        )
+        config = {
+            "id": "test",
+            "command": "speckit.specify",
+            "input": {"args": "test"},
+        }
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_result.stderr = "API error"
+
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value="/usr/local/bin/claude"), \
+             patch("subprocess.run", return_value=mock_result):
+            result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.FAILED
+        assert result.output["dispatched"] is True
+        assert result.output["exit_code"] == 1
+
+
+class TestPromptStep:
+    """Test the prompt step type."""
+
+    def test_execute_basic(self):
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = PromptStep()
+        ctx = StepContext(
+            inputs={"file": "auth.py"},
+            default_integration="claude",
+        )
+        config = {
+            "id": "review",
+            "type": "prompt",
+            "prompt": "Review {{ inputs.file }} for security issues",
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["prompt"] == "Review auth.py for security issues"
+        assert result.output["integration"] == "claude"
+        assert result.output["dispatched"] is False
+
+    def test_execute_with_step_integration(self):
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext
+
+        step = PromptStep()
+        ctx = StepContext(default_integration="claude")
+        config = {
+            "id": "review",
+            "type": "prompt",
+            "prompt": "Summarize the codebase",
+            "integration": "gemini",
+        }
+        result = step.execute(config, ctx)
+        assert result.output["integration"] == "gemini"
+
+    def test_execute_with_model(self):
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext
+
+        step = PromptStep()
+        ctx = StepContext(default_integration="claude", default_model="sonnet-4")
+        config = {
+            "id": "review",
+            "type": "prompt",
+            "prompt": "hello",
+            "model": "opus-4",
+        }
+        result = step.execute(config, ctx)
+        assert result.output["model"] == "opus-4"
+
+    def test_dispatch_with_mock_cli(self, tmp_path):
+        from unittest.mock import patch, MagicMock
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = PromptStep()
+        ctx = StepContext(
+            default_integration="claude",
+            project_root=str(tmp_path),
+        )
+        config = {
+            "id": "ask",
+            "type": "prompt",
+            "prompt": "Explain this code",
+        }
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Here is the explanation"
+        mock_result.stderr = ""
+
+        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value="/usr/local/bin/claude"), \
+             patch("subprocess.run", return_value=mock_result):
+            result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["dispatched"] is True
+        assert result.output["exit_code"] == 0
+
+    def test_validate_missing_prompt(self):
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        errors = step.validate({"id": "test"})
+        assert any("missing 'prompt'" in e for e in errors)
+
+    def test_validate_valid(self):
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        errors = step.validate({"id": "test", "prompt": "do something"})
+        assert errors == []
 
 
 class TestShellStep:
@@ -573,6 +820,45 @@ class TestSwitchStep:
         assert result.output["matched_case"] == "__default__"
         assert result.next_steps[0]["id"] == "fallback"
 
+    def test_execute_no_default_no_match(self):
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext
+
+        step = SwitchStep()
+        ctx = StepContext(
+            steps={"review": {"output": {"choice": "other"}}}
+        )
+        config = {
+            "id": "route",
+            "expression": "{{ steps.review.output.choice }}",
+            "cases": {
+                "approve": [{"id": "plan", "command": "speckit.plan"}],
+            },
+        }
+        result = step.execute(config, ctx)
+        assert result.output["matched_case"] == "__default__"
+        assert result.next_steps == []
+
+    def test_validate_missing_expression(self):
+        from specify_cli.workflows.steps.switch import SwitchStep
+
+        step = SwitchStep()
+        errors = step.validate({"id": "test", "cases": {}})
+        assert any("missing 'expression'" in e for e in errors)
+
+    def test_validate_invalid_cases_and_default(self):
+        from specify_cli.workflows.steps.switch import SwitchStep
+
+        step = SwitchStep()
+        errors = step.validate({
+            "id": "test",
+            "expression": "{{ x }}",
+            "cases": {"a": "not-a-list"},
+            "default": "also-bad",
+        })
+        assert any("case 'a' must be a list" in e for e in errors)
+        assert any("'default' must be a list" in e for e in errors)
+
 
 class TestWhileStep:
     """Test the while loop step type."""
@@ -642,6 +928,59 @@ class TestDoWhileStep:
         assert result.output["loop_type"] == "do-while"
         assert result.output["condition"] == "{{ false }}"
 
+    def test_execute_with_true_condition(self):
+        from specify_cli.workflows.steps.do_while import DoWhileStep
+        from specify_cli.workflows.base import StepContext
+
+        step = DoWhileStep()
+        ctx = StepContext()
+        config = {
+            "id": "cycle",
+            "condition": "{{ true }}",
+            "max_iterations": 5,
+            "steps": [{"id": "work", "command": "speckit.plan"}],
+        }
+        result = step.execute(config, ctx)
+        # Body always executes on first call regardless of condition
+        assert len(result.next_steps) == 1
+        assert result.output["max_iterations"] == 5
+
+    def test_execute_empty_steps(self):
+        from specify_cli.workflows.steps.do_while import DoWhileStep
+        from specify_cli.workflows.base import StepContext
+
+        step = DoWhileStep()
+        ctx = StepContext()
+        config = {
+            "id": "empty",
+            "condition": "{{ false }}",
+            "max_iterations": 1,
+            "steps": [],
+        }
+        result = step.execute(config, ctx)
+        assert result.next_steps == []
+        assert result.status.value == "completed"
+
+    def test_validate_missing_fields(self):
+        from specify_cli.workflows.steps.do_while import DoWhileStep
+
+        step = DoWhileStep()
+        errors = step.validate({"id": "test", "steps": []})
+        assert any("missing 'condition'" in e for e in errors)
+        assert any("missing 'max_iterations'" in e for e in errors)
+
+    def test_validate_steps_not_list(self):
+        from specify_cli.workflows.steps.do_while import DoWhileStep
+
+        step = DoWhileStep()
+        errors = step.validate({
+            "id": "test",
+            "condition": "{{ true }}",
+            "max_iterations": 3,
+            "steps": "not-a-list",
+        })
+        assert any("'steps' must be a list" in e for e in errors)
+
 
 class TestFanOutStep:
     """Test the fan-out step type."""
@@ -667,6 +1006,21 @@ class TestFanOutStep:
         assert result.output["item_count"] == 2
         assert result.output["max_concurrency"] == 3
 
+    def test_execute_non_list_items_resolves_empty(self):
+        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.base import StepContext
+
+        step = FanOutStep()
+        ctx = StepContext()
+        config = {
+            "id": "parallel",
+            "items": "{{ undefined_var }}",
+            "step": {"id": "impl", "command": "speckit.implement"},
+        }
+        result = step.execute(config, ctx)
+        assert result.output["item_count"] == 0
+        assert result.output["items"] == []
+
     def test_validate_missing_fields(self):
         from specify_cli.workflows.steps.fan_out import FanOutStep
 
@@ -674,6 +1028,17 @@ class TestFanOutStep:
         errors = step.validate({"id": "test"})
         assert any("missing 'items'" in e for e in errors)
         assert any("missing 'step'" in e for e in errors)
+
+    def test_validate_step_not_mapping(self):
+        from specify_cli.workflows.steps.fan_out import FanOutStep
+
+        step = FanOutStep()
+        errors = step.validate({
+            "id": "test",
+            "items": "{{ x }}",
+            "step": "not-a-dict",
+        })
+        assert any("'step' must be a mapping" in e for e in errors)
 
 
 class TestFanInStep:
@@ -698,11 +1063,53 @@ class TestFanInStep:
         assert len(result.output["results"]) == 1
         assert result.output["results"][0]["item_count"] == 2
 
+    def test_execute_multiple_wait_for(self):
+        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.base import StepContext
+
+        step = FanInStep()
+        ctx = StepContext(
+            steps={
+                "task-a": {"output": {"file": "a.md"}},
+                "task-b": {"output": {"file": "b.md"}},
+            }
+        )
+        config = {
+            "id": "collect",
+            "wait_for": ["task-a", "task-b"],
+            "output": {},
+        }
+        result = step.execute(config, ctx)
+        assert len(result.output["results"]) == 2
+        assert result.output["results"][0]["file"] == "a.md"
+        assert result.output["results"][1]["file"] == "b.md"
+
+    def test_execute_missing_wait_for_step(self):
+        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.base import StepContext
+
+        step = FanInStep()
+        ctx = StepContext(steps={})
+        config = {
+            "id": "collect",
+            "wait_for": ["nonexistent"],
+            "output": {},
+        }
+        result = step.execute(config, ctx)
+        assert result.output["results"] == [{}]
+
     def test_validate_empty_wait_for(self):
         from specify_cli.workflows.steps.fan_in import FanInStep
 
         step = FanInStep()
         errors = step.validate({"id": "test", "wait_for": []})
+        assert any("non-empty list" in e for e in errors)
+
+    def test_validate_wait_for_not_list(self):
+        from specify_cli.workflows.steps.fan_in import FanInStep
+
+        step = FanInStep()
+        errors = step.validate({"id": "test", "wait_for": "not-a-list"})
         assert any("non-empty list" in e for e in errors)
 
 

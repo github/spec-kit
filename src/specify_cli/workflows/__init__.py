@@ -48,6 +48,7 @@ def _register_builtin_steps() -> None:
     from .steps.fan_out import FanOutStep
     from .steps.gate import GateStep
     from .steps.if_then import IfThenStep
+    from .steps.prompt import PromptStep
     from .steps.shell import ShellStep
     from .steps.switch import SwitchStep
     from .steps.while_loop import WhileStep
@@ -58,6 +59,7 @@ def _register_builtin_steps() -> None:
     _register_step(FanOutStep())
     _register_step(GateStep())
     _register_step(IfThenStep())
+    _register_step(PromptStep())
     _register_step(ShellStep())
     _register_step(SwitchStep())
     _register_step(WhileStep())

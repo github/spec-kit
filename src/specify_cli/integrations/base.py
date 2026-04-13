@@ -89,6 +89,121 @@ class IntegrationBase(ABC):
         """Return options this integration accepts. Default: none."""
         return []
 
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+    ) -> list[str] | None:
+        """Build CLI arguments for non-interactive execution.
+
+        Returns a list of command-line tokens that will execute *prompt*
+        non-interactively using this integration's CLI tool, or ``None``
+        if the integration does not support CLI dispatch.
+
+        Subclasses for CLI-based integrations should override this.
+        """
+        return None
+
+    def build_command_invocation(self, command_name: str, args: str = "") -> str:
+        """Build the native slash-command invocation for a Spec Kit command.
+
+        The CLI tools discover and execute commands from installed files
+        on disk.  This method builds the invocation string the CLI
+        expects — e.g. ``"/speckit.specify my-feature"`` for markdown
+        agents or ``"/speckit-specify my-feature"`` for skills agents.
+
+        *command_name* may be a full dotted name like
+        ``"speckit.specify"`` or a bare stem like ``"specify"``.
+        """
+        stem = command_name
+        if "." in stem:
+            stem = stem.rsplit(".", 1)[-1]
+
+        invocation = f"/speckit.{stem}"
+        if args:
+            invocation = f"{invocation} {args}"
+        return invocation
+
+    def dispatch_command(
+        self,
+        command_name: str,
+        args: str = "",
+        *,
+        project_root: Path | None = None,
+        model: str | None = None,
+        timeout: int = 600,
+        stream: bool = True,
+    ) -> dict[str, Any]:
+        """Dispatch a Spec Kit command through this integration's CLI.
+
+        If the integration provides ``build_exec_args_for_command``
+        (e.g. Copilot using ``--agent``), that takes precedence.
+        Otherwise falls back to building a slash-command invocation
+        and passing it as the prompt.
+
+        When *stream* is ``True`` (the default), stdout and stderr are
+        piped directly to the terminal so the user sees live output.
+        When ``False``, output is captured and returned in the dict.
+
+        Returns a dict with ``exit_code``, ``stdout``, and ``stderr``.
+        Raises ``NotImplementedError`` if the integration does not
+        support CLI dispatch.
+        """
+        import subprocess
+        import sys
+
+        prompt = self.build_command_invocation(command_name, args)
+        # When streaming to the terminal, request text output so the
+        # user sees readable output instead of raw JSONL events.
+        exec_args = self.build_exec_args(
+            prompt, model=model, output_json=not stream
+        )
+
+        if exec_args is None:
+            msg = (
+                f"Integration {self.key!r} does not support CLI dispatch. "
+                f"Override build_exec_args() to enable it."
+            )
+            raise NotImplementedError(msg)
+
+        cwd = str(project_root) if project_root else None
+
+        if stream:
+            try:
+                result = subprocess.run(
+                    exec_args,
+                    stdout=sys.stdout,
+                    stderr=sys.stderr,
+                    text=True,
+                    cwd=cwd,
+                )
+            except KeyboardInterrupt:
+                return {
+                    "exit_code": 130,
+                    "stdout": "",
+                    "stderr": "Interrupted by user",
+                }
+            return {
+                "exit_code": result.returncode,
+                "stdout": "",
+                "stderr": "",
+            }
+
+        result = subprocess.run(
+            exec_args,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=timeout,
+        )
+        return {
+            "exit_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+
     # -- Primitives — building blocks for setup() -------------------------
 
     def shared_commands_dir(self) -> Path | None:
@@ -463,6 +578,22 @@ class MarkdownIntegration(IntegrationBase):
     integration-specific scripts (``update-context.sh`` / ``.ps1``).
     """
 
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+    ) -> list[str] | None:
+        if not self.config or not self.config.get("requires_cli"):
+            return None
+        args = [self.key, "-p", prompt]
+        if model:
+            args.extend(["--model", model])
+        if output_json:
+            args.extend(["--output-format", "json"])
+        return args
+
     def setup(
         self,
         project_root: Path,
@@ -523,6 +654,22 @@ class TomlIntegration(IntegrationBase):
     pipeline as ``MarkdownIntegration``, then converts the result to
     TOML format (``description`` key + ``prompt`` multiline string).
     """
+
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+    ) -> list[str] | None:
+        if not self.config or not self.config.get("requires_cli"):
+            return None
+        args = [self.key, "-p", prompt]
+        if model:
+            args.extend(["-m", model])
+        if output_json:
+            args.extend(["--output-format", "json"])
+        return args
 
     def command_filename(self, template_name: str) -> str:
         """TOML commands use ``.toml`` extension."""
@@ -704,6 +851,22 @@ class SkillsIntegration(IntegrationBase):
     ``speckit-<name>/SKILL.md`` file with skills-oriented frontmatter.
     """
 
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+    ) -> list[str] | None:
+        if not self.config or not self.config.get("requires_cli"):
+            return None
+        args = [self.key, "-p", prompt]
+        if model:
+            args.extend(["--model", model])
+        if output_json:
+            args.extend(["--output-format", "json"])
+        return args
+
     def skills_dest(self, project_root: Path) -> Path:
         """Return the absolute path to the skills output directory.
 
@@ -723,6 +886,17 @@ class SkillsIntegration(IntegrationBase):
             )
         subdir = self.config.get("commands_subdir", "skills")
         return project_root / folder / subdir
+
+    def build_command_invocation(self, command_name: str, args: str = "") -> str:
+        """Skills use ``/speckit-<stem>`` (hyphenated directory name)."""
+        stem = command_name
+        if "." in stem:
+            stem = stem.rsplit(".", 1)[-1]
+
+        invocation = f"/speckit-{stem}"
+        if args:
+            invocation = f"{invocation} {args}"
+        return invocation
 
     def setup(
         self,

@@ -19,7 +19,7 @@ class WhileStep(StepBase):
     type_key = "while"
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
-        condition = config.get("condition", "false")
+        condition = config.get("condition", False)
         max_iterations = config.get("max_iterations", 10)
         nested_steps = config.get("steps", [])
 

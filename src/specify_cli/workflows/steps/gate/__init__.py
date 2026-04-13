@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
@@ -9,10 +10,15 @@ from specify_cli.workflows.expressions import evaluate_expression
 
 
 class GateStep(StepBase):
-    """Pause for human review with interactive options.
+    """Interactive review gate.
+
+    When running in an interactive terminal, prompts the user to choose
+    an option (e.g. approve / reject).  Falls back to ``PAUSED`` when
+    stdin is not a TTY (CI, piped input) so the run can be resumed
+    later with ``specify workflow resume``.
 
     The user's choice is stored in ``output.choice``.  ``on_reject``
-    controls abort / skip / retry behaviour.
+    controls abort / skip behaviour.
     """
 
     type_key = "gate"
@@ -29,20 +35,53 @@ class GateStep(StepBase):
         if show_file and isinstance(show_file, str) and "{{" in show_file:
             show_file = evaluate_expression(show_file, context)
 
-        # In non-interactive mode, auto-approve
-        # The engine layer is responsible for presenting the gate to the user
-        # and pausing execution.  This default implementation records the
-        # gate config so the engine can act on it.
-        return StepResult(
-            status=StepStatus.PAUSED,
-            output={
-                "message": message,
-                "options": options,
-                "on_reject": on_reject,
-                "show_file": show_file,
-                "choice": None,  # Filled by engine after user interaction
-            },
-        )
+        output = {
+            "message": message,
+            "options": options,
+            "on_reject": on_reject,
+            "show_file": show_file,
+            "choice": None,
+        }
+
+        # Non-interactive: pause for later resume
+        if not sys.stdin.isatty():
+            return StepResult(status=StepStatus.PAUSED, output=output)
+
+        # Interactive: prompt the user
+        choice = self._prompt(message, options)
+        output["choice"] = choice
+
+        if choice in ("reject", "abort"):
+            if on_reject == "abort":
+                from specify_cli.workflows.engine import WorkflowAbortError
+                raise WorkflowAbortError(f"Gate rejected by user at step {config.get('id', '?')!r}")
+            # on_reject == "skip" → completed, downstream steps decide
+            return StepResult(status=StepStatus.COMPLETED, output=output)
+
+        return StepResult(status=StepStatus.COMPLETED, output=output)
+
+    @staticmethod
+    def _prompt(message: str, options: list[str]) -> str:
+        """Display gate message and prompt for a choice."""
+        print(f"\n  ┌─ Gate ─────────────────────────────────────")
+        print(f"  │ {message}")
+        print(f"  │")
+        for i, opt in enumerate(options, 1):
+            print(f"  │  [{i}] {opt}")
+        print(f"  └────────────────────────────────────────────")
+
+        while True:
+            try:
+                raw = input(f"  Choose [1-{len(options)}]: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return options[-1]  # default to last (usually reject)
+            if raw.isdigit() and 1 <= int(raw) <= len(options):
+                return options[int(raw) - 1]
+            # Also accept the option name directly
+            if raw.lower() in [o.lower() for o in options]:
+                return next(o for o in options if o.lower() == raw.lower())
+            print(f"  Invalid choice. Enter 1-{len(options)} or an option name.")
 
     def validate(self, config: dict[str, Any]) -> list[str]:
         errors = super().validate(config)
