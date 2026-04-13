@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-10T00:00:00Z",
+  "updated_at": "2026-04-13T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.json",
   "presets": {
     "lean": {
@@ -16,6 +16,21 @@
         "minimal",
         "workflow",
         "core"
+      ]
+    },
+    "claude-ask-questions": {
+      "name": "Claude AskUserQuestion",
+      "id": "claude-ask-questions",
+      "version": "1.0.0",
+      "description": "Replaces Markdown-table question rendering in /speckit.clarify and /speckit.checklist with Claude Code's native AskUserQuestion structured picker",
+      "author": "0xrafasec",
+      "repository": "https://github.com/github/spec-kit",
+      "bundled": true,
+      "tags": [
+        "claude",
+        "ask-user-question",
+        "clarify",
+        "checklist"
       ]
     }
   }
