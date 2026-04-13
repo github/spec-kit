@@ -114,8 +114,19 @@ has_git() {
     git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
 
+# Strip a single optional path segment (e.g. gitflow "feat/004-name" -> "004-name").
+# Only when the full name is exactly two slash-free segments; otherwise returns the raw name.
+spec_kit_effective_branch_name() {
+    local raw="$1"
+    if [[ "$raw" =~ ^([^/]+)/([^/]+)$ ]]; then
+        printf '%s\n' "${BASH_REMATCH[2]}"
+    else
+        printf '%s\n' "$raw"
+    fi
+}
+
 check_feature_branch() {
-    local branch="$1"
+    local raw="$1"
     local has_git_repo="$2"
 
     # For non-git repos, we can't enforce branch naming but still provide output
@@ -124,6 +135,9 @@ check_feature_branch() {
         return 0
     fi
 
+    local branch
+    branch=$(spec_kit_effective_branch_name "$raw")
+
     # Accept sequential prefix (3+ digits) but exclude malformed timestamps
     # Malformed: 7-or-8 digit date + 6-digit time with no trailing slug (e.g. "2026031-143022" or "20260319-143022")
     local is_sequential=false
@@ -131,7 +145,7 @@ check_feature_branch() {
         is_sequential=true
     fi
     if [[ "$is_sequential" != "true" ]] && [[ ! "$branch" =~ ^[0-9]{8}-[0-9]{6}- ]]; then
-        echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
+        echo "ERROR: Not on a feature branch. Current branch: $raw" >&2
         echo "Feature branches should be named like: 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name" >&2
         return 1
     fi
@@ -139,13 +153,12 @@ check_feature_branch() {
     return 0
 }
 
-get_feature_dir() { echo "$1/specs/$2"; }
-
 # Find feature directory by numeric prefix instead of exact branch match
 # This allows multiple branches to work on the same spec (e.g., 004-fix-bug, 004-add-feature)
 find_feature_dir_by_prefix() {
     local repo_root="$1"
-    local branch_name="$2"
+    local branch_name
+    branch_name=$(spec_kit_effective_branch_name "$2")
     local specs_dir="$repo_root/specs"
 
     # Extract prefix from branch (e.g., "004" from "004-whatever" or "20260319-143022" from timestamp branches)
