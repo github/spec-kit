@@ -26,14 +26,12 @@ COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
 EXT_CREATE_FEATURE = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
 EXT_CREATE_FEATURE_PS = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
 
+HAS_PWSH = shutil.which("pwsh") is not None
+
 
 def _has_pwsh() -> bool:
     """Check if pwsh is available."""
-    try:
-        subprocess.run(["pwsh", "--version"], capture_output=True, check=True)
-        return True
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return False
+    return HAS_PWSH
 
 
 @pytest.fixture
