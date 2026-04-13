@@ -4394,7 +4394,7 @@ def workflow_add(
         from urllib.request import urlopen  # noqa: S310 — URL comes from catalog
 
         workflow_dir.mkdir(parents=True, exist_ok=True)
-        with urlopen(workflow_url) as response:  # noqa: S310
+        with urlopen(workflow_url, timeout=30) as response:  # noqa: S310
             workflow_file.write_bytes(response.read())
     except Exception as exc:
         if workflow_dir.exists():

@@ -90,7 +90,7 @@ steps:
 - ✅ `version` follows semantic versioning (X.Y.Z)
 - ✅ `description` is concise
 - ✅ All step IDs are unique
-- ✅ Step types are valid: `command`, `shell`, `gate`, `if`, `switch`, `while`, `do-while`, `fan-out`, `fan-in`
+- ✅ Step types are valid: `command`, `prompt`, `shell`, `gate`, `if`, `switch`, `while`, `do-while`, `fan-out`, `fan-in`
 - ✅ Required fields present per step type (e.g., `condition` for `if`, `expression` for `switch`)
 - ✅ Input types are valid: `string`, `number`, `boolean`
 - ✅ Enum values match declared type

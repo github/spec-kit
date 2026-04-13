@@ -21,6 +21,7 @@ class ShellStep(StepBase):
         run_cmd = config.get("run", "")
         if isinstance(run_cmd, str) and "{{" in run_cmd:
             run_cmd = evaluate_expression(run_cmd, context)
+        run_cmd = str(run_cmd)
 
         cwd = context.project_root or "."
 

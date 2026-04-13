@@ -371,11 +371,15 @@ class WorkflowCatalog:
             # Handle both dict and list formats
             if isinstance(workflows, dict):
                 for wf_id, wf_data in workflows.items():
+                    if not isinstance(wf_data, dict):
+                        continue
                     wf_data["_catalog_name"] = entry.name
                     wf_data["_install_allowed"] = entry.install_allowed
                     merged[wf_id] = wf_data
             elif isinstance(workflows, list):
                 for wf_data in workflows:
+                    if not isinstance(wf_data, dict):
+                        continue
                     wf_id = wf_data.get("id", "")
                     if wf_id:
                         wf_data["_catalog_name"] = entry.name
@@ -468,7 +472,7 @@ class WorkflowCatalog:
 
         config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, default_flow_style=False)
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     def remove_catalog(self, index: int) -> str:
         """Remove a catalog source by index (0-based). Returns the removed name."""
@@ -488,6 +492,6 @@ class WorkflowCatalog:
         data["catalogs"] = catalogs
 
         with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, default_flow_style=False)
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
         return removed.get("name", f"catalog-{index + 1}")

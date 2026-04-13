@@ -83,6 +83,11 @@ class CopilotIntegration(IntegrationBase):
         agent_name = f"speckit.{stem}"
 
         prompt = args or ""
+        # NOTE: --allow-all-tools is required for non-interactive execution
+        # so the agent can perform file edits and shell commands.  The
+        # workflow engine's gate steps serve as the human approval mechanism.
+        # Making tool approval configurable (e.g. via workflow config or
+        # env var) is tracked as a future enhancement.
         cli_args = [
             "copilot", "-p", prompt,
             "--agent", agent_name,

@@ -596,23 +596,35 @@ class WorkflowEngine:
                         ):
                             return
 
-            # Fan-out: execute nested step template per item
+            # Fan-out: execute nested step template per item with unique IDs
             if step_type == "fan-out" and result.output.get("items"):
                 template = result.output.get("step_template", {})
                 if template:
-                    for item_val in result.output["items"]:
+                    fan_out_results = []
+                    for item_idx, item_val in enumerate(result.output["items"]):
                         context.item = item_val
+                        # Create a per-item copy with a unique ID
+                        item_step = dict(template)
+                        base_id = item_step.get("id", "item")
+                        item_step["id"] = f"{base_id}-{item_idx}"
                         self._execute_steps(
-                            [template], context, state, registry,
+                            [item_step], context, state, registry,
                             step_offset=-1,
                         )
+                        # Collect per-item result for fan-in
+                        item_result = context.steps.get(item_step["id"], {})
+                        fan_out_results.append(item_result.get("output", {}))
                         if state.status in (
                             RunStatus.PAUSED,
                             RunStatus.FAILED,
                             RunStatus.ABORTED,
                         ):
-                            return
+                            break
                     context.item = None
+                    # Update fan-out step output with collected results
+                    result.output["results"] = fan_out_results
+                    context.steps[step_id]["output"] = result.output
+                    state.step_results[step_id]["output"] = result.output
 
     def _resolve_inputs(
         self,
