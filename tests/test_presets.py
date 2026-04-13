@@ -1286,6 +1286,22 @@ class TestPresetCatalog:
         req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
         assert "Authorization" not in req.headers
 
+    def test_make_request_whitespace_only_github_token_ignored(self, project_dir, monkeypatch):
+        """A whitespace-only GITHUB_TOKEN is treated as unset."""
+        monkeypatch.setenv("GITHUB_TOKEN", "   ")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_whitespace_github_token_falls_back_to_gh_token(self, project_dir, monkeypatch):
+        """When GITHUB_TOKEN is whitespace-only, GH_TOKEN is used as fallback."""
+        monkeypatch.setenv("GITHUB_TOKEN", "   ")
+        monkeypatch.setenv("GH_TOKEN", "ghp_fallback")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
+        assert req.get_header("Authorization") == "token ghp_fallback"
+
     def test_make_request_github_token_added_for_github_url(self, project_dir, monkeypatch):
         """GITHUB_TOKEN is attached for raw.githubusercontent.com URLs."""
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
