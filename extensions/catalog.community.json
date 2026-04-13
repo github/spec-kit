@@ -1924,7 +1924,7 @@
       "description": "Preview the downstream impact (complexity, effort, tasks, risks) of requirement changes before committing to them.",
       "author": "DevAbdullah90",
       "version": "1.0.0",
-      "download_url": "https://github.com/DevAbdullah90/spec-kit-whatif/archive/refs/heads/main.zip",
+      "download_url": "https://github.com/DevAbdullah90/spec-kit-whatif/archive/refs/tags/v1.0.0.zip",
       "repository": "https://github.com/DevAbdullah90/spec-kit-whatif",
       "homepage": "https://github.com/DevAbdullah90/spec-kit-whatif",
       "documentation": "https://github.com/DevAbdullah90/spec-kit-whatif/blob/main/README.md",
