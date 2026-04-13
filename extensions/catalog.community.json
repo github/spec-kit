@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-13T14:39:00Z",
+  "updated_at": "2026-04-13T21:45:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1924,6 +1924,7 @@
       "description": "Preview the downstream impact (complexity, effort, tasks, risks) of requirement changes before committing to them.",
       "author": "DevAbdullah90",
       "version": "1.0.0",
+      "download_url": "https://github.com/DevAbdullah90/spec-kit-whatif/archive/refs/heads/main.zip",
       "repository": "https://github.com/DevAbdullah90/spec-kit-whatif",
       "homepage": "https://github.com/DevAbdullah90/spec-kit-whatif",
       "documentation": "https://github.com/DevAbdullah90/spec-kit-whatif/blob/main/README.md",
