@@ -6,17 +6,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def setup_client():
-    """
-    Initializes the AI client using standard environment variables.
-    Defaults to OpenAI, but can be overridden via AI_BASE_URL.
-    """
-    api_key = os.getenv("AI_API_KEY")
-    base_url = os.getenv("AI_BASE_URL", "https://api.openai.com/v1")
-    
+    api_key = os.getenv("AI_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
+    base_url = os.getenv("AI_BASE_URL")
     if not api_key:
-        raise ValueError("CRITICAL ERROR: AI_API_KEY environment variable is not set.")
-        
-    return OpenAI(api_key=api_key, base_url=base_url)
+        raise ValueError("AI API Key not found. Please set AI_API_KEY or ensure your LLM provider is configured.")
+
+    return OpenAI(api_key=api_key, base_url=base_url if base_url else "https://api.openai.com/v1")
 
 def load_project_context(target_dir):
     """
@@ -116,14 +111,19 @@ def render_architect_report(raw_json):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Spec-Kit Architectural Impact Previewer")
     parser.add_argument("--change", required=True, help="Description of the change request")
-    parser.add_argument("--model", default=os.getenv("AI_MODEL_ID"), help="Model ID to invoke")
+    parser.add_argument("--model", default=os.getenv("AI_MODEL_ID", "gpt-4o"), help="Model ID to invoke")
     
     args = parser.parse_args()
 
-    # Dynamic path resolution to ensure it works from root
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    default_presets = os.path.abspath(os.path.join(script_dir, "..", "presets", "lean", "commands"))
-    search_path = os.getenv("SPECKIT_PRESETS_DIR", default_presets)
+    def get_search_path():
+        project_specify = os.path.join(os.getcwd(), ".specify", "memory")
+        if os.path.exists(project_specify):
+            return project_specify
+        
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.abspath(os.path.join(script_dir, "..", "presets", "lean", "commands"))
+
+    search_path = os.getenv("SPECKIT_PRESETS_DIR", get_search_path())
 
     try:
         ai_client = setup_client()
@@ -132,12 +132,9 @@ if __name__ == "__main__":
         if not project_context:
             print(f"[!] Path Error: No specification files found at {search_path}")
         else:
-            if not args.model:
-                print("[!] Configuration Error: No Model ID provided via --model or AI_MODEL_ID.")
-            else:
-                print(f"[*] Analyzing global impact for: '{args.change[:50]}...'")
-                raw_report = perform_impact_analysis(ai_client, project_context, args.change, args.model)
-                render_architect_report(raw_report)
+            print(f"[*] Analyzing global impact for: '{args.change[:50]}...'")
+            raw_report = perform_impact_analysis(ai_client, project_context, args.change, args.model)
+            render_architect_report(raw_report)
                 
     except Exception as error:
         print(f"[!] Runtime Exception: {error}")
