@@ -41,6 +41,23 @@ def build_github_request(url: str) -> urllib.request.Request:
     return urllib.request.Request(url, headers=headers)
 
 
+class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
+    """Redirect handler that drops the Authorization header when leaving GitHub.
+
+    Prevents token leakage to CDNs or other third-party hosts that GitHub
+    may redirect to (e.g. S3 for release asset downloads, objects.githubusercontent.com).
+    Auth is preserved as long as the redirect target remains within GITHUB_HOSTS.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req is not None:
+            hostname = (urlparse(newurl).hostname or "").lower()
+            if hostname not in GITHUB_HOSTS:
+                new_req.headers.pop("Authorization", None)
+        return new_req
+
+
 def open_github_url(url: str, timeout: int = 10):
     """Open a URL with GitHub auth, stripping the header on cross-host redirects.
 
@@ -53,15 +70,6 @@ def open_github_url(url: str, timeout: int = 10):
 
     if not req.get_header("Authorization"):
         return urllib.request.urlopen(req, timeout=timeout)
-
-    class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(_self, req, fp, code, msg, headers, newurl):
-            new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
-            if new_req is not None:
-                hostname = (urlparse(newurl).hostname or "").lower()
-                if hostname not in GITHUB_HOSTS:
-                    new_req.headers.pop("Authorization", None)
-            return new_req
 
     opener = urllib.request.build_opener(_StripAuthOnRedirect)
     return opener.open(req, timeout=timeout)
