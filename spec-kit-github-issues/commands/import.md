@@ -1,7 +1,5 @@
 ---
 description: "Import a GitHub Issue and generate spec.md with structured requirements"
-tools:
-  - 'bash/gh'
 ---
 
 # Import GitHub Issue to Spec
