@@ -6,8 +6,6 @@ Commands are deprecated; ``--skills`` defaults to ``True``.
 
 from __future__ import annotations
 
-from typing import Any
-
 from ..base import IntegrationOption, SkillsIntegration
 
 

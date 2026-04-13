@@ -4152,7 +4152,7 @@ def workflow_run(
     console.print(f"[dim]Run ID: {state.run_id}[/dim]")
 
     if state.status.value == "paused":
-        _handle_gate_pause(state, project_root)
+        console.print(f"\nResume with: [cyan]specify workflow resume {state.run_id}[/cyan]")
 
 
 @workflow_app.command("resume")

@@ -63,12 +63,12 @@ class GateStep(StepBase):
     @staticmethod
     def _prompt(message: str, options: list[str]) -> str:
         """Display gate message and prompt for a choice."""
-        print(f"\n  ┌─ Gate ─────────────────────────────────────")
+        print("\n  ┌─ Gate ─────────────────────────────────────")
         print(f"  │ {message}")
-        print(f"  │")
+        print("  │")
         for i, opt in enumerate(options, 1):
             print(f"  │  [{i}] {opt}")
-        print(f"  └────────────────────────────────────────────")
+        print("  └────────────────────────────────────────────")
 
         while True:
             try:

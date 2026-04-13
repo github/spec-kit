@@ -491,7 +491,7 @@ class WorkflowEngine:
             )
 
             # Print progress so the user sees which step is running
-            import sys
+
             label = step_config.get("command", "") or step_type
             print(f"  ▸ [{step_id}] {label} …", flush=True)
 
