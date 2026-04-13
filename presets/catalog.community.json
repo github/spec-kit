@@ -57,7 +57,7 @@
       "name": "Claude AskUserQuestion",
       "id": "claude-ask-questions",
       "version": "1.0.0",
-      "description": "Replaces Markdown-table question rendering in /speckit.clarify and /speckit.checklist with Claude Code's native AskUserQuestion structured picker.",
+      "description": "Upgrades /speckit.clarify and /speckit.checklist on Claude Code from Markdown-table prompts to the native AskUserQuestion picker, with a recommended option and reasoning on every question.",
       "author": "0xrafasec",
       "repository": "https://github.com/0xrafasec/spec-kit-preset-claude-ask-questions",
       "download_url": "https://github.com/0xrafasec/spec-kit-preset-claude-ask-questions/archive/refs/tags/v1.0.0.zip",
