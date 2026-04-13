@@ -1,7 +1,5 @@
 ---
 description: "Add bidirectional traceability between spec artifacts and source issue"
-tools:
-  - 'bash/gh'
 ---
 
 # Link Spec to GitHub Issue
