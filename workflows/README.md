@@ -75,11 +75,11 @@ specify workflow run sdd-pipeline \
 
 ## Step Types
 
-Workflows support 9 built-in step types:
+Workflows support 10 built-in step types:
 
 ### Command Steps (default)
 
-Dispatch a Spec Kit command to an AI integration:
+Invoke an installed Spec Kit command by name via the integration CLI:
 
 ```yaml
 - id: specify
@@ -88,6 +88,17 @@ Dispatch a Spec Kit command to an AI integration:
     args: "{{ inputs.feature_name }}"
   integration: claude        # Optional: override workflow default
   model: "claude-sonnet-4-20250514"   # Optional: override model
+```
+
+### Prompt Steps
+
+Send an arbitrary inline prompt to an integration CLI (no command file needed):
+
+```yaml
+- id: security-review
+  type: prompt
+  prompt: "Review {{ inputs.file }} for security vulnerabilities"
+  integration: claude
 ```
 
 ### Shell Steps

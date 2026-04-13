@@ -682,8 +682,9 @@ class TestShellStep:
         ctx = StepContext()
         config = {"id": "test", "run": "exit 1"}
         result = step.execute(config, ctx)
-        assert result.status == StepStatus.COMPLETED
+        assert result.status == StepStatus.FAILED
         assert result.output["exit_code"] == 1
+        assert result.error is not None
 
     def test_validate_missing_run(self):
         from specify_cli.workflows.steps.shell import ShellStep

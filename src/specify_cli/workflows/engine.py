@@ -80,18 +80,15 @@ class WorkflowDefinition:
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
 
 # Valid step types (matching STEP_REGISTRY keys)
-VALID_STEP_TYPES = {
-    "command",
-    "shell",
-    "prompt",
-    "gate",
-    "if",
-    "switch",
-    "while",
-    "do-while",
-    "fan-out",
-    "fan-in",
-}
+def _get_valid_step_types() -> set[str]:
+    """Return valid step types from the registry, with a built-in fallback."""
+    from . import STEP_REGISTRY
+    if STEP_REGISTRY:
+        return set(STEP_REGISTRY.keys())
+    return {
+        "command", "shell", "prompt", "gate", "if",
+        "switch", "while", "do-while", "fan-out", "fan-in",
+    }
 
 
 def validate_workflow(definition: WorkflowDefinition) -> list[str]:
@@ -162,7 +159,7 @@ def _validate_steps(
 
         # Determine step type
         step_type = step_config.get("type", "command")
-        if step_type not in VALID_STEP_TYPES:
+        if step_type not in _get_valid_step_types():
             errors.append(
                 f"Step {step_id!r} has invalid type {step_type!r}."
             )
@@ -374,6 +371,16 @@ class WorkflowEngine:
             project_root=self.project_root,
         )
 
+        # Persist a copy of the workflow definition so resume can
+        # reload it even if the original source is no longer available
+        # (e.g. a local YAML path that was moved or deleted).
+        run_dir = self.project_root / ".specify" / "workflows" / "runs" / state.run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        workflow_copy = run_dir / "workflow.yml"
+        import yaml
+        with open(workflow_copy, "w", encoding="utf-8") as f:
+            yaml.safe_dump(definition.data, f, sort_keys=False)
+
         # Resolve inputs
         resolved_inputs = self._resolve_inputs(definition, inputs or {})
         state.inputs = resolved_inputs
@@ -419,8 +426,15 @@ class WorkflowEngine:
             msg = f"Cannot resume run {run_id!r} with status {state.status.value!r}."
             raise ValueError(msg)
 
-        # Load the workflow definition
-        definition = self.load_workflow(state.workflow_id)
+        # Load the workflow definition — try the persisted copy in the
+        # run directory first so resume works even if the original
+        # source (e.g. a local YAML path) is no longer available.
+        run_dir = self.project_root / ".specify" / "workflows" / "runs" / run_id
+        run_copy = run_dir / "workflow.yml"
+        if run_copy.exists():
+            definition = WorkflowDefinition.from_yaml(run_copy)
+        else:
+            definition = self.load_workflow(state.workflow_id)
 
         # Restore context
         context = StepContext(
@@ -561,6 +575,44 @@ class WorkflowEngine:
                     RunStatus.ABORTED,
                 ):
                     return
+
+                # Loop iteration: while/do-while re-evaluate after body
+                if step_type in ("while", "do-while"):
+                    from .expressions import evaluate_condition
+
+                    max_iters = step_config.get("max_iterations", 10)
+                    condition = step_config.get("condition", False)
+                    for _loop_iter in range(max_iters - 1):
+                        if not evaluate_condition(condition, context):
+                            break
+                        self._execute_steps(
+                            result.next_steps, context, state, registry,
+                            step_offset=-1,
+                        )
+                        if state.status in (
+                            RunStatus.PAUSED,
+                            RunStatus.FAILED,
+                            RunStatus.ABORTED,
+                        ):
+                            return
+
+            # Fan-out: execute nested step template per item
+            if step_type == "fan-out" and result.output.get("items"):
+                template = result.output.get("step_template", {})
+                if template:
+                    for item_val in result.output["items"]:
+                        context.item = item_val
+                        self._execute_steps(
+                            [template], context, state, registry,
+                            step_offset=-1,
+                        )
+                        if state.status in (
+                            RunStatus.PAUSED,
+                            RunStatus.FAILED,
+                            RunStatus.ABORTED,
+                        ):
+                            return
+                    context.item = None
 
     def _resolve_inputs(
         self,

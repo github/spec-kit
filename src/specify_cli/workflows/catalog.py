@@ -356,11 +356,12 @@ class WorkflowCatalog:
     def _get_merged_workflows(
         self, force_refresh: bool = False
     ) -> dict[str, dict[str, Any]]:
-        """Merge workflows from all active catalogs (higher priority wins)."""
+        """Merge workflows from all active catalogs (lower priority number wins)."""
         catalogs = self.get_active_catalogs()
         merged: dict[str, dict[str, Any]] = {}
 
-        # Process in reverse priority (lower priority first, higher overwrites)
+        # Process later/higher-numbered entries first so earlier/lower-numbered
+        # entries overwrite them on workflow ID conflicts.
         for entry in reversed(catalogs):
             try:
                 data = self._fetch_single_catalog(entry, force_refresh)

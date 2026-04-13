@@ -5,12 +5,12 @@ workflow:
   version: "1.0.0"
   author: "github"
   description: "Runs specify → plan → tasks → implement with review gates"
-  integration: claude
+  integration: copilot
 
 requires:
-  speckit_version: ">=0.15.0"
+  speckit_version: ">=0.7.0"
   integrations:
-    any: ["claude", "gemini"]
+    any: ["copilot", "claude", "gemini"]
 
 inputs:
   feature_name:

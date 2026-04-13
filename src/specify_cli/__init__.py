@@ -4365,6 +4365,27 @@ def workflow_add(
         console.print(f"[red]Error:[/red] Workflow '{source}' does not have an install URL in the catalog")
         raise typer.Exit(1)
 
+    # Validate URL scheme (HTTPS required, HTTP allowed for localhost only)
+    from ipaddress import ip_address
+    from urllib.parse import urlparse
+
+    parsed_url = urlparse(workflow_url)
+    url_host = parsed_url.hostname or ""
+    is_loopback = False
+    if url_host == "localhost":
+        is_loopback = True
+    else:
+        try:
+            is_loopback = ip_address(url_host).is_loopback
+        except ValueError:
+            pass
+    if parsed_url.scheme != "https" and not (parsed_url.scheme == "http" and is_loopback):
+        console.print(
+            f"[red]Error:[/red] Workflow '{source}' has an invalid install URL. "
+            "Only HTTPS URLs are allowed, except HTTP for localhost/loopback."
+        )
+        raise typer.Exit(1)
+
     workflow_dir = workflows_dir / source
     workflow_file = workflow_dir / "workflow.yml"
 

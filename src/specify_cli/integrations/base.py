@@ -138,10 +138,12 @@ class IntegrationBase(ABC):
     ) -> dict[str, Any]:
         """Dispatch a Spec Kit command through this integration's CLI.
 
-        If the integration provides ``build_exec_args_for_command``
-        (e.g. Copilot using ``--agent``), that takes precedence.
-        Otherwise falls back to building a slash-command invocation
-        and passing it as the prompt.
+        By default this builds a slash-command invocation with
+        ``build_command_invocation()`` and passes that prompt to
+        ``build_exec_args()`` to construct the CLI command line.
+        Integrations with custom dispatch behavior can override
+        ``build_command_invocation()``, ``build_exec_args()``, or
+        ``dispatch_command()`` directly.
 
         When *stream* is ``True`` (the default), stdout and stderr are
         piped directly to the terminal so the user sees live output.

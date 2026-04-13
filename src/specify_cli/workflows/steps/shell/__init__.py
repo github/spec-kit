@@ -33,13 +33,20 @@ class ShellStep(StepBase):
                 cwd=cwd,
                 timeout=300,
             )
-            return StepResult(
-                status=StepStatus.COMPLETED,
-                output={
+            output = {
                     "exit_code": proc.returncode,
                     "stdout": proc.stdout,
                     "stderr": proc.stderr,
-                },
+                }
+            if proc.returncode != 0:
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    error=f"Shell command exited with code {proc.returncode}.",
+                    output=output,
+                )
+            return StepResult(
+                status=StepStatus.COMPLETED,
+                output=output,
             )
         except subprocess.TimeoutExpired:
             return StepResult(
