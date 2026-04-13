@@ -311,6 +311,7 @@ Community projects that extend, visualize, or build on Spec Kit:
 | [Cursor](https://cursor.sh/)                                                         | ✅      |                                                                                                                                           |
 | [Forge](https://forgecode.dev/)                                                      | ✅      | CLI tool: `forge`                                                                                                                         |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | ✅      |                                                                                                                                           |
+| [Goose](https://block.github.io/goose/)                                              | ✅      | Uses YAML recipe format in `.goose/recipes/` with slash command support                                                                   |
 | [GitHub Copilot](https://code.visualstudio.com/)                                     | ✅      |                                                                                                                                           |
 | [IBM Bob](https://www.ibm.com/products/bob)                                          | ✅      | IDE-based agent with slash command support                                                                                                |
 | [Jules](https://jules.google.com/)                                                   | ✅      |                                                                                                                                           |
@@ -655,7 +656,7 @@ specify init . --force --ai claude
 specify init --here --force --ai claude
 ```
 
-The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, Qoder CLI, Tabnine CLI, Kiro CLI, Pi, Forge, or Mistral Vibe installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, Qoder CLI, Tabnine CLI, Kiro CLI, Pi, Forge, Goose, or Mistral Vibe installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
 specify init <project_name> --ai claude --ignore-agent-tools

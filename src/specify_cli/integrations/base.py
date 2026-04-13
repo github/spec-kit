@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 # IntegrationOption
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class IntegrationOption:
     """Declares an option that an integration accepts via ``--integration-options``.
@@ -50,6 +51,7 @@ class IntegrationOption:
 # ---------------------------------------------------------------------------
 # IntegrationBase — abstract base class
 # ---------------------------------------------------------------------------
+
 
 class IntegrationBase(ABC):
     """Abstract base class every integration must implement.
@@ -275,7 +277,7 @@ class IntegrationBase(ABC):
         2. Replace ``{SCRIPT}`` with the extracted script command
         3. Extract ``agent_scripts.<script_type>`` and replace ``{AGENT_SCRIPT}``
         4. Strip ``scripts:`` and ``agent_scripts:`` sections from frontmatter
-        5. Replace ``{ARGS}`` with *arg_placeholder*
+        5. Replace ``{ARGS}`` and ``$ARGUMENTS`` with *arg_placeholder*
         6. Replace ``__AGENT__`` with *agent_name*
         7. Rewrite paths: ``scripts/`` → ``.specify/scripts/`` etc.
         """
@@ -348,8 +350,9 @@ class IntegrationBase(ABC):
             output_lines.append(line)
         content = "".join(output_lines)
 
-        # 5. Replace {ARGS}
+        # 5. Replace {ARGS} and $ARGUMENTS
         content = content.replace("{ARGS}", arg_placeholder)
+        content = content.replace("$ARGUMENTS", arg_placeholder)
 
         # 6. Replace __AGENT__
         content = content.replace("__AGENT__", agent_name)
@@ -358,6 +361,7 @@ class IntegrationBase(ABC):
         #    CommandRegistrar so extension-local paths are preserved and
         #    boundary rules stay consistent across the codebase.
         from specify_cli.agents import CommandRegistrar
+
         content = CommandRegistrar.rewrite_project_relative_paths(content)
 
         return content
@@ -433,9 +437,7 @@ class IntegrationBase(ABC):
         **opts: Any,
     ) -> list[Path]:
         """High-level install — calls ``setup()`` and returns created files."""
-        return self.setup(
-            project_root, manifest, parsed_options=parsed_options, **opts
-        )
+        return self.setup(project_root, manifest, parsed_options=parsed_options, **opts)
 
     def uninstall(
         self,
@@ -451,6 +453,7 @@ class IntegrationBase(ABC):
 # ---------------------------------------------------------------------------
 # MarkdownIntegration — covers ~20 standard agents
 # ---------------------------------------------------------------------------
+
 
 class MarkdownIntegration(IntegrationBase):
     """Concrete base for integrations that use standard Markdown commands.
@@ -492,12 +495,18 @@ class MarkdownIntegration(IntegrationBase):
         dest.mkdir(parents=True, exist_ok=True)
 
         script_type = opts.get("script_type", "sh")
-        arg_placeholder = self.registrar_config.get("args", "$ARGUMENTS") if self.registrar_config else "$ARGUMENTS"
+        arg_placeholder = (
+            self.registrar_config.get("args", "$ARGUMENTS")
+            if self.registrar_config
+            else "$ARGUMENTS"
+        )
         created: list[Path] = []
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
-            processed = self.process_template(raw, self.key, script_type, arg_placeholder)
+            processed = self.process_template(
+                raw, self.key, script_type, arg_placeholder
+            )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
                 processed, dest / dst_name, project_root, manifest
@@ -511,6 +520,7 @@ class MarkdownIntegration(IntegrationBase):
 # ---------------------------------------------------------------------------
 # TomlIntegration — TOML-format agents (Gemini, Tabnine)
 # ---------------------------------------------------------------------------
+
 
 class TomlIntegration(IntegrationBase):
     """Concrete base for integrations that use TOML command format.
@@ -603,13 +613,17 @@ class TomlIntegration(IntegrationBase):
         if "'''" not in value and not value.endswith("'"):
             return "'''\n" + value + "'''"
 
-        return '"' + (
-            value.replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
-        ) + '"'
+        return (
+            '"'
+            + (
+                value.replace("\\", "\\\\")
+                .replace('"', '\\"')
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+            )
+            + '"'
+        )
 
     @staticmethod
     def _render_toml(description: str, body: str) -> str:
@@ -628,7 +642,9 @@ class TomlIntegration(IntegrationBase):
         toml_lines: list[str] = []
 
         if description:
-            toml_lines.append(f"description = {TomlIntegration._render_toml_string(description)}")
+            toml_lines.append(
+                f"description = {TomlIntegration._render_toml_string(description)}"
+            )
             toml_lines.append("")
 
         body = body.rstrip("\n")
@@ -665,18 +681,206 @@ class TomlIntegration(IntegrationBase):
         dest.mkdir(parents=True, exist_ok=True)
 
         script_type = opts.get("script_type", "sh")
-        arg_placeholder = self.registrar_config.get("args", "{{args}}") if self.registrar_config else "{{args}}"
+        arg_placeholder = (
+            self.registrar_config.get("args", "{{args}}")
+            if self.registrar_config
+            else "{{args}}"
+        )
         created: list[Path] = []
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
             description = self._extract_description(raw)
-            processed = self.process_template(raw, self.key, script_type, arg_placeholder)
+            processed = self.process_template(
+                raw, self.key, script_type, arg_placeholder
+            )
             _, body = self._split_frontmatter(processed)
             toml_content = self._render_toml(description, body)
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
                 toml_content, dest / dst_name, project_root, manifest
+            )
+            created.append(dst_file)
+
+        created.extend(self.install_scripts(project_root, manifest))
+        return created
+
+
+# ---------------------------------------------------------------------------
+# YamlIntegration — YAML-format agents (Goose)
+# ---------------------------------------------------------------------------
+
+
+class YamlIntegration(IntegrationBase):
+    """Concrete base for integrations that use YAML recipe format.
+
+    Mirrors ``TomlIntegration`` closely: subclasses only need to set
+    ``key``, ``config``, ``registrar_config`` (and optionally
+    ``context_file``).  Everything else is inherited.
+
+    ``setup()`` processes command templates through the same placeholder
+    pipeline as ``MarkdownIntegration``, then converts the result to
+    YAML recipe format (version, title, description, prompt block scalar).
+    """
+
+    def command_filename(self, template_name: str) -> str:
+        """YAML commands use ``.yaml`` extension."""
+        return f"speckit.{template_name}.yaml"
+
+    @staticmethod
+    def _extract_frontmatter(content: str) -> dict[str, Any]:
+        """Extract frontmatter as a dict from YAML frontmatter block."""
+        import yaml
+
+        if not content.startswith("---"):
+            return {}
+
+        lines = content.splitlines(keepends=True)
+        if not lines or lines[0].rstrip("\r\n") != "---":
+            return {}
+
+        frontmatter_end = -1
+        for i, line in enumerate(lines[1:], start=1):
+            if line.rstrip("\r\n") == "---":
+                frontmatter_end = i
+                break
+
+        if frontmatter_end == -1:
+            return {}
+
+        frontmatter_text = "".join(lines[1:frontmatter_end])
+        try:
+            fm = yaml.safe_load(frontmatter_text) or {}
+        except yaml.YAMLError:
+            return {}
+
+        return fm if isinstance(fm, dict) else {}
+
+    @staticmethod
+    def _split_frontmatter(content: str) -> tuple[str, str]:
+        """Split YAML frontmatter from the remaining body content."""
+        if not content.startswith("---"):
+            return "", content
+
+        lines = content.splitlines(keepends=True)
+        if not lines or lines[0].rstrip("\r\n") != "---":
+            return "", content
+
+        frontmatter_end = -1
+        for i, line in enumerate(lines[1:], start=1):
+            if line.rstrip("\r\n") == "---":
+                frontmatter_end = i
+                break
+
+        if frontmatter_end == -1:
+            return "", content
+
+        frontmatter = "".join(lines[1:frontmatter_end])
+        body = "".join(lines[frontmatter_end + 1 :])
+        return frontmatter, body
+
+    @staticmethod
+    def _human_title(identifier: str) -> str:
+        """Convert an identifier to a human-readable title.
+
+        Strips a leading ``speckit.`` prefix and replaces ``.``, ``-``,
+        and ``_`` with spaces before title-casing.
+        """
+        text = identifier
+        if text.startswith("speckit."):
+            text = text[len("speckit.") :]
+        return text.replace(".", " ").replace("-", " ").replace("_", " ").title()
+
+    @staticmethod
+    def _render_yaml(title: str, description: str, body: str, source_id: str) -> str:
+        """Render a YAML recipe file from title, description, and body.
+
+        Produces a Goose-compatible recipe with a literal block scalar
+        for the prompt content.  Uses ``yaml.safe_dump()`` for the
+        header fields to ensure proper escaping.
+        """
+        import yaml
+
+        header = {
+            "version": "1.0.0",
+            "title": title,
+            "description": description,
+            "author": {"contact": "spec-kit"},
+            "extensions": [{"type": "builtin", "name": "developer"}],
+            "activities": ["Spec-Driven Development"],
+        }
+
+        header_yaml = yaml.safe_dump(
+            header,
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=False,
+        ).strip()
+
+        # Indent each line for YAML block scalar
+        indented = "\n".join(f"  {line}" for line in body.split("\n"))
+
+        lines = [header_yaml, "prompt: |", indented, "", f"# Source: {source_id}"]
+        return "\n".join(lines) + "\n"
+
+    def setup(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        parsed_options: dict[str, Any] | None = None,
+        **opts: Any,
+    ) -> list[Path]:
+        templates = self.list_command_templates()
+        if not templates:
+            return []
+
+        project_root_resolved = project_root.resolve()
+        if manifest.project_root != project_root_resolved:
+            raise ValueError(
+                f"manifest.project_root ({manifest.project_root}) does not match "
+                f"project_root ({project_root_resolved})"
+            )
+
+        dest = self.commands_dest(project_root).resolve()
+        try:
+            dest.relative_to(project_root_resolved)
+        except ValueError as exc:
+            raise ValueError(
+                f"Integration destination {dest} escapes "
+                f"project root {project_root_resolved}"
+            ) from exc
+        dest.mkdir(parents=True, exist_ok=True)
+
+        script_type = opts.get("script_type", "sh")
+        arg_placeholder = (
+            self.registrar_config.get("args", "{{args}}")
+            if self.registrar_config
+            else "{{args}}"
+        )
+        created: list[Path] = []
+
+        for src_file in templates:
+            raw = src_file.read_text(encoding="utf-8")
+            fm = self._extract_frontmatter(raw)
+            description = fm.get("description", "")
+            if not isinstance(description, str):
+                description = str(description) if description is not None else ""
+            title = fm.get("title", "") or fm.get("name", "")
+            if not isinstance(title, str):
+                title = str(title) if title is not None else ""
+            if not title:
+                title = self._human_title(src_file.stem)
+
+            processed = self.process_template(
+                raw, self.key, script_type, arg_placeholder
+            )
+            _, body = self._split_frontmatter(processed)
+            yaml_content = self._render_yaml(
+                title, description, body, f"templates/commands/{src_file.name}"
+            )
+            dst_name = self.command_filename(src_file.stem)
+            dst_file = self.write_file_and_record(
+                yaml_content, dest / dst_name, project_root, manifest
             )
             created.append(dst_file)
 
@@ -713,9 +917,7 @@ class SkillsIntegration(IntegrationBase):
         Raises ``ValueError`` when ``config`` or ``folder`` is missing.
         """
         if not self.config:
-            raise ValueError(
-                f"{type(self).__name__}.config is not set."
-            )
+            raise ValueError(f"{type(self).__name__}.config is not set.")
         folder = self.config.get("folder")
         if not folder:
             raise ValueError(
