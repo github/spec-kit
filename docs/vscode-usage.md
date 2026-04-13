@@ -33,7 +33,7 @@ After launching VS Code you may still need to follow the sign-in flow the first 
 
 The Copilot Chat input is a conversational interface only — it does not run shell/CLI commands on your machine. To actually run `specify` (or any other CLI command supplied by this repo), use the VS Code integrated terminal:
 
-1. Open the integrated terminal (View > Terminal or Ctrl+`).
+1. Open the integrated terminal (View > Terminal or Ctrl+\`).
 2. Make sure you're in the project folder (the same folder that contains the repository files).
 3. Activate your Python environment and install the project if needed (example using a virtual environment):
 

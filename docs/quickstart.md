@@ -7,7 +7,7 @@ This guide will help you get started with Spec-Driven Development using Spec Kit
 > - CLI: run the `specify` command (no leading slash) in your terminal.
 > - Slash commands (AI assistant): use `/speckit.specify`, `/speckit.plan`, etc., inside an AI assistant or editor that supports slash commands (for example, GitHub Copilot Chat). Do not remove the leading slash — these commands rely on the slash prefix to trigger the assistant correctly.
 >
-> **Note**: The original command was `/specify`, but it has been renamed to `/speckit.*` (e.g., `/speckit.specify`, `/speckit.plan`) to avoid conflicts with other tools. Use the `/speckit.` prefix for all slash commands.
+> **Note**: Spec Kit slash commands use the `/speckit.` prefix (for example, `/speckit.specify` and `/speckit.plan`). Use the `/speckit.` prefix for all slash commands.
 >
 > See the [VS Code Usage Guide](vscode-usage.md) for details on where to run each type of command.
 
@@ -53,12 +53,6 @@ Example (slash command used in the assistant/chat):
 /speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 
 Note: Do NOT change or implement this spec; only return the spec text focusing on requirements and acceptance criteria.
-```
-
-If you prefer the terminal, you can still run the CLI version (no leading slash):
-
-```bash
-specify init my-project
 ```
 
 ### 3. Create a Technical Implementation Plan
