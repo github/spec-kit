@@ -4378,6 +4378,7 @@ def workflow_add(
         try:
             is_loopback = ip_address(url_host).is_loopback
         except ValueError:
+            # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
             pass
     if parsed_url.scheme != "https" and not (parsed_url.scheme == "http" and is_loopback):
         console.print(
