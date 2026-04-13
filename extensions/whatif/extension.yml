@@ -1,0 +1,24 @@
+schema_version: "1.0"
+
+extension:
+  id: whatif
+  name: "What-if Analysis"
+  version: "1.0.0"
+  description: "Preview the downstream impact (complexity, effort, tasks, risks) of requirement changes before committing to them."
+  author: "DevAbdullah90"
+  repository: "https://github.com/github/spec-kit"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.6.0"
+
+provides:
+  commands:
+    - name: speckit.whatif.analyze
+      file: commands/analyze.md
+      description: "Analyze the impact of requirement changes"
+
+tags:
+  - "analysis"
+  - "planning"
+  - "simulation"

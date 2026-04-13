@@ -1,9 +1,13 @@
 ---
 description: Preview the downstream impact (complexity, effort, tasks, risks) of requirement changes before committing to them.
 scripts:
-  sh: scripts/bash/check-prerequisites.sh --json --include-tasks
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
+  sh: ../../scripts/bash/check-prerequisites.sh --json --include-tasks
+  ps: ../../scripts/powershell/check-prerequisites.ps1 -Json -IncludeTasks
 ---
+
+# What-if Analysis
+
+Use this command to preview the impact of requirement changes on complexity, effort, and task breakdown without modifying any files.
 
 ## User Input
 
@@ -124,4 +128,4 @@ Provide a clear "Go / No-Go" recommendation based on the data. Suggest follow-up
 
 ## Context
 
-{ARGS}
+$ARGUMENTS
