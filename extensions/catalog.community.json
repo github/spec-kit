@@ -1751,6 +1751,41 @@
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
     },
+    "tekimax-security": {
+      "name": "TEKIMAX Secure SDD",
+      "id": "tekimax-security",
+      "description": "Adds security gates to the SDD lifecycle — STRIDE threat modeling, data contracts, AI guardrails, model governance, automated red team, and post-implementation audit. Seven commands wired into five Spec Kit hooks.",
+      "author": "Christian Kaman (TEKIMAX)",
+      "version": "0.2.0",
+      "download_url": "https://github.com/TEKIMAX/speckit-security/archive/refs/tags/v0.2.0.zip",
+      "repository": "https://github.com/TEKIMAX/speckit-security",
+      "homepage": "https://tekimax.com",
+      "documentation": "https://github.com/TEKIMAX/speckit-security/blob/main/docs/GETTING-STARTED.md",
+      "changelog": "https://github.com/TEKIMAX/speckit-security/blob/main/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 5
+      },
+      "tags": [
+        "security",
+        "threat-modeling",
+        "stride",
+        "red-team",
+        "guardrails",
+        "ai-safety",
+        "prompt-injection",
+        "compliance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-13T07:00:00Z",
+      "updated_at": "2026-04-13T07:00:00Z"
+    },
     "tinyspec": {
       "name": "TinySpec",
       "id": "tinyspec",
