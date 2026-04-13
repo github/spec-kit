@@ -1411,7 +1411,7 @@ class ExtensionCatalog:
         if not parsed.netloc:
             raise ValidationError("Catalog URL must be a valid URL with a host.")
 
-    def _make_request(self, url: str) -> "urllib.request.Request":
+    def _make_request(self, url: str):
         """Build a urllib Request, adding a GitHub auth header when available.
 
         Delegates to :func:`specify_cli._github_http.build_github_request`.
@@ -1583,7 +1583,6 @@ class ExtensionCatalog:
         Raises:
             ExtensionError: If catalog cannot be fetched or has invalid format
         """
-        import urllib.request
         import urllib.error
 
         # Determine cache file paths (backward compat for default catalog)
@@ -1731,7 +1730,6 @@ class ExtensionCatalog:
         catalog_url = self.get_catalog_url()
 
         try:
-            import urllib.request
             import urllib.error
 
             with self._open_url(catalog_url, timeout=10) as response:
@@ -1845,7 +1843,6 @@ class ExtensionCatalog:
         Raises:
             ExtensionError: If extension not found or download fails
         """
-        import urllib.request
         import urllib.error
 
         # Get extension info from catalog

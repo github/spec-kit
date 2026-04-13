@@ -1178,7 +1178,7 @@ class PresetCatalog:
                 "Catalog URL must be a valid URL with a host."
             )
 
-    def _make_request(self, url: str) -> "urllib.request.Request":
+    def _make_request(self, url: str):
         """Build a urllib Request, adding a GitHub auth header when available.
 
         Delegates to :func:`specify_cli._github_http.build_github_request`.
@@ -1376,9 +1376,6 @@ class PresetCatalog:
                 pass
 
         try:
-            import urllib.request
-            import urllib.error
-
             with self._open_url(entry.url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
@@ -1472,9 +1469,6 @@ class PresetCatalog:
                 pass
 
         try:
-            import urllib.request
-            import urllib.error
-
             with self._open_url(catalog_url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
@@ -1594,7 +1588,6 @@ class PresetCatalog:
         Raises:
             PresetError: If pack not found or download fails
         """
-        import urllib.request
         import urllib.error
 
         pack_info = self.get_pack_info(pack_id)
