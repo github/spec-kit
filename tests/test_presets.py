@@ -1310,6 +1310,13 @@ class TestPresetCatalog:
         req = catalog._make_request("https://api.github.com/repos/org/repo")
         assert req.get_header("Authorization") == "token ghp_primary"
 
+    def test_make_request_token_added_for_codeload_github_com(self, project_dir, monkeypatch):
+        """GITHUB_TOKEN is attached for codeload.github.com URLs (GitHub archive redirects)."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://codeload.github.com/org/repo/zip/refs/tags/v1.0.0")
+        assert req.get_header("Authorization") == "token ghp_testtoken"
+
     def test_make_request_token_not_added_for_non_github_url(self, project_dir, monkeypatch):
         """Auth header is never attached to non-GitHub URLs to prevent credential leakage."""
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")

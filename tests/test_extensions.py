@@ -2217,6 +2217,13 @@ class TestExtensionCatalog:
         req = catalog._make_request("https://api.github.com/repos/org/repo/releases/assets/1")
         assert req.get_header("Authorization") == "token ghp_testtoken"
 
+    def test_make_request_token_added_for_codeload_github_com(self, temp_dir, monkeypatch):
+        """GITHUB_TOKEN is attached for codeload.github.com URLs (GitHub archive redirects)."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://codeload.github.com/org/repo/zip/refs/tags/v1.0.0")
+        assert req.get_header("Authorization") == "token ghp_testtoken"
+
     def test_fetch_single_catalog_sends_auth_header(self, temp_dir, monkeypatch):
         """_fetch_single_catalog passes Authorization header via opener for GitHub URLs."""
         from unittest.mock import patch, MagicMock
@@ -2252,7 +2259,7 @@ class TestExtensionCatalog:
         assert captured["req"].get_header("Authorization") == "token ghp_testtoken"
 
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
-        """download_extension passes Authorization header to urlopen for GitHub URLs."""
+        """download_extension passes Authorization header via opener for GitHub URLs."""
         from unittest.mock import patch, MagicMock
         import zipfile, io
 

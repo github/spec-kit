@@ -1414,53 +1414,18 @@ class ExtensionCatalog:
     def _make_request(self, url: str) -> "urllib.request.Request":
         """Build a urllib Request, adding a GitHub auth header when available.
 
-        Reads GITHUB_TOKEN or GH_TOKEN from the environment and attaches an
-        ``Authorization: token <value>`` header for requests to GitHub-hosted
-        domains (``raw.githubusercontent.com``, ``github.com``,
-        ``api.github.com``).  Non-GitHub URLs are returned as plain requests
-        so credentials are never leaked to third-party hosts.
+        Delegates to :func:`specify_cli._github_http.build_github_request`.
         """
-        import os
-        import urllib.request
-        from urllib.parse import urlparse
-
-        headers: Dict[str, str] = {}
-        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-        hostname = (urlparse(url).hostname or "").lower()
-        github_hosts = {"raw.githubusercontent.com", "github.com", "api.github.com"}
-        if token and hostname in github_hosts:
-            headers["Authorization"] = f"token {token}"
-        return urllib.request.Request(url, headers=headers)
+        from specify_cli._github_http import build_github_request
+        return build_github_request(url)
 
     def _open_url(self, url: str, timeout: int = 10):
-        """Open a URL using _make_request, stripping auth on cross-host redirects.
+        """Open a URL with GitHub auth, stripping the header on cross-host redirects.
 
-        When the request carries an Authorization header, a custom redirect
-        handler is used to drop that header if the redirect target is not a
-        GitHub-hosted domain, preventing token leakage to CDNs or other
-        third-party hosts that GitHub may redirect to.
+        Delegates to :func:`specify_cli._github_http.open_github_url`.
         """
-        import urllib.request
-        from urllib.parse import urlparse
-
-        req = self._make_request(url)
-
-        if not req.get_header("Authorization"):
-            return urllib.request.urlopen(req, timeout=timeout)
-
-        _github_hosts = {"raw.githubusercontent.com", "github.com", "api.github.com"}
-
-        class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
-            def redirect_request(_self, req, fp, code, msg, headers, newurl):
-                new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
-                if new_req is not None:
-                    hostname = (urlparse(newurl).hostname or "").lower()
-                    if hostname not in _github_hosts:
-                        new_req.headers.pop("Authorization", None)
-                return new_req
-
-        opener = urllib.request.build_opener(_StripAuthOnRedirect)
-        return opener.open(req, timeout=timeout)
+        from specify_cli._github_http import open_github_url
+        return open_github_url(url, timeout)
 
     def _load_catalog_config(self, config_path: Path) -> Optional[List[CatalogEntry]]:
         """Load catalog stack configuration from a YAML file.
