@@ -115,6 +115,11 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
 
     if not definition.version:
         errors.append("Workflow is missing 'workflow.version'.")
+    elif not re.match(r"^\d+\.\d+\.\d+", definition.version):
+        errors.append(
+            f"Workflow version {definition.version!r} is not valid "
+            f"semantic versioning (expected X.Y.Z)."
+        )
 
     # -- Inputs -----------------------------------------------------------
     if not isinstance(definition.inputs, dict):
