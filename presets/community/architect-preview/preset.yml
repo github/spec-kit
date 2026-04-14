@@ -1,0 +1,6 @@
+id: architect-preview
+name: Architect Impact Previewer
+version: 1.0.0
+description: Previews architectural risks and complexity before implementation.
+author: Umme Habiba
+type: command
