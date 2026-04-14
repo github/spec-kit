@@ -205,7 +205,7 @@ class CommandRegistrar:
         if not isinstance(text, str) or not text:
             return text
 
-        _SKIP = {"commands", ".git"}
+        _SKIP = {"commands", ".git", "specs"}
         try:
             subdirs = [
                 d.name

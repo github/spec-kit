@@ -1533,6 +1533,52 @@ Agent __AGENT__
         assert ".specify/extensions/ext-alias-paths/agents/control/commander.md" in alias_content
         assert "Read agents/" not in alias_content
 
+    def test_rewrite_extension_paths_specs_not_rewritten(self, project_dir, temp_dir):
+        """Extension-internal specs/ dir must not cause user project specs/ paths to be rewritten.
+
+        echelon has a specs/ subdirectory for its own internal design documents.
+        References to specs/ in command bodies should NOT be rewritten to
+        .specify/extensions/echelon/specs/ — they point to the user's project specs.
+        """
+        import yaml
+
+        ext_dir = temp_dir / "echelon"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "agents").mkdir()
+        # Simulate echelon having its own internal specs/ subdir
+        (ext_dir / "specs").mkdir()
+        (ext_dir / "specs" / "001-internal").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {"id": "echelon", "name": "Echelon", "version": "1.0.0", "description": "Test"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": [{"name": "speckit.echelon.run", "file": "commands/run.md", "description": "Run"}]},
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\ndescription: Run\n---\n\n"
+            "Artifacts go to specs/{NNN}-{feature}/.\n"
+            "Read agents/control/commander.md.\n"
+        )
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        from specify_cli.extensions import ExtensionManifest
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        CommandRegistrar().register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        content = (skills_dir / "speckit-echelon-run" / "SKILL.md").read_text()
+        # specs/ must NOT be rewritten to extension-internal path
+        assert ".specify/extensions/echelon/specs/" not in content
+        assert "specs/{NNN}-{feature}/" in content
+        # agents/ should still be rewritten (it is extension-internal)
+        assert ".specify/extensions/echelon/agents/control/commander.md" in content
+
     def test_rewrite_extension_paths_no_subdirs(self, project_dir, temp_dir):
         """Extension with no subdirectories should leave command body text unchanged."""
         import yaml
