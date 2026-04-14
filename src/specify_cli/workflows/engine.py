@@ -101,6 +101,13 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
     """
     errors: list[str] = []
 
+    # -- Schema version ---------------------------------------------------
+    if definition.schema_version not in ("1.0", "1"):
+        errors.append(
+            f"Unsupported schema_version {definition.schema_version!r}. "
+            f"Expected '1.0'."
+        )
+
     # -- Top-level fields -------------------------------------------------
     if not definition.id:
         errors.append("Workflow is missing 'workflow.id'.")
@@ -115,7 +122,7 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
 
     if not definition.version:
         errors.append("Workflow is missing 'workflow.version'.")
-    elif not re.match(r"^\d+\.\d+\.\d+", definition.version):
+    elif not re.match(r"^\d+\.\d+\.\d+$", definition.version):
         errors.append(
             f"Workflow version {definition.version!r} is not valid "
             f"semantic versioning (expected X.Y.Z)."
@@ -333,7 +340,8 @@ class WorkflowEngine:
 
         Returns
         -------
-        A validated ``WorkflowDefinition``.
+        A parsed ``WorkflowDefinition`` (not yet validated; call
+        ``validate_workflow()`` or ``engine.validate()`` separately).
 
         Raises
         ------
@@ -665,10 +673,8 @@ class WorkflowEngine:
                         ):
                             break
                     context.item = None
-                    # Fan-out items are executed sequentially in this engine,
-                    # so do not surface max_concurrency in persisted output.
+                    # Preserve original output and add collected results
                     fan_out_output = dict(result.output)
-                    fan_out_output.pop("max_concurrency", None)
                     fan_out_output["results"] = fan_out_results
                     context.steps[step_id]["output"] = fan_out_output
                     state.step_results[step_id]["output"] = fan_out_output

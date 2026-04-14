@@ -14,8 +14,8 @@ class DoWhileStep(StepBase):
     optional safety cap (defaults to 10 if omitted).
 
     The first invocation always returns the nested steps for execution.
-    The ``condition`` field is stored in the output so the engine can
-    evaluate it after the body runs and decide whether to re-invoke.
+    The engine re-evaluates ``step_config['condition']`` after each
+    iteration to decide whether to loop again.
     """
 
     type_key = "do-while"

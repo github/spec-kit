@@ -70,6 +70,11 @@ flowchart LR
 
 When a `gate` step pauses execution, the engine persists `current_step_index` and all accumulated `step_results`. On `specify workflow resume <run_id>`, the engine restores the context and continues from the paused step.
 
+> **Note:** Resume tracking is at the top-level step index only. If a
+> nested step (inside `if`/`switch`/`while`) pauses, resume re-runs
+> the parent control-flow step and its nested body. A nested step-path
+> stack for exact resume is a planned enhancement.
+
 ## Step Types
 
 The engine ships with 10 built-in step types, each in its own subpackage under `src/specify_cli/workflows/steps/`:
