@@ -1,33 +1,32 @@
-"""Reusable test mixin for standard TomlIntegration subclasses.
+"""Reusable test mixin for standard YamlIntegration subclasses.
 
 Each per-agent test file sets ``KEY``, ``FOLDER``, ``COMMANDS_SUBDIR``,
 ``REGISTRAR_DIR``, and ``CONTEXT_FILE``, then inherits all verification
-logic from ``TomlIntegrationTests``.
+logic from ``YamlIntegrationTests``.
 
-Mirrors ``MarkdownIntegrationTests`` closely — same test structure,
-adapted for TOML output format.
+Mirrors ``TomlIntegrationTests`` closely — same test structure,
+adapted for YAML recipe output format.
 """
 
 import os
-import tomllib
 
-import pytest
+import yaml
 
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
-from specify_cli.integrations.base import TomlIntegration
+from specify_cli.integrations.base import YamlIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
 
 
-class TomlIntegrationTests:
+class YamlIntegrationTests:
     """Mixin — set class-level constants and inherit these tests.
 
     Required class attrs on subclass::
 
         KEY: str              — integration registry key
-        FOLDER: str           — e.g. ".gemini/"
-        COMMANDS_SUBDIR: str  — e.g. "commands"
-        REGISTRAR_DIR: str    — e.g. ".gemini/commands"
-        CONTEXT_FILE: str     — e.g. "GEMINI.md"
+        FOLDER: str           — e.g. ".goose/"
+        COMMANDS_SUBDIR: str  — e.g. "recipes"
+        REGISTRAR_DIR: str    — e.g. ".goose/recipes"
+        CONTEXT_FILE: str     — e.g. "AGENTS.md"
     """
 
     KEY: str
@@ -42,8 +41,8 @@ class TomlIntegrationTests:
         assert self.KEY in INTEGRATION_REGISTRY
         assert get_integration(self.KEY) is not None
 
-    def test_is_toml_integration(self):
-        assert isinstance(get_integration(self.KEY), TomlIntegration)
+    def test_is_yaml_integration(self):
+        assert isinstance(get_integration(self.KEY), YamlIntegration)
 
     # -- Config -----------------------------------------------------------
 
@@ -58,9 +57,9 @@ class TomlIntegrationTests:
     def test_registrar_config(self):
         i = get_integration(self.KEY)
         assert i.registrar_config["dir"] == self.REGISTRAR_DIR
-        assert i.registrar_config["format"] == "toml"
+        assert i.registrar_config["format"] == "yaml"
         assert i.registrar_config["args"] == "{{args}}"
-        assert i.registrar_config["extension"] == ".toml"
+        assert i.registrar_config["extension"] == ".yaml"
 
     def test_context_file(self):
         i = get_integration(self.KEY)
@@ -77,7 +76,7 @@ class TomlIntegrationTests:
         for f in cmd_files:
             assert f.exists()
             assert f.name.startswith("speckit.")
-            assert f.name.endswith(".toml")
+            assert f.name.endswith(".yaml")
 
     def test_setup_writes_to_correct_directory(self, tmp_path):
         i = get_integration(self.KEY)
@@ -95,7 +94,7 @@ class TomlIntegrationTests:
             )
 
     def test_templates_are_processed(self, tmp_path):
-        """Command files must have placeholders replaced and be valid TOML."""
+        """Command files must have placeholders replaced."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
@@ -107,77 +106,60 @@ class TomlIntegrationTests:
             assert "__AGENT__" not in content, f"{f.name} has unprocessed __AGENT__"
             assert "{ARGS}" not in content, f"{f.name} has unprocessed {{ARGS}}"
 
-    def test_toml_has_description(self, tmp_path):
-        """Every TOML command file should have a description key."""
+    def test_yaml_has_title(self, tmp_path):
+        """Every YAML recipe should have a title field."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
         cmd_files = [f for f in created if "scripts" not in f.parts]
         for f in cmd_files:
             content = f.read_text(encoding="utf-8")
-            assert 'description = "' in content, f"{f.name} missing description key"
+            assert "title:" in content, f"{f.name} missing title field"
 
-    def test_toml_has_prompt(self, tmp_path):
-        """Every TOML command file should have a prompt key."""
+    def test_yaml_has_prompt(self, tmp_path):
+        """Every YAML recipe should have a prompt block scalar."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
         cmd_files = [f for f in created if "scripts" not in f.parts]
         for f in cmd_files:
             content = f.read_text(encoding="utf-8")
-            assert "prompt = " in content, f"{f.name} missing prompt key"
+            assert "prompt: |" in content, f"{f.name} missing prompt block scalar"
 
-    def test_toml_uses_correct_arg_placeholder(self, tmp_path):
-        """TOML commands must use {{args}} (from {ARGS} replacement)."""
+    def test_yaml_uses_correct_arg_placeholder(self, tmp_path):
+        """YAML recipes must use {{args}} placeholder."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
         cmd_files = [f for f in created if "scripts" not in f.parts]
-        # At least one file should contain {{args}} from the {ARGS} placeholder
         has_args = any("{{args}}" in f.read_text(encoding="utf-8") for f in cmd_files)
-        assert has_args, "No TOML command file contains {{args}} placeholder"
+        assert has_args, "No YAML recipe contains {{args}} placeholder"
         has_dollar_args = any(
             "$ARGUMENTS" in f.read_text(encoding="utf-8") for f in cmd_files
         )
         assert not has_dollar_args, (
-            "TOML command still contains $ARGUMENTS instead of {{args}}"
+            "YAML recipe still contains $ARGUMENTS instead of {{args}}"
         )
 
-    @pytest.mark.parametrize(
-        ("frontmatter", "expected"),
-        [
-            (
-                "---\ndescription: |\n  First line\n  Second line\n---\nBody\n",
-                "First line\nSecond line\n",
-            ),
-            (
-                "---\ndescription: >\n  First line\n  Second line\n---\nBody\n",
-                "First line Second line\n",
-            ),
-            (
-                "---\ndescription: |-\n  First line\n  Second line\n---\nBody\n",
-                "First line\nSecond line",
-            ),
-            (
-                "---\ndescription: >-\n  First line\n  Second line\n---\nBody\n",
-                "First line Second line",
-            ),
-        ],
-    )
-    def test_toml_extract_description_supports_block_scalars(
-        self, frontmatter, expected
-    ):
-        assert TomlIntegration._extract_description(frontmatter) == expected
+    def test_yaml_is_valid(self, tmp_path):
+        """Every generated YAML file must parse without errors."""
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        cmd_files = [f for f in created if "scripts" not in f.parts]
+        for f in cmd_files:
+            content = f.read_text(encoding="utf-8")
+            # Strip trailing source comment before parsing
+            lines = content.split("\n")
+            yaml_lines = [l for l in lines if not l.startswith("# Source:")]
+            try:
+                parsed = yaml.safe_load("\n".join(yaml_lines))
+            except Exception as exc:
+                raise AssertionError(f"{f.name} is not valid YAML: {exc}") from exc
+            assert "prompt" in parsed, f"{f.name} parsed YAML has no 'prompt' key"
+            assert "title" in parsed, f"{f.name} parsed YAML has no 'title' key"
 
-    def test_split_frontmatter_ignores_indented_delimiters(self):
-        content = "---\ndescription: |\n  line one\n  ---\n  line two\n---\nBody\n"
-
-        frontmatter, body = TomlIntegration._split_frontmatter(content)
-
-        assert "line two" in frontmatter
-        assert body == "Body\n"
-
-    def test_toml_prompt_excludes_frontmatter(self, tmp_path, monkeypatch):
+    def test_yaml_prompt_excludes_frontmatter(self, tmp_path, monkeypatch):
         i = get_integration(self.KEY)
         template = tmp_path / "sample.md"
         template.write_text(
@@ -197,118 +179,15 @@ class TomlIntegrationTests:
         cmd_files = [f for f in created if "scripts" not in f.parts]
         assert len(cmd_files) == 1
 
-        generated = cmd_files[0].read_text(encoding="utf-8")
-        parsed = tomllib.loads(generated)
+        content = cmd_files[0].read_text(encoding="utf-8")
+        # Strip source comment for parsing
+        lines = content.split("\n")
+        yaml_lines = [l for l in lines if not l.startswith("# Source:")]
+        parsed = yaml.safe_load("\n".join(yaml_lines))
 
-        assert parsed["description"] == "Summary line one"
-        assert parsed["prompt"] == "Body line one\nBody line two"
         assert "description:" not in parsed["prompt"]
         assert "scripts:" not in parsed["prompt"]
         assert "---" not in parsed["prompt"]
-
-    def test_toml_no_ambiguous_closing_quotes(self, tmp_path, monkeypatch):
-        """Multiline body ending with a double quote must not produce an ambiguous TOML multiline-string closing delimiter (#2113)."""
-        i = get_integration(self.KEY)
-        template = tmp_path / "sample.md"
-        template.write_text(
-            "---\n"
-            "description: Test\n"
-            "scripts:\n"
-            "  sh: echo ok\n"
-            "---\n"
-            "Check the following:\n"
-            '- Correct: "Is X clearly specified?"\n',
-            encoding="utf-8",
-        )
-        monkeypatch.setattr(i, "list_command_templates", lambda: [template])
-
-        m = IntegrationManifest(self.KEY, tmp_path)
-        created = i.setup(tmp_path, m)
-        cmd_files = [f for f in created if "scripts" not in f.parts]
-        assert len(cmd_files) == 1
-
-        raw = cmd_files[0].read_text(encoding="utf-8")
-        assert '""""' not in raw, "closing delimiter must not merge with body quote"
-        assert '"""\n' in raw, "body must use multiline basic string"
-        parsed = tomllib.loads(raw)
-        assert parsed["prompt"].endswith('specified?"')
-        assert not parsed["prompt"].endswith("\n"), (
-            "parsed value must not gain a trailing newline"
-        )
-
-    def test_toml_triple_double_and_single_quote_ending(self, tmp_path, monkeypatch):
-        """Body containing `\"\"\"` and ending with `'` falls back to escaped basic string."""
-        i = get_integration(self.KEY)
-        template = tmp_path / "sample.md"
-        template.write_text(
-            "---\n"
-            "description: Test\n"
-            "scripts:\n"
-            "  sh: echo ok\n"
-            "---\n"
-            'Use """triple""" quotes\n'
-            "and end with 'single'\n",
-            encoding="utf-8",
-        )
-        monkeypatch.setattr(i, "list_command_templates", lambda: [template])
-
-        m = IntegrationManifest(self.KEY, tmp_path)
-        created = i.setup(tmp_path, m)
-        cmd_files = [f for f in created if "scripts" not in f.parts]
-        assert len(cmd_files) == 1
-
-        raw = cmd_files[0].read_text(encoding="utf-8")
-        assert "''''" not in raw, (
-            "literal string must not produce ambiguous closing quotes"
-        )
-        parsed = tomllib.loads(raw)
-        assert parsed["prompt"].endswith("'single'")
-        assert '"""triple"""' in parsed["prompt"]
-        assert not parsed["prompt"].endswith("\n"), (
-            "parsed value must not gain a trailing newline"
-        )
-
-    def test_toml_closing_delimiter_inline_when_safe(self, tmp_path, monkeypatch):
-        """Body NOT ending with `"` keeps closing `\"\"\"` inline (no extra newline)."""
-        i = get_integration(self.KEY)
-        template = tmp_path / "sample.md"
-        template.write_text(
-            "---\n"
-            "description: Test\n"
-            "scripts:\n"
-            "  sh: echo ok\n"
-            "---\n"
-            "Line one\n"
-            "Plain body content\n",
-            encoding="utf-8",
-        )
-        monkeypatch.setattr(i, "list_command_templates", lambda: [template])
-
-        m = IntegrationManifest(self.KEY, tmp_path)
-        created = i.setup(tmp_path, m)
-        cmd_files = [f for f in created if "scripts" not in f.parts]
-        assert len(cmd_files) == 1
-
-        raw = cmd_files[0].read_text(encoding="utf-8")
-        parsed = tomllib.loads(raw)
-        assert parsed["prompt"] == "Line one\nPlain body content"
-        assert raw.rstrip().endswith('content"""'), (
-            "closing delimiter should be inline when body does not end with a quote"
-        )
-
-    def test_toml_is_valid(self, tmp_path):
-        """Every generated TOML file must parse without errors."""
-        i = get_integration(self.KEY)
-        m = IntegrationManifest(self.KEY, tmp_path)
-        created = i.setup(tmp_path, m)
-        cmd_files = [f for f in created if "scripts" not in f.parts]
-        for f in cmd_files:
-            raw = f.read_bytes()
-            try:
-                parsed = tomllib.loads(raw.decode("utf-8"))
-            except Exception as exc:
-                raise AssertionError(f"{f.name} is not valid TOML: {exc}") from exc
-            assert "prompt" in parsed, f"{f.name} parsed TOML has no 'prompt' key"
 
     def test_all_files_tracked_in_manifest(self, tmp_path):
         i = get_integration(self.KEY)
@@ -438,7 +317,7 @@ class TomlIntegrationTests:
         i = get_integration(self.KEY)
         cmd_dir = i.commands_dest(project)
         assert cmd_dir.is_dir(), f"Commands directory {cmd_dir} not created"
-        commands = sorted(cmd_dir.glob("speckit.*.toml"))
+        commands = sorted(cmd_dir.glob("speckit.*.yaml"))
         assert len(commands) > 0, f"No command files in {cmd_dir}"
 
     # -- Complete file inventory ------------------------------------------
@@ -461,9 +340,9 @@ class TomlIntegrationTests:
         cmd_dir = i.registrar_config["dir"]
         files = []
 
-        # Command files (.toml)
+        # Command files (.yaml)
         for stem in self.COMMAND_STEMS:
-            files.append(f"{cmd_dir}/speckit.{stem}.toml")
+            files.append(f"{cmd_dir}/speckit.{stem}.yaml")
 
         # Integration scripts
         files.append(f".specify/integrations/{self.KEY}/scripts/update-context.ps1")

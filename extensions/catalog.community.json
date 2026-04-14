@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-10T12:34:56Z",
+  "updated_at": "2026-04-13T23:01:30Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -138,6 +138,38 @@
       "created_at": "2026-04-08T00:00:00Z",
       "updated_at": "2026-04-08T00:00:00Z"
     },
+    "brownfield": {
+      "name": "Brownfield Bootstrap",
+      "id": "brownfield",
+      "description": "Bootstrap spec-kit for existing codebases — auto-discover architecture and adopt SDD incrementally.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-brownfield/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-brownfield",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-brownfield",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-brownfield/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-brownfield/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 1
+      },
+      "tags": [
+        "brownfield",
+        "bootstrap",
+        "existing-project",
+        "migration",
+        "onboarding"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-10T00:00:00Z",
+      "updated_at": "2026-04-10T00:00:00Z"
+    },
     "bugfix": {
       "name": "Bugfix Workflow",
       "id": "bugfix",
@@ -204,6 +236,39 @@
       "stars": 0,
       "created_at": "2026-03-29T00:00:00Z",
       "updated_at": "2026-03-29T00:00:00Z"
+    },
+    "ci-guard": {
+      "name": "CI Guard",
+      "id": "ci-guard",
+      "description": "Spec compliance gates for CI/CD — verify specs exist, check drift, and block merges on gaps.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-ci-guard/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-ci-guard",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-ci-guard",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-ci-guard/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-ci-guard/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "ci-cd",
+        "compliance",
+        "governance",
+        "quality-gate",
+        "drift-detection",
+        "automation"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-10T17:00:00Z",
+      "updated_at": "2026-04-10T17:00:00Z"
     },
     "checkpoint": {
       "name": "Checkpoint Extension",
@@ -583,6 +648,46 @@
       "stars": 0,
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-03-31T00:00:00Z"
+    },
+    "github-issues": {
+      "name": "GitHub Issues Integration",
+      "id": "github-issues",
+      "description": "Generate spec artifacts from GitHub Issues - import issues, sync updates, and maintain bidirectional traceability",
+      "author": "Fatima367",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Fatima367/spec-kit-github-issues/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Fatima367/spec-kit-github-issues",
+      "homepage": "https://github.com/Fatima367/spec-kit-github-issues",
+      "documentation": "https://github.com/Fatima367/spec-kit-github-issues/blob/main/README.md",
+      "changelog": "https://github.com/Fatima367/spec-kit-github-issues/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "gh",
+            "version": ">=2.0.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 0
+      },
+      "tags": [
+        "integration",
+        "github",
+        "issues",
+        "import",
+        "sync",
+        "traceability"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-12T15:30:00Z",
+      "updated_at": "2026-04-13T14:39:00Z"
     },
     "iterate": {
       "name": "Iterate",
@@ -1160,8 +1265,8 @@
       "id": "ralph",
       "description": "Autonomous implementation loop using AI agent CLI.",
       "author": "Rubiss",
-      "version": "1.0.0",
-      "download_url": "https://github.com/Rubiss/spec-kit-ralph/archive/refs/tags/v1.0.0.zip",
+      "version": "1.0.1",
+      "download_url": "https://github.com/Rubiss/spec-kit-ralph/archive/refs/tags/v1.0.1.zip",
       "repository": "https://github.com/Rubiss/spec-kit-ralph",
       "homepage": "https://github.com/Rubiss/spec-kit-ralph",
       "documentation": "https://github.com/Rubiss/spec-kit-ralph/blob/main/README.md",
@@ -1194,7 +1299,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-09T00:00:00Z",
-      "updated_at": "2026-03-09T00:00:00Z"
+      "updated_at": "2026-04-12T19:00:00Z"
     },
     "reconcile": {
       "name": "Reconcile Extension",
@@ -1424,6 +1529,50 @@
       "created_at": "2026-04-03T03:24:03Z",
       "updated_at": "2026-04-03T04:15:00Z"
     },
+    "sf": {
+      "name": "SFSpeckit — Salesforce Spec-Driven Development",
+      "id": "sf",
+      "description": "Enterprise-Grade Spec-Driven Development (SDD) Framework for Salesforce.",
+      "author": "Sumanth Yanamala",
+      "version": "1.0.0",
+      "download_url": "https://github.com/ysumanth06/spec-kit-sf/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/ysumanth06/spec-kit-sf",
+      "homepage": "https://ysumanth06.github.io/spec-kit-sf/",
+      "documentation": "https://ysumanth06.github.io/spec-kit-sf/introduction.html",
+      "changelog": "https://github.com/ysumanth06/spec-kit-sf/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0",
+        "tools": [
+          {
+            "name": "sf",
+            "version": ">=2.0.0",
+            "required": true
+          },
+          {
+            "name": "gh",
+            "version": ">=2.0.0",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 18,
+        "hooks": 2
+      },
+      "tags": [
+        "salesforce",
+        "enterprise",
+        "sdlc",
+        "apex",
+        "devops"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-13T22:11:30Z",
+      "updated_at": "2026-04-13T22:11:30Z"
+    },
     "ship": {
       "name": "Ship Release Extension",
       "id": "ship",
@@ -1485,6 +1634,39 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "spectest": {
+      "name": "SpecTest",
+      "id": "spectest",
+      "description": "Auto-generate test scaffolds from spec criteria, map coverage, and find untested requirements.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-spectest/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-spectest",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-spectest",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-spectest/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-spectest/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 1
+      },
+      "tags": [
+        "testing",
+        "test-generation",
+        "coverage",
+        "quality",
+        "automation",
+        "traceability"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-10T16:00:00Z",
+      "updated_at": "2026-04-10T16:00:00Z"
     },
     "staff-review": {
       "name": "Staff Review Extension",
@@ -1780,6 +1962,34 @@
       "created_at": "2026-03-16T00:00:00Z",
       "updated_at": "2026-03-16T00:00:00Z"
     },
+    "whatif": {
+      "name": "What-if Analysis",
+      "id": "whatif",
+      "description": "Preview the downstream impact (complexity, effort, tasks, risks) of requirement changes before committing to them.",
+      "author": "DevAbdullah90",
+      "version": "1.0.0",
+      "repository": "https://github.com/DevAbdullah90/spec-kit-whatif",
+      "homepage": "https://github.com/DevAbdullah90/spec-kit-whatif",
+      "documentation": "https://github.com/DevAbdullah90/spec-kit-whatif/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "analysis",
+        "planning",
+        "simulation"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
     "worktree": {
       "name": "Worktree Isolation",
       "id": "worktree",
@@ -1811,6 +2021,38 @@
       "stars": 0,
       "created_at": "2026-04-09T00:00:00Z",
       "updated_at": "2026-04-09T00:00:00Z"
+    },
+    "worktrees": {
+      "name": "Worktrees",
+      "id": "worktrees",
+      "description": "Default-on worktree isolation for parallel agents — sibling or nested layout",
+      "author": "dango85",
+      "version": "1.0.0",
+      "download_url": "https://github.com/dango85/spec-kit-worktree-parallel/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/dango85/spec-kit-worktree-parallel",
+      "homepage": "https://github.com/dango85/spec-kit-worktree-parallel",
+      "documentation": "https://github.com/dango85/spec-kit-worktree-parallel/blob/main/README.md",
+      "changelog": "https://github.com/dango85/spec-kit-worktree-parallel/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "worktree",
+        "git",
+        "parallel",
+        "isolation",
+        "agents"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
     }
   }
 }
