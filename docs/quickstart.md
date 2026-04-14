@@ -84,7 +84,7 @@ Let the AI generate tasks, write code, run tests, and fix bugs — all from your
 
 ### Common Issues and Solutions
 
-- **Command not found**: Ensure `uvx` is installed (`pip install uvx`)
+- **Command not found**:  Ensure `uv` is installed (see [uv install docs](https://docs.astral.sh/uv/getting-started/installation/)); `uvx` is included with `uv`
 - **Wrong script type**: Use `--script ps` (PowerShell) or `--script sh` (Bash) to override auto-selection
 - **Slash commands not working**: Verify your AI assistant supports slash commands and the `/speckit` prefix is included
 - **Environment errors**: Check Python/Node.js installation and PATH settings
