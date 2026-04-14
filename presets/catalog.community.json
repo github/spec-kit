@@ -239,6 +239,33 @@
         "clarify",
         "interactive"
       ]
+    },
+    "architect-preview": {
+      "name": "Architect Impact Previewer",
+      "id": "architect-preview",
+      "version": "1.0.0",
+      "description": "Predicts architectural impact, complexity, and risks of proposed changes.",
+      "author": "Umme Habiba",
+      "repository": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview",
+      "homepage": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview",
+      "documentation": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 1,
+        "scripts": 1
+      },
+      "tags": [
+        "architecture",
+        "impact-analysis",
+        "risk-assessment",
+        "preview"
+      ],
+      "created_at": "2026-04-14T00:00:00Z",
+      "updated_at": "2026-04-14T00:00:00Z"
     }
   }
 }
