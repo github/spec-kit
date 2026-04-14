@@ -162,9 +162,10 @@ def _validate_steps(
             errors.append("Step is missing 'id' field.")
             continue
 
-        if step_id.startswith("_fanout_"):
+        if ":" in step_id:
             errors.append(
-                f"Step ID {step_id!r} uses reserved prefix '_fanout_'."
+                f"Step ID {step_id!r} contains ':' which is reserved "
+                f"for engine-generated nested IDs (parentId:childId)."
             )
 
         if step_id in seen_ids:
@@ -204,7 +205,7 @@ def _validate_steps(
             _validate_steps(default, seen_ids, errors)
 
         # Validate fan-out nested step (template — not added to seen_ids
-        # since the engine renames items to _fanout_<step>_<base>_<idx>)
+        # since the engine generates parentId:templateId:index at runtime)
         fan_step = step_config.get("step")
         if isinstance(fan_step, dict):
             fan_errors: list[str] = []
@@ -641,10 +642,10 @@ class WorkflowEngine:
                     fan_out_results = []
                     for item_idx, item_val in enumerate(result.output["items"]):
                         context.item = item_val
-                        # Create a per-item copy with an ID in a reserved namespace
+                        # Per-item ID: parentId:templateId:index
                         item_step = dict(template)
                         base_id = item_step.get("id", "item")
-                        item_step["id"] = f"_fanout_{step_id}_{base_id}_{item_idx}"
+                        item_step["id"] = f"{step_id}:{base_id}:{item_idx}"
                         self._execute_steps(
                             [item_step], context, state, registry,
                             step_offset=-1,

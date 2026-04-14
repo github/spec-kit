@@ -93,7 +93,7 @@ steps:
 - ✅ Step types are valid: `command`, `prompt`, `shell`, `gate`, `if`, `switch`, `while`, `do-while`, `fan-out`, `fan-in`
 - ✅ Required fields present per step type (e.g., `condition` for `if`, `expression` for `switch`)
 - ✅ Input types are valid: `string`, `number`, `boolean`
-- ✅ Step IDs do not start with `_fanout_` (reserved prefix)
+- ✅ Step IDs do not contain `:` (reserved for engine-generated nested IDs like `parentId:childId`)
 
 ### 3. Test Locally
 
