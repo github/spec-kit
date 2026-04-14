@@ -70,7 +70,7 @@ python -m src.specify_cli --help
 
 - If you're new to Python projects, create and activate a virtual environment before installing.
 - Use the integrated terminal for all CLI work — you can split terminals, run tasks, and see output inside VS Code.
-- To run common workflows with one click, consider adding a VS Code Task or an npm/powershell script that runs the command you need.
+- To run common workflows with one click, consider adding a VS Code Task or an npm/PowerShell script that runs the command you need.
 
 ### Troubleshooting common issues
 
@@ -78,8 +78,10 @@ python -m src.specify_cli --help
    - Solution: Run `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process` to temporarily allow script execution
    
 2. **Command not found after installation**
-   - Make sure you're in your virtual environment (you should see `(.venv)` in your terminal prompt)
-   - Try reinstalling with `pip install -e .` from the project root
+   - If you installed with `uv tool install`, ensure the uv tools bin directory is on your `PATH`, then verify the tool is installed with `uv tool list`
+   - If needed, reinstall with `uv tool install specify-cli --from git+https://github.com/github/spec-kit.git`
+   - If you're running from the source repository in a virtual environment, make sure the environment is activated (you should see `(.venv)` in your terminal prompt)
+   - For that source/venv workflow, try reinstalling with `pip install -e .` from the project root
    
 3. **Copilot Chat not showing up**
    - Verify you're signed in to GitHub in VS Code
