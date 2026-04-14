@@ -9,16 +9,20 @@ from specify_cli.workflows.expressions import evaluate_expression
 
 
 class FanInStep(StepBase):
-    """Join point — blocks until all ``wait_for:`` steps complete.
+    """Join point that aggregates results from ``wait_for:`` steps.
 
-    Aggregates their results into ``fan_in.results``.
+    Reads completed step outputs from ``context.steps`` and collects
+    them into ``output.results``.  Does not block; relies on the
+    engine executing steps sequentially.
     """
 
     type_key = "fan-in"
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         wait_for = config.get("wait_for", [])
-        output_config = config.get("output", {})
+        output_config = config.get("output") or {}
+        if not isinstance(output_config, dict):
+            output_config = {}
 
         # Collect results from referenced steps
         results = []

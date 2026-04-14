@@ -92,8 +92,8 @@ class GateStep(StepBase):
             errors.append(
                 f"Gate step {config.get('id', '?')!r} is missing 'message' field."
             )
-        options = config.get("options", [])
-        if options and not isinstance(options, list):
+        options = config.get("options", ["approve", "reject"])
+        if not isinstance(options, list):
             errors.append(
                 f"Gate step {config.get('id', '?')!r}: 'options' must be a list."
             )

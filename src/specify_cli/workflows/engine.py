@@ -115,18 +115,24 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
         errors.append("Workflow is missing 'workflow.version'.")
 
     # -- Inputs -----------------------------------------------------------
-    for input_name, input_def in definition.inputs.items():
-        if not isinstance(input_def, dict):
-            errors.append(f"Input {input_name!r} must be a mapping.")
-            continue
-        input_type = input_def.get("type")
-        if input_type and input_type not in ("string", "number", "boolean"):
-            errors.append(
-                f"Input {input_name!r} has invalid type {input_type!r}. "
-                f"Must be 'string', 'number', or 'boolean'."
-            )
+    if not isinstance(definition.inputs, dict):
+        errors.append("'inputs' must be a mapping (or omitted).")
+    else:
+        for input_name, input_def in definition.inputs.items():
+            if not isinstance(input_def, dict):
+                errors.append(f"Input {input_name!r} must be a mapping.")
+                continue
+            input_type = input_def.get("type")
+            if input_type and input_type not in ("string", "number", "boolean"):
+                errors.append(
+                    f"Input {input_name!r} has invalid type {input_type!r}. "
+                    f"Must be 'string', 'number', or 'boolean'."
+                )
 
     # -- Steps ------------------------------------------------------------
+    if not isinstance(definition.steps, list):
+        errors.append("'steps' must be a list.")
+        return errors
     if not definition.steps:
         errors.append("Workflow has no steps defined.")
 
@@ -153,6 +159,11 @@ def _validate_steps(
         if not step_id:
             errors.append("Step is missing 'id' field.")
             continue
+
+        if step_id.startswith("_fanout_"):
+            errors.append(
+                f"Step ID {step_id!r} uses reserved prefix '_fanout_'."
+            )
 
         if step_id in seen_ids:
             errors.append(f"Duplicate step ID {step_id!r}.")

@@ -93,8 +93,7 @@ steps:
 - ✅ Step types are valid: `command`, `prompt`, `shell`, `gate`, `if`, `switch`, `while`, `do-while`, `fan-out`, `fan-in`
 - ✅ Required fields present per step type (e.g., `condition` for `if`, `expression` for `switch`)
 - ✅ Input types are valid: `string`, `number`, `boolean`
-- ✅ Enum values match declared type
-- ✅ Expression references (`{{ steps.*.output.* }}`) point to steps that run before they're referenced
+- ✅ Step IDs do not start with `_fanout_` (reserved prefix)
 
 ### 3. Test Locally
 
