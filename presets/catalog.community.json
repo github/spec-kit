@@ -244,7 +244,7 @@
       "name": "Architect Impact Previewer",
       "id": "architect-preview",
       "version": "1.0.0",
-      "description": "Predicts architectural impact, complexity, and risks of proposed changes.",
+      "description": "Predicts architectural impact, complexity and risks of proposed changes.",
       "author": "Umme Habiba",
       "repository": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview",
       "homepage": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview",
