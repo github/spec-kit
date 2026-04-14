@@ -12,8 +12,8 @@ class WhileStep(StepBase):
     """Repeat nested steps while condition is truthy.
 
     Evaluates condition *before* each iteration.  If falsy on first
-    check, the body never runs.  ``max_iterations`` is required as
-    a safety cap.
+    check, the body never runs.  ``max_iterations`` is an optional
+    safety cap (defaults to 10 if omitted).
     """
 
     type_key = "while"

@@ -50,9 +50,13 @@ class CopilotIntegration(IntegrationBase):
         output_json: bool = True,
     ) -> list[str] | None:
         # GitHub Copilot CLI uses ``copilot -p "prompt"`` for
-        # non-interactive mode.  --allow-all-tools lets the agent
-        # execute file edits and shell commands without manual approval.
-        args = ["copilot", "-p", prompt, "--allow-all-tools"]
+        # non-interactive mode.  --allow-all-tools is required for the
+        # agent to perform file edits and shell commands.  Controlled
+        # by SPECKIT_ALLOW_ALL_TOOLS env var (default: enabled).
+        import os
+        args = ["copilot", "-p", prompt]
+        if os.environ.get("SPECKIT_ALLOW_ALL_TOOLS", "1") != "0":
+            args.append("--allow-all-tools")
         if model:
             args.extend(["--model", model])
         if output_json:
@@ -87,16 +91,13 @@ class CopilotIntegration(IntegrationBase):
         agent_name = f"speckit.{stem}"
 
         prompt = args or ""
-        # NOTE: --allow-all-tools is required for non-interactive execution
-        # so the agent can perform file edits and shell commands.  The
-        # workflow engine's gate steps serve as the human approval mechanism.
-        # Making tool approval configurable (e.g. via workflow config or
-        # env var) is tracked as a future enhancement.
+        import os
         cli_args = [
             "copilot", "-p", prompt,
             "--agent", agent_name,
-            "--allow-all-tools",
         ]
+        if os.environ.get("SPECKIT_ALLOW_ALL_TOOLS", "1") != "0":
+            cli_args.append("--allow-all-tools")
         if model:
             cli_args.extend(["--model", model])
         if not stream:

@@ -415,9 +415,6 @@ class WorkflowEngine:
         # Execute steps
         try:
             self._execute_steps(definition.steps, context, state, STEP_REGISTRY)
-        except WorkflowAbortError:
-            state.status = RunStatus.ABORTED
-            state.append_log({"event": "workflow_aborted"})
         except KeyboardInterrupt:
             state.status = RunStatus.PAUSED
             state.append_log({"event": "workflow_interrupted"})
@@ -478,9 +475,6 @@ class WorkflowEngine:
                 remaining_steps, context, state, STEP_REGISTRY,
                 step_offset=step_offset,
             )
-        except WorkflowAbortError:
-            state.status = RunStatus.ABORTED
-            state.append_log({"event": "workflow_aborted"})
         except KeyboardInterrupt:
             state.status = RunStatus.PAUSED
             state.append_log({"event": "workflow_interrupted"})

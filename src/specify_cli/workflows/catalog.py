@@ -184,10 +184,9 @@ class WorkflowCatalog:
             )
         catalogs_data = data.get("catalogs", [])
         if not catalogs_data:
-            raise WorkflowValidationError(
-                f"Catalog config {config_path} exists but contains no "
-                f"'catalogs' entries."
-            )
+            # Empty catalogs list (e.g. after removing last entry)
+            # is valid — fall back to built-in defaults.
+            return None
         if not isinstance(catalogs_data, list):
             raise WorkflowValidationError(
                 f"Invalid catalog config: 'catalogs' must be a list, "
