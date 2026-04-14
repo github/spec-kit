@@ -89,7 +89,7 @@ class PromptStep(StepBase):
                 output=output,
                 error=(
                     f"Cannot dispatch prompt: "
-                    f"integration {config.get('integration') or context.default_integration!r} "
+                    f"integration {integration!r} "
                     f"CLI not found or not installed."
                 ),
             )

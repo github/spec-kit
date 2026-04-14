@@ -615,7 +615,9 @@ class WorkflowEngine:
                 if step_type in ("while", "do-while"):
                     from .expressions import evaluate_condition
 
-                    max_iters = step_config.get("max_iterations", 10)
+                    max_iters = step_config.get("max_iterations")
+                    if not isinstance(max_iters, int) or max_iters < 1:
+                        max_iters = 10
                     condition = step_config.get("condition", False)
                     for _loop_iter in range(max_iters - 1):
                         if not evaluate_condition(condition, context):
