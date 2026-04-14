@@ -92,6 +92,36 @@ def _build_ai_assistant_help() -> str:
     return base_help + " Use " + aliases_text + "."
 AI_ASSISTANT_HELP = _build_ai_assistant_help()
 
+
+def _build_integration_equivalent(
+    integration_key: str,
+    ai_commands_dir: str | None = None,
+) -> str:
+    """Build the modern --integration equivalent for legacy --ai usage."""
+
+    parts = [f"--integration {integration_key}"]
+    if integration_key == "generic" and ai_commands_dir:
+        parts.append(
+            f'--integration-options="--commands-dir {ai_commands_dir}"'
+        )
+    return " ".join(parts)
+
+
+def _build_ai_deprecation_warning(
+    integration_key: str,
+    ai_commands_dir: str | None = None,
+) -> str:
+    """Build the legacy --ai deprecation warning message."""
+
+    replacement = _build_integration_equivalent(
+        integration_key,
+        ai_commands_dir=ai_commands_dir,
+    )
+    return (
+        "[bold]--ai[/bold] is deprecated and will no longer be available in version 1.0.0 or later.\n\n"
+        f"Use [bold]{replacement}[/bold] instead."
+    )
+
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
@@ -957,6 +987,7 @@ def init(
     """
 
     show_banner()
+    ai_deprecation_warning: str | None = None
 
     # Detect when option values are likely misinterpreted flags (parameter ordering issue)
     if ai_assistant and ai_assistant.startswith("--"):
@@ -995,6 +1026,10 @@ def init(
         if not resolved_integration:
             console.print(f"[red]Error:[/red] Unknown agent '{ai_assistant}'. Choose from: {', '.join(sorted(INTEGRATION_REGISTRY))}")
             raise typer.Exit(1)
+        ai_deprecation_warning = _build_ai_deprecation_warning(
+            resolved_integration.key,
+            ai_commands_dir=ai_commands_dir,
+        )
 
     # Deprecation warnings for --ai-skills and --ai-commands-dir (only when
     # an integration has been resolved from --ai or --integration)
@@ -1427,6 +1462,16 @@ def init(
             )
             console.print()
             console.print(security_notice)
+
+    if ai_deprecation_warning:
+        deprecation_notice = Panel(
+            ai_deprecation_warning,
+            title="[bold red]Deprecation Warning[/bold red]",
+            border_style="red",
+            padding=(1, 2),
+        )
+        console.print()
+        console.print(deprecation_notice)
 
     steps_lines = []
     if not here:
