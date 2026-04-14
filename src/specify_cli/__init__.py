@@ -4488,12 +4488,16 @@ def workflow_add(
             console.print(f"  \u2022 {err}")
         raise typer.Exit(1)
 
-    # Warn if the workflow's internal ID doesn't match the catalog key
+    # Enforce that the workflow's internal ID matches the catalog key
     if definition.id and definition.id != source:
+        import shutil
+        shutil.rmtree(workflow_dir, ignore_errors=True)
         console.print(
-            f"[yellow]Warning:[/yellow] Workflow ID in YAML ({definition.id!r}) "
-            f"differs from catalog key ({source!r}). Using catalog key."
+            f"[red]Error:[/red] Workflow ID in YAML ({definition.id!r}) "
+            f"does not match catalog key ({source!r}). "
+            f"The catalog entry may be misconfigured."
         )
+        raise typer.Exit(1)
 
     registry.add(source, {
         "name": definition.name or info.get("name", source),
