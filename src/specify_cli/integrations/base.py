@@ -156,7 +156,6 @@ class IntegrationBase(ABC):
         support CLI dispatch.
         """
         import subprocess
-        import sys
 
         prompt = self.build_command_invocation(command_name, args)
         # When streaming to the terminal, request text output so the
@@ -181,8 +180,6 @@ class IntegrationBase(ABC):
             try:
                 result = subprocess.run(
                     exec_args,
-                    stdout=sys.stdout,
-                    stderr=sys.stderr,
                     text=True,
                     cwd=cwd,
                 )

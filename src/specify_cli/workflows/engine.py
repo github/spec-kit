@@ -530,13 +530,18 @@ class WorkflowEngine:
 
             result: StepResult = step_impl.execute(step_config, context)
 
-            # Record step results in context
+            # Record step results — prefer resolved values from step output
             step_data = {
-                "integration": step_config.get("integration")
+                "integration": result.output.get("integration")
+                or step_config.get("integration")
                 or context.default_integration,
-                "model": step_config.get("model") or context.default_model,
-                "options": step_config.get("options", {}),
-                "input": step_config.get("input", {}),
+                "model": result.output.get("model")
+                or step_config.get("model")
+                or context.default_model,
+                "options": result.output.get("options")
+                or step_config.get("options", {}),
+                "input": result.output.get("input")
+                or step_config.get("input", {}),
                 "output": result.output,
                 "status": result.status.value,
             }
@@ -609,9 +614,10 @@ class WorkflowEngine:
                             return
 
             # Fan-out: execute nested step template per item with unique IDs
-            if step_type == "fan-out" and result.output.get("items"):
+            if step_type == "fan-out":
+                items = result.output.get("items", [])
                 template = result.output.get("step_template", {})
-                if template:
+                if template and items:
                     fan_out_results = []
                     for item_idx, item_val in enumerate(result.output["items"]):
                         context.item = item_val
@@ -646,6 +652,11 @@ class WorkflowEngine:
                         RunStatus.ABORTED,
                     ):
                         return
+                else:
+                    # Empty items or no template — normalize output
+                    result.output["results"] = []
+                    context.steps[step_id]["output"] = result.output
+                    state.step_results[step_id]["output"] = result.output
 
     def _resolve_inputs(
         self,

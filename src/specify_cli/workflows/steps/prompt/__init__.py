@@ -77,14 +77,22 @@ class PromptStep(StepBase):
                         or f"Prompt exited with code {dispatch_result['exit_code']}"
                     ),
                 )
+            return StepResult(
+                status=StepStatus.COMPLETED,
+                output=output,
+            )
         else:
-            output["exit_code"] = 0
+            output["exit_code"] = 1
             output["dispatched"] = False
-
-        return StepResult(
-            status=StepStatus.COMPLETED,
-            output=output,
-        )
+            return StepResult(
+                status=StepStatus.FAILED,
+                output=output,
+                error=(
+                    f"Cannot dispatch prompt: "
+                    f"integration {config.get('integration') or context.default_integration!r} "
+                    f"CLI not found or not installed."
+                ),
+            )
 
     @staticmethod
     def _try_dispatch(
@@ -114,7 +122,6 @@ class PromptStep(StepBase):
             return None
 
         import subprocess
-        import sys
 
         project_root = (
             Path(context.project_root) if context.project_root else Path.cwd()
@@ -123,8 +130,6 @@ class PromptStep(StepBase):
         try:
             result = subprocess.run(
                 exec_args,
-                stdout=sys.stdout,
-                stderr=sys.stderr,
                 text=True,
                 cwd=str(project_root),
             )

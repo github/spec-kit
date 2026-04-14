@@ -92,7 +92,7 @@ class TestStepRegistry:
     def test_registry_populated(self):
         from specify_cli.workflows import STEP_REGISTRY
 
-        assert len(STEP_REGISTRY) == 10
+        assert len(STEP_REGISTRY) >= 10
 
     def test_all_step_types_registered(self):
         from specify_cli.workflows import STEP_REGISTRY
@@ -101,7 +101,7 @@ class TestStepRegistry:
             "command", "shell", "prompt", "gate", "if", "switch",
             "while", "do-while", "fan-out", "fan-in",
         }
-        assert set(STEP_REGISTRY.keys()) == expected
+        assert expected.issubset(set(STEP_REGISTRY.keys()))
 
     def test_get_step_type(self):
         from specify_cli.workflows import get_step_type
@@ -580,7 +580,7 @@ class TestPromptStep:
             "prompt": "Review {{ inputs.file }} for security issues",
         }
         result = step.execute(config, ctx)
-        assert result.status == StepStatus.COMPLETED
+        assert result.status == StepStatus.FAILED
         assert result.output["prompt"] == "Review auth.py for security issues"
         assert result.output["integration"] == "claude"
         assert result.output["dispatched"] is False

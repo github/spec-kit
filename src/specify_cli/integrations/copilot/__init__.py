@@ -75,7 +75,6 @@ class CopilotIntegration(IntegrationBase):
         the user's arguments.
         """
         import subprocess
-        import sys
 
         stem = command_name
         if "." in stem:
@@ -104,8 +103,6 @@ class CopilotIntegration(IntegrationBase):
             try:
                 result = subprocess.run(
                     cli_args,
-                    stdout=sys.stdout,
-                    stderr=sys.stderr,
                     text=True,
                     cwd=cwd,
                 )
