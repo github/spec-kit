@@ -19,14 +19,19 @@ from ..manifest import IntegrationManifest
 
 
 class CopilotIntegration(IntegrationBase):
-    """Integration for GitHub Copilot (VS Code IDE + CLI)."""
+    """Integration for GitHub Copilot (VS Code IDE + CLI).
+
+    The IDE integration (``requires_cli: False``) installs ``.agent.md``
+    command files.  Workflow dispatch additionally requires the
+    ``copilot`` CLI to be installed separately.
+    """
 
     key = "copilot"
     config = {
         "name": "GitHub Copilot",
         "folder": ".github/",
         "commands_subdir": "agents",
-        "install_url": None,
+        "install_url": "https://docs.github.com/en/copilot/concepts/agents/copilot-cli/about-copilot-cli",
         "requires_cli": False,
     }
     registrar_config = {

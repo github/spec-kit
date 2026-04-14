@@ -5,7 +5,6 @@ workflow:
   version: "1.0.0"
   author: "GitHub"
   description: "Runs specify → plan → tasks → implement with review gates"
-  integration: copilot
 
 requires:
   speckit_version: ">=0.6.1"
@@ -17,6 +16,10 @@ inputs:
     type: string
     required: true
     prompt: "Feature name"
+  integration:
+    type: string
+    default: "claude"
+    prompt: "Integration to use (e.g. claude, copilot, gemini)"
   scope:
     type: string
     default: "full"
@@ -25,6 +28,7 @@ inputs:
 steps:
   - id: specify
     command: speckit.specify
+    integration: "{{ inputs.integration }}"
     input:
       args: "{{ inputs.feature_name }}"
 
@@ -36,6 +40,7 @@ steps:
 
   - id: plan
     command: speckit.plan
+    integration: "{{ inputs.integration }}"
     input:
       args: "{{ inputs.feature_name }}"
 
@@ -47,10 +52,12 @@ steps:
 
   - id: tasks
     command: speckit.tasks
+    integration: "{{ inputs.integration }}"
     input:
       args: "{{ inputs.feature_name }}"
 
   - id: implement
     command: speckit.implement
+    integration: "{{ inputs.integration }}"
     input:
       args: "{{ inputs.feature_name }}"
