@@ -17,9 +17,9 @@ This page explains where to run Spec Kit commands when you're working inside VS 
 
 ### Install & enable GitHub Copilot Chat (command line)
 
-If you prefer the command line, you can install the extension with the VS Code CLI. Open PowerShell and run:
+If you prefer the command line, you can install the extension with the VS Code CLI. Open a terminal (for example, the VS Code integrated terminal) and run:
 
-```powershell
+```sh
 # Install the Copilot Chat extension
 code --install-extension GitHub.copilot-chat
 
@@ -48,7 +48,9 @@ specify --help
 
 To run the CLI from the source repository without installation:
 
-```powershell
+```sh
+# On Windows: cd C:\path\to\spec-kit
+# On macOS/Linux: cd /path/to/spec-kit
 cd /path/to/spec-kit
 uvx --from . specify --help
 ```
