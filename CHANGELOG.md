@@ -2,6 +2,12 @@
 
 <!-- insert new changelog below this comment -->
 
+## [Unreleased]
+
+### Added
+
+- feat(cli): warn on launch when a newer spec-kit release is available; cached for 24h and suppressed with `SPECIFY_SKIP_UPDATE_CHECK=1`, non-interactive shells, or `CI=1` (#1320)
+
 ## [0.6.2] - 2026-04-13
 
 ### Changed

@@ -77,6 +77,16 @@ After initialization, you should see the following commands available in your AI
 
 The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
 
+### Update Notifications
+
+On each launch, `specify` checks once per 24 hours whether a newer release is available on GitHub and prints an upgrade hint if so. The check is silent when:
+
+- `SPECIFY_SKIP_UPDATE_CHECK=1` (or `true`/`yes`/`on`) is set
+- stdout is not a TTY (piped output, redirected to a file, etc.)
+- the `CI` environment variable is set
+
+Network failures and rate-limit responses are swallowed — the check never blocks the command you ran.
+
 ## Troubleshooting
 
 ### Enterprise / Air-Gapped Installation
