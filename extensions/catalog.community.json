@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-13T23:01:30Z",
+  "updated_at": "2026-04-14T21:30:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -35,6 +35,38 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "architect-preview": {
+      "name": "Architect Impact Previewer",
+      "id": "architect-preview",
+      "description": "Predicts architectural impact, complexity, and risks of proposed changes before implementation.",
+      "author": "Umme Habiba",
+      "version": "1.0.0",
+      "download_url": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview",
+      "homepage": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview",
+      "documentation": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview/blob/main/README.md",
+      "changelog": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "architecture",
+        "analysis",
+        "risk-assessment",
+        "planning",
+        "preview"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-14T00:00:00Z",
+      "updated_at": "2026-04-14T00:00:00Z"
     },
     "archive": {
       "name": "Archive Extension",
@@ -2053,38 +2085,6 @@
       "stars": 0,
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z"
-    },
-    "architect-preview": {
-      "name": "Architect Impact Previewer",
-      "id": "architect-preview",
-      "description": "Predicts architectural impact, complexity, and risks of proposed changes before implementation.",
-      "author": "Umme Habiba",
-      "version": "1.0.0",
-      "download_url": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview",
-      "homepage": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview",
-      "documentation": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview/blob/main/README.md",
-      "changelog": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "commands": 1,
-        "hooks": 0
-      },
-      "tags": [
-        "architecture",
-        "analysis",
-        "risk-assessment",
-        "planning",
-        "preview"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-04-14T00:00:00Z",
-      "updated_at": "2026-04-14T00:00:00Z"
     }
   }
 }
