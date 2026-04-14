@@ -239,34 +239,22 @@ class ExtensionManifest:
                         "must follow pattern 'speckit.{extension}.{command}'"
                     )
 
-            # Validate and auto-correct alias name formats
+            # Validate alias types; no pattern enforcement on aliases — they are
+            # intentionally free-form to preserve community extension compatibility
+            # (e.g. 'speckit.verify' short aliases used by existing extensions).
             aliases = cmd.get("aliases")
             if aliases is None:
+                cmd["aliases"] = []
                 aliases = []
             if not isinstance(aliases, list):
                 raise ValidationError(
                     f"Aliases for command '{cmd['name']}' must be a list"
                 )
-            for i, alias in enumerate(aliases):
+            for alias in aliases:
                 if not isinstance(alias, str):
                     raise ValidationError(
                         f"Aliases for command '{cmd['name']}' must be strings"
                     )
-                if not EXTENSION_COMMAND_NAME_PATTERN.match(alias):
-                    corrected = self._try_correct_command_name(alias, ext["id"])
-                    if corrected:
-                        self.warnings.append(
-                            f"Alias '{alias}' does not follow the required pattern "
-                            f"'speckit.{{extension}}.{{command}}'. Registering as '{corrected}'. "
-                            f"The extension author should update the manifest to use this name."
-                        )
-                        rename_map[alias] = corrected
-                        aliases[i] = corrected
-                    else:
-                        raise ValidationError(
-                            f"Invalid alias '{alias}': "
-                            "must follow pattern 'speckit.{extension}.{command}'"
-                        )
 
         # Rewrite any hook command references that pointed at a renamed command or
         # an alias-form ref (ext.cmd → speckit.ext.cmd).  Always emit a warning when

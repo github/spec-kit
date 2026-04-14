@@ -305,8 +305,8 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="Invalid command name"):
             ExtensionManifest(manifest_path)
 
-    def test_alias_autocorrect_speckit_prefix(self, temp_dir, valid_manifest_data):
-        """Test that a legacy 'speckit.command' alias is auto-corrected."""
+    def test_alias_free_form_accepted(self, temp_dir, valid_manifest_data):
+        """Aliases are free-form — a 'speckit.command' alias must be accepted unchanged."""
         import yaml
 
         valid_manifest_data["provides"]["commands"][0]["aliases"] = ["speckit.hello"]
@@ -317,10 +317,8 @@ class TestExtensionManifest:
 
         manifest = ExtensionManifest(manifest_path)
 
-        assert manifest.commands[0]["aliases"] == ["speckit.test-ext.hello"]
-        assert len(manifest.warnings) == 1
-        assert "speckit.hello" in manifest.warnings[0]
-        assert "speckit.test-ext.hello" in manifest.warnings[0]
+        assert manifest.commands[0]["aliases"] == ["speckit.hello"]
+        assert manifest.warnings == []
 
     def test_valid_command_name_has_no_warnings(self, temp_dir, valid_manifest_data):
         """Test that a correctly-named command produces no warnings."""
@@ -778,8 +776,8 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="conflicts with core command namespace"):
             manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
-    def test_install_autocorrects_alias_without_extension_namespace(self, temp_dir, project_dir):
-        """Legacy short aliases are auto-corrected to 'speckit.{ext_id}.{cmd}' with a warning."""
+    def test_install_accepts_free_form_alias(self, temp_dir, project_dir):
+        """Aliases are free-form — a short 'speckit.shortcut' alias must be preserved unchanged."""
         import yaml
 
         ext_dir = temp_dir / "alias-shortcut"
@@ -812,10 +810,8 @@ class TestExtensionManager:
         manager = ExtensionManager(project_dir)
         manifest = manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
-        assert manifest.commands[0]["aliases"] == ["speckit.alias-shortcut.shortcut"]
-        assert len(manifest.warnings) == 1
-        assert "speckit.shortcut" in manifest.warnings[0]
-        assert "speckit.alias-shortcut.shortcut" in manifest.warnings[0]
+        assert manifest.commands[0]["aliases"] == ["speckit.shortcut"]
+        assert manifest.warnings == []
 
     def test_install_rejects_namespace_squatting(self, temp_dir, project_dir):
         """Install should reject commands and aliases outside the extension namespace."""
