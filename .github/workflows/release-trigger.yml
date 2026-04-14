@@ -86,8 +86,10 @@ jobs:
           if [ -f "CHANGELOG.md" ]; then
             DATE=$(date +%Y-%m-%d)
 
-            # Get the previous tag to compare commits
-            PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            # Get the previous tag by sorting all version tags numerically
+            # (git describe --tags only finds tags reachable from HEAD,
+            #  which misses tags on unmerged release branches)
+            PREVIOUS_TAG=$(git tag -l 'v*' --sort=-version:refname | head -n 1)
 
             echo "Generating changelog from commits..."
             if [[ -n "$PREVIOUS_TAG" ]]; then
@@ -98,18 +100,16 @@ jobs:
               COMMITS="- Initial release"
             fi
 
-            # Create new changelog entry
-            {
-              head -n 8 CHANGELOG.md
-              echo ""
-              echo "## [${{ steps.version.outputs.version }}] - $DATE"
-              echo ""
-              echo "### Changed"
-              echo ""
-              echo "$COMMITS"
-              echo ""
-              tail -n +9 CHANGELOG.md
-            } > CHANGELOG.md.tmp
+            # Create new changelog entry — insert after the marker comment
+            NEW_ENTRY=$(printf '%s\n' \
+              "" \
+              "## [${{ steps.version.outputs.version }}] - $DATE" \
+              "" \
+              "### Changed" \
+              "" \
+              "$COMMITS")
+
+            awk -v entry="$NEW_ENTRY" '/<!-- insert new changelog below this comment -->/ { print; print entry; next } {print}' CHANGELOG.md > CHANGELOG.md.tmp
             mv CHANGELOG.md.tmp CHANGELOG.md
 
             echo "✅ Updated CHANGELOG.md with commits since $PREVIOUS_TAG"
@@ -139,6 +139,22 @@ jobs:
           git push origin "${{ steps.version.outputs.tag }}"
           echo "Branch ${{ env.branch }} and tag ${{ steps.version.outputs.tag }} pushed"
 
+      - name: Bump to dev version
+        id: dev_version
+        run: |
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${{ steps.version.outputs.version }}"
+          NEXT_DEV="$MAJOR.$MINOR.$((PATCH + 1)).dev0"
+          echo "dev_version=$NEXT_DEV" >> $GITHUB_OUTPUT
+          sed -i "s/version = \".*\"/version = \"$NEXT_DEV\"/" pyproject.toml
+          git add pyproject.toml
+          if git diff --cached --quiet; then
+            echo "No dev version changes to commit"
+          else
+            git commit -m "chore: begin $NEXT_DEV development"
+            git push origin "${{ env.branch }}"
+            echo "Bumped to dev version $NEXT_DEV"
+          fi
+
       - name: Open pull request
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
@@ -146,16 +162,17 @@ jobs:
           gh pr create \
             --base main \
             --head "${{ env.branch }}" \
-            --title "chore: bump version to ${{ steps.version.outputs.version }}" \
-            --body "Automated version bump to ${{ steps.version.outputs.version }}.
+            --title "chore: release ${{ steps.version.outputs.version }}, begin ${{ steps.dev_version.outputs.dev_version }} development" \
+            --body "Automated release of ${{ steps.version.outputs.version }}.
 
           This PR was created by the Release Trigger workflow. The git tag \`${{ steps.version.outputs.tag }}\` has already been pushed and the release artifacts are being built.
 
-          Merge this PR to record the version bump and changelog update on \`main\`."
+          Merging this PR will set \`main\` to \`${{ steps.dev_version.outputs.dev_version }}\` so that development installs are clearly marked as pre-release."
 
       - name: Summary
         run: |
           echo "✅ Version bumped to ${{ steps.version.outputs.version }}"
           echo "✅ Tag ${{ steps.version.outputs.tag }} created and pushed"
+          echo "✅ Dev version set to ${{ steps.dev_version.outputs.dev_version }}"
           echo "✅ PR opened to merge version bump into main"
           echo "🚀 Release workflow is building artifacts from the tag"

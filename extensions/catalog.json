@@ -1,6 +1,22 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-02-03T00:00:00Z",
+  "updated_at": "2026-04-10T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json",
-  "extensions": {}
+  "extensions": {
+    "git": {
+      "name": "Git Branching Workflow",
+      "id": "git",
+      "version": "1.0.0",
+      "description": "Feature branch creation, numbering (sequential/timestamp), validation, and Git remote detection",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "bundled": true,
+      "tags": [
+        "git",
+        "branching",
+        "workflow",
+        "core"
+      ]
+    }
+  }
 }

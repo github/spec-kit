@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Run markdownlint-cli2
-        uses: DavidAnson/markdownlint-cli2-action@v19
+        uses: DavidAnson/markdownlint-cli2-action@ce4853d43830c74c1753b39f3cf40f71c2031eb9 # v23
         with:
           globs: |
             '**/*.md'

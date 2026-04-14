@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - **Linux/macOS** (or Windows; PowerShell scripts now supported without WSL)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Codebuddy CLI](https://www.codebuddy.ai/cli) or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Codebuddy CLI](https://www.codebuddy.ai/cli), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Pi Coding Agent](https://pi.dev)
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
@@ -12,18 +12,22 @@
 
 ### Initialize a New Project
 
-The easiest way to get started is to initialize a new project:
+The easiest way to get started is to initialize a new project. Pin a specific release tag for stability (check [Releases](https://github.com/github/spec-kit/releases) for the latest):
 
 ```bash
+# Install from a specific stable release (recommended — replace vX.Y.Z with the latest tag)
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <PROJECT_NAME>
+
+# Or install latest from main (may include unreleased changes)
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
 
 Or initialize in the current directory:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init .
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init .
 # or use the --here flag
-uvx --from git+https://github.com/github/spec-kit.git specify init --here
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here
 ```
 
 ### Specify AI Agent
@@ -31,10 +35,11 @@ uvx --from git+https://github.com/github/spec-kit.git specify init --here
 You can proactively specify your AI agent during initialization:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai claude
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai gemini
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai copilot
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai codebuddy
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai claude
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai gemini
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai copilot
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai codebuddy
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai pi
 ```
 
 ### Specify Script Type (Shell vs PowerShell)
@@ -50,8 +55,8 @@ Auto behavior:
 Force a specific script type:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script sh
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --script ps
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --script sh
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --script ps
 ```
 
 ### Ignore Agent Tools Check
@@ -59,7 +64,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <project_name
 If you prefer to get the templates without checking for the right tools:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <project_name> --ai claude --ignore-agent-tools
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai claude --ignore-agent-tools
 ```
 
 ## Verification
@@ -73,6 +78,52 @@ After initialization, you should see the following commands available in your AI
 The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
 
 ## Troubleshooting
+
+### Enterprise / Air-Gapped Installation
+
+If your environment blocks access to PyPI (you see 403 errors when running `uv tool install` or `pip install`), you can create a portable wheel bundle on a connected machine and transfer it to the air-gapped target.
+
+**Step 1: Build the wheel on a connected machine (same OS and Python version as the target)**
+
+```bash
+# Clone the repository
+git clone https://github.com/github/spec-kit.git
+cd spec-kit
+
+# Build the wheel
+pip install build
+python -m build --wheel --outdir dist/
+
+# Download the wheel and all its runtime dependencies
+pip download -d dist/ dist/specify_cli-*.whl
+```
+
+> **Important:** `pip download` resolves platform-specific wheels (e.g., PyYAML includes native extensions). You must run this step on a machine with the **same OS and Python version** as the air-gapped target. If you need to support multiple platforms, repeat this step on each target OS (Linux, macOS, Windows) and Python version.
+
+**Step 2: Transfer the `dist/` directory to the air-gapped machine**
+
+Copy the entire `dist/` directory (which contains the `specify-cli` wheel and all dependency wheels) to the target machine via USB, network share, or other approved transfer method.
+
+**Step 3: Install on the air-gapped machine**
+
+```bash
+pip install --no-index --find-links=./dist specify-cli
+```
+
+**Step 4: Initialize a project (no network required)**
+
+```bash
+# Initialize a project — no GitHub access needed
+specify init my-project --ai claude --offline
+```
+
+The `--offline` flag tells the CLI to use the templates, commands, and scripts bundled inside the wheel instead of downloading from GitHub.
+
+> **Deprecation notice:** Starting with v0.6.0, `specify init` will use bundled assets by default and the `--offline` flag will be removed. The GitHub download path will be retired because bundled assets eliminate the need for network access, avoid proxy/firewall issues, and guarantee that templates always match the installed CLI version. No action will be needed — `specify init` will simply work without network access out of the box.
+
+> **Note:** Python 3.11+ is required.
+
+> **Windows note:** Offline scaffolding requires PowerShell 7+ (`pwsh`), not Windows PowerShell 5.x (`powershell.exe`). Install from https://aka.ms/powershell.
 
 ### Git Credential Manager on Linux
 

@@ -1,0 +1,217 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-04-09T08:00:00Z",
+  "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
+  "presets": {
+    "aide-in-place": {
+      "name": "AIDE In-Place Migration",
+      "id": "aide-in-place",
+      "version": "1.0.0",
+      "description": "Adapts the AIDE workflow for in-place technology migrations (X → Y pattern). Overrides vision, roadmap, progress, and work item commands with migration-specific guidance.",
+      "author": "mnriem",
+      "repository": "https://github.com/mnriem/spec-kit-presets",
+      "download_url": "https://github.com/mnriem/spec-kit-presets/releases/download/aide-in-place-v1.0.0/aide-in-place.zip",
+      "homepage": "https://github.com/mnriem/spec-kit-presets",
+      "documentation": "https://github.com/mnriem/spec-kit-presets/blob/main/aide-in-place/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "extensions": ["aide"]
+      },
+      "provides": {
+        "templates": 2,
+        "commands": 8
+      },
+      "tags": [
+        "migration",
+        "in-place",
+        "brownfield",
+        "aide"
+      ]
+    },
+    "canon-core": {
+      "name": "Canon Core",
+      "id": "canon-core",
+      "version": "0.1.0",
+      "description": "Adapts original Spec Kit workflow to work together with Canon extension.",
+      "author": "Maxim Stupakov",
+      "download_url": "https://github.com/maximiliamus/spec-kit-canon/releases/download/v0.1.0/spec-kit-canon-core-v0.1.0.zip",
+      "repository": "https://github.com/maximiliamus/spec-kit-canon",
+      "homepage": "https://github.com/maximiliamus/spec-kit-canon",
+      "documentation": "https://github.com/maximiliamus/spec-kit-canon/blob/master/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.3"
+      },
+      "provides": {
+        "templates": 2,
+        "commands": 8
+      },
+      "tags": [
+        "baseline",
+        "canon",
+        "spec-first"
+      ]
+    },
+    "explicit-task-dependencies": {
+      "name": "Explicit Task Dependencies",
+      "id": "explicit-task-dependencies",
+      "version": "1.0.0",
+      "description": "Adds explicit (depends on T###) dependency declarations and an Execution Wave DAG to tasks.md for dependency-resolved parallel scheduling",
+      "author": "Quratulain-bilal",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "templates": 1,
+        "commands": 1
+      },
+      "tags": [
+        "dependencies",
+        "parallel",
+        "scheduling",
+        "wave-dag"
+      ]
+    },
+    "fiction-book-writing": {
+      "name": "Fiction Book Writing",
+      "id": "fiction-book-writing",
+      "version": "1.3.0",
+      "description": "Spec-Driven Development for novel and long-form fiction. Replaces software engineering terminology with storytelling craft: specs become story briefs, plans become story structures, and tasks become scene-by-scene writing tasks. Supports 8 POV modes, all major plot structure frameworks, 5 humanized-AI prose profiles, and exports to DOCX/EPUB/LaTeX via pandoc.",
+      "author": "Andreas Daumann",
+      "repository": "https://github.com/adaumann/speckit-preset-fiction-book-writing",
+      "download_url": "https://github.com/adaumann/speckit-preset-fiction-book-writing/archive/refs/tags/v1.3.0.zip",
+      "homepage": "https://github.com/adaumann/speckit-preset-fiction-book-writing",
+      "documentation": "https://github.com/adaumann/speckit-preset-fiction-book-writing/blob/main/fiction-book-writing/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.5.0"
+      },
+      "provides": {
+        "templates": 21,
+        "commands": 17,
+        "scripts": 1
+      },
+      "tags": [
+        "writing",
+        "novel",
+        "book",
+        "fiction",
+        "storytelling",
+        "creative-writing",
+        "kdp",
+        "single-pov",
+        "multi-pov",
+        "export"
+      ],
+      "created_at": "2026-04-09T08:00:00Z",
+      "updated_at": "2026-04-09T08:00:00Z"
+    },
+    "multi-repo-branching": {
+      "name": "Multi-Repo Branching",
+      "id": "multi-repo-branching",
+      "version": "1.0.0",
+      "description": "Coordinates feature branch creation across multiple git repositories (independent repos and submodules) during plan and tasks phases.",
+      "author": "sakitA",
+      "repository": "https://github.com/sakitA/spec-kit-preset-multi-repo-branching",
+      "download_url": "https://github.com/sakitA/spec-kit-preset-multi-repo-branching/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/sakitA/spec-kit-preset-multi-repo-branching",
+      "documentation": "https://github.com/sakitA/spec-kit-preset-multi-repo-branching/blob/master/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 2
+      },
+      "tags": [
+        "multi-repo-branching",
+        "multi-module",
+        "submodules",
+        "monorepo"
+      ],
+      "created_at": "2026-04-09T00:00:00Z",
+      "updated_at": "2026-04-09T00:00:00Z"
+    },
+    "pirate": {
+      "name": "Pirate Speak (Full)",
+      "id": "pirate",
+      "version": "1.0.0",
+      "description": "Arrr! Transforms all Spec Kit output into pirate speak. Specs, plans, and tasks be written fer scallywags.",
+      "author": "mnriem",
+      "repository": "https://github.com/mnriem/spec-kit-presets",
+      "download_url": "https://github.com/mnriem/spec-kit-presets/releases/download/pirate-v1.0.0/pirate.zip",
+      "homepage": "https://github.com/mnriem/spec-kit-presets",
+      "documentation": "https://github.com/mnriem/spec-kit-presets/blob/main/pirate/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "templates": 6,
+        "commands": 9
+      },
+      "tags": [
+        "pirate",
+        "theme",
+        "fun",
+        "experimental"
+      ]
+    },
+    "toc-navigation": {
+      "name": "Table of Contents Navigation",
+      "id": "toc-navigation",
+      "version": "1.0.0",
+      "description": "Adds a navigable Table of Contents to generated spec.md, plan.md, and tasks.md documents",
+      "author": "Quratulain-bilal",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "templates": 3,
+        "commands": 3
+      },
+      "tags": [
+        "navigation",
+        "toc",
+        "documentation"
+      ]
+    },
+    "vscode-ask-questions": {
+      "name": "VS Code Ask Questions",
+      "id": "vscode-ask-questions",
+      "version": "1.0.0",
+      "description": "Enhances the clarify command to use vscode/askQuestions for batched interactive questioning, reducing API request costs in GitHub Copilot.",
+      "author": "fdcastel",
+      "repository": "https://github.com/fdcastel/spec-kit-presets",
+      "download_url": "https://github.com/fdcastel/spec-kit-presets/releases/download/vscode-ask-questions-v1.0.0/vscode-ask-questions.zip",
+      "homepage": "https://github.com/fdcastel/spec-kit-presets",
+      "documentation": "https://github.com/fdcastel/spec-kit-presets/blob/main/vscode-ask-questions/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 1
+      },
+      "tags": [
+        "vscode",
+        "askquestions",
+        "clarify",
+        "interactive"
+      ]
+    }
+  }
+}

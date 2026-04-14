@@ -6,6 +6,7 @@ on:
   workflow_dispatch: # Allow manual triggering
 
 permissions:
+  actions: write
   issues: write
   pull-requests: write
 
@@ -39,4 +40,4 @@ jobs:
           any-of-labels: ''
           
           # Operations per run (helps avoid rate limits)
-          operations-per-run: 100
+          operations-per-run: 250

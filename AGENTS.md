@@ -10,272 +10,282 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 ---
 
-## General practices
+## Integration Architecture
 
-- Any changes to `__init__.py` for the Specify CLI require a version rev in `pyproject.toml` and addition of entries to `CHANGELOG.md`.
+Each AI agent is a self-contained **integration subpackage** under `src/specify_cli/integrations/<key>/`. The subpackage exposes a single class that declares all metadata and inherits setup/teardown logic from a base class. Built-in integrations are then instantiated and added to the global `INTEGRATION_REGISTRY` by `src/specify_cli/integrations/__init__.py` via `_register_builtins()`.
 
-## Adding New Agent Support
+```
+src/specify_cli/integrations/
+├── __init__.py            # INTEGRATION_REGISTRY + _register_builtins()
+├── base.py                # IntegrationBase, MarkdownIntegration, TomlIntegration, YamlIntegration, SkillsIntegration
+├── manifest.py            # IntegrationManifest (file tracking)
+├── claude/                # Example: SkillsIntegration subclass
+│   ├── __init__.py        #   ClaudeIntegration class
+│   └── scripts/           #   Thin wrapper scripts
+│       ├── update-context.sh
+│       └── update-context.ps1
+├── gemini/                # Example: TomlIntegration subclass
+│   ├── __init__.py
+│   └── scripts/
+├── windsurf/              # Example: MarkdownIntegration subclass
+│   ├── __init__.py
+│   └── scripts/
+├── copilot/               # Example: IntegrationBase subclass (custom setup)
+│   ├── __init__.py
+│   └── scripts/
+└── ...                    # One subpackage per supported agent
+```
 
-This section explains how to add support for new AI agents/assistants to the Specify CLI. Use this guide as a reference when integrating new AI tools into the Spec-Driven Development workflow.
+The registry is the **single source of truth for Python integration metadata**. Supported agents, their directories, formats, and capabilities are derived from the integration classes for the Python integration layer. However, context-update behavior still requires explicit cases in the shared dispatcher scripts (`scripts/bash/update-agent-context.sh` and `scripts/powershell/update-agent-context.ps1`), which currently maintain their own supported-agent lists and agent-key→context-file mappings until they are migrated to registry-based dispatch.
 
-### Overview
+---
 
-Specify supports multiple AI agents by generating agent-specific command files and directory structures when initializing projects. Each agent has its own conventions for:
+## Adding a New Integration
 
-- **Command file formats** (Markdown, TOML, etc.)
-- **Directory structures** (`.claude/commands/`, `.windsurf/workflows/`, etc.)
-- **Command invocation patterns** (slash commands, CLI tools, etc.)
-- **Argument passing conventions** (`$ARGUMENTS`, `{{args}}`, etc.)
+### 1. Choose a base class
 
-### Current Supported Agents
+| Your agent needs… | Subclass |
+|---|---|
+| Standard markdown commands (`.md`) | `MarkdownIntegration` |
+| TOML-format commands (`.toml`) | `TomlIntegration` |
+| YAML recipe files (`.yaml`) | `YamlIntegration` |
+| Skill directories (`speckit-<name>/SKILL.md`) | `SkillsIntegration` |
+| Fully custom output (companion files, settings merge, etc.) | `IntegrationBase` directly |
 
-| Agent                      | Directory              | Format   | CLI Tool        | Description                 |
-| -------------------------- | ---------------------- | -------- | --------------- | --------------------------- |
-| **Claude Code**            | `.claude/commands/`    | Markdown | `claude`        | Anthropic's Claude Code CLI |
-| **Gemini CLI**             | `.gemini/commands/`    | TOML     | `gemini`        | Google's Gemini CLI         |
-| **GitHub Copilot**         | `.github/agents/`      | Markdown | N/A (IDE-based) | GitHub Copilot in VS Code   |
-| **Cursor**                 | `.cursor/commands/`    | Markdown | `cursor-agent`  | Cursor CLI                  |
-| **Qwen Code**              | `.qwen/commands/`      | TOML     | `qwen`          | Alibaba's Qwen Code CLI     |
-| **opencode**               | `.opencode/command/`   | Markdown | `opencode`      | opencode CLI                |
-| **Codex CLI**              | `.codex/commands/`     | Markdown | `codex`         | Codex CLI                   |
-| **Windsurf**               | `.windsurf/workflows/` | Markdown | N/A (IDE-based) | Windsurf IDE workflows      |
-| **Kilo Code**              | `.kilocode/rules/`     | Markdown | N/A (IDE-based) | Kilo Code IDE               |
-| **Auggie CLI**             | `.augment/rules/`      | Markdown | `auggie`        | Auggie CLI                  |
-| **Roo Code**               | `.roo/rules/`          | Markdown | N/A (IDE-based) | Roo Code IDE                |
-| **CodeBuddy CLI**          | `.codebuddy/commands/` | Markdown | `codebuddy`     | CodeBuddy CLI               |
-| **Qoder CLI**              | `.qoder/commands/`     | Markdown | `qodercli`      | Qoder CLI                   |
-| **Kiro CLI**               | `.kiro/prompts/`       | Markdown | `kiro-cli`      | Kiro CLI                    |
-| **Amp**                    | `.agents/commands/`    | Markdown | `amp`           | Amp CLI                     |
-| **SHAI**                   | `.shai/commands/`      | Markdown | `shai`          | SHAI CLI                    |
-| **IBM Bob**                | `.bob/commands/`       | Markdown | N/A (IDE-based) | IBM Bob IDE                 |
-| **Generic**                | User-specified via `--ai-commands-dir` | Markdown | N/A | Bring your own agent        |
+Most agents only need `MarkdownIntegration` — a minimal subclass with zero method overrides.
 
-### Step-by-Step Integration Guide
+### 2. Create the subpackage
 
-Follow these steps to add a new agent (using a hypothetical new agent as an example):
+Create `src/specify_cli/integrations/<package_dir>/__init__.py`, where `<package_dir>` is the Python-safe directory name derived from `<key>`: use the key as-is when it contains no hyphens (e.g., key `"gemini"` → `gemini/`), or replace hyphens with underscores when it does (e.g., key `"kiro-cli"` → `kiro_cli/`). The `IntegrationBase.key` class attribute always retains the original hyphenated value, since that is what the CLI and registry use. For CLI-based integrations (`requires_cli: True`), the `key` should match the actual CLI tool name (the executable users install and run) so CLI checks can resolve it correctly. For IDE-based integrations (`requires_cli: False`), use the canonical integration identifier instead.
 
-#### 1. Add to AGENT_CONFIG
-
-**IMPORTANT**: Use the actual CLI tool name as the key, not a shortened version.
-
-Add the new agent to the `AGENT_CONFIG` dictionary in `src/specify_cli/__init__.py`. This is the **single source of truth** for all agent metadata:
+**Minimal example — Markdown agent (Windsurf):**
 
 ```python
-AGENT_CONFIG = {
-    # ... existing agents ...
-    "new-agent-cli": {  # Use the ACTUAL CLI tool name (what users type in terminal)
-        "name": "New Agent Display Name",
-        "folder": ".newagent/",  # Directory for agent files
-        "commands_subdir": "commands",  # Subdirectory name for command files (default: "commands")
-        "install_url": "https://example.com/install",  # URL for installation docs (or None if IDE-based)
-        "requires_cli": True,  # True if CLI tool required, False for IDE-based agents
-    },
-}
+"""Windsurf IDE integration."""
+
+from ..base import MarkdownIntegration
+
+
+class WindsurfIntegration(MarkdownIntegration):
+    key = "windsurf"
+    config = {
+        "name": "Windsurf",
+        "folder": ".windsurf/",
+        "commands_subdir": "workflows",
+        "install_url": None,
+        "requires_cli": False,
+    }
+    registrar_config = {
+        "dir": ".windsurf/workflows",
+        "format": "markdown",
+        "args": "$ARGUMENTS",
+        "extension": ".md",
+    }
+    context_file = ".windsurf/rules/specify-rules.md"
 ```
 
-**Key Design Principle**: The dictionary key should match the actual executable name that users install. For example:
-
-- ✅ Use `"cursor-agent"` because the CLI tool is literally called `cursor-agent`
-- ❌ Don't use `"cursor"` as a shortcut if the tool is `cursor-agent`
-
-This eliminates the need for special-case mappings throughout the codebase.
-
-**Field Explanations**:
-
-- `name`: Human-readable display name shown to users
-- `folder`: Directory where agent-specific files are stored (relative to project root)
-- `commands_subdir`: Subdirectory name within the agent folder where command/prompt files are stored (default: `"commands"`)
-  - Most agents use `"commands"` (e.g., `.claude/commands/`)
-  - Some agents use alternative names: `"agents"` (copilot), `"workflows"` (windsurf, kilocode, agy), `"prompts"` (codex, kiro-cli), `"command"` (opencode - singular)
-  - This field enables `--ai-skills` to locate command templates correctly for skill generation
-- `install_url`: Installation documentation URL (set to `None` for IDE-based agents)
-- `requires_cli`: Whether the agent requires a CLI tool check during initialization
-
-#### 2. Update CLI Help Text
-
-Update the `--ai` parameter help text in the `init()` command to include the new agent:
+**TOML agent (Gemini):**
 
 ```python
-ai_assistant: str = typer.Option(None, "--ai", help="AI assistant to use: claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, codebuddy, new-agent-cli, or kiro-cli"),
+"""Gemini CLI integration."""
+
+from ..base import TomlIntegration
+
+
+class GeminiIntegration(TomlIntegration):
+    key = "gemini"
+    config = {
+        "name": "Gemini CLI",
+        "folder": ".gemini/",
+        "commands_subdir": "commands",
+        "install_url": "https://github.com/google-gemini/gemini-cli",
+        "requires_cli": True,
+    }
+    registrar_config = {
+        "dir": ".gemini/commands",
+        "format": "toml",
+        "args": "{{args}}",
+        "extension": ".toml",
+    }
+    context_file = "GEMINI.md"
 ```
 
-Also update any function docstrings, examples, and error messages that list available agents.
+**Skills agent (Codex):**
 
-#### 3. Update README Documentation
+```python
+"""Codex CLI integration — skills-based agent."""
 
-Update the **Supported AI Agents** section in `README.md` to include the new agent:
+from __future__ import annotations
 
-- Add the new agent to the table with appropriate support level (Full/Partial)
-- Include the agent's official website link
-- Add any relevant notes about the agent's implementation
-- Ensure the table formatting remains aligned and consistent
+from ..base import IntegrationOption, SkillsIntegration
 
-#### 4. Update Release Package Script
 
-Modify `.github/workflows/scripts/create-release-packages.sh`:
+class CodexIntegration(SkillsIntegration):
+    key = "codex"
+    config = {
+        "name": "Codex CLI",
+        "folder": ".agents/",
+        "commands_subdir": "skills",
+        "install_url": "https://github.com/openai/codex",
+        "requires_cli": True,
+    }
+    registrar_config = {
+        "dir": ".agents/skills",
+        "format": "markdown",
+        "args": "$ARGUMENTS",
+        "extension": "/SKILL.md",
+    }
+    context_file = "AGENTS.md"
 
-##### Add to ALL_AGENTS array
+    @classmethod
+    def options(cls) -> list[IntegrationOption]:
+        return [
+            IntegrationOption(
+                "--skills",
+                is_flag=True,
+                default=True,
+                help="Install as agent skills (default for Codex)",
+            ),
+        ]
+```
+
+#### Required fields
+
+| Field | Location | Purpose |
+|---|---|---|
+| `key` | Class attribute | Unique identifier; for CLI-based integrations (`requires_cli: True`), must match the CLI executable name |
+| `config` | Class attribute (dict) | Agent metadata: `name`, `folder`, `commands_subdir`, `install_url`, `requires_cli` |
+| `registrar_config` | Class attribute (dict) | Command output config: `dir`, `format`, `args` placeholder, file `extension` |
+| `context_file` | Class attribute (str or None) | Path to agent context/instructions file (e.g., `"CLAUDE.md"`, `".github/copilot-instructions.md"`) |
+
+**Key design rule:** For CLI-based integrations (`requires_cli: True`), `key` must be the actual executable name (e.g., `"cursor-agent"` not `"cursor"`). This ensures `shutil.which(key)` works for CLI-tool checks without special-case mappings. IDE-based integrations (`requires_cli: False`) should use their canonical identifier (e.g., `"windsurf"`, `"copilot"`).
+
+### 3. Register it
+
+In `src/specify_cli/integrations/__init__.py`, add one import and one `_register()` call inside `_register_builtins()`. Both lists are alphabetical:
+
+```python
+def _register_builtins() -> None:
+    # -- Imports (alphabetical) -------------------------------------------
+    from .claude import ClaudeIntegration
+    # ...
+    from .newagent import NewAgentIntegration   # ← add import
+    # ...
+
+    # -- Registration (alphabetical) --------------------------------------
+    _register(ClaudeIntegration())
+    # ...
+    _register(NewAgentIntegration())            # ← add registration
+    # ...
+```
+
+### 4. Add scripts
+
+Create two thin wrapper scripts in `src/specify_cli/integrations/<package_dir>/scripts/` that delegate to the shared context-update scripts. Each is ~25 lines of boilerplate.
+
+> **Note on `<package_dir>` vs `<key>`:** `<package_dir>` is the Python-safe directory name for your integration — it matches `<key>` exactly when the key contains no hyphens (e.g., key `"gemini"` → `gemini/`), but uses underscores when it does (e.g., key `"kiro-cli"` → `kiro_cli/`). The `IntegrationBase.key` class attribute always retains the original hyphenated value (e.g., `key = "kiro-cli"`), since that is what the CLI and registry use.
+
+**`update-context.sh`:**
 
 ```bash
-ALL_AGENTS=(claude gemini copilot cursor-agent qwen opencode windsurf kiro-cli)
+#!/usr/bin/env bash
+# update-context.sh — <Agent Name> integration: create/update <context_file>
+set -euo pipefail
+
+_script_dir="$(cd "$(dirname "$0")" && pwd)"
+_root="$_script_dir"
+while [ "$_root" != "/" ] && [ ! -d "$_root/.specify" ]; do _root="$(dirname "$_root")"; done
+if [ -z "${REPO_ROOT:-}" ]; then
+  if [ -d "$_root/.specify" ]; then
+    REPO_ROOT="$_root"
+  else
+    git_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -n "$git_root" ] && [ -d "$git_root/.specify" ]; then
+      REPO_ROOT="$git_root"
+    else
+      REPO_ROOT="$_root"
+    fi
+  fi
+fi
+
+exec "$REPO_ROOT/.specify/scripts/bash/update-agent-context.sh" <key>
 ```
 
-##### Add case statement for directory structure
-
-```bash
-case $agent in
-  # ... existing cases ...
-  windsurf)
-    mkdir -p "$base_dir/.windsurf/workflows"
-    generate_commands windsurf md "\$ARGUMENTS" "$base_dir/.windsurf/workflows" "$script" ;;
-esac
-```
-
-#### 4. Update GitHub Release Script
-
-Modify `.github/workflows/scripts/create-github-release.sh` to include the new agent's packages:
-
-```bash
-gh release create "$VERSION" \
-  # ... existing packages ...
-  .genreleases/spec-kit-template-windsurf-sh-"$VERSION".zip \
-  .genreleases/spec-kit-template-windsurf-ps-"$VERSION".zip \
-  # Add new agent packages here
-```
-
-#### 5. Update Agent Context Scripts
-
-##### Bash script (`scripts/bash/update-agent-context.sh`)
-
-Add file variable:
-
-```bash
-WINDSURF_FILE="$REPO_ROOT/.windsurf/rules/specify-rules.md"
-```
-
-Add to case statement:
-
-```bash
-case "$AGENT_TYPE" in
-  # ... existing cases ...
-  windsurf) update_agent_file "$WINDSURF_FILE" "Windsurf" ;;
-  "")
-    # ... existing checks ...
-    [ -f "$WINDSURF_FILE" ] && update_agent_file "$WINDSURF_FILE" "Windsurf";
-    # Update default creation condition
-    ;;
-esac
-```
-
-##### PowerShell script (`scripts/powershell/update-agent-context.ps1`)
-
-Add file variable:
+**`update-context.ps1`:**
 
 ```powershell
-$windsurfFile = Join-Path $repoRoot '.windsurf/rules/specify-rules.md'
-```
+# update-context.ps1 — <Agent Name> integration: create/update <context_file>
+$ErrorActionPreference = 'Stop'
 
-Add to switch statement:
-
-```powershell
-switch ($AgentType) {
-    # ... existing cases ...
-    'windsurf' { Update-AgentFile $windsurfFile 'Windsurf' }
-    '' {
-        foreach ($pair in @(
-            # ... existing pairs ...
-            @{file=$windsurfFile; name='Windsurf'}
-        )) {
-            if (Test-Path $pair.file) { Update-AgentFile $pair.file $pair.name }
-        }
-        # Update default creation condition
-    }
-}
-```
-
-#### 6. Update CLI Tool Checks (Optional)
-
-For agents that require CLI tools, add checks in the `check()` command and agent validation:
-
-```python
-# In check() command
-tracker.add("windsurf", "Windsurf IDE (optional)")
-windsurf_ok = check_tool_for_tracker("windsurf", "https://windsurf.com/", tracker)
-
-# In init validation (only if CLI tool required)
-elif selected_ai == "windsurf":
-    if not check_tool("windsurf", "Install from: https://windsurf.com/"):
-        console.print("[red]Error:[/red] Windsurf CLI is required for Windsurf projects")
-        agent_tool_missing = True
-```
-
-**Note**: CLI tool checks are now handled automatically based on the `requires_cli` field in AGENT_CONFIG. No additional code changes needed in the `check()` or `init()` commands - they automatically loop through AGENT_CONFIG and check tools as needed.
-
-## Important Design Decisions
-
-### Using Actual CLI Tool Names as Keys
-
-**CRITICAL**: When adding a new agent to AGENT_CONFIG, always use the **actual executable name** as the dictionary key, not a shortened or convenient version.
-
-**Why this matters:**
-
-- The `check_tool()` function uses `shutil.which(tool)` to find executables in the system PATH
-- If the key doesn't match the actual CLI tool name, you'll need special-case mappings throughout the codebase
-- This creates unnecessary complexity and maintenance burden
-
-**Example - The Cursor Lesson:**
-
-❌ **Wrong approach** (requires special-case mapping):
-
-```python
-AGENT_CONFIG = {
-    "cursor": {  # Shorthand that doesn't match the actual tool
-        "name": "Cursor",
-        # ...
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$repoRoot = try { git rev-parse --show-toplevel 2>$null } catch { $null }
+if (-not $repoRoot -or -not (Test-Path (Join-Path $repoRoot '.specify'))) {
+    $repoRoot = $scriptDir
+    $fsRoot = [System.IO.Path]::GetPathRoot($repoRoot)
+    while ($repoRoot -and $repoRoot -ne $fsRoot -and -not (Test-Path (Join-Path $repoRoot '.specify'))) {
+        $repoRoot = Split-Path -Parent $repoRoot
     }
 }
 
-# Then you need special cases everywhere:
-cli_tool = agent_key
-if agent_key == "cursor":
-    cli_tool = "cursor-agent"  # Map to the real tool name
+& "$repoRoot/.specify/scripts/powershell/update-agent-context.ps1" -AgentType <key>
 ```
 
-✅ **Correct approach** (no mapping needed):
+Replace `<key>` with your integration key and `<Agent Name>` / `<context_file>` with the appropriate values.
 
-```python
-AGENT_CONFIG = {
-    "cursor-agent": {  # Matches the actual executable name
-        "name": "Cursor",
-        # ...
-    }
-}
+You must also add the agent to the shared context-update scripts so the shared dispatcher recognises the new key:
 
-# No special cases needed - just use agent_key directly!
+- **`scripts/bash/update-agent-context.sh`** — add a file-path variable and a case in `update_specific_agent()`.
+- **`scripts/powershell/update-agent-context.ps1`** — add a file-path variable, add the new key to the `AgentType` parameter's `[ValidateSet(...)]`, add a switch case in `Update-SpecificAgent`, and add an entry in `Update-AllExistingAgents`.
+
+### 5. Test it
+
+```bash
+# Install into a test project
+specify init my-project --integration <key>
+
+# Verify files were created in the commands directory configured by
+# config["folder"] + config["commands_subdir"] (for example, .windsurf/workflows/)
+ls -R my-project/.windsurf/workflows/
+
+# Uninstall cleanly
+cd my-project && specify integration uninstall <key>
 ```
 
-**Benefits of this approach:**
+Each integration also has a dedicated test file at `tests/integrations/test_integration_<key>.py`. Note that hyphens in the key are replaced with underscores in the filename (e.g., key `cursor-agent` → `test_integration_cursor_agent.py`, key `kiro-cli` → `test_integration_kiro_cli.py`). Run it with:
 
-- Eliminates special-case logic scattered throughout the codebase
-- Makes the code more maintainable and easier to understand
-- Reduces the chance of bugs when adding new agents
-- Tool checking "just works" without additional mappings
+```bash
+pytest tests/integrations/test_integration_<key_with_underscores>.py -v
+```
 
-#### 7. Update Devcontainer files (Optional)
+### 6. Optional overrides
+
+The base classes handle most work automatically. Override only when the agent deviates from standard patterns:
+
+| Override | When to use | Example |
+|---|---|---|
+| `command_filename(template_name)` | Custom file naming or extension | Copilot → `speckit.{name}.agent.md` |
+| `options()` | Integration-specific CLI flags via `--integration-options` | Codex → `--skills` flag |
+| `setup()` | Custom install logic (companion files, settings merge) | Copilot → `.agent.md` + `.prompt.md` + `.vscode/settings.json` |
+| `teardown()` | Custom uninstall logic | Rarely needed; base handles manifest-tracked files |
+
+**Example — Copilot (fully custom `setup`):**
+
+Copilot extends `IntegrationBase` directly because it creates `.agent.md` commands, companion `.prompt.md` files, and merges `.vscode/settings.json`. See `src/specify_cli/integrations/copilot/__init__.py` for the full implementation.
+
+### 7. Update Devcontainer files (Optional)
 
 For agents that have VS Code extensions or require CLI installation, update the devcontainer configuration files:
 
-##### VS Code Extension-based Agents
+#### VS Code Extension-based Agents
 
 For agents available as VS Code extensions, add them to `.devcontainer/devcontainer.json`:
 
-```json
+```jsonc
 {
   "customizations": {
     "vscode": {
       "extensions": [
         // ... existing extensions ...
-        // [New Agent Name]
         "[New Agent Extension ID]"
       ]
     }
@@ -283,7 +293,7 @@ For agents available as VS Code extensions, add them to `.devcontainer/devcontai
 }
 ```
 
-##### CLI-based Agents
+#### CLI-based Agents
 
 For agents that require CLI tools, add installation commands to `.devcontainer/post-create.sh`:
 
@@ -293,49 +303,15 @@ For agents that require CLI tools, add installation commands to `.devcontainer/p
 # Existing installations...
 
 echo -e "\n🤖 Installing [New Agent Name] CLI..."
-# run_command "npm install -g [agent-cli-package]@latest" # Example for node-based CLI
-# or other installation instructions (must be non-interactive and compatible with Linux Debian "Trixie" or later)...
+# run_command "npm install -g [agent-cli-package]@latest"
 echo "✅ Done"
-
 ```
 
-**Quick Tips:**
-
-- **Extension-based agents**: Add to the `extensions` array in `devcontainer.json`
-- **CLI-based agents**: Add installation scripts to `post-create.sh`
-- **Hybrid agents**: May require both extension and CLI installation
-- **Test thoroughly**: Ensure installations work in the devcontainer environment
-
-## Agent Categories
-
-### CLI-Based Agents
-
-Require a command-line tool to be installed:
-
-- **Claude Code**: `claude` CLI
-- **Gemini CLI**: `gemini` CLI
-- **Cursor**: `cursor-agent` CLI
-- **Qwen Code**: `qwen` CLI
-- **opencode**: `opencode` CLI
-- **Kiro CLI**: `kiro-cli` CLI
-- **CodeBuddy CLI**: `codebuddy` CLI
-- **Qoder CLI**: `qodercli` CLI
-- **Amp**: `amp` CLI
-- **SHAI**: `shai` CLI
-
-### IDE-Based Agents
-
-Work within integrated development environments:
-
-- **GitHub Copilot**: Built into VS Code/compatible editors
-- **Windsurf**: Built into Windsurf IDE
-- **IBM Bob**: Built into IBM Bob IDE
+---
 
 ## Command File Formats
 
 ### Markdown Format
-
-Used by: Claude, Cursor, opencode, Windsurf, Kiro CLI, Amp, SHAI, IBM Bob
 
 **Standard format:**
 
@@ -360,8 +336,6 @@ Command content with {SCRIPT} and $ARGUMENTS placeholders.
 
 ### TOML Format
 
-Used by: Gemini, Qwen
-
 ```toml
 description = "Command description"
 
@@ -370,50 +344,90 @@ Command content with {SCRIPT} and {{args}} placeholders.
 """
 ```
 
-## Directory Conventions
+### YAML Format
 
-- **CLI agents**: Usually `.<agent-name>/commands/`
-- **IDE agents**: Follow IDE-specific patterns:
-  - Copilot: `.github/agents/`
-  - Cursor: `.cursor/commands/`
-  - Windsurf: `.windsurf/workflows/`
+Used by: Goose
+
+```yaml
+version: 1.0.0
+title: "Command Title"
+description: "Command description"
+author:
+  contact: spec-kit
+extensions:
+  - type: builtin
+    name: developer
+activities:
+  - Spec-Driven Development
+prompt: |
+  Command content with {SCRIPT} and {{args}} placeholders.
+```
 
 ## Argument Patterns
 
-Different agents use different argument placeholders:
+Different agents use different argument placeholders. The placeholder used in command files is always taken from `registrar_config["args"]` for each integration — check there first when in doubt:
 
-- **Markdown/prompt-based**: `$ARGUMENTS`
-- **TOML-based**: `{{args}}`
+- **Markdown/prompt-based**: `$ARGUMENTS` (default for most markdown agents)
+- **TOML-based**: `{{args}}` (e.g., Gemini)
+- **YAML-based**: `{{args}}` (e.g., Goose)
+- **Custom**: some agents override the default (e.g., Forge uses `{{parameters}}`)
 - **Script placeholders**: `{SCRIPT}` (replaced with actual script path)
 - **Agent placeholders**: `__AGENT__` (replaced with agent name)
 
-## Testing New Agent Integration
+## Special Processing Requirements
 
-1. **Build test**: Run package creation script locally
-2. **CLI test**: Test `specify init --ai <agent>` command
-3. **File generation**: Verify correct directory structure and files
-4. **Command validation**: Ensure generated commands work with the agent
-5. **Context update**: Test agent context update scripts
+Some agents require custom processing beyond the standard template transformations:
+
+### Copilot Integration
+
+GitHub Copilot has unique requirements:
+- Commands use `.agent.md` extension (not `.md`)
+- Each command gets a companion `.prompt.md` file in `.github/prompts/`
+- Installs `.vscode/settings.json` with prompt file recommendations
+- Context file lives at `.github/copilot-instructions.md`
+
+Implementation: Extends `IntegrationBase` with custom `setup()` method that:
+1. Processes templates with `process_template()`
+2. Generates companion `.prompt.md` files
+3. Merges VS Code settings
+
+### Forge Integration
+
+Forge has special frontmatter and argument requirements:
+- Uses `{{parameters}}` instead of `$ARGUMENTS`
+- Strips `handoffs` frontmatter key (Forge-specific collaboration feature)
+- Injects `name` field into frontmatter when missing
+
+Implementation: Extends `MarkdownIntegration` with custom `setup()` method that:
+1. Inherits standard template processing from `MarkdownIntegration`
+2. Adds extra `$ARGUMENTS` → `{{parameters}}` replacement after template processing
+3. Applies Forge-specific transformations via `_apply_forge_transformations()`
+4. Strips `handoffs` frontmatter key
+5. Injects missing `name` fields
+6. Ensures the shared `update-agent-context.*` scripts include a `forge` case that maps context updates to `AGENTS.md` and lists `forge` in their usage/help text
+
+### Goose Integration
+
+Goose is a YAML-format agent using Block's recipe system:
+- Uses `.goose/recipes/` directory for YAML recipe files
+- Uses `{{args}}` argument placeholder
+- Produces YAML with `prompt: |` block scalar for command content
+
+Implementation: Extends `YamlIntegration` (parallel to `TomlIntegration`):
+1. Processes templates through the standard placeholder pipeline
+2. Extracts title and description from frontmatter
+3. Renders output as Goose recipe YAML (version, title, description, author, extensions, activities, prompt)
+4. Uses `yaml.safe_dump()` for header fields to ensure proper escaping
+5. Context updates map to `AGENTS.md` (shared with opencode/codex/pi/forge)
 
 ## Common Pitfalls
 
-1. **Using shorthand keys instead of actual CLI tool names**: Always use the actual executable name as the AGENT_CONFIG key (e.g., `"cursor-agent"` not `"cursor"`). This prevents the need for special-case mappings throughout the codebase.
-2. **Forgetting update scripts**: Both bash and PowerShell scripts must be updated when adding new agents.
-3. **Incorrect `requires_cli` value**: Set to `True` only for agents that actually have CLI tools to check; set to `False` for IDE-based agents.
-4. **Wrong argument format**: Use correct placeholder format for each agent type (`$ARGUMENTS` for Markdown, `{{args}}` for TOML).
-5. **Directory naming**: Follow agent-specific conventions exactly (check existing agents for patterns).
-6. **Help text inconsistency**: Update all user-facing text consistently (help strings, docstrings, README, error messages).
-
-## Future Considerations
-
-When adding new agents:
-
-- Consider the agent's native command/workflow patterns
-- Ensure compatibility with the Spec-Driven Development process
-- Document any special requirements or limitations
-- Update this guide with lessons learned
-- Verify the actual CLI tool name before adding to AGENT_CONFIG
+1. **Using shorthand keys for CLI-based integrations**: For CLI-based integrations (`requires_cli: True`), the `key` must match the executable name (e.g., `"cursor-agent"` not `"cursor"`). `shutil.which(key)` is used for CLI tool checks — mismatches require special-case mappings. IDE-based integrations (`requires_cli: False`) are not subject to this constraint.
+2. **Forgetting update scripts**: Both bash and PowerShell thin wrappers and the shared context-update scripts must be updated.
+3. **Incorrect `requires_cli` value**: Set to `True` only for agents that have a CLI tool; set to `False` for IDE-based agents.
+4. **Wrong argument format**: Use `$ARGUMENTS` for Markdown agents, `{{args}}` for TOML agents.
+5. **Skipping registration**: The import and `_register()` call in `_register_builtins()` must both be added.
 
 ---
 
-*This documentation should be updated whenever new agents are added to maintain accuracy and completeness.*
+*This documentation should be updated whenever new integrations are added to maintain accuracy and completeness.*

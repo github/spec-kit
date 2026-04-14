@@ -9,7 +9,7 @@ Mirrors the behavior of scripts/bash/update-agent-context.sh:
  2. Plan Data Extraction
  3. Agent File Management (create from template or update existing)
  4. Content Generation (technology stack, recent changes, timestamp)
- 5. Multi-Agent Support (claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, kilocode, auggie, roo, codebuddy, amp, shai, kiro-cli, agy, bob, qodercli)
+ 5. Multi-Agent Support (claude, gemini, copilot, cursor-agent, qwen, opencode, codex, windsurf, junie, kilocode, auggie, roo, codebuddy, amp, shai, tabnine, kiro-cli, agy, bob, vibe, qodercli, kimi, trae, pi, iflow, forge, goose, generic)
 
 .PARAMETER AgentType
 Optional agent key to update a single agent. If omitted, updates all existing agent files (creating a default Claude file if none exist).
@@ -25,7 +25,7 @@ Relies on common helper functions in common.ps1
 #>
 param(
     [Parameter(Position=0)]
-    [ValidateSet('claude','gemini','copilot','cursor-agent','qwen','opencode','codex','windsurf','kilocode','auggie','roo','codebuddy','amp','shai','kiro-cli','agy','bob','qodercli','generic')]
+    [ValidateSet('claude','gemini','copilot','cursor-agent','qwen','opencode','codex','windsurf','junie','kilocode','auggie','roo','codebuddy','amp','shai','tabnine','kiro-cli','agy','bob','vibe','qodercli','kimi','trae','pi','iflow','forge','goose','generic')]
     [string]$AgentType
 )
 
@@ -46,11 +46,12 @@ $NEW_PLAN = $IMPL_PLAN
 # Agent file paths
 $CLAUDE_FILE   = Join-Path $REPO_ROOT 'CLAUDE.md'
 $GEMINI_FILE   = Join-Path $REPO_ROOT 'GEMINI.md'
-$COPILOT_FILE  = Join-Path $REPO_ROOT '.github/agents/copilot-instructions.md'
+$COPILOT_FILE  = Join-Path $REPO_ROOT '.github/copilot-instructions.md'
 $CURSOR_FILE   = Join-Path $REPO_ROOT '.cursor/rules/specify-rules.mdc'
 $QWEN_FILE     = Join-Path $REPO_ROOT 'QWEN.md'
 $AGENTS_FILE   = Join-Path $REPO_ROOT 'AGENTS.md'
 $WINDSURF_FILE = Join-Path $REPO_ROOT '.windsurf/rules/specify-rules.md'
+$JUNIE_FILE = Join-Path $REPO_ROOT '.junie/AGENTS.md'
 $KILOCODE_FILE = Join-Path $REPO_ROOT '.kilocode/rules/specify-rules.md'
 $AUGGIE_FILE   = Join-Path $REPO_ROOT '.augment/rules/specify-rules.md'
 $ROO_FILE      = Join-Path $REPO_ROOT '.roo/rules/specify-rules.md'
@@ -58,9 +59,16 @@ $CODEBUDDY_FILE = Join-Path $REPO_ROOT 'CODEBUDDY.md'
 $QODER_FILE    = Join-Path $REPO_ROOT 'QODER.md'
 $AMP_FILE      = Join-Path $REPO_ROOT 'AGENTS.md'
 $SHAI_FILE     = Join-Path $REPO_ROOT 'SHAI.md'
+$TABNINE_FILE  = Join-Path $REPO_ROOT 'TABNINE.md'
 $KIRO_FILE     = Join-Path $REPO_ROOT 'AGENTS.md'
 $AGY_FILE      = Join-Path $REPO_ROOT '.agent/rules/specify-rules.md'
 $BOB_FILE      = Join-Path $REPO_ROOT 'AGENTS.md'
+$VIBE_FILE     = Join-Path $REPO_ROOT '.vibe/agents/specify-agents.md'
+$KIMI_FILE     = Join-Path $REPO_ROOT 'KIMI.md'
+$TRAE_FILE     = Join-Path $REPO_ROOT '.trae/rules/project_rules.md'
+$IFLOW_FILE    = Join-Path $REPO_ROOT 'IFLOW.md'
+$FORGE_FILE    = Join-Path $REPO_ROOT 'AGENTS.md'
+$GOOSE_FILE    = Join-Path $REPO_ROOT 'AGENTS.md'
 
 $TEMPLATE_FILE = Join-Path $REPO_ROOT '.specify/templates/agent-file-template.md'
 
@@ -328,7 +336,7 @@ function Update-ExistingAgentFile {
             if ($existingChanges -lt 2) { $output.Add($line); $existingChanges++ }
             continue
         }
-        if ($line -match '\*\*Last updated\*\*: .*\d{4}-\d{2}-\d{2}') {
+        if ($line -match '(\*\*)?Last updated(\*\*)?: .*\d{4}-\d{2}-\d{2}') {
             $output.Add(($line -replace '\d{4}-\d{2}-\d{2}',$Date.ToString('yyyy-MM-dd')))
             continue
         }
@@ -392,6 +400,7 @@ function Update-SpecificAgent {
         'opencode' { Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'opencode' }
         'codex'    { Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'Codex CLI' }
         'windsurf' { Update-AgentFile -TargetFile $WINDSURF_FILE -AgentName 'Windsurf' }
+        'junie'    { Update-AgentFile -TargetFile $JUNIE_FILE    -AgentName 'Junie' }
         'kilocode' { Update-AgentFile -TargetFile $KILOCODE_FILE -AgentName 'Kilo Code' }
         'auggie'   { Update-AgentFile -TargetFile $AUGGIE_FILE   -AgentName 'Auggie CLI' }
         'roo'      { Update-AgentFile -TargetFile $ROO_FILE      -AgentName 'Roo Code' }
@@ -399,33 +408,76 @@ function Update-SpecificAgent {
         'qodercli' { Update-AgentFile -TargetFile $QODER_FILE    -AgentName 'Qoder CLI' }
         'amp'      { Update-AgentFile -TargetFile $AMP_FILE      -AgentName 'Amp' }
         'shai'     { Update-AgentFile -TargetFile $SHAI_FILE     -AgentName 'SHAI' }
+        'tabnine'  { Update-AgentFile -TargetFile $TABNINE_FILE  -AgentName 'Tabnine CLI' }
         'kiro-cli' { Update-AgentFile -TargetFile $KIRO_FILE     -AgentName 'Kiro CLI' }
         'agy'      { Update-AgentFile -TargetFile $AGY_FILE      -AgentName 'Antigravity' }
         'bob'      { Update-AgentFile -TargetFile $BOB_FILE      -AgentName 'IBM Bob' }
+        'vibe'     { Update-AgentFile -TargetFile $VIBE_FILE     -AgentName 'Mistral Vibe' }
+        'kimi'     { Update-AgentFile -TargetFile $KIMI_FILE     -AgentName 'Kimi Code' }
+        'trae'     { Update-AgentFile -TargetFile $TRAE_FILE     -AgentName 'Trae' }
+        'pi'       { Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'Pi Coding Agent' }
+        'iflow'    { Update-AgentFile -TargetFile $IFLOW_FILE    -AgentName 'iFlow CLI' }
+        'forge'    { Update-AgentFile -TargetFile $FORGE_FILE    -AgentName 'Forge' }
+        'goose'    { Update-AgentFile -TargetFile $GOOSE_FILE    -AgentName 'Goose' }
         'generic'  { Write-Info 'Generic agent: no predefined context file. Use the agent-specific update script for your agent.' }
-        default { Write-Err "Unknown agent type '$Type'"; Write-Err 'Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|kiro-cli|agy|bob|qodercli|generic'; return $false }
+        default { Write-Err "Unknown agent type '$Type'"; Write-Err 'Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|junie|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|iflow|forge|goose|generic'; return $false }
     }
 }
 
 function Update-AllExistingAgents {
     $found = $false
     $ok = $true
-    if (Test-Path $CLAUDE_FILE)   { if (-not (Update-AgentFile -TargetFile $CLAUDE_FILE   -AgentName 'Claude Code')) { $ok = $false }; $found = $true }
-    if (Test-Path $GEMINI_FILE)   { if (-not (Update-AgentFile -TargetFile $GEMINI_FILE   -AgentName 'Gemini CLI')) { $ok = $false }; $found = $true }
-    if (Test-Path $COPILOT_FILE)  { if (-not (Update-AgentFile -TargetFile $COPILOT_FILE  -AgentName 'GitHub Copilot')) { $ok = $false }; $found = $true }
-    if (Test-Path $CURSOR_FILE)   { if (-not (Update-AgentFile -TargetFile $CURSOR_FILE   -AgentName 'Cursor IDE')) { $ok = $false }; $found = $true }
-    if (Test-Path $QWEN_FILE)     { if (-not (Update-AgentFile -TargetFile $QWEN_FILE     -AgentName 'Qwen Code')) { $ok = $false }; $found = $true }
-    if (Test-Path $AGENTS_FILE)   { if (-not (Update-AgentFile -TargetFile $AGENTS_FILE   -AgentName 'Codex/opencode')) { $ok = $false }; $found = $true }
-    if (Test-Path $WINDSURF_FILE) { if (-not (Update-AgentFile -TargetFile $WINDSURF_FILE -AgentName 'Windsurf')) { $ok = $false }; $found = $true }
-    if (Test-Path $KILOCODE_FILE) { if (-not (Update-AgentFile -TargetFile $KILOCODE_FILE -AgentName 'Kilo Code')) { $ok = $false }; $found = $true }
-    if (Test-Path $AUGGIE_FILE)   { if (-not (Update-AgentFile -TargetFile $AUGGIE_FILE   -AgentName 'Auggie CLI')) { $ok = $false }; $found = $true }
-    if (Test-Path $ROO_FILE)      { if (-not (Update-AgentFile -TargetFile $ROO_FILE      -AgentName 'Roo Code')) { $ok = $false }; $found = $true }
-    if (Test-Path $CODEBUDDY_FILE) { if (-not (Update-AgentFile -TargetFile $CODEBUDDY_FILE -AgentName 'CodeBuddy CLI')) { $ok = $false }; $found = $true }
-    if (Test-Path $QODER_FILE)    { if (-not (Update-AgentFile -TargetFile $QODER_FILE    -AgentName 'Qoder CLI')) { $ok = $false }; $found = $true }
-    if (Test-Path $SHAI_FILE)     { if (-not (Update-AgentFile -TargetFile $SHAI_FILE     -AgentName 'SHAI')) { $ok = $false }; $found = $true }
-    if (Test-Path $KIRO_FILE)     { if (-not (Update-AgentFile -TargetFile $KIRO_FILE     -AgentName 'Kiro CLI')) { $ok = $false }; $found = $true }
-    if (Test-Path $AGY_FILE)      { if (-not (Update-AgentFile -TargetFile $AGY_FILE      -AgentName 'Antigravity')) { $ok = $false }; $found = $true }
-    if (Test-Path $BOB_FILE)      { if (-not (Update-AgentFile -TargetFile $BOB_FILE      -AgentName 'IBM Bob')) { $ok = $false }; $found = $true }
+    $updatedPaths = @()
+    
+    # Helper function to update only if file exists and hasn't been updated yet
+    function Update-IfNew {
+        param(
+            [Parameter(Mandatory=$true)]
+            [string]$FilePath,
+            [Parameter(Mandatory=$true)]
+            [string]$AgentName
+        )
+        
+        if (-not (Test-Path $FilePath)) { return $true }
+        
+        # Get the real path to detect duplicates (e.g., AMP_FILE, KIRO_FILE, BOB_FILE all point to AGENTS.md)
+        $realPath = (Get-Item -LiteralPath $FilePath).FullName
+        
+        # Check if we've already updated this file
+        if ($updatedPaths -contains $realPath) {
+            return $true
+        }
+        
+        # Record the file as seen before attempting the update
+        # Use parent scope (1) to modify Update-AllExistingAgents' local variables
+        Set-Variable -Name updatedPaths -Value ($updatedPaths + $realPath) -Scope 1
+        Set-Variable -Name found -Value $true -Scope 1
+        
+        # Perform the update
+        return (Update-AgentFile -TargetFile $FilePath -AgentName $AgentName)
+    }
+    
+    if (-not (Update-IfNew -FilePath $CLAUDE_FILE   -AgentName 'Claude Code')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $GEMINI_FILE   -AgentName 'Gemini CLI')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $COPILOT_FILE  -AgentName 'GitHub Copilot')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $CURSOR_FILE   -AgentName 'Cursor IDE')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $QWEN_FILE     -AgentName 'Qwen Code')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $AGENTS_FILE   -AgentName 'Codex/opencode/Amp/Kiro/Bob/Pi/Forge/Goose')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $WINDSURF_FILE -AgentName 'Windsurf')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $JUNIE_FILE    -AgentName 'Junie')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $KILOCODE_FILE -AgentName 'Kilo Code')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $AUGGIE_FILE   -AgentName 'Auggie CLI')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $ROO_FILE      -AgentName 'Roo Code')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $CODEBUDDY_FILE -AgentName 'CodeBuddy CLI')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $QODER_FILE    -AgentName 'Qoder CLI')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $SHAI_FILE     -AgentName 'SHAI')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $TABNINE_FILE  -AgentName 'Tabnine CLI')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $AGY_FILE      -AgentName 'Antigravity')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $VIBE_FILE     -AgentName 'Mistral Vibe')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $KIMI_FILE     -AgentName 'Kimi Code')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $TRAE_FILE     -AgentName 'Trae')) { $ok = $false }
+    if (-not (Update-IfNew -FilePath $IFLOW_FILE    -AgentName 'iFlow CLI')) { $ok = $false }
+    
     if (-not $found) {
         Write-Info 'No existing agent files found, creating default Claude file...'
         if (-not (Update-AgentFile -TargetFile $CLAUDE_FILE -AgentName 'Claude Code')) { $ok = $false }
@@ -440,7 +492,7 @@ function Print-Summary {
     if ($NEW_FRAMEWORK) { Write-Host "  - Added framework: $NEW_FRAMEWORK" }
     if ($NEW_DB -and $NEW_DB -ne 'N/A') { Write-Host "  - Added database: $NEW_DB" }
     Write-Host ''
-    Write-Info 'Usage: ./update-agent-context.ps1 [-AgentType claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|kiro-cli|agy|bob|qodercli|generic]'
+    Write-Info 'Usage: ./update-agent-context.ps1 [-AgentType claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|junie|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|trae|pi|iflow|forge|goose|generic]'
 }
 
 function Main {
