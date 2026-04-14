@@ -35,14 +35,15 @@ class FanInStep(StepBase):
         context.fan_in = {"results": results}
         resolved_output: dict[str, Any] = {"results": results}
 
-        for key, expr in output_config.items():
-            if isinstance(expr, str) and "{{" in expr:
-                resolved_output[key] = evaluate_expression(expr, context)
-            else:
-                resolved_output[key] = expr
-
-        # Restore previous fan_in state
-        context.fan_in = prev_fan_in
+        try:
+            for key, expr in output_config.items():
+                if isinstance(expr, str) and "{{" in expr:
+                    resolved_output[key] = evaluate_expression(expr, context)
+                else:
+                    resolved_output[key] = expr
+        finally:
+            # Restore previous fan_in state even if evaluation fails
+            context.fan_in = prev_fan_in
 
         return StepResult(
             status=StepStatus.COMPLETED,

@@ -71,7 +71,7 @@ def _resolve_dot_path(obj: Any, path: str) -> Any:
     current = obj
     for part in parts:
         # Handle list indexing: name[0]
-        idx_match = re.match(r"^(\w+)\[(\d+)\]$", part)
+        idx_match = re.match(r"^([\w-]+)\[(\d+)\]$", part)
         if idx_match:
             key, idx = idx_match.group(1), int(idx_match.group(2))
             if isinstance(current, dict):

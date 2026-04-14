@@ -86,7 +86,7 @@ steps:
 
 **Validation Checklist**:
 
-- ✅ `id` is lowercase with hyphens only (matches `^[a-z0-9][a-z0-9-]*[a-z0-9]$`)
+- ✅ `id` is lowercase alphanumeric with hyphens (single-character IDs are allowed)
 - ✅ `version` follows semantic versioning (X.Y.Z)
 - ✅ `description` is concise
 - ✅ All step IDs are unique
