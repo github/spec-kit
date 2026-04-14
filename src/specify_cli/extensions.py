@@ -219,6 +219,10 @@ class ExtensionManifest:
         # Validate commands; track renames so hook references can be rewritten.
         rename_map: Dict[str, str] = {}
         for cmd in commands:
+            if not isinstance(cmd, dict):
+                raise ValidationError(
+                    "Each command entry in 'provides.commands' must be a mapping"
+                )
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
 
