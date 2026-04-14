@@ -1,0 +1,70 @@
+schema_version: "1.0"
+
+preset:
+  id: "data-warehouse"
+  name: "Data Warehouse Development Kit"
+  version: "1.0.0"
+  description: "Spec-driven development kit for data warehousing projects. Covers dimensional modeling, ETL/ELT pipelines, SCD handling, data quality gates, and warehouse-native workflows."
+  author: "branky"
+  repository: "https://github.com/branky/spec-kit"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.6.0"
+
+provides:
+  templates:
+    - type: "template"
+      name: "spec-template"
+      file: "templates/spec-template.md"
+      description: "DW feature spec template — data sources, dimensional model, business rules, data quality, and SLAs"
+      replaces: "spec-template"
+
+    - type: "template"
+      name: "plan-template"
+      file: "templates/plan-template.md"
+      description: "DW implementation plan — schema design, ETL architecture, SCD strategy, DQ framework, and performance"
+      replaces: "plan-template"
+
+    - type: "template"
+      name: "constitution-template"
+      file: "templates/constitution-template.md"
+      description: "DW project constitution — modeling standards, naming conventions, data quality mandates, and governance"
+      replaces: "constitution-template"
+
+    - type: "template"
+      name: "tasks-template"
+      file: "templates/tasks-template.md"
+      description: "DW task list template organized by pipeline layer (raw → staging → dimensions → facts) and consumer use case"
+      replaces: "tasks-template"
+
+    - type: "command"
+      name: "speckit.specify"
+      file: "commands/speckit.specify.md"
+      description: "DW-aware specify — captures data sources, consumers, dimensional model requirements, DQ rules, and SLAs"
+      replaces: "speckit.specify"
+
+    - type: "command"
+      name: "speckit.plan"
+      file: "commands/speckit.plan.md"
+      description: "DW-aware plan — designs schema, ETL/ELT strategy, SCD types, DQ implementation, and partitioning"
+      replaces: "speckit.plan"
+
+    - type: "command"
+      name: "speckit.tasks"
+      file: "commands/speckit.tasks.md"
+      description: "DW-aware tasks — generates pipeline-phase task list (raw, staging, dimensions, facts, ops) with DQ gates"
+      replaces: "speckit.tasks"
+
+    - type: "command"
+      name: "speckit.constitution"
+      file: "commands/speckit.constitution.md"
+      description: "DW constitution — defines modeling standards, naming conventions, SCD rules, and quality gates for the project"
+      replaces: "speckit.constitution"
+
+tags:
+  - "data-warehouse"
+  - "etl"
+  - "dimensional-modeling"
+  - "analytics"
+  - "data-engineering"
