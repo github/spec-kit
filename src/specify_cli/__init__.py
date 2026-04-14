@@ -628,7 +628,7 @@ def _locate_bundled_workflow(workflow_id: str) -> Path | None:
     source-checkout ``workflows/<id>/`` directory.
     """
     import re as _re
-    if not _re.match(r'^[a-z0-9-]+$', workflow_id):
+    if not _re.match(r'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$', workflow_id):
         return None
 
     core = _locate_core_pack()

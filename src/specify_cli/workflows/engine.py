@@ -43,7 +43,9 @@ class WorkflowDefinition:
         # Defaults
         self.default_integration: str | None = workflow.get("integration")
         self.default_model: str | None = workflow.get("model")
-        self.default_options: dict[str, Any] = workflow.get("options", {})
+        self.default_options: dict[str, Any] = workflow.get("options") or {}
+        if not isinstance(self.default_options, dict):
+            self.default_options = {}
 
         # Requirements (declared but not yet enforced at runtime;
         # enforcement is a planned enhancement)
