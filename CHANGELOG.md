@@ -2,6 +2,17 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.6.2] - 2026-04-13
+
+### Changed
+
+- feat: Register "What-if Analysis" community extension (#2182)
+- feat: add GitHub Issues Integration to community catalog (#2188)
+- feat(agents): add Goose AI agent support (#2015)
+- Update ralph extension to v1.0.1 in community catalog (#2192)
+- fix: skip docs deployment workflow on forks (#2171)
+- chore: release 0.6.1, begin 0.6.2.dev0 development (#2162)
+
 ## [0.6.1] - 2026-04-10
 
 ### Changed
