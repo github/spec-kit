@@ -4565,6 +4565,12 @@ def workflow_add(
         raise typer.Exit(1)
 
     workflow_dir = workflows_dir / source
+    # Validate that source is a safe directory name (no path traversal)
+    try:
+        workflow_dir.resolve().relative_to(workflows_dir.resolve())
+    except ValueError:
+        console.print(f"[red]Error:[/red] Invalid workflow ID: {source!r}")
+        raise typer.Exit(1)
     workflow_file = workflow_dir / "workflow.yml"
 
     try:

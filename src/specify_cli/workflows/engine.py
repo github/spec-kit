@@ -238,6 +238,9 @@ class RunState:
         project_root: Path | None = None,
     ) -> None:
         self.run_id = run_id or str(uuid.uuid4())[:8]
+        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]*$', self.run_id):
+            msg = f"Invalid run_id {self.run_id!r}: must be alphanumeric with hyphens/underscores only."
+            raise ValueError(msg)
         self.workflow_id = workflow_id
         self.project_root = project_root or Path(".")
         self.status = RunStatus.CREATED
@@ -636,8 +639,15 @@ class WorkflowEngine:
                     for _loop_iter in range(max_iters - 1):
                         if not evaluate_condition(condition, context):
                             break
+                        # Namespace nested step IDs per iteration
+                        iter_steps = []
+                        for ns in result.next_steps:
+                            ns_copy = dict(ns)
+                            if "id" in ns_copy:
+                                ns_copy["id"] = f"{step_id}:{ns_copy['id']}:{_loop_iter + 1}"
+                            iter_steps.append(ns_copy)
                         self._execute_steps(
-                            result.next_steps, context, state, registry,
+                            iter_steps, context, state, registry,
                             step_offset=-1,
                         )
                         if state.status in (
