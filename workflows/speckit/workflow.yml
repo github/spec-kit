@@ -18,7 +18,7 @@ inputs:
     prompt: "Feature name"
   integration:
     type: string
-    default: "claude"
+    default: "copilot"
     prompt: "Integration to use (e.g. claude, copilot, gemini)"
   scope:
     type: string

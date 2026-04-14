@@ -4221,6 +4221,9 @@ def workflow_run(
     from .workflows.engine import WorkflowEngine
 
     project_root = Path.cwd()
+    if not (project_root / ".specify").exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
     engine = WorkflowEngine(project_root)
     engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
@@ -4285,6 +4288,9 @@ def workflow_resume(
     from .workflows.engine import WorkflowEngine
 
     project_root = Path.cwd()
+    if not (project_root / ".specify").exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
     engine = WorkflowEngine(project_root)
     engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
@@ -4318,6 +4324,9 @@ def workflow_status(
     from .workflows.engine import WorkflowEngine
 
     project_root = Path.cwd()
+    if not (project_root / ".specify").exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
     engine = WorkflowEngine(project_root)
 
     if run_id:
@@ -4669,6 +4678,9 @@ def workflow_search(
     from .workflows.catalog import WorkflowCatalog, WorkflowCatalogError
 
     project_root = Path.cwd()
+    if not (project_root / ".specify").exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
     catalog = WorkflowCatalog(project_root)
 
     try:
@@ -4702,6 +4714,9 @@ def workflow_info(
     from .workflows.engine import WorkflowEngine
 
     project_root = Path.cwd()
+    if not (project_root / ".specify").exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
 
     # Check installed first
     registry = WorkflowRegistry(project_root)

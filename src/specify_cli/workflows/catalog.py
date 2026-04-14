@@ -350,6 +350,11 @@ class WorkflowCatalog:
                 f"Failed to fetch catalog from {entry.url}: {exc}"
             ) from exc
 
+        if not isinstance(data, dict):
+            raise WorkflowCatalogError(
+                f"Catalog from {entry.url} is not a valid JSON object."
+            )
+
         # Write cache
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         with open(cache_file, "w", encoding="utf-8") as f:
@@ -365,6 +370,7 @@ class WorkflowCatalog:
         """Merge workflows from all active catalogs (lower priority number wins)."""
         catalogs = self.get_active_catalogs()
         merged: dict[str, dict[str, Any]] = {}
+        fetch_errors = 0
 
         # Process later/higher-numbered entries first so earlier/lower-numbered
         # entries overwrite them on workflow ID conflicts.
@@ -372,6 +378,7 @@ class WorkflowCatalog:
             try:
                 data = self._fetch_single_catalog(entry, force_refresh)
             except WorkflowCatalogError:
+                fetch_errors += 1
                 continue
             workflows = data.get("workflows", {})
             # Handle both dict and list formats
@@ -391,6 +398,10 @@ class WorkflowCatalog:
                         wf_data["_catalog_name"] = entry.name
                         wf_data["_install_allowed"] = entry.install_allowed
                         merged[wf_id] = wf_data
+        if fetch_errors == len(catalogs) and catalogs:
+            raise WorkflowCatalogError(
+                "All configured catalogs failed to fetch."
+            )
         return merged
 
     # -- Public API -------------------------------------------------------
@@ -467,15 +478,18 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 "Catalog config 'catalogs' must be a list."
             )
-        # Check for duplicate URL
+        # Check for duplicate URL (guard against non-dict entries)
         for cat in catalogs:
-            if cat.get("url") == url:
+            if isinstance(cat, dict) and cat.get("url") == url:
                 raise WorkflowValidationError(
                     f"Catalog URL already configured: {url}"
                 )
 
         # Derive priority from the highest existing priority + 1
-        max_priority = max((cat.get("priority", 0) for cat in catalogs), default=0)
+        max_priority = max(
+            (cat.get("priority", 0) for cat in catalogs if isinstance(cat, dict)),
+            default=0,
+        )
         catalogs.append(
             {
                 "name": name or f"catalog-{len(catalogs) + 1}",
@@ -498,7 +512,15 @@ class WorkflowCatalog:
             raise WorkflowValidationError("No catalog config file found.")
 
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(data, dict):
+            raise WorkflowValidationError(
+                "Catalog config file is corrupted (expected a mapping)."
+            )
         catalogs = data.get("catalogs", [])
+        if not isinstance(catalogs, list):
+            raise WorkflowValidationError(
+                "Catalog config 'catalogs' must be a list."
+            )
 
         if index < 0 or index >= len(catalogs):
             raise WorkflowValidationError(
@@ -511,4 +533,6 @@ class WorkflowCatalog:
         with open(config_path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
-        return removed.get("name", f"catalog-{index + 1}")
+        if isinstance(removed, dict):
+            return removed.get("name", f"catalog-{index + 1}")
+        return f"catalog-{index + 1}"
