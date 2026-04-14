@@ -570,14 +570,24 @@ class WorkflowEngine:
 
             # Handle failures
             if result.status == StepStatus.FAILED:
-                state.status = RunStatus.FAILED
-                state.append_log(
-                    {
-                        "event": "step_failed",
-                        "step_id": step_id,
-                        "error": result.error,
-                    }
-                )
+                # Gate abort (output.aborted) maps to ABORTED status
+                if result.output.get("aborted"):
+                    state.status = RunStatus.ABORTED
+                    state.append_log(
+                        {
+                            "event": "workflow_aborted",
+                            "step_id": step_id,
+                        }
+                    )
+                else:
+                    state.status = RunStatus.FAILED
+                    state.append_log(
+                        {
+                            "event": "step_failed",
+                            "step_id": step_id,
+                            "error": result.error,
+                        }
+                    )
                 state.save()
                 return
 

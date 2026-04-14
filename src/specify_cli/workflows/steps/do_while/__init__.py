@@ -10,8 +10,8 @@ from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepSt
 class DoWhileStep(StepBase):
     """Execute body at least once, then check condition.
 
-    Continues while condition is truthy.  ``max_iterations`` is
-    required as a safety cap.
+    Continues while condition is truthy.  ``max_iterations`` is an
+    optional safety cap (defaults to 10 if omitted).
 
     The first invocation always returns the nested steps for execution.
     The ``condition`` field is stored in the output so the engine can
@@ -21,7 +21,9 @@ class DoWhileStep(StepBase):
     type_key = "do-while"
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
-        max_iterations = config.get("max_iterations", 10)
+        max_iterations = config.get("max_iterations")
+        if max_iterations is None:
+            max_iterations = 10
         nested_steps = config.get("steps", [])
         condition = config.get("condition", "false")
 
@@ -44,13 +46,8 @@ class DoWhileStep(StepBase):
                 f"Do-while step {config.get('id', '?')!r} is missing "
                 f"'condition' field."
             )
-        if "max_iterations" not in config:
-            errors.append(
-                f"Do-while step {config.get('id', '?')!r} is missing "
-                f"'max_iterations' field."
-            )
-        else:
-            max_iter = config.get("max_iterations")
+        max_iter = config.get("max_iterations")
+        if max_iter is not None:
             if not isinstance(max_iter, int) or max_iter < 1:
                 errors.append(
                     f"Do-while step {config.get('id', '?')!r}: "

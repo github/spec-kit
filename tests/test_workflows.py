@@ -975,7 +975,7 @@ class TestDoWhileStep:
         step = DoWhileStep()
         errors = step.validate({"id": "test", "steps": []})
         assert any("missing 'condition'" in e for e in errors)
-        assert any("missing 'max_iterations'" in e for e in errors)
+        # max_iterations is optional (defaults to 10)
 
     def test_validate_steps_not_list(self):
         from specify_cli.workflows.steps.do_while import DoWhileStep
