@@ -8,7 +8,7 @@ workflow:
   integration: copilot
 
 requires:
-  speckit_version: ">=0.7.0"
+  speckit_version: ">=0.6.1"
   integrations:
     any: ["copilot", "claude", "gemini"]
 

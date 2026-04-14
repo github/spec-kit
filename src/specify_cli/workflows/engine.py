@@ -189,10 +189,13 @@ def _validate_steps(
         if isinstance(default, list):
             _validate_steps(default, seen_ids, errors)
 
-        # Validate fan-out nested step
+        # Validate fan-out nested step (template — not added to seen_ids
+        # since the engine renames items to _fanout_<step>_<base>_<idx>)
         fan_step = step_config.get("step")
         if isinstance(fan_step, dict):
-            _validate_steps([fan_step], seen_ids, errors)
+            fan_errors: list[str] = []
+            _validate_steps([fan_step], set(), fan_errors)
+            errors.extend(fan_errors)
 
 
 # -- Run State Persistence ------------------------------------------------

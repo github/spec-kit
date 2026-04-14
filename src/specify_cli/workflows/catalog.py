@@ -455,11 +455,18 @@ class WorkflowCatalog:
 
         data: dict[str, Any] = {"catalogs": []}
         if config_path.exists():
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {
-                "catalogs": []
-            }
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                raise WorkflowValidationError(
+                    "Catalog config file is corrupted (expected a mapping)."
+                )
+            data = raw
 
         catalogs = data.get("catalogs", [])
+        if not isinstance(catalogs, list):
+            raise WorkflowValidationError(
+                "Catalog config 'catalogs' must be a list."
+            )
         # Check for duplicate URL
         for cat in catalogs:
             if cat.get("url") == url:

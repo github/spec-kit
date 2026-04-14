@@ -49,6 +49,13 @@ class DoWhileStep(StepBase):
                 f"Do-while step {config.get('id', '?')!r} is missing "
                 f"'max_iterations' field."
             )
+        else:
+            max_iter = config.get("max_iterations")
+            if not isinstance(max_iter, int) or max_iter < 1:
+                errors.append(
+                    f"Do-while step {config.get('id', '?')!r}: "
+                    f"'max_iterations' must be an integer >= 1."
+                )
         nested = config.get("steps", [])
         if not isinstance(nested, list):
             errors.append(
