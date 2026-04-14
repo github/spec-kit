@@ -451,6 +451,7 @@ class TomlIntegrationTests:
         "implement",
         "plan",
         "specify",
+        "status",
         "tasks",
         "taskstoissues",
     ]
