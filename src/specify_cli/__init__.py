@@ -4537,8 +4537,8 @@ def workflow_remove(
 
 @workflow_app.command("search")
 def workflow_search(
-    query: str = typer.Argument(None, help="Search query"),
-    tag: str = typer.Option(None, "--tag", help="Filter by tag"),
+    query: str | None = typer.Argument(None, help="Search query"),
+    tag: str | None = typer.Option(None, "--tag", help="Filter by tag"),
 ):
     """Search workflow catalogs."""
     from .workflows.catalog import WorkflowCatalog, WorkflowCatalogError

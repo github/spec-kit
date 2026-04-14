@@ -57,7 +57,7 @@ workflow:
   model: "claude-sonnet-4-20250514"         # Default model (optional)
 
 requires:
-  speckit_version: ">=0.15.0"
+  speckit_version: ">=0.6.1"
   integrations:
     any: ["claude", "gemini"]      # At least one required
 

@@ -45,7 +45,8 @@ class WorkflowDefinition:
         self.default_model: str | None = workflow.get("model")
         self.default_options: dict[str, Any] = workflow.get("options", {})
 
-        # Requirements
+        # Requirements (declared but not yet enforced at runtime;
+        # enforcement is a planned enhancement)
         self.requires: dict[str, Any] = data.get("requires", {})
 
         # Inputs

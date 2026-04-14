@@ -19,6 +19,13 @@ class PromptStep(StepBase):
     directly to the CLI.  This is useful for ad-hoc instructions
     that don't map to a registered command.
 
+    .. note::
+
+        CLI output is streamed to the terminal for live progress.
+        ``output.exit_code`` is always captured and can be referenced
+        by later steps.  Full response text capture is a planned
+        enhancement.
+
     Example YAML::
 
         - id: review-security

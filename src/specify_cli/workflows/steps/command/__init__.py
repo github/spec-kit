@@ -17,6 +17,13 @@ class CommandStep(StepBase):
     the integration's directory on disk.  This step tells the CLI to
     execute the command by name (e.g. ``/speckit.specify`` or
     ``/speckit-specify``) rather than reading the file contents.
+
+    .. note::
+
+        CLI output is streamed to the terminal for live progress.
+        ``output.exit_code`` is always captured and can be referenced
+        by later steps (e.g. ``{{ steps.specify.output.exit_code }}``).
+        Full ``stdout``/``stderr`` capture is a planned enhancement.
     """
 
     type_key = "command"
