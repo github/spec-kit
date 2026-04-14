@@ -494,6 +494,7 @@ class WorkflowEngine:
 
         if state.status == RunStatus.RUNNING:
             state.status = RunStatus.COMPLETED
+        state.append_log({"event": "workflow_finished", "status": state.status.value})
         state.save()
         return state
 

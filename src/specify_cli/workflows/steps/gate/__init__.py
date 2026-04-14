@@ -53,8 +53,12 @@ class GateStep(StepBase):
 
         if choice in ("reject", "abort"):
             if on_reject == "abort":
-                from specify_cli.workflows.engine import WorkflowAbortError
-                raise WorkflowAbortError(f"Gate rejected by user at step {config.get('id', '?')!r}")
+                output["aborted"] = True
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    output=output,
+                    error=f"Gate rejected by user at step {config.get('id', '?')!r}",
+                )
             if on_reject == "retry":
                 # Pause so the next resume re-executes this gate
                 return StepResult(status=StepStatus.PAUSED, output=output)

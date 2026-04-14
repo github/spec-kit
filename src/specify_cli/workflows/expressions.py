@@ -289,4 +289,12 @@ def evaluate_condition(condition: str, context: Any) -> bool:
     the result to bool.
     """
     result = evaluate_expression(condition, context)
+    # Treat plain "false"/"true" strings as booleans so that
+    # condition: "false" (without {{ }}) behaves as expected.
+    if isinstance(result, str):
+        lower = result.lower()
+        if lower == "false":
+            return False
+        if lower == "true":
+            return True
     return bool(result)

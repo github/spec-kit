@@ -906,7 +906,14 @@ class TestWhileStep:
         step = WhileStep()
         errors = step.validate({"id": "test", "steps": []})
         assert any("missing 'condition'" in e for e in errors)
-        assert any("missing 'max_iterations'" in e for e in errors)
+        # max_iterations is optional (defaults to 10)
+
+    def test_validate_invalid_max_iterations(self):
+        from specify_cli.workflows.steps.while_loop import WhileStep
+
+        step = WhileStep()
+        errors = step.validate({"id": "test", "condition": "{{ true }}", "max_iterations": 0, "steps": []})
+        assert any("must be an integer >= 1" in e for e in errors)
 
 
 class TestDoWhileStep:

@@ -20,7 +20,9 @@ class WhileStep(StepBase):
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         condition = config.get("condition", False)
-        max_iterations = config.get("max_iterations", 10)
+        max_iterations = config.get("max_iterations")
+        if max_iterations is None:
+            max_iterations = 10
         nested_steps = config.get("steps", [])
 
         result = evaluate_condition(condition, context)
@@ -51,13 +53,8 @@ class WhileStep(StepBase):
                 f"While step {config.get('id', '?')!r} is missing "
                 f"'condition' field."
             )
-        if "max_iterations" not in config:
-            errors.append(
-                f"While step {config.get('id', '?')!r} is missing "
-                f"'max_iterations' field."
-            )
-        else:
-            max_iter = config.get("max_iterations")
+        max_iter = config.get("max_iterations")
+        if max_iter is not None:
             if not isinstance(max_iter, int) or max_iter < 1:
                 errors.append(
                     f"While step {config.get('id', '?')!r}: "

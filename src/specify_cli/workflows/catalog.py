@@ -344,8 +344,11 @@ class WorkflowCatalog:
         except Exception as exc:
             # Fall back to cache if available
             if cache_file.exists():
-                with open(cache_file, encoding="utf-8") as f:
-                    return json.load(f)
+                try:
+                    with open(cache_file, encoding="utf-8") as f:
+                        return json.load(f)
+                except (json.JSONDecodeError, ValueError, OSError):
+                    pass
             raise WorkflowCatalogError(
                 f"Failed to fetch catalog from {entry.url}: {exc}"
             ) from exc
