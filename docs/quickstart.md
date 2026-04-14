@@ -9,6 +9,8 @@ This guide will help you get started with Spec-Driven Development using Spec Kit
 >
 > **Note**: Spec Kit slash commands use the `/speckit.` prefix (for example, `/speckit.specify` and `/speckit.plan`). Use the `/speckit.` prefix for all slash commands.
 >
+> **Important for slash commands to work**: When you run `specify init`, you must select your AI assistant (e.g., `--ai copilot` for GitHub Copilot). This generates the prompt/command files (e.g., `.github/prompts/` for Copilot) that make slash commands available. Without this step, `/speckit.*` commands will be treated as plain text.
+>
 > See the [VS Code Usage Guide](vscode-usage.md) for details on where to run each type of command.
 
 | Command Type | Where to Run | Example | Notes |
@@ -38,6 +40,8 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 ### 2. Create the Spec
 
 Use the `/speckit.specify` slash command (in an AI assistant or editor that supports slash commands) to describe what you want to build. Focus on the **what** and **why**, not the tech stack. The slash command is intended to be consumed by an AI assistant and is different from the CLI `specify` command (no slash) which you run in a terminal.
+
+> **How slash commands work**: When you ran `specify init` with `--ai copilot` (or selected Copilot during init), Spec Kit generated prompt files into the `.github/prompts/` folder in your project. These files are what make `/speckit.*` commands appear in Copilot Chat. The commands are project-specific and only show up when VS Code is opened on the project folder containing `.github/prompts/`. For other agents, commands are stored in their respective locations (e.g., `.claude/commands/`, `.gemini/commands/`).
 
 If you use a coding agent, some agents may try to rewrite or "improve" your prompt. Make the difference from step 1 explicit in your slash prompt. For example, include an explicit instruction such as:
 
@@ -86,7 +90,8 @@ Let the AI generate tasks, write code, run tests, and fix bugs — all from your
 
 - **Command not found**:  Ensure `uv` is installed (see [uv install docs](https://docs.astral.sh/uv/getting-started/installation/)); `uvx` is included with `uv`
 - **Wrong script type**: Use `--script ps` (PowerShell) or `--script sh` (Bash) to override auto-selection
-- **Slash commands not working**: Verify your AI assistant supports slash commands and the `/speckit` prefix is included
+- **Slash commands not working**: Verify your AI assistant supports slash commands and the `/speckit` prefix is included. Make sure you ran `specify init` with `--ai copilot` (or selected Copilot) so the `.github/prompts/` folder was created
+- **`/speckit.*` treated as plain text**: This usually means the prompt files weren't generated. Run `specify init` again with `--ai copilot` and confirm `.github/prompts/` exists in your project
 - **Environment errors**: Check Python/Node.js installation and PATH settings
 - **Git access issues**: Verify your Git credentials and repository access
 
