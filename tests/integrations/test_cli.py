@@ -2,14 +2,15 @@
 
 import json
 import os
-import re
 
 import yaml
 
+from tests.conftest import strip_ansi
+
 
 def _normalize_cli_output(output: str) -> str:
-    output = re.sub(r"\x1b\[[0-9;]*m", "", output)
-    output = re.sub(r"\s+", " ", output)
+    output = strip_ansi(output)
+    output = " ".join(output.split())
     return output.strip()
 
 

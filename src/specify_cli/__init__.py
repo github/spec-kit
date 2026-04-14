@@ -33,6 +33,7 @@ import shutil
 import json
 import json5
 import stat
+import shlex
 import yaml
 from pathlib import Path
 from typing import Any, Optional
@@ -102,7 +103,7 @@ def _build_integration_equivalent(
     parts = [f"--integration {integration_key}"]
     if integration_key == "generic" and ai_commands_dir:
         parts.append(
-            f'--integration-options="--commands-dir {ai_commands_dir}"'
+            f'--integration-options="--commands-dir {shlex.quote(ai_commands_dir)}"'
         )
     return " ".join(parts)
 
