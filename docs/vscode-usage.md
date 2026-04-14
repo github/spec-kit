@@ -35,13 +35,13 @@ The Copilot Chat input is a conversational interface only — it does not run sh
 
 1. Open the integrated terminal (View > Terminal or Ctrl+\`).
 2. Make sure you're in the project folder (the same folder that contains the repository files).
-3. Install and run the CLI (examples using uvx - the recommended way, or use uv for persistent installation):
+3. Run the CLI with `uvx` for one-off usage, or install it with `uv tool install` if you expect to use it regularly:
 
 ```powershell
 # Run once with uvx (no installation needed)
 uvx --from git+https://github.com/github/spec-kit.git specify --help
 
-# Or install persistently with uv (recommended)
+# Or install persistently with uv for regular usage
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
 specify --help
 ```
@@ -53,12 +53,6 @@ To run the CLI from the source repository without installation:
 # On macOS/Linux: cd /path/to/spec-kit
 cd /path/to/spec-kit
 uvx --from . specify --help
-```
-
-Or directly via the module:
-
-```powershell
-python -m src.specify_cli --help
 ```
 
 ### Where to run commands: Terminal vs AI Assistant
