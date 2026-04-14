@@ -41,6 +41,8 @@ packages = ["src/specify_cli"]
 "scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
 # Bundled extensions (installable via `specify extension add <name>`)
 "extensions/git" = "specify_cli/core_pack/extensions/git"
+# Bundled workflows (auto-installed during `specify init`)
+"workflows/speckit" = "specify_cli/core_pack/workflows/speckit"
 
 [project.optional-dependencies]
 test = [

@@ -621,6 +621,31 @@ def _locate_bundled_extension(extension_id: str) -> Path | None:
     return None
 
 
+def _locate_bundled_workflow(workflow_id: str) -> Path | None:
+    """Return the path to a bundled workflow directory, or None.
+
+    Checks the wheel's core_pack first, then falls back to the
+    source-checkout ``workflows/<id>/`` directory.
+    """
+    import re as _re
+    if not _re.match(r'^[a-z0-9-]+$', workflow_id):
+        return None
+
+    core = _locate_core_pack()
+    if core is not None:
+        candidate = core / "workflows" / workflow_id
+        if (candidate / "workflow.yml").is_file():
+            return candidate
+
+    # Source-checkout / editable install: look relative to repo root
+    repo_root = Path(__file__).parent.parent.parent
+    candidate = repo_root / "workflows" / workflow_id
+    if (candidate / "workflow.yml").is_file():
+        return candidate
+
+    return None
+
+
 def _install_shared_infra(
     project_path: Path,
     script_type: str,
@@ -1134,6 +1159,7 @@ def init(
         ("chmod", "Ensure scripts executable"),
         ("constitution", "Constitution setup"),
         ("git", "Install git extension"),
+        ("workflow", "Install bundled workflow"),
         ("final", "Finalize"),
     ]:
         tracker.add(key, label)
@@ -1236,6 +1262,37 @@ def init(
                     tracker.complete("git", summary)
             else:
                 tracker.skip("git", "--no-git flag")
+
+            # Install bundled speckit workflow
+            try:
+                bundled_wf = _locate_bundled_workflow("speckit")
+                if bundled_wf:
+                    from .workflows.catalog import WorkflowRegistry
+                    from .workflows.engine import WorkflowDefinition
+                    wf_registry = WorkflowRegistry(project_path)
+                    if wf_registry.is_installed("speckit"):
+                        tracker.complete("workflow", "already installed")
+                    else:
+                        import shutil as _shutil
+                        dest_wf = project_path / ".specify" / "workflows" / "speckit"
+                        dest_wf.mkdir(parents=True, exist_ok=True)
+                        _shutil.copy2(
+                            bundled_wf / "workflow.yml",
+                            dest_wf / "workflow.yml",
+                        )
+                        definition = WorkflowDefinition.from_yaml(dest_wf / "workflow.yml")
+                        wf_registry.add("speckit", {
+                            "name": definition.name,
+                            "version": definition.version,
+                            "description": definition.description,
+                            "source": "bundled",
+                        })
+                        tracker.complete("workflow", "speckit installed")
+                else:
+                    tracker.skip("workflow", "bundled workflow not found")
+            except Exception as wf_err:
+                sanitized_wf = str(wf_err).replace('\n', ' ').strip()
+                tracker.error("workflow", f"install failed: {sanitized_wf[:120]}")
 
             # Fix permissions after all installs (scripts + extensions)
             ensure_executable_scripts(project_path, tracker=tracker)
