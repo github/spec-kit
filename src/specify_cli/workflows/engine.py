@@ -524,6 +524,7 @@ class WorkflowEngine:
                         "error": f"Unknown step type: {step_type!r}",
                     }
                 )
+                state.save()
                 return
 
             result: StepResult = step_impl.execute(step_config, context)

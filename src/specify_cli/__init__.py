@@ -4488,6 +4488,13 @@ def workflow_add(
             console.print(f"  \u2022 {err}")
         raise typer.Exit(1)
 
+    # Warn if the workflow's internal ID doesn't match the catalog key
+    if definition.id and definition.id != source:
+        console.print(
+            f"[yellow]Warning:[/yellow] Workflow ID in YAML ({definition.id!r}) "
+            f"differs from catalog key ({source!r}). Using catalog key."
+        )
+
     registry.add(source, {
         "name": definition.name or info.get("name", source),
         "version": definition.version or info.get("version", "0.0.0"),

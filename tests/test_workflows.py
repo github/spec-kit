@@ -414,7 +414,7 @@ class TestCommandStep:
             "input": {"args": "{{ inputs.name }}"},
         }
         result = step.execute(config, ctx)
-        assert result.status == StepStatus.COMPLETED
+        assert result.status == StepStatus.FAILED
         assert result.output["command"] == "speckit.specify"
         assert result.output["integration"] == "claude"
         assert result.output["input"]["args"] == "login"
@@ -473,7 +473,7 @@ class TestCommandStep:
         assert result.output["options"]["thinking-budget"] == 32768
 
     def test_dispatch_not_attempted_without_cli(self):
-        """When the CLI tool is not installed, dispatched should be False."""
+        """When the CLI tool is not installed, step should fail."""
         from specify_cli.workflows.steps.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
@@ -489,9 +489,9 @@ class TestCommandStep:
             "input": {"args": "{{ inputs.name }}"},
         }
         result = step.execute(config, ctx)
-        assert result.status == StepStatus.COMPLETED
+        assert result.status == StepStatus.FAILED
         assert result.output["dispatched"] is False
-        assert result.output["exit_code"] == 0
+        assert result.error is not None
 
     def test_dispatch_with_mock_cli(self, tmp_path, monkeypatch):
         """When the CLI is installed, dispatch invokes the command by name."""
@@ -1328,7 +1328,7 @@ steps:
         engine = WorkflowEngine(project_dir)
         state = engine.execute(definition, {"name": "login"})
 
-        assert state.status == RunStatus.COMPLETED
+        assert state.status == RunStatus.FAILED
         assert "step-one" in state.step_results
         assert state.step_results["step-one"]["output"]["command"] == "speckit.specify"
         assert state.step_results["step-one"]["output"]["input"]["args"] == "login"
@@ -1345,18 +1345,16 @@ workflow:
   version: "1.0.0"
 steps:
   - id: step-one
-    command: speckit.specify
-    input:
-      args: "test"
+    type: shell
+    run: "echo test"
   - id: gate
     type: gate
     message: "Review?"
     options: [approve, reject]
     on_reject: abort
   - id: step-two
-    command: speckit.plan
-    input:
-      args: "test"
+    type: shell
+    run: "echo done"
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
@@ -1726,9 +1724,8 @@ inputs:
     default: "login"
 steps:
   - id: specify
-    command: speckit.specify
-    input:
-      args: "{{ inputs.feature }}"
+    type: shell
+    run: "echo speckit.specify {{ inputs.feature }}"
 
   - id: check-scope
     type: if
@@ -1743,9 +1740,8 @@ steps:
         run: "echo partial scope"
 
   - id: plan
-    command: speckit.plan
-    input:
-      args: "{{ steps.specify.output.command }}"
+    type: shell
+    run: "echo speckit.plan"
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)

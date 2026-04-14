@@ -71,14 +71,22 @@ class CommandStep(StepBase):
                     output=output,
                     error=dispatch_result["stderr"] or f"Command exited with code {dispatch_result['exit_code']}",
                 )
+            return StepResult(
+                status=StepStatus.COMPLETED,
+                output=output,
+            )
         else:
-            output["exit_code"] = 0
+            output["exit_code"] = 1
             output["dispatched"] = False
-
-        return StepResult(
-            status=StepStatus.COMPLETED,
-            output=output,
-        )
+            return StepResult(
+                status=StepStatus.FAILED,
+                output=output,
+                error=(
+                    f"Cannot dispatch command {command!r}: "
+                    f"integration {integration!r} CLI not found or not installed. "
+                    f"Install the CLI tool or check 'specify integration list'."
+                ),
+            )
 
     @staticmethod
     def _try_dispatch(
