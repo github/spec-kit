@@ -210,7 +210,7 @@ class CommandRegistrar:
             subdirs = [
                 d.name
                 for d in extension_dir.iterdir()
-                if d.is_dir() and d.name not in _SKIP
+                if d.is_dir() and d.name not in _SKIP and not d.name.startswith(".")
             ]
         except OSError:
             return text
