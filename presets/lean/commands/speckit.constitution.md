@@ -14,12 +14,10 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 Before generating or revising the constitution, determine whether this is a **new** or **existing** solution.
 
-1. If `.specify/memory/constitution.md` exists **and** contains concrete content (not just unfilled `[PLACEHOLDER]` tokens), treat as **existing**.
-2. If the repo has meaningful source code, architecture docs, or prior constitution versions, treat as **existing**.
-3. Otherwise, ask the user: "Is this a new solution or an existing one? Reply with one of: `new`, `existing`"
+1. If `.specify/memory/constitution.md` exists **and** contains concrete content (not just unfilled `[PLACEHOLDER]` tokens), treat as **existing** → follow Path A below.
+2. If `.specify/memory/constitution.md` does not exist, or contains only unfilled placeholder tokens, treat as **new** → follow Path B below.
 
-- If **existing** → follow Path A below.
-- If **new** → follow Path B below.
+Do not ask the user — the check is automatic.
 
 ## Path A — Existing Solution
 

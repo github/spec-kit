@@ -50,20 +50,12 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Step 0 — Determine Solution State
 
-Before generating or revising the constitution, determine whether this is a **new** or **existing** solution.
+Before generating or revising the constitution, determine whether this is a **new** or **existing** solution automatically — do not ask the user.
 
-**Detection heuristic** (check in order):
+**Detection rule** (check in order):
 
-1. If `.specify/memory/constitution.md` exists **and** contains concrete content (not just unfilled `[PLACEHOLDER]` tokens), treat as **existing**.
-2. If the repo has meaningful source code, architecture docs, or prior constitution versions, treat as **existing**.
-3. Otherwise, ask the user:
-
-> **Is this a new solution or an existing one?** Reply with one of: `new`, `existing`
-
-Rules:
-- If the user answers `existing`, proceed to **Path A — Existing Solution** below.
-- If the user answers `new`, proceed to **Path B — New Solution Bootstrap** below.
-- If the answer is ambiguous, ask one follow-up question to clarify before continuing.
+1. If `.specify/memory/constitution.md` exists **and** contains concrete content (not just unfilled `[PLACEHOLDER]` tokens), treat as **existing** → proceed to **Path A**.
+2. If `.specify/memory/constitution.md` does not exist, or contains only unfilled placeholder tokens, treat as **new** → proceed to **Path B**.
 
 ---
 
