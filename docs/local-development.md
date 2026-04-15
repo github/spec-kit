@@ -128,12 +128,14 @@ python -m src.specify_cli init --here --ai claude --ignore-agent-tools --script 
 
 Or copy only the modified CLI portion if you want a lighter sandbox.
 
-## 9. Debug Network / TLS Skips
+## 9. Debug Network / TLS Issues
 
 > **Deprecated:** The `--skip-tls` flag is a no-op and has no effect.
-> Previously it was used to bypass TLS validation during local testing.
-> If you encounter TLS errors on a corporate network, configure your
+> It was previously used to bypass TLS validation during local testing.
+> If you encounter TLS errors (e.g., on a corporate network), configure your
 > environment's certificate store or proxy instead.
+>
+> For example, set `SSL_CERT_FILE` or configure `HTTPS_PROXY` / `HTTP_PROXY`.
 
 ## 10. Rapid Edit Loop Summary
 
