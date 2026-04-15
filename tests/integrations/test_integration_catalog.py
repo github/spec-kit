@@ -563,11 +563,11 @@ class TestIntegrationUpgrade:
         assert manifest_path.exists(), "Manifest should exist after init"
         manifest_data = json.loads(manifest_path.read_text())
         tracked_files = manifest_data.get("files", {})
-        if tracked_files:
-            first_rel = next(iter(tracked_files))
-            target_file = project / first_rel
-            if target_file.exists():
-                target_file.write_text("MODIFIED CONTENT\n")
+        assert tracked_files, "Manifest should track at least one file"
+        first_rel = next(iter(tracked_files))
+        target_file = project / first_rel
+        assert target_file.exists(), f"Tracked file {first_rel} should exist"
+        target_file.write_text("MODIFIED CONTENT\n")
 
         old = os.getcwd()
         try:
@@ -588,11 +588,11 @@ class TestIntegrationUpgrade:
         manifest_path = project / ".specify" / "integrations" / "copilot.manifest.json"
         manifest_data = json.loads(manifest_path.read_text())
         tracked_files = manifest_data.get("files", {})
-        if tracked_files:
-            first_rel = next(iter(tracked_files))
-            target_file = project / first_rel
-            if target_file.exists():
-                target_file.write_text("MODIFIED CONTENT\n")
+        assert tracked_files, "Manifest should track at least one file"
+        first_rel = next(iter(tracked_files))
+        target_file = project / first_rel
+        assert target_file.exists(), f"Tracked file {first_rel} should exist"
+        target_file.write_text("MODIFIED CONTENT\n")
 
         old = os.getcwd()
         try:

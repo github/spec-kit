@@ -169,7 +169,7 @@ class IntegrationCatalog:
 
         Resolution:
         1. ``SPECKIT_INTEGRATION_CATALOG_URL`` env var
-        2. Project ```.specify/integration-catalogs.yml```
+        2. Project ``.specify/integration-catalogs.yml``
         3. User ``~/.specify/integration-catalogs.yml``
         4. Built-in defaults (built-in + community)
         """
