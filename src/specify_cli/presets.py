@@ -706,7 +706,8 @@ class PresetManager:
             return []
 
         from . import SKILL_DESCRIPTIONS, load_init_options
-        from .agents import CommandRegistrar, post_process_skill
+        from .agents import CommandRegistrar
+        from .integrations import get_integration
 
         init_opts = load_init_options(self.project_root)
         if not isinstance(init_opts, dict):
@@ -716,6 +717,7 @@ class PresetManager:
             return []
         ai_skills_enabled = bool(init_opts.get("ai_skills"))
         registrar = CommandRegistrar()
+        integration = get_integration(selected_ai)
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
         # Native skill agents (e.g. codex/kimi/agy/trae) materialize brand-new
         # preset skills in _register_commands() because their detected agent
@@ -789,9 +791,10 @@ class PresetManager:
                     f"# Speckit {skill_title} Skill\n\n"
                     f"{body}\n"
                 )
-                skill_content = post_process_skill(
-                    selected_ai, skill_content
-                )
+                if integration is not None and hasattr(integration, "post_process_skill_content"):
+                    skill_content = integration.post_process_skill_content(
+                        skill_content
+                    )
 
                 skill_file = skill_subdir / "SKILL.md"
                 skill_file.write_text(skill_content, encoding="utf-8")
@@ -818,7 +821,8 @@ class PresetManager:
             return
 
         from . import SKILL_DESCRIPTIONS, load_init_options
-        from .agents import CommandRegistrar, post_process_skill
+        from .agents import CommandRegistrar
+        from .integrations import get_integration
 
         # Locate core command templates from the project's installed templates
         core_templates_dir = self.project_root / ".specify" / "templates" / "commands"
@@ -827,6 +831,7 @@ class PresetManager:
             init_opts = {}
         selected_ai = init_opts.get("ai")
         registrar = CommandRegistrar()
+        integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
         extension_restore_index = self._build_extension_skill_restore_index()
 
         for skill_name in skill_names:
@@ -880,9 +885,10 @@ class PresetManager:
                     f"# Speckit {skill_title} Skill\n\n"
                     f"{body}\n"
                 )
-                skill_content = post_process_skill(
-                    selected_ai, skill_content
-                )
+                if integration is not None and hasattr(integration, "post_process_skill_content"):
+                    skill_content = integration.post_process_skill_content(
+                        skill_content
+                    )
                 skill_file.write_text(skill_content, encoding="utf-8")
                 continue
 
@@ -912,9 +918,10 @@ class PresetManager:
                     f"# {title_name} Skill\n\n"
                     f"{body}\n"
                 )
-                skill_content = post_process_skill(
-                    selected_ai, skill_content
-                )
+                if integration is not None and hasattr(integration, "post_process_skill_content"):
+                    skill_content = integration.post_process_skill_content(
+                        skill_content
+                    )
                 skill_file.write_text(skill_content, encoding="utf-8")
             else:
                 # No core or extension template — remove the skill entirely
