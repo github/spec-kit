@@ -55,7 +55,9 @@ Before generating or revising the constitution, determine whether this is a **ne
 **Detection rule** (check in order):
 
 1. If `.specify/memory/constitution.md` exists **and** contains concrete content (not just unfilled square-bracket placeholder identifiers such as `[PROJECT_NAME]`), treat as **existing** → proceed to **Path A**.
-2. If `.specify/memory/constitution.md` does not exist, or contains only unfilled square-bracket placeholder identifiers, treat as **new** → proceed to **Path B**.
+2. If `.specify/memory/constitution.md` does not exist **but** `.specify/templates/constitution-template.md` exists, treat the solution as an **initialized existing repo with a missing working copy** → copy the template to `.specify/memory/constitution.md`, then proceed to **Path A**.
+3. If `.specify/memory/constitution.md` exists but contains only unfilled square-bracket placeholder identifiers, treat as **new** → proceed to **Path B**.
+4. If neither `.specify/memory/constitution.md` nor `.specify/templates/constitution-template.md` exists, treat as **new** → proceed to **Path B**.
 
 ---
 
@@ -65,7 +67,7 @@ If `solution_state = existing`, follow the standard constitution update flow.
 
 You are updating the project constitution at `.specify/memory/constitution.md`. This file is a TEMPLATE containing placeholder tokens in square brackets (e.g. `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`). Your job is to (a) collect/derive concrete values, (b) fill the template precisely, and (c) propagate any amendments across dependent artifacts.
 
-**Note**: If `.specify/memory/constitution.md` does not exist yet, it should have been initialized from `.specify/templates/constitution-template.md` during project setup. If it's missing, copy the template first.
+**Note**: The missing-file recovery in Path A applies only when `.specify/templates/constitution-template.md` exists, which indicates the repo was already initialized and only the working copy is missing. In that case, copy the template first.
 
 Follow this execution flow:
 

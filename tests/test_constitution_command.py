@@ -35,6 +35,13 @@ class TestMainConstitutionCommandStructure:
         assert ".specify/memory/constitution.md" in content
         assert "unfilled" in content or "[PLACEHOLDER]" in content
 
+    def test_detection_distinguishes_initialized_repo_from_truly_new(self):
+        """Missing working copies in initialized repos must route to Path A, not Path B."""
+        content = self._content()
+        assert ".specify/templates/constitution-template.md" in content
+        assert "initialized existing repo with a missing working copy" in content
+        assert "copy the template to `.specify/memory/constitution.md`, then proceed to **Path A**" in content
+
     def test_detection_is_automatic_no_user_prompt(self):
         """Detection must be fully automatic — the command must not ask the user."""
         content = self._content()
@@ -231,6 +238,13 @@ class TestLeanPresetConstitutionCommand:
         content = self._content()
         assert ".specify/memory/constitution.md" in content
         assert "unfilled" in content or "[PLACEHOLDER]" in content
+
+    def test_lean_detection_distinguishes_initialized_repo_from_truly_new(self):
+        """Lean preset must route initialized repos with a missing working copy to Path A."""
+        content = self._content()
+        assert ".specify/templates/constitution-template.md" in content
+        assert "initialized existing repo with a missing working copy" in content
+        assert "copy the template to `.specify/memory/constitution.md`, then follow Path A below" in content
 
     def test_path_a_exists_in_lean(self):
         """Lean preset must have a Path A for existing solutions."""

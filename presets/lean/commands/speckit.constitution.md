@@ -15,7 +15,9 @@ You **MUST** consider the user input before proceeding (if not empty).
 Before generating or revising the constitution, determine whether this is a **new** or **existing** solution.
 
 1. If `.specify/memory/constitution.md` exists **and** contains concrete content (not just unfilled square-bracket placeholder identifiers such as `[PROJECT_NAME]`), treat as **existing** → follow Path A below.
-2. If `.specify/memory/constitution.md` does not exist, or contains only unfilled square-bracket placeholder identifiers, treat as **new** → follow Path B below.
+2. If `.specify/memory/constitution.md` does not exist **but** `.specify/templates/constitution-template.md` exists, treat the solution as an **initialized existing repo with a missing working copy** → copy the template to `.specify/memory/constitution.md`, then follow Path A below.
+3. If `.specify/memory/constitution.md` exists but contains only unfilled square-bracket placeholder identifiers, treat as **new** → follow Path B below.
+4. If neither `.specify/memory/constitution.md` nor `.specify/templates/constitution-template.md` exists, treat as **new** → follow Path B below.
 
 Do not ask the user — the check is automatic.
 
