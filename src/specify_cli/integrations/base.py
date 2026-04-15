@@ -1190,6 +1190,27 @@ class SkillsIntegration(IntegrationBase):
                 escaped = v.replace("\\", "\\\\").replace('"', '\\"')
                 return f'"{escaped}"'
 
+            # Translate behavior block to agent-specific frontmatter fields.
+            # This lets templates declare e.g. `behavior: invocation: automatic`
+            # to produce `disable-model-invocation: false` in the skill.
+            # Fields are emitted here so downstream post-processors (e.g.
+            # ClaudeIntegration.setup) see them already set and skip injection.
+            behavior = frontmatter.get("behavior") or {}
+            behavior_fm_lines = ""
+            if isinstance(behavior, dict) and behavior:
+                try:
+                    from specify_cli.behavior import translate_behavior
+                    behavior_fields = translate_behavior(self.key, behavior, {})
+                    for bk, bv in behavior_fields.items():
+                        if isinstance(bv, bool):
+                            behavior_fm_lines += f"{bk}: {'true' if bv else 'false'}\n"
+                        elif isinstance(bv, str):
+                            behavior_fm_lines += f"{bk}: {_quote(bv)}\n"
+                        else:
+                            behavior_fm_lines += f"{bk}: {bv}\n"
+                except ImportError:
+                    pass
+
             skill_content = (
                 f"---\n"
                 f"name: {_quote(skill_name)}\n"
@@ -1198,6 +1219,7 @@ class SkillsIntegration(IntegrationBase):
                 f"metadata:\n"
                 f"  author: {_quote('github-spec-kit')}\n"
                 f"  source: {_quote('templates/commands/' + src_file.name)}\n"
+                f"{behavior_fm_lines}"
                 f"---\n"
                 f"{processed_body}"
             )

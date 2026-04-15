@@ -1,5 +1,7 @@
 ---
 description: Create or update the feature specification from a natural language feature description.
+behavior:
+  invocation: automatic
 handoffs: 
   - label: Build Technical Plan
     agent: speckit.plan

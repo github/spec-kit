@@ -2,6 +2,7 @@
 
 import json
 import os
+from textwrap import dedent
 from unittest.mock import patch
 
 import yaml
@@ -59,7 +60,8 @@ class TestClaudeIntegration:
         parsed = yaml.safe_load(parts[1])
         assert parsed["name"] == "speckit-plan"
         assert parsed["user-invocable"] is True
-        assert parsed["disable-model-invocation"] is True
+        # plan.md has behavior: invocation: automatic → disable-model-invocation: false
+        assert parsed["disable-model-invocation"] is False
         assert parsed["metadata"]["source"] == "templates/commands/plan.md"
 
     def test_setup_installs_update_context_scripts(self, tmp_path):
@@ -179,7 +181,8 @@ class TestClaudeIntegration:
         assert skill_file.exists()
         skill_content = skill_file.read_text(encoding="utf-8")
         assert "user-invocable: true" in skill_content
-        assert "disable-model-invocation: true" in skill_content
+        # plan.md has behavior: invocation: automatic → disable-model-invocation: false
+        assert "disable-model-invocation: false" in skill_content
 
         init_options = json.loads(
             (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
@@ -400,3 +403,113 @@ class TestClaudeArgumentHints:
         lines = result.splitlines()
         hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
         assert hint_count == 1
+
+
+class TestSkillsIntegrationBehaviorTranslation:
+    """SkillsIntegration.setup() must translate behavior: blocks from templates
+    into agent-specific frontmatter fields *before* ClaudeIntegration.setup()
+    post-processes the file.
+
+    Regression: templates declaring 'behavior: invocation: automatic' used to
+    get disable-model-invocation: true anyway because ClaudeIntegration.setup()
+    injected the default unconditionally, and SkillsIntegration.setup() never
+    ran translate_behavior() before writing the SKILL.md.
+    """
+
+    def _run_claude_setup(self, tmp_path, template_content: str) -> dict:
+        """Install a single fake template via ClaudeIntegration and return the SKILL.md frontmatter."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        integration = ClaudeIntegration()
+
+        # Inject a fake template list so we don't touch the real templates on disk.
+        fake_template = tmp_path / "commands" / "testcmd.md"
+        fake_template.parent.mkdir(parents=True)
+        fake_template.write_text(template_content, encoding="utf-8")
+
+        original = integration.list_command_templates
+
+        def patched_templates():
+            return [fake_template]
+
+        import unittest.mock as mock
+        with mock.patch.object(integration, "list_command_templates", patched_templates):
+            m = IntegrationManifest("claude", tmp_path)
+            integration.setup(tmp_path, m)
+
+        skill_file = tmp_path / ".claude" / "skills" / "speckit-testcmd" / "SKILL.md"
+        assert skill_file.exists(), "SKILL.md was not created"
+        content = skill_file.read_text(encoding="utf-8")
+        parts = content.split("---", 2)
+        return yaml.safe_load(parts[1])
+
+    def test_invocation_automatic_produces_disable_model_invocation_false(self, tmp_path):
+        """behavior: invocation: automatic must produce disable-model-invocation: false.
+
+        This is the primary regression test: before the fix, ClaudeIntegration.setup()
+        always injected disable-model-invocation: true regardless of behavior.
+        """
+        fm = self._run_claude_setup(tmp_path, dedent("""\
+            ---
+            description: Test command with automatic invocation
+            behavior:
+              invocation: automatic
+            ---
+            Command body here.
+        """))
+        assert fm.get("disable-model-invocation") is False, (
+            "behavior: invocation: automatic must produce disable-model-invocation: false, "
+            f"got {fm.get('disable-model-invocation')!r}"
+        )
+
+    def test_invocation_explicit_produces_disable_model_invocation_true(self, tmp_path):
+        """behavior: invocation: explicit must produce disable-model-invocation: true."""
+        fm = self._run_claude_setup(tmp_path, dedent("""\
+            ---
+            description: Test command with explicit invocation
+            behavior:
+              invocation: explicit
+            ---
+            Command body here.
+        """))
+        assert fm.get("disable-model-invocation") is True
+
+    def test_no_behavior_block_defaults_to_disable_model_invocation_true(self, tmp_path):
+        """Templates without a behavior: block get the default disable-model-invocation: true."""
+        fm = self._run_claude_setup(tmp_path, dedent("""\
+            ---
+            description: Plain template with no behavior
+            ---
+            Command body here.
+        """))
+        assert fm.get("disable-model-invocation") is True
+
+    def test_capability_strong_produces_model_opus(self, tmp_path):
+        """behavior: capability: strong must produce model: claude-opus-4-6 in the skill."""
+        fm = self._run_claude_setup(tmp_path, dedent("""\
+            ---
+            description: Strong capability command
+            behavior:
+              capability: strong
+            ---
+            Body.
+        """))
+        assert fm.get("model") == "claude-opus-4-6"
+
+    def test_behavior_fields_present_before_post_processing(self, tmp_path):
+        """Verify behavior fields appear in final SKILL.md alongside user-invocable."""
+        fm = self._run_claude_setup(tmp_path, dedent("""\
+            ---
+            description: Automatic command
+            behavior:
+              invocation: automatic
+              capability: fast
+            ---
+            Body.
+        """))
+        # Both behavior-translated fields must be present
+        assert fm.get("disable-model-invocation") is False
+        assert fm.get("model") == "claude-haiku-4-5-20251001"
+        # Claude post-processor still injects user-invocable
+        assert fm.get("user-invocable") is True

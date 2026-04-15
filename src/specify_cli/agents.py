@@ -7,12 +7,37 @@ command files into agent-specific directories in the correct format.
 """
 
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 import platform
 import re
 from copy import deepcopy
 import yaml
+
+from specify_cli.behavior import translate_behavior, strip_behavior_keys, get_deployment_type, get_copilot_tools
+
+
+# Agent-specific frontmatter keys that extension/preset authors may declare in
+# source command frontmatter and have passed through verbatim to the generated
+# skill file.  Keys not in this set are ignored during skill rendering.
+_SKILL_PASSTHROUGH_KEYS: dict[str, frozenset[str]] = {
+    "claude": frozenset({
+        "context",                    # fork execution model
+        "agent",                      # subagent type when context: fork
+        "model",                      # model override
+        "effort",                     # effort level
+        "allowed-tools",              # tool restriction list
+        "color",                      # UI color in Claude Code task list
+        "paths",                      # path-based activation glob
+        "argument-hint",              # UI hint in slash-command menu
+        "disable-model-invocation",   # override default True
+        "user-invocable",             # override default True
+    }),
+    "codex": frozenset({
+        "model",
+        "effort",
+    }),
+}
 
 
 def _build_agent_configs() -> dict[str, Any]:
@@ -157,6 +182,54 @@ class CommandRegistrar:
             ".specify.specify/", ".specify/"
         )
 
+    @staticmethod
+    def rewrite_extension_paths(text: str, extension_id: str, extension_dir: Path) -> str:
+        """Rewrite extension-relative paths to their installed project locations.
+
+        Extension command bodies reference files using paths relative to the
+        extension root (e.g. ``agents/control/commander.md``).  After install,
+        those files live at ``.specify/extensions/<id>/...``.  This method
+        rewrites such references so that AI agents can locate them after install.
+
+        Only directories that actually exist inside *extension_dir* are rewritten,
+        keeping the behaviour conservative and avoiding false positives on prose.
+
+        Args:
+            text: Body text of the command file.
+            extension_id: The extension identifier (e.g. ``"echelon"``).
+            extension_dir: Path to the installed extension directory.
+
+        Returns:
+            Body text with extension-relative paths expanded.
+        """
+        if not isinstance(text, str) or not text:
+            return text
+
+        _SKIP = {"commands", ".git", "specs"}
+        try:
+            subdirs = [
+                d.name
+                for d in extension_dir.iterdir()
+                if d.is_dir() and d.name not in _SKIP
+            ]
+        except OSError:
+            return text
+
+        base_prefix = f".specify/extensions/{extension_id}/"
+
+        # Replace $EXTENSION_PATH shell variable with the actual installed path.
+        text = text.replace("$EXTENSION_PATH", base_prefix.rstrip("/"))
+
+        for subdir in subdirs:
+            escaped = re.escape(subdir)
+            text = re.sub(
+                r"(^|[\s`\"'(])(?:\.?/)?" + escaped + r"/",
+                r"\1" + base_prefix + subdir + "/",
+                text,
+            )
+
+        return text
+
     def render_markdown_command(
         self, frontmatter: dict, body: str, source_id: str, context_note: str = None
     ) -> str:
@@ -259,6 +332,62 @@ class CommandRegistrar:
             description = str(description) if description is not None else ""
         return YamlIntegration._render_yaml(title, description, body, source_id)
 
+    def render_agent_definition(
+        self,
+        agent_name: str,
+        skill_name: str,
+        frontmatter: dict,
+        body: str,
+        source_id: str,
+        source_file: str,
+        project_root: Path,
+        source_dir: Optional[Path] = None,
+    ) -> str:
+        """Render a command as a Claude agent definition file (.claude/agents/{name}.md).
+
+        Agent definitions differ from skills:
+        - Body is the system prompt, not a task prompt
+        - Frontmatter is minimal: name, description, and behavior-derived fields
+        - No user-invocable, disable-model-invocation, context, or metadata keys
+        """
+        if not isinstance(frontmatter, dict):
+            frontmatter = {}
+
+        if source_dir is not None and (source_dir / "extension.yml").exists():
+            body = self.rewrite_extension_paths(body, source_id, source_dir)
+
+        behavior = frontmatter.get("behavior") or {}
+        agents_overrides = frontmatter.get("agents") or {}
+        behavior_fields: dict = {}
+        if isinstance(behavior, dict):
+            behavior_fields = translate_behavior(
+                agent_name, behavior,
+                agents_overrides if isinstance(agents_overrides, dict) else {}
+            )
+
+        clean_frontmatter = strip_behavior_keys(frontmatter)
+        description = clean_frontmatter.get("description", f"Spec-kit agent: {skill_name}")
+
+        # Agent definition frontmatter: minimal set, no skill-specific keys
+        agent_fm: dict = {
+            "name": skill_name,
+            "description": description,
+        }
+
+        # Merge behavior-translated fields; remap allowed-tools → tools for agent defs
+        for k, v in behavior_fields.items():
+            if k == "allowed-tools":
+                agent_fm["tools"] = v
+            elif k not in {"disable-model-invocation", "user-invocable", "context", "agent"}:
+                agent_fm[k] = v
+
+        # Explicit model/tools in source frontmatter win
+        for key in ("model", "tools"):
+            if key in clean_frontmatter:
+                agent_fm[key] = clean_frontmatter[key]
+
+        return self.render_frontmatter(agent_fm) + "\n" + body
+
     def render_skill_command(
         self,
         agent_name: str,
@@ -268,6 +397,7 @@ class CommandRegistrar:
         source_id: str,
         source_file: str,
         project_root: Path,
+        source_dir: Optional[Path] = None,
     ) -> str:
         """Render a command override as a SKILL.md file.
 
@@ -284,20 +414,43 @@ class CommandRegistrar:
         if not isinstance(frontmatter, dict):
             frontmatter = {}
 
+        if source_dir is not None and (source_dir / "extension.yml").exists():
+            body = self.rewrite_extension_paths(body, source_id, source_dir)
+
         if agent_name in {"codex", "kimi"}:
             body = self.resolve_skill_placeholders(
                 agent_name, frontmatter, body, project_root
             )
 
-        description = frontmatter.get(
-            "description", f"Spec-kit workflow command: {skill_name}"
-        )
+        # Extract and translate behavior + agents escape hatch
+        behavior = frontmatter.get("behavior") or {}
+        agents_overrides = frontmatter.get("agents") or {}
+        behavior_fields: dict = {}
+        if isinstance(behavior, dict):
+            behavior_fields = translate_behavior(
+                agent_name, behavior,
+                agents_overrides if isinstance(agents_overrides, dict) else {}
+            )
+
+        # Strip behavior/agents keys before building skill frontmatter
+        clean_frontmatter = strip_behavior_keys(frontmatter)
+
+        description = clean_frontmatter.get("description", f"Spec-kit workflow command: {skill_name}")
         skill_frontmatter = self.build_skill_frontmatter(
             agent_name,
             skill_name,
             description,
             f"{source_id}:{source_file}",
+            source_frontmatter=clean_frontmatter,
         )
+        # Merge behavior translation — passthrough (already in skill_frontmatter) wins
+        # because we only set behavior fields if they are not already set via passthrough,
+        # EXCEPT for the set of fields that behavior can legitimately override defaults for.
+        _behavior_overridable = {"disable-model-invocation", "user-invocable", "model", "effort", "context", "agent", "allowed-tools"}
+        for k, v in behavior_fields.items():
+            if k not in skill_frontmatter or k in _behavior_overridable:
+                skill_frontmatter[k] = v
+
         return self.render_frontmatter(skill_frontmatter) + "\n" + body
 
     @staticmethod
@@ -306,9 +459,22 @@ class CommandRegistrar:
         skill_name: str,
         description: str,
         source: str,
+        source_frontmatter: dict | None = None,
     ) -> dict:
-        """Build consistent SKILL.md frontmatter across all skill generators."""
-        skill_frontmatter = {
+        """Build consistent SKILL.md frontmatter across all skill generators.
+
+        Args:
+            agent_name: Target agent key (e.g. "claude", "codex").
+            skill_name: Generated skill name (e.g. "speckit-revenge-extract").
+            description: Human-readable description.
+            source: Source tracking string (e.g. "revenge:commands/extract.md").
+            source_frontmatter: Original command frontmatter. Keys present in
+                ``_SKILL_PASSTHROUGH_KEYS[agent_name]`` are merged after
+                defaults, allowing source authors to override injected values.
+        """
+        source_frontmatter = source_frontmatter or {}
+
+        skill_frontmatter: dict = {
             "name": skill_name,
             "description": description,
             "compatibility": "Requires spec-kit project structure with .specify/ directory",
@@ -318,10 +484,14 @@ class CommandRegistrar:
             },
         }
         if agent_name == "claude":
-            # Claude skills should be user-invocable (accessible via /command)
-            # and only run when explicitly invoked (not auto-triggered by the model).
             skill_frontmatter["user-invocable"] = True
             skill_frontmatter["disable-model-invocation"] = True
+
+        # Merge passthrough keys from source (wins over defaults above)
+        for key in _SKILL_PASSTHROUGH_KEYS.get(agent_name, frozenset()):
+            if key in source_frontmatter:
+                skill_frontmatter[key] = source_frontmatter[key]
+
         return skill_frontmatter
 
     @staticmethod
@@ -461,6 +631,13 @@ class CommandRegistrar:
             content = source_file.read_text(encoding="utf-8")
             frontmatter, body = self.parse_frontmatter(content)
 
+            # Merge manifest-level fields into frontmatter — source file wins.
+            # This lets extension.yml declare behavior/description for agent files
+            # that carry no frontmatter of their own (e.g. pure persona prompts).
+            for key in ("description", "behavior", "agents"):
+                if key in cmd_info and key not in frontmatter:
+                    frontmatter[key] = cmd_info[key]
+
             frontmatter = self._adjust_script_paths(frontmatter)
 
             for key in agent_config.get("strip_frontmatter_keys", []):
@@ -477,6 +654,33 @@ class CommandRegistrar:
 
             output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
 
+            # Deployment target is fully derived from behavior.execution
+            cmd_type = get_deployment_type(frontmatter)
+
+            if cmd_type == "agent" and agent_name == "claude":
+                output = self.render_agent_definition(
+                    agent_name, output_name, frontmatter, body,
+                    source_id, cmd_file, project_root, source_dir=source_dir,
+                )
+                agents_dir = project_root / ".claude" / "agents"
+                agents_dir.mkdir(parents=True, exist_ok=True)
+                dest_file = agents_dir / f"{output_name}.md"
+                dest_file.write_text(output, encoding="utf-8")
+                registered.append(cmd_name)
+                # Also generate agent definition files for any aliases
+                for alias in cmd_info.get("aliases", []):
+                    alias_output_name = self._compute_output_name(agent_name, alias, agent_config)
+                    alias_frontmatter = deepcopy(frontmatter)
+                    alias_frontmatter["name"] = alias_output_name
+                    alias_output = self.render_agent_definition(
+                        agent_name, alias_output_name, alias_frontmatter, body,
+                        source_id, cmd_file, project_root, source_dir=source_dir,
+                    )
+                    alias_file = agents_dir / f"{alias_output_name}.md"
+                    alias_file.write_text(alias_output, encoding="utf-8")
+                    registered.append(alias)
+                continue  # skip normal skill/command rendering
+
             if agent_config["extension"] == "/SKILL.md":
                 output = self.render_skill_command(
                     agent_name,
@@ -486,11 +690,26 @@ class CommandRegistrar:
                     source_id,
                     cmd_file,
                     project_root,
+                    source_dir=source_dir,
                 )
             elif agent_config["format"] == "markdown":
-                output = self.render_markdown_command(
-                    frontmatter, body, source_id, context_note
-                )
+                # For Copilot execution:agent, inject behavior-derived fields into frontmatter
+                if agent_name == "copilot" and cmd_type == "agent":
+                    behavior = frontmatter.get("behavior") if isinstance(frontmatter.get("behavior"), dict) else {}
+                    agents_overrides = frontmatter.get("agents") or {}
+                    extra_fields = translate_behavior(
+                        agent_name, behavior,
+                        agents_overrides if isinstance(agents_overrides, dict) else {}
+                    )
+                    copilot_tools = get_copilot_tools(behavior)
+                    if copilot_tools:
+                        extra_fields["tools"] = copilot_tools
+                    # Build modified frontmatter: strip internal keys, add extra
+                    copilot_fm = strip_behavior_keys(frontmatter)
+                    copilot_fm.update(extra_fields)
+                    output = self.render_markdown_command(copilot_fm, body, source_id, context_note)
+                else:
+                    output = self.render_markdown_command(frontmatter, body, source_id, context_note)
             elif agent_config["format"] == "toml":
                 output = self.render_toml_command(frontmatter, body, source_id)
             elif agent_config["format"] == "yaml":
@@ -532,11 +751,10 @@ class CommandRegistrar:
                             source_id,
                             cmd_file,
                             project_root,
+                            source_dir=source_dir,
                         )
                     elif agent_config["format"] == "markdown":
-                        alias_output = self.render_markdown_command(
-                            alias_frontmatter, body, source_id, context_note
-                        )
+                        alias_output = self.render_markdown_command(alias_frontmatter, body, source_id, context_note)
                     elif agent_config["format"] == "toml":
                         alias_output = self.render_toml_command(
                             alias_frontmatter, body, source_id
@@ -561,6 +779,7 @@ class CommandRegistrar:
                             source_id,
                             cmd_file,
                             project_root,
+                            source_dir=source_dir,
                         )
 
                 alias_file = (
@@ -676,6 +895,12 @@ class CommandRegistrar:
                     )
                     if prompt_file.exists():
                         prompt_file.unlink()
+
+                # Also try agent definition file (Claude-specific)
+                if agent_name == "claude":
+                    agent_def = project_root / ".claude" / "agents" / f"{output_name}.md"
+                    if agent_def.exists():
+                        agent_def.unlink()
 
 
 # Populate AGENT_CONFIGS after class definition.

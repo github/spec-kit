@@ -894,6 +894,18 @@ class ExtensionManager:
                 # Do not overwrite user-customized skills
                 continue
 
+            # Skip commands that behavior-routing deploys as agent definitions
+            # (to .claude/agents/) rather than as skill files.
+            from specify_cli.behavior import get_deployment_type
+            _source_fm, _ = registrar.parse_frontmatter(
+                source_file.read_text(encoding="utf-8")
+            )
+            # Merge manifest-level behavior when source file has none
+            if "behavior" not in _source_fm and "behavior" in cmd_info:
+                _source_fm["behavior"] = cmd_info["behavior"]
+            if get_deployment_type(_source_fm) == "agent":
+                continue
+
             # Create skill directory; track whether we created it so we can clean
             # up safely if reading the source file subsequently fails.
             created_now = not skill_subdir.exists()
@@ -911,6 +923,7 @@ class ExtensionManager:
                 continue
             frontmatter, body = registrar.parse_frontmatter(content)
             frontmatter = registrar._adjust_script_paths(frontmatter)
+            body = registrar.rewrite_extension_paths(body, manifest.id, extension_dir)
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root
             )

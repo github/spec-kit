@@ -16,6 +16,7 @@ import tempfile
 import shutil
 import yaml
 from pathlib import Path
+from textwrap import dedent
 
 from specify_cli.extensions import (
     ExtensionManifest,
@@ -740,3 +741,238 @@ class TestExtensionSkillEdgeCases:
         assert result is True
         assert not (skills_dir / "speckit-test-ext-hello").exists()
         assert not (skills_dir / "speckit-test-ext-world").exists()
+
+
+class TestPassthroughFrontmatter:
+    """Source frontmatter keys in _SKILL_PASSTHROUGH_KEYS survive into generated SKILL.md."""
+
+    def _make_project(self, tmp_path):
+        """Create project root with claude skills dir."""
+        project_root = tmp_path / "proj"
+        (project_root / ".claude" / "skills").mkdir(parents=True)
+        (project_root / ".specify").mkdir()
+        (project_root / ".specify" / "init-options.json").write_text(
+            '{"ai": "claude", "ai_skills": true, "script": "sh"}'
+        )
+        return project_root
+
+    def test_context_fork_passed_through(self, tmp_path):
+        import yaml
+        from specify_cli.agents import CommandRegistrar
+        project_root = self._make_project(tmp_path)
+        registrar = CommandRegistrar()
+        result = registrar.render_skill_command(
+            "claude", "speckit-test-ext-hello",
+            {"name": "speckit.test-ext.hello", "description": "Test", "context": "fork", "agent": "general-purpose"},
+            "Hello world", "test-ext", "commands/hello.md", project_root,
+        )
+        fm_text = result.split("---")[1]
+        fm = yaml.safe_load(fm_text)
+        assert fm.get("context") == "fork"
+        assert fm.get("agent") == "general-purpose"
+
+    def test_disable_model_invocation_override(self, tmp_path):
+        import yaml
+        from specify_cli.agents import CommandRegistrar
+        project_root = self._make_project(tmp_path)
+        registrar = CommandRegistrar()
+        result = registrar.render_skill_command(
+            "claude", "speckit-test-ext-hello",
+            {"description": "Test", "disable-model-invocation": False},
+            "Hello", "test-ext", "commands/hello.md", project_root,
+        )
+        fm_text = result.split("---")[1]
+        fm = yaml.safe_load(fm_text)
+        assert fm.get("disable-model-invocation") is False
+
+    def test_non_passthrough_key_not_leaked(self, tmp_path):
+        import yaml
+        from specify_cli.agents import CommandRegistrar
+        project_root = self._make_project(tmp_path)
+        registrar = CommandRegistrar()
+        result = registrar.render_skill_command(
+            "claude", "speckit-test-ext-hello",
+            {"description": "Test", "scripts": {"sh": "run.sh"}},
+            "Hello", "test-ext", "commands/hello.md", project_root,
+        )
+        fm_text = result.split("---")[1]
+        fm = yaml.safe_load(fm_text)
+        assert "scripts" not in fm
+
+
+class TestBehaviorTranslationInRender:
+    """behavior: and agents: blocks are stripped and translated during rendering."""
+
+    def _render(self, source_frontmatter: dict, body: str = "Hello") -> dict:
+        import yaml
+        import json
+        import tempfile
+        from specify_cli.agents import CommandRegistrar
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            (project_root / ".specify").mkdir()
+            (project_root / ".specify" / "init-options.json").write_text(
+                json.dumps({"ai": "claude", "ai_skills": True, "script": "sh"})
+            )
+            registrar = CommandRegistrar()
+            result = registrar.render_skill_command(
+                "claude", "speckit-test-cmd",
+                source_frontmatter, body, "test-ext", "commands/test.md", project_root,
+            )
+        parts = result.split("---")
+        return yaml.safe_load(parts[1])
+
+    def test_behavior_key_stripped_from_output(self):
+        fm = self._render({"description": "Test", "behavior": {"execution": "isolated"}})
+        assert "behavior" not in fm
+
+    def test_agents_key_stripped_from_output(self):
+        fm = self._render({"description": "Test", "agents": {"claude": {"paths": "src/**"}}})
+        assert "agents" not in fm
+
+    def test_execution_isolated_injects_context_fork(self):
+        fm = self._render({"description": "Test", "behavior": {"execution": "isolated"}})
+        assert fm.get("context") == "fork"
+
+    def test_capability_strong_injects_model(self):
+        fm = self._render({"description": "Test", "behavior": {"capability": "strong"}})
+        assert fm.get("model") == "claude-opus-4-6"
+
+    def test_effort_high_injected(self):
+        fm = self._render({"description": "Test", "behavior": {"effort": "high"}})
+        assert fm.get("effort") == "high"
+
+    def test_tools_read_only_injects_allowed_tools(self):
+        fm = self._render({"description": "Test", "behavior": {"tools": "read-only"}})
+        assert fm.get("allowed-tools") == "Read Grep Glob"
+
+    def test_invocation_automatic_overrides_default(self):
+        fm = self._render({"description": "Test", "behavior": {"invocation": "automatic"}})
+        assert fm.get("disable-model-invocation") is False
+
+    def test_agents_escape_hatch_applied(self):
+        fm = self._render({
+            "description": "Test",
+            "behavior": {"capability": "fast"},
+            "agents": {"claude": {"model": "claude-opus-4-6", "paths": "src/**"}},
+        })
+        assert fm.get("model") == "claude-opus-4-6"
+        assert fm.get("paths") == "src/**"
+
+    def test_passthrough_wins_over_behavior(self):
+        # Explicit context: fork in source FM (passthrough) should still work alongside behavior
+        fm = self._render({
+            "description": "Test",
+            "context": "fork",
+            "behavior": {"execution": "isolated"},
+        })
+        assert fm.get("context") == "fork"
+
+
+# ===== Agent-Routing Skip in _register_extension_skills =====
+
+class TestExtensionSkillAgentRoutingSkip:
+    """_register_extension_skills() must not create SKILL.md for execution:agent commands."""
+
+    def _make_ext(self, temp_dir: Path, ext_id: str, commands: list) -> Path:
+        ext_dir = temp_dir / ext_id
+        (ext_dir / "commands").mkdir(parents=True)
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": ext_id,
+                "name": ext_id,
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": commands},
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        return ext_dir
+
+    def test_agent_command_not_registered_as_skill(self, skills_project, temp_dir):
+        """Command with behavior: execution: agent must not create a SKILL.md."""
+        project_dir, skills_dir = skills_project
+        ext_dir = self._make_ext(temp_dir, "routing-ext", [
+            {
+                "name": "speckit.routing-ext.orchestrator",
+                "file": "commands/orchestrator.md",
+                "description": "Orchestrator command (plain skill)",
+            },
+            {
+                "name": "speckit.routing-ext.specialist",
+                "file": "commands/specialist.md",
+                "description": "Specialist subagent",
+            },
+        ])
+        (ext_dir / "commands" / "orchestrator.md").write_text(
+            "---\ndescription: Orchestrator\nbehavior:\n  invocation: automatic\n---\nOrchestrate.\n"
+        )
+        (ext_dir / "commands" / "specialist.md").write_text(
+            "---\ndescription: Specialist\nbehavior:\n  execution: agent\n---\nYou are a specialist.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        # orchestrator → SKILL.md created
+        assert (skills_dir / "speckit-routing-ext-orchestrator" / "SKILL.md").exists()
+        # specialist → NO SKILL.md (routed to agents dir instead)
+        assert not (skills_dir / "speckit-routing-ext-specialist" / "SKILL.md").exists()
+
+        metadata = manager.registry.get(manifest.id)
+        assert "speckit-routing-ext-orchestrator" in metadata["registered_skills"]
+        assert "speckit-routing-ext-specialist" not in metadata["registered_skills"]
+
+    def test_agent_command_from_manifest_behavior_not_registered_as_skill(self, skills_project, temp_dir):
+        """execution:agent declared in manifest cmd_info (not source) also skips SKILL.md creation."""
+        project_dir, skills_dir = skills_project
+        ext_dir = self._make_ext(temp_dir, "manifest-routing-ext", [
+            {
+                "name": "speckit.manifest-routing-ext.agent",
+                "file": "commands/agent.md",
+                "description": "Agent from manifest behavior",
+                "behavior": {"execution": "agent"},
+            },
+        ])
+        # Source file has NO frontmatter — pure persona prompt
+        (ext_dir / "commands" / "agent.md").write_text("You are a helpful agent.\n")
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        assert not (skills_dir / "speckit-manifest-routing-ext-agent" / "SKILL.md").exists()
+        metadata = manager.registry.get(manifest.id)
+        assert "speckit-manifest-routing-ext-agent" not in metadata["registered_skills"]
+
+    def test_extension_skill_body_paths_rewritten(self, skills_project, temp_dir):
+        """_register_extension_skills rewrites extension-relative paths before placeholder resolution."""
+        project_dir, skills_dir = skills_project
+        ext_dir = self._make_ext(temp_dir, "path-rewrite-ext", [
+            {
+                "name": "speckit.path-rewrite-ext.cmd",
+                "file": "commands/cmd.md",
+                "description": "Command with extension-relative paths",
+            },
+        ])
+        # Create a subdir so rewrite_extension_paths picks it up
+        (ext_dir / "agents").mkdir()
+        (ext_dir / "commands" / "cmd.md").write_text(dedent("""\
+            ---
+            description: Test command
+            ---
+            See agents/control/commander.md for instructions.
+        """))
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        skill_file = skills_dir / "speckit-path-rewrite-ext-cmd" / "SKILL.md"
+        assert skill_file.exists()
+        content = skill_file.read_text()
+        # Path must be rewritten to the installed extension location
+        assert ".specify/extensions/path-rewrite-ext/agents/control/commander.md" in content
+        # Must NOT appear as a bare relative path without the full prefix
+        assert "See agents/control/commander.md" not in content
