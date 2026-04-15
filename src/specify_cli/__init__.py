@@ -2286,15 +2286,8 @@ def integration_upgrade(
 
     selected_script = _resolve_script_type(project_root, script)
 
-    # Phase 1: Teardown old files
+    # Phase 1: Install new files (overwrites existing; old-only files remain)
     console.print(f"Upgrading integration: [cyan]{key}[/cyan]")
-    removed, skipped = old_manifest.uninstall(project_root, force=force)
-    if removed:
-        console.print(f"  Removed {len(removed)} old file(s)")
-    if skipped:
-        console.print(f"  [yellow]Preserved {len(skipped)} modified file(s)[/yellow]")
-
-    # Phase 2: Reinstall
     new_manifest = IntegrationManifest(key, project_root, version=get_speckit_version())
 
     parsed_options: dict[str, Any] | None = None
@@ -2319,14 +2312,32 @@ def integration_upgrade(
             console.print(
                 f"[yellow]Warning:[/yellow] Teardown during rollback also failed: {teardown_exc}"
             )
-        # Attempt to restore the old manifest so the project is not left broken
-        try:
-            old_manifest.save()
-            _write_integration_json(project_root, key, selected_script)
-        except Exception:
-            pass  # Best-effort restoration; original error is more important
         console.print(f"[red]Error:[/red] Failed to upgrade integration: {exc}")
         raise typer.Exit(1)
+
+    # Phase 2: Remove stale files from old manifest that are not in the new one
+    old_files = set(old_manifest.files.keys())
+    new_files = set(new_manifest.files.keys())
+    stale_files = old_files - new_files
+    stale_removed = 0
+    for rel in stale_files:
+        path = project_root / rel
+        if path.exists() and path.is_file():
+            try:
+                path.unlink()
+                stale_removed += 1
+                # Clean up empty parent directories up to project root
+                parent = path.parent
+                while parent != project_root:
+                    try:
+                        parent.rmdir()
+                    except OSError:
+                        break
+                    parent = parent.parent
+            except OSError:
+                pass
+    if stale_removed:
+        console.print(f"  Removed {stale_removed} stale file(s) from previous install")
 
     name = (integration.config or {}).get("name", key)
     console.print(f"\n[green]✓[/green] Integration '{name}' upgraded successfully")

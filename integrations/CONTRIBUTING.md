@@ -80,7 +80,7 @@ provides:
 | `schema_version` | Must be `"1.0"` |
 | `integration.id` | Lowercase alphanumeric + hyphens (`^[a-z0-9-]+$`) |
 | `integration.version` | Valid semantic version |
-| `requires.speckit_version` | PEP 440 version specifier |
+| `requires.speckit_version` | Required field; current validation checks presence only |
 | `provides` | Must include at least one command or script |
 | `provides.commands[].name` | String identifier |
 | `provides.commands[].file` | Relative path to template file |

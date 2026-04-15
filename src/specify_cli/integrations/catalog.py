@@ -66,8 +66,6 @@ class IntegrationCatalog:
     def __init__(self, project_root: Path) -> None:
         self.project_root = project_root
         self.cache_dir = project_root / ".specify" / "integrations" / ".cache"
-        self.cache_file = self.cache_dir / "catalog.json"
-        self.cache_metadata_file = self.cache_dir / "catalog-metadata.json"
 
     # -- URL validation ---------------------------------------------------
 
@@ -176,11 +174,13 @@ class IntegrationCatalog:
         if env_value:
             self._validate_catalog_url(env_value)
             if env_value != self.DEFAULT_CATALOG_URL:
-                print(
-                    "Warning: Using non-default integration catalog. "
-                    "Only use catalogs from sources you trust.",
-                    file=sys.stderr,
-                )
+                if not getattr(self, "_non_default_catalog_warning_shown", False):
+                    print(
+                        "Warning: Using non-default integration catalog. "
+                        "Only use catalogs from sources you trust.",
+                        file=sys.stderr,
+                    )
+                    self._non_default_catalog_warning_shown = True
             return [
                 IntegrationCatalogEntry(
                     url=env_value,
@@ -459,7 +459,7 @@ class IntegrationDescriptor:
                 "must be lowercase alphanumeric with hyphens only"
             )
 
-        if not re.match(r"^\d+\.\d+\.\d+", integ["version"]):
+        if not re.match(r"^\d+\.\d+\.\d+$", integ["version"]):
             raise IntegrationDescriptorError(
                 f"Invalid version '{integ['version']}': must use semantic versioning (e.g., 1.0.0)"
             )
