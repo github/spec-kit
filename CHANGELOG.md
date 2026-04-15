@@ -2,6 +2,20 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.7.1] - 2026-04-15
+
+### Changed
+
+- ci: add windows-latest to test matrix (#2233)
+- docs: remove deprecated --skip-tls references from local-development guide (#2231)
+- fix: allow Claude to chain skills for hook execution (#2227)
+- docs: merge TESTING.md into CONTRIBUTING.md, remove TESTING.md (#2228)
+- Add agent-assign extension to community catalog (#2030)
+- fix: unofficial PyPI warning (#1982) and legacy extension command name auto-correction (#2017) (#2027)
+- feat: register architect-preview in community catalog (#2214)
+- chore: deprecate --ai flag in favor of --integration on specify init (#2218)
+- chore: release 0.7.0, begin 0.7.1.dev0 development (#2217)
+
 ## [0.7.0] - 2026-04-14
 
 ### Changed
