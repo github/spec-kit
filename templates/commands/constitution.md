@@ -228,10 +228,12 @@ The constitution MUST:
 - Avoid one-off implementation details unless they are global rules.
 - Avoid pseudo-code unless it expresses a global engineering rule.
 
-The constitution MUST end with:
+The constitution MUST end with a concrete footer that uses the current date in ISO format `YYYY-MM-DD` for both date fields when creating a new solution. Do **not** leave literal placeholders such as `<TODAY>` in the generated file.
+
+Use this exact footer shape:
 
 ```
-**Version**: 1.0.0 | **Ratified**: <TODAY> | **Last Amended**: <TODAY>
+**Version**: 1.0.0 | **Ratified**: YYYY-MM-DD | **Last Amended**: YYYY-MM-DD
 ```
 
 ### B.4 — Output behavior for new solutions

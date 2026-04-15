@@ -161,6 +161,13 @@ class TestMainConstitutionCommandStructure:
         """New solutions must start at version 1.0.0."""
         assert "1.0.0" in self._content()
 
+    def test_path_b_requires_concrete_iso_dates_in_footer(self):
+        """Path B must require concrete ISO dates instead of leaving placeholders in the footer."""
+        content = self._content()
+        assert "current date in ISO format `YYYY-MM-DD`" in content
+        assert "Do **not** leave literal placeholders such as `<TODAY>`" in content
+        assert "**Ratified**: YYYY-MM-DD | **Last Amended**: YYYY-MM-DD" in content
+
     def test_path_b_safety_rails_forbid_functional_requirements(self):
         """Safety rails must explicitly forbid functional requirements in the constitution."""
         content = self._content()
