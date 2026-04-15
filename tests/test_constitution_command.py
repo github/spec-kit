@@ -33,7 +33,7 @@ class TestMainConstitutionCommandStructure:
         content = self._content()
         assert "Detection rule" in content
         assert ".specify/memory/constitution.md" in content
-        assert "unfilled" in content or "[PLACEHOLDER]" in content
+        assert "unfilled" in content or "[PROJECT_NAME]" in content
 
     def test_detection_distinguishes_initialized_repo_from_truly_new(self):
         """Missing working copies in initialized repos must route to Path A, not Path B."""
@@ -298,7 +298,7 @@ class TestLeanPresetConstitutionCommand:
         content = self._content()
         lines = content.split("\n")
         frontmatter_block = "\n".join(lines[:10])
-        assert "new" in frontmatter_block.lower() or "existing" in frontmatter_block.lower()
+        assert "new" in frontmatter_block.lower() and "existing" in frontmatter_block.lower()
 
     def test_lean_writes_to_memory_constitution(self):
         """Lean preset Path B must write to `.specify/memory/constitution.md`."""
