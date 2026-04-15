@@ -79,6 +79,41 @@ class TestMainConstitutionCommandStructure:
         for q in questions:
             assert q in content, f"Bootstrap question '{q}' missing from Path B"
 
+    def test_path_b_questions_include_options_or_examples(self):
+        """Bootstrap questions must include options or examples to reduce ambiguity."""
+        content = self._content()
+        # solution_type must offer structured options
+        assert "Windows desktop app" in content
+        assert "Web app" in content
+        assert "REST API" in content
+        assert "CLI tool" in content
+        # primary_stack must offer technology options
+        assert "C# / .NET" in content
+        assert "Python" in content
+        assert "TypeScript / Node.js" in content
+        # security_constraints must offer auth options
+        assert "OAuth 2.0" in content
+        assert "RBAC" in content
+        # data_rules must offer storage options
+        assert "SQL Server only" in content
+        assert "parameterized queries" in content
+        # quality_rules must offer quality options
+        assert "Unit tests" in content
+        assert "Structured logging" in content
+        # out_of_scope must offer exclusion options
+        assert "Feature-specific requirements" in content
+        assert "standard exclusions" in content
+
+    def test_path_b_questions_show_concrete_examples(self):
+        """Bootstrap questions must show concrete examples where applicable."""
+        content = self._content()
+        # solution_name should have name examples
+        assert "InventoryTracker" in content or "PayrollEngine" in content
+        # core_dependencies should have service examples
+        assert "Active Directory" in content
+        # boundary_rules should have boundary examples
+        assert "shared" in content.lower() or "public API" in content
+
     def test_path_b_normalizes_answers_into_categories(self):
         """Path B must normalize answers into constitution-friendly categories."""
         content = self._content()
@@ -212,6 +247,22 @@ class TestLeanPresetConstitutionCommand:
             "data_rules",
         ]:
             assert question_key in content, f"Bootstrap question '{question_key}' missing from lean preset"
+
+    def test_lean_bootstrap_questions_include_options(self):
+        """Lean preset bootstrap questions must include options to reduce ambiguity."""
+        content = self._content()
+        # solution_type must offer options
+        assert "Windows desktop app" in content
+        assert "REST API" in content
+        # primary_stack must offer technology options
+        assert "C# / .NET" in content
+        assert "Python" in content
+        # security_constraints must offer auth options
+        assert "OAuth 2.0" in content
+        # data_rules must offer storage options
+        assert "SQL Server" in content
+        # quality_rules must offer quality options
+        assert "Unit tests" in content
 
     def test_lean_path_b_constitution_sections(self):
         """Lean preset Path B must list the required constitution sections."""

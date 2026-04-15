@@ -138,18 +138,48 @@ If `solution_state = new`, do **NOT** draft the constitution yet.
 
 ### B.1 — Collect minimum durable inputs
 
-Ask exactly these questions to gather the information needed for a strong constitution. Do not ask for feature-by-feature requirements, screen flows, or pseudo-code.
+Ask exactly these questions to gather the information needed for a strong constitution. Do not ask for feature-by-feature requirements, screen flows, or pseudo-code. Present options and examples as shown below to reduce ambiguity.
 
 1. **solution_name** — "What is the name of the solution?"
+   - Example: `InventoryTracker`, `PayrollEngine`, `Contoso.Api`
+
 2. **solution_purpose** — "In 2–5 sentences, what is this solution for?"
-3. **solution_type** — "What type of solution is this? (examples: Windows desktop app, web app, API, background service, library)"
-4. **primary_stack** — "What is the expected primary stack or platform? (examples: C#/.NET, WPF, WinForms, ASP.NET Core, SQL Server)"
-5. **core_dependencies** — "What important external systems or dependencies does it rely on? If none, reply `none`."
-6. **security_constraints** — "What security or authentication constraints must always be followed? If unknown, reply `unknown`."
-7. **data_rules** — "What data/storage rules must always be followed? (examples: SQL Server only, parameterized queries only, no sensitive data in logs). If unknown, reply `unknown`."
-8. **quality_rules** — "What quality expectations must always apply? (examples: automated tests, structured logging, responsive UI, retry handling). If unknown, reply `unknown`."
-9. **boundary_rules** — "Does this solution need strict boundaries from other solutions or repos? If yes, describe them. If none, reply `none`."
-10. **out_of_scope** — "What kinds of details should NOT go into the constitution for this solution? (examples: feature-specific requirements, screen behavior, one-off SQL queries). If unsure, reply `standard exclusions`."
+   - Example: *"A desktop tool for warehouse staff to track incoming shipments, manage stock levels, and generate reorder reports. It replaces the current spreadsheet-based workflow."*
+
+3. **solution_type** — "What type of solution is this?"
+   - Options: `Windows desktop app` · `Web app` · `REST API` · `Background service / worker` · `Class library / SDK` · `CLI tool` · `Mobile app` · `Monorepo (multiple projects)`
+   - Pick one, or describe if none fit.
+
+4. **primary_stack** — "What is the expected primary stack or platform?"
+   - Options: `C# / .NET` · `Python` · `TypeScript / Node.js` · `Java / Spring` · `Go` · `Rust` · `Ruby / Rails`
+   - Include framework and database if known. Example: `C# / .NET 8, WPF, SQL Server` or `TypeScript, Next.js, PostgreSQL`
+
+5. **core_dependencies** — "What important external systems or dependencies does it rely on?"
+   - Examples: Active Directory, Azure Blob Storage, Stripe API, SAP, RabbitMQ, a shared internal auth service
+   - Reply `none` if the solution is self-contained.
+
+6. **security_constraints** — "What security or authentication constraints must always be followed?"
+   - Options: `Windows Auth / AD` · `OAuth 2.0 / OIDC` · `API keys` · `Certificate-based` · `Role-based access (RBAC)` · `No auth required`
+   - Also mention: secrets management, encryption-at-rest, PII handling, compliance standards (HIPAA, SOC 2, GDPR) if applicable.
+   - Reply `unknown` if not yet decided — safe defaults will be used.
+
+7. **data_rules** — "What data/storage rules must always be followed?"
+   - Options: `SQL Server only` · `PostgreSQL only` · `SQLite (local)` · `NoSQL (MongoDB, Cosmos)` · `File-based storage` · `No persistent storage`
+   - Also consider: parameterized queries only, no raw SQL in app code, no sensitive data in logs, soft-delete policy, audit trail required.
+   - Reply `unknown` if not yet decided — safe defaults will be used.
+
+8. **quality_rules** — "What quality expectations must always apply?"
+   - Options: `Unit tests required` · `Integration tests required` · `Code review required` · `CI pipeline must pass` · `Structured logging` · `Responsive UI (< 200ms)` · `Retry / resilience handling` · `Accessibility (WCAG)`
+   - Pick all that apply, or describe your own.
+   - Reply `unknown` if not yet decided — safe defaults will be used.
+
+9. **boundary_rules** — "Does this solution need strict boundaries from other solutions or repos?"
+   - Examples: *"Must not share a database with the billing system"*, *"Must communicate with the auth service only via its public API"*, *"Must be deployable independently from the monorepo"*
+   - Reply `none` if there are no cross-solution boundaries.
+
+10. **out_of_scope** — "What kinds of details should NOT go into the constitution?"
+    - Options: `Feature-specific requirements` · `Screen-by-screen UI behavior` · `One-off SQL queries` · `Sprint-level priorities` · `Individual user stories`
+    - Reply `standard exclusions` to use the defaults above.
 
 ### B.2 — Normalize answers into constitution categories
 
