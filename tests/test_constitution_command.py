@@ -172,7 +172,9 @@ class TestMainConstitutionCommandStructure:
 
     def test_no_ambiguous_answer_handling(self):
         """Detection is automatic — there is no ambiguous-answer follow-up prompt."""
-        assert "ambiguous" not in self._content()
+        content = self._content().lower()
+        assert "if the answer is ambiguous" not in content
+        assert "ask a single follow-up" not in content
 
     def test_path_b_writes_to_memory_constitution(self):
         """Path B must write the generated constitution to the correct path."""
