@@ -23,23 +23,17 @@ def _has_working_bash() -> bool:
     """
     if os.environ.get("SPECKIT_TEST_BASH") == "1":
         return True
-    if shutil.which("bash") is None:
+    bash_path = shutil.which("bash")
+    if bash_path is None:
         return False
-    try:
-        r = subprocess.run(
-            ["bash", "-c", "echo ok"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if r.returncode != 0 or "ok" not in r.stdout:
-            return False
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    # On Windows, verify we have MSYS/MINGW bash (Git for Windows),
-    # not the WSL launcher which can't handle native paths.
+    # On Windows, reject the WSL launcher early (avoids WSL init prompts
+    # and the 5 s timeout) and only accept MSYS/MINGW/CYGWIN bash.
     if sys.platform == "win32":
+        if "system32" in bash_path.lower():
+            return False
         try:
             u = subprocess.run(
-                ["bash", "-c", "uname -s"],
+                [bash_path, "-c", "uname -s"],
                 capture_output=True, text=True, timeout=5,
             )
             kernel = u.stdout.strip().upper()
@@ -47,6 +41,15 @@ def _has_working_bash() -> bool:
                 return False
         except (OSError, subprocess.TimeoutExpired):
             return False
+    try:
+        r = subprocess.run(
+            [bash_path, "-c", "echo ok"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode != 0 or "ok" not in r.stdout:
+            return False
+    except (OSError, subprocess.TimeoutExpired):
+        return False
     return True
 
 
