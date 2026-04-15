@@ -105,6 +105,10 @@ class IntegrationCatalog:
             raise IntegrationCatalogError(
                 f"Failed to read catalog config {config_path}: {exc}"
             )
+        if not isinstance(data, dict):
+            raise IntegrationCatalogError(
+                f"Invalid catalog config {config_path}: expected a YAML mapping at the root"
+            )
         catalogs_data = data.get("catalogs", [])
         if not catalogs_data:
             raise IntegrationCatalogError(
@@ -267,17 +271,20 @@ class IntegrationCatalog:
                     f"Invalid catalog format from {entry.url}: 'integrations' must be a JSON object"
                 )
 
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(json.dumps(catalog_data, indent=2))
-            cache_meta.write_text(
-                json.dumps(
-                    {
-                        "cached_at": datetime.now(timezone.utc).isoformat(),
-                        "catalog_url": entry.url,
-                    },
-                    indent=2,
+            try:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                cache_file.write_text(json.dumps(catalog_data, indent=2))
+                cache_meta.write_text(
+                    json.dumps(
+                        {
+                            "cached_at": datetime.now(timezone.utc).isoformat(),
+                            "catalog_url": entry.url,
+                        },
+                        indent=2,
+                    )
                 )
-            )
+            except OSError:
+                pass  # Cache is best-effort; proceed with fetched data
             return catalog_data
 
         except urllib.error.URLError as exc:
@@ -294,8 +301,10 @@ class IntegrationCatalog:
     ) -> List[Dict[str, Any]]:
         """Fetch and merge integrations from all active catalogs.
 
-        Higher-priority catalogs win on conflicts.  Each dict is annotated
-        with ``_catalog_name`` and ``_install_allowed``.
+        Catalogs are processed in the order returned by
+        :meth:`get_active_catalogs`.  On conflicts, the first catalog in that
+        order wins (lower numeric priority = higher precedence).  Each dict is
+        annotated with ``_catalog_name`` and ``_install_allowed``.
         """
         import sys
 
@@ -315,6 +324,8 @@ class IntegrationCatalog:
                 continue
 
             for integ_id, integ_data in data.get("integrations", {}).items():
+                if not isinstance(integ_data, dict):
+                    continue
                 if integ_id not in merged:
                     merged[integ_id] = {
                         **integ_data,
@@ -343,18 +354,21 @@ class IntegrationCatalog:
         for item in self._get_merged_integrations():
             if author and item.get("author", "").lower() != author.lower():
                 continue
-            if tag and tag.lower() not in [
-                t.lower() for t in item.get("tags", [])
-            ]:
-                continue
+            if tag:
+                raw_tags = item.get("tags", [])
+                tags_list = raw_tags if isinstance(raw_tags, list) else []
+                if tag.lower() not in [t.lower() for t in tags_list if isinstance(t, str)]:
+                    continue
             if query:
+                raw_tags = item.get("tags", [])
+                tags_list = raw_tags if isinstance(raw_tags, list) else []
                 haystack = " ".join(
                     [
                         item.get("name", ""),
                         item.get("description", ""),
                         item.get("id", ""),
                     ]
-                    + item.get("tags", [])
+                    + [t for t in tags_list if isinstance(t, str)]
                 ).lower()
                 if query.lower() not in haystack:
                     continue

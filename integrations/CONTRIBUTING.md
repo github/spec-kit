@@ -17,18 +17,21 @@ Built-in integrations are maintained by the Spec Kit core team and ship with the
 
 ### Catalog Entry Format
 
-Add your integration to `integrations/catalog.json`:
+Add your integration under the top-level `integrations` key in `integrations/catalog.json`:
 
 ```json
 {
-  "my-agent": {
-    "id": "my-agent",
-    "name": "My Agent",
-    "version": "1.0.0",
-    "description": "Integration for My Agent",
-    "author": "spec-kit-core",
-    "repository": "https://github.com/github/spec-kit",
-    "tags": ["cli"]
+  "schema_version": "1.0",
+  "integrations": {
+    "my-agent": {
+      "id": "my-agent",
+      "name": "My Agent",
+      "version": "1.0.0",
+      "description": "Integration for My Agent",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    }
   }
 }
 ```
@@ -88,18 +91,21 @@ provides:
 ### Submitting to the Community Catalog
 
 1. **Fork** the [spec-kit repository](https://github.com/github/spec-kit)
-2. **Add your entry** to `integrations/catalog.community.json`:
+2. **Add your entry** under the `integrations` key in `integrations/catalog.community.json`:
 
 ```json
 {
-  "my-agent": {
-    "id": "my-agent",
-    "name": "My Agent",
-    "version": "1.0.0",
-    "description": "Integration for My Agent",
-    "author": "your-name",
-    "repository": "https://github.com/your-name/speckit-my-agent",
-    "tags": ["cli"]
+  "schema_version": "1.0",
+  "integrations": {
+    "my-agent": {
+      "id": "my-agent",
+      "name": "My Agent",
+      "version": "1.0.0",
+      "description": "Integration for My Agent",
+      "author": "your-name",
+      "repository": "https://github.com/your-name/speckit-my-agent",
+      "tags": ["cli"]
+    }
   }
 }
 ```
