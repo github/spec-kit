@@ -284,7 +284,7 @@ class TestLeanPresetConstitutionCommand:
         content = self._content()
         lines = content.split("\n")
         frontmatter_block = "\n".join(lines[:10])
-        assert "new" in frontmatter_block.lower() or "existing" in frontmatter_block.lower()
+        assert "new" in frontmatter_block.lower() and "existing" in frontmatter_block.lower()
 
     def test_lean_writes_to_memory_constitution(self):
         """Lean preset Path B must write to `.specify/memory/constitution.md`."""
