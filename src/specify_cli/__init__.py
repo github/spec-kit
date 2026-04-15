@@ -2319,17 +2319,17 @@ def integration_upgrade(
         raise typer.Exit(1)
 
     # Phase 2: Remove stale files from old manifest that are not in the new one
-    resolved_project_root = project_root.resolve()
+    root = project_root.resolve()
     old_files = set(old_manifest.files.keys())
     new_files = set(new_manifest.files.keys())
     stale_files = old_files - new_files
     stale_removed = 0
     for rel in stale_files:
-        path = project_root / rel
+        path = root / rel
         # Validate containment to prevent path traversal from tampered manifests
         try:
             normed = Path(os.path.normpath(path))
-            normed.relative_to(resolved_project_root)
+            normed.relative_to(root)
         except (ValueError, OSError):
             continue
         if path.is_symlink() or path.is_file():
@@ -2338,7 +2338,7 @@ def integration_upgrade(
                 stale_removed += 1
                 # Clean up empty parent directories up to project root
                 parent = path.parent
-                while parent != project_root:
+                while parent != root:
                     try:
                         parent.rmdir()
                     except OSError:
