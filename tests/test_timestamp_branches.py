@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -149,6 +150,7 @@ def source_and_call(func_call: str, env: dict | None = None) -> subprocess.Compl
 # ── Timestamp Branch Tests ───────────────────────────────────────────────────
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
 class TestTimestampBranch:
     def test_timestamp_creates_branch(self, git_repo: Path):
         """Test 1: --timestamp creates branch with YYYYMMDD-HHMMSS prefix."""
@@ -194,6 +196,7 @@ class TestTimestampBranch:
 # ── Sequential Branch Tests ──────────────────────────────────────────────────
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
 class TestSequentialBranch:
     def test_sequential_default_with_existing_specs(self, git_repo: Path):
         """Test 2: Sequential default with existing specs."""
@@ -242,6 +245,7 @@ class TestSequentialBranch:
 # ── check_feature_branch Tests ───────────────────────────────────────────────
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
 class TestCheckFeatureBranch:
     def test_accepts_timestamp_branch(self):
         """Test 6: check_feature_branch accepts timestamp branch."""
@@ -306,6 +310,7 @@ class TestCheckFeatureBranch:
 # ── find_feature_dir_by_prefix Tests ─────────────────────────────────────────
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
 class TestFindFeatureDirByPrefix:
     def test_timestamp_branch(self, tmp_path: Path):
         """Test 10: find_feature_dir_by_prefix with timestamp branch."""
@@ -356,6 +361,7 @@ class TestFindFeatureDirByPrefix:
 
 
 class TestGetFeaturePathsSinglePrefix:
+    @pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
     def test_bash_specify_feature_prefixed_resolves_by_prefix(self, tmp_path: Path):
         """get_feature_paths: SPECIFY_FEATURE with one optional prefix uses effective name for lookup."""
         (tmp_path / ".specify").mkdir()
@@ -399,6 +405,7 @@ class TestGetFeaturePathsSinglePrefix:
 # ── get_current_branch Tests ─────────────────────────────────────────────────
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
 class TestGetCurrentBranch:
     def test_env_var(self):
         """Test 12: get_current_branch returns SPECIFY_FEATURE env var."""
@@ -409,6 +416,7 @@ class TestGetCurrentBranch:
 # ── No-git Tests ─────────────────────────────────────────────────────────────
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
 class TestNoGitTimestamp:
     def test_no_git_timestamp(self, no_git_dir: Path):
         """Test 13: No-git repo + timestamp creates spec dir with warning."""
@@ -422,6 +430,7 @@ class TestNoGitTimestamp:
 # ── E2E Flow Tests ───────────────────────────────────────────────────────────
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
 class TestE2EFlow:
     def test_e2e_timestamp(self, git_repo: Path):
         """Test 14: E2E timestamp flow — branch, dir, validation."""
@@ -455,6 +464,7 @@ class TestE2EFlow:
 # ── Allow Existing Branch Tests ──────────────────────────────────────────────
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
 class TestAllowExistingBranch:
     def test_allow_existing_switches_to_branch(self, git_repo: Path):
         """T006: Pre-create branch, verify script switches to it."""
@@ -655,6 +665,7 @@ class TestGitExtensionParity:
 # ── Dry-Run Tests ────────────────────────────────────────────────────────────
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
 class TestDryRun:
     def test_dry_run_sequential_outputs_name(self, git_repo: Path):
         """T009: Dry-run computes correct branch name with existing specs."""
@@ -984,6 +995,7 @@ class TestPowerShellDryRun:
 # ── GIT_BRANCH_NAME Override Tests ──────────────────────────────────────────
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
 class TestGitBranchNameOverrideBash:
     """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature.sh."""
 
@@ -1088,6 +1100,7 @@ class TestGitBranchNameOverridePowerShell:
 class TestFeatureDirectoryResolution:
     """Tests for SPECIFY_FEATURE_DIRECTORY and .specify/feature.json resolution."""
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
     def test_env_var_overrides_branch_lookup(self, git_repo: Path):
         """SPECIFY_FEATURE_DIRECTORY env var takes priority over branch-based lookup."""
         custom_dir = git_repo / "my-custom-specs" / "my-feature"
@@ -1110,6 +1123,7 @@ class TestFeatureDirectoryResolution:
         else:
             pytest.fail("FEATURE_DIR not found in output")
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
     def test_feature_json_overrides_branch_lookup(self, git_repo: Path):
         """feature.json feature_directory takes priority over branch-based lookup."""
         custom_dir = git_repo / "specs" / "custom-feature"
@@ -1136,6 +1150,7 @@ class TestFeatureDirectoryResolution:
         else:
             pytest.fail("FEATURE_DIR not found in output")
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
     def test_env_var_takes_priority_over_feature_json(self, git_repo: Path):
         """Env var wins over feature.json."""
         env_dir = git_repo / "specs" / "env-feature"
@@ -1165,6 +1180,7 @@ class TestFeatureDirectoryResolution:
         else:
             pytest.fail("FEATURE_DIR not found in output")
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
     def test_fallback_to_branch_lookup(self, git_repo: Path):
         """Without env var or feature.json, falls back to branch-based lookup."""
         subprocess.run(["git", "checkout", "-q", "-b", "001-test-feat"], cwd=git_repo, check=True)
