@@ -2,6 +2,102 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.7.0] - 2026-04-14
+
+### Changed
+
+- Add workflow engine with catalog system (#2158)
+- docs(catalog): add claude-ask-questions to community preset catalog (#2191)
+- Add SFSpeckit — Salesforce SDD Extension (#2208)
+- feat(scripts): optional single-segment branch prefix for gitflow (#2202)
+- chore: release 0.6.2, begin 0.6.3.dev0 development (#2205)
+- Add Worktrees extension to community catalog (#2207)
+- feat: Update catalog.community.json for preset-fiction-book-writing (#2199)
+
+## [0.6.2] - 2026-04-13
+
+### Changed
+
+- feat: Register "What-if Analysis" community extension (#2182)
+- feat: add GitHub Issues Integration to community catalog (#2188)
+- feat(agents): add Goose AI agent support (#2015)
+- Update ralph extension to v1.0.1 in community catalog (#2192)
+- fix: skip docs deployment workflow on forks (#2171)
+- chore: release 0.6.1, begin 0.6.2.dev0 development (#2162)
+
+## [0.6.1] - 2026-04-10
+
+### Changed
+
+- feat: add bundled lean preset with minimal workflow commands (#2161)
+- Add Brownfield Bootstrap extension to community catalog (#2145)
+- Add CI Guard extension to community catalog (#2157)
+- Add SpecTest extension to community catalog (#2159)
+- fix: bundled extensions should not have download URLs (#2155)
+- Add PR Bridge extension to community catalog (#2148)
+- feat(cursor-agent): migrate from .cursor/commands to .cursor/skills (#2156)
+- Add TinySpec extension to community catalog (#2147)
+- chore: bump spec-kit-verify to 1.0.3 and spec-kit-review to 1.0.1 (#2146)
+- Add Status Report extension to community catalog (#2123)
+- chore: release 0.6.0, begin 0.6.1.dev0 development (#2144)
+
+## [0.6.0] - 2026-04-09
+
+### Changed
+
+- Add Bugfix Workflow community extension to catalog and README (#2135)
+- Add Worktree Isolation extension to community catalog (#2143)
+- Add multi-repo-branching preset to community catalog (#2139)
+- Readme clarity (#2013)
+- Rewrite AGENTS.md for integration architecture (#2119)
+- docs: add SpecKit Companion to Community Friends section (#2140)
+- feat: add memorylint extension to community catalog (#2138)
+- chore: release 0.5.1, begin 0.5.2.dev0 development (#2137)
+
+## [0.5.1] - 2026-04-08
+
+### Changed
+
+- fix: pin typer>=0.24.0 and click>=8.2.1 to fix import crash (#2136)
+- feat: update fleet extension to v1.1.0 (#2029)
+- fix(forge): use hyphen notation in frontmatter name field (#2075)
+- fix(bash): sed replacement escaping, BSD portability, dead cleanup in update-agent-context.sh (#2090)
+- Add Spec Diagram community extension to catalog and README (#2129)
+- feat: Git extension stage 2 — GIT_BRANCH_NAME override, --force for existing dirs, auto-install tests (#1940) (#2117)
+- fix(git): surface checkout errors for existing branches (#2122)
+- Add Branch Convention community extension to catalog and README (#2128)
+- docs: lighten March 2026 newsletter for readability (#2127)
+- fix: restore alias compatibility for community extensions (#2110) (#2125)
+- Added March 2026 newsletter (#2124)
+- Add Spec Refine community extension to catalog and README (#2118)
+- Add explicit-task-dependencies community preset to catalog and README (#2091)
+- Add toc-navigation community preset to catalog and README (#2080)
+- fix: prevent ambiguous TOML closing quotes when body ends with `"` (#2113) (#2115)
+- fix speckit issue for trae (#2112)
+- feat: Git extension stage 1 — bundled `extensions/git` with hooks on all core commands (#1941)
+- Upgraded confluence extension to v.1.1.1 (#2109)
+- Update V-Model Extension Pack to v0.5.0 (#2108)
+- Add canon extension and canon-core preset. (#2022)
+- [stage2] fix: serialize multiline descriptions in legacy TOML renderer (#2097)
+- [stage1] fix: strip YAML frontmatter from TOML integration prompts (#2096)
+- Add Confluence extension (#2028)
+- fix: accept 4+ digit spec numbers in tests and docs (#2094)
+- fix(scripts): improve git branch creation error handling (#2089)
+- Add optimize extension to community catalog (#2088)
+- feat: add "VS Code Ask Questions" preset (#2086)
+- Add security-review v1.1.1 to community extensions catalog (#2073)
+- Add `specify integration` subcommand for post-init integration management (#2083)
+- Remove template version info from CLI, fix Claude user-invocable, cleanup dead code (#2081)
+- fix: add user-invocable: true to skill frontmatter (#2077)
+- fix: add actions:write permission to stale workflow (#2079)
+- feat: add argument-hint frontmatter to Claude Code commands (#1951) (#2059)
+- Update conduct extension to v1.0.1 (#2078)
+- chore(deps): bump astral-sh/setup-uv from 7.6.0 to 8.0.0 (#2072)
+- chore(deps): bump actions/configure-pages from 5 to 6 (#2071)
+- feat: add spec-kit-fixit extension to community catalog (#2024)
+- chore: release 0.5.0, begin 0.5.1.dev0 development (#2070)
+- feat: add Forgecode agent support (#2034)
+
 ## [0.5.0] - 2026-04-02
 
 ### Changed

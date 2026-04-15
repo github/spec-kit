@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-06T06:30:00Z",
+  "updated_at": "2026-04-13T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "aide-in-place": {
@@ -53,6 +53,33 @@
         "spec-first"
       ]
     },
+    "claude-ask-questions": {
+      "name": "Claude AskUserQuestion",
+      "id": "claude-ask-questions",
+      "version": "1.0.0",
+      "description": "Upgrades /speckit.clarify and /speckit.checklist on Claude Code from Markdown-table prompts to the native AskUserQuestion picker, with a recommended option and reasoning on every question.",
+      "author": "0xrafasec",
+      "repository": "https://github.com/0xrafasec/spec-kit-preset-claude-ask-questions",
+      "download_url": "https://github.com/0xrafasec/spec-kit-preset-claude-ask-questions/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/0xrafasec/spec-kit-preset-claude-ask-questions",
+      "documentation": "https://github.com/0xrafasec/spec-kit-preset-claude-ask-questions/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 2
+      },
+      "tags": [
+        "claude",
+        "ask-user-question",
+        "clarify",
+        "checklist"
+      ],
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
     "explicit-task-dependencies": {
       "name": "Explicit Task Dependencies",
       "id": "explicit-task-dependencies",
@@ -77,6 +104,67 @@
         "scheduling",
         "wave-dag"
       ]
+    },
+    "fiction-book-writing": {
+      "name": "Fiction Book Writing",
+      "id": "fiction-book-writing",
+      "version": "1.3.0",
+      "description": "Spec-Driven Development for novel and long-form fiction. Replaces software engineering terminology with storytelling craft: specs become story briefs, plans become story structures, and tasks become scene-by-scene writing tasks. Supports 8 POV modes, all major plot structure frameworks, 5 humanized-AI prose profiles, and exports to DOCX/EPUB/LaTeX via pandoc.",
+      "author": "Andreas Daumann",
+      "repository": "https://github.com/adaumann/speckit-preset-fiction-book-writing",
+      "download_url": "https://github.com/adaumann/speckit-preset-fiction-book-writing/archive/refs/tags/v1.3.0.zip",
+      "homepage": "https://github.com/adaumann/speckit-preset-fiction-book-writing",
+      "documentation": "https://github.com/adaumann/speckit-preset-fiction-book-writing/blob/main/fiction-book-writing/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.5.0"
+      },
+      "provides": {
+        "templates": 21,
+        "commands": 17,
+        "scripts": 1
+      },
+      "tags": [
+        "writing",
+        "novel",
+        "book",
+        "fiction",
+        "storytelling",
+        "creative-writing",
+        "kdp",
+        "single-pov",
+        "multi-pov",
+        "export"
+      ],
+      "created_at": "2026-04-09T08:00:00Z",
+      "updated_at": "2026-04-09T08:00:00Z"
+    },
+    "multi-repo-branching": {
+      "name": "Multi-Repo Branching",
+      "id": "multi-repo-branching",
+      "version": "1.0.0",
+      "description": "Coordinates feature branch creation across multiple git repositories (independent repos and submodules) during plan and tasks phases.",
+      "author": "sakitA",
+      "repository": "https://github.com/sakitA/spec-kit-preset-multi-repo-branching",
+      "download_url": "https://github.com/sakitA/spec-kit-preset-multi-repo-branching/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/sakitA/spec-kit-preset-multi-repo-branching",
+      "documentation": "https://github.com/sakitA/spec-kit-preset-multi-repo-branching/blob/master/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 2
+      },
+      "tags": [
+        "multi-repo-branching",
+        "multi-module",
+        "submodules",
+        "monorepo"
+      ],
+      "created_at": "2026-04-09T00:00:00Z",
+      "updated_at": "2026-04-09T00:00:00Z"
     },
     "pirate": {
       "name": "Pirate Speak (Full)",
