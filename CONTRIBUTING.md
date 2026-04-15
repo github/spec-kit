@@ -73,8 +73,6 @@ For the smoothest review experience, validate changes in this order:
 
 ### Automated checks
 
-Run these before manual testing when your change affects scaffolding, templates, or agent wiring.
-
 #### Agent configuration and wiring consistency
 
 ```bash
@@ -96,8 +94,8 @@ uv pip install -e .
 # Ensure the `specify` binary in this environment points at your working tree so the agent runs the branch you're testing.
 
 # Initialize a test project using your local changes
-uv run specify init /tmp/speckit-test --ai <agent> --offline
-cd /tmp/speckit-test
+uv run specify init <temp-dir>/speckit-test --ai <agent> --offline
+cd <temp-dir>/speckit-test
 
 # Open in your agent
 ```
