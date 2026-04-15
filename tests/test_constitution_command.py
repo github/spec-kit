@@ -33,7 +33,7 @@ class TestMainConstitutionCommandStructure:
         content = self._content()
         assert "Detection rule" in content
         assert ".specify/memory/constitution.md" in content
-        assert "unfilled" in content or "[PLACEHOLDER]" in content
+        assert "unfilled" in content or "[PROJECT_NAME]" in content
 
     def test_detection_is_automatic_no_user_prompt(self):
         """Detection must be fully automatic — the command must not ask the user."""
