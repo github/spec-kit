@@ -357,7 +357,10 @@ class IntegrationCatalog:
         """Search catalogs for integrations matching the given filters."""
         results: List[Dict[str, Any]] = []
         for item in self._get_merged_integrations():
-            if author and item.get("author", "").lower() != author.lower():
+            author_val = item.get("author", "")
+            if not isinstance(author_val, str):
+                author_val = str(author_val) if author_val is not None else ""
+            if author and author_val.lower() != author.lower():
                 continue
             if tag:
                 raw_tags = item.get("tags", [])
@@ -367,11 +370,14 @@ class IntegrationCatalog:
             if query:
                 raw_tags = item.get("tags", [])
                 tags_list = raw_tags if isinstance(raw_tags, list) else []
+                name_val = item.get("name", "")
+                desc_val = item.get("description", "")
+                id_val = item.get("id", "")
                 haystack = " ".join(
                     [
-                        item.get("name", ""),
-                        item.get("description", ""),
-                        item.get("id", ""),
+                        str(name_val) if name_val else "",
+                        str(desc_val) if desc_val else "",
+                        str(id_val) if id_val else "",
                     ]
                     + [t for t in tags_list if isinstance(t, str)]
                 ).lower()
@@ -502,6 +508,10 @@ class IntegrationDescriptor:
             raise IntegrationDescriptorError(
                 "Missing requires.speckit_version"
             )
+        if not isinstance(requires["speckit_version"], str) or not requires["speckit_version"].strip():
+            raise IntegrationDescriptorError(
+                "requires.speckit_version must be a non-empty string"
+            )
 
         provides = self.data["provides"]
         if not isinstance(provides, dict):
@@ -530,6 +540,20 @@ class IntegrationDescriptor:
             if "name" not in cmd or "file" not in cmd:
                 raise IntegrationDescriptorError(
                     "Command entry missing 'name' or 'file'"
+                )
+            cmd_name = cmd["name"]
+            cmd_file = cmd["file"]
+            if not isinstance(cmd_name, str) or not cmd_name.strip():
+                raise IntegrationDescriptorError(
+                    "Command entry 'name' must be a non-empty string"
+                )
+            if not isinstance(cmd_file, str) or not cmd_file.strip():
+                raise IntegrationDescriptorError(
+                    "Command entry 'file' must be a non-empty string"
+                )
+            if os.path.isabs(cmd_file) or ".." in Path(cmd_file).parts:
+                raise IntegrationDescriptorError(
+                    f"Command entry 'file' must be a relative path without '..': {cmd_file}"
                 )
 
     # -- Property accessors -----------------------------------------------

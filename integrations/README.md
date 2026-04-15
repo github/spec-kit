@@ -12,6 +12,25 @@ Contains integrations that ship with Spec Kit. These are maintained by the core 
 
 Community-contributed integrations. Listed for discovery only — users install from the source repositories.
 
+## Catalog Configuration
+
+The catalog stack is resolved in this order (first match wins):
+
+1. **Environment variable** — `SPECKIT_INTEGRATION_CATALOG_URL` overrides all catalogs with a single URL
+2. **Project config** — `.specify/integration-catalogs.yml` in the project root
+3. **User config** — `~/.specify/integration-catalogs.yml` in the user home directory
+4. **Built-in defaults** — `catalog.json` + `catalog.community.json`
+
+Example `integration-catalogs.yml`:
+
+```yaml
+catalogs:
+  - url: "https://example.com/my-catalog.json"
+    name: "my-catalog"
+    priority: 1
+    install_allowed: true
+```
+
 ## CLI Commands
 
 ```bash
@@ -99,7 +118,7 @@ Both catalog files follow the same JSON schema:
 |-------|------|----------|-------------|
 | `id` | string | Yes | Unique ID (lowercase alphanumeric + hyphens) |
 | `name` | string | Yes | Human-readable display name |
-| `version` | string | Yes | Semantic version |
+| `version` | string | Yes | PEP 440 version (e.g., `1.0.0`, `1.0.0a1`) |
 | `description` | string | Yes | One-line description |
 | `author` | string | No | Author name or organization |
 | `repository` | string | No | Source repository URL |

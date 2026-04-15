@@ -2335,7 +2335,7 @@ def integration_upgrade(
             normed.relative_to(resolved_project_root)
         except (ValueError, OSError):
             continue
-        if path.exists() and path.is_file():
+        if path.is_symlink() or path.is_file():
             try:
                 path.unlink()
                 stale_removed += 1
