@@ -8,10 +8,11 @@ Built-in integrations are maintained by the Spec Kit core team and ship with the
 
 ### Checklist
 
-1. **Create the integration subpackage** under `src/specify_cli/integrations/<name>/`
+1. **Create the integration subpackage** under `src/specify_cli/integrations/<package_dir>/`
+   — `<package_dir>` matches the integration key when it contains no hyphens (e.g., `gemini`), or replaces hyphens with underscores when it does (e.g., key `cursor-agent` → directory `cursor_agent/`, key `kiro-cli` → directory `kiro_cli/`). Python package names cannot use hyphens.
 2. **Implement the integration class** extending `MarkdownIntegration`, `TomlIntegration`, or `SkillsIntegration`
 3. **Register the integration** in `src/specify_cli/integrations/__init__.py`
-4. **Add tests** under `tests/integrations/test_integration_<name>.py`
+4. **Add tests** under `tests/integrations/test_integration_<package_dir>.py`
 5. **Add a catalog entry** in `integrations/catalog.json`
 6. **Update documentation** in `AGENTS.md` and `README.md`
 
