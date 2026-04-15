@@ -253,7 +253,7 @@ class IntegrationCatalog:
                     cache_file.unlink(missing_ok=True)
                     cache_meta.unlink(missing_ok=True)
                 except OSError:
-                    pass
+                    pass  # Cache cleanup is best-effort; ignore deletion failures.
 
         try:
             with urllib.request.urlopen(entry.url, timeout=10) as resp:
