@@ -449,6 +449,10 @@ class IntegrationDescriptor:
     # -- Validation -------------------------------------------------------
 
     def _validate(self) -> None:
+        if not isinstance(self.data, dict):
+            raise IntegrationDescriptorError(
+                f"Descriptor root must be a YAML mapping, got {type(self.data).__name__}"
+            )
         for field in self.REQUIRED_TOP_LEVEL:
             if field not in self.data:
                 raise IntegrationDescriptorError(

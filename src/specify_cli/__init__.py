@@ -2286,6 +2286,12 @@ def integration_upgrade(
 
     selected_script = _resolve_script_type(project_root, script)
 
+    # Ensure shared infrastructure is present (safe to run unconditionally;
+    # _install_shared_infra merges missing files without overwriting).
+    _install_shared_infra(project_root, selected_script)
+    if os.name != "nt":
+        ensure_executable_scripts(project_root)
+
     # Phase 1: Install new files (overwrites existing; old-only files remain)
     console.print(f"Upgrading integration: [cyan]{key}[/cyan]")
     new_manifest = IntegrationManifest(key, project_root, version=get_speckit_version())
