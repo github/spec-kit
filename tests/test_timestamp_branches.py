@@ -1235,7 +1235,7 @@ class TestFeatureDirectoryResolution:
 
         feature_json = git_repo / ".specify" / "feature.json"
         feature_json.write_text(
-            f'{{"feature_directory": "{custom_dir}"}}\n',
+            json.dumps({"feature_directory": str(custom_dir)}) + "\n",
             encoding="utf-8",
         )
 

@@ -11,6 +11,7 @@ Tests cover:
 
 import pytest
 import json
+import platform
 import tempfile
 import shutil
 import tomllib
@@ -1452,6 +1453,7 @@ scripts:
   ps: ../../scripts/powershell/setup-plan.ps1 -Json
 agent_scripts:
   sh: ../../scripts/bash/update-agent-context.sh __AGENT__
+  ps: ../../scripts/powershell/update-agent-context.ps1 __AGENT__
 ---
 
 Run {SCRIPT}
@@ -1473,8 +1475,12 @@ Then {AGENT_SCRIPT}
         content = skill_file.read_text()
         assert "{SCRIPT}" not in content
         assert "{AGENT_SCRIPT}" not in content
-        assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
-        assert ".specify/scripts/bash/update-agent-context.sh codex" in content
+        if platform.system().lower().startswith("win"):
+            assert ".specify/scripts/powershell/setup-plan.ps1 -Json" in content
+            assert ".specify/scripts/powershell/update-agent-context.ps1 codex" in content
+        else:
+            assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+            assert ".specify/scripts/bash/update-agent-context.sh codex" in content
 
     def test_codex_skill_registration_handles_non_dict_init_options(
         self, project_dir, temp_dir

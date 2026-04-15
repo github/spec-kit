@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import sys
 
 import pytest
 
@@ -41,8 +42,9 @@ class TestManifestPathTraversal:
 
     def test_record_file_rejects_absolute_path(self, tmp_path):
         m = IntegrationManifest("test", tmp_path)
+        abs_path = "C:\\tmp\\escape.txt" if sys.platform == "win32" else "/tmp/escape.txt"
         with pytest.raises(ValueError, match="Absolute paths"):
-            m.record_file("/tmp/escape.txt", "bad")
+            m.record_file(abs_path, "bad")
 
     def test_record_existing_rejects_parent_traversal(self, tmp_path):
         escape = tmp_path.parent / "escape.txt"
