@@ -8,10 +8,11 @@ to .mdc files so that Cursor IDE auto-includes the rules.
 import os
 import shutil
 import subprocess
-import sys
 import textwrap
 
 import pytest
+
+from tests.conftest import requires_bash
 
 SCRIPT_PATH = os.path.join(
     os.path.dirname(__file__),
@@ -74,7 +75,7 @@ class TestScriptFrontmatterPattern:
 
 
 @requires_git
-@pytest.mark.skipif(sys.platform == "win32", reason="bash not available on Windows")
+@requires_bash
 class TestCursorFrontmatterIntegration:
     """Integration tests using a real git repo."""
 
