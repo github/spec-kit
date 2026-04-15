@@ -76,6 +76,7 @@ class TestActiveCatalogs:
     def test_defaults_when_no_config(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
         (tmp_path / ".specify").mkdir()
         cat = IntegrationCatalog(tmp_path)
         active = cat.get_active_catalogs()
@@ -153,6 +154,9 @@ class TestCatalogFetch:
         monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
 
     def test_fetch_and_search_all(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
         (tmp_path / ".specify").mkdir()
         cat = IntegrationCatalog(tmp_path)
 
@@ -178,6 +182,9 @@ class TestCatalogFetch:
         assert "acme-coder" in ids
 
     def test_search_by_tag(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
         (tmp_path / ".specify").mkdir()
         cat = IntegrationCatalog(tmp_path)
 
@@ -195,6 +202,9 @@ class TestCatalogFetch:
         assert all("cli" in r.get("tags", []) for r in results)
 
     def test_search_by_query(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
         (tmp_path / ".specify").mkdir()
         cat = IntegrationCatalog(tmp_path)
 
@@ -213,6 +223,9 @@ class TestCatalogFetch:
         assert results[0]["id"] == "claude"
 
     def test_get_integration_info(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
         (tmp_path / ".specify").mkdir()
         cat = IntegrationCatalog(tmp_path)
 
@@ -232,6 +245,9 @@ class TestCatalogFetch:
         assert cat.get_integration_info("nonexistent") is None
 
     def test_invalid_catalog_format(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
         (tmp_path / ".specify").mkdir()
         cat = IntegrationCatalog(tmp_path)
 

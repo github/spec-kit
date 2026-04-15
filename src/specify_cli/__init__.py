@@ -2221,7 +2221,7 @@ def integration_switch(
 
 @integration_app.command("upgrade")
 def integration_upgrade(
-    key: str = typer.Argument(None, help="Integration key to upgrade (default: current integration)"),
+    key: str | None = typer.Argument(None, help="Integration key to upgrade (default: current integration)"),
     force: bool = typer.Option(False, "--force", help="Force upgrade even if files are modified"),
     script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
     integration_options: str | None = typer.Option(None, "--integration-options", help="Options for the integration"),
