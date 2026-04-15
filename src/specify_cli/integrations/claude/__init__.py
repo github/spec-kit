@@ -183,7 +183,7 @@ class ClaudeIntegration(SkillsIntegration):
             )
 
         return re.sub(
-            r"(?m)^(\s*)(- For each executable hook, output the following)(\r\n|\n|$)",
+            r"(?m)^(\s*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
             repl,
             content,
         )
