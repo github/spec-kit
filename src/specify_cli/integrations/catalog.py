@@ -516,6 +516,22 @@ class IntegrationDescriptor:
             raise IntegrationDescriptorError(
                 "requires.speckit_version must be a non-empty string"
             )
+        tools = requires.get("tools")
+        if tools is not None:
+            if not isinstance(tools, list):
+                raise IntegrationDescriptorError(
+                    "requires.tools must be a list"
+                )
+            for tool in tools:
+                if not isinstance(tool, dict):
+                    raise IntegrationDescriptorError(
+                        "Each requires.tools entry must be a mapping"
+                    )
+                tool_name = tool.get("name")
+                if not isinstance(tool_name, str) or not tool_name.strip():
+                    raise IntegrationDescriptorError(
+                        "requires.tools entry 'name' must be a non-empty string"
+                    )
 
         provides = self.data["provides"]
         if not isinstance(provides, dict):
