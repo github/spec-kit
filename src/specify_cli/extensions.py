@@ -857,11 +857,26 @@ class ExtensionManager:
                 f"# {title_name} Skill\n\n"
                 f"{body}\n"
             )
+            skill_content = self._post_process_skill(
+                selected_ai, skill_content
+            )
 
             skill_file.write_text(skill_content, encoding="utf-8")
             written.append(skill_name)
 
         return written
+
+    @staticmethod
+    def _post_process_skill(agent_key: str, content: str) -> str:
+        """Delegate to the integration's post_process_skill_content if available."""
+        if not isinstance(agent_key, str) or not agent_key:
+            return content
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration(agent_key)
+        if integration is not None and hasattr(integration, "post_process_skill_content"):
+            return integration.post_process_skill_content(content)
+        return content
 
     def _unregister_extension_skills(self, skill_names: List[str], extension_id: str) -> None:
         """Remove SKILL.md directories for extension skills.

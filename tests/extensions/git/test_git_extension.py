@@ -491,6 +491,34 @@ class TestAutoCommitBash:
         result = _run_bash("auto-commit.sh", project)
         assert result.returncode != 0
 
+    def test_success_message_uses_ok_prefix(self, tmp_path: Path):
+        """auto-commit.sh success message uses [OK] (not Unicode)."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+        assert "[OK] Changes committed" in result.stderr
+
+    def test_success_message_no_unicode_checkmark(self, tmp_path: Path):
+        """auto-commit.sh must not use Unicode checkmark in output."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_plan:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash("auto-commit.sh", project, "after_plan")
+        assert result.returncode == 0
+        assert "\u2713" not in result.stderr, "Must not use Unicode checkmark"
+
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
 class TestAutoCommitPowerShell:
@@ -522,6 +550,34 @@ class TestAutoCommitPowerShell:
             cwd=project, capture_output=True, text=True,
         )
         assert "ps commit" in log.stdout
+
+    def test_success_message_uses_ok_prefix(self, tmp_path: Path):
+        """auto-commit.ps1 success message uses [OK] (not Unicode)."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        assert "[OK] Changes committed" in result.stdout
+
+    def test_success_message_no_unicode_checkmark(self, tmp_path: Path):
+        """auto-commit.ps1 must not use Unicode checkmark in output."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_plan:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh("auto-commit.ps1", project, "after_plan")
+        assert result.returncode == 0
+        assert "\u2713" not in result.stdout, "Must not use Unicode checkmark"
 
 
 # ── git-common.sh Tests ──────────────────────────────────────────────────────

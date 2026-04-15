@@ -1102,6 +1102,16 @@ class SkillsIntegration(IntegrationBase):
             invocation = f"{invocation} {args}"
         return invocation
 
+    def post_process_skill_content(self, content: str) -> str:
+        """Post-process a SKILL.md file's content after generation.
+
+        Called by external skill generators (presets, extensions) to let
+        the integration inject agent-specific frontmatter or body
+        transformations.  The default implementation returns *content*
+        unchanged.  Subclasses may override — see ``ClaudeIntegration``.
+        """
+        return content
+
     def setup(
         self,
         project_root: Path,
