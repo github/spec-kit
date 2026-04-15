@@ -130,11 +130,15 @@ class TestCatalogFetch:
         """Patch urllib.request.urlopen to return *catalog_data*."""
 
         class FakeResponse:
-            def __init__(self, data):
+            def __init__(self, data, url=""):
                 self._data = json.dumps(data).encode()
+                self._url = url
 
             def read(self):
                 return self._data
+
+            def geturl(self):
+                return self._url
 
             def __enter__(self):
                 return self
@@ -143,7 +147,7 @@ class TestCatalogFetch:
                 pass
 
         def fake_urlopen(url, timeout=10):
-            return FakeResponse(catalog_data)
+            return FakeResponse(catalog_data, url)
 
         import urllib.request
         monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
@@ -431,16 +435,19 @@ class TestIntegrationListCatalog:
         import urllib.request
 
         class FakeResponse:
-            def __init__(self, data):
+            def __init__(self, data, url=""):
                 self._data = json.dumps(data).encode()
+                self._url = url
             def read(self):
                 return self._data
+            def geturl(self):
+                return self._url
             def __enter__(self):
                 return self
             def __exit__(self, *a):
                 pass
 
-        monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=10: FakeResponse(catalog))
+        monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=10: FakeResponse(catalog, url))
 
         old = os.getcwd()
         try:

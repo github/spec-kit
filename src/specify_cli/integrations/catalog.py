@@ -257,6 +257,10 @@ class IntegrationCatalog:
 
         try:
             with urllib.request.urlopen(entry.url, timeout=10) as resp:
+                # Validate final URL after redirects
+                final_url = resp.geturl()
+                if final_url != entry.url:
+                    self._validate_catalog_url(final_url)
                 catalog_data = json.loads(resp.read())
 
             if not isinstance(catalog_data, dict):
@@ -551,7 +555,7 @@ class IntegrationDescriptor:
                 raise IntegrationDescriptorError(
                     "Command entry 'file' must be a non-empty string"
                 )
-            if os.path.isabs(cmd_file) or ".." in Path(cmd_file).parts:
+            if os.path.isabs(cmd_file) or ".." in Path(cmd_file).parts or Path(cmd_file).drive or Path(cmd_file).anchor:
                 raise IntegrationDescriptorError(
                     f"Command entry 'file' must be a relative path without '..': {cmd_file}"
                 )
@@ -560,7 +564,7 @@ class IntegrationDescriptor:
                 raise IntegrationDescriptorError(
                     "Script entry must be a non-empty string"
                 )
-            if os.path.isabs(script_entry) or ".." in Path(script_entry).parts:
+            if os.path.isabs(script_entry) or ".." in Path(script_entry).parts or Path(script_entry).drive or Path(script_entry).anchor:
                 raise IntegrationDescriptorError(
                     f"Script entry must be a relative path without '..': {script_entry}"
                 )
