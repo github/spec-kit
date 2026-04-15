@@ -234,10 +234,10 @@ class TestLeanPresetConstitutionCommand:
         assert "`new`, `existing`" not in content
 
     def test_lean_detection_rule_checks_constitution_file(self):
-        """Lean preset detection must be based solely on constitution file existence."""
+        """Lean preset detection must check constitution file existence and whether content is still placeholders."""
         content = self._content()
         assert ".specify/memory/constitution.md" in content
-        assert "unfilled" in content or "[PLACEHOLDER]" in content
+        assert "unfilled" in content or "[PROJECT_NAME]" in content
 
     def test_lean_detection_distinguishes_initialized_repo_from_truly_new(self):
         """Lean preset must route initialized repos with a missing working copy to Path A."""
