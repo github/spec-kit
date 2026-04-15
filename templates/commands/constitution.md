@@ -136,7 +136,7 @@ Do not create a new template; always operate on the existing `.specify/memory/co
 
 ## Path B — New Solution Bootstrap
 
-If `solution_state = new`, do **NOT** draft the constitution yet.
+If you determined in Step 0 that this is a new solution, do **NOT** draft the constitution yet.
 
 ### B.1 — Collect minimum durable inputs
 
