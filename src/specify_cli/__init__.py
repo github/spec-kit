@@ -2335,6 +2335,8 @@ def integration_upgrade(
                         break
                     parent = parent.parent
             except OSError:
+                # Best-effort cleanup: if a stale file cannot be removed (e.g. permission/race),
+                # continue upgrade flow without failing the command.
                 pass
     if stale_removed:
         console.print(f"  Removed {stale_removed} stale file(s) from previous install")
