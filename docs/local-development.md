@@ -130,10 +130,10 @@ Or copy only the modified CLI portion if you want a lighter sandbox.
 
 ## 9. Debug Network / TLS Skips
 
-> **Note:** The `--skip-tls` flag is deprecated and no longer has any effect.
+> **Deprecated:** The `--skip-tls` flag is a no-op and has no effect.
+> Previously it was used to bypass TLS validation during local testing.
 > If you encounter TLS errors on a corporate network, configure your
 > environment's certificate store or proxy instead.
-
 
 ## 10. Rapid Edit Loop Summary
 
