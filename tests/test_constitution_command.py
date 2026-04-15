@@ -197,10 +197,12 @@ class TestMainConstitutionCommandStructure:
 
     def test_no_standalone_prompt_file(self):
         """The standalone bootstrap prompt file must be removed — logic now lives in the command."""
-        standalone = REPO_ROOT / ".github" / "Prompts" / "smart-constitution-bootstrap-prompt.md"
-        assert not standalone.exists(), (
-            "Standalone smart-constitution-bootstrap-prompt.md should be deleted; "
-            "the logic now lives in templates/commands/constitution.md"
+        standalone_lowercase = REPO_ROOT / ".github" / "prompts" / "smart-constitution-bootstrap-prompt.md"
+        standalone_uppercase = REPO_ROOT / ".github" / "Prompts" / "smart-constitution-bootstrap-prompt.md"
+        assert not standalone_lowercase.exists() and not standalone_uppercase.exists(), (
+            "Standalone smart-constitution-bootstrap-prompt.md should be deleted from "
+            ".github/prompts/ or .github/Prompts/; the logic now lives in "
+            "templates/commands/constitution.md"
         )
 
 

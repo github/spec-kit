@@ -44,7 +44,7 @@ You **MUST** consider the user input before proceeding (if not empty).
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
 
-    Wait for the result of the hook command before proceeding to the Outline.
+   Wait for the result of the hook command before proceeding to Step 0.
     ```
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
@@ -54,8 +54,8 @@ Before generating or revising the constitution, determine whether this is a **ne
 
 **Detection rule** (check in order):
 
-1. If `.specify/memory/constitution.md` exists **and** contains concrete content (not just unfilled `[PLACEHOLDER]` tokens), treat as **existing** → proceed to **Path A**.
-2. If `.specify/memory/constitution.md` does not exist, or contains only unfilled placeholder tokens, treat as **new** → proceed to **Path B**.
+1. If `.specify/memory/constitution.md` exists **and** contains concrete content (not just unfilled square-bracket placeholder identifiers such as `[PROJECT_NAME]`), treat as **existing** → proceed to **Path A**.
+2. If `.specify/memory/constitution.md` does not exist, or contains only unfilled square-bracket placeholder identifiers, treat as **new** → proceed to **Path B**.
 
 ---
 
