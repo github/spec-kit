@@ -1,0 +1,61 @@
+schema_version: "1.0"
+
+extension:
+  id: orchestrator
+  name: "Intelligent Agent Orchestrator"
+  version: "0.1.0"
+  description: "Cross-catalog agent discovery and intelligent prompt-to-command routing"
+  author: "Pragya Chaurasia"
+  repository: "https://github.com/pragya247/spec-kit-orchestrator"
+  license: "MIT"
+  homepage: "https://github.com/pragya247/spec-kit-orchestrator"
+
+requires:
+  speckit_version: ">=0.6.1"
+
+provides:
+  commands:
+    - name: speckit.orchestrator.route
+      file: commands/speckit.orchestrator.route.md
+      description: "Match a user prompt to the best-fit command across all catalogs"
+
+    - name: speckit.orchestrator.index
+      file: commands/speckit.orchestrator.index.md
+      description: "Index all available commands, extensions, workflows, and presets"
+
+    - name: speckit.orchestrator.discover
+      file: commands/speckit.orchestrator.discover.md
+      description: "Discover agents and capabilities across linked repositories"
+
+  config:
+    - name: "orchestrator-config.yml"
+      template: "config-template.yml"
+      description: "Orchestrator routing configuration"
+      required: false
+
+hooks:
+  after_init:
+    command: speckit.orchestrator.index
+    optional: true
+    prompt: "Index available commands and agents for intelligent routing?"
+    description: "Auto-index capabilities after project initialization"
+
+tags:
+  - "orchestrator"
+  - "routing"
+  - "discovery"
+  - "agent"
+  - "ai"
+
+config:
+  defaults:
+    matching_strategy: "keyword"
+    confidence_threshold: 0.5
+    cross_repo_scan: true
+    scan_patterns:
+      - ".agent.md"
+      - "SKILL.md"
+      - "AGENTS.md"
+      - "extension.yml"
+      - "workflow.yml"
+      - "preset.yml"

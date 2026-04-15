@@ -1,0 +1,40 @@
+# Orchestrator Configuration
+# Configure intelligent agent routing and cross-repo discovery
+
+# Matching strategy for prompt-to-command routing
+# Options: "keyword" (fast, deterministic), "weighted" (keyword + description scoring)
+matching_strategy: "keyword"
+
+# Minimum confidence score (0.0 - 1.0) for a match to be shown
+# Lower = more results, higher = more precise
+confidence_threshold: 0.5
+
+# Enable scanning across linked repositories for agent discovery
+cross_repo_scan: true
+
+# File patterns to scan for agent definitions
+scan_patterns:
+  - ".agent.md"
+  - "SKILL.md"
+  - "AGENTS.md"
+  - ".claude/skills/*.md"
+  - ".github/copilot-instructions.md"
+  - ".specify/extensions/*/extension.yml"
+  - ".specify/workflows/*/workflow.yml"
+
+# Linked repositories to include in cross-repo discovery
+# Add paths (relative or absolute) to repos you want to scan
+linked_repos: []
+  # - path: "../frontend-app"
+  #   name: "Frontend"
+  # - path: "../backend-api"
+  #   name: "Backend API"
+
+# Caching settings
+cache:
+  # Cache duration for the capability index (in seconds)
+  # Default: 3600 (1 hour)
+  index_ttl: 3600
+
+  # Cache route results for repeated queries
+  route_cache_enabled: true
