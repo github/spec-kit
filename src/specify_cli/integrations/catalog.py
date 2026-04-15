@@ -555,6 +555,15 @@ class IntegrationDescriptor:
                 raise IntegrationDescriptorError(
                     f"Command entry 'file' must be a relative path without '..': {cmd_file}"
                 )
+        for script_entry in scripts:
+            if not isinstance(script_entry, str) or not script_entry.strip():
+                raise IntegrationDescriptorError(
+                    "Script entry must be a non-empty string"
+                )
+            if os.path.isabs(script_entry) or ".." in Path(script_entry).parts:
+                raise IntegrationDescriptorError(
+                    f"Script entry must be a relative path without '..': {script_entry}"
+                )
 
     # -- Property accessors -----------------------------------------------
 

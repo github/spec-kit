@@ -2312,13 +2312,10 @@ def integration_upgrade(
         _write_integration_json(project_root, key, selected_script)
         _update_init_options_for_integration(project_root, integration, script_type=selected_script)
     except Exception as exc:
-        try:
-            integration.teardown(project_root, new_manifest, force=True)
-        except Exception as teardown_exc:
-            console.print(
-                f"[yellow]Warning:[/yellow] Teardown during rollback also failed: {teardown_exc}"
-            )
+        # Don't teardown — setup overwrites in-place, so teardown would
+        # delete files that were working before the upgrade.  Just report.
         console.print(f"[red]Error:[/red] Failed to upgrade integration: {exc}")
+        console.print("[yellow]The previous integration files may still be in place.[/yellow]")
         raise typer.Exit(1)
 
     # Phase 2: Remove stale files from old manifest that are not in the new one
