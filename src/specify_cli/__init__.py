@@ -2229,7 +2229,7 @@ def integration_upgrade(
     """Upgrade an integration by reinstalling with diff-aware file handling.
 
     Compares manifest hashes to detect locally modified files and
-    preserves them unless --force is used.
+    blocks the upgrade unless --force is used.
     """
     from .integrations import get_integration
     from .integrations.manifest import IntegrationManifest
@@ -2315,8 +2315,16 @@ def integration_upgrade(
     except Exception as exc:
         try:
             integration.teardown(project_root, new_manifest, force=True)
+        except Exception as teardown_exc:
+            console.print(
+                f"[yellow]Warning:[/yellow] Teardown during rollback also failed: {teardown_exc}"
+            )
+        # Attempt to restore the old manifest so the project is not left broken
+        try:
+            old_manifest.save()
+            _write_integration_json(project_root, key, selected_script)
         except Exception:
-            pass
+            pass  # Best-effort restoration; original error is more important
         console.print(f"[red]Error:[/red] Failed to upgrade integration: {exc}")
         raise typer.Exit(1)
 

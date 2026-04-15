@@ -123,8 +123,8 @@ The `specify integration upgrade` command supports diff-aware upgrades:
 
 1. **Hash comparison** — the manifest records SHA-256 hashes of all installed files
 2. **Modified file detection** — files changed since installation are flagged
-3. **Safe default** — modified files are preserved unless `--force` is used
-4. **Clean reinstall** — unmodified files are replaced with the latest version
+3. **Safe default** — the upgrade blocks if any installed files were modified since installation
+4. **Forced reinstall** — passing `--force` overwrites modified files with the latest version
 
 ```bash
 # Upgrade current integration (blocks if files are modified)

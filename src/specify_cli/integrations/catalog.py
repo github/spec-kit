@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
-from packaging import version as pkg_version
 
 
 # ---------------------------------------------------------------------------
@@ -244,18 +243,28 @@ class IntegrationCatalog:
                 if age < self.CACHE_DURATION:
                     return json.loads(cache_file.read_text())
             except (json.JSONDecodeError, ValueError, KeyError, TypeError):
-                pass
+                # Cache is invalid or stale metadata; delete and refetch from source.
+                cache_file.unlink(missing_ok=True)
+                cache_meta.unlink(missing_ok=True)
 
         try:
             with urllib.request.urlopen(entry.url, timeout=10) as resp:
                 catalog_data = json.loads(resp.read())
 
+            if not isinstance(catalog_data, dict):
+                raise IntegrationCatalogError(
+                    f"Invalid catalog format from {entry.url}: expected a JSON object"
+                )
             if (
                 "schema_version" not in catalog_data
                 or "integrations" not in catalog_data
             ):
                 raise IntegrationCatalogError(
                     f"Invalid catalog format from {entry.url}"
+                )
+            if not isinstance(catalog_data.get("integrations"), dict):
+                raise IntegrationCatalogError(
+                    f"Invalid catalog format from {entry.url}: 'integrations' must be a JSON object"
                 )
 
             self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -413,6 +422,10 @@ class IntegrationDescriptor:
             raise IntegrationDescriptorError(f"Invalid YAML in {path}: {exc}")
         except FileNotFoundError:
             raise IntegrationDescriptorError(f"Descriptor not found: {path}")
+        except (OSError, UnicodeError) as exc:
+            raise IntegrationDescriptorError(
+                f"Unable to read descriptor {path}: {exc}"
+            )
 
     # -- Validation -------------------------------------------------------
 
@@ -430,6 +443,10 @@ class IntegrationDescriptor:
             )
 
         integ = self.data["integration"]
+        if not isinstance(integ, dict):
+            raise IntegrationDescriptorError(
+                "'integration' must be a mapping"
+            )
         for field in ("id", "name", "version", "description"):
             if field not in integ:
                 raise IntegrationDescriptorError(
@@ -442,20 +459,26 @@ class IntegrationDescriptor:
                 "must be lowercase alphanumeric with hyphens only"
             )
 
-        try:
-            pkg_version.Version(integ["version"])
-        except pkg_version.InvalidVersion:
+        if not re.match(r"^\d+\.\d+\.\d+", integ["version"]):
             raise IntegrationDescriptorError(
-                f"Invalid version: {integ['version']}"
+                f"Invalid version '{integ['version']}': must use semantic versioning (e.g., 1.0.0)"
             )
 
         requires = self.data["requires"]
+        if not isinstance(requires, dict):
+            raise IntegrationDescriptorError(
+                "'requires' must be a mapping"
+            )
         if "speckit_version" not in requires:
             raise IntegrationDescriptorError(
                 "Missing requires.speckit_version"
             )
 
         provides = self.data["provides"]
+        if not isinstance(provides, dict):
+            raise IntegrationDescriptorError(
+                "'provides' must be a mapping"
+            )
         commands = provides.get("commands", [])
         scripts = provides.get("scripts", [])
         if "commands" in provides and not isinstance(commands, list):
@@ -471,6 +494,10 @@ class IntegrationDescriptor:
                 "Integration must provide at least one command or script"
             )
         for cmd in commands:
+            if not isinstance(cmd, dict):
+                raise IntegrationDescriptorError(
+                    "Each command entry must be a mapping"
+                )
             if "name" not in cmd or "file" not in cmd:
                 raise IntegrationDescriptorError(
                     "Command entry missing 'name' or 'file'"
