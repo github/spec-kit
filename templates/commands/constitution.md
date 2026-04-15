@@ -63,7 +63,7 @@ Before generating or revising the constitution, determine whether this is a **ne
 
 ## Path A — Existing Solution
 
-If `solution_state = existing`, follow the standard constitution update flow.
+If you determined this is an existing solution in Step 0, follow the standard constitution update flow.
 
 You are updating the project constitution at `.specify/memory/constitution.md`. This file is a TEMPLATE containing placeholder tokens in square brackets (e.g. `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`). Your job is to (a) collect/derive concrete values, (b) fill the template precisely, and (c) propagate any amendments across dependent artifacts.
 
