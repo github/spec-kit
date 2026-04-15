@@ -1806,7 +1806,7 @@ def integration_list(
             console.print("[yellow]No integrations found in catalog.[/yellow]")
             return
 
-        table = Table(title="Integration Catalog (built-in + community)")
+        table = Table(title="Integration Catalog")
         table.add_column("ID", style="cyan")
         table.add_column("Name")
         table.add_column("Version")

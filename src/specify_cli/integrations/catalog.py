@@ -247,7 +247,7 @@ class IntegrationCatalog:
                 age = (datetime.now(timezone.utc) - cached_at).total_seconds()
                 if age < self.CACHE_DURATION:
                     return json.loads(cache_file.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+            except (json.JSONDecodeError, ValueError, KeyError, TypeError, AttributeError):
                 # Cache is invalid or stale metadata; delete and refetch from source.
                 try:
                     cache_file.unlink(missing_ok=True)
