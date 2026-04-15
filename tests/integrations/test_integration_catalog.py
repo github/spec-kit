@@ -73,7 +73,9 @@ class TestCatalogURLValidation:
 
 
 class TestActiveCatalogs:
-    def test_defaults_when_no_config(self, tmp_path):
+    def test_defaults_when_no_config(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
         (tmp_path / ".specify").mkdir()
         cat = IntegrationCatalog(tmp_path)
         active = cat.get_active_catalogs()

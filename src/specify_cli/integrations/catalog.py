@@ -111,15 +111,15 @@ class IntegrationCatalog:
                 f"Invalid catalog config {config_path}: expected a YAML mapping at the root"
             )
         catalogs_data = data.get("catalogs", [])
-        if not catalogs_data:
-            raise IntegrationCatalogError(
-                f"Catalog config {config_path} exists but contains no 'catalogs' entries. "
-                f"Remove the file to use built-in defaults, or add valid catalog entries."
-            )
         if not isinstance(catalogs_data, list):
             raise IntegrationCatalogError(
                 f"Invalid catalog config: 'catalogs' must be a list, "
                 f"got {type(catalogs_data).__name__}"
+            )
+        if not catalogs_data:
+            raise IntegrationCatalogError(
+                f"Catalog config {config_path} exists but contains no 'catalogs' entries. "
+                f"Remove the file to use built-in defaults, or add valid catalog entries."
             )
         entries: List[IntegrationCatalogEntry] = []
         skipped: List[int] = []
@@ -475,6 +475,10 @@ class IntegrationDescriptor:
                 raise IntegrationDescriptorError(
                     f"Missing integration.{field}"
                 )
+            if not isinstance(integ[field], str):
+                raise IntegrationDescriptorError(
+                    f"integration.{field} must be a string, got {type(integ[field]).__name__}"
+                )
 
         if not re.match(r"^[a-z0-9-]+$", integ["id"]):
             raise IntegrationDescriptorError(
@@ -484,7 +488,7 @@ class IntegrationDescriptor:
 
         try:
             pkg_version.Version(integ["version"])
-        except pkg_version.InvalidVersion:
+        except (pkg_version.InvalidVersion, TypeError):
             raise IntegrationDescriptorError(
                 f"Invalid version '{integ['version']}'"
             )
