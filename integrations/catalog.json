@@ -245,6 +245,15 @@
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["generic"]
+    },
+    "goose": {
+      "id": "goose",
+      "name": "Goose",
+      "version": "1.0.0",
+      "description": "Goose CLI integration with YAML recipe format",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
     }
   }
 }

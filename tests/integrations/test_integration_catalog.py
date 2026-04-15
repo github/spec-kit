@@ -118,18 +118,8 @@ class TestActiveCatalogs:
 
 
 # ---------------------------------------------------------------------------
-# IntegrationCatalog — fetch & search (using local file:// catalog)
+# IntegrationCatalog — fetch & search (using monkeypatched urlopen responses)
 # ---------------------------------------------------------------------------
-
-
-def _write_catalog(path: Path, integrations: dict) -> None:
-    """Helper: write a catalog JSON file."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
-        "schema_version": "1.0",
-        "updated_at": "2026-01-01T00:00:00Z",
-        "integrations": integrations,
-    }, indent=2))
 
 
 class TestCatalogFetch:

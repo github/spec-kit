@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
+from packaging import version as pkg_version
 
 
 # ---------------------------------------------------------------------------
@@ -239,17 +240,20 @@ class IntegrationCatalog:
 
         if not force_refresh and cache_file.exists() and cache_meta.exists():
             try:
-                meta = json.loads(cache_meta.read_text())
+                meta = json.loads(cache_meta.read_text(encoding="utf-8"))
                 cached_at = datetime.fromisoformat(meta.get("cached_at", ""))
                 if cached_at.tzinfo is None:
                     cached_at = cached_at.replace(tzinfo=timezone.utc)
                 age = (datetime.now(timezone.utc) - cached_at).total_seconds()
                 if age < self.CACHE_DURATION:
-                    return json.loads(cache_file.read_text())
+                    return json.loads(cache_file.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, ValueError, KeyError, TypeError):
                 # Cache is invalid or stale metadata; delete and refetch from source.
-                cache_file.unlink(missing_ok=True)
-                cache_meta.unlink(missing_ok=True)
+                try:
+                    cache_file.unlink(missing_ok=True)
+                    cache_meta.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
         try:
             with urllib.request.urlopen(entry.url, timeout=10) as resp:
@@ -273,7 +277,7 @@ class IntegrationCatalog:
 
             try:
                 self.cache_dir.mkdir(parents=True, exist_ok=True)
-                cache_file.write_text(json.dumps(catalog_data, indent=2))
+                cache_file.write_text(json.dumps(catalog_data, indent=2), encoding="utf-8")
                 cache_meta.write_text(
                     json.dumps(
                         {
@@ -281,7 +285,8 @@ class IntegrationCatalog:
                             "catalog_url": entry.url,
                         },
                         indent=2,
-                    )
+                    ),
+                    encoding="utf-8",
                 )
             except OSError:
                 pass  # Cache is best-effort; proceed with fetched data
@@ -473,9 +478,11 @@ class IntegrationDescriptor:
                 "must be lowercase alphanumeric with hyphens only"
             )
 
-        if not re.match(r"^\d+\.\d+\.\d+$", integ["version"]):
+        try:
+            pkg_version.Version(integ["version"])
+        except pkg_version.InvalidVersion:
             raise IntegrationDescriptorError(
-                f"Invalid version '{integ['version']}': must use semantic versioning (e.g., 1.0.0)"
+                f"Invalid version '{integ['version']}'"
             )
 
         requires = self.data["requires"]
