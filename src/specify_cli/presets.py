@@ -706,7 +706,7 @@ class PresetManager:
             return []
 
         from . import SKILL_DESCRIPTIONS, load_init_options
-        from .agents import CommandRegistrar
+        from .agents import CommandRegistrar, post_process_skill
 
         init_opts = load_init_options(self.project_root)
         if not isinstance(init_opts, dict):
@@ -789,7 +789,7 @@ class PresetManager:
                     f"# Speckit {skill_title} Skill\n\n"
                     f"{body}\n"
                 )
-                skill_content = self._post_process_skill(
+                skill_content = post_process_skill(
                     selected_ai, skill_content
                 )
 
@@ -798,18 +798,6 @@ class PresetManager:
                 written.append(target_skill_name)
 
         return written
-
-    @staticmethod
-    def _post_process_skill(agent_key: str, content: str) -> str:
-        """Delegate to the integration's post_process_skill_content if available."""
-        if not isinstance(agent_key, str) or not agent_key:
-            return content
-        from specify_cli.integrations import get_integration
-
-        integration = get_integration(agent_key)
-        if integration is not None and hasattr(integration, "post_process_skill_content"):
-            return integration.post_process_skill_content(content)
-        return content
 
     def _unregister_skills(self, skill_names: List[str], preset_dir: Path) -> None:
         """Restore original SKILL.md files after a preset is removed.
@@ -830,7 +818,7 @@ class PresetManager:
             return
 
         from . import SKILL_DESCRIPTIONS, load_init_options
-        from .agents import CommandRegistrar
+        from .agents import CommandRegistrar, post_process_skill
 
         # Locate core command templates from the project's installed templates
         core_templates_dir = self.project_root / ".specify" / "templates" / "commands"
@@ -892,7 +880,7 @@ class PresetManager:
                     f"# Speckit {skill_title} Skill\n\n"
                     f"{body}\n"
                 )
-                skill_content = self._post_process_skill(
+                skill_content = post_process_skill(
                     selected_ai, skill_content
                 )
                 skill_file.write_text(skill_content, encoding="utf-8")
@@ -924,7 +912,7 @@ class PresetManager:
                     f"# {title_name} Skill\n\n"
                     f"{body}\n"
                 )
-                skill_content = self._post_process_skill(
+                skill_content = post_process_skill(
                     selected_ai, skill_content
                 )
                 skill_file.write_text(skill_content, encoding="utf-8")

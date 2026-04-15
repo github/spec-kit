@@ -168,9 +168,23 @@ class ClaudeIntegration(SkillsIntegration):
         """
         if "replace dots" in content:
             return content
+
+        def repl(m: re.Match[str]) -> str:
+            indent = m.group(1)
+            instruction = m.group(2)
+            eol = m.group(3)
+            return (
+                indent
+                + _HOOK_COMMAND_NOTE.rstrip("\n")
+                + eol
+                + indent
+                + instruction
+                + eol
+            )
+
         return re.sub(
-            r"(?m)^(\s*)(- For each executable hook, output the following)",
-            lambda m: m.group(1) + _HOOK_COMMAND_NOTE.rstrip("\n") + "\n" + m.group(0),
+            r"(?m)^(\s*)(- For each executable hook, output the following)(\r\n|\n|$)",
+            repl,
             content,
         )
 
