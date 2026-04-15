@@ -36,6 +36,7 @@ def get_integration(key: str) -> IntegrationBase | None:
 
 # -- Register built-in integrations --------------------------------------
 
+
 def _register_builtins() -> None:
     """Register all built-in integrations.
 
@@ -51,13 +52,14 @@ def _register_builtins() -> None:
     from .auggie import AuggieIntegration
     from .bob import BobIntegration
     from .claude import ClaudeIntegration
-    from .codex import CodexIntegration
     from .codebuddy import CodebuddyIntegration
+    from .codex import CodexIntegration
     from .copilot import CopilotIntegration
     from .cursor_agent import CursorAgentIntegration
     from .forge import ForgeIntegration
     from .gemini import GeminiIntegration
     from .generic import GenericIntegration
+    from .goose import GooseIntegration
     from .iflow import IflowIntegration
     from .junie import JunieIntegration
     from .kilocode import KilocodeIntegration
@@ -80,13 +82,14 @@ def _register_builtins() -> None:
     _register(AuggieIntegration())
     _register(BobIntegration())
     _register(ClaudeIntegration())
-    _register(CodexIntegration())
     _register(CodebuddyIntegration())
+    _register(CodexIntegration())
     _register(CopilotIntegration())
     _register(CursorAgentIntegration())
     _register(ForgeIntegration())
     _register(GeminiIntegration())
     _register(GenericIntegration())
+    _register(GooseIntegration())
     _register(IflowIntegration())
     _register(JunieIntegration())
     _register(KilocodeIntegration())

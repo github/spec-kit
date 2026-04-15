@@ -292,7 +292,7 @@ This tells Spec Kit which feature directory to use when creating specs, plans, a
    ```bash
    ls -la .claude/commands/      # Claude Code
    ls -la .gemini/commands/      # Gemini
-   ls -la .cursor/commands/      # Cursor
+   ls -la .cursor/skills/      # Cursor
    ls -la .pi/prompts/           # Pi Coding Agent
    ```
 

@@ -18,6 +18,7 @@ import yaml
 def _build_agent_configs() -> dict[str, Any]:
     """Derive CommandRegistrar.AGENT_CONFIGS from INTEGRATION_REGISTRY."""
     from specify_cli.integrations import INTEGRATION_REGISTRY
+
     configs: dict[str, dict[str, Any]] = {}
     for key, integration in INTEGRATION_REGISTRY.items():
         if key == "generic":
@@ -75,7 +76,7 @@ class CommandRegistrar:
             return {}, content
 
         frontmatter_str = content[3:end_marker].strip()
-        body = content[end_marker + 3:].strip()
+        body = content[end_marker + 3 :].strip()
 
         try:
             frontmatter = yaml.safe_load(frontmatter_str) or {}
@@ -100,7 +101,9 @@ class CommandRegistrar:
         if not fm:
             return ""
 
-        yaml_str = yaml.dump(fm, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        yaml_str = yaml.dump(
+            fm, default_flow_style=False, sort_keys=False, allow_unicode=True
+        )
         return f"---\n{yaml_str}---\n"
 
     def _adjust_script_paths(self, frontmatter: dict) -> dict:
@@ -146,16 +149,16 @@ class CommandRegistrar:
         # ".specify/extensions/<ext>/scripts/..." remain intact.
         text = re.sub(r'(^|[\s`"\'(])(?:\.?/)?memory/', r"\1.specify/memory/", text)
         text = re.sub(r'(^|[\s`"\'(])(?:\.?/)?scripts/', r"\1.specify/scripts/", text)
-        text = re.sub(r'(^|[\s`"\'(])(?:\.?/)?templates/', r"\1.specify/templates/", text)
+        text = re.sub(
+            r'(^|[\s`"\'(])(?:\.?/)?templates/', r"\1.specify/templates/", text
+        )
 
-        return text.replace(".specify/.specify/", ".specify/").replace(".specify.specify/", ".specify/")
+        return text.replace(".specify/.specify/", ".specify/").replace(
+            ".specify.specify/", ".specify/"
+        )
 
     def render_markdown_command(
-        self,
-        frontmatter: dict,
-        body: str,
-        source_id: str,
-        context_note: str = None
+        self, frontmatter: dict, body: str, source_id: str, context_note: str = None
     ) -> str:
         """Render command in Markdown format.
 
@@ -172,12 +175,7 @@ class CommandRegistrar:
             context_note = f"\n<!-- Source: {source_id} -->\n"
         return self.render_frontmatter(frontmatter) + "\n" + context_note + body
 
-    def render_toml_command(
-        self,
-        frontmatter: dict,
-        body: str,
-        source_id: str
-    ) -> str:
+    def render_toml_command(self, frontmatter: dict, body: str, source_id: str) -> str:
         """Render command in TOML format.
 
         Args:
@@ -192,7 +190,7 @@ class CommandRegistrar:
 
         if "description" in frontmatter:
             toml_lines.append(
-                f'description = {self._render_basic_toml_string(frontmatter["description"])}'
+                f"description = {self._render_basic_toml_string(frontmatter['description'])}"
             )
             toml_lines.append("")
 
@@ -226,6 +224,41 @@ class CommandRegistrar:
         )
         return f'"{escaped}"'
 
+    def render_yaml_command(
+        self,
+        frontmatter: dict,
+        body: str,
+        source_id: str,
+        cmd_name: str = "",
+    ) -> str:
+        """Render command in YAML recipe format for Goose.
+
+        Args:
+            frontmatter: Command frontmatter
+            body: Command body content
+            source_id: Source identifier (extension or preset ID)
+            cmd_name: Command name used as title fallback
+
+        Returns:
+            Formatted YAML recipe file content
+        """
+        from specify_cli.integrations.base import YamlIntegration
+
+        title = frontmatter.get("title", "") or frontmatter.get("name", "")
+        if not isinstance(title, str):
+            title = str(title) if title is not None else ""
+        if not title and cmd_name:
+            title = YamlIntegration._human_title(cmd_name)
+        if not title and source_id:
+            title = YamlIntegration._human_title(Path(str(source_id)).stem)
+        if not title:
+            title = "Command"
+
+        description = frontmatter.get("description", "")
+        if not isinstance(description, str):
+            description = str(description) if description is not None else ""
+        return YamlIntegration._render_yaml(title, description, body, source_id)
+
     def render_skill_command(
         self,
         agent_name: str,
@@ -252,9 +285,13 @@ class CommandRegistrar:
             frontmatter = {}
 
         if agent_name in {"codex", "kimi"}:
-            body = self.resolve_skill_placeholders(agent_name, frontmatter, body, project_root)
+            body = self.resolve_skill_placeholders(
+                agent_name, frontmatter, body, project_root
+            )
 
-        description = frontmatter.get("description", f"Spec-kit workflow command: {skill_name}")
+        description = frontmatter.get(
+            "description", f"Spec-kit workflow command: {skill_name}"
+        )
         skill_frontmatter = self.build_skill_frontmatter(
             agent_name,
             skill_name,
@@ -288,7 +325,9 @@ class CommandRegistrar:
         return skill_frontmatter
 
     @staticmethod
-    def resolve_skill_placeholders(agent_name: str, frontmatter: dict, body: str, project_root: Path) -> str:
+    def resolve_skill_placeholders(
+        agent_name: str, frontmatter: dict, body: str, project_root: Path
+    ) -> str:
         """Resolve script placeholders for skills-backed agents."""
         try:
             from . import load_init_options
@@ -312,7 +351,9 @@ class CommandRegistrar:
         script_variant = init_opts.get("script")
         if script_variant not in {"sh", "ps"}:
             fallback_order = []
-            default_variant = "ps" if platform.system().lower().startswith("win") else "sh"
+            default_variant = (
+                "ps" if platform.system().lower().startswith("win") else "sh"
+            )
             secondary_variant = "sh" if default_variant == "ps" else "ps"
 
             if default_variant in scripts or default_variant in agent_scripts:
@@ -334,7 +375,9 @@ class CommandRegistrar:
             script_command = script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{SCRIPT}", script_command)
 
-        agent_script_command = agent_scripts.get(script_variant) if script_variant else None
+        agent_script_command = (
+            agent_scripts.get(script_variant) if script_variant else None
+        )
         if agent_script_command:
             agent_script_command = agent_script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{AGENT_SCRIPT}", agent_script_command)
@@ -342,7 +385,9 @@ class CommandRegistrar:
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
         return CommandRegistrar.rewrite_project_relative_paths(body)
 
-    def _convert_argument_placeholder(self, content: str, from_placeholder: str, to_placeholder: str) -> str:
+    def _convert_argument_placeholder(
+        self, content: str, from_placeholder: str, to_placeholder: str
+    ) -> str:
         """Convert argument placeholder format.
 
         Args:
@@ -356,14 +401,16 @@ class CommandRegistrar:
         return content.replace(from_placeholder, to_placeholder)
 
     @staticmethod
-    def _compute_output_name(agent_name: str, cmd_name: str, agent_config: Dict[str, Any]) -> str:
+    def _compute_output_name(
+        agent_name: str, cmd_name: str, agent_config: Dict[str, Any]
+    ) -> str:
         """Compute the on-disk command or skill name for an agent."""
         if agent_config["extension"] != "/SKILL.md":
             return cmd_name
 
         short_name = cmd_name
         if short_name.startswith("speckit."):
-            short_name = short_name[len("speckit."):]
+            short_name = short_name[len("speckit.") :]
         short_name = short_name.replace(".", "-")
 
         return f"speckit-{short_name}"
@@ -375,7 +422,7 @@ class CommandRegistrar:
         source_id: str,
         source_dir: Path,
         project_root: Path,
-        context_note: str = None
+        context_note: str = None,
     ) -> List[str]:
         """Register commands for a specific agent.
 
@@ -432,12 +479,24 @@ class CommandRegistrar:
 
             if agent_config["extension"] == "/SKILL.md":
                 output = self.render_skill_command(
-                    agent_name, output_name, frontmatter, body, source_id, cmd_file, project_root
+                    agent_name,
+                    output_name,
+                    frontmatter,
+                    body,
+                    source_id,
+                    cmd_file,
+                    project_root,
                 )
             elif agent_config["format"] == "markdown":
-                output = self.render_markdown_command(frontmatter, body, source_id, context_note)
+                output = self.render_markdown_command(
+                    frontmatter, body, source_id, context_note
+                )
             elif agent_config["format"] == "toml":
                 output = self.render_toml_command(frontmatter, body, source_id)
+            elif agent_config["format"] == "yaml":
+                output = self.render_yaml_command(
+                    frontmatter, body, source_id, cmd_name
+                )
             else:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
@@ -451,34 +510,68 @@ class CommandRegistrar:
             registered.append(cmd_name)
 
             for alias in cmd_info.get("aliases", []):
-                alias_output_name = self._compute_output_name(agent_name, alias, agent_config)
+                alias_output_name = self._compute_output_name(
+                    agent_name, alias, agent_config
+                )
 
                 # For agents with inject_name, render with alias-specific frontmatter
                 if agent_config.get("inject_name"):
                     alias_frontmatter = deepcopy(frontmatter)
                     # Use custom name formatter if provided (e.g., Forge's hyphenated format)
                     format_name = agent_config.get("format_name")
-                    alias_frontmatter["name"] = format_name(alias) if format_name else alias
+                    alias_frontmatter["name"] = (
+                        format_name(alias) if format_name else alias
+                    )
 
                     if agent_config["extension"] == "/SKILL.md":
                         alias_output = self.render_skill_command(
-                            agent_name, alias_output_name, alias_frontmatter, body, source_id, cmd_file, project_root
+                            agent_name,
+                            alias_output_name,
+                            alias_frontmatter,
+                            body,
+                            source_id,
+                            cmd_file,
+                            project_root,
                         )
                     elif agent_config["format"] == "markdown":
-                        alias_output = self.render_markdown_command(alias_frontmatter, body, source_id, context_note)
+                        alias_output = self.render_markdown_command(
+                            alias_frontmatter, body, source_id, context_note
+                        )
                     elif agent_config["format"] == "toml":
-                        alias_output = self.render_toml_command(alias_frontmatter, body, source_id)
+                        alias_output = self.render_toml_command(
+                            alias_frontmatter, body, source_id
+                        )
+                    elif agent_config["format"] == "yaml":
+                        alias_output = self.render_yaml_command(
+                            alias_frontmatter, body, source_id, alias
+                        )
                     else:
-                        raise ValueError(f"Unsupported format: {agent_config['format']}")
+                        raise ValueError(
+                            f"Unsupported format: {agent_config['format']}"
+                        )
                 else:
                     # For other agents, reuse the primary output
                     alias_output = output
                     if agent_config["extension"] == "/SKILL.md":
                         alias_output = self.render_skill_command(
-                            agent_name, alias_output_name, frontmatter, body, source_id, cmd_file, project_root
+                            agent_name,
+                            alias_output_name,
+                            frontmatter,
+                            body,
+                            source_id,
+                            cmd_file,
+                            project_root,
                         )
 
-                alias_file = commands_dir / f"{alias_output_name}{agent_config['extension']}"
+                alias_file = (
+                    commands_dir / f"{alias_output_name}{agent_config['extension']}"
+                )
+                try:
+                    alias_file.resolve().relative_to(commands_dir.resolve())
+                except ValueError:
+                    raise ValueError(
+                        f"Alias output path escapes commands directory: {alias_file!r}"
+                    )
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
                 alias_file.write_text(alias_output, encoding="utf-8")
                 if agent_name == "copilot":
@@ -506,7 +599,7 @@ class CommandRegistrar:
         source_id: str,
         source_dir: Path,
         project_root: Path,
-        context_note: str = None
+        context_note: str = None,
     ) -> Dict[str, List[str]]:
         """Register commands for all detected agents in the project.
 
@@ -529,8 +622,12 @@ class CommandRegistrar:
             if agent_dir.exists():
                 try:
                     registered = self.register_commands(
-                        agent_name, commands, source_id, source_dir, project_root,
-                        context_note=context_note
+                        agent_name,
+                        commands,
+                        source_id,
+                        source_dir,
+                        project_root,
+                        context_note=context_note,
                     )
                     if registered:
                         results[agent_name] = registered
@@ -540,9 +637,7 @@ class CommandRegistrar:
         return results
 
     def unregister_commands(
-        self,
-        registered_commands: Dict[str, List[str]],
-        project_root: Path
+        self, registered_commands: Dict[str, List[str]], project_root: Path
     ) -> None:
         """Remove previously registered command files from agent directories.
 
@@ -559,13 +654,26 @@ class CommandRegistrar:
             commands_dir = project_root / agent_config["dir"]
 
             for cmd_name in cmd_names:
-                output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
+                output_name = self._compute_output_name(
+                    agent_name, cmd_name, agent_config
+                )
                 cmd_file = commands_dir / f"{output_name}{agent_config['extension']}"
                 if cmd_file.exists():
                     cmd_file.unlink()
+                    # For SKILL.md agents each command lives in its own subdirectory
+                    # (e.g. .agents/skills/speckit-ext-cmd/SKILL.md). Remove the
+                    # parent dir when it becomes empty to avoid orphaned directories.
+                    parent = cmd_file.parent
+                    if parent != commands_dir and parent.exists():
+                        try:
+                            parent.rmdir()  # no-op if dir still has other files
+                        except OSError:
+                            pass
 
                 if agent_name == "copilot":
-                    prompt_file = project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
+                    prompt_file = (
+                        project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
+                    )
                     if prompt_file.exists():
                         prompt_file.unlink()
 

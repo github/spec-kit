@@ -1175,8 +1175,7 @@ class TestPresetCatalog:
         """Test search with cached catalog data."""
         from unittest.mock import patch
 
-        # Only use the default catalog to prevent fetching the community catalog from the network
-        monkeypatch.setenv("SPECKIT_PRESET_CATALOG_URL", PresetCatalog.DEFAULT_CATALOG_URL)
+        monkeypatch.delenv("SPECKIT_PRESET_CATALOG_URL", raising=False)
         catalog = PresetCatalog(project_dir)
         catalog.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -2865,3 +2864,182 @@ class TestPresetEnableDisable:
 
         assert result.exit_code == 1
         assert "corrupted state" in result.output.lower()
+
+
+# ===== Lean Preset Tests =====
+
+
+LEAN_PRESET_DIR = Path(__file__).parent.parent / "presets" / "lean"
+
+LEAN_COMMAND_NAMES = [
+    "speckit.specify",
+    "speckit.plan",
+    "speckit.tasks",
+    "speckit.implement",
+    "speckit.constitution",
+]
+
+
+class TestLeanPreset:
+    """Tests for the lean preset that ships with the repo."""
+
+    def test_lean_preset_exists(self):
+        """Verify the lean preset directory and manifest exist."""
+        assert LEAN_PRESET_DIR.exists()
+        assert (LEAN_PRESET_DIR / "preset.yml").exists()
+
+    def test_lean_manifest_valid(self):
+        """Verify the lean preset manifest is valid."""
+        manifest = PresetManifest(LEAN_PRESET_DIR / "preset.yml")
+        assert manifest.id == "lean"
+        assert manifest.name == "Lean Workflow"
+        assert manifest.version == "1.0.0"
+        assert len(manifest.templates) == 5  # 5 commands
+
+    def test_lean_provides_core_workflow_commands(self):
+        """Verify the lean preset provides overrides for core workflow commands."""
+        manifest = PresetManifest(LEAN_PRESET_DIR / "preset.yml")
+        provided_names = {t["name"] for t in manifest.templates}
+        for name in LEAN_COMMAND_NAMES:
+            assert name in provided_names, f"Lean preset missing command: {name}"
+
+    def test_lean_command_files_exist(self):
+        """Verify that all declared command files actually exist on disk."""
+        manifest = PresetManifest(LEAN_PRESET_DIR / "preset.yml")
+        for tmpl in manifest.templates:
+            tmpl_path = LEAN_PRESET_DIR / tmpl["file"]
+            assert tmpl_path.exists(), f"Missing command file: {tmpl['file']}"
+
+    def test_lean_commands_have_no_scripts(self):
+        """Verify lean commands have no scripts or agent_scripts in frontmatter."""
+        from specify_cli.agents import CommandRegistrar
+
+        for name in LEAN_COMMAND_NAMES:
+            cmd_path = LEAN_PRESET_DIR / "commands" / f"speckit.{name.split('.')[-1]}.md"
+            content = cmd_path.read_text()
+            frontmatter, _ = CommandRegistrar.parse_frontmatter(content)
+            assert "scripts" not in frontmatter, f"{name} should not have scripts in frontmatter"
+            assert "agent_scripts" not in frontmatter, f"{name} should not have agent_scripts in frontmatter"
+
+    def test_lean_commands_have_no_hooks(self):
+        """Verify lean commands do not contain extension hook boilerplate."""
+        for name in LEAN_COMMAND_NAMES:
+            cmd_path = LEAN_PRESET_DIR / "commands" / f"speckit.{name.split('.')[-1]}.md"
+            content = cmd_path.read_text()
+            assert "hooks." not in content, f"{name} should not reference extension hooks"
+            assert "extensions.yml" not in content, f"{name} should not reference extensions.yml"
+
+    def test_install_lean_preset(self, project_dir):
+        """Test installing the lean preset from its directory."""
+        manager = PresetManager(project_dir)
+        manifest = manager.install_from_directory(LEAN_PRESET_DIR, "0.6.0")
+        assert manifest.id == "lean"
+        assert manager.registry.is_installed("lean")
+
+    def test_lean_overrides_commands(self, project_dir):
+        """Test that lean preset overrides are resolved correctly."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(LEAN_PRESET_DIR, "0.6.0")
+
+        resolver = PresetResolver(project_dir)
+        for name in LEAN_COMMAND_NAMES:
+            result = resolver.resolve(name, template_type="command")
+            assert result is not None, f"Lean override for {name} not resolved"
+
+
+# ===== Bundled Preset Locator Tests =====
+
+
+class TestBundledPresetLocator:
+    """Tests for _locate_bundled_preset discovery function."""
+
+    def test_locate_bundled_lean_preset(self):
+        """_locate_bundled_preset finds the lean preset."""
+        from specify_cli import _locate_bundled_preset
+
+        path = _locate_bundled_preset("lean")
+        assert path is not None
+        assert (path / "preset.yml").is_file()
+
+    def test_locate_bundled_preset_not_found(self):
+        """_locate_bundled_preset returns None for nonexistent preset."""
+        from specify_cli import _locate_bundled_preset
+
+        path = _locate_bundled_preset("nonexistent-preset")
+        assert path is None
+
+    def test_locate_bundled_preset_rejects_invalid_id(self):
+        """_locate_bundled_preset rejects IDs with invalid characters."""
+        from specify_cli import _locate_bundled_preset
+
+        assert _locate_bundled_preset("../escape") is None
+        assert _locate_bundled_preset("UPPERCASE") is None
+        assert _locate_bundled_preset("has spaces") is None
+
+    def test_bundled_preset_add_via_cli(self, project_dir):
+        """Test that 'specify preset add lean' installs the bundled preset."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="0.6.0"):
+            result = runner.invoke(app, ["preset", "add", "lean"])
+
+        assert result.exit_code == 0, result.output
+        assert "Lean Workflow" in result.output
+        assert "installed" in result.output.lower()
+
+    def test_bundled_preset_in_catalog(self):
+        """Verify the lean preset is listed in catalog.json with bundled marker."""
+        catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
+        catalog = json.loads(catalog_path.read_text())
+        assert "lean" in catalog["presets"]
+        assert catalog["presets"]["lean"]["bundled"] is True
+        assert "download_url" not in catalog["presets"]["lean"]
+
+    def test_bundled_preset_download_raises_error(self, project_dir):
+        """download_pack raises PresetError for bundled presets without download_url."""
+        catalog = PresetCatalog(project_dir)
+
+        catalog_data = {
+            "test-bundled": {
+                "name": "Test Bundled",
+                "version": "1.0.0",
+                "bundled": True,
+            }
+        }
+        from unittest.mock import patch
+        with patch.object(catalog, "_get_merged_packs", return_value=catalog_data):
+            with pytest.raises(PresetError, match="bundled with spec-kit"):
+                catalog.download_pack("test-bundled")
+
+    def test_bundled_preset_missing_locally_cli_error(self, project_dir):
+        """CLI shows clear error when bundled preset cannot be found locally."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        # Patch _locate_bundled_preset to return None (simulating missing files)
+        # and mock the catalog to return a bundled entry for "lean"
+        fake_pack_info = {
+            "id": "lean",
+            "name": "Lean Workflow",
+            "version": "1.0.0",
+            "bundled": True,
+            "_install_allowed": True,
+        }
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli._locate_bundled_preset", return_value=None), \
+             patch("specify_cli.presets.PresetCatalog") as MockCatalog:
+            MockCatalog.return_value.get_pack_info.return_value = fake_pack_info
+            result = runner.invoke(app, ["preset", "add", "lean"])
+
+        # Should fail with a helpful error explaining this is a bundled preset
+        # and suggesting how to recover.
+        assert result.exit_code == 1
+        output = strip_ansi(result.output).lower()
+        assert "bundled" in output, result.output
+        assert "reinstall" in output, result.output

@@ -26,6 +26,13 @@ COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
 EXT_CREATE_FEATURE = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
 EXT_CREATE_FEATURE_PS = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
 
+HAS_PWSH = shutil.which("pwsh") is not None
+
+
+def _has_pwsh() -> bool:
+    """Check if pwsh is available."""
+    return HAS_PWSH
+
 
 @pytest.fixture
 def git_repo(tmp_path: Path) -> Path:
@@ -271,6 +278,30 @@ class TestCheckFeatureBranch:
         result = source_and_call('check_feature_branch "2026031-143022" "true"')
         assert result.returncode != 0
 
+    def test_accepts_single_prefix_sequential(self):
+        """Optional gitflow-style prefix: one segment + sequential feature name."""
+        result = source_and_call('check_feature_branch "feat/004-my-feature" "true"')
+        assert result.returncode == 0
+
+    def test_accepts_single_prefix_timestamp(self):
+        """Optional prefix + timestamp-style feature name."""
+        result = source_and_call('check_feature_branch "release/20260319-143022-feat" "true"')
+        assert result.returncode == 0
+
+    def test_rejects_invalid_suffix_with_single_prefix(self):
+        result = source_and_call('check_feature_branch "feat/main" "true"')
+        assert result.returncode != 0
+        assert "feat/main" in result.stderr
+
+    def test_rejects_two_level_prefix_before_feature(self):
+        """More than one slash: no stripping; whole name must match (fails)."""
+        result = source_and_call('check_feature_branch "feat/fix/004-feat" "true"')
+        assert result.returncode != 0
+
+    def test_rejects_malformed_timestamp_with_prefix(self):
+        result = source_and_call('check_feature_branch "feat/2026031-143022-feat" "true"')
+        assert result.returncode != 0
+
 
 # ── find_feature_dir_by_prefix Tests ─────────────────────────────────────────
 
@@ -302,6 +333,67 @@ class TestFindFeatureDirByPrefix:
         )
         assert result.returncode == 0
         assert result.stdout.strip() == f"{tmp_path}/specs/1000-original-feat"
+
+    def test_sequential_with_single_path_prefix(self, tmp_path: Path):
+        """Strip one optional prefix segment before prefix directory lookup."""
+        (tmp_path / "specs" / "004-only-dir").mkdir(parents=True)
+        result = source_and_call(
+            f'find_feature_dir_by_prefix "{tmp_path}" "feat/004-other-suffix"'
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == f"{tmp_path}/specs/004-only-dir"
+
+    def test_timestamp_with_single_path_prefix_cross_branch(self, tmp_path: Path):
+        (tmp_path / "specs" / "20260319-143022-canonical").mkdir(parents=True)
+        result = source_and_call(
+            f'find_feature_dir_by_prefix "{tmp_path}" "hotfix/20260319-143022-alias"'
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == f"{tmp_path}/specs/20260319-143022-canonical"
+
+
+# ── get_feature_paths + single-prefix integration ───────────────────────────
+
+
+class TestGetFeaturePathsSinglePrefix:
+    def test_bash_specify_feature_prefixed_resolves_by_prefix(self, tmp_path: Path):
+        """get_feature_paths: SPECIFY_FEATURE with one optional prefix uses effective name for lookup."""
+        (tmp_path / ".specify").mkdir()
+        (tmp_path / "specs" / "001-target-spec").mkdir(parents=True)
+        cmd = (
+            f'cd "{tmp_path}" && export SPECIFY_FEATURE="feat/001-other" && '
+            f'source "{COMMON_SH}" && eval "$(get_feature_paths)" && printf "%s" "$FEATURE_DIR"'
+        )
+        result = subprocess.run(
+            ["bash", "-c", cmd],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == str(tmp_path / "specs" / "001-target-spec")
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_ps_specify_feature_prefixed_resolves_by_prefix(self, git_repo: Path):
+        """PowerShell Get-FeaturePathsEnv: same prefix stripping as bash."""
+        common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
+        spec_dir = git_repo / "specs" / "001-ps-prefix-spec"
+        spec_dir.mkdir(parents=True)
+        ps_cmd = f'. "{common_ps}"; $r = Get-FeaturePathsEnv; Write-Output "FEATURE_DIR=$($r.FEATURE_DIR)"'
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-Command", ps_cmd],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "SPECIFY_FEATURE": "feat/001-other"},
+        )
+        assert result.returncode == 0, result.stderr
+        for line in result.stdout.splitlines():
+            if line.startswith("FEATURE_DIR="):
+                val = line.split("=", 1)[1].strip()
+                assert val == str(spec_dir)
+                break
+        else:
+            pytest.fail("FEATURE_DIR not found in PowerShell output")
 
 
 # ── get_current_branch Tests ─────────────────────────────────────────────────
@@ -789,15 +881,6 @@ class TestDryRun:
 
 
 # ── PowerShell Dry-Run Tests ─────────────────────────────────────────────────
-
-
-def _has_pwsh() -> bool:
-    """Check if pwsh is available."""
-    try:
-        subprocess.run(["pwsh", "--version"], capture_output=True, check=True)
-        return True
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return False
 
 
 def run_ps_script(cwd: Path, *args: str) -> subprocess.CompletedProcess:
