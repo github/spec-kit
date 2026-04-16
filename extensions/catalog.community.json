@@ -2117,6 +2117,39 @@
       "stars": 0,
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "tekimax-security": {
+      "name": "TEKIMAX Secure SDD",
+      "id": "tekimax-security",
+      "description": "Security-first extension for Spec Kit. Adds threat modeling (STRIDE), automated red teaming, AI guardrails, data contracts, model governance gates, and project-root-confined security scripts with tamper-evident hash-chain audit logs.",
+      "author": "TEKIMAX",
+      "version": "0.3.0",
+      "download_url": "https://github.com/TEKIMAX/speckit-security/releases/download/v0.3.0/speckit-security.zip",
+      "repository": "https://github.com/TEKIMAX/speckit-security",
+      "homepage": "https://speckit.tekimax.com",
+      "documentation": "https://speckit.tekimax.com/docs",
+      "changelog": "https://github.com/TEKIMAX/speckit-security/blob/main/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 8,
+        "hooks": 5
+      },
+      "tags": [
+        "security",
+        "threat-modeling",
+        "red-team",
+        "guardrails",
+        "ai-safety",
+        "compliance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-16T00:00:00Z"
     }
   }
 }
