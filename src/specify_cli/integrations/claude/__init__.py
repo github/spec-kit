@@ -5,10 +5,20 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import re
+
 import yaml
 
 from ..base import SkillsIntegration
 from ..manifest import IntegrationManifest
+
+# Note injected into hook sections so Claude maps dot-notation command
+# names (from extensions.yml) to the hyphenated skill names it uses.
+_HOOK_COMMAND_NOTE = (
+    "- When constructing slash commands from hook command names, "
+    "replace dots (`.`) with hyphens (`-`). "
+    "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
+)
 
 # Mapping of command template stem → argument-hint text shown inline
 # when a user invokes the slash command in Claude Code.
@@ -148,6 +158,43 @@ class ClaudeIntegration(SkillsIntegration):
             out.append(line)
         return "".join(out)
 
+    @staticmethod
+    def _inject_hook_command_note(content: str) -> str:
+        """Insert a dot-to-hyphen note before each hook output instruction.
+
+        Targets the line ``- For each executable hook, output the following``
+        and inserts the note on the line before it, matching its indentation.
+        Skips if the note is already present.
+        """
+        if "replace dots" in content:
+            return content
+
+        def repl(m: re.Match[str]) -> str:
+            indent = m.group(1)
+            instruction = m.group(2)
+            eol = m.group(3)
+            return (
+                indent
+                + _HOOK_COMMAND_NOTE.rstrip("\n")
+                + eol
+                + indent
+                + instruction
+                + eol
+            )
+
+        return re.sub(
+            r"(?m)^(\s*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
+            repl,
+            content,
+        )
+
+    def post_process_skill_content(self, content: str) -> str:
+        """Inject Claude-specific frontmatter flags and hook notes."""
+        updated = self._inject_frontmatter_flag(content, "user-invocable")
+        updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
+        updated = self._inject_hook_command_note(updated)
+        return updated
+
     def setup(
         self,
         project_root: Path,
@@ -155,7 +202,7 @@ class ClaudeIntegration(SkillsIntegration):
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
-        """Install Claude skills, then inject user-invocable, disable-model-invocation, and argument-hint."""
+        """Install Claude skills, then inject Claude-specific flags and argument-hints."""
         created = super().setup(project_root, manifest, parsed_options, **opts)
 
         # Post-process generated skill files
@@ -173,11 +220,7 @@ class ClaudeIntegration(SkillsIntegration):
             content_bytes = path.read_bytes()
             content = content_bytes.decode("utf-8")
 
-            # Inject user-invocable: true (Claude skills are accessible via /command)
-            updated = self._inject_frontmatter_flag(content, "user-invocable")
-
-            # Inject disable-model-invocation: true (Claude skills run only when invoked)
-            updated = self._inject_frontmatter_flag(updated, "disable-model-invocation")
+            updated = self.post_process_skill_content(content)
 
             # Inject argument-hint if available for this skill
             skill_dir_name = path.parent.name  # e.g. "speckit-plan"

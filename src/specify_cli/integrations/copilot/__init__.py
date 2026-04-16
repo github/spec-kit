@@ -19,14 +19,19 @@ from ..manifest import IntegrationManifest
 
 
 class CopilotIntegration(IntegrationBase):
-    """Integration for GitHub Copilot in VS Code."""
+    """Integration for GitHub Copilot (VS Code IDE + CLI).
+
+    The IDE integration (``requires_cli: False``) installs ``.agent.md``
+    command files.  Workflow dispatch additionally requires the
+    ``copilot`` CLI to be installed separately.
+    """
 
     key = "copilot"
     config = {
         "name": "GitHub Copilot",
         "folder": ".github/",
         "commands_subdir": "agents",
-        "install_url": None,
+        "install_url": "https://docs.github.com/en/copilot/concepts/agents/copilot-cli/about-copilot-cli",
         "requires_cli": False,
     }
     registrar_config = {
@@ -36,6 +41,101 @@ class CopilotIntegration(IntegrationBase):
         "extension": ".agent.md",
     }
     context_file = ".github/copilot-instructions.md"
+
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+    ) -> list[str] | None:
+        # GitHub Copilot CLI uses ``copilot -p "prompt"`` for
+        # non-interactive mode.  --allow-all-tools is required for the
+        # agent to perform file edits and shell commands.  Controlled
+        # by SPECKIT_ALLOW_ALL_TOOLS env var (default: enabled).
+        import os
+        args = ["copilot", "-p", prompt]
+        if os.environ.get("SPECKIT_ALLOW_ALL_TOOLS", "1") != "0":
+            args.append("--allow-all-tools")
+        if model:
+            args.extend(["--model", model])
+        if output_json:
+            args.extend(["--output-format", "json"])
+        return args
+
+    def build_command_invocation(self, command_name: str, args: str = "") -> str:
+        """Copilot agents are not slash-commands — just return the args as prompt."""
+        return args or ""
+
+    def dispatch_command(
+        self,
+        command_name: str,
+        args: str = "",
+        *,
+        project_root: Path | None = None,
+        model: str | None = None,
+        timeout: int = 600,
+        stream: bool = True,
+    ) -> dict[str, Any]:
+        """Dispatch via ``--agent speckit.<stem>`` instead of slash-commands.
+
+        Copilot ``.agent.md`` files are agents, not skills.  The CLI
+        selects them with ``--agent <name>`` and the prompt is just
+        the user's arguments.
+        """
+        import subprocess
+
+        stem = command_name
+        if "." in stem:
+            stem = stem.rsplit(".", 1)[-1]
+        agent_name = f"speckit.{stem}"
+
+        prompt = args or ""
+        import os
+        cli_args = [
+            "copilot", "-p", prompt,
+            "--agent", agent_name,
+        ]
+        if os.environ.get("SPECKIT_ALLOW_ALL_TOOLS", "1") != "0":
+            cli_args.append("--allow-all-tools")
+        if model:
+            cli_args.extend(["--model", model])
+        if not stream:
+            cli_args.extend(["--output-format", "json"])
+
+        cwd = str(project_root) if project_root else None
+
+        if stream:
+            try:
+                result = subprocess.run(
+                    cli_args,
+                    text=True,
+                    cwd=cwd,
+                )
+            except KeyboardInterrupt:
+                return {
+                    "exit_code": 130,
+                    "stdout": "",
+                    "stderr": "Interrupted by user",
+                }
+            return {
+                "exit_code": result.returncode,
+                "stdout": "",
+                "stderr": "",
+            }
+
+        result = subprocess.run(
+            cli_args,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=timeout,
+        )
+        return {
+            "exit_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
 
     def command_filename(self, template_name: str) -> str:
         """Copilot commands use ``.agent.md`` extension."""

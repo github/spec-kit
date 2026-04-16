@@ -12,6 +12,8 @@ import textwrap
 
 import pytest
 
+from tests.conftest import requires_bash
+
 SCRIPT_PATH = os.path.join(
     os.path.dirname(__file__),
     os.pardir,
@@ -73,6 +75,7 @@ class TestScriptFrontmatterPattern:
 
 
 @requires_git
+@requires_bash
 class TestCursorFrontmatterIntegration:
     """Integration tests using a real git repo."""
 
