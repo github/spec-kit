@@ -618,7 +618,7 @@ class IntegrationDescriptor:
 
     @property
     def tools(self) -> List[Dict[str, Any]]:
-        return self.data.get("requires", {}).get("tools", [])
+        return self.data.get("requires", {}).get("tools") or []
 
     def get_hash(self) -> str:
         """SHA-256 hash of the descriptor file."""
