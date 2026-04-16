@@ -77,9 +77,9 @@ And use the tool directly:
 specify init <PROJECT_NAME>
 
 # Or initialize in existing project
-specify init . --ai claude
+specify init . --ai copilot
 # or
-specify init --here --ai claude
+specify init --here --ai copilot
 
 # Check installed tools
 specify check
@@ -100,9 +100,9 @@ Run directly without installing:
 uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <PROJECT_NAME>
 
 # Or initialize in existing project
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init . --ai claude
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init . --ai copilot
 # or
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here --ai claude
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here --ai copilot
 ```
 
 **Benefits of persistent installation:**
@@ -349,136 +349,13 @@ Additional commands for enhanced quality and validation:
 
 ## 🔧 Specify CLI Reference
 
-The `specify` tool is invoked as
+For full command details, options, and examples, see the [reference documentation](https://github.github.io/spec-kit/):
 
-```text
-specify <COMMAND> [SUBCOMMAND] [OPTIONS]
-```
-
-and supports the following commands:
-
-### Commands
-
-| Command       | Description                                                                                                                                                                                                                                                                                                                                  |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init`        | Initialize a new Specify project from the latest template.                                                                                                                                                                                                                                                                                   |
-| `check`       | Check for installed tools: `git` plus all CLI-based agents configured in `AGENT_CONFIG` (for example: `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `junie`, `qwen`, `opencode`, `codex`, `kiro-cli`, `shai`, `qodercli`, `vibe`, `kimi`, `iflow`, `pi`, `forge`, etc.)                                            |
-| `version`     | Show the currently installed Spec Kit version.                                                                                                                                                                                                                                                                                               |
-| `extension`   | Manage extensions                                                                                                                                                                                                                                                                                                                            |
-| `preset`      | Manage presets                                                                                                                                                                                                                                                                                                                               |
-| `integration` | Manage integrations                                                                                                                                                                                                                                                                                                                          |
-| `workflow`    | Run, manage, and search workflows. See the [Workflows reference](https://github.github.io/spec-kit/reference/workflows.html)                                                                                                                                                                                                                |
-
-### `specify init` Arguments & Options
-
-```bash
-specify init [PROJECT_NAME] <OPTIONS>
-```
-
-| Argument/Option        | Type     | Description                                                                                                                                                                                                                                                                                                                                                                               |
-| ---------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<PROJECT_NAME>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory)                                                                                                                                                                                                                                                                                        |
-| `--ai`                 | Option   | AI assistant to use (see `AGENT_CONFIG` for the full, up-to-date list). Common options include: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `junie`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, `shai`, `kiro-cli` (`kiro` alias), `agy`, `bob`, `qodercli`, `vibe`, `kimi`, `iflow`, `pi`, `forge`, or `generic` (requires `--ai-commands-dir`) |
-| `--ai-commands-dir`    | Option   | Directory for agent command files (required with `--ai generic`, e.g. `.myagent/commands/`)                                                                                                                                                                                                                                                                                               |
-| `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                                                                                                                                                                                                                                                                                                                               |
-| `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                                                                                                                                                                                                                                                                                                                                           |
-| `--no-git`             | Flag     | Skip git repository initialization                                                                                                                                                                                                                                                                                                                                                        |
-| `--here`               | Flag     | Initialize project in the current directory instead of creating a new one                                                                                                                                                                                                                                                                                                                 |
-| `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation)                                                                                                                                                                                                                                                                                                          |
-| `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                                                                                                                                                                                                                                                                                                                               |
-| `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                                                                                                                                                                                                                                                                          |
-| `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                                                                                                                                                                                                                                                                 |
-| `--ai-skills`          | Flag     | Install Prompt.MD templates as agent skills in agent-specific `skills/` directory (requires `--ai`). Extension commands are also auto-registered as skills when extensions are added later.                                                                                                                                                                                               |
-| `--branch-numbering`   | Option   | Branch numbering strategy: `sequential` (default — `001`, `002`, `003`, …, `1000`, … — expands beyond 3 digits automatically) or `timestamp` (`YYYYMMDD-HHMMSS`). Timestamp mode is useful for distributed teams to avoid numbering conflicts                                                                                                                                                                                                  |
-
-### Examples
-
-```bash
-# Basic project initialization
-specify init my-project
-
-# Initialize with specific AI assistant
-specify init my-project --ai claude
-
-# Initialize with Cursor support
-specify init my-project --ai cursor-agent
-
-# Initialize with Qoder support
-specify init my-project --ai qodercli
-
-# Initialize with Windsurf support
-specify init my-project --ai windsurf
-
-# Initialize with Kiro CLI support
-specify init my-project --ai kiro-cli
-
-# Initialize with Amp support
-specify init my-project --ai amp
-
-# Initialize with SHAI support
-specify init my-project --ai shai
-
-# Initialize with Mistral Vibe support
-specify init my-project --ai vibe
-
-# Initialize with IBM Bob support
-specify init my-project --ai bob
-
-# Initialize with Pi Coding Agent support
-specify init my-project --ai pi
-
-# Initialize with Codex CLI support
-specify init my-project --ai codex --ai-skills
-
-# Initialize with Antigravity support
-specify init my-project --ai agy --ai-skills
-
-# Initialize with Forge support
-specify init my-project --ai forge
-
-# Initialize with an unsupported agent (generic / bring your own agent)
-specify init my-project --ai generic --ai-commands-dir .myagent/commands/
-
-# Initialize with PowerShell scripts (Windows/cross-platform)
-specify init my-project --ai copilot --script ps
-
-# Initialize in current directory
-specify init . --ai copilot
-# or use the --here flag
-specify init --here --ai copilot
-
-# Force merge into current (non-empty) directory without confirmation
-specify init . --force --ai copilot
-# or
-specify init --here --force --ai copilot
-
-# Skip git initialization
-specify init my-project --ai gemini --no-git
-
-# Enable debug output for troubleshooting
-specify init my-project --ai claude --debug
-
-# Use GitHub token for API requests (helpful for corporate environments)
-specify init my-project --ai claude --github-token ghp_your_token_here
-
-# Claude Code installs skills with the project by default
-specify init my-project --ai claude
-
-# Initialize in current directory with agent skills
-specify init --here --ai gemini --ai-skills
-
-# Use timestamp-based branch numbering (useful for distributed teams)
-specify init my-project --ai claude --branch-numbering timestamp
-
-# Check system requirements
-specify check
-```
-
-### Environment Variables
-
-| Variable          | Description                                                                                                                                                                                                                                                                                            |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>\*\*Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+- [Core Commands](https://github.github.io/spec-kit/reference/core.html) — `init`, `check`, `version`
+- [Integrations](https://github.github.io/spec-kit/reference/integrations.html) — `integration list`, `install`, `uninstall`, `switch`, `upgrade`
+- [Extensions](https://github.github.io/spec-kit/reference/extensions.html) — `extension add`, `remove`, `search`, `update`, catalogs
+- [Presets](https://github.github.io/spec-kit/reference/presets.html) — `preset add`, `remove`, `resolve`, priority stacking
+- [Workflows](https://github.github.io/spec-kit/reference/workflows.html) — `workflow run`, `resume`, step types, expressions
 
 ## 🧩 Making Spec Kit Your Own: Extensions & Presets
 
@@ -627,29 +504,29 @@ specify init --here --force
 You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
 
 ```bash
-specify init <project_name> --ai claude
+specify init <project_name> --ai copilot
 specify init <project_name> --ai gemini
 specify init <project_name> --ai copilot
 
 # Or in current directory:
-specify init . --ai claude
+specify init . --ai copilot
 specify init . --ai codex --ai-skills
 
 # or use --here flag
-specify init --here --ai claude
+specify init --here --ai copilot
 specify init --here --ai codex --ai-skills
 
 # Force merge into a non-empty current directory
-specify init . --force --ai claude
+specify init . --force --ai copilot
 
 # or
-specify init --here --force --ai claude
+specify init --here --force --ai copilot
 ```
 
 The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, Qoder CLI, Tabnine CLI, Kiro CLI, Pi, Forge, Goose, or Mistral Vibe installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
-specify init <project_name> --ai claude --ignore-agent-tools
+specify init <project_name> --ai copilot --ignore-agent-tools
 ```
 
 ### **STEP 1:** Establish project principles
