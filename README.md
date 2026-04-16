@@ -315,6 +315,7 @@ Community projects that extend, visualize, or build on Spec Kit:
 - **[SpecKit Companion](https://marketplace.visualstudio.com/items?itemName=alfredoperez.speckit-companion)** — A VS Code extension that brings a visual GUI to Spec Kit. Browse specs in a rich markdown viewer with clickable file references, create specifications with image attachments, comment and refine each step inline (GitHub-style review), track your progress through the SDD workflow with a visual phase stepper, and manage steering documents like constitutions and templates.
 
 ## 🤖 Supported AI Agents
+
 | Agent                                                                                | Support | Notes                                                                                                                                     |
 | ------------------------------------------------------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | [Qoder CLI](https://qoder.com/cli)                                                   | ✅      |                                                                                                                                           |
@@ -349,9 +350,9 @@ Community projects that extend, visualize, or build on Spec Kit:
 
 ## Available Slash Commands
 
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development. If you pass `--ai <agent> --ai-skills`, Spec Kit installs agent skills instead of slash-command prompt files; `--ai-skills` requires `--ai`.
+After running `specify init --integration <agent>`, your AI coding agent will have access to these slash commands for structured development. Integrations choose the appropriate command format for each agent, including native skills where supported. The legacy `--ai` and `--ai-skills` options remain available as deprecated aliases.
 
-#### Core Commands
+### Core Commands
 
 Essential commands for the Spec-Driven Development workflow:
 
@@ -364,7 +365,7 @@ Essential commands for the Spec-Driven Development workflow:
 | `/speckit.taskstoissues` | `speckit-taskstoissues`| Convert generated task lists into GitHub issues for tracking and execution |
 | `/speckit.implement`     | `speckit-implement`    | Execute all tasks to build the feature according to the plan               |
 
-#### Optional Commands
+### Optional Commands
 
 Additional commands for enhanced quality and validation:
 
@@ -404,17 +405,21 @@ specify init [PROJECT_NAME] <OPTIONS>
 | Argument/Option        | Type     | Description                                                                                                                                                                                                                                                                                                                                                                               |
 | ---------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `<PROJECT_NAME>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory)                                                                                                                                                                                                                                                                                        |
-| `--ai`                 | Option   | AI assistant to use (see `AGENT_CONFIG` for the full, up-to-date list). Common options include: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `junie`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, `shai`, `kiro-cli` (`kiro` alias), `agy`, `bob`, `qodercli`, `vibe`, `kimi`, `iflow`, `pi`, `forge`, or `generic` (requires `--ai-commands-dir`) |
-| `--ai-commands-dir`    | Option   | Directory for agent command files (required with `--ai generic`, e.g. `.myagent/commands/`)                                                                                                                                                                                                                                                                                               |
+| `--integration`        | Option   | Integration to use. Common options include: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `junie`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, `shai`, `kiro-cli`, `agy`, `bob`, `qodercli`, `vibe`, `kimi`, `iflow`, `pi`, `forge`, or `generic` |
+| `--integration-options`| Option   | Options passed to the selected integration, such as `--integration-options="--commands-dir .myagent/commands/"` for `generic`                                                                                                                                                                                                                                                               |
+| `--ai`                 | Option   | Deprecated legacy alias for `--integration`                                                                                                                                                                                                                                                                                                                                               |
+| `--ai-commands-dir`    | Option   | Deprecated legacy option for generic command directories. Use `--integration generic --integration-options="--commands-dir <dir>"` instead                                                                                                                                                                                                                                                |
 | `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                                                                                                                                                                                                                                                                                                                               |
 | `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                                                                                                                                                                                                                                                                                                                                           |
-| `--no-git`             | Flag     | Skip git repository initialization                                                                                                                                                                                                                                                                                                                                                        |
+| `--no-git`             | Flag     | Deprecated. Skip git repository initialization and default git-extension installation                                                                                                                                                                                                                                                                                                      |
 | `--here`               | Flag     | Initialize project in the current directory instead of creating a new one                                                                                                                                                                                                                                                                                                                 |
 | `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation)                                                                                                                                                                                                                                                                                                          |
-| `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                                                                                                                                                                                                                                                                                                                               |
-| `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                                                                                                                                                                                                                                                                          |
-| `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                                                                                                                                                                                                                                                                 |
-| `--ai-skills`          | Flag     | Install Prompt.MD templates as agent skills in agent-specific `skills/` directory (requires `--ai`). Extension commands are also auto-registered as skills when extensions are added later.                                                                                                                                                                                               |
+| `--skip-tls`           | Flag     | Deprecated no-op retained for compatibility; SSL/TLS verification behavior is unaffected                                                                                                                                                                                                                                                                                                  |
+| `--debug`              | Flag     | Deprecated no-op retained for compatibility; does not enable additional debug output                                                                                                                                                                                                                                                                                                       |
+| `--github-token`       | Option   | Deprecated no-op retained for compatibility; does not affect initialization behavior                                                                                                                                                                                                                                                                                                       |
+| `--ai-skills`          | Flag     | Deprecated legacy option for integrations that support skills. Skills are now selected by the integration.                                                                                                                                                                                                                                                                                |
+| `--extension`          | Option   | Install an extension during initialization. Repeatable; accepts bundled IDs, local paths, or archive URLs.                                                                                                                                                                                                                                                                                |
+| `--preset`             | Option   | Install a preset during initialization                                                                                                                                                                                                                                                                                                                                                    |
 | `--branch-numbering`   | Option   | Branch numbering strategy: `sequential` (default — `001`, `002`, `003`, …, `1000`, … — expands beyond 3 digits automatically) or `timestamp` (`YYYYMMDD-HHMMSS`). Timestamp mode is useful for distributed teams to avoid numbering conflicts                                                                                                                                                                                                  |
 
 ### Examples
@@ -424,10 +429,13 @@ specify init [PROJECT_NAME] <OPTIONS>
 specify init my-project
 
 # Initialize with specific AI assistant
-specify init my-project --ai claude
+specify init my-project --integration claude
+
+# Install a bundled extension during initialization
+specify init my-project --integration copilot --extension git
 
 # Initialize with Cursor support
-specify init my-project --ai cursor-agent
+specify init my-project --integration cursor-agent
 
 # Initialize with Qoder support
 specify init my-project --ai qodercli
@@ -480,12 +488,6 @@ specify init --here --force --ai copilot
 
 # Skip git initialization
 specify init my-project --ai gemini --no-git
-
-# Enable debug output for troubleshooting
-specify init my-project --ai claude --debug
-
-# Use GitHub token for API requests (helpful for corporate environments)
-specify init my-project --ai claude --github-token ghp_your_token_here
 
 # Claude Code installs skills with the project by default
 specify init my-project --ai claude

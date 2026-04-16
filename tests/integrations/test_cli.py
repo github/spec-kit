@@ -2,7 +2,10 @@
 
 import json
 import os
+import tarfile
+from io import BytesIO
 
+import pytest
 import yaml
 
 from tests.conftest import strip_ansi
@@ -12,6 +15,45 @@ def _normalize_cli_output(output: str) -> str:
     output = strip_ansi(output)
     output = " ".join(output.split())
     return output.strip()
+
+
+def _write_test_extension(root, ext_id="sample-ext"):
+    """Create a minimal extension fixture."""
+    ext_dir = root / ext_id
+    commands_dir = ext_dir / "commands"
+    commands_dir.mkdir(parents=True)
+
+    manifest = {
+        "schema_version": "1.0",
+        "extension": {
+            "id": ext_id,
+            "name": "Sample Extension",
+            "version": "1.0.0",
+            "description": "Sample extension for init tests",
+            "author": "Test",
+            "repository": "https://github.com/example/sample-ext",
+            "license": "MIT",
+        },
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {
+            "commands": [
+                {
+                    "name": f"speckit.{ext_id}.hello",
+                    "file": "commands/hello.md",
+                    "description": "Say hello",
+                }
+            ]
+        },
+    }
+    (ext_dir / "extension.yml").write_text(
+        yaml.safe_dump(manifest, sort_keys=False),
+        encoding="utf-8",
+    )
+    (commands_dir / "hello.md").write_text(
+        "---\ndescription: Say hello\n---\n\nHello from $ARGUMENTS\n",
+        encoding="utf-8",
+    )
+    return ext_dir
 
 
 class TestInitIntegrationFlag:
@@ -83,6 +125,9 @@ class TestInitIntegrationFlag:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
+        assert "--ai is deprecated" in result.output
+        assert "--integration" in result.output
+        assert "copilot instead" in result.output
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
 
     def test_ai_emits_deprecation_warning_with_integration_replacement(self, tmp_path):
@@ -212,6 +257,282 @@ class TestInitIntegrationFlag:
         assert (templates_dir / "plan-template.md").exists()
 
 
+class TestInitExtensionFlag:
+    """Tests for installing extensions during specify init."""
+
+    def test_extension_flag_installs_local_extension(self, tmp_path):
+        """--extension accepts a local extension directory during init."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        extension_dir = _write_test_extension(tmp_path)
+        project = tmp_path / "with-extension"
+
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "init", str(project),
+            "--integration", "copilot",
+            "--extension", str(extension_dir),
+            "--script", "sh",
+            "--no-git",
+        ], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        installed = project / ".specify" / "extensions" / "sample-ext"
+        assert installed.exists()
+        assert (installed / "extension.yml").exists()
+        assert (
+            project / ".github" / "agents" / "speckit.sample-ext.hello.agent.md"
+        ).exists()
+
+        opts = json.loads(
+            (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
+        )
+        assert opts["extensions"] == [str(extension_dir)]
+
+    def test_extension_flag_is_repeatable(self, tmp_path):
+        """Multiple --extension values are installed in order."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        ext_one = _write_test_extension(tmp_path, "alpha-ext")
+        ext_two = _write_test_extension(tmp_path, "beta-ext")
+        project = tmp_path / "repeatable-extension"
+
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "init", str(project),
+            "--integration", "copilot",
+            "--extension", str(ext_one),
+            "--extension", str(ext_two),
+            "--script", "sh",
+            "--no-git",
+        ], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert (project / ".specify" / "extensions" / "alpha-ext").exists()
+        assert (project / ".specify" / "extensions" / "beta-ext").exists()
+
+    def test_extension_git_explicit_opt_in_works_with_no_git(self, tmp_path):
+        """Explicit --extension git installs the bundled git extension even with --no-git."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "explicit-git"
+
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "init", str(project),
+            "--integration", "copilot",
+            "--extension", "git",
+            "--script", "sh",
+            "--no-git",
+        ], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert (project / ".specify" / "extensions" / "git").exists()
+        assert not (project / ".git").exists()
+
+    def test_extension_url_output_redacts_credentials_and_query(self, tmp_path, monkeypatch):
+        """URL-based extension install output should not leak query strings or credentials."""
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        import urllib.request
+        import specify_cli
+        from specify_cli import app
+
+        payload = b"fake-archive"
+
+        class FakeResponse:
+            headers = {"Content-Length": str(len(payload))}
+
+            def __init__(self):
+                self.offset = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self, size=-1):
+                if self.offset >= len(payload):
+                    return b""
+                end = min(self.offset + size, len(payload))
+                chunk = payload[self.offset:end]
+                self.offset = end
+                return chunk
+
+        def fake_urlopen(*args, **kwargs):
+            return FakeResponse()
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(
+            specify_cli,
+            "_install_extension_archive",
+            lambda *args, **kwargs: SimpleNamespace(id="url-ext"),
+        )
+
+        project = tmp_path / "url-extension"
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "init", str(project),
+            "--integration", "copilot",
+            "--extension", "https://user:secret@example.com/archive.zip?token=abc123",
+            "--script", "sh",
+            "--no-git",
+        ], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert "https://example.com/archive.zip" in result.output
+        assert "user:secret" not in result.output
+        assert "token=abc123" not in result.output
+
+    def test_tar_extension_archive_rejects_special_members(self, tmp_path):
+        """TAR extension archives reject non-file and non-directory members."""
+        from specify_cli import _install_extension_archive
+        from specify_cli.extensions import ValidationError
+
+        archive_path = tmp_path / "unsafe-extension.tar"
+        manifest = b"extension:\n  id: test-ext\n  name: Test\n  version: 1.0.0\n"
+
+        with tarfile.open(archive_path, "w") as tf:
+            manifest_info = tarfile.TarInfo("extension.yml")
+            manifest_info.size = len(manifest)
+            tf.addfile(manifest_info, BytesIO(manifest))
+
+            fifo_info = tarfile.TarInfo("unsafe-fifo")
+            fifo_info.type = tarfile.FIFOTYPE
+            tf.addfile(fifo_info)
+
+        with pytest.raises(ValidationError, match="Unsupported TAR member type"):
+            _install_extension_archive(object(), archive_path, "0.0.0")
+
+    def test_extension_archive_error_message_lists_plain_tar(self, tmp_path):
+        """Unsupported extension archive message should include plain .tar."""
+        from specify_cli import _install_extension_archive
+        from specify_cli.extensions import ValidationError
+
+        archive_path = tmp_path / "not-an-archive.txt"
+        archive_path.write_text("not an archive", encoding="utf-8")
+
+        with pytest.raises(
+            ValidationError,
+            match=r"ZIP, \.tar, \.tar\.gz, or \.tgz",
+        ):
+            _install_extension_archive(object(), archive_path, "0.0.0")
+
+    def test_extension_url_downloads_in_bounded_chunks(self, tmp_path, monkeypatch):
+        """URL extension downloads stream to disk instead of reading all bytes."""
+        import urllib.request
+        import specify_cli
+
+        payload = b"archive-bytes"
+        read_sizes = []
+
+        class FakeResponse:
+            headers = {"Content-Length": str(len(payload))}
+
+            def __init__(self):
+                self.offset = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self, size=-1):
+                read_sizes.append(size)
+                if self.offset >= len(payload):
+                    return b""
+                end = min(self.offset + size, len(payload))
+                chunk = payload[self.offset:end]
+                self.offset = end
+                return chunk
+
+        def fake_urlopen(url, timeout):
+            assert url == "https://example.com/extension.zip"
+            assert timeout == 60
+            return FakeResponse()
+
+        def fake_install(manager, archive_path, speckit_version, priority=10):
+            assert archive_path.read_bytes() == payload
+            assert speckit_version == "0.0.0"
+            assert priority == 10
+            return "installed"
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(specify_cli, "_install_extension_archive", fake_install)
+
+        result = specify_cli._download_and_install_extension_url(
+            object(),
+            tmp_path,
+            "https://example.com/extension.zip",
+            "0.0.0",
+        )
+
+        assert result == "installed"
+        assert read_sizes == [
+            specify_cli.DOWNLOAD_CHUNK_BYTES,
+            specify_cli.DOWNLOAD_CHUNK_BYTES,
+        ]
+
+    def test_extension_add_from_url_uses_shared_bounded_download_helper(self, tmp_path, monkeypatch):
+        """extension add --from should reuse the bounded URL download helper."""
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        import specify_cli
+        from specify_cli import app
+        from specify_cli.extensions import ExtensionManager
+
+        project = tmp_path / "url-extension-add"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        captured = {}
+
+        def fake_download_and_install(manager, project_path, source_url, speckit_version, priority=10):
+            captured["manager"] = manager
+            captured["project_path"] = project_path
+            captured["source_url"] = source_url
+            captured["speckit_version"] = speckit_version
+            captured["priority"] = priority
+            return SimpleNamespace(
+                id="url-ext",
+                name="URL Extension",
+                version="1.0.0",
+                description="Downloaded from URL",
+                warnings=[],
+                commands=[],
+            )
+
+        monkeypatch.setattr(
+            specify_cli,
+            "_download_and_install_extension_url",
+            fake_download_and_install,
+        )
+
+        runner = CliRunner()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(
+                app,
+                ["extension", "add", "url-ext", "--from", "https://example.com/url-ext.zip"],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert isinstance(captured["manager"], ExtensionManager)
+        assert captured["project_path"] == project
+        assert captured["source_url"] == "https://example.com/url-ext.zip"
+        assert captured["speckit_version"] == specify_cli.get_speckit_version()
+        assert captured["priority"] == 10
+
+
 class TestForceExistingDirectory:
     """Tests for --force merging into an existing named directory."""
 
@@ -299,6 +620,8 @@ class TestGitExtensionAutoInstall:
         assert "hooks" in hooks_data
         assert "before_specify" in hooks_data["hooks"]
         assert "before_constitution" in hooks_data["hooks"]
+        assert "Git Extension Default Changing" in result.output
+        assert "specify init --extension git" in result.output
 
     def test_no_git_skips_extension(self, tmp_path):
         """With --no-git, the git extension is NOT installed."""
@@ -319,6 +642,7 @@ class TestGitExtensionAutoInstall:
             os.chdir(old_cwd)
 
         assert result.exit_code == 0, f"init failed: {result.output}"
+        assert "--no-git is deprecated" in result.output
 
         # Git extension should NOT be installed
         ext_dir = project / ".specify" / "extensions" / "git"
