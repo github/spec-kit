@@ -116,6 +116,22 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here
 
 If your environment blocks access to PyPI or GitHub, see the [Enterprise / Air-Gapped Installation](./docs/installation.md#enterprise--air-gapped-installation) guide for step-by-step instructions on using `pip download` to create portable, OS-specific wheel bundles on a connected machine.
 
+#### Option 4: Claude Code / Copilot Plugin
+
+Install Spec Kit as a plugin:
+
+```bash
+# Claude Code
+claude plugin marketplace add speckit-community/cc-spec-kit
+claude plugin install speckit@speckit-community
+
+# GitHub Copilot CLI
+copilot plugin marketplace add speckit-community/cc-spec-kit
+copilot plugin install speckit@speckit-community
+```
+
+Then initialize your project with `/speckit:init` and use the standard workflow (`/speckit-specify`, `/speckit-plan`, `/speckit-tasks`, `/speckit-implement`). Projects initialized with the plugin are compatible with the `specify` CLI.
+
 ### 2. Establish project principles
 
 Launch your AI assistant in the project directory. Most agents expose spec-kit as `/speckit.*` slash commands; Codex CLI in skills mode uses `$speckit-*` instead.
