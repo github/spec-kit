@@ -404,8 +404,9 @@ class IntegrationCatalog:
     def clear_cache(self) -> None:
         """Remove all cached catalog files."""
         if self.cache_dir.exists():
-            for f in self.cache_dir.glob("catalog-*.json"):
-                f.unlink(missing_ok=True)
+            for pattern in ("catalog-*.json", "catalog-*-metadata.json"):
+                for f in self.cache_dir.glob(pattern):
+                    f.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------

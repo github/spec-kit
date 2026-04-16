@@ -1816,10 +1816,13 @@ def integration_list(
         for entry in sorted(entries, key=lambda e: e["id"]):
             eid = entry["id"]
             cat_name = entry.get("_catalog_name", "")
+            install_allowed = entry.get("_install_allowed", True)
             if eid == installed_key:
                 status = "[green]installed[/green]"
             elif eid in INTEGRATION_REGISTRY:
                 status = "built-in"
+            elif install_allowed is False:
+                status = "discovery-only"
             else:
                 status = ""
             table.add_row(
