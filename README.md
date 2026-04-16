@@ -526,7 +526,7 @@ specify preset add <preset-name>
 
 For example, presets could restructure spec templates to require regulatory traceability, adapt the workflow to fit the methodology you use (e.g., Agile, Kanban, Waterfall, jobs-to-be-done, or domain-driven design), add mandatory security review gates to plans, enforce test-first task ordering, or localize the entire workflow to a different language. The [pirate-speak demo](https://github.com/mnriem/spec-kit-pirate-speak-preset-demo) shows just how deep the customization can go. Multiple presets can be stacked with priority ordering.
 
-See the [Presets README](./presets/README.md) for the full guide, including resolution order, priority, and how to create your own.
+See the [Presets reference](https://github.github.io/spec-kit/presets.html) for the full command guide, including resolution order and priority stacking.
 
 ### When to Use Which
 

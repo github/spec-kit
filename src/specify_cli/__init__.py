@@ -2376,7 +2376,7 @@ def preset_list():
 
 @preset_app.command("add")
 def preset_add(
-    pack_id: str = typer.Argument(None, help="Preset ID to install from catalog"),
+    preset_id: str = typer.Argument(None, help="Preset ID to install from catalog"),
     from_url: str = typer.Option(None, "--from", help="Install from a URL (ZIP file)"),
     dev: str = typer.Option(None, "--dev", help="Install from local directory (development mode)"),
     priority: int = typer.Option(10, "--priority", help="Resolution priority (lower = higher precedence, default 10)"),
@@ -2444,19 +2444,19 @@ def preset_add(
 
             console.print(f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})")
 
-        elif pack_id:
+        elif preset_id:
             # Try bundled preset first, then catalog
-            bundled_path = _locate_bundled_preset(pack_id)
+            bundled_path = _locate_bundled_preset(preset_id)
             if bundled_path:
-                console.print(f"Installing bundled preset [cyan]{pack_id}[/cyan]...")
+                console.print(f"Installing bundled preset [cyan]{preset_id}[/cyan]...")
                 manifest = manager.install_from_directory(bundled_path, speckit_version, priority)
                 console.print(f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})")
             else:
                 catalog = PresetCatalog(project_root)
-                pack_info = catalog.get_pack_info(pack_id)
+                pack_info = catalog.get_pack_info(preset_id)
 
                 if not pack_info:
-                    console.print(f"[red]Error:[/red] Preset '{pack_id}' not found in catalog")
+                    console.print(f"[red]Error:[/red] Preset '{preset_id}' not found in catalog")
                     raise typer.Exit(1)
 
                 # Bundled presets should have been caught above; if we reach
@@ -2464,7 +2464,7 @@ def preset_add(
                 if pack_info.get("bundled") and not pack_info.get("download_url"):
                     from .extensions import REINSTALL_COMMAND
                     console.print(
-                        f"[red]Error:[/red] Preset '{pack_id}' is bundled with spec-kit "
+                        f"[red]Error:[/red] Preset '{preset_id}' is bundled with spec-kit "
                         f"but could not be found in the installed package."
                     )
                     console.print(
@@ -2476,14 +2476,14 @@ def preset_add(
 
                 if not pack_info.get("_install_allowed", True):
                     catalog_name = pack_info.get("_catalog_name", "unknown")
-                    console.print(f"[red]Error:[/red] Preset '{pack_id}' is from the '{catalog_name}' catalog which is discovery-only (install not allowed).")
+                    console.print(f"[red]Error:[/red] Preset '{preset_id}' is from the '{catalog_name}' catalog which is discovery-only (install not allowed).")
                     console.print("Add the catalog with --install-allowed or install from the preset's repository directly with --from.")
                     raise typer.Exit(1)
 
-                console.print(f"Installing preset [cyan]{pack_info.get('name', pack_id)}[/cyan]...")
+                console.print(f"Installing preset [cyan]{pack_info.get('name', preset_id)}[/cyan]...")
 
                 try:
-                    zip_path = catalog.download_pack(pack_id)
+                    zip_path = catalog.download_pack(preset_id)
                     manifest = manager.install_from_zip(zip_path, speckit_version, priority)
                     console.print(f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})")
                 finally:
@@ -2506,7 +2506,7 @@ def preset_add(
 
 @preset_app.command("remove")
 def preset_remove(
-    pack_id: str = typer.Argument(..., help="Preset ID to remove"),
+    preset_id: str = typer.Argument(..., help="Preset ID to remove"),
 ):
     """Remove an installed preset."""
     from .presets import PresetManager
@@ -2521,14 +2521,14 @@ def preset_remove(
 
     manager = PresetManager(project_root)
 
-    if not manager.registry.is_installed(pack_id):
-        console.print(f"[red]Error:[/red] Preset '{pack_id}' is not installed")
+    if not manager.registry.is_installed(preset_id):
+        console.print(f"[red]Error:[/red] Preset '{preset_id}' is not installed")
         raise typer.Exit(1)
 
-    if manager.remove(pack_id):
-        console.print(f"[green]✓[/green] Preset '{pack_id}' removed successfully")
+    if manager.remove(preset_id):
+        console.print(f"[green]✓[/green] Preset '{preset_id}' removed successfully")
     else:
-        console.print(f"[red]Error:[/red] Failed to remove preset '{pack_id}'")
+        console.print(f"[red]Error:[/red] Failed to remove preset '{preset_id}'")
         raise typer.Exit(1)
 
 
@@ -2599,7 +2599,7 @@ def preset_resolve(
 
 @preset_app.command("info")
 def preset_info(
-    pack_id: str = typer.Argument(..., help="Preset ID to get info about"),
+    preset_id: str = typer.Argument(..., help="Preset ID to get info about"),
 ):
     """Show detailed information about a preset."""
     from .extensions import normalize_priority
@@ -2615,7 +2615,7 @@ def preset_info(
 
     # Check if installed locally first
     manager = PresetManager(project_root)
-    local_pack = manager.get_pack(pack_id)
+    local_pack = manager.get_pack(preset_id)
 
     if local_pack:
         console.print(f"\n[bold cyan]Preset: {local_pack.name}[/bold cyan]\n")
@@ -2637,7 +2637,7 @@ def preset_info(
             console.print(f"  License:     {license_val}")
         console.print("\n  [green]Status: installed[/green]")
         # Get priority from registry
-        pack_metadata = manager.registry.get(pack_id)
+        pack_metadata = manager.registry.get(preset_id)
         priority = normalize_priority(pack_metadata.get("priority") if isinstance(pack_metadata, dict) else None)
         console.print(f"  [dim]Priority:[/dim] {priority}")
         console.print()
@@ -2646,15 +2646,15 @@ def preset_info(
     # Fall back to catalog
     catalog = PresetCatalog(project_root)
     try:
-        pack_info = catalog.get_pack_info(pack_id)
+        pack_info = catalog.get_pack_info(preset_id)
     except PresetError:
         pack_info = None
 
     if not pack_info:
-        console.print(f"[red]Error:[/red] Preset '{pack_id}' not found (not installed and not in catalog)")
+        console.print(f"[red]Error:[/red] Preset '{preset_id}' not found (not installed and not in catalog)")
         raise typer.Exit(1)
 
-    console.print(f"\n[bold cyan]Preset: {pack_info.get('name', pack_id)}[/bold cyan]\n")
+    console.print(f"\n[bold cyan]Preset: {pack_info.get('name', preset_id)}[/bold cyan]\n")
     console.print(f"  ID:          {pack_info['id']}")
     console.print(f"  Version:     {pack_info.get('version', '?')}")
     console.print(f"  Description: {pack_info.get('description', '')}")
@@ -2667,13 +2667,13 @@ def preset_info(
     if pack_info.get("license"):
         console.print(f"  License:     {pack_info['license']}")
     console.print("\n  [yellow]Status: not installed[/yellow]")
-    console.print(f"  Install with: [cyan]specify preset add {pack_id}[/cyan]")
+    console.print(f"  Install with: [cyan]specify preset add {preset_id}[/cyan]")
     console.print()
 
 
 @preset_app.command("set-priority")
 def preset_set_priority(
-    pack_id: str = typer.Argument(help="Preset ID"),
+    preset_id: str = typer.Argument(help="Preset ID"),
     priority: int = typer.Argument(help="New priority (lower = higher precedence)"),
 ):
     """Set the resolution priority of an installed preset."""
@@ -2696,14 +2696,14 @@ def preset_set_priority(
     manager = PresetManager(project_root)
 
     # Check if preset is installed
-    if not manager.registry.is_installed(pack_id):
-        console.print(f"[red]Error:[/red] Preset '{pack_id}' is not installed")
+    if not manager.registry.is_installed(preset_id):
+        console.print(f"[red]Error:[/red] Preset '{preset_id}' is not installed")
         raise typer.Exit(1)
 
     # Get current metadata
-    metadata = manager.registry.get(pack_id)
+    metadata = manager.registry.get(preset_id)
     if metadata is None or not isinstance(metadata, dict):
-        console.print(f"[red]Error:[/red] Preset '{pack_id}' not found in registry (corrupted state)")
+        console.print(f"[red]Error:[/red] Preset '{preset_id}' not found in registry (corrupted state)")
         raise typer.Exit(1)
 
     from .extensions import normalize_priority
@@ -2711,21 +2711,21 @@ def preset_set_priority(
     # Only skip if the stored value is already a valid int equal to requested priority
     # This ensures corrupted values (e.g., "high") get repaired even when setting to default (10)
     if isinstance(raw_priority, int) and raw_priority == priority:
-        console.print(f"[yellow]Preset '{pack_id}' already has priority {priority}[/yellow]")
+        console.print(f"[yellow]Preset '{preset_id}' already has priority {priority}[/yellow]")
         raise typer.Exit(0)
 
     old_priority = normalize_priority(raw_priority)
 
     # Update priority
-    manager.registry.update(pack_id, {"priority": priority})
+    manager.registry.update(preset_id, {"priority": priority})
 
-    console.print(f"[green]✓[/green] Preset '{pack_id}' priority changed: {old_priority} → {priority}")
+    console.print(f"[green]✓[/green] Preset '{preset_id}' priority changed: {old_priority} → {priority}")
     console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
 
 
 @preset_app.command("enable")
 def preset_enable(
-    pack_id: str = typer.Argument(help="Preset ID to enable"),
+    preset_id: str = typer.Argument(help="Preset ID to enable"),
 ):
     """Enable a disabled preset."""
     from .presets import PresetManager
@@ -2742,31 +2742,31 @@ def preset_enable(
     manager = PresetManager(project_root)
 
     # Check if preset is installed
-    if not manager.registry.is_installed(pack_id):
-        console.print(f"[red]Error:[/red] Preset '{pack_id}' is not installed")
+    if not manager.registry.is_installed(preset_id):
+        console.print(f"[red]Error:[/red] Preset '{preset_id}' is not installed")
         raise typer.Exit(1)
 
     # Get current metadata
-    metadata = manager.registry.get(pack_id)
+    metadata = manager.registry.get(preset_id)
     if metadata is None or not isinstance(metadata, dict):
-        console.print(f"[red]Error:[/red] Preset '{pack_id}' not found in registry (corrupted state)")
+        console.print(f"[red]Error:[/red] Preset '{preset_id}' not found in registry (corrupted state)")
         raise typer.Exit(1)
 
     if metadata.get("enabled", True):
-        console.print(f"[yellow]Preset '{pack_id}' is already enabled[/yellow]")
+        console.print(f"[yellow]Preset '{preset_id}' is already enabled[/yellow]")
         raise typer.Exit(0)
 
     # Enable the preset
-    manager.registry.update(pack_id, {"enabled": True})
+    manager.registry.update(preset_id, {"enabled": True})
 
-    console.print(f"[green]✓[/green] Preset '{pack_id}' enabled")
+    console.print(f"[green]✓[/green] Preset '{preset_id}' enabled")
     console.print("\nTemplates from this preset will now be included in resolution.")
     console.print("[dim]Note: Previously registered commands/skills remain active.[/dim]")
 
 
 @preset_app.command("disable")
 def preset_disable(
-    pack_id: str = typer.Argument(help="Preset ID to disable"),
+    preset_id: str = typer.Argument(help="Preset ID to disable"),
 ):
     """Disable a preset without removing it."""
     from .presets import PresetManager
@@ -2783,27 +2783,27 @@ def preset_disable(
     manager = PresetManager(project_root)
 
     # Check if preset is installed
-    if not manager.registry.is_installed(pack_id):
-        console.print(f"[red]Error:[/red] Preset '{pack_id}' is not installed")
+    if not manager.registry.is_installed(preset_id):
+        console.print(f"[red]Error:[/red] Preset '{preset_id}' is not installed")
         raise typer.Exit(1)
 
     # Get current metadata
-    metadata = manager.registry.get(pack_id)
+    metadata = manager.registry.get(preset_id)
     if metadata is None or not isinstance(metadata, dict):
-        console.print(f"[red]Error:[/red] Preset '{pack_id}' not found in registry (corrupted state)")
+        console.print(f"[red]Error:[/red] Preset '{preset_id}' not found in registry (corrupted state)")
         raise typer.Exit(1)
 
     if not metadata.get("enabled", True):
-        console.print(f"[yellow]Preset '{pack_id}' is already disabled[/yellow]")
+        console.print(f"[yellow]Preset '{preset_id}' is already disabled[/yellow]")
         raise typer.Exit(0)
 
     # Disable the preset
-    manager.registry.update(pack_id, {"enabled": False})
+    manager.registry.update(preset_id, {"enabled": False})
 
-    console.print(f"[green]✓[/green] Preset '{pack_id}' disabled")
+    console.print(f"[green]✓[/green] Preset '{preset_id}' disabled")
     console.print("\nTemplates from this preset will be skipped during resolution.")
     console.print("[dim]Note: Previously registered commands/skills remain active until preset removal.[/dim]")
-    console.print(f"To re-enable: specify preset enable {pack_id}")
+    console.print(f"To re-enable: specify preset enable {preset_id}")
 
 
 # ===== Preset Catalog Commands =====

@@ -19,6 +19,8 @@
       href: integrations.md
     - name: Extensions
       href: extensions.md
+    - name: Presets
+      href: presets.md
 
 # Development workflows
 - name: Development
