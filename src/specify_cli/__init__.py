@@ -2322,37 +2322,15 @@ def integration_upgrade(
         raise typer.Exit(1)
 
     # Phase 2: Remove stale files from old manifest that are not in the new one
-    root = project_root.resolve()
-    old_files = set(old_manifest.files.keys())
-    new_files = set(new_manifest.files.keys())
-    stale_files = old_files - new_files
-    stale_removed = 0
-    for rel in stale_files:
-        path = root / rel
-        # Validate containment to prevent path traversal from tampered manifests
-        try:
-            normed = Path(os.path.normpath(path))
-            normed.relative_to(root)
-        except (ValueError, OSError):
-            continue
-        if path.is_symlink() or path.is_file():
-            try:
-                path.unlink()
-                stale_removed += 1
-                # Clean up empty parent directories up to project root
-                parent = path.parent
-                while parent != root:
-                    try:
-                        parent.rmdir()
-                    except OSError:
-                        break
-                    parent = parent.parent
-            except OSError:
-                # Best-effort cleanup: if a stale file cannot be removed (e.g. permission/race),
-                # continue upgrade flow without failing the command.
-                pass
-    if stale_removed:
-        console.print(f"  Removed {stale_removed} stale file(s) from previous install")
+    old_files = old_manifest.files
+    new_files = new_manifest.files
+    stale_keys = set(old_files) - set(new_files)
+    if stale_keys:
+        stale_manifest = IntegrationManifest(key, project_root, version="stale-cleanup")
+        stale_manifest._files = {k: old_files[k] for k in stale_keys}
+        stale_removed, _ = stale_manifest.uninstall(project_root, force=True)
+        if stale_removed:
+            console.print(f"  Removed {len(stale_removed)} stale file(s) from previous install")
 
     name = (integration.config or {}).get("name", key)
     console.print(f"\n[green]✓[/green] Integration '{name}' upgraded successfully")
