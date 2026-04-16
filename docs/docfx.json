@@ -4,7 +4,8 @@
       {
         "files": [
           "*.md",
-          "toc.yml"
+          "toc.yml",
+          "reference/*.md"
         ]
       },
       {
