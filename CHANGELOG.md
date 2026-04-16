@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.7.2] - 2026-04-16
+
+### Changed
+
+- docs: add core commands reference and simplify README CLI section (#2245)
+- docs: add workflows reference, reorganize into docs/reference/, and add --version flag (#2244)
+- docs: add presets reference page and rename pack_id to preset_id (#2243)
+- docs: add extensions reference page and integrations FAQ (#2242)
+- docs: consolidate integration documentation into docs/integrations.md (#2241)
+- feat: update memorylint and superpowers-bridge versions to 1.3.0 with new download URLs (#2240)
+- feat: Integration catalog — discovery, versioning, and community distribution (#2130)
+- Add Catalog CI extension to community catalog (#2239)
+- Added issues extension (#2194)
+- chore: release 0.7.1, begin 0.7.2.dev0 development (#2235)
+
 ## [0.7.1] - 2026-04-15
 
 ### Changed
