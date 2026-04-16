@@ -77,9 +77,9 @@ And use the tool directly:
 specify init <PROJECT_NAME>
 
 # Or initialize in existing project
-specify init . --ai claude
+specify init .
 # or
-specify init --here --ai claude
+specify init --here
 
 # Check installed tools
 specify check
