@@ -768,8 +768,16 @@
       "requires": {
         "speckit_version": ">=0.1.0"
       },
+      "provides": {
+        "commands": 3,
+        "hooks": 0
+      },
       "tags": [
-        "issue"
+        "issue",
+        "integration",
+        "github",
+        "issues",
+        "sync"
       ],
       "verified": false,
       "downloads": 0,
