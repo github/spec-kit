@@ -137,7 +137,7 @@ workflow:
   description: "Runs specify → plan → tasks → implement with review gates"
 
 requires:
-  speckit_version: ">=0.6.1"
+  speckit_version: ">=0.7.2"
   integrations:
     any: ["copilot", "claude", "gemini"]
 
