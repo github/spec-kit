@@ -128,16 +128,14 @@ python -m src.specify_cli init --here --ai claude --ignore-agent-tools --script 
 
 Or copy only the modified CLI portion if you want a lighter sandbox.
 
-## 9. Debug Network / TLS Skips
+## 9. Debug Network / TLS Issues
 
-If you need to bypass TLS validation while experimenting:
-
-```bash
-specify check --skip-tls
-specify init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
-```
-
-(Use only for local experimentation.)
+> **Deprecated:** The `--skip-tls` flag is a no-op and has no effect.
+> It was previously used to bypass TLS validation during local testing.
+> If you encounter TLS errors (e.g., on a corporate network), configure your
+> environment's certificate store or proxy instead.
+>
+> For example, set `SSL_CERT_FILE` or configure `HTTPS_PROXY` / `HTTP_PROXY`.
 
 ## 10. Rapid Edit Loop Summary
 
@@ -166,7 +164,7 @@ rm -rf .venv dist build *.egg-info
 | Scripts not executable (Linux) | Re-run init or `chmod +x scripts/*.sh` |
 | Git step skipped | You passed `--no-git` or Git not installed |
 | Wrong script type downloaded | Pass `--script sh` or `--script ps` explicitly |
-| TLS errors on corporate network | Try `--skip-tls` (not for production) |
+| TLS errors on corporate network | Configure your environment's certificate store or proxy. The `--skip-tls` flag is deprecated and has no effect. |
 
 ## 13. Next Steps
 

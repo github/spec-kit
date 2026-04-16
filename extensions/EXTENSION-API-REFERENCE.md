@@ -108,7 +108,7 @@ defaults:                # Optional, default configuration values
 #### `hooks`
 
 - **Type**: object
-- **Keys**: Event names (e.g., `after_specify`, `after_plan`, `after_tasks`, `after_implement`, `before_commit`)
+- **Keys**: Event names (e.g., `after_specify`, `after_plan`, `after_tasks`, `after_implement`, `before_analyze`)
 - **Description**: Hooks that execute at lifecycle events
 - **Events**: Defined by core spec-kit commands
 
@@ -559,8 +559,16 @@ Standard events (defined by core):
 - `after_tasks` - After task generation
 - `before_implement` - Before implementation
 - `after_implement` - After implementation
-- `before_commit` - Before git commit *(planned - not yet wired into core templates)*
-- `after_commit` - After git commit *(planned - not yet wired into core templates)*
+- `before_analyze` - Before cross-artifact analysis
+- `after_analyze` - After cross-artifact analysis
+- `before_checklist` - Before checklist generation
+- `after_checklist` - After checklist generation
+- `before_clarify` - Before spec clarification
+- `after_clarify` - After spec clarification
+- `before_constitution` - Before constitution update
+- `after_constitution` - After constitution update
+- `before_taskstoissues` - Before tasks-to-issues conversion
+- `after_taskstoissues` - After tasks-to-issues conversion
 
 ### Hook Configuration
 

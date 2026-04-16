@@ -1,6 +1,22 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-03-10T00:00:00Z",
+  "updated_at": "2026-04-10T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.json",
-  "presets": {}
+  "presets": {
+    "lean": {
+      "name": "Lean Workflow",
+      "id": "lean",
+      "version": "1.0.0",
+      "description": "Minimal core workflow commands - just the prompt, just the artifact",
+      "author": "github",
+      "repository": "https://github.com/github/spec-kit",
+      "bundled": true,
+      "tags": [
+        "lean",
+        "minimal",
+        "workflow",
+        "core"
+      ]
+    }
+  }
 }

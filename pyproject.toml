@@ -1,16 +1,14 @@
 [project]
 name = "specify-cli"
-version = "0.4.4.dev0"
+version = "0.7.3.dev0"
 description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
 requires-python = ">=3.11"
 dependencies = [
-    "typer",
-    "click>=8.1",
+    "typer>=0.24.0",
+    "click>=8.2.1",
     "rich",
-    "httpx[socks]",
     "platformdirs",
     "readchar",
-    "truststore>=0.10.4",
     "pyyaml>=6.0",
     "packaging>=23.0",
     "pathspec>=0.12.0",
@@ -42,8 +40,12 @@ packages = ["src/specify_cli"]
 "templates/commands" = "specify_cli/core_pack/commands"
 "scripts/bash" = "specify_cli/core_pack/scripts/bash"
 "scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
-".github/workflows/scripts/create-release-packages.sh" = "specify_cli/core_pack/release_scripts/create-release-packages.sh"
-".github/workflows/scripts/create-release-packages.ps1" = "specify_cli/core_pack/release_scripts/create-release-packages.ps1"
+# Bundled extensions (installable via `specify extension add <name>`)
+"extensions/git" = "specify_cli/core_pack/extensions/git"
+# Bundled workflows (auto-installed during `specify init`)
+"workflows/speckit" = "specify_cli/core_pack/workflows/speckit"
+# Bundled presets (installable via `specify preset add <name>` or `specify init --preset <name>`)
+"presets/lean" = "specify_cli/core_pack/presets/lean"
 
 [project.optional-dependencies]
 test = [

@@ -26,7 +26,7 @@
 - [🎨 Community Presets](#-community-presets)
 - [🚶 Community Walkthroughs](#-community-walkthroughs)
 - [🛠️ Community Friends](#️-community-friends)
-- [🤖 Supported AI Agents](#-supported-ai-agents)
+- [🤖 Supported AI Coding Agent Integrations](#-supported-ai-coding-agent-integrations)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [🧩 Making Spec Kit Your Own: Extensions & Presets](#-making-spec-kit-your-own-extensions--presets)
 - [📚 Core Philosophy](#-core-philosophy)
@@ -50,6 +50,8 @@ Spec-Driven Development **flips the script** on traditional software development
 
 Choose your preferred installation method:
 
+> **Important:** The only official, maintained packages for Spec Kit are published from this GitHub repository. Any packages with the same name on PyPI are **not** affiliated with this project and are not maintained by the Spec Kit maintainers. Always install directly from GitHub as shown below.
+
 #### Option 1: Persistent Installation (Recommended)
 
 Install once and use everywhere. Pin a specific release tag for stability (check [Releases](https://github.com/github/spec-kit/releases) for the latest):
@@ -62,16 +64,22 @@ uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
 ```
 
-Then use the tool directly:
+Then verify the correct version is installed:
+
+```bash
+specify version
+```
+
+And use the tool directly:
 
 ```bash
 # Create new project
 specify init <PROJECT_NAME>
 
 # Or initialize in existing project
-specify init . --ai claude
+specify init . --ai copilot
 # or
-specify init --here --ai claude
+specify init --here --ai copilot
 
 # Check installed tools
 specify check
@@ -92,9 +100,9 @@ Run directly without installing:
 uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <PROJECT_NAME>
 
 # Or initialize in existing project
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init . --ai claude
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init . --ai copilot
 # or
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here --ai claude
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here --ai copilot
 ```
 
 **Benefits of persistent installation:**
@@ -160,6 +168,11 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 
 ## 🧩 Community Extensions
 
+> [!NOTE]
+> Community extensions are independently created and maintained by their respective authors. GitHub and the Spec Kit maintainers may review pull requests that add entries to the community catalog for formatting, catalog structure, or policy compliance, but they do **not review, audit, endorse, or support the extension code itself**. The Community Extensions website is also a third-party resource. Review extension source code before installation and use at your own discretion.
+
+🔍 **Browse and search community extensions on the [Community Extensions website](https://speckit-community.github.io/extensions/).**
+
 The following community-contributed extensions are available in [`catalog.community.json`](extensions/catalog.community.json):
 
 **Categories:**
@@ -177,16 +190,28 @@ The following community-contributed extensions are available in [`catalog.commun
 
 | Extension | Purpose | Category | Effect | URL |
 |-----------|---------|----------|--------|-----|
+| Agent Assign | Assign specialized Claude Code agents to spec-kit tasks for targeted execution | `process` | Read+Write | [spec-kit-agent-assign](https://github.com/xymelon/spec-kit-agent-assign) |
 | AI-Driven Engineering (AIDE) | A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation | `process` | Read+Write | [aide](https://github.com/mnriem/spec-kit-extensions/tree/main/aide) |
+| Architect Impact Previewer | Predicts architectural impact, complexity, and risks of proposed changes before implementation. | `visibility` | Read-only | [spec-kit-architect-preview](https://github.com/UmmeHabiba1312/spec-kit-architect-preview) |
 | Archive Extension | Archive merged features into main project memory. | `docs` | Read+Write | [spec-kit-archive](https://github.com/stn1slv/spec-kit-archive) |
 | Azure DevOps Integration | Sync user stories and tasks to Azure DevOps work items using OAuth authentication | `integration` | Read+Write | [spec-kit-azure-devops](https://github.com/pragya247/spec-kit-azure-devops) |
+| Branch Convention | Configurable branch and folder naming conventions for /specify with presets and custom patterns | `process` | Read+Write | [spec-kit-branch-convention](https://github.com/Quratulain-bilal/spec-kit-branch-convention) |
+| Brownfield Bootstrap | Bootstrap spec-kit for existing codebases — auto-discover architecture and adopt SDD incrementally | `process` | Read+Write | [spec-kit-brownfield](https://github.com/Quratulain-bilal/spec-kit-brownfield) |
+| Bugfix Workflow | Structured bugfix workflow — capture bugs, trace to spec artifacts, and patch specs surgically | `process` | Read+Write | [spec-kit-bugfix](https://github.com/Quratulain-bilal/spec-kit-bugfix) |
+| Canon | Adds canon-driven (baseline-driven) workflows: spec-first, code-first, spec-drift. Requires Canon Core preset installation. | `process` | Read+Write | [spec-kit-canon](https://github.com/maximiliamus/spec-kit-canon/tree/master/extension) |
+| Catalog CI | Automated validation for spec-kit community catalog entries — structure, URLs, diffs, and linting | `process` | Read-only | [spec-kit-catalog-ci](https://github.com/Quratulain-bilal/spec-kit-catalog-ci) |
+| CI Guard | Spec compliance gates for CI/CD — verify specs exist, check drift, and block merges on gaps | `process` | Read-only | [spec-kit-ci-guard](https://github.com/Quratulain-bilal/spec-kit-ci-guard) |
 | Checkpoint Extension | Commit the changes made during the middle of the implementation, so you don't end up with just one very large commit at the end | `code` | Read+Write | [spec-kit-checkpoint](https://github.com/aaronrsun/spec-kit-checkpoint) |
 | Cleanup Extension | Post-implementation quality gate that reviews changes, fixes small issues (scout rule), creates tasks for medium issues, and generates analysis for large issues | `code` | Read+Write | [spec-kit-cleanup](https://github.com/dsrednicki/spec-kit-cleanup) |
-| Cognitive Squad | Multi-agent cognitive system with Triadic Model: understanding, internalization, application — with quality gates, backpropagation verification, and self-healing | `docs` | Read+Write | [cognitive-squad](https://github.com/Testimonial/cognitive-squad) |
 | Conduct Extension | Orchestrates spec-kit phases via sub-agent delegation to reduce context pollution. | `process` | Read+Write | [spec-kit-conduct-ext](https://github.com/twbrandon7/spec-kit-conduct-ext) |
+| Confluence Extension | Create a doc in Confluence summarizing the specifications and planning files | `integration` | Read+Write | [spec-kit-confluence](https://github.com/aaronrsun/spec-kit-confluence) |
 | DocGuard — CDD Enforcement | Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. Zero NPM runtime dependencies. | `docs` | Read+Write | [spec-kit-docguard](https://github.com/raccioly/docguard) |
 | Extensify | Create and validate extensions and extension catalogs | `process` | Read+Write | [extensify](https://github.com/mnriem/spec-kit-extensions/tree/main/extensify) |
+| Fix Findings | Automated analyze-fix-reanalyze loop that resolves spec findings until clean | `code` | Read+Write | [spec-kit-fix-findings](https://github.com/Quratulain-bilal/spec-kit-fix-findings) |
+| FixIt Extension | Spec-aware bug fixing — maps bugs to spec artifacts, proposes a plan, applies minimal changes | `code` | Read+Write | [spec-kit-fixit](https://github.com/speckit-community/spec-kit-fixit) |
 | Fleet Orchestrator | Orchestrate a full feature lifecycle with human-in-the-loop gates across all SpecKit phases | `process` | Read+Write | [spec-kit-fleet](https://github.com/sharathsatish/spec-kit-fleet) |
+| GitHub Issues Integration 1 | Generate spec artifacts from GitHub Issues - import issues, sync updates, and maintain bidirectional traceability | `integration` | Read+Write | [spec-kit-github-issues](https://github.com/Fatima367/spec-kit-github-issues) |
+| GitHub Issues Integration 2 | Creates and syncs local specs from an existing GitHub issue | `integration` | Read+Write | [spec-kit-issue](https://github.com/aaronrsun/spec-kit-issue) |
 | Iterate | Iterate on spec documents with a two-phase define-and-apply workflow — refine specs mid-implementation and go straight back to building | `docs` | Read+Write | [spec-kit-iterate](https://github.com/imviancagrace/spec-kit-iterate) |
 | Jira Integration | Create Jira Epics, Stories, and Issues from spec-kit specifications and task breakdowns with configurable hierarchy and custom field support | `integration` | Read+Write | [spec-kit-jira](https://github.com/mbachorik/spec-kit-jira) |
 | Learning Extension | Generate educational guides from implementations and enhance clarifications with mentoring context | `docs` | Read+Write | [spec-kit-learn](https://github.com/imviancagrace/spec-kit-learn) |
@@ -197,38 +222,68 @@ The following community-contributed extensions are available in [`catalog.commun
 | MAQA Jira Integration | Jira integration for MAQA — syncs Stories and Subtasks as features progress through the board | `integration` | Read+Write | [spec-kit-maqa-jira](https://github.com/GenieRobot/spec-kit-maqa-jira) |
 | MAQA Linear Integration | Linear integration for MAQA — syncs issues and sub-issues across workflow states as features progress | `integration` | Read+Write | [spec-kit-maqa-linear](https://github.com/GenieRobot/spec-kit-maqa-linear) |
 | MAQA Trello Integration | Trello board integration for MAQA — populates board from specs, moves cards, real-time checklist ticking | `integration` | Read+Write | [spec-kit-maqa-trello](https://github.com/GenieRobot/spec-kit-maqa-trello) |
+| MemoryLint | Agent memory governance tool: Automatically audits and fixes boundary conflicts between AGENTS.md and the constitution. | `process` | Read+Write | [memorylint](https://github.com/RbBtSn0w/spec-kit-extensions/tree/main/memorylint) |
 | Onboard | Contextual onboarding and progressive growth for developers new to spec-kit projects. Explains specs, maps dependencies, validates understanding, and guides the next step | `process` | Read+Write | [spec-kit-onboard](https://github.com/dmux/spec-kit-onboard) |
+| Optimize | Audit and optimize AI governance for context efficiency — token budgets, rule health, interpretability, compression, coherence, and echo detection | `process` | Read+Write | [spec-kit-optimize](https://github.com/sakitA/spec-kit-optimize) |
 | Plan Review Gate | Require spec.md and plan.md to be merged via MR/PR before allowing task generation | `process` | Read-only | [spec-kit-plan-review-gate](https://github.com/luno/spec-kit-plan-review-gate) |
+| PR Bridge | Auto-generate pull request descriptions, checklists, and summaries from spec artifacts | `process` | Read-only | [spec-kit-pr-bridge-](https://github.com/Quratulain-bilal/spec-kit-pr-bridge-) |
 | Presetify | Create and validate presets and preset catalogs | `process` | Read+Write | [presetify](https://github.com/mnriem/spec-kit-extensions/tree/main/presetify) |
 | Product Forge | Full product lifecycle: research → product spec → SpecKit → implement → verify → test | `process` | Read+Write | [speckit-product-forge](https://github.com/VaiYav/speckit-product-forge) |
 | Project Health Check | Diagnose a Spec Kit project and report health issues across structure, agents, features, scripts, extensions, and git | `visibility` | Read-only | [spec-kit-doctor](https://github.com/KhawarHabibKhan/spec-kit-doctor) |
 | Project Status | Show current SDD workflow progress — active feature, artifact status, task completion, workflow phase, and extensions summary | `visibility` | Read-only | [spec-kit-status](https://github.com/KhawarHabibKhan/spec-kit-status) |
+| QA Testing Extension | Systematic QA testing with browser-driven or CLI-based validation of acceptance criteria from spec | `code` | Read-only | [spec-kit-qa](https://github.com/arunt14/spec-kit-qa) |
 | Ralph Loop | Autonomous implementation loop using AI agent CLI | `code` | Read+Write | [spec-kit-ralph](https://github.com/Rubiss/spec-kit-ralph) |
 | Reconcile Extension | Reconcile implementation drift by surgically updating feature artifacts. | `docs` | Read+Write | [spec-kit-reconcile](https://github.com/stn1slv/spec-kit-reconcile) |
+| Repository Index | Generate index for existing repo for overview, architecture and module level. | `docs` | Read-only | [spec-kit-repoindex](https://github.com/liuyiyu/spec-kit-repoindex) |
+| Retro Extension | Sprint retrospective analysis with metrics, spec accuracy assessment, and improvement suggestions | `process` | Read+Write | [spec-kit-retro](https://github.com/arunt14/spec-kit-retro) |
 | Retrospective Extension | Post-implementation retrospective with spec adherence scoring, drift analysis, and human-gated spec updates | `docs` | Read+Write | [spec-kit-retrospective](https://github.com/emi-dm/spec-kit-retrospective) |
 | Review Extension | Post-implementation comprehensive code review with specialized agents for code quality, comments, tests, error handling, type design, and simplification | `code` | Read-only | [spec-kit-review](https://github.com/ismaelJimenez/spec-kit-review) |
 | SDD Utilities | Resume interrupted workflows, validate project health, and verify spec-to-task traceability | `process` | Read+Write | [speckit-utils](https://github.com/mvanhorn/speckit-utils) |
-| Superpowers Bridge | Orchestrates obra/superpowers skills within the spec-kit SDD workflow across the full lifecycle (clarification, TDD, review, verification, critique, debugging, branch completion) | `process` | Read+Write | [superpowers-bridge](https://github.com/RbBtSn0w/spec-kit-extensions/tree/main/superpowers-bridge) |
+| Security Review | Comprehensive security audit of codebases using AI-powered DevSecOps analysis | `code` | Read-only | [spec-kit-security-review](https://github.com/DyanGalih/spec-kit-security-review) |
+| SFSpeckit | Enterprise Salesforce SDLC with 18 commands for the full SDD lifecycle. | `process` | Read+Write | [spec-kit-sf](https://github.com/ysumanth06/spec-kit-sf) |
+| Ship Release Extension | Automates release pipeline: pre-flight checks, branch sync, changelog generation, CI verification, and PR creation | `process` | Read+Write | [spec-kit-ship](https://github.com/arunt14/spec-kit-ship) |
+| Spec Critique Extension | Dual-lens critical review of spec and plan from product strategy and engineering risk perspectives | `docs` | Read-only | [spec-kit-critique](https://github.com/arunt14/spec-kit-critique) |
+| Spec Diagram | Auto-generate Mermaid diagrams of SDD workflow state, feature progress, and task dependencies | `visibility` | Read-only | [spec-kit-diagram-](https://github.com/Quratulain-bilal/spec-kit-diagram-) |
+| Spec Refine | Update specs in-place, propagate changes to plan and tasks, and diff impact across artifacts | `process` | Read+Write | [spec-kit-refine](https://github.com/Quratulain-bilal/spec-kit-refine) |
 | Spec Sync | Detect and resolve drift between specs and implementation. AI-assisted resolution with human approval | `docs` | Read+Write | [spec-kit-sync](https://github.com/bgervin/spec-kit-sync) |
-| Understanding | Automated requirements quality analysis — 31 deterministic metrics against IEEE/ISO standards with experimental energy-based ambiguity detection | `docs` | Read-only | [understanding](https://github.com/Testimonial/understanding) |
+| SpecTest | Auto-generate test scaffolds from spec criteria, map coverage, and find untested requirements | `code` | Read+Write | [spec-kit-spectest](https://github.com/Quratulain-bilal/spec-kit-spectest) |
+| Staff Review Extension | Staff-engineer-level code review that validates implementation against spec, checks security, performance, and test coverage | `code` | Read-only | [spec-kit-staff-review](https://github.com/arunt14/spec-kit-staff-review) |
+| Status Report | Project status, feature progress, and next-action recommendations for spec-driven workflows | `visibility` | Read-only | [Open-Agent-Tools/spec-kit-status](https://github.com/Open-Agent-Tools/spec-kit-status) |
+| Superpowers Bridge | Orchestrates obra/superpowers skills within the spec-kit SDD workflow across the full lifecycle (clarification, TDD, review, verification, critique, debugging, branch completion) | `process` | Read+Write | [superpowers-bridge](https://github.com/RbBtSn0w/spec-kit-extensions/tree/main/superpowers-bridge) |
+| TinySpec | Lightweight single-file workflow for small tasks — skip the heavy multi-step SDD process | `process` | Read+Write | [spec-kit-tinyspec](https://github.com/Quratulain-bilal/spec-kit-tinyspec) |
 | V-Model Extension Pack | Enforces V-Model paired generation of development specs and test specs with full traceability | `docs` | Read+Write | [spec-kit-v-model](https://github.com/leocamello/spec-kit-v-model) |
 | Verify Extension | Post-implementation quality gate that validates implemented code against specification artifacts | `code` | Read-only | [spec-kit-verify](https://github.com/ismaelJimenez/spec-kit-verify) |
 | Verify Tasks Extension | Detect phantom completions: tasks marked [X] in tasks.md with no real implementation | `code` | Read-only | [spec-kit-verify-tasks](https://github.com/datastone-inc/spec-kit-verify-tasks) |
+| What-if Analysis | Preview the downstream impact (complexity, effort, tasks, risks) of requirement changes before committing to them | `visibility` | Read-only | [spec-kit-whatif](https://github.com/DevAbdullah90/spec-kit-whatif) |
+| Worktree Isolation | Spawn isolated git worktrees for parallel feature development without checkout switching | `process` | Read+Write | [spec-kit-worktree](https://github.com/Quratulain-bilal/spec-kit-worktree) |
+| Worktrees | Default-on worktree isolation for parallel agents — sibling or nested layout | `process` | Read+Write | [spec-kit-worktree-parallel](https://github.com/dango85/spec-kit-worktree-parallel) |
 
 To submit your own extension, see the [Extension Publishing Guide](extensions/EXTENSION-PUBLISHING-GUIDE.md).
 
 ## 🎨 Community Presets
+
+> [!NOTE]
+> Community presets are independently created and maintained by their respective authors. GitHub and the Spec Kit maintainers may review pull requests that add entries to the community catalog for formatting, catalog structure, or policy compliance, but they do **not review, audit, endorse, or support the preset code itself**. Review preset source code before installation and use at your own discretion.
 
 The following community-contributed presets customize how Spec Kit behaves — overriding templates, commands, and terminology without changing any tooling. Presets are available in [`catalog.community.json`](presets/catalog.community.json):
 
 | Preset | Purpose | Provides | Requires | URL |
 |--------|---------|----------|----------|-----|
 | AIDE In-Place Migration | Adapts the AIDE extension workflow for in-place technology migrations (X → Y pattern) — adds migration objectives, verification gates, knowledge documents, and behavioral equivalence criteria | 2 templates, 8 commands | AIDE extension | [spec-kit-presets](https://github.com/mnriem/spec-kit-presets) |
+| Canon Core | Adapts original Spec Kit workflow to work together with Canon extension | 2 templates, 8 commands | — | [spec-kit-canon](https://github.com/maximiliamus/spec-kit-canon) |
+| Explicit Task Dependencies | Adds explicit `(depends on T###)` dependency declarations and an Execution Wave DAG to tasks.md for parallel scheduling | 1 template, 1 command | — | [spec-kit-preset-explicit-task-dependencies](https://github.com/Quratulain-bilal/spec-kit-preset-explicit-task-dependencies) |
+| Fiction Book Writing | It adapts the Spec-Driven Development workflow for storytelling: features become story elements, specs become story briefs, plans become story structures, and tasks become scene-by-scene writing tasks. Supports single and multi-POV, all major plot structure frameworks, and two style modes, author voice sample or humanized AI prose. | 21 templates, 17 commands | — | [spec-kit-preset-fiction-book-writing](https://github.com/adaumann/speckit-preset-fiction-book-writing) |
+| Multi-Repo Branching | Coordinates feature branch creation across multiple git repositories (independent repos and submodules) during plan and tasks phases | 2 commands | — | [spec-kit-preset-multi-repo-branching](https://github.com/sakitA/spec-kit-preset-multi-repo-branching) |
 | Pirate Speak (Full) | Transforms all Spec Kit output into pirate speak — specs become "Voyage Manifests", plans become "Battle Plans", tasks become "Crew Assignments" | 6 templates, 9 commands | — | [spec-kit-presets](https://github.com/mnriem/spec-kit-presets) |
+| Table of Contents Navigation | Adds a navigable Table of Contents to generated spec.md, plan.md, and tasks.md documents | 3 templates, 3 commands | — | [spec-kit-preset-toc-navigation](https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation) |
+| VS Code Ask Questions | Enhances the clarify command to use `vscode/askQuestions` for batched interactive questioning. | 1 command | — | [spec-kit-presets](https://github.com/fdcastel/spec-kit-presets) |
 
 To build and publish your own preset, see the [Presets Publishing Guide](presets/PUBLISHING.md).
 
 ## 🚶 Community Walkthroughs
+
+> [!NOTE]
+> Community walkthroughs are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. Review their content before following along and use at your own discretion.
 
 See Spec-Driven Development in action across different scenarios with these community-contributed walkthroughs:
 
@@ -248,206 +303,70 @@ See Spec-Driven Development in action across different scenarios with these comm
 
 ## 🛠️ Community Friends
 
+> [!NOTE]
+> Community projects listed here are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. Review their source code before installation and use at your own discretion.
+
 Community projects that extend, visualize, or build on Spec Kit:
 
-- **[cc-sdd](https://github.com/rhuss/cc-sdd)** - A Claude Code plugin that adds composable traits on top of Spec Kit with [Superpowers](https://github.com/obra/superpowers)-based quality gates, spec/code review, git worktree isolation, and parallel implementation via agent teams.
+- **[cc-spex](https://github.com/rhuss/cc-spex)** - A Claude Code plugin that adds composable traits on top of Spec Kit with [Superpowers](https://github.com/obra/superpowers)-based quality gates, spec/code review, git worktree isolation, and parallel implementation via agent teams.
 
 - **[Spec Kit Assistant](https://marketplace.visualstudio.com/items?itemName=rfsales.speckit-assistant)** — A VS Code extension that provides a visual orchestrator for the full SDD workflow (constitution → specification → planning → tasks → implementation) with phase status visualization, an interactive task checklist, DAG visualization, and support for Claude, Gemini, GitHub Copilot, and OpenAI backends. Requires the `specify` CLI in your PATH.
 
-## 🤖 Supported AI Agents
+- **[SpecKit Companion](https://marketplace.visualstudio.com/items?itemName=alfredoperez.speckit-companion)** — A VS Code extension that brings a visual GUI to Spec Kit. Browse specs in a rich markdown viewer with clickable file references, create specifications with image attachments, comment and refine each step inline (GitHub-style review), track your progress through the SDD workflow with a visual phase stepper, and manage steering documents like constitutions and templates.
 
-| Agent                                                                                | Support | Notes                                                                                                                                     |
-| ------------------------------------------------------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| [Qoder CLI](https://qoder.com/cli)                                                   | ✅      |                                                                                                                                           |
-| [Kiro CLI](https://kiro.dev/docs/cli/)                                               | ✅      | Use `--ai kiro-cli` (alias: `--ai kiro`)                                                                                                 |
-| [Amp](https://ampcode.com/)                                                          | ✅      |                                                                                                                                           |
-| [Auggie CLI](https://docs.augmentcode.com/cli/overview)                              | ✅      |                                                                                                                                           |
-| [Claude Code](https://www.anthropic.com/claude-code)                                 | ✅      |                                                                                                                                           |
-| [CodeBuddy CLI](https://www.codebuddy.ai/cli)                                        | ✅      |                                                                                                                                           |
-| [Codex CLI](https://github.com/openai/codex)                                         | ✅      | Requires `--ai-skills`. Codex recommends [skills](https://developers.openai.com/codex/skills) and treats [custom prompts](https://developers.openai.com/codex/custom-prompts) as deprecated. Spec-kit installs Codex skills into `.agents/skills` and invokes them as `$speckit-<command>`. |
-| [Cursor](https://cursor.sh/)                                                         | ✅      |                                                                                                                                           |
-| [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | ✅      |                                                                                                                                           |
-| [GitHub Copilot](https://code.visualstudio.com/)                                     | ✅      |                                                                                                                                           |
-| [IBM Bob](https://www.ibm.com/products/bob)                                          | ✅      | IDE-based agent with slash command support                                                                                                |
-| [Jules](https://jules.google.com/)                                                   | ✅      |                                                                                                                                           |
-| [Kilo Code](https://github.com/Kilo-Org/kilocode)                                    | ✅      |                                                                                                                                           |
-| [opencode](https://opencode.ai/)                                                     | ✅      |                                                                                                                                           |
-| [Pi Coding Agent](https://pi.dev)                                                    | ✅      | Pi doesn't have MCP support out of the box, so `taskstoissues` won't work as intended. MCP support can be added via [extensions](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#extensions) |
-| [Qwen Code](https://github.com/QwenLM/qwen-code)                                     | ✅      |                                                                                                                                           |
-| [Roo Code](https://roocode.com/)                                                     | ✅      |                                                                                                                                           |
-| [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | ✅      |                                                                                                                                           |
-| [Tabnine CLI](https://docs.tabnine.com/main/getting-started/tabnine-cli)             | ✅      |                                                                                                                                           |
-| [Mistral Vibe](https://github.com/mistralai/mistral-vibe)                            | ✅      |                                                                                                                                           |
-| [Kimi Code](https://code.kimi.com/)                                                  | ✅      |                                                                                                                                           |
-| [iFlow CLI](https://docs.iflow.cn/en/cli/quickstart)                                 | ✅      |                                                                                                                                           |
-| [Windsurf](https://windsurf.com/)                                                    | ✅      |                                                                                                                                           |
-| [Junie](https://junie.jetbrains.com/)                                                | ✅      |                                                                                                                                           |
-| [Antigravity (agy)](https://antigravity.google/)                                     | ✅      | Requires `--ai-skills` |
-| [Trae](https://www.trae.ai/)                                                         | ✅      |                                                                                                                                           |
-| Generic                                                                              | ✅      | Bring your own agent — use `--ai generic --ai-commands-dir <path>` for unsupported agents                                                 |
+## 🤖 Supported AI Coding Agent Integrations
 
-## 🔧 Specify CLI Reference
+Spec Kit works with 30+ AI coding agents — both CLI tools and IDE-based assistants. See the full list with notes and usage details in the [Supported AI Coding Agent Integrations](https://github.github.io/spec-kit/reference/integrations.html) guide.
 
-The `specify` command supports the following options:
+Run `specify integration list` to see all available integrations in your installed version.
 
-### Commands
+## Available Slash Commands
 
-| Command | Description                                                                                                                                                                                                                                                                              |
-| ------- |------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `init`  | Initialize a new Specify project from the latest template                                                                                                                                                                                                                                |
-| `check` | Check for installed tools: `git` plus all CLI-based agents configured in `AGENT_CONFIG` (for example: `claude`, `gemini`, `code`/`code-insiders`, `cursor-agent`, `windsurf`, `junie`, `qwen`, `opencode`, `codex`, `kiro-cli`, `shai`, `qodercli`, `vibe`, `kimi`, `iflow`, `pi`, etc.) |
-
-### `specify init` Arguments & Options
-
-| Argument/Option        | Type     | Description                                                                                                                                                                                                                                                                                                                                                                               |
-| ---------------------- | -------- |-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `<project-name>`       | Argument | Name for your new project directory (optional if using `--here`, or use `.` for current directory)                                                                                                                                                                                                                                                                                        |
-| `--ai`                 | Option   | AI assistant to use (see `AGENT_CONFIG` for the full, up-to-date list). Common options include: `claude`, `gemini`, `copilot`, `cursor-agent`, `qwen`, `opencode`, `codex`, `windsurf`, `junie`, `kilocode`, `auggie`, `roo`, `codebuddy`, `amp`, `shai`, `kiro-cli` (`kiro` alias), `agy`, `bob`, `qodercli`, `vibe`, `kimi`, `iflow`, `pi`, or `generic` (requires `--ai-commands-dir`) |
-| `--ai-commands-dir`    | Option   | Directory for agent command files (required with `--ai generic`, e.g. `.myagent/commands/`)                                                                                                                                                                                                                                                                                               |
-| `--script`             | Option   | Script variant to use: `sh` (bash/zsh) or `ps` (PowerShell)                                                                                                                                                                                                                                                                                                                               |
-| `--ignore-agent-tools` | Flag     | Skip checks for AI agent tools like Claude Code                                                                                                                                                                                                                                                                                                                                           |
-| `--no-git`             | Flag     | Skip git repository initialization                                                                                                                                                                                                                                                                                                                                                        |
-| `--here`               | Flag     | Initialize project in the current directory instead of creating a new one                                                                                                                                                                                                                                                                                                                 |
-| `--force`              | Flag     | Force merge/overwrite when initializing in current directory (skip confirmation)                                                                                                                                                                                                                                                                                                          |
-| `--skip-tls`           | Flag     | Skip SSL/TLS verification (not recommended)                                                                                                                                                                                                                                                                                                                                               |
-| `--debug`              | Flag     | Enable detailed debug output for troubleshooting                                                                                                                                                                                                                                                                                                                                          |
-| `--github-token`       | Option   | GitHub token for API requests (or set GH_TOKEN/GITHUB_TOKEN env variable)                                                                                                                                                                                                                                                                                                                 |
-| `--ai-skills`          | Flag     | Install Prompt.MD templates as agent skills in agent-specific `skills/` directory (requires `--ai`). Extension commands are also auto-registered as skills when extensions are added later.                                                                                                                                                                                               |
-| `--branch-numbering`   | Option   | Branch numbering strategy: `sequential` (default — `001`, `002`, `003`) or `timestamp` (`YYYYMMDD-HHMMSS`). Timestamp mode is useful for distributed teams to avoid numbering conflicts                                                                                                                                                                                                  |
-
-### Examples
-
-```bash
-# Basic project initialization
-specify init my-project
-
-# Initialize with specific AI assistant
-specify init my-project --ai claude
-
-# Initialize with Cursor support
-specify init my-project --ai cursor-agent
-
-# Initialize with Qoder support
-specify init my-project --ai qodercli
-
-# Initialize with Windsurf support
-specify init my-project --ai windsurf
-
-# Initialize with Kiro CLI support
-specify init my-project --ai kiro-cli
-
-# Initialize with Amp support
-specify init my-project --ai amp
-
-# Initialize with SHAI support
-specify init my-project --ai shai
-
-# Initialize with Mistral Vibe support
-specify init my-project --ai vibe
-
-# Initialize with IBM Bob support
-specify init my-project --ai bob
-
-# Initialize with Pi Coding Agent support
-specify init my-project --ai pi
-
-# Initialize with Codex CLI support
-specify init my-project --ai codex --ai-skills
-
-# Initialize with Antigravity support
-specify init my-project --ai agy --ai-skills
-
-# Initialize with an unsupported agent (generic / bring your own agent)
-specify init my-project --ai generic --ai-commands-dir .myagent/commands/
-
-# Initialize with PowerShell scripts (Windows/cross-platform)
-specify init my-project --ai copilot --script ps
-
-# Initialize in current directory
-specify init . --ai copilot
-# or use the --here flag
-specify init --here --ai copilot
-
-# Force merge into current (non-empty) directory without confirmation
-specify init . --force --ai copilot
-# or
-specify init --here --force --ai copilot
-
-# Skip git initialization
-specify init my-project --ai gemini --no-git
-
-# Enable debug output for troubleshooting
-specify init my-project --ai claude --debug
-
-# Use GitHub token for API requests (helpful for corporate environments)
-specify init my-project --ai claude --github-token ghp_your_token_here
-
-# Install agent skills with the project
-specify init my-project --ai claude --ai-skills
-
-# Initialize in current directory with agent skills
-specify init --here --ai gemini --ai-skills
-
-# Use timestamp-based branch numbering (useful for distributed teams)
-specify init my-project --ai claude --branch-numbering timestamp
-
-# Check system requirements
-specify check
-```
-
-### Available Slash Commands
-
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development.
-
-For Codex CLI, `--ai-skills` installs spec-kit as agent skills instead of slash-command prompt files. In Codex skills mode, invoke spec-kit as `$speckit-constitution`, `$speckit-specify`, `$speckit-plan`, `$speckit-tasks`, and `$speckit-implement`.
+After running `specify init`, your AI coding agent will have access to these slash commands for structured development. If you pass `--ai <agent> --ai-skills`, Spec Kit installs agent skills instead of slash-command prompt files; `--ai-skills` requires `--ai`.
 
 #### Core Commands
 
 Essential commands for the Spec-Driven Development workflow:
 
-| Command                 | Description                                                              |
-| ----------------------- | ------------------------------------------------------------------------ |
-| `/speckit.constitution` | Create or update project governing principles and development guidelines |
-| `/speckit.specify`      | Define what you want to build (requirements and user stories)            |
-| `/speckit.plan`         | Create technical implementation plans with your chosen tech stack        |
-| `/speckit.tasks`        | Generate actionable task lists for implementation                        |
-| `/speckit.implement`    | Execute all tasks to build the feature according to the plan             |
+| Command                  | Agent Skill            | Description                                                                |
+| ------------------------ | ---------------------- | -------------------------------------------------------------------------- |
+| `/speckit.constitution`  | `speckit-constitution` | Create or update project governing principles and development guidelines   |
+| `/speckit.specify`       | `speckit-specify`      | Define what you want to build (requirements and user stories)              |
+| `/speckit.plan`          | `speckit-plan`         | Create technical implementation plans with your chosen tech stack          |
+| `/speckit.tasks`         | `speckit-tasks`        | Generate actionable task lists for implementation                          |
+| `/speckit.taskstoissues` | `speckit-taskstoissues`| Convert generated task lists into GitHub issues for tracking and execution |
+| `/speckit.implement`     | `speckit-implement`    | Execute all tasks to build the feature according to the plan               |
 
 #### Optional Commands
 
 Additional commands for enhanced quality and validation:
 
-| Command              | Description                                                                                                                          |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `/speckit.clarify`   | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`)                                                |
-| `/speckit.analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`)                             |
-| `/speckit.checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| Command              | Agent Skill            | Description                                                                                                                          |
+| -------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `/speckit.clarify`   | `speckit-clarify`      | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`)                                                |
+| `/speckit.analyze`   | `speckit-analyze`      | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`)                             |
+| `/speckit.checklist` | `speckit-checklist`    | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 
-### Environment Variables
+## 🔧 Specify CLI Reference
 
-| Variable          | Description                                                                                                                                                                                                                                                                                            |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches.<br/>\*\*Must be set in the context of the agent you're working with prior to using `/speckit.plan` or follow-up commands. |
+For full command details, options, and examples, see the [CLI Reference](https://github.github.io/spec-kit/reference/overview.html).
 
 ## 🧩 Making Spec Kit Your Own: Extensions & Presets
 
 Spec Kit can be tailored to your needs through two complementary systems — **extensions** and **presets** — plus project-local overrides for one-off adjustments:
 
-```mermaid
-block-beta
-    columns 1
-    overrides["⬆ Highest priority\nProject-Local Overrides\n.specify/templates/overrides/"]
-    presets["Presets — Customize core & extensions\n.specify/presets/<preset-id>/templates/"]
-    extensions["Extensions — Add new capabilities\n.specify/extensions/<ext-id>/templates/"]
-    core["Spec Kit Core — Built-in SDD commands & templates\n.specify/templates/\n⬇ Lowest priority"]
+| Priority | Component Type                                    | Location                         |
+| -------: | ------------------------------------------------- | -------------------------------- |
+|      ⬆ 1 | Project-Local Overrides                           | `.specify/templates/overrides/`  |
+|        2 | Presets — Customize core & extensions             | `.specify/presets/templates/`    |
+|        3 | Extensions — Add new capabilities                 | `.specify/extensions/templates/` |
+|      ⬇ 4 | Spec Kit Core — Built-in SDD commands & templates | `.specify/templates/`            |
 
-    style overrides fill:transparent,stroke:#999
-    style presets fill:transparent,stroke:#4a9eda
-    style extensions fill:transparent,stroke:#4a9e4a
-    style core fill:transparent,stroke:#e6a817
-```
-
-**Templates** are resolved at **runtime** — Spec Kit walks the stack top-down and uses the first match. Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset. **Commands** are applied at **install time** — when you run `specify extension add` or `specify preset add`, command files are written into agent directories (e.g., `.claude/commands/`). If multiple presets or extensions provide the same command, the highest-priority version wins. On removal, the next-highest-priority version is restored automatically. If no overrides or customizations exist, Spec Kit uses its core defaults.
+- **Templates** are resolved at **runtime** — Spec Kit walks the stack top-down and uses the first match.
+- Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset.
+- **Extension/preset commands** are applied at **install time** — when you run `specify extension add` or `specify preset add`, command files are written into agent directories (e.g., `.claude/commands/`).
+- If multiple presets or extensions provide the same command, the highest-priority version wins. On removal, the next-highest-priority version is restored automatically.
+- If no overrides or customizations exist, Spec Kit uses its core defaults.
 
 ### Extensions — Add New Capabilities
 
@@ -463,7 +382,7 @@ specify extension add <extension-name>
 
 For example, extensions could add Jira integration, post-implementation code review, V-Model test traceability, or project health diagnostics.
 
-See the [Extensions README](./extensions/README.md) for the full guide and how to build and publish your own. Browse the [community extensions](#-community-extensions) above for what's available.
+See the [Extensions reference](https://github.github.io/spec-kit/reference/extensions.html) for the full command guide. Browse the [community extensions](#-community-extensions) above for what's available.
 
 ### Presets — Customize Existing Workflows
 
@@ -479,7 +398,7 @@ specify preset add <preset-name>
 
 For example, presets could restructure spec templates to require regulatory traceability, adapt the workflow to fit the methodology you use (e.g., Agile, Kanban, Waterfall, jobs-to-be-done, or domain-driven design), add mandatory security review gates to plans, enforce test-first task ordering, or localize the entire workflow to a different language. The [pirate-speak demo](https://github.com/mnriem/spec-kit-pirate-speak-preset-demo) shows just how deep the customization can go. Multiple presets can be stacked with priority ordering.
 
-See the [Presets README](./presets/README.md) for the full guide, including resolution order, priority, and how to create your own.
+See the [Presets reference](https://github.github.io/spec-kit/reference/presets.html) for the full command guide, including resolution order and priority stacking.
 
 ### When to Use Which
 
@@ -537,7 +456,7 @@ Our research and experimentation focus on:
 ## 🔧 Prerequisites
 
 - **Linux/macOS/Windows**
-- [Supported](#-supported-ai-agents) AI coding agent.
+- [Supported](#-supported-ai-coding-agent-integrations) AI coding agent.
 - [uv](https://docs.astral.sh/uv/) for package management
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
@@ -579,29 +498,29 @@ specify init --here --force
 You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
 
 ```bash
-specify init <project_name> --ai claude
+specify init <project_name> --ai copilot
 specify init <project_name> --ai gemini
 specify init <project_name> --ai copilot
 
 # Or in current directory:
-specify init . --ai claude
+specify init . --ai copilot
 specify init . --ai codex --ai-skills
 
 # or use --here flag
-specify init --here --ai claude
+specify init --here --ai copilot
 specify init --here --ai codex --ai-skills
 
 # Force merge into a non-empty current directory
-specify init . --force --ai claude
+specify init . --force --ai copilot
 
 # or
-specify init --here --force --ai claude
+specify init --here --force --ai copilot
 ```
 
-The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, Qoder CLI, Tabnine CLI, Kiro CLI, Pi, or Mistral Vibe installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, Qoder CLI, Tabnine CLI, Kiro CLI, Pi, Forge, Goose, or Mistral Vibe installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
-specify init <project_name> --ai claude --ignore-agent-tools
+specify init <project_name> --ai copilot --ignore-agent-tools
 ```
 
 ### **STEP 1:** Establish project principles

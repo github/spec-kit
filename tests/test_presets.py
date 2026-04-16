@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 
 import yaml
 
+from tests.conftest import strip_ansi
 from specify_cli.presets import (
     PresetManifest,
     PresetRegistry,
@@ -1174,8 +1175,7 @@ class TestPresetCatalog:
         """Test search with cached catalog data."""
         from unittest.mock import patch
 
-        # Only use the default catalog to prevent fetching the community catalog from the network
-        monkeypatch.setenv("SPECKIT_PRESET_CATALOG_URL", PresetCatalog.DEFAULT_CATALOG_URL)
+        monkeypatch.delenv("SPECKIT_PRESET_CATALOG_URL", raising=False)
         catalog = PresetCatalog(project_dir)
         catalog.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1771,19 +1771,20 @@ class TestSelfTestPreset:
         assert "preset:self-test" in content
 
     def test_self_test_registers_commands_for_claude(self, project_dir):
-        """Test that installing self-test registers commands in .claude/commands/."""
-        # Create Claude agent directory to simulate Claude being set up
-        claude_dir = project_dir / ".claude" / "commands"
+        """Test that installing self-test registers skills in .claude/skills/."""
+        # Create Claude skills directory to simulate Claude being set up
+        claude_dir = project_dir / ".claude" / "skills"
         claude_dir.mkdir(parents=True)
 
         manager = PresetManager(project_dir)
         manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
 
-        # Check the command was registered
-        cmd_file = claude_dir / "speckit.specify.md"
-        assert cmd_file.exists(), "Command not registered in .claude/commands/"
+        # Check the skill was registered
+        cmd_file = claude_dir / "speckit-specify" / "SKILL.md"
+        assert cmd_file.exists(), "Skill not registered in .claude/skills/"
         content = cmd_file.read_text()
-        assert "preset:self-test" in content
+        assert "self-test" in content
+        assert "source:" in content  # skill frontmatter includes metadata.source
 
     def test_self_test_registers_commands_for_gemini(self, project_dir):
         """Test that installing self-test registers commands in .gemini/commands/ as TOML."""
@@ -1803,13 +1804,13 @@ class TestSelfTestPreset:
 
     def test_self_test_unregisters_commands_on_remove(self, project_dir):
         """Test that removing self-test cleans up registered commands."""
-        claude_dir = project_dir / ".claude" / "commands"
+        claude_dir = project_dir / ".claude" / "skills"
         claude_dir.mkdir(parents=True)
 
         manager = PresetManager(project_dir)
         manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
 
-        cmd_file = claude_dir / "speckit.specify.md"
+        cmd_file = claude_dir / "speckit-specify" / "SKILL.md"
         assert cmd_file.exists()
 
         manager.remove("self-test")
@@ -1825,7 +1826,7 @@ class TestSelfTestPreset:
 
     def test_extension_command_skipped_when_extension_missing(self, project_dir, temp_dir):
         """Test that extension command overrides are skipped if the extension isn't installed."""
-        claude_dir = project_dir / ".claude" / "commands"
+        claude_dir = project_dir / ".claude" / "skills"
         claude_dir.mkdir(parents=True)
 
         preset_dir = temp_dir / "ext-override-preset"
@@ -1868,7 +1869,7 @@ class TestSelfTestPreset:
 
     def test_extension_command_registered_when_extension_present(self, project_dir, temp_dir):
         """Test that extension command overrides ARE registered when the extension is installed."""
-        claude_dir = project_dir / ".claude" / "commands"
+        claude_dir = project_dir / ".claude" / "skills"
         claude_dir.mkdir(parents=True)
         (project_dir / ".specify" / "extensions" / "fakeext").mkdir(parents=True)
 
@@ -1904,8 +1905,8 @@ class TestSelfTestPreset:
         manager = PresetManager(project_dir)
         manager.install_from_directory(preset_dir, "0.1.5")
 
-        cmd_file = claude_dir / "speckit.fakeext.cmd.md"
-        assert cmd_file.exists(), "Command not registered despite extension being present"
+        cmd_file = claude_dir / "speckit-fakeext-cmd" / "SKILL.md"
+        assert cmd_file.exists(), "Skill not registered despite extension being present"
 
 
 # ===== Init Options and Skills Tests =====
@@ -1963,7 +1964,7 @@ class TestPresetSkills:
         self._create_skill(skills_dir, "speckit-specify")
 
         # Also create the claude commands dir so commands get registered
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
 
         # Install self-test preset (has a command override for speckit.specify)
         manager = PresetManager(project_dir)
@@ -1974,6 +1975,7 @@ class TestPresetSkills:
         assert skill_file.exists()
         content = skill_file.read_text()
         assert "preset:self-test" in content, "Skill should reference preset source"
+        assert "disable-model-invocation: false" in content
 
         # Verify it was recorded in registry
         metadata = manager.registry.get("self-test")
@@ -1981,11 +1983,9 @@ class TestPresetSkills:
 
     def test_skill_not_updated_when_ai_skills_disabled(self, project_dir, temp_dir):
         """When --ai-skills was NOT used, preset install should not touch skills."""
-        self._write_init_options(project_dir, ai="claude", ai_skills=False)
-        skills_dir = project_dir / ".claude" / "skills"
+        self._write_init_options(project_dir, ai="qwen", ai_skills=False)
+        skills_dir = project_dir / ".qwen" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
-
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
@@ -2017,18 +2017,16 @@ class TestPresetSkills:
 
     def test_skill_not_updated_without_init_options(self, project_dir, temp_dir):
         """When no init-options.json exists, preset install should not touch skills."""
-        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir = project_dir / ".qwen" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
-
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
         manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
 
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
-        content = skill_file.read_text()
-        assert "untouched" in content
+        file_content = skill_file.read_text()
+        assert "untouched" in file_content
 
     def test_skill_restored_on_preset_remove(self, project_dir, temp_dir):
         """When a preset is removed, skills should be restored from core templates."""
@@ -2036,7 +2034,7 @@ class TestPresetSkills:
         skills_dir = project_dir / ".claude" / "skills"
         self._create_skill(skills_dir, "speckit-specify")
 
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
 
         # Set up core command template in the project so restoration works
         core_cmds = project_dir / ".specify" / "templates" / "commands"
@@ -2059,13 +2057,14 @@ class TestPresetSkills:
         content = skill_file.read_text()
         assert "preset:self-test" not in content, "Preset content should be gone"
         assert "templates/commands/specify.md" in content, "Should reference core template"
+        assert "disable-model-invocation: false" in content
 
     def test_skill_restored_on_remove_resolves_script_placeholders(self, project_dir):
         """Core restore should resolve {SCRIPT}/{ARGS} placeholders like other skill paths."""
         self._write_init_options(project_dir, ai="claude", ai_skills=True, script="sh")
         skills_dir = project_dir / ".claude" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="old")
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
 
         core_cmds = project_dir / ".specify" / "templates" / "commands"
         core_cmds.mkdir(parents=True, exist_ok=True)
@@ -2091,12 +2090,10 @@ class TestPresetSkills:
 
     def test_skill_not_overridden_when_skill_path_is_file(self, project_dir):
         """Preset install should skip non-directory skill targets."""
-        self._write_init_options(project_dir, ai="claude")
-        skills_dir = project_dir / ".claude" / "skills"
+        self._write_init_options(project_dir, ai="qwen")
+        skills_dir = project_dir / ".qwen" / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
         (skills_dir / "speckit-specify").write_text("not-a-directory")
-
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
@@ -2110,8 +2107,6 @@ class TestPresetSkills:
         """Skills should not be created when no existing skill dir is found."""
         self._write_init_options(project_dir, ai="claude")
         # Don't create skills dir — simulate --ai-skills never created them
-
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
@@ -2349,6 +2344,55 @@ class TestPresetSkills:
         metadata = manager.registry.get("self-test")
         assert "speckit-specify" in metadata.get("registered_skills", [])
 
+    def test_kimi_new_skill_created_even_when_ai_skills_disabled(self, project_dir, temp_dir):
+        """Kimi native skills should still receive brand-new preset commands."""
+        self._write_init_options(project_dir, ai="kimi", ai_skills=False)
+        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+
+        preset_dir = temp_dir / "kimi-new-skill"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.research.md").write_text(
+            "---\n"
+            "description: Kimi research workflow\n"
+            "---\n\n"
+            "preset:kimi-new-skill\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "kimi-new-skill",
+                "name": "Kimi New Skill",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.research",
+                        "file": "commands/speckit.research.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-research" / "SKILL.md"
+        assert skill_file.exists()
+        content = skill_file.read_text()
+        assert "preset:kimi-new-skill" in content
+        assert "name: speckit-research" in content
+
+        metadata = manager.registry.get("kimi-new-skill")
+        assert "speckit-research" in metadata.get("registered_skills", [])
+
     def test_kimi_preset_skill_override_resolves_script_placeholders(self, project_dir, temp_dir):
         """Kimi preset skill overrides should resolve placeholders and rewrite project paths."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False, script="sh")
@@ -2401,22 +2445,78 @@ class TestPresetSkills:
         assert ".specify/memory/constitution.md" in content
         assert "for kimi" in content
 
+    def test_agy_skill_restored_on_preset_remove(self, project_dir, temp_dir):
+        """Agy preset removal should restore native skills instead of deleting them."""
+        self._write_init_options(project_dir, ai="agy", ai_skills=True)
+        skills_dir = project_dir / ".agent" / "skills"
+        self._create_skill(skills_dir, "speckit-specify", body="before override")
+
+        core_command = project_dir / ".specify" / "templates" / "commands" / "specify.md"
+        core_command.write_text(
+            "---\n"
+            "description: Restored core specify workflow\n"
+            "---\n\n"
+            "restored core body\n"
+        )
+
+        preset_dir = temp_dir / "agy-override"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.specify.md").write_text(
+            "---\n"
+            "description: Agy override\n"
+            "---\n\n"
+            "preset agy body\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "agy-override",
+                "name": "Agy Override",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.specify",
+                        "file": "commands/speckit.specify.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset agy body" in skill_file.read_text()
+
+        assert manager.remove("agy-override") is True
+        assert skill_file.exists()
+        restored = skill_file.read_text()
+        assert "restored core body" in restored
+        assert "name: speckit-specify" in restored
+
     def test_preset_skill_registration_handles_non_dict_init_options(self, project_dir, temp_dir):
         """Non-dict init-options payloads should not crash preset install/remove flows."""
         init_options = project_dir / ".specify" / "init-options.json"
         init_options.parent.mkdir(parents=True, exist_ok=True)
         init_options.write_text("[]")
 
-        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir = project_dir / ".qwen" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
-        (project_dir / ".claude" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         self_test_dir = Path(__file__).parent.parent / "presets" / "self-test"
         manager.install_from_directory(self_test_dir, "0.1.5")
 
-        content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
-        assert "untouched" in content
+        skill_content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
+        assert "untouched" in skill_content
 
 
 class TestPresetSetPriority:
@@ -2441,7 +2541,8 @@ class TestPresetSetPriority:
             result = runner.invoke(app, ["preset", "set-priority", "test-pack", "5"])
 
         assert result.exit_code == 0, result.output
-        assert "priority changed: 10 → 5" in result.output
+        plain = strip_ansi(result.output)
+        assert "priority changed: 10 → 5" in plain
 
         # Reload registry to see updated value
         manager2 = PresetManager(project_dir)
@@ -2463,7 +2564,8 @@ class TestPresetSetPriority:
             result = runner.invoke(app, ["preset", "set-priority", "test-pack", "5"])
 
         assert result.exit_code == 0, result.output
-        assert "already has priority 5" in result.output
+        plain = strip_ansi(result.output)
+        assert "already has priority 5" in plain
 
     def test_set_priority_invalid_value(self, project_dir, pack_dir):
         """Test set-priority rejects invalid priority values."""
@@ -2762,3 +2864,182 @@ class TestPresetEnableDisable:
 
         assert result.exit_code == 1
         assert "corrupted state" in result.output.lower()
+
+
+# ===== Lean Preset Tests =====
+
+
+LEAN_PRESET_DIR = Path(__file__).parent.parent / "presets" / "lean"
+
+LEAN_COMMAND_NAMES = [
+    "speckit.specify",
+    "speckit.plan",
+    "speckit.tasks",
+    "speckit.implement",
+    "speckit.constitution",
+]
+
+
+class TestLeanPreset:
+    """Tests for the lean preset that ships with the repo."""
+
+    def test_lean_preset_exists(self):
+        """Verify the lean preset directory and manifest exist."""
+        assert LEAN_PRESET_DIR.exists()
+        assert (LEAN_PRESET_DIR / "preset.yml").exists()
+
+    def test_lean_manifest_valid(self):
+        """Verify the lean preset manifest is valid."""
+        manifest = PresetManifest(LEAN_PRESET_DIR / "preset.yml")
+        assert manifest.id == "lean"
+        assert manifest.name == "Lean Workflow"
+        assert manifest.version == "1.0.0"
+        assert len(manifest.templates) == 5  # 5 commands
+
+    def test_lean_provides_core_workflow_commands(self):
+        """Verify the lean preset provides overrides for core workflow commands."""
+        manifest = PresetManifest(LEAN_PRESET_DIR / "preset.yml")
+        provided_names = {t["name"] for t in manifest.templates}
+        for name in LEAN_COMMAND_NAMES:
+            assert name in provided_names, f"Lean preset missing command: {name}"
+
+    def test_lean_command_files_exist(self):
+        """Verify that all declared command files actually exist on disk."""
+        manifest = PresetManifest(LEAN_PRESET_DIR / "preset.yml")
+        for tmpl in manifest.templates:
+            tmpl_path = LEAN_PRESET_DIR / tmpl["file"]
+            assert tmpl_path.exists(), f"Missing command file: {tmpl['file']}"
+
+    def test_lean_commands_have_no_scripts(self):
+        """Verify lean commands have no scripts or agent_scripts in frontmatter."""
+        from specify_cli.agents import CommandRegistrar
+
+        for name in LEAN_COMMAND_NAMES:
+            cmd_path = LEAN_PRESET_DIR / "commands" / f"speckit.{name.split('.')[-1]}.md"
+            content = cmd_path.read_text()
+            frontmatter, _ = CommandRegistrar.parse_frontmatter(content)
+            assert "scripts" not in frontmatter, f"{name} should not have scripts in frontmatter"
+            assert "agent_scripts" not in frontmatter, f"{name} should not have agent_scripts in frontmatter"
+
+    def test_lean_commands_have_no_hooks(self):
+        """Verify lean commands do not contain extension hook boilerplate."""
+        for name in LEAN_COMMAND_NAMES:
+            cmd_path = LEAN_PRESET_DIR / "commands" / f"speckit.{name.split('.')[-1]}.md"
+            content = cmd_path.read_text()
+            assert "hooks." not in content, f"{name} should not reference extension hooks"
+            assert "extensions.yml" not in content, f"{name} should not reference extensions.yml"
+
+    def test_install_lean_preset(self, project_dir):
+        """Test installing the lean preset from its directory."""
+        manager = PresetManager(project_dir)
+        manifest = manager.install_from_directory(LEAN_PRESET_DIR, "0.6.0")
+        assert manifest.id == "lean"
+        assert manager.registry.is_installed("lean")
+
+    def test_lean_overrides_commands(self, project_dir):
+        """Test that lean preset overrides are resolved correctly."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(LEAN_PRESET_DIR, "0.6.0")
+
+        resolver = PresetResolver(project_dir)
+        for name in LEAN_COMMAND_NAMES:
+            result = resolver.resolve(name, template_type="command")
+            assert result is not None, f"Lean override for {name} not resolved"
+
+
+# ===== Bundled Preset Locator Tests =====
+
+
+class TestBundledPresetLocator:
+    """Tests for _locate_bundled_preset discovery function."""
+
+    def test_locate_bundled_lean_preset(self):
+        """_locate_bundled_preset finds the lean preset."""
+        from specify_cli import _locate_bundled_preset
+
+        path = _locate_bundled_preset("lean")
+        assert path is not None
+        assert (path / "preset.yml").is_file()
+
+    def test_locate_bundled_preset_not_found(self):
+        """_locate_bundled_preset returns None for nonexistent preset."""
+        from specify_cli import _locate_bundled_preset
+
+        path = _locate_bundled_preset("nonexistent-preset")
+        assert path is None
+
+    def test_locate_bundled_preset_rejects_invalid_id(self):
+        """_locate_bundled_preset rejects IDs with invalid characters."""
+        from specify_cli import _locate_bundled_preset
+
+        assert _locate_bundled_preset("../escape") is None
+        assert _locate_bundled_preset("UPPERCASE") is None
+        assert _locate_bundled_preset("has spaces") is None
+
+    def test_bundled_preset_add_via_cli(self, project_dir):
+        """Test that 'specify preset add lean' installs the bundled preset."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="0.6.0"):
+            result = runner.invoke(app, ["preset", "add", "lean"])
+
+        assert result.exit_code == 0, result.output
+        assert "Lean Workflow" in result.output
+        assert "installed" in result.output.lower()
+
+    def test_bundled_preset_in_catalog(self):
+        """Verify the lean preset is listed in catalog.json with bundled marker."""
+        catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
+        catalog = json.loads(catalog_path.read_text())
+        assert "lean" in catalog["presets"]
+        assert catalog["presets"]["lean"]["bundled"] is True
+        assert "download_url" not in catalog["presets"]["lean"]
+
+    def test_bundled_preset_download_raises_error(self, project_dir):
+        """download_pack raises PresetError for bundled presets without download_url."""
+        catalog = PresetCatalog(project_dir)
+
+        catalog_data = {
+            "test-bundled": {
+                "name": "Test Bundled",
+                "version": "1.0.0",
+                "bundled": True,
+            }
+        }
+        from unittest.mock import patch
+        with patch.object(catalog, "_get_merged_packs", return_value=catalog_data):
+            with pytest.raises(PresetError, match="bundled with spec-kit"):
+                catalog.download_pack("test-bundled")
+
+    def test_bundled_preset_missing_locally_cli_error(self, project_dir):
+        """CLI shows clear error when bundled preset cannot be found locally."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        # Patch _locate_bundled_preset to return None (simulating missing files)
+        # and mock the catalog to return a bundled entry for "lean"
+        fake_pack_info = {
+            "id": "lean",
+            "name": "Lean Workflow",
+            "version": "1.0.0",
+            "bundled": True,
+            "_install_allowed": True,
+        }
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli._locate_bundled_preset", return_value=None), \
+             patch("specify_cli.presets.PresetCatalog") as MockCatalog:
+            MockCatalog.return_value.get_pack_info.return_value = fake_pack_info
+            result = runner.invoke(app, ["preset", "add", "lean"])
+
+        # Should fail with a helpful error explaining this is a bundled preset
+        # and suggesting how to recover.
+        assert result.exit_code == 1
+        output = strip_ansi(result.output).lower()
+        assert "bundled" in output, result.output
+        assert "reinstall" in output, result.output

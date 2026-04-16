@@ -76,7 +76,7 @@ Run this inside your project directory:
 specify init --here --force --ai <your-agent>
 ```
 
-Replace `<your-agent>` with your AI assistant. Refer to this list of [Supported AI Agents](../README.md#-supported-ai-agents)
+Replace `<your-agent>` with your AI coding agent. Refer to this list of [Supported AI Coding Agent Integrations](reference/integrations.md)
 
 **Example:**
 
@@ -292,7 +292,7 @@ This tells Spec Kit which feature directory to use when creating specs, plans, a
    ```bash
    ls -la .claude/commands/      # Claude Code
    ls -la .gemini/commands/      # Gemini
-   ls -la .cursor/commands/      # Cursor
+   ls -la .cursor/skills/      # Cursor
    ls -la .pi/prompts/           # Pi Coding Agent
    ```
 
@@ -401,7 +401,7 @@ The `specify` CLI tool is used for:
 - **Upgrades:** `specify init --here --force` to update templates and commands
 - **Diagnostics:** `specify check` to verify tool installation
 
-Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/speckit.plan`, etc.) are **permanently installed** in your project's agent folder (`.claude/`, `.github/prompts/`, `.pi/prompts/`, etc.). Your AI assistant reads these command files directly—no need to run `specify` again.
+Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/speckit.plan`, etc.) are **permanently installed** in your project's agent folder (`.claude/`, `.github/prompts/`, `.pi/prompts/`, etc.). Your AI coding agent reads these command files directly—no need to run `specify` again.
 
 **If your agent isn't recognizing slash commands:**
 

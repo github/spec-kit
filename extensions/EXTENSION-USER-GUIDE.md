@@ -403,8 +403,10 @@ settings:
 
 # Hook configuration
 # Available events: before_specify, after_specify, before_plan, after_plan,
-#                   before_tasks, after_tasks, before_implement, after_implement
-# Planned (not yet wired into core templates): before_commit, after_commit
+#                   before_tasks, after_tasks, before_implement, after_implement,
+#                   before_analyze, after_analyze, before_checklist, after_checklist,
+#                   before_clarify, after_clarify, before_constitution, after_constitution,
+#                   before_taskstoissues, after_taskstoissues
 hooks:
   after_tasks:
     - extension: jira
