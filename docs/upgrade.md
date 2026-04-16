@@ -76,7 +76,7 @@ Run this inside your project directory:
 specify init --here --force --ai <your-agent>
 ```
 
-Replace `<your-agent>` with your AI coding agent. Refer to this list of [Supported AI Coding Agent Integrations](integrations.md)
+Replace `<your-agent>` with your AI coding agent. Refer to this list of [Supported AI Coding Agent Integrations](reference/integrations.md)
 
 **Example:**
 

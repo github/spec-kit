@@ -255,7 +255,7 @@ def evaluate_expression(template: str, context: Any) -> Any:
     ----------
     template:
         The template string (e.g., ``"{{ steps.plan.output.task_count }}"``
-        or ``"Processed {{ inputs.feature_name }}"``.
+        or ``"Processed {{ inputs.spec }}"``.
     context:
         A ``StepContext`` or compatible object.
 

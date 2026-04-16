@@ -7,15 +7,15 @@ workflow:
   description: "Runs specify → plan → tasks → implement with review gates"
 
 requires:
-  speckit_version: ">=0.6.1"
+  speckit_version: ">=0.7.2"
   integrations:
     any: ["copilot", "claude", "gemini"]
 
 inputs:
-  feature_name:
+  spec:
     type: string
     required: true
-    prompt: "Feature name"
+    prompt: "Describe what you want to build"
   integration:
     type: string
     default: "copilot"
@@ -30,7 +30,7 @@ steps:
     command: speckit.specify
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.feature_name }}"
+      args: "{{ inputs.spec }}"
 
   - id: review-spec
     type: gate
@@ -42,7 +42,7 @@ steps:
     command: speckit.plan
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.feature_name }}"
+      args: "{{ inputs.spec }}"
 
   - id: review-plan
     type: gate
@@ -54,10 +54,10 @@ steps:
     command: speckit.tasks
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.feature_name }}"
+      args: "{{ inputs.spec }}"
 
   - id: implement
     command: speckit.implement
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.feature_name }}"
+      args: "{{ inputs.spec }}"

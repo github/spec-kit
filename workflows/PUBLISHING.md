@@ -62,10 +62,10 @@ requires:
     any: ["claude", "gemini"]      # At least one required
 
 inputs:
-  feature_name:
+  spec:
     type: string
     required: true
-    prompt: "Feature name"
+    prompt: "Describe what you want to build"
   scope:
     type: string
     default: "full"
@@ -75,7 +75,7 @@ steps:
   - id: specify
     command: speckit.specify
     input:
-      args: "{{ inputs.feature_name }}"
+      args: "{{ inputs.spec }}"
 
   - id: review
     type: gate
@@ -99,7 +99,7 @@ steps:
 
 ```bash
 # Run with required inputs
-specify workflow run ./workflow.yml --input feature_name="user-auth"
+specify workflow run ./workflow.yml --input spec="Build a user authentication system with OAuth support"
 
 # Check validation
 specify workflow info ./workflow.yml

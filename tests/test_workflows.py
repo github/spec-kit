@@ -54,7 +54,7 @@ workflow:
   description: "A test workflow"
 
 inputs:
-  feature_name:
+  spec:
     type: string
     required: true
   scope:
@@ -65,7 +65,7 @@ steps:
   - id: step-one
     command: speckit.specify
     input:
-      args: "{{ inputs.feature_name }}"
+      args: "{{ inputs.spec }}"
 
   - id: step-two
     command: speckit.plan
@@ -1152,8 +1152,8 @@ class TestWorkflowDefinition:
         from specify_cli.workflows.engine import WorkflowDefinition
 
         definition = WorkflowDefinition.from_string(sample_workflow_yaml)
-        assert "feature_name" in definition.inputs
-        assert definition.inputs["feature_name"]["required"] is True
+        assert "spec" in definition.inputs
+        assert definition.inputs["spec"]["required"] is True
         assert definition.inputs["scope"]["default"] == "full"
 
 

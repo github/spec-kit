@@ -11,7 +11,7 @@ steps:
   - id: specify
     command: speckit.specify
     input:
-      args: "{{ inputs.feature_name }}"
+      args: "{{ inputs.spec }}"
 
   - id: review
     type: gate
@@ -35,10 +35,10 @@ specify workflow search
 specify workflow add speckit
 
 # Or run directly from a local YAML file
-specify workflow run ./workflow.yml --input feature_name="user-auth"
+specify workflow run ./workflow.yml --input spec="Build a user authentication system with OAuth support"
 
 # Run an installed workflow with inputs
-specify workflow run speckit --input feature_name="user-auth"
+specify workflow run speckit --input spec="Build a user authentication system with OAuth support"
 
 # Check run status
 specify workflow status
@@ -59,20 +59,20 @@ specify workflow remove speckit
 
 ```bash
 specify workflow add speckit
-specify workflow run speckit --input feature_name="user-auth"
+specify workflow run speckit --input spec="Build a user authentication system with OAuth support"
 ```
 
 ### From a Local YAML File
 
 ```bash
-specify workflow run ./my-workflow.yml --input feature_name="user-auth"
+specify workflow run ./my-workflow.yml --input spec="Build a user authentication system with OAuth support"
 ```
 
 ### Multiple Inputs
 
 ```bash
 specify workflow run speckit \
-  --input feature_name="user-auth" \
+  --input spec="Build a user authentication system with OAuth support" \
   --input scope="backend-only"
 ```
 
@@ -88,7 +88,7 @@ Invoke an installed Spec Kit command by name via the integration CLI:
 - id: specify
   command: speckit.specify
   input:
-    args: "{{ inputs.feature_name }}"
+    args: "{{ inputs.spec }}"
   integration: claude        # Optional: override workflow default
   model: "claude-sonnet-4-20250514"   # Optional: override model
 ```
@@ -225,7 +225,7 @@ Workflow definitions use `{{ expression }}` syntax for dynamic values:
 
 ```yaml
 # Access inputs
-args: "{{ inputs.feature_name }}"
+args: "{{ inputs.spec }}"
 
 # Access previous step outputs
 args: "{{ steps.specify.output.file }}"
@@ -245,10 +245,10 @@ Workflow inputs are type-checked and coerced from CLI string values:
 
 ```yaml
 inputs:
-  feature_name:
+  spec:
     type: string
     required: true
-    prompt: "Feature name"
+    prompt: "Describe what you want to build"
   task_count:
     type: number
     default: 5
