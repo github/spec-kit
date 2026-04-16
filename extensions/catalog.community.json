@@ -714,7 +714,7 @@
       "updated_at": "2026-03-31T00:00:00Z"
     },
     "github-issues": {
-      "name": "GitHub Issues Integration",
+      "name": "GitHub Issues Integration 1",
       "id": "github-issues",
       "description": "Generate spec artifacts from GitHub Issues - import issues, sync updates, and maintain bidirectional traceability",
       "author": "Fatima367",
@@ -754,7 +754,7 @@
       "updated_at": "2026-04-13T14:39:00Z"
     },
     "issue": {
-      "name": "Issue",
+      "name": "GitHub Issues Integration 2",
       "id": "issue",
       "description": "Creates and syncs local specs based on an existing issue in GitHub",
       "author": "aaronrsun",
