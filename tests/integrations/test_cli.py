@@ -408,6 +408,20 @@ class TestInitExtensionFlag:
         with pytest.raises(ValidationError, match="Unsupported TAR member type"):
             _install_extension_archive(object(), archive_path, "0.0.0")
 
+    def test_extension_archive_error_message_lists_plain_tar(self, tmp_path):
+        """Unsupported extension archive message should include plain .tar."""
+        from specify_cli import _install_extension_archive
+        from specify_cli.extensions import ValidationError
+
+        archive_path = tmp_path / "not-an-archive.txt"
+        archive_path.write_text("not an archive", encoding="utf-8")
+
+        with pytest.raises(
+            ValidationError,
+            match=r"ZIP, \.tar, \.tar\.gz, or \.tgz",
+        ):
+            _install_extension_archive(object(), archive_path, "0.0.0")
+
     def test_extension_url_downloads_in_bounded_chunks(self, tmp_path, monkeypatch):
         """URL extension downloads stream to disk instead of reading all bytes."""
         import urllib.request
@@ -463,6 +477,60 @@ class TestInitExtensionFlag:
             specify_cli.DOWNLOAD_CHUNK_BYTES,
             specify_cli.DOWNLOAD_CHUNK_BYTES,
         ]
+
+    def test_extension_add_from_url_uses_shared_bounded_download_helper(self, tmp_path, monkeypatch):
+        """extension add --from should reuse the bounded URL download helper."""
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        import specify_cli
+        from specify_cli import app
+        from specify_cli.extensions import ExtensionManager
+
+        project = tmp_path / "url-extension-add"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        captured = {}
+
+        def fake_download_and_install(manager, project_path, source_url, speckit_version, priority=10):
+            captured["manager"] = manager
+            captured["project_path"] = project_path
+            captured["source_url"] = source_url
+            captured["speckit_version"] = speckit_version
+            captured["priority"] = priority
+            return SimpleNamespace(
+                id="url-ext",
+                name="URL Extension",
+                version="1.0.0",
+                description="Downloaded from URL",
+                warnings=[],
+                commands=[],
+            )
+
+        monkeypatch.setattr(
+            specify_cli,
+            "_download_and_install_extension_url",
+            fake_download_and_install,
+        )
+
+        runner = CliRunner()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(
+                app,
+                ["extension", "add", "url-ext", "--from", "https://example.com/url-ext.zip"],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert isinstance(captured["manager"], ExtensionManager)
+        assert captured["project_path"] == project
+        assert captured["source_url"] == "https://example.com/url-ext.zip"
+        assert captured["speckit_version"] == specify_cli.get_speckit_version()
+        assert captured["priority"] == 10
 
 
 class TestForceExistingDirectory:

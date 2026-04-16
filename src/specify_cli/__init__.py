@@ -768,7 +768,7 @@ def _install_extension_archive(
         )
 
     if not tarfile.is_tarfile(archive_path):
-        raise ValidationError("Extension archive must be a ZIP, .tar.gz, or .tgz file")
+        raise ValidationError("Extension archive must be a ZIP, .tar, .tar.gz, or .tgz file")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         temp_path = Path(tmpdir)
@@ -3695,45 +3695,14 @@ def extension_add(
                 manifest = manager.install_from_directory(source_path, speckit_version, priority=priority)
 
             elif from_url:
-                # Install from URL (ZIP file)
-                import urllib.request
-                import urllib.error
-                from urllib.parse import urlparse
-
-                # Validate URL
-                parsed = urlparse(from_url)
-                is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-
-                if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
-                    console.print("[red]Error:[/red] URL must use HTTPS for security.")
-                    console.print("HTTP is only allowed for localhost URLs.")
-                    raise typer.Exit(1)
-
-                # Warn about untrusted sources
-                display_url = _redact_url_for_display(from_url)
-                console.print("[yellow]Warning:[/yellow] Installing from external URL.")
-                console.print("Only install extensions from sources you trust.\n")
-                console.print(f"Downloading from {display_url}...")
-
-                # Download ZIP to temp location
-                download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
-                download_dir.mkdir(parents=True, exist_ok=True)
-                zip_path = download_dir / f"{extension}-url-download.zip"
-
-                try:
-                    with urllib.request.urlopen(from_url, timeout=60) as response:
-                        zip_data = response.read()
-                    zip_path.write_bytes(zip_data)
-
-                    # Install from downloaded ZIP
-                    manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
-                except urllib.error.URLError as e:
-                    console.print(f"[red]Error:[/red] Failed to download from {display_url}: {e}")
-                    raise typer.Exit(1)
-                finally:
-                    # Clean up downloaded ZIP
-                    if zip_path.exists():
-                        zip_path.unlink()
+                # Install from URL using bounded chunked download + archive validation.
+                manifest = _download_and_install_extension_url(
+                    manager,
+                    project_root,
+                    from_url,
+                    speckit_version,
+                    priority=priority,
+                )
 
             else:
                 # Try bundled extensions first (shipped with spec-kit)
