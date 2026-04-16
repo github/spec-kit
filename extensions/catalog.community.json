@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-14T21:30:00Z",
+  "updated_at": "2026-04-16T18:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -300,6 +300,38 @@
       "stars": 0,
       "created_at": "2026-03-29T00:00:00Z",
       "updated_at": "2026-03-29T00:00:00Z"
+    },
+    "catalog-ci": {
+      "name": "Catalog CI",
+      "id": "catalog-ci",
+      "description": "Automated validation for spec-kit community catalog entries — structure, URLs, diffs, and linting.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-catalog-ci/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-catalog-ci",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-catalog-ci",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-catalog-ci/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-catalog-ci/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "ci",
+        "validation",
+        "catalog",
+        "quality",
+        "automation"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-16T00:00:00Z",
+      "updated_at": "2026-04-16T00:00:00Z"
     },
     "ci-guard": {
       "name": "CI Guard",
