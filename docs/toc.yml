@@ -12,6 +12,12 @@
     - name: Upgrade
       href: upgrade.md
 
+# Reference
+- name: Reference
+  items:
+    - name: Integrations
+      href: integrations.md
+
 # Development workflows
 - name: Development
   items:
