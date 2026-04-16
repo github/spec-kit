@@ -116,3 +116,25 @@ Example:
 ```bash
 specify integration install generic --integration-options="--commands-dir .myagent/cmds"
 ```
+
+## FAQ
+
+### Can I use multiple integrations at the same time?
+
+No. Only one AI coding agent integration can be installed per project. Use `specify integration switch <key>` to change to a different AI coding agent.
+
+### What happens to my changes when I uninstall or switch?
+
+Files you've modified are preserved automatically. Only unmodified files (matching their original SHA-256 hash) are removed. Use `--force` to override this.
+
+### How do I know which key to use?
+
+Run `specify integration list` to see all available integrations with their keys, or check the [Supported AI Coding Agents](#supported-ai-coding-agents) table above.
+
+### Do I need the AI coding agent installed to use an integration?
+
+CLI-based integrations (like Claude Code, Gemini CLI) require the tool to be installed. IDE-based integrations (like Windsurf, Cursor) work through the IDE itself. Some agents like GitHub Copilot support both IDE and CLI usage. `specify integration list` shows which type each integration is.
+
+### When should I use `upgrade` vs `switch`?
+
+Use `upgrade` when you've upgraded Spec Kit and want to refresh the same integration's templates. Use `switch` when you want to change to a different AI coding agent.

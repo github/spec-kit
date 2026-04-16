@@ -316,7 +316,7 @@ Community projects that extend, visualize, or build on Spec Kit:
 
 ## 🤖 Supported AI Coding Agent Integrations
 
-Spec Kit works with 30+ AI coding agents — both CLI tools and IDE-based assistants. See the full list with notes and usage details in the [Supported AI Coding Agent Integrations](docs/integrations.md) guide.
+Spec Kit works with 30+ AI coding agents — both CLI tools and IDE-based assistants. See the full list with notes and usage details in the [Supported AI Coding Agent Integrations](https://github.github.io/spec-kit/integrations.html) guide.
 
 Run `specify integration list` to see all available integrations in your installed version.
 
@@ -510,7 +510,7 @@ specify extension add <extension-name>
 
 For example, extensions could add Jira integration, post-implementation code review, V-Model test traceability, or project health diagnostics.
 
-See the [Extensions README](./extensions/README.md) for the full guide and how to build and publish your own. Browse the [community extensions](#-community-extensions) above for what's available.
+See the [Extensions reference](https://github.github.io/spec-kit/extensions.html) for the full command guide. Browse the [community extensions](#-community-extensions) above for what's available.
 
 ### Presets — Customize Existing Workflows
 
