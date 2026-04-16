@@ -349,13 +349,7 @@ Additional commands for enhanced quality and validation:
 
 ## 🔧 Specify CLI Reference
 
-For full command details, options, and examples, see the [reference documentation](https://github.github.io/spec-kit/):
-
-- [Core Commands](https://github.github.io/spec-kit/reference/core.html) — `init`, `check`, `version`
-- [Integrations](https://github.github.io/spec-kit/reference/integrations.html) — `integration list`, `install`, `uninstall`, `switch`, `upgrade`
-- [Extensions](https://github.github.io/spec-kit/reference/extensions.html) — `extension add`, `remove`, `search`, `update`, catalogs
-- [Presets](https://github.github.io/spec-kit/reference/presets.html) — `preset add`, `remove`, `resolve`, priority stacking
-- [Workflows](https://github.github.io/spec-kit/reference/workflows.html) — `workflow run`, `resume`, step types, expressions
+For full command details, options, and examples, see the [CLI Reference](https://github.github.io/spec-kit/reference/overview.html).
 
 ## 🧩 Making Spec Kit Your Own: Extensions & Presets
 
