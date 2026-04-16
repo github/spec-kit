@@ -1261,15 +1261,11 @@ def init(
             manifest.save()
 
             # Write .specify/integration.json
-            script_ext = "sh" if selected_script == "sh" else "ps1"
             integration_json = project_path / ".specify" / "integration.json"
             integration_json.parent.mkdir(parents=True, exist_ok=True)
             integration_json.write_text(json.dumps({
                 "integration": resolved_integration.key,
                 "version": get_speckit_version(),
-                "scripts": {
-                    "update-context": f".specify/integrations/{resolved_integration.key}/scripts/update-context.{script_ext}",
-                },
             }, indent=2) + "\n", encoding="utf-8")
 
             tracker.complete("integration", resolved_integration.config.get("name", resolved_integration.key))
@@ -1373,6 +1369,7 @@ def init(
                 "ai": selected_ai,
                 "integration": resolved_integration.key,
                 "branch_numbering": branch_numbering or "sequential",
+                "context_file": resolved_integration.context_file,
                 "here": here,
                 "preset": preset,
                 "script": selected_script,
@@ -1740,15 +1737,11 @@ def _write_integration_json(
     script_type: str,
 ) -> None:
     """Write ``.specify/integration.json`` for *integration_key*."""
-    script_ext = "sh" if script_type == "sh" else "ps1"
     dest = project_root / INTEGRATION_JSON
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps({
         "integration": integration_key,
         "version": get_speckit_version(),
-        "scripts": {
-            "update-context": f".specify/integrations/{integration_key}/scripts/update-context.{script_ext}",
-        },
     }, indent=2) + "\n", encoding="utf-8")
 
 
@@ -2013,6 +2006,7 @@ def _update_init_options_for_integration(
     opts = load_init_options(project_root)
     opts["integration"] = integration.key
     opts["ai"] = integration.key
+    opts["context_file"] = integration.context_file
     if script_type:
         opts["script"] = script_type
     if isinstance(integration, SkillsIntegration):
@@ -2064,6 +2058,7 @@ def integration_uninstall(
             opts.pop("integration", None)
             opts.pop("ai", None)
             opts.pop("ai_skills", None)
+            opts.pop("context_file", None)
             save_init_options(project_root, opts)
         raise typer.Exit(0)
 
@@ -2090,6 +2085,7 @@ def integration_uninstall(
         opts.pop("integration", None)
         opts.pop("ai", None)
         opts.pop("ai_skills", None)
+        opts.pop("context_file", None)
         save_init_options(project_root, opts)
 
     name = (integration.config or {}).get("name", key) if integration else key

@@ -84,6 +84,11 @@ class IntegrationBase(ABC):
     context_file: str | None = None
     """Relative path to the agent context file (e.g. ``CLAUDE.md``)."""
 
+    # -- Markers for managed context section ------------------------------
+
+    CONTEXT_MARKER_START = "<!-- SPECKIT START -->"
+    CONTEXT_MARKER_END = "<!-- SPECKIT END -->"
+
     # -- Public API -------------------------------------------------------
 
     @classmethod
@@ -380,22 +385,130 @@ class IntegrationBase(ABC):
 
         return created
 
+    # -- Agent context file management ------------------------------------
+
+    @staticmethod
+    def _build_context_section(plan_path: str = "") -> str:
+        """Build the content for the managed section between markers.
+
+        *plan_path* is the project-relative path to the current plan
+        (e.g. ``".specify/plans/plan.md"``).  When empty, the section
+        contains only the generic directive without a concrete path.
+        """
+        lines = [
+            "For additional context about technologies to be used, project structure,",
+            "shell commands and other important information read the current plan",
+        ]
+        if plan_path:
+            lines.append(f"at {plan_path}")
+        return "\n".join(lines)
+
+    def upsert_context_section(
+        self,
+        project_root: Path,
+        plan_path: str = "",
+    ) -> Path | None:
+        """Create or update the managed section in the agent context file.
+
+        If the context file does not exist it is created with just the
+        managed section.  If it exists, the content between
+        ``<!-- SPECKIT START -->`` and ``<!-- SPECKIT END -->`` markers
+        is replaced (or appended when no markers are found).
+
+        Returns the path to the context file, or ``None`` when
+        ``context_file`` is not set.
+        """
+        if not self.context_file:
+            return None
+
+        ctx_path = project_root / self.context_file
+        section = (
+            f"{self.CONTEXT_MARKER_START}\n"
+            f"{self._build_context_section(plan_path)}\n"
+            f"{self.CONTEXT_MARKER_END}\n"
+        )
+
+        if ctx_path.exists():
+            content = ctx_path.read_text(encoding="utf-8")
+            start_idx = content.find(self.CONTEXT_MARKER_START)
+            end_idx = content.find(self.CONTEXT_MARKER_END)
+
+            if start_idx != -1 and end_idx != -1:
+                # Replace existing section (include the end marker + newline)
+                end_of_marker = end_idx + len(self.CONTEXT_MARKER_END)
+                if end_of_marker < len(content) and content[end_of_marker] == "\n":
+                    end_of_marker += 1
+                new_content = content[:start_idx] + section + content[end_of_marker:]
+            else:
+                # Markers not found — append
+                if content and not content.endswith("\n"):
+                    content += "\n"
+                new_content = content + "\n" + section
+        else:
+            ctx_path.parent.mkdir(parents=True, exist_ok=True)
+            new_content = section
+
+        normalized = new_content.replace("\r\n", "\n")
+        ctx_path.write_bytes(normalized.encode("utf-8"))
+        return ctx_path
+
+    def remove_context_section(self, project_root: Path) -> bool:
+        """Remove the managed section from the agent context file.
+
+        Returns ``True`` if the section was found and removed.  If the
+        file becomes empty (or whitespace-only) after removal it is
+        deleted.
+        """
+        if not self.context_file:
+            return False
+
+        ctx_path = project_root / self.context_file
+        if not ctx_path.exists():
+            return False
+
+        content = ctx_path.read_text(encoding="utf-8")
+        start_idx = content.find(self.CONTEXT_MARKER_START)
+        end_idx = content.find(self.CONTEXT_MARKER_END)
+
+        if start_idx == -1 or end_idx == -1:
+            return False
+
+        end_of_marker = end_idx + len(self.CONTEXT_MARKER_END)
+        if end_of_marker < len(content) and content[end_of_marker] == "\n":
+            end_of_marker += 1
+
+        # Also strip a blank line before the section if present
+        if start_idx > 0 and content[start_idx - 1] == "\n":
+            if start_idx > 1 and content[start_idx - 2] == "\n":
+                start_idx -= 1
+
+        new_content = content[:start_idx] + content[end_of_marker:]
+
+        if not new_content.strip():
+            ctx_path.unlink()
+        else:
+            normalized = new_content.replace("\r\n", "\n")
+            ctx_path.write_bytes(normalized.encode("utf-8"))
+
+        return True
+
     @staticmethod
     def process_template(
         content: str,
         agent_name: str,
         script_type: str,
         arg_placeholder: str = "$ARGUMENTS",
+        context_file: str = "",
     ) -> str:
         """Process a raw command template into agent-ready content.
 
         Performs the same transformations as the release script:
         1. Extract ``scripts.<script_type>`` value from YAML frontmatter
         2. Replace ``{SCRIPT}`` with the extracted script command
-        3. Extract ``agent_scripts.<script_type>`` and replace ``{AGENT_SCRIPT}``
-        4. Strip ``scripts:`` and ``agent_scripts:`` sections from frontmatter
-        5. Replace ``{ARGS}`` and ``$ARGUMENTS`` with *arg_placeholder*
-        6. Replace ``__AGENT__`` with *agent_name*
+        3. Strip ``scripts:`` section from frontmatter
+        4. Replace ``{ARGS}`` and ``$ARGUMENTS`` with *arg_placeholder*
+        5. Replace ``__AGENT__`` with *agent_name*
+        6. Replace ``__CONTEXT_FILE__`` with *context_file*
         7. Rewrite paths: ``scripts/`` → ``.specify/scripts/`` etc.
         """
         # 1. Extract script command from frontmatter
@@ -421,25 +534,7 @@ class IntegrationBase(ABC):
         if script_command:
             content = content.replace("{SCRIPT}", script_command)
 
-        # 3. Extract agent_script command
-        agent_script_command = ""
-        in_agent_scripts = False
-        for line in content.splitlines():
-            if line.strip() == "agent_scripts:":
-                in_agent_scripts = True
-                continue
-            if in_agent_scripts and line and not line[0].isspace():
-                in_agent_scripts = False
-            if in_agent_scripts:
-                m = script_pattern.match(line)
-                if m:
-                    agent_script_command = m.group(1).strip()
-                    break
-
-        if agent_script_command:
-            content = content.replace("{AGENT_SCRIPT}", agent_script_command)
-
-        # 4. Strip scripts: and agent_scripts: sections from frontmatter
+        # 3. Strip scripts: section from frontmatter
         lines = content.splitlines(keepends=True)
         output_lines: list[str] = []
         in_frontmatter = False
@@ -457,22 +552,25 @@ class IntegrationBase(ABC):
                 output_lines.append(line)
                 continue
             if in_frontmatter:
-                if stripped in ("scripts:", "agent_scripts:"):
+                if stripped == "scripts:":
                     skip_section = True
                     continue
                 if skip_section:
                     if line[0:1].isspace():
-                        continue  # skip indented content under scripts/agent_scripts
+                        continue  # skip indented content under scripts
                     skip_section = False
             output_lines.append(line)
         content = "".join(output_lines)
 
-        # 5. Replace {ARGS} and $ARGUMENTS
+        # 4. Replace {ARGS} and $ARGUMENTS
         content = content.replace("{ARGS}", arg_placeholder)
         content = content.replace("$ARGUMENTS", arg_placeholder)
 
-        # 6. Replace __AGENT__
+        # 5. Replace __AGENT__
         content = content.replace("__AGENT__", agent_name)
+
+        # 6. Replace __CONTEXT_FILE__
+        content = content.replace("__CONTEXT_FILE__", context_file)
 
         # 7. Rewrite paths — delegate to the shared implementation in
         #    CommandRegistrar so extension-local paths are preserved and
@@ -526,6 +624,9 @@ class IntegrationBase(ABC):
             self.record_file_in_manifest(dst_file, project_root, manifest)
             created.append(dst_file)
 
+        # Upsert managed context section into the agent context file
+        self.upsert_context_section(project_root)
+
         return created
 
     def teardown(
@@ -539,9 +640,11 @@ class IntegrationBase(ABC):
 
         Delegates to ``manifest.uninstall()`` which only removes files
         whose hash still matches the recorded value (unless *force*).
+        Also removes the managed context section from the agent file.
 
         Returns ``(removed, skipped)`` file lists.
         """
+        self.remove_context_section(project_root)
         return manifest.uninstall(project_root, force=force)
 
     # -- Convenience helpers for subclasses -------------------------------
@@ -579,8 +682,8 @@ class MarkdownIntegration(IntegrationBase):
     (and optionally ``context_file``).  Everything else is inherited.
 
     ``setup()`` processes command templates (replacing ``{SCRIPT}``,
-    ``{ARGS}``, ``__AGENT__``, rewriting paths) and installs
-    integration-specific scripts (``update-context.sh`` / ``.ps1``).
+    ``{ARGS}``, ``__AGENT__``, rewriting paths) and upserts the
+    managed context section into the agent context file.
     """
 
     def build_exec_args(
@@ -638,7 +741,8 @@ class MarkdownIntegration(IntegrationBase):
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
-                raw, self.key, script_type, arg_placeholder
+                raw, self.key, script_type, arg_placeholder,
+                context_file=self.context_file or "",
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
@@ -646,7 +750,9 @@ class MarkdownIntegration(IntegrationBase):
             )
             created.append(dst_file)
 
-        created.extend(self.install_scripts(project_root, manifest))
+        # Upsert managed context section into the agent context file
+        self.upsert_context_section(project_root)
+
         return created
 
 
@@ -841,7 +947,8 @@ class TomlIntegration(IntegrationBase):
             raw = src_file.read_text(encoding="utf-8")
             description = self._extract_description(raw)
             processed = self.process_template(
-                raw, self.key, script_type, arg_placeholder
+                raw, self.key, script_type, arg_placeholder,
+                context_file=self.context_file or "",
             )
             _, body = self._split_frontmatter(processed)
             toml_content = self._render_toml(description, body)
@@ -851,7 +958,9 @@ class TomlIntegration(IntegrationBase):
             )
             created.append(dst_file)
 
-        created.extend(self.install_scripts(project_root, manifest))
+        # Upsert managed context section into the agent context file
+        self.upsert_context_section(project_root)
+
         return created
 
 
@@ -1021,7 +1130,8 @@ class YamlIntegration(IntegrationBase):
                 title = self._human_title(src_file.stem)
 
             processed = self.process_template(
-                raw, self.key, script_type, arg_placeholder
+                raw, self.key, script_type, arg_placeholder,
+                context_file=self.context_file or "",
             )
             _, body = self._split_frontmatter(processed)
             yaml_content = self._render_yaml(
@@ -1033,7 +1143,9 @@ class YamlIntegration(IntegrationBase):
             )
             created.append(dst_file)
 
-        created.extend(self.install_scripts(project_root, manifest))
+        # Upsert managed context section into the agent context file
+        self.upsert_context_section(project_root)
+
         return created
 
 
@@ -1176,7 +1288,8 @@ class SkillsIntegration(IntegrationBase):
 
             # Process body through the standard template pipeline
             processed_body = self.process_template(
-                raw, self.key, script_type, arg_placeholder
+                raw, self.key, script_type, arg_placeholder,
+                context_file=self.context_file or "",
             )
             # Strip the processed frontmatter — we rebuild it for skills.
             # Preserve leading whitespace in the body to match release ZIP
@@ -1220,5 +1333,7 @@ class SkillsIntegration(IntegrationBase):
             )
             created.append(dst)
 
-        created.extend(self.install_scripts(project_root, manifest))
+        # Upsert managed context section into the agent context file
+        self.upsert_context_section(project_root)
+
         return created

@@ -110,9 +110,9 @@ class CommandRegistrar:
         """Normalize script paths in frontmatter to generated project locations.
 
         Rewrites known repo-relative and top-level script paths under the
-        `scripts` and `agent_scripts` keys (for example `../../scripts/`,
-        `../../templates/`, `../../memory/`, `scripts/`, `templates/`, and
-        `memory/`) to the `.specify/...` paths used in generated projects.
+        ``scripts`` key (for example ``../../scripts/``,
+        ``../../templates/``, ``../../memory/``, ``scripts/``, ``templates/``, and
+        ``memory/``) to the ``.specify/...`` paths used in generated projects.
 
         Args:
             frontmatter: Frontmatter dictionary
@@ -122,11 +122,8 @@ class CommandRegistrar:
         """
         frontmatter = deepcopy(frontmatter)
 
-        for script_key in ("scripts", "agent_scripts"):
-            scripts = frontmatter.get(script_key)
-            if not isinstance(scripts, dict):
-                continue
-
+        scripts = frontmatter.get("scripts")
+        if isinstance(scripts, dict):
             for key, script_path in scripts.items():
                 if isinstance(script_path, str):
                     scripts[key] = self.rewrite_project_relative_paths(script_path)
@@ -333,11 +330,8 @@ class CommandRegistrar:
             frontmatter = {}
 
         scripts = frontmatter.get("scripts", {}) or {}
-        agent_scripts = frontmatter.get("agent_scripts", {}) or {}
         if not isinstance(scripts, dict):
             scripts = {}
-        if not isinstance(agent_scripts, dict):
-            agent_scripts = {}
 
         init_opts = load_init_options(project_root)
         if not isinstance(init_opts, dict):
@@ -351,15 +345,12 @@ class CommandRegistrar:
             )
             secondary_variant = "sh" if default_variant == "ps" else "ps"
 
-            if default_variant in scripts or default_variant in agent_scripts:
+            if default_variant in scripts:
                 fallback_order.append(default_variant)
-            if secondary_variant in scripts or secondary_variant in agent_scripts:
+            if secondary_variant in scripts:
                 fallback_order.append(secondary_variant)
 
             for key in scripts:
-                if key not in fallback_order:
-                    fallback_order.append(key)
-            for key in agent_scripts:
                 if key not in fallback_order:
                     fallback_order.append(key)
 
@@ -369,13 +360,6 @@ class CommandRegistrar:
         if script_command:
             script_command = script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{SCRIPT}", script_command)
-
-        agent_script_command = (
-            agent_scripts.get(script_variant) if script_variant else None
-        )
-        if agent_script_command:
-            agent_script_command = agent_script_command.replace("{ARGS}", "$ARGUMENTS")
-            body = body.replace("{AGENT_SCRIPT}", agent_script_command)
 
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
         return CommandRegistrar.rewrite_project_relative_paths(body)

@@ -183,7 +183,10 @@ class CopilotIntegration(IntegrationBase):
         # 1. Process and write command files as .agent.md
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
-            processed = self.process_template(raw, self.key, script_type, arg_placeholder)
+            processed = self.process_template(
+                raw, self.key, script_type, arg_placeholder,
+                context_file=self.context_file or "",
+            )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
                 processed, dest / dst_name, project_root, manifest
@@ -217,8 +220,8 @@ class CopilotIntegration(IntegrationBase):
                 self.record_file_in_manifest(dst_settings, project_root, manifest)
                 created.append(dst_settings)
 
-        # 4. Install integration-specific update-context scripts
-        created.extend(self.install_scripts(project_root, manifest))
+        # 4. Upsert managed context section into the agent context file
+        self.upsert_context_section(project_root)
 
         return created
 

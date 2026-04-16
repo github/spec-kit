@@ -1334,13 +1334,9 @@ description: "Scripted command"
 scripts:
   sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"
   ps: ../../scripts/powershell/setup-plan.ps1 -Json
-agent_scripts:
-  sh: ../../scripts/bash/update-agent-context.sh __AGENT__
-  ps: ../../scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
 ---
 
 Run {SCRIPT}
-Then {AGENT_SCRIPT}
 Agent __AGENT__
 """
         )
@@ -1361,11 +1357,9 @@ Agent __AGENT__
 
         content = skill_file.read_text()
         assert "{SCRIPT}" not in content
-        assert "{AGENT_SCRIPT}" not in content
         assert "__AGENT__" not in content
         assert "{ARGS}" not in content
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
-        assert ".specify/scripts/bash/update-agent-context.sh codex" in content
 
     def test_codex_skill_alias_frontmatter_matches_alias_name(self, project_dir, temp_dir):
         """Codex alias skills should render their own matching `name:` frontmatter."""
@@ -1451,13 +1445,9 @@ description: "Fallback scripted command"
 scripts:
   sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"
   ps: ../../scripts/powershell/setup-plan.ps1 -Json
-agent_scripts:
-  sh: ../../scripts/bash/update-agent-context.sh __AGENT__
-  ps: ../../scripts/powershell/update-agent-context.ps1 __AGENT__
 ---
 
 Run {SCRIPT}
-Then {AGENT_SCRIPT}
 """
         )
 
@@ -1474,13 +1464,10 @@ Then {AGENT_SCRIPT}
 
         content = skill_file.read_text()
         assert "{SCRIPT}" not in content
-        assert "{AGENT_SCRIPT}" not in content
         if platform.system().lower().startswith("win"):
             assert ".specify/scripts/powershell/setup-plan.ps1 -Json" in content
-            assert ".specify/scripts/powershell/update-agent-context.ps1 codex" in content
         else:
             assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
-            assert ".specify/scripts/bash/update-agent-context.sh codex" in content
 
     def test_codex_skill_registration_handles_non_dict_init_options(
         self, project_dir, temp_dir
@@ -1577,13 +1564,9 @@ description: "Windows fallback scripted command"
 scripts:
   sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"
   ps: ../../scripts/powershell/setup-plan.ps1 -Json
-agent_scripts:
-  sh: ../../scripts/bash/update-agent-context.sh __AGENT__
-  ps: ../../scripts/powershell/update-agent-context.ps1 -AgentType __AGENT__
 ---
 
 Run {SCRIPT}
-Then {AGENT_SCRIPT}
 """
         )
 
@@ -1599,7 +1582,6 @@ Then {AGENT_SCRIPT}
 
         content = skill_file.read_text()
         assert ".specify/scripts/powershell/setup-plan.ps1 -Json" in content
-        assert ".specify/scripts/powershell/update-agent-context.ps1 -AgentType codex" in content
         assert ".specify/scripts/bash/setup-plan.sh" not in content
 
     def test_register_commands_for_copilot(self, extension_dir, project_dir):
