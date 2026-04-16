@@ -84,7 +84,9 @@ class TomlIntegrationTests:
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
         expected_dir = i.commands_dest(tmp_path)
-        assert expected_dir.exists(), f"Expected directory {expected_dir} was not created"
+        assert expected_dir.exists(), (
+            f"Expected directory {expected_dir} was not created"
+        )
         cmd_files = [f for f in created if "scripts" not in f.parts]
         assert len(cmd_files) > 0, "No command files were created"
         for f in cmd_files:
@@ -134,6 +136,12 @@ class TomlIntegrationTests:
         # At least one file should contain {{args}} from the {ARGS} placeholder
         has_args = any("{{args}}" in f.read_text(encoding="utf-8") for f in cmd_files)
         assert has_args, "No TOML command file contains {{args}} placeholder"
+        has_dollar_args = any(
+            "$ARGUMENTS" in f.read_text(encoding="utf-8") for f in cmd_files
+        )
+        assert not has_dollar_args, (
+            "TOML command still contains $ARGUMENTS instead of {{args}}"
+        )
 
     @pytest.mark.parametrize(
         ("frontmatter", "expected"),
@@ -156,19 +164,13 @@ class TomlIntegrationTests:
             ),
         ],
     )
-    def test_toml_extract_description_supports_block_scalars(self, frontmatter, expected):
+    def test_toml_extract_description_supports_block_scalars(
+        self, frontmatter, expected
+    ):
         assert TomlIntegration._extract_description(frontmatter) == expected
 
     def test_split_frontmatter_ignores_indented_delimiters(self):
-        content = (
-            "---\n"
-            "description: |\n"
-            "  line one\n"
-            "  ---\n"
-            "  line two\n"
-            "---\n"
-            "Body\n"
-        )
+        content = "---\ndescription: |\n  line one\n  ---\n  line two\n---\nBody\n"
 
         frontmatter, body = TomlIntegration._split_frontmatter(content)
 
@@ -205,7 +207,7 @@ class TomlIntegrationTests:
         assert "---" not in parsed["prompt"]
 
     def test_toml_no_ambiguous_closing_quotes(self, tmp_path, monkeypatch):
-        """Multiline body ending with `"` must not produce `""""` (#2113)."""
+        """Multiline body ending with a double quote must not produce an ambiguous TOML multiline-string closing delimiter (#2113)."""
         i = get_integration(self.KEY)
         template = tmp_path / "sample.md"
         template.write_text(
@@ -230,7 +232,9 @@ class TomlIntegrationTests:
         assert '"""\n' in raw, "body must use multiline basic string"
         parsed = tomllib.loads(raw)
         assert parsed["prompt"].endswith('specified?"')
-        assert not parsed["prompt"].endswith("\n"), "parsed value must not gain a trailing newline"
+        assert not parsed["prompt"].endswith("\n"), (
+            "parsed value must not gain a trailing newline"
+        )
 
     def test_toml_triple_double_and_single_quote_ending(self, tmp_path, monkeypatch):
         """Body containing `\"\"\"` and ending with `'` falls back to escaped basic string."""
@@ -254,11 +258,15 @@ class TomlIntegrationTests:
         assert len(cmd_files) == 1
 
         raw = cmd_files[0].read_text(encoding="utf-8")
-        assert "''''" not in raw, "literal string must not produce ambiguous closing quotes"
+        assert "''''" not in raw, (
+            "literal string must not produce ambiguous closing quotes"
+        )
         parsed = tomllib.loads(raw)
         assert parsed["prompt"].endswith("'single'")
         assert '"""triple"""' in parsed["prompt"]
-        assert not parsed["prompt"].endswith("\n"), "parsed value must not gain a trailing newline"
+        assert not parsed["prompt"].endswith("\n"), (
+            "parsed value must not gain a trailing newline"
+        )
 
     def test_toml_closing_delimiter_inline_when_safe(self, tmp_path, monkeypatch):
         """Body NOT ending with `"` keeps closing `\"\"\"` inline (no extra newline)."""
@@ -284,8 +292,9 @@ class TomlIntegrationTests:
         raw = cmd_files[0].read_text(encoding="utf-8")
         parsed = tomllib.loads(raw)
         assert parsed["prompt"] == "Line one\nPlain body content"
-        assert raw.rstrip().endswith('content"""'), \
+        assert raw.rstrip().endswith('content"""'), (
             "closing delimiter should be inline when body does not end with a quote"
+        )
 
     def test_toml_is_valid(self, tmp_path):
         """Every generated TOML file must parse without errors."""
@@ -354,7 +363,14 @@ class TomlIntegrationTests:
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
-        sh = tmp_path / ".specify" / "integrations" / self.KEY / "scripts" / "update-context.sh"
+        sh = (
+            tmp_path
+            / ".specify"
+            / "integrations"
+            / self.KEY
+            / "scripts"
+            / "update-context.sh"
+        )
         assert os.access(sh, os.X_OK)
 
     # -- CLI auto-promote -------------------------------------------------
@@ -369,10 +385,20 @@ class TomlIntegrationTests:
         try:
             os.chdir(project)
             runner = CliRunner()
-            result = runner.invoke(app, [
-                "init", "--here", "--ai", self.KEY, "--script", "sh", "--no-git",
-                "--ignore-agent-tools",
-            ], catch_exceptions=False)
+            result = runner.invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--ai",
+                    self.KEY,
+                    "--script",
+                    "sh",
+                    "--no-git",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init --ai {self.KEY} failed: {result.output}"
@@ -390,13 +416,25 @@ class TomlIntegrationTests:
         try:
             os.chdir(project)
             runner = CliRunner()
-            result = runner.invoke(app, [
-                "init", "--here", "--integration", self.KEY, "--script", "sh", "--no-git",
-                "--ignore-agent-tools",
-            ], catch_exceptions=False)
+            result = runner.invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    self.KEY,
+                    "--script",
+                    "sh",
+                    "--no-git",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
         finally:
             os.chdir(old_cwd)
-        assert result.exit_code == 0, f"init --integration {self.KEY} failed: {result.output}"
+        assert result.exit_code == 0, (
+            f"init --integration {self.KEY} failed: {result.output}"
+        )
         i = get_integration(self.KEY)
         cmd_dir = i.commands_dest(project)
         assert cmd_dir.is_dir(), f"Commands directory {cmd_dir} not created"
@@ -406,8 +444,15 @@ class TomlIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     COMMAND_STEMS = [
-        "analyze", "checklist", "clarify", "constitution",
-        "implement", "plan", "specify", "tasks", "taskstoissues",
+        "analyze",
+        "checklist",
+        "clarify",
+        "constitution",
+        "implement",
+        "plan",
+        "specify",
+        "tasks",
+        "taskstoissues",
     ]
 
     def _expected_files(self, script_variant: str) -> list[str]:
@@ -425,26 +470,44 @@ class TomlIntegrationTests:
         files.append(f".specify/integrations/{self.KEY}/scripts/update-context.sh")
 
         # Framework files
-        files.append(f".specify/integration.json")
-        files.append(f".specify/init-options.json")
+        files.append(".specify/integration.json")
+        files.append(".specify/init-options.json")
         files.append(f".specify/integrations/{self.KEY}.manifest.json")
-        files.append(f".specify/integrations/speckit.manifest.json")
+        files.append(".specify/integrations/speckit.manifest.json")
 
         if script_variant == "sh":
-            for name in ["check-prerequisites.sh", "common.sh", "create-new-feature.sh",
-                         "setup-plan.sh", "update-agent-context.sh"]:
+            for name in [
+                "check-prerequisites.sh",
+                "common.sh",
+                "create-new-feature.sh",
+                "setup-plan.sh",
+                "update-agent-context.sh",
+            ]:
                 files.append(f".specify/scripts/bash/{name}")
         else:
-            for name in ["check-prerequisites.ps1", "common.ps1", "create-new-feature.ps1",
-                         "setup-plan.ps1", "update-agent-context.ps1"]:
+            for name in [
+                "check-prerequisites.ps1",
+                "common.ps1",
+                "create-new-feature.ps1",
+                "setup-plan.ps1",
+                "update-agent-context.ps1",
+            ]:
                 files.append(f".specify/scripts/powershell/{name}")
 
-        for name in ["agent-file-template.md", "checklist-template.md",
-                     "constitution-template.md", "plan-template.md",
-                     "spec-template.md", "tasks-template.md"]:
+        for name in [
+            "agent-file-template.md",
+            "checklist-template.md",
+            "constitution-template.md",
+            "plan-template.md",
+            "spec-template.md",
+            "tasks-template.md",
+        ]:
             files.append(f".specify/templates/{name}")
 
         files.append(".specify/memory/constitution.md")
+        # Bundled workflow
+        files.append(".specify/workflows/speckit/workflow.yml")
+        files.append(".specify/workflows/workflow-registry.json")
         return sorted(files)
 
     def test_complete_file_inventory_sh(self, tmp_path):
@@ -457,15 +520,26 @@ class TomlIntegrationTests:
         old_cwd = os.getcwd()
         try:
             os.chdir(project)
-            result = CliRunner().invoke(app, [
-                "init", "--here", "--integration", self.KEY, "--script", "sh",
-                "--no-git", "--ignore-agent-tools",
-            ], catch_exceptions=False)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    self.KEY,
+                    "--script",
+                    "sh",
+                    "--no-git",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
-        actual = sorted(p.relative_to(project).as_posix()
-                        for p in project.rglob("*") if p.is_file())
+        actual = sorted(
+            p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file()
+        )
         expected = self._expected_files("sh")
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
@@ -482,15 +556,26 @@ class TomlIntegrationTests:
         old_cwd = os.getcwd()
         try:
             os.chdir(project)
-            result = CliRunner().invoke(app, [
-                "init", "--here", "--integration", self.KEY, "--script", "ps",
-                "--no-git", "--ignore-agent-tools",
-            ], catch_exceptions=False)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    self.KEY,
+                    "--script",
+                    "ps",
+                    "--no-git",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
-        actual = sorted(p.relative_to(project).as_posix()
-                        for p in project.rglob("*") if p.is_file())
+        actual = sorted(
+            p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file()
+        )
         expected = self._expected_files("ps")
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"

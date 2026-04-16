@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-10T17:00:00Z",
+  "updated_at": "2026-04-14T21:30:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -35,6 +35,70 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
+    },
+    "agent-assign": {
+      "name": "Agent Assign",
+      "id": "agent-assign",
+      "description": "Assign specialized Claude Code agents to spec-kit tasks for targeted execution",
+      "author": "xuyang",
+      "version": "1.0.0",
+      "download_url": "https://github.com/xymelon/spec-kit-agent-assign/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/xymelon/spec-kit-agent-assign",
+      "homepage": "https://github.com/xymelon/spec-kit-agent-assign",
+      "documentation": "https://github.com/xymelon/spec-kit-agent-assign/blob/main/README.md",
+      "changelog": "https://github.com/xymelon/spec-kit-agent-assign/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.3.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "agent",
+        "automation",
+        "implementation",
+        "multi-agent",
+        "task-routing"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-31T00:00:00Z",
+      "updated_at": "2026-03-31T00:00:00Z"
+    },
+    "architect-preview": {
+      "name": "Architect Impact Previewer",
+      "id": "architect-preview",
+      "description": "Predicts architectural impact, complexity, and risks of proposed changes before implementation.",
+      "author": "Umme Habiba",
+      "version": "1.0.0",
+      "download_url": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview",
+      "homepage": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview",
+      "documentation": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview/blob/main/README.md",
+      "changelog": "https://github.com/UmmeHabiba1312/spec-kit-architect-preview/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "architecture",
+        "analysis",
+        "risk-assessment",
+        "planning",
+        "preview"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-14T00:00:00Z",
+      "updated_at": "2026-04-14T00:00:00Z"
     },
     "archive": {
       "name": "Archive Extension",
@@ -670,8 +734,72 @@
       "verified": false,
       "downloads": 0,
       "stars": 0,
-      "created_at": "2026-04-12T00:00:00Z",
-      "updated_at": "2026-04-12T00:00:00Z"
+      "created_at": "2026-04-12T15:30:00Z",
+      "updated_at": "2026-04-13T14:39:00Z"
+    },
+    "github-issues": {
+      "name": "GitHub Issues Integration",
+      "id": "github-issues",
+      "description": "Generate spec artifacts from GitHub Issues - import issues, sync updates, and maintain bidirectional traceability",
+      "author": "Fatima367",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Fatima367/spec-kit-github-issues/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Fatima367/spec-kit-github-issues",
+      "homepage": "https://github.com/Fatima367/spec-kit-github-issues",
+      "documentation": "https://github.com/Fatima367/spec-kit-github-issues/blob/main/README.md",
+      "changelog": "https://github.com/Fatima367/spec-kit-github-issues/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "gh",
+            "version": ">=2.0.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 0
+      },
+      "tags": [
+        "integration",
+        "github",
+        "issues",
+        "import",
+        "sync",
+        "traceability"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-12T15:30:00Z",
+      "updated_at": "2026-04-13T14:39:00Z"
+    },
+    "issue": {
+      "name": "Issues",
+      "id": "issue",
+      "description": "Creates and syncs local specs based on an existing issue in GitHub",
+      "author": "aaronrsun",
+      "version": "1.0.0",
+      "download_url": "https://github.com/aaronrsun/spec-kit-issue/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/aaronrsun/spec-kit-issue",
+      "homepage": "https://github.com/aaronrsun/spec-kit-issue",
+      "documentation": "https://github.com/aaronrsun/spec-kit-issue/blob/main/README.md",
+      "changelog": "https://github.com/aaronrsun/spec-kit-issue/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "tags": [
+        "issue"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-12T15:30:00Z",
+      "updated_at": "2026-04-13T14:39:00Z"
     },
     "iterate": {
       "name": "Iterate",
@@ -1249,8 +1377,8 @@
       "id": "ralph",
       "description": "Autonomous implementation loop using AI agent CLI.",
       "author": "Rubiss",
-      "version": "1.0.0",
-      "download_url": "https://github.com/Rubiss/spec-kit-ralph/archive/refs/tags/v1.0.0.zip",
+      "version": "1.0.1",
+      "download_url": "https://github.com/Rubiss/spec-kit-ralph/archive/refs/tags/v1.0.1.zip",
       "repository": "https://github.com/Rubiss/spec-kit-ralph",
       "homepage": "https://github.com/Rubiss/spec-kit-ralph",
       "documentation": "https://github.com/Rubiss/spec-kit-ralph/blob/main/README.md",
@@ -1283,7 +1411,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-09T00:00:00Z",
-      "updated_at": "2026-03-09T00:00:00Z"
+      "updated_at": "2026-04-12T19:00:00Z"
     },
     "reconcile": {
       "name": "Reconcile Extension",
@@ -1512,6 +1640,50 @@
       "stars": 0,
       "created_at": "2026-04-03T03:24:03Z",
       "updated_at": "2026-04-03T04:15:00Z"
+    },
+    "sf": {
+      "name": "SFSpeckit — Salesforce Spec-Driven Development",
+      "id": "sf",
+      "description": "Enterprise-Grade Spec-Driven Development (SDD) Framework for Salesforce.",
+      "author": "Sumanth Yanamala",
+      "version": "1.0.0",
+      "download_url": "https://github.com/ysumanth06/spec-kit-sf/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/ysumanth06/spec-kit-sf",
+      "homepage": "https://ysumanth06.github.io/spec-kit-sf/",
+      "documentation": "https://ysumanth06.github.io/spec-kit-sf/introduction.html",
+      "changelog": "https://github.com/ysumanth06/spec-kit-sf/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0",
+        "tools": [
+          {
+            "name": "sf",
+            "version": ">=2.0.0",
+            "required": true
+          },
+          {
+            "name": "gh",
+            "version": ">=2.0.0",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 18,
+        "hooks": 2
+      },
+      "tags": [
+        "salesforce",
+        "enterprise",
+        "sdlc",
+        "apex",
+        "devops"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-13T22:11:30Z",
+      "updated_at": "2026-04-13T22:11:30Z"
     },
     "ship": {
       "name": "Ship Release Extension",
@@ -1902,6 +2074,34 @@
       "created_at": "2026-03-16T00:00:00Z",
       "updated_at": "2026-03-16T00:00:00Z"
     },
+    "whatif": {
+      "name": "What-if Analysis",
+      "id": "whatif",
+      "description": "Preview the downstream impact (complexity, effort, tasks, risks) of requirement changes before committing to them.",
+      "author": "DevAbdullah90",
+      "version": "1.0.0",
+      "repository": "https://github.com/DevAbdullah90/spec-kit-whatif",
+      "homepage": "https://github.com/DevAbdullah90/spec-kit-whatif",
+      "documentation": "https://github.com/DevAbdullah90/spec-kit-whatif/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "analysis",
+        "planning",
+        "simulation"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
+    },
     "worktree": {
       "name": "Worktree Isolation",
       "id": "worktree",
@@ -1933,6 +2133,38 @@
       "stars": 0,
       "created_at": "2026-04-09T00:00:00Z",
       "updated_at": "2026-04-09T00:00:00Z"
+    },
+    "worktrees": {
+      "name": "Worktrees",
+      "id": "worktrees",
+      "description": "Default-on worktree isolation for parallel agents — sibling or nested layout",
+      "author": "dango85",
+      "version": "1.0.0",
+      "download_url": "https://github.com/dango85/spec-kit-worktree-parallel/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/dango85/spec-kit-worktree-parallel",
+      "homepage": "https://github.com/dango85/spec-kit-worktree-parallel",
+      "documentation": "https://github.com/dango85/spec-kit-worktree-parallel/blob/main/README.md",
+      "changelog": "https://github.com/dango85/spec-kit-worktree-parallel/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "worktree",
+        "git",
+        "parallel",
+        "isolation",
+        "agents"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-13T00:00:00Z",
+      "updated_at": "2026-04-13T00:00:00Z"
     }
   }
 }

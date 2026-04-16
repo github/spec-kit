@@ -11,6 +11,7 @@ Tests cover:
 
 import pytest
 import json
+import platform
 import tempfile
 import shutil
 import tomllib
@@ -243,7 +244,7 @@ class TestExtensionManifest:
             ExtensionManifest(manifest_path)
 
     def test_invalid_command_name(self, temp_dir, valid_manifest_data):
-        """Test manifest with invalid command name format."""
+        """Test manifest with command name that cannot be auto-corrected raises ValidationError."""
         import yaml
 
         valid_manifest_data["provides"]["commands"][0]["name"] = "invalid-name"
@@ -254,6 +255,83 @@ class TestExtensionManifest:
 
         with pytest.raises(ValidationError, match="Invalid command name"):
             ExtensionManifest(manifest_path)
+
+    def test_command_name_autocorrect_speckit_prefix(self, temp_dir, valid_manifest_data):
+        """Test that 'speckit.command' is auto-corrected to 'speckit.{ext_id}.command'."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["name"] = "speckit.hello"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["name"] == "speckit.test-ext.hello"
+        assert len(manifest.warnings) == 1
+        assert "speckit.hello" in manifest.warnings[0]
+        assert "speckit.test-ext.hello" in manifest.warnings[0]
+
+    def test_command_name_autocorrect_matching_ext_id_prefix(self, temp_dir, valid_manifest_data):
+        """Test that '{ext_id}.command' is auto-corrected to 'speckit.{ext_id}.command'."""
+        import yaml
+
+        # Set ext_id to match the legacy namespace so correction is valid
+        valid_manifest_data["extension"]["id"] = "docguard"
+        valid_manifest_data["provides"]["commands"][0]["name"] = "docguard.guard"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["name"] == "speckit.docguard.guard"
+        assert len(manifest.warnings) == 1
+        assert "docguard.guard" in manifest.warnings[0]
+        assert "speckit.docguard.guard" in manifest.warnings[0]
+
+    def test_command_name_mismatched_namespace_not_corrected(self, temp_dir, valid_manifest_data):
+        """Test that 'X.command' is NOT corrected when X doesn't match ext_id."""
+        import yaml
+
+        # ext_id is "test-ext" but command uses a different namespace
+        valid_manifest_data["provides"]["commands"][0]["name"] = "docguard.guard"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid command name"):
+            ExtensionManifest(manifest_path)
+
+    def test_alias_free_form_accepted(self, temp_dir, valid_manifest_data):
+        """Aliases are free-form — a 'speckit.command' alias must be accepted unchanged."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["speckit.hello"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["aliases"] == ["speckit.hello"]
+        assert manifest.warnings == []
+
+    def test_valid_command_name_has_no_warnings(self, temp_dir, valid_manifest_data):
+        """Test that a correctly-named command produces no warnings."""
+        import yaml
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.warnings == []
 
     def test_no_commands_no_hooks(self, temp_dir, valid_manifest_data):
         """Test manifest with no commands and no hooks provided."""
@@ -315,6 +393,19 @@ class TestExtensionManifest:
             yaml.dump(valid_manifest_data, f)
 
         with pytest.raises(ValidationError, match="Invalid hooks"):
+            ExtensionManifest(manifest_path)
+
+    def test_non_dict_hook_entry_raises_validation_error(self, temp_dir, valid_manifest_data):
+        """Non-mapping hook entries must raise ValidationError, not silently skip."""
+        import yaml
+
+        valid_manifest_data["hooks"]["after_tasks"] = "speckit.test-ext.hello"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid hook 'after_tasks'"):
             ExtensionManifest(manifest_path)
 
     def test_manifest_hash(self, extension_dir):
@@ -686,8 +777,8 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="conflicts with core command namespace"):
             manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
-    def test_install_accepts_short_alias(self, temp_dir, project_dir):
-        """Install should accept legacy short aliases for community extension compat."""
+    def test_install_accepts_free_form_alias(self, temp_dir, project_dir):
+        """Aliases are free-form — a short 'speckit.shortcut' alias must be preserved unchanged."""
         import yaml
 
         ext_dir = temp_dir / "alias-shortcut"
@@ -718,8 +809,10 @@ class TestExtensionManager:
         (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nBody")
 
         manager = ExtensionManager(project_dir)
-        # Should not raise — short aliases are allowed
-        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+        manifest = manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        assert manifest.commands[0]["aliases"] == ["speckit.shortcut"]
+        assert manifest.warnings == []
 
     def test_install_rejects_namespace_squatting(self, temp_dir, project_dir):
         """Install should reject commands and aliases outside the extension namespace."""
@@ -1360,6 +1453,7 @@ scripts:
   ps: ../../scripts/powershell/setup-plan.ps1 -Json
 agent_scripts:
   sh: ../../scripts/bash/update-agent-context.sh __AGENT__
+  ps: ../../scripts/powershell/update-agent-context.ps1 __AGENT__
 ---
 
 Run {SCRIPT}
@@ -1381,8 +1475,12 @@ Then {AGENT_SCRIPT}
         content = skill_file.read_text()
         assert "{SCRIPT}" not in content
         assert "{AGENT_SCRIPT}" not in content
-        assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
-        assert ".specify/scripts/bash/update-agent-context.sh codex" in content
+        if platform.system().lower().startswith("win"):
+            assert ".specify/scripts/powershell/setup-plan.ps1 -Json" in content
+            assert ".specify/scripts/powershell/update-agent-context.ps1 codex" in content
+        else:
+            assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+            assert ".specify/scripts/bash/update-agent-context.sh codex" in content
 
     def test_codex_skill_registration_handles_non_dict_init_options(
         self, project_dir, temp_dir
@@ -1618,6 +1716,54 @@ Then {AGENT_SCRIPT}
         # No .github/prompts directory should exist
         prompts_dir = project_dir / ".github" / "prompts"
         assert not prompts_dir.exists()
+
+    def test_unregister_skill_removes_parent_directory(self, project_dir, temp_dir):
+        """Unregistering a SKILL.md command should remove the empty parent subdirectory."""
+        import yaml
+
+        ext_dir = temp_dir / "cleanup-ext"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "cleanup-ext",
+                "name": "Cleanup Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.cleanup-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        (ext_dir / "commands" / "run.md").write_text("---\ndescription: Run\n---\n\nBody")
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        registrar = CommandRegistrar()
+        from specify_cli.extensions import ExtensionManifest
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registered = registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        skill_subdir = skills_dir / "speckit-cleanup-ext-run"
+        assert skill_subdir.exists(), "Skill subdirectory should exist after registration"
+        assert (skill_subdir / "SKILL.md").exists()
+
+        registrar.unregister_commands({"codex": ["speckit.cleanup-ext.run"]}, project_dir)
+
+        assert not (skill_subdir / "SKILL.md").exists(), "SKILL.md should be removed"
+        assert not skill_subdir.exists(), "Empty parent subdirectory should be removed"
 
 
 # ===== Utility Function Tests =====
@@ -3853,3 +3999,58 @@ class TestHookInvocationRendering:
         assert "Executing: `/<missing command>`" in message
         assert "EXECUTE_COMMAND: <missing command>" in message
         assert "EXECUTE_COMMAND_INVOCATION: /<missing command>" in message
+
+
+class TestExtensionRemoveCLI:
+    """CLI tests for `specify extension remove` confirmation prompt wording."""
+
+    def _install_ext(self, project_dir, ext_dir):
+        """Install extension and return the manager."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+        return manager
+
+    def test_remove_confirmation_singular_command(self, tmp_path, extension_dir):
+        """Confirmation prompt should say '1 command' (singular) when one command registered."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        manager = self._install_ext(project_dir, extension_dir)
+        # Inject registered_commands with 1 entry so cmd_count == 1
+        manager.registry.update("test-ext", {"registered_commands": {"claude": ["speckit.test-ext.hello"]}})
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["extension", "remove", "test-ext"], input="n\n", catch_exceptions=False
+            )
+
+        assert "1 command" in result.output
+        assert "1 commands" not in result.output
+
+    def test_remove_confirmation_plural_commands(self, tmp_path, extension_dir):
+        """Confirmation prompt should say '2 commands' (plural) when two commands registered."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        manager = self._install_ext(project_dir, extension_dir)
+        # Inject registered_commands with 2 entries so cmd_count == 2
+        manager.registry.update("test-ext", {"registered_commands": {"claude": ["speckit.test-ext.hello", "speckit.test-ext.run"]}})
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["extension", "remove", "test-ext"], input="n\n", catch_exceptions=False
+            )
+
+        assert "2 commands" in result.output
