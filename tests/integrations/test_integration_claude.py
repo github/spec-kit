@@ -287,15 +287,13 @@ class TestClaudeIntegration:
         assert "speckit-research" in metadata.get("registered_skills", [])
 
 
-EXPECTED_CLAUDE_MD_COMMANDS = (
-    "/speckit.constitution",
-    "/speckit.specify",
-    "/speckit.clarify",
-    "/speckit.plan",
-    "/speckit.tasks",
-    "/speckit.analyze",
-    "/speckit.checklist",
-    "/speckit.implement",
+_CLAUDE = get_integration("claude")
+EXPECTED_CLAUDE_MD_COMMANDS = tuple(
+    _CLAUDE.build_command_invocation(stem)
+    for stem in (
+        "constitution", "specify", "clarify", "plan",
+        "tasks", "analyze", "checklist", "implement",
+    )
 )
 EXPECTED_CLAUDE_MD_SECTIONS = (
     "## Claude's Role",

@@ -219,19 +219,26 @@ class ClaudeIntegration(SkillsIntegration):
             return None
 
         constitution_rel = CONSTITUTION_REL_PATH.as_posix()
+        inv = self.build_command_invocation
+        command_lines = [
+            (inv("constitution"), "establish or amend project principles"),
+            (inv("specify"), "generate spec"),
+            (inv("clarify"), f"ask structured de-risking questions (before `{inv('plan')}`)"),
+            (inv("plan"), "generate plan"),
+            (inv("tasks"), "generate task list"),
+            (inv("analyze"), f"cross-artifact consistency report (after `{inv('tasks')}`)"),
+            (inv("checklist"), "generate quality checklists"),
+            (inv("implement"), "execute plan"),
+        ]
+        commands_section = "".join(
+            f"- `{command}` — {description}\n" for command, description in command_lines
+        )
         content = (
             "## Claude's Role\n"
             f"Read `{constitution_rel}` first. It is the authoritative source of truth for this project. "
             "Everything in it is non-negotiable.\n\n"
             "## SpecKit Commands\n"
-            "- `/speckit.constitution` — establish or amend project principles\n"
-            "- `/speckit.specify` — generate spec\n"
-            "- `/speckit.clarify` — ask structured de-risking questions (before `/speckit.plan`)\n"
-            "- `/speckit.plan` — generate plan\n"
-            "- `/speckit.tasks` — generate task list\n"
-            "- `/speckit.analyze` — cross-artifact consistency report (after `/speckit.tasks`)\n"
-            "- `/speckit.checklist` — generate quality checklists\n"
-            "- `/speckit.implement` — execute plan\n\n"
+            f"{commands_section}\n"
             "## On Ambiguity\n"
             "If a spec is missing, incomplete, or conflicts with the constitution — stop and ask. "
             "Do not infer. Do not proceed.\n\n"
