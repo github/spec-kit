@@ -450,6 +450,10 @@ class IntegrationBase(ABC):
                     new_content = content + "\n" + section
                 else:
                     new_content = section
+
+            # Ensure .mdc files have required YAML frontmatter
+            if ctx_path.suffix == ".mdc" and not new_content.startswith("---\n"):
+                new_content = "---\nalwaysApply: true\n---\n\n" + new_content
         else:
             ctx_path.parent.mkdir(parents=True, exist_ok=True)
             # Cursor .mdc files require YAML frontmatter to be loaded
@@ -496,6 +500,13 @@ class IntegrationBase(ABC):
                 start_idx -= 1
 
         new_content = content[:start_idx] + content[end_of_marker:]
+
+        # For .mdc files, also strip Speckit-generated frontmatter
+        if ctx_path.suffix == ".mdc":
+            stripped = new_content.strip()
+            if stripped in ("", "---\nalwaysApply: true\n---"):
+                ctx_path.unlink()
+                return True
 
         if not new_content.strip():
             ctx_path.unlink()

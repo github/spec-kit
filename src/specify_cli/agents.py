@@ -364,7 +364,7 @@ class CommandRegistrar:
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
 
         # Resolve __CONTEXT_FILE__ from init-options
-        context_file = init_opts.get("context_file", "")
+        context_file = init_opts.get("context_file") or ""
         body = body.replace("__CONTEXT_FILE__", context_file)
 
         return CommandRegistrar.rewrite_project_relative_paths(body)
