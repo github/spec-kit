@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-16T18:00:00Z",
+  "updated_at": "2026-04-16T18:40:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1962,6 +1962,40 @@
       "stars": 0,
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
+    },
+    "tekimax-security": {
+      "name": "TEKIMAX Secure SDD",
+      "id": "tekimax-security",
+      "description": "Security-first extension for Spec Kit — threat modeling (STRIDE), red teaming, AI guardrails, data contracts, model governance, polyglot inline-content scan, dependency CVE scan (Gate G via osv-scanner / pnpm / npm / yarn), and project-root-confined scripts with tamper-evident hash-chain audit logs.",
+      "author": "Christian Kaman (TEKIMAX)",
+      "version": "0.3.1",
+      "license": "Apache-2.0",
+      "homepage": "https://speckit.tekimax.com",
+      "repository": "https://github.com/TEKIMAX/speckit-security",
+      "documentation": "https://speckit.tekimax.com",
+      "changelog": "https://github.com/TEKIMAX/speckit-security/blob/main/CHANGELOG.md",
+      "download_url": "https://github.com/TEKIMAX/speckit-security/archive/refs/tags/v0.3.1.zip",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 9,
+        "hooks": 5
+      },
+      "tags": [
+        "security",
+        "threat-modeling",
+        "red-team",
+        "guardrails",
+        "ai-safety",
+        "compliance",
+        "tekimax"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-16T00:00:00Z",
+      "updated_at": "2026-04-16T00:00:00Z"
     },
     "tinyspec": {
       "name": "TinySpec",
