@@ -392,7 +392,7 @@ class IntegrationBase(ABC):
         """Build the content for the managed section between markers.
 
         *plan_path* is the project-relative path to the current plan
-        (e.g. ``".specify/plans/plan.md"``).  When empty, the section
+        (e.g. ``"specs/<feature>/plan.md"``).  When empty, the section
         contains only the generic directive without a concrete path.
         """
         lines = [
@@ -506,8 +506,12 @@ class IntegrationBase(ABC):
 
         # For .mdc files, also strip Speckit-generated frontmatter
         if ctx_path.suffix == ".mdc":
-            stripped = normalized.strip()
-            if stripped in ("", "---\nalwaysApply: true\n---"):
+            import re
+            # Treat as empty if only YAML frontmatter remains (no body content)
+            frontmatter_only = re.match(
+                r"^---\n.*?\n---\s*$", normalized, re.DOTALL
+            )
+            if not normalized.strip() or frontmatter_only:
                 ctx_path.unlink()
                 return True
 

@@ -1734,7 +1734,6 @@ def _read_integration_json(project_root: Path) -> dict[str, Any]:
 def _write_integration_json(
     project_root: Path,
     integration_key: str,
-    script_type: str,
 ) -> None:
     """Write ``.specify/integration.json`` for *integration_key*."""
     dest = project_root / INTEGRATION_JSON
@@ -1929,7 +1928,7 @@ def integration_install(
             raw_options=integration_options,
         )
         manifest.save()
-        _write_integration_json(project_root, integration.key, selected_script)
+        _write_integration_json(project_root, integration.key)
         _update_init_options_for_integration(project_root, integration, script_type=selected_script)
 
     except Exception as e:
@@ -2212,7 +2211,7 @@ def integration_switch(
             raw_options=integration_options,
         )
         manifest.save()
-        _write_integration_json(project_root, target_integration.key, selected_script)
+        _write_integration_json(project_root, target_integration.key)
         _update_init_options_for_integration(project_root, target_integration, script_type=selected_script)
 
     except Exception as e:
@@ -2320,7 +2319,7 @@ def integration_upgrade(
             raw_options=integration_options,
         )
         new_manifest.save()
-        _write_integration_json(project_root, key, selected_script)
+        _write_integration_json(project_root, key)
         _update_init_options_for_integration(project_root, integration, script_type=selected_script)
     except Exception as exc:
         # Don't teardown — setup overwrites in-place, so teardown would
