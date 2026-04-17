@@ -195,6 +195,49 @@ class ClaudeIntegration(SkillsIntegration):
         updated = self._inject_hook_command_note(updated)
         return updated
 
+    def ensure_context_file(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+    ) -> Path | None:
+        """Create a minimal root ``CLAUDE.md`` if missing.
+
+        Typically called from ``init()`` after
+        ``ensure_constitution_from_template``. This file acts as a bridge
+        to the constitution at ``CONSTITUTION_REL_PATH`` and is only
+        created if that constitution file exists. Returns the created
+        path or ``None`` (existing file, or prerequisites not met).
+        """
+        from specify_cli import CONSTITUTION_REL_PATH
+
+        if self.context_file is None:
+            return None
+
+        constitution = project_root / CONSTITUTION_REL_PATH
+        context_file = project_root / self.context_file
+        if context_file.exists() or not constitution.exists():
+            return None
+
+        constitution_rel = CONSTITUTION_REL_PATH.as_posix()
+        content = (
+            "## Claude's Role\n"
+            f"Read `{constitution_rel}` first. It is the authoritative source of truth for this project. "
+            "Everything in it is non-negotiable.\n\n"
+            "## SpecKit Commands\n"
+            "- `/speckit.constitution` — establish or amend project principles\n"
+            "- `/speckit.specify` — generate spec\n"
+            "- `/speckit.clarify` — ask structured de-risking questions (before `/speckit.plan`)\n"
+            "- `/speckit.plan` — generate plan\n"
+            "- `/speckit.tasks` — generate task list\n"
+            "- `/speckit.analyze` — cross-artifact consistency report (after `/speckit.tasks`)\n"
+            "- `/speckit.checklist` — generate quality checklists\n"
+            "- `/speckit.implement` — execute plan\n\n"
+            "## On Ambiguity\n"
+            "If a spec is missing, incomplete, or conflicts with the constitution — stop and ask. "
+            "Do not infer. Do not proceed.\n\n"
+        )
+        return self.write_file_and_record(content, context_file, project_root, manifest)
+
     def setup(
         self,
         project_root: Path,
