@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.7.3] - 2026-04-17
+
+### Changed
+
+- fix: replace shell-based context updates with marker-based upsert (#2259)
+- Add Community Friends page to docs site (#2261)
+- Add Spec Scope extension to community catalog (#2172)
+- docs: add Community-maintained plugin for Claude Code and GitHub Copilot CLI that installs Spec Kit skills via the plugin marketplace to README (#2250)
+- fix: suppress CRLF warnings in auto-commit.ps1 (#2258)
+- feat: register Blueprint in community catalog (#2252)
+- preset: Update preset-fiction-book-writing to community catalog -> v1.5.0 (#2256)
+- chore(deps): bump actions/upload-pages-artifact from 3 to 5 (#2251)
+- fix: add reference/*.md to docfx content glob (#2248)
+- chore: release 0.7.2, begin 0.7.3.dev0 development (#2247)
+
 ## [0.7.2] - 2026-04-16
 
 ### Changed
