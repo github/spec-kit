@@ -17,6 +17,7 @@ description: "Task list template for feature implementation"
 - **[P]**: Can run in parallel (different files, no dependencies)
 - **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
 - Include exact file paths in descriptions
+- For **governed operations** (commands the constitution defines with specific syntax): append the exact command — e.g., `Push packages: \`dotnet nuget push "*.nupkg" --api-key $KEY --source $URL\``
 
 ## Path Conventions
 
