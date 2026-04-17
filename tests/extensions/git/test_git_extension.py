@@ -585,6 +585,136 @@ class TestAutoCommitPowerShell:
         assert "\u2713" not in result.stdout, "Must not use Unicode checkmark"
 
 
+# ── auto-commit.ps1 CRLF warning tests (issue #2253) ────────────────────────
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
+class TestAutoCommitPowerShellCRLF:
+    """Tests for CRLF warning handling in auto-commit.ps1 (issue #2253).
+
+    On Windows, git emits CRLF warnings to stderr when core.autocrlf=true
+    and files use LF line endings.  PowerShell's $ErrorActionPreference='Stop'
+    converts stderr output into terminating errors, crashing the script.
+
+    These tests use core.autocrlf=true + explicit LF-ending files.  On Windows
+    the CRLF warnings fire and exercise the fix; on other platforms the tests
+    still run (they just won't produce stderr warnings, so they pass trivially).
+    """
+
+    # -- positive tests (fix works) ----------------------------------------
+
+    def test_commit_succeeds_with_autocrlf(self, tmp_path: Path):
+        """auto-commit.ps1 creates a commit when core.autocrlf=true (CRLF
+        warnings on stderr must not crash the script)."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "crlf commit"\n'
+        ))
+        subprocess.run(
+            ["git", "config", "core.autocrlf", "true"],
+            cwd=project, check=True,
+        )
+        # Write a file with explicit LF line endings to trigger the warning.
+        (project / "crlf-test.txt").write_bytes(b"line one\nline two\nline three\n")
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+
+        assert result.returncode == 0, (
+            f"Script crashed (likely CRLF stderr); stderr:\n{result.stderr}"
+        )
+        assert "[OK] Changes committed" in result.stdout
+
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "crlf commit" in log.stdout
+
+    def test_custom_message_not_corrupted_by_crlf(self, tmp_path: Path):
+        """Commit message is the configured value, not a CRLF warning."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_plan:\n"
+            "    enabled: true\n"
+            '    message: "[Project] Plan done"\n'
+        ))
+        subprocess.run(
+            ["git", "config", "core.autocrlf", "true"],
+            cwd=project, check=True,
+        )
+        (project / "plan.txt").write_bytes(b"plan\ncontent\n")
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_plan")
+        assert result.returncode == 0
+
+        log = subprocess.run(
+            ["git", "log", "--format=%s", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Project] Plan done" in log.stdout.strip()
+
+    def test_no_changes_still_skips_with_autocrlf(self, tmp_path: Path):
+        """Script correctly detects 'no changes' even with core.autocrlf=true."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        subprocess.run(
+            ["git", "config", "core.autocrlf", "true"],
+            cwd=project, check=True,
+        )
+        # Stage and commit everything so the working tree is clean.
+        subprocess.run(["git", "add", "."], cwd=project, check=True,
+                        env={**os.environ, **_GIT_ENV})
+        subprocess.run(["git", "commit", "-m", "setup", "-q"], cwd=project,
+                        check=True, env={**os.environ, **_GIT_ENV})
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        assert "[OK]" not in result.stdout, "Should not have committed anything"
+
+    # -- negative tests (real errors still surface) ------------------------
+
+    def test_not_a_repo_still_detected_with_autocrlf(self, tmp_path: Path):
+        """Script still exits gracefully when not in a git repo, even though
+        ErrorActionPreference is relaxed around the rev-parse call."""
+        project = _setup_project(tmp_path, git=False)
+        _write_config(project, "auto_commit:\n  default: true\n")
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        combined = result.stdout + result.stderr
+        assert "not a git repository" in combined.lower() or "warning" in combined.lower()
+
+    def test_missing_config_still_exits_cleanly_with_autocrlf(self, tmp_path: Path):
+        """Script exits 0 when git-config.yml is absent (no over-suppression)."""
+        project = _setup_project(tmp_path)
+        subprocess.run(
+            ["git", "config", "core.autocrlf", "true"],
+            cwd=project, check=True,
+        )
+        config = project / ".specify" / "extensions" / "git" / "git-config.yml"
+        config.unlink(missing_ok=True)
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        # Should not have committed anything — config file missing means disabled.
+        log = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert log.stdout.strip().count("\n") == 0  # only the seed commit
+
+
 # ── git-common.sh Tests ──────────────────────────────────────────────────────
 
 

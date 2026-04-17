@@ -36,10 +36,14 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     exit 0
 }
 
-try {
-    git rev-parse --is-inside-work-tree 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "not a repo" }
-} catch {
+# Temporarily relax ErrorActionPreference so git stderr warnings
+# (e.g. CRLF notices on Windows) do not become terminating errors.
+$savedEAP = $ErrorActionPreference
+$ErrorActionPreference = 'SilentlyContinue'
+git rev-parse --is-inside-work-tree 2>$null | Out-Null
+$isRepo = $LASTEXITCODE -eq 0
+$ErrorActionPreference = $savedEAP
+if (-not $isRepo) {
     Write-Warning "[specify] Warning: Not a Git repository; skipped auto-commit"
     exit 0
 }
@@ -117,11 +121,13 @@ if (-not $enabled) {
 }
 
 # Check if there are changes to commit
-$null = git diff --quiet HEAD 2>&1
-$d1 = $LASTEXITCODE
-$null = git diff --cached --quiet 2>&1
-$d2 = $LASTEXITCODE
-$untracked = git ls-files --others --exclude-standard 2>&1
+# Relax ErrorActionPreference so CRLF warnings on stderr do not terminate.
+$savedEAP = $ErrorActionPreference
+$ErrorActionPreference = 'SilentlyContinue'
+git diff --quiet HEAD 2>$null; $d1 = $LASTEXITCODE
+git diff --cached --quiet 2>$null; $d2 = $LASTEXITCODE
+$untracked = git ls-files --others --exclude-standard 2>$null
+$ErrorActionPreference = $savedEAP
 
 if ($d1 -eq 0 -and $d2 -eq 0 -and -not $untracked) {
     Write-Host "[specify] No changes to commit after $EventName" -ForegroundColor DarkGray
@@ -138,14 +144,19 @@ if (-not $commitMsg) {
 }
 
 # Stage and commit
+# Relax ErrorActionPreference so CRLF warnings on stderr do not terminate.
+$savedEAP = $ErrorActionPreference
+$ErrorActionPreference = 'SilentlyContinue'
 try {
     $out = git add . 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) { throw "git add failed: $out" }
     $out = git commit -q -m $commitMsg 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) { throw "git commit failed: $out" }
 } catch {
+    $ErrorActionPreference = $savedEAP
     Write-Warning "[specify] Error: $_"
     exit 1
 }
+$ErrorActionPreference = $savedEAP
 
 Write-Host "[OK] Changes committed $phase $commandName"
