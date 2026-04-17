@@ -89,7 +89,7 @@ def test_falls_back_to_older_release_when_latest_has_no_assets(tmp_path):
 
     assert meta["release"] == "v0.4.4"
     assert PATTERN in meta["filename"]
-    assert zip_path.exists() or True  # file may be in tmp_path
+    assert zip_path.exists(), f"Expected zip at {zip_path}"
 
 
 # ---------------------------------------------------------------------------

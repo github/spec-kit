@@ -440,9 +440,13 @@ def _get_cache_dir() -> Path:
 
 
 def _find_cached_template(pattern: str) -> "Path | None":
-    """Return a cached zip matching *pattern*, or None."""
+    """Return the most-recently-modified cached zip matching *pattern*, or None."""
     cache_dir = _get_cache_dir()
-    matches = list(cache_dir.glob(f"*{pattern}*.zip"))
+    matches = sorted(
+        cache_dir.glob(f"*{pattern}*.zip"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
     return matches[0] if matches else None
 
 
