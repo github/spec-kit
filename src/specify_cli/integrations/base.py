@@ -554,19 +554,14 @@ class IntegrationBase(ABC):
             start_idx if start_idx != -1 else 0,
         )
 
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            removal_start = start_idx
-            removal_end = end_idx + len(self.CONTEXT_MARKER_END)
-        elif start_idx != -1:
-            # Corrupted: start marker without end — remove from start through EOF
-            removal_start = start_idx
-            removal_end = len(content)
-        elif end_idx != -1:
-            # Corrupted: end marker without start — remove BOF through end marker
-            removal_start = 0
-            removal_end = end_idx + len(self.CONTEXT_MARKER_END)
-        else:
+        # Only remove a complete, well-ordered managed section. If either
+        # marker is missing, leave the file unchanged to avoid deleting
+        # unrelated user-authored content.
+        if start_idx == -1 or end_idx == -1 or end_idx <= start_idx:
             return False
+
+        removal_start = start_idx
+        removal_end = end_idx + len(self.CONTEXT_MARKER_END)
 
         # Consume trailing line ending (CRLF or LF)
         if removal_end < len(content) and content[removal_end] == "\r":
