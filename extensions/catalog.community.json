@@ -173,7 +173,7 @@
     "blueprint": {
       "name": "Blueprint",
       "id": "blueprint",
-      "description": "Stay code-literate in AI-driven development: review a complete code blueprint for every task from spec artifacts before /implement runs",
+      "description": "Stay code-literate in AI-driven development: review a complete code blueprint for every task from spec artifacts before /speckit.implement runs",
       "author": "chordpli",
       "version": "1.0.0",
       "download_url": "https://github.com/chordpli/spec-kit-blueprint/archive/refs/tags/v1.0.0.zip",
