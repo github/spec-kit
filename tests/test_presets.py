@@ -2910,7 +2910,7 @@ class TestLeanPreset:
             assert tmpl_path.exists(), f"Missing command file: {tmpl['file']}"
 
     def test_lean_commands_have_no_scripts(self):
-        """Verify lean commands have no scripts or agent_scripts in frontmatter."""
+        """Verify lean commands have no scripts in frontmatter."""
         from specify_cli.agents import CommandRegistrar
 
         for name in LEAN_COMMAND_NAMES:

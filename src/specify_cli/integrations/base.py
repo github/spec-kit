@@ -452,7 +452,7 @@ class IntegrationBase(ABC):
                     new_content = section
 
             # Ensure .mdc files have required YAML frontmatter
-            if ctx_path.suffix == ".mdc" and not new_content.startswith("---\n"):
+            if ctx_path.suffix == ".mdc" and not new_content.lstrip().startswith("---"):
                 new_content = "---\nalwaysApply: true\n---\n\n" + new_content
         else:
             ctx_path.parent.mkdir(parents=True, exist_ok=True)
@@ -501,17 +501,19 @@ class IntegrationBase(ABC):
 
         new_content = content[:start_idx] + content[end_of_marker:]
 
+        # Normalize line endings before comparisons
+        normalized = new_content.replace("\r\n", "\n").replace("\r", "\n")
+
         # For .mdc files, also strip Speckit-generated frontmatter
         if ctx_path.suffix == ".mdc":
-            stripped = new_content.strip()
+            stripped = normalized.strip()
             if stripped in ("", "---\nalwaysApply: true\n---"):
                 ctx_path.unlink()
                 return True
 
-        if not new_content.strip():
+        if not normalized.strip():
             ctx_path.unlink()
         else:
-            normalized = new_content.replace("\r\n", "\n")
             ctx_path.write_bytes(normalized.encode("utf-8"))
 
         return True

@@ -2077,6 +2077,10 @@ def integration_uninstall(
 
     removed, skipped = manifest.uninstall(project_root, force=force)
 
+    # Remove managed context section from the agent context file
+    if integration:
+        integration.remove_context_section(project_root)
+
     _remove_integration_json(project_root)
 
     # Update init-options.json to clear the integration
