@@ -2155,6 +2155,7 @@ def integration_switch(
                 )
                 raise typer.Exit(1)
             removed, skipped = old_manifest.uninstall(project_root, force=force)
+            current_integration.remove_context_section(project_root)
             if removed:
                 console.print(f"  Removed {len(removed)} file(s)")
             if skipped:
@@ -2185,6 +2186,7 @@ def integration_switch(
         opts.pop("integration", None)
         opts.pop("ai", None)
         opts.pop("ai_skills", None)
+        opts.pop("context_file", None)
         save_init_options(project_root, opts)
 
     # Ensure shared infrastructure is present (safe to run unconditionally;

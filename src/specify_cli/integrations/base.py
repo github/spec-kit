@@ -395,34 +395,51 @@ class IntegrationBase(ABC):
 
         If frontmatter is missing, prepend it.  If frontmatter exists but
         ``alwaysApply`` is absent or not ``true``, inject/fix it.
-        """
-        import yaml as _yaml
 
-        stripped = content.lstrip()
+        Uses string/regex manipulation to preserve comments and formatting
+        in existing frontmatter.
+        """
+        import re as _re
+
+        leading_ws = len(content) - len(content.lstrip())
+        leading = content[:leading_ws]
+        stripped = content[leading_ws:]
+
         if not stripped.startswith("---"):
             return "---\nalwaysApply: true\n---\n\n" + content
 
-        # Parse existing frontmatter
-        end = stripped.find("\n---", 3)
-        if end == -1:
+        # Match frontmatter block: ---\n...\n---
+        match = _re.match(
+            r"^(---[ \t]*\r?\n)(.*?)(\r?\n---[ \t]*)(\r?\n|$)(.*)",
+            stripped,
+            _re.DOTALL,
+        )
+        if not match:
             return "---\nalwaysApply: true\n---\n\n" + content
 
-        fm_text = stripped[4:end]  # between first --- and closing ---
-        try:
-            fm = _yaml.safe_load(fm_text)
-        except Exception:
-            fm = None
-        if not isinstance(fm, dict):
-            fm = {}
+        opening, fm_text, closing, sep, rest = match.groups()
+        newline = "\r\n" if "\r\n" in opening else "\n"
 
-        if fm.get("alwaysApply") is True:
-            return content  # already correct
+        # Already correct?
+        if _re.search(
+            r"(?m)^[ \t]*alwaysApply[ \t]*:[ \t]*true[ \t]*(?:#.*)?$", fm_text
+        ):
+            return content
 
-        fm["alwaysApply"] = True
-        new_fm = _yaml.safe_dump(fm, sort_keys=False).strip()
-        # Reconstruct: frontmatter + rest of file after closing ---
-        rest = stripped[end + 4:]  # after \n---
-        return f"---\n{new_fm}\n---{rest}"
+        # alwaysApply exists but wrong value — fix in place
+        if _re.search(r"(?m)^[ \t]*alwaysApply[ \t]*:", fm_text):
+            fm_text = _re.sub(
+                r"(?m)^([ \t]*)alwaysApply[ \t]*:.*$",
+                r"\1alwaysApply: true",
+                fm_text,
+                count=1,
+            )
+        elif fm_text.strip():
+            fm_text = fm_text + newline + "alwaysApply: true"
+        else:
+            fm_text = "alwaysApply: true"
+
+        return f"{leading}{opening}{fm_text}{closing}{sep}{rest}"
 
     @staticmethod
     def _build_context_section(plan_path: str = "") -> str:
