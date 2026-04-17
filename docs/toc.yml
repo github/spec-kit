@@ -33,3 +33,9 @@
   items:
     - name: Local Development
       href: local-development.md
+
+# Community
+- name: Community
+  items:
+    - name: Friends
+      href: community/friends.md
