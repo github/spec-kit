@@ -163,10 +163,31 @@ Every task MUST strictly follow this format:
 - ✅ CORRECT: `- [ ] T005 [P] Implement authentication middleware in src/middleware/auth.py`
 - ✅ CORRECT: `- [ ] T012 [P] [US1] Create User model in src/models/user.py`
 - ✅ CORRECT: `- [ ] T014 [US1] Implement UserService in src/services/user_service.py`
+- ✅ CORRECT (governed): `- [ ] T008 Push packages to NuGet feed: \`dotnet nuget push "*.nupkg" --api-key $NUGET_API_KEY --source $NUGET_FEED_URL\``
 - ❌ WRONG: `- [ ] Create User model` (missing ID and Story label)
 - ❌ WRONG: `T001 [US1] Create model` (missing checkbox)
 - ❌ WRONG: `- [ ] [US1] Create User model` (missing Task ID)
 - ❌ WRONG: `- [ ] T001 [US1] Create model` (missing file path)
+- ❌ WRONG (governed): `- [ ] T008 Push packages to NuGet feed` (prose only — omits executable command for a governed operation)
+
+### Governed Operations (REQUIRED)
+
+A **governed operation** is any operation the project constitution defines with specific command syntax, required flags, or environment variable references (for example: a package publish step, a deployment command, a signed git tag).
+
+When a task covers a governed operation, its description MUST include the exact executable command from the constitution, parameterized with environment variable names rather than literal credential values. Do not paraphrase the command.
+
+```text
+- [ ] [TaskID] [P?] [Story?] Description: `<exact-command --flag $ENV_VAR>`
+```
+
+**Why this matters**: Tasks are surfaced in agent context every session. The constitution may be compacted out of active context by the time a task is executed — especially across session boundaries or late in long sessions. Embedding the exact command in the task body ensures the agent executes the correct syntax without re-reading the constitution.
+
+**How to identify governed operations while generating tasks**:
+
+- The constitution is in active context during `/speckit.tasks` execution — read it before generating tasks
+- Any operation the constitution names with a specific tool, required flags, or env var references is governed
+- If the constitution says "do not use X, use Y" (e.g., use the feed URL env var, not the config source name), the task body must use Y
+- If a governed operation has multiple steps (e.g., pack then push), each step is its own task with its own command
 
 ### Task Organization
 
