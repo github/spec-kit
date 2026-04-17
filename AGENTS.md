@@ -17,7 +17,7 @@ Each AI agent is a self-contained **integration subpackage** under `src/specify_
 ```
 src/specify_cli/integrations/
 ├── __init__.py            # INTEGRATION_REGISTRY + _register_builtins()
-├── base.py                # IntegrationBase, MarkdownIntegration, TomlIntegration, SkillsIntegration
+├── base.py                # IntegrationBase, MarkdownIntegration, TomlIntegration, YamlIntegration, SkillsIntegration
 ├── manifest.py            # IntegrationManifest (file tracking)
 ├── claude/                # Example: SkillsIntegration subclass
 │   ├── __init__.py        #   ClaudeIntegration class
@@ -48,6 +48,7 @@ The registry is the **single source of truth for Python integration metadata**. 
 |---|---|
 | Standard markdown commands (`.md`) | `MarkdownIntegration` |
 | TOML-format commands (`.toml`) | `TomlIntegration` |
+| YAML recipe files (`.yaml`) | `YamlIntegration` |
 | Skill directories (`speckit-<name>/SKILL.md`) | `SkillsIntegration` |
 | Fully custom output (companion files, settings merge, etc.) | `IntegrationBase` directly |
 
@@ -343,15 +344,81 @@ Command content with {SCRIPT} and {{args}} placeholders.
 """
 ```
 
+### YAML Format
+
+Used by: Goose
+
+```yaml
+version: 1.0.0
+title: "Command Title"
+description: "Command description"
+author:
+  contact: spec-kit
+extensions:
+  - type: builtin
+    name: developer
+activities:
+  - Spec-Driven Development
+prompt: |
+  Command content with {SCRIPT} and {{args}} placeholders.
+```
+
 ## Argument Patterns
 
 Different agents use different argument placeholders. The placeholder used in command files is always taken from `registrar_config["args"]` for each integration — check there first when in doubt:
 
 - **Markdown/prompt-based**: `$ARGUMENTS` (default for most markdown agents)
 - **TOML-based**: `{{args}}` (e.g., Gemini)
+- **YAML-based**: `{{args}}` (e.g., Goose)
 - **Custom**: some agents override the default (e.g., Forge uses `{{parameters}}`)
 - **Script placeholders**: `{SCRIPT}` (replaced with actual script path)
 - **Agent placeholders**: `__AGENT__` (replaced with agent name)
+
+## Special Processing Requirements
+
+Some agents require custom processing beyond the standard template transformations:
+
+### Copilot Integration
+
+GitHub Copilot has unique requirements:
+- Commands use `.agent.md` extension (not `.md`)
+- Each command gets a companion `.prompt.md` file in `.github/prompts/`
+- Installs `.vscode/settings.json` with prompt file recommendations
+- Context file lives at `.github/copilot-instructions.md`
+
+Implementation: Extends `IntegrationBase` with custom `setup()` method that:
+1. Processes templates with `process_template()`
+2. Generates companion `.prompt.md` files
+3. Merges VS Code settings
+
+### Forge Integration
+
+Forge has special frontmatter and argument requirements:
+- Uses `{{parameters}}` instead of `$ARGUMENTS`
+- Strips `handoffs` frontmatter key (Forge-specific collaboration feature)
+- Injects `name` field into frontmatter when missing
+
+Implementation: Extends `MarkdownIntegration` with custom `setup()` method that:
+1. Inherits standard template processing from `MarkdownIntegration`
+2. Adds extra `$ARGUMENTS` → `{{parameters}}` replacement after template processing
+3. Applies Forge-specific transformations via `_apply_forge_transformations()`
+4. Strips `handoffs` frontmatter key
+5. Injects missing `name` fields
+6. Ensures the shared `update-agent-context.*` scripts include a `forge` case that maps context updates to `AGENTS.md` and lists `forge` in their usage/help text
+
+### Goose Integration
+
+Goose is a YAML-format agent using Block's recipe system:
+- Uses `.goose/recipes/` directory for YAML recipe files
+- Uses `{{args}}` argument placeholder
+- Produces YAML with `prompt: |` block scalar for command content
+
+Implementation: Extends `YamlIntegration` (parallel to `TomlIntegration`):
+1. Processes templates through the standard placeholder pipeline
+2. Extracts title and description from frontmatter
+3. Renders output as Goose recipe YAML (version, title, description, author, extensions, activities, prompt)
+4. Uses `yaml.safe_dump()` for header fields to ensure proper escaping
+5. Context updates map to `AGENTS.md` (shared with opencode/codex/pi/forge)
 
 ## Common Pitfalls
 
