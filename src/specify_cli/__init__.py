@@ -30,6 +30,7 @@ import tempfile
 import shutil
 import shlex
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -431,58 +432,209 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> bool:
         os.chdir(original_cwd)
 
 
-def download_template_from_github(ai_assistant: str, download_dir: Path, *, script_type: str = "sh", verbose: bool = True, show_progress: bool = True, client: httpx.Client = None, debug: bool = False, github_token: str = None) -> Tuple[Path, dict]:
+def _get_cache_dir() -> Path:
+    """Return (and create) the local template cache directory."""
+    cache_dir = Path.home() / ".cache" / "specify" / "templates"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+def _find_cached_template(pattern: str) -> "Path | None":
+    """Return a cached zip matching *pattern*, or None."""
+    cache_dir = _get_cache_dir()
+    matches = list(cache_dir.glob(f"*{pattern}*.zip"))
+    return matches[0] if matches else None
+
+
+def _cache_template(zip_path: Path, metadata: dict) -> None:
+    """Copy *zip_path* into the cache dir and update cache-meta.json."""
+    cache_dir = _get_cache_dir()
+    dest = cache_dir / zip_path.name
+    try:
+        shutil.copy2(zip_path, dest)
+        meta_path = cache_dir / "cache-meta.json"
+        existing: dict = {}
+        if meta_path.exists():
+            try:
+                existing = json.loads(meta_path.read_text())
+            except Exception:
+                pass
+        existing[zip_path.name] = {
+            **metadata,
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+        }
+        meta_path.write_text(json.dumps(existing, indent=2))
+    except Exception:
+        pass  # Caching is best-effort; never block the main flow
+
+
+def download_template_from_github(
+    ai_assistant: str,
+    download_dir: Path,
+    *,
+    script_type: str = "sh",
+    verbose: bool = True,
+    show_progress: bool = True,
+    client: httpx.Client = None,
+    debug: bool = False,
+    github_token: str = None,
+) -> Tuple[Path, dict]:
+    """Download the template zip for *ai_assistant* / *script_type*.
+
+    Strategy (in order):
+    1. Return a fresh cached copy if available and < 7 days old
+       (or always if SPECIFY_OFFLINE=1).
+    2. Try ``/releases/latest``; if it has no matching asset, walk up to 10
+       older releases looking for one that does.
+    3. On network or asset failure, fall back to a stale cached copy with a
+       warning rather than hard-failing.
+    4. Only raise Exit(1) when no release AND no cache can supply the asset.
+    """
     repo_owner = "github"
     repo_name = "spec-kit"
+    pattern = f"spec-kit-template-{ai_assistant}-{script_type}"
+    offline = os.getenv("SPECIFY_OFFLINE", "").strip() == "1"
+
     if client is None:
         client = httpx.Client(verify=ssl_context)
-    
-    if verbose:
-        console.print("[cyan]Fetching latest release information...[/cyan]")
-    api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
-    
+
+    # --- 1. Cache-first path ---
+    cached = _find_cached_template(pattern)
+    if cached:
+        cache_dir = _get_cache_dir()
+        meta_path = cache_dir / "cache-meta.json"
+        cached_at = None
+        try:
+            meta = json.loads(meta_path.read_text()).get(cached.name, {})
+            cached_at_str = meta.get("cached_at", "")
+            if cached_at_str:
+                cached_at = datetime.fromisoformat(cached_at_str)
+        except Exception:
+            pass
+
+        age_ok = cached_at is not None and (
+            datetime.now(timezone.utc) - cached_at
+        ).days < 7
+
+        if offline or age_ok:
+            if offline:
+                console.print("[dim]SPECIFY_OFFLINE=1 — using cached template[/dim]")
+            else:
+                console.print(f"[dim]Using cached template ({cached.name})[/dim]")
+            dest = download_dir / cached.name
+            shutil.copy2(cached, dest)
+            try:
+                file_meta = json.loads(meta_path.read_text()).get(cached.name, {})
+            except Exception:
+                file_meta = {"filename": cached.name, "size": cached.stat().st_size,
+                             "release": "cached", "asset_url": ""}
+            return dest, file_meta
+
+    if offline:
+        console.print("[red]SPECIFY_OFFLINE=1 but no cached template found.[/red]")
+        console.print("[dim]Run without --offline first to download and cache a template.[/dim]")
+        raise typer.Exit(1)
+
+    # --- 2. Network path: try latest, then walk older releases ---
+    releases_to_check: list[dict] = []
+    checked_versions: list[str] = []
+
     try:
-        response = client.get(
-            api_url,
-            timeout=30,
-            follow_redirects=True,
+        if verbose:
+            console.print("[cyan]Fetching latest release information...[/cyan]")
+        latest_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
+        resp = client.get(
+            latest_url, timeout=30, follow_redirects=True,
             headers=_github_auth_headers(github_token),
         )
-        status = response.status_code
-        if status != 200:
-            msg = f"GitHub API returned {status} for {api_url}"
-            if debug:
-                msg += f"\nResponse headers: {response.headers}\nBody (truncated 500): {response.text[:500]}"
-            raise RuntimeError(msg)
-        try:
-            release_data = response.json()
-        except ValueError as je:
-            raise RuntimeError(f"Failed to parse release JSON: {je}\nRaw (truncated 400): {response.text[:400]}")
+        if resp.status_code == 200:
+            releases_to_check.append(resp.json())
     except Exception as e:
-        console.print(f"[red]Error fetching release information[/red]")
-        console.print(Panel(str(e), title="Fetch Error", border_style="red"))
-        raise typer.Exit(1)
-    
-    # Find the template asset for the specified AI assistant
-    assets = release_data.get("assets", [])
-    pattern = f"spec-kit-template-{ai_assistant}-{script_type}"
-    matching_assets = [
-        asset for asset in assets
-        if pattern in asset["name"] and asset["name"].endswith(".zip")
-    ]
+        if debug:
+            console.print(f"[dim]Warning fetching latest: {e}[/dim]")
 
-    asset = matching_assets[0] if matching_assets else None
+    # Check whether latest had assets; if not, fetch the paginated list.
+    latest_has_assets = bool(
+        releases_to_check
+        and [
+            a for a in releases_to_check[0].get("assets", [])
+            if pattern in a["name"] and a["name"].endswith(".zip")
+        ]
+    )
+    if not latest_has_assets:
+        try:
+            page_url = (
+                f"https://api.github.com/repos/{repo_owner}/{repo_name}"
+                "/releases?per_page=10"
+            )
+            resp = client.get(
+                page_url, timeout=30, follow_redirects=True,
+                headers=_github_auth_headers(github_token),
+            )
+            if resp.status_code == 200:
+                # Prepend latest (already fetched) then append older ones
+                older = [
+                    r for r in resp.json()
+                    if not releases_to_check
+                    or r.get("tag_name") != releases_to_check[0].get("tag_name")
+                ]
+                releases_to_check.extend(older)
+        except Exception as e:
+            if debug:
+                console.print(f"[dim]Warning fetching release list: {e}[/dim]")
 
+    # Walk releases looking for a matching asset
+    asset = None
+    release_data = None
+    for rel in releases_to_check:
+        tag = rel.get("tag_name", "?")
+        checked_versions.append(tag)
+        assets = rel.get("assets", [])
+        matching = [
+            a for a in assets
+            if pattern in a["name"] and a["name"].endswith(".zip")
+        ]
+        if matching:
+            asset = matching[0]
+            release_data = rel
+            break
+
+    # --- 3. Stale-cache fallback if no asset found online ---
     if asset is None:
-        console.print(f"[red]No matching release asset found[/red] for [bold]{ai_assistant}[/bold] (expected pattern: [bold]{pattern}[/bold])")
-        asset_names = [a.get('name', '?') for a in assets]
-        console.print(Panel("\n".join(asset_names) or "(no assets)", title="Available Assets", border_style="yellow"))
+        if cached:
+            console.print(
+                f"[yellow]Warning:[/yellow] No release with template assets found "
+                f"(checked: {', '.join(checked_versions[:5])}). "
+                "Using stale cached template."
+            )
+            dest = download_dir / cached.name
+            shutil.copy2(cached, dest)
+            return dest, {"filename": cached.name, "size": cached.stat().st_size,
+                          "release": "cached (stale)", "asset_url": ""}
+
+        # --- 4. Hard fail ---
+        console.print(
+            f"[red]No matching release asset found[/red] for "
+            f"[bold]{ai_assistant}[/bold] "
+            f"(expected pattern: [bold]{pattern}[/bold])"
+        )
+        checked_str = ", ".join(checked_versions[:3]) or "none"
+        console.print(
+            Panel(
+                f"Checked releases: {checked_str}\n\n"
+                "All checked releases have no template assets.\n\n"
+                "Workaround: run once with network access to cache a template,\n"
+                "then use SPECIFY_OFFLINE=1 for subsequent offline runs.",
+                title="No Assets Available",
+                border_style="red",
+            )
+        )
         raise typer.Exit(1)
 
     download_url = asset["browser_download_url"]
     filename = asset["name"]
     file_size = asset["size"]
-    
+
     if verbose:
         console.print(f"[cyan]Found template:[/cyan] {filename}")
         console.print(f"[cyan]Size:[/cyan] {file_size:,} bytes")
@@ -490,8 +642,8 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
 
     zip_path = download_dir / filename
     if verbose:
-        console.print(f"[cyan]Downloading template...[/cyan]")
-    
+        console.print("[cyan]Downloading template...[/cyan]")
+
     try:
         with client.stream(
             "GET",
@@ -502,44 +654,46 @@ def download_template_from_github(ai_assistant: str, download_dir: Path, *, scri
         ) as response:
             if response.status_code != 200:
                 body_sample = response.text[:400]
-                raise RuntimeError(f"Download failed with {response.status_code}\nHeaders: {response.headers}\nBody (truncated): {body_sample}")
-            total_size = int(response.headers.get('content-length', 0))
-            with open(zip_path, 'wb') as f:
-                if total_size == 0:
+                raise RuntimeError(
+                    f"Download failed with {response.status_code}\n"
+                    f"Headers: {response.headers}\nBody (truncated): {body_sample}"
+                )
+            total_size = int(response.headers.get("content-length", 0))
+            with open(zip_path, "wb") as f:
+                if total_size == 0 or not show_progress:
                     for chunk in response.iter_bytes(chunk_size=8192):
                         f.write(chunk)
                 else:
-                    if show_progress:
-                        with Progress(
-                            SpinnerColumn(),
-                            TextColumn("[progress.description]{task.description}"),
-                            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                            console=console,
-                        ) as progress:
-                            task = progress.add_task("Downloading...", total=total_size)
-                            downloaded = 0
-                            for chunk in response.iter_bytes(chunk_size=8192):
-                                f.write(chunk)
-                                downloaded += len(chunk)
-                                progress.update(task, completed=downloaded)
-                    else:
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn("[progress.description]{task.description}"),
+                        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                        console=console,
+                    ) as progress:
+                        dl_task = progress.add_task("Downloading...", total=total_size)
+                        downloaded = 0
                         for chunk in response.iter_bytes(chunk_size=8192):
                             f.write(chunk)
+                            downloaded += len(chunk)
+                            progress.update(dl_task, completed=downloaded)
     except Exception as e:
-        console.print(f"[red]Error downloading template[/red]")
-        detail = str(e)
+        console.print("[red]Error downloading template[/red]")
         if zip_path.exists():
             zip_path.unlink()
-        console.print(Panel(detail, title="Download Error", border_style="red"))
+        console.print(Panel(str(e), title="Download Error", border_style="red"))
         raise typer.Exit(1)
+
     if verbose:
         console.print(f"Downloaded: {filename}")
+
     metadata = {
         "filename": filename,
         "size": file_size,
         "release": release_data["tag_name"],
-        "asset_url": download_url
+        "asset_url": download_url,
     }
+    # Cache for future offline/fallback use (best-effort)
+    _cache_template(zip_path, metadata)
     return zip_path, metadata
 
 
