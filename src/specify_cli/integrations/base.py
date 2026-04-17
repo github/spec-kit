@@ -387,6 +387,43 @@ class IntegrationBase(ABC):
 
     # -- Agent context file management ------------------------------------
 
+    MDC_FRONTMATTER = "---\nalwaysApply: true\n---"
+
+    @staticmethod
+    def _ensure_mdc_frontmatter(content: str) -> str:
+        """Ensure ``.mdc`` content has YAML frontmatter with ``alwaysApply: true``.
+
+        If frontmatter is missing, prepend it.  If frontmatter exists but
+        ``alwaysApply`` is absent or not ``true``, inject/fix it.
+        """
+        import yaml as _yaml
+
+        stripped = content.lstrip()
+        if not stripped.startswith("---"):
+            return "---\nalwaysApply: true\n---\n\n" + content
+
+        # Parse existing frontmatter
+        end = stripped.find("\n---", 3)
+        if end == -1:
+            return "---\nalwaysApply: true\n---\n\n" + content
+
+        fm_text = stripped[4:end]  # between first --- and closing ---
+        try:
+            fm = _yaml.safe_load(fm_text)
+        except Exception:
+            fm = None
+        if not isinstance(fm, dict):
+            fm = {}
+
+        if fm.get("alwaysApply") is True:
+            return content  # already correct
+
+        fm["alwaysApply"] = True
+        new_fm = _yaml.safe_dump(fm, sort_keys=False).strip()
+        # Reconstruct: frontmatter + rest of file after closing ---
+        rest = stripped[end + 4:]  # after \n---
+        return f"---\n{new_fm}\n---{rest}"
+
     @staticmethod
     def _build_context_section(plan_path: str = "") -> str:
         """Build the content for the managed section between markers.
@@ -442,8 +479,17 @@ class IntegrationBase(ABC):
                 if end_of_marker < len(content) and content[end_of_marker] == "\n":
                     end_of_marker += 1
                 new_content = content[:start_idx] + section + content[end_of_marker:]
+            elif start_idx != -1:
+                # Corrupted: start marker without end — replace from start through EOF
+                new_content = content[:start_idx] + section
+            elif end_idx != -1:
+                # Corrupted: end marker without start — replace BOF through end marker
+                end_of_marker = end_idx + len(self.CONTEXT_MARKER_END)
+                if end_of_marker < len(content) and content[end_of_marker] == "\n":
+                    end_of_marker += 1
+                new_content = section + content[end_of_marker:]
             else:
-                # Markers not found — append
+                # No markers found — append
                 if content:
                     if not content.endswith("\n"):
                         content += "\n"
@@ -452,13 +498,13 @@ class IntegrationBase(ABC):
                     new_content = section
 
             # Ensure .mdc files have required YAML frontmatter
-            if ctx_path.suffix == ".mdc" and not new_content.lstrip().startswith("---"):
-                new_content = "---\nalwaysApply: true\n---\n\n" + new_content
+            if ctx_path.suffix == ".mdc":
+                new_content = self._ensure_mdc_frontmatter(new_content)
         else:
             ctx_path.parent.mkdir(parents=True, exist_ok=True)
             # Cursor .mdc files require YAML frontmatter to be loaded
             if ctx_path.suffix == ".mdc":
-                new_content = "---\nalwaysApply: true\n---\n\n" + section
+                new_content = self._ensure_mdc_frontmatter(section)
             else:
                 new_content = section
 
