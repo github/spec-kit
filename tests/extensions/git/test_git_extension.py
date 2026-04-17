@@ -614,12 +614,22 @@ class TestAutoCommitPowerShellCRLF:
             "    enabled: true\n"
             '    message: "crlf commit"\n'
         ))
+        # Create and commit a tracked LF-ending file first so the script's
+        # `git diff --quiet HEAD` checks inspect a tracked modification.
+        tracked = project / "crlf-test.txt"
+        tracked.write_bytes(b"line one\nline two\nline three\n")
+        subprocess.run(["git", "add", "crlf-test.txt"], cwd=project, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "seed tracked file"],
+            cwd=project, check=True, env={**os.environ, **_GIT_ENV},
+        )
         subprocess.run(
             ["git", "config", "core.autocrlf", "true"],
             cwd=project, check=True,
         )
-        # Write a file with explicit LF line endings to trigger the warning.
-        (project / "crlf-test.txt").write_bytes(b"line one\nline two\nline three\n")
+        # Modify the tracked file with explicit LF endings to trigger the
+        # CRLF warning during diff/status checks on Windows.
+        tracked.write_bytes(b"line one\nline two changed\nline three\n")
 
         result = _run_pwsh("auto-commit.ps1", project, "after_specify")
 
