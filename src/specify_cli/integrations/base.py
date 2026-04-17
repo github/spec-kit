@@ -387,8 +387,6 @@ class IntegrationBase(ABC):
 
     # -- Agent context file management ------------------------------------
 
-    MDC_FRONTMATTER = "---\nalwaysApply: true\n---"
-
     @staticmethod
     def _ensure_mdc_frontmatter(content: str) -> str:
         """Ensure ``.mdc`` content has YAML frontmatter with ``alwaysApply: true``.
@@ -426,11 +424,12 @@ class IntegrationBase(ABC):
         ):
             return content
 
-        # alwaysApply exists but wrong value — fix in place
+        # alwaysApply exists but wrong value — fix in place while preserving
+        # indentation and any trailing inline comment.
         if _re.search(r"(?m)^[ \t]*alwaysApply[ \t]*:", fm_text):
             fm_text = _re.sub(
-                r"(?m)^([ \t]*)alwaysApply[ \t]*:.*$",
-                r"\1alwaysApply: true",
+                r"(?m)^([ \t]*)alwaysApply[ \t]*:.*?([ \t]*(?:#.*)?)$",
+                r"\1alwaysApply: true\2",
                 fm_text,
                 count=1,
             )
@@ -525,7 +524,7 @@ class IntegrationBase(ABC):
             else:
                 new_content = section
 
-        normalized = new_content.replace("\r\n", "\n")
+        normalized = new_content.replace("\r\n", "\n").replace("\r", "\n")
         ctx_path.write_bytes(normalized.encode("utf-8"))
         return ctx_path
 
@@ -567,10 +566,10 @@ class IntegrationBase(ABC):
         # Normalize line endings before comparisons
         normalized = new_content.replace("\r\n", "\n").replace("\r", "\n")
 
-        # For .mdc files, also strip Speckit-generated frontmatter
+        # For .mdc files, treat Speckit-generated frontmatter-only content as empty
         if ctx_path.suffix == ".mdc":
             import re
-            # Treat as empty if only YAML frontmatter remains (no body content)
+            # Delete the file if only YAML frontmatter remains (no body content)
             frontmatter_only = re.match(
                 r"^---\n.*?\n---\s*$", normalized, re.DOTALL
             )
