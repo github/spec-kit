@@ -187,7 +187,7 @@
       },
       "provides": {
         "commands": 2,
-        "hooks": 2
+        "hooks": 1
       },
       "tags": [
         "blueprint",
