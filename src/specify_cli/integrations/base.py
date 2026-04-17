@@ -431,9 +431,12 @@ class IntegrationBase(ABC):
         if ctx_path.exists():
             content = ctx_path.read_text(encoding="utf-8")
             start_idx = content.find(self.CONTEXT_MARKER_START)
-            end_idx = content.find(self.CONTEXT_MARKER_END)
+            end_idx = content.find(
+                self.CONTEXT_MARKER_END,
+                start_idx if start_idx != -1 else 0,
+            )
 
-            if start_idx != -1 and end_idx != -1:
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
                 # Replace existing section (include the end marker + newline)
                 end_of_marker = end_idx + len(self.CONTEXT_MARKER_END)
                 if end_of_marker < len(content) and content[end_of_marker] == "\n":
@@ -468,9 +471,12 @@ class IntegrationBase(ABC):
 
         content = ctx_path.read_text(encoding="utf-8")
         start_idx = content.find(self.CONTEXT_MARKER_START)
-        end_idx = content.find(self.CONTEXT_MARKER_END)
+        end_idx = content.find(
+            self.CONTEXT_MARKER_END,
+            start_idx if start_idx != -1 else 0,
+        )
 
-        if start_idx == -1 or end_idx == -1:
+        if start_idx == -1 or end_idx == -1 or end_idx <= start_idx:
             return False
 
         end_of_marker = end_idx + len(self.CONTEXT_MARKER_END)
