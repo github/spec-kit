@@ -170,6 +170,38 @@
       "created_at": "2026-03-03T00:00:00Z",
       "updated_at": "2026-03-03T00:00:00Z"
     },
+    "blueprint": {
+      "name": "Blueprint",
+      "id": "blueprint",
+      "description": "Stay code-literate in AI-driven development: review a complete code blueprint for every task from spec artifacts before /implement runs",
+      "author": "chordpli",
+      "version": "1.0.0",
+      "download_url": "https://github.com/chordpli/spec-kit-blueprint/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/chordpli/spec-kit-blueprint",
+      "homepage": "https://github.com/chordpli/spec-kit-blueprint",
+      "documentation": "https://github.com/chordpli/spec-kit-blueprint/blob/main/README.md",
+      "changelog": "https://github.com/chordpli/spec-kit-blueprint/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 2
+      },
+      "tags": [
+        "blueprint",
+        "pre-implementation",
+        "review",
+        "scaffolding",
+        "code-literacy"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-17T00:00:00Z",
+      "updated_at": "2026-04-17T00:00:00Z"
+    },
     "branch-convention": {
       "name": "Branch Convention",
       "id": "branch-convention",
