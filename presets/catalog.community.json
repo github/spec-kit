@@ -121,8 +121,7 @@
       },
       "provides": {
         "templates": 21,
-        "commands": 26,
-        "scripts": 1
+        "commands": 26
       },
       "tags": [
         "writing",
