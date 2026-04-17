@@ -2405,6 +2405,41 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z"
     },
+    "wireframe": {
+      "name": "Wireframe Visual Feedback Loop",
+      "id": "wireframe",
+      "description": "SVG wireframe generation, review, and sign-off for spec-driven development. Approved wireframes become spec constraints honored by /plan, /tasks, and /implement.",
+      "author": "TortoiseWolfe",
+      "version": "0.1.0",
+      "download_url": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe",
+      "homepage": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe",
+      "documentation": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/blob/main/README.md",
+      "changelog": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 3
+      },
+      "tags": [
+        "wireframe",
+        "visual",
+        "design",
+        "ui",
+        "mockup",
+        "svg",
+        "feedback-loop",
+        "sign-off"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-17T00:00:00Z",
+      "updated_at": "2026-04-17T00:00:00Z"
+    },
     "worktree": {
       "name": "Worktree Isolation",
       "id": "worktree",
@@ -2468,41 +2503,6 @@
       "stars": 0,
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z"
-    },
-    "wireframe": {
-      "name": "Wireframe Visual Feedback Loop",
-      "id": "wireframe",
-      "description": "SVG wireframe generation, review, and sign-off for spec-driven development. Approved wireframes become spec constraints honored by /plan, /tasks, and /implement.",
-      "author": "TortoiseWolfe (turtlewolfe.com)",
-      "version": "0.1.0",
-      "download_url": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/archive/refs/tags/v0.1.0.zip",
-      "repository": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe",
-      "homepage": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe",
-      "documentation": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/blob/main/README.md",
-      "changelog": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.6.0"
-      },
-      "provides": {
-        "commands": 6,
-        "hooks": 3
-      },
-      "tags": [
-        "wireframe",
-        "visual",
-        "design",
-        "ui",
-        "mockup",
-        "svg",
-        "feedback-loop",
-        "sign-off"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-04-17T00:00:00Z",
-      "updated_at": "2026-04-17T00:00:00Z"
     }
   }
 }
