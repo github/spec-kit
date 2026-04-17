@@ -116,22 +116,6 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here
 
 If your environment blocks access to PyPI or GitHub, see the [Enterprise / Air-Gapped Installation](./docs/installation.md#enterprise--air-gapped-installation) guide for step-by-step instructions on using `pip download` to create portable, OS-specific wheel bundles on a connected machine.
 
-#### Option 4: Claude Code / Copilot Plugin
-
-Install Spec Kit as a plugin:
-
-```bash
-# Claude Code
-claude plugin marketplace add speckit-community/cc-spec-kit
-claude plugin install speckit@speckit-community
-
-# GitHub Copilot CLI
-copilot plugin marketplace add speckit-community/cc-spec-kit
-copilot plugin install speckit@speckit-community
-```
-
-Then initialize your project with `/speckit:init` and use the standard workflow (`/speckit-specify`, `/speckit-plan`, `/speckit-tasks`, `/speckit-implement`). Projects initialized with the plugin are compatible with the `specify` CLI.
-
 ### 2. Establish project principles
 
 Launch your AI assistant in the project directory. Most agents expose spec-kit as `/speckit.*` slash commands; Codex CLI in skills mode uses `$speckit-*` instead.
@@ -329,6 +313,8 @@ Community projects that extend, visualize, or build on Spec Kit:
 - **[Spec Kit Assistant](https://marketplace.visualstudio.com/items?itemName=rfsales.speckit-assistant)** — A VS Code extension that provides a visual orchestrator for the full SDD workflow (constitution → specification → planning → tasks → implementation) with phase status visualization, an interactive task checklist, DAG visualization, and support for Claude, Gemini, GitHub Copilot, and OpenAI backends. Requires the `specify` CLI in your PATH.
 
 - **[SpecKit Companion](https://marketplace.visualstudio.com/items?itemName=alfredoperez.speckit-companion)** — A VS Code extension that brings a visual GUI to Spec Kit. Browse specs in a rich markdown viewer with clickable file references, create specifications with image attachments, comment and refine each step inline (GitHub-style review), track your progress through the SDD workflow with a visual phase stepper, and manage steering documents like constitutions and templates.
+
+- **[cc-spec-kit](https://github.com/speckit-community/cc-spec-kit)** — Community-maintained plugin for Claude Code and GitHub Copilot CLI that installs Spec Kit skills via the plugin marketplace.
 
 ## 🤖 Supported AI Coding Agent Integrations
 
