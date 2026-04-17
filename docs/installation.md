@@ -81,9 +81,11 @@ This helps verify you are running the official Spec Kit build from GitHub, not a
 
 After initialization, you should see the following commands available in your AI agent:
 
-- `/speckit.specify` - Create specifications
-- `/speckit.plan` - Generate implementation plans  
-- `/speckit.tasks` - Break down into actionable tasks
+  -`/speckit.specify` - Create specifications
+  - `/speckit.clarify` - Clarify and refine specifications
+  - `/speckit.plan` - Generate implementation plans
+  - `/speckit.tasks` - Break down into actionable tasks
+  - `/speckit.implement` - Execute tasks and build the feature
 
 The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
 
