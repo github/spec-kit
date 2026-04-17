@@ -362,6 +362,11 @@ class CommandRegistrar:
             body = body.replace("{SCRIPT}", script_command)
 
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
+
+        # Resolve __CONTEXT_FILE__ from init-options
+        context_file = init_opts.get("context_file", "")
+        body = body.replace("__CONTEXT_FILE__", context_file)
+
         return CommandRegistrar.rewrite_project_relative_paths(body)
 
     def _convert_argument_placeholder(

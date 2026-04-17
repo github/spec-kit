@@ -397,7 +397,7 @@ class IntegrationBase(ABC):
         """
         lines = [
             "For additional context about technologies to be used, project structure,",
-            "shell commands and other important information read the current plan",
+            "shell commands, and other important information, read the current plan",
         ]
         if plan_path:
             lines.append(f"at {plan_path}")
@@ -444,12 +444,19 @@ class IntegrationBase(ABC):
                 new_content = content[:start_idx] + section + content[end_of_marker:]
             else:
                 # Markers not found — append
-                if content and not content.endswith("\n"):
-                    content += "\n"
-                new_content = content + "\n" + section
+                if content:
+                    if not content.endswith("\n"):
+                        content += "\n"
+                    new_content = content + "\n" + section
+                else:
+                    new_content = section
         else:
             ctx_path.parent.mkdir(parents=True, exist_ok=True)
-            new_content = section
+            # Cursor .mdc files require YAML frontmatter to be loaded
+            if ctx_path.suffix == ".mdc":
+                new_content = "---\nalwaysApply: true\n---\n\n" + section
+            else:
+                new_content = section
 
         normalized = new_content.replace("\r\n", "\n")
         ctx_path.write_bytes(normalized.encode("utf-8"))
