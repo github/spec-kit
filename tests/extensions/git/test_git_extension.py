@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -630,6 +631,16 @@ class TestAutoCommitPowerShellCRLF:
         # Modify the tracked file with explicit LF endings to trigger the
         # CRLF warning during diff/status checks on Windows.
         tracked.write_bytes(b"line one\nline two changed\nline three\n")
+
+        # On Windows, verify the test setup actually produces a CRLF warning.
+        if sys.platform == "win32":
+            probe = subprocess.run(
+                ["git", "diff", "--quiet", "HEAD"],
+                cwd=project, capture_output=True, text=True,
+            )
+            assert "LF will be replaced by CRLF" in probe.stderr, (
+                "Expected CRLF warning from git on Windows; test setup may be wrong"
+            )
 
         result = _run_pwsh("auto-commit.ps1", project, "after_specify")
 
