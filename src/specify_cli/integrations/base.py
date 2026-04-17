@@ -492,6 +492,9 @@ class IntegrationBase(ABC):
             if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
                 # Replace existing section (include the end marker + newline)
                 end_of_marker = end_idx + len(self.CONTEXT_MARKER_END)
+                # Consume trailing line ending (CRLF or LF)
+                if end_of_marker < len(content) and content[end_of_marker] == "\r":
+                    end_of_marker += 1
                 if end_of_marker < len(content) and content[end_of_marker] == "\n":
                     end_of_marker += 1
                 new_content = content[:start_idx] + section + content[end_of_marker:]
@@ -501,6 +504,8 @@ class IntegrationBase(ABC):
             elif end_idx != -1:
                 # Corrupted: end marker without start — replace BOF through end marker
                 end_of_marker = end_idx + len(self.CONTEXT_MARKER_END)
+                if end_of_marker < len(content) and content[end_of_marker] == "\r":
+                    end_of_marker += 1
                 if end_of_marker < len(content) and content[end_of_marker] == "\n":
                     end_of_marker += 1
                 new_content = section + content[end_of_marker:]
@@ -549,19 +554,32 @@ class IntegrationBase(ABC):
             start_idx if start_idx != -1 else 0,
         )
 
-        if start_idx == -1 or end_idx == -1 or end_idx <= start_idx:
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            removal_start = start_idx
+            removal_end = end_idx + len(self.CONTEXT_MARKER_END)
+        elif start_idx != -1:
+            # Corrupted: start marker without end — remove from start through EOF
+            removal_start = start_idx
+            removal_end = len(content)
+        elif end_idx != -1:
+            # Corrupted: end marker without start — remove BOF through end marker
+            removal_start = 0
+            removal_end = end_idx + len(self.CONTEXT_MARKER_END)
+        else:
             return False
 
-        end_of_marker = end_idx + len(self.CONTEXT_MARKER_END)
-        if end_of_marker < len(content) and content[end_of_marker] == "\n":
-            end_of_marker += 1
+        # Consume trailing line ending (CRLF or LF)
+        if removal_end < len(content) and content[removal_end] == "\r":
+            removal_end += 1
+        if removal_end < len(content) and content[removal_end] == "\n":
+            removal_end += 1
 
         # Also strip a blank line before the section if present
-        if start_idx > 0 and content[start_idx - 1] == "\n":
-            if start_idx > 1 and content[start_idx - 2] == "\n":
-                start_idx -= 1
+        if removal_start > 0 and content[removal_start - 1] == "\n":
+            if removal_start > 1 and content[removal_start - 2] == "\n":
+                removal_start -= 1
 
-        new_content = content[:start_idx] + content[end_of_marker:]
+        new_content = content[:removal_start] + content[removal_end:]
 
         # Normalize line endings before comparisons
         normalized = new_content.replace("\r\n", "\n").replace("\r", "\n")

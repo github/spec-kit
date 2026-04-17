@@ -148,5 +148,5 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Key rules
 
-- Use absolute paths
+- Use absolute paths for filesystem operations; use project-relative paths for references in documentation and agent context files
 - ERROR on gate failures or unresolved clarifications
