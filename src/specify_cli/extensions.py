@@ -346,6 +346,15 @@ class ExtensionManifest:
         """Get hook definitions."""
         return self.data.get("hooks", {})
 
+    @property
+    def install_notice(self) -> str | None:
+        """Get optional install notice message.
+
+        Extensions can specify an 'install_notice' field to display
+        important information to users when the extension is first installed.
+        """
+        return self.data.get("extension", {}).get("install_notice")
+
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
         with open(self.path, 'rb') as f:

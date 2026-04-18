@@ -800,7 +800,7 @@ class TestGitCommonBash:
             capture_output=True, text=True,
         )
         assert result.returncode != 0
-        
+
     def test_check_feature_branch_accepts_single_prefix(self, tmp_path: Path):
         """git-common check_feature_branch matches core: one optional path prefix."""
         project = _setup_project(tmp_path)
@@ -854,11 +854,21 @@ class TestGitExtDeprecationNotice:
         project_dir = tmp_path / "test-project"
         runner = CliRunner()
 
+        mock_manifest = MagicMock()
+        mock_manifest.install_notice = (
+            "The git extension is currently enabled by default, but starting with\n"
+            "v1.0.0 it will require explicit opt-in.\n\n"
+            "To opt in after v1.0.0:\n"
+            "  • specify init --extension git\n"
+            "  • specify extension add git  (post-init)"
+        )
+
         mock_registry = MagicMock()
         mock_registry.is_installed.return_value = False
 
         mock_manager = MagicMock()
         mock_manager.registry = mock_registry
+        mock_manager.install_from_directory.return_value = mock_manifest
 
         with patch("specify_cli.extensions.ExtensionManager", return_value=mock_manager):
             result = runner.invoke(
@@ -868,9 +878,9 @@ class TestGitExtDeprecationNotice:
             )
 
         assert result.exit_code == 0, result.output
-        assert "Upcoming Change: git Extension" in result.output
+        assert "Deprecation notice: git Extension" in result.output
         assert "v1.0.0" in result.output
-        assert "specify init --extension git" in result.output
+        assert "specify extension add git" in result.output
 
     def test_deprecation_notice_not_shown_when_already_installed(self, tmp_path: Path):
         """specify init does NOT show the deprecation notice when git extension is already installed."""
@@ -895,7 +905,7 @@ class TestGitExtDeprecationNotice:
             )
 
         assert result.exit_code == 0, result.output
-        assert "Upcoming Change: git Extension" not in result.output
+        assert "Deprecation notice: git Extension" not in result.output
 
     def test_deprecation_notice_not_shown_with_no_git_flag(self, tmp_path: Path):
         """specify init does NOT show the deprecation notice when --no-git is passed."""
@@ -912,4 +922,33 @@ class TestGitExtDeprecationNotice:
         )
 
         assert result.exit_code == 0, result.output
-        assert "Upcoming Change: git Extension" not in result.output
+        assert "Deprecation notice: git Extension" not in result.output
+
+    def test_deprecation_notice_not_shown_when_no_install_notice(self, tmp_path: Path):
+        """specify init does NOT show the deprecation notice if extension has no install_notice."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        runner = CliRunner()
+
+        mock_manifest = MagicMock()
+        mock_manifest.install_notice = None  # No notice defined
+
+        mock_registry = MagicMock()
+        mock_registry.is_installed.return_value = False
+
+        mock_manager = MagicMock()
+        mock_manager.registry = mock_registry
+        mock_manager.install_from_directory.return_value = mock_manifest
+
+        with patch("specify_cli.extensions.ExtensionManager", return_value=mock_manager):
+            result = runner.invoke(
+                app,
+                ["init", str(project_dir), "--ai", "claude", "--ignore-agent-tools", "--script", "sh"],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Deprecation notice: git Extension" not in result.output

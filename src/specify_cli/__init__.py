@@ -1278,6 +1278,7 @@ def init(
             ensure_constitution_from_template(project_path, tracker=tracker)
 
             _git_ext_freshly_installed = False
+            _git_ext_install_notice: str | None = None
             if not no_git:
                 tracker.start("git")
                 git_messages = []
@@ -1308,11 +1309,12 @@ def init(
                         if manager.registry.is_installed("git"):
                             git_messages.append("extension already installed")
                         else:
-                            manager.install_from_directory(
+                            ext_manifest = manager.install_from_directory(
                                 bundled_path, get_speckit_version()
                             )
                             git_messages.append("extension installed")
                             _git_ext_freshly_installed = True
+                            _git_ext_install_notice = ext_manifest.install_notice
                     else:
                         git_has_error = True
                         git_messages.append("bundled extension not found")
@@ -1456,16 +1458,12 @@ def init(
     console.print(tracker.render())
     console.print("\n[bold green]Project ready.[/bold green]")
 
-    if _git_ext_freshly_installed:
+    if _git_ext_freshly_installed and _git_ext_install_notice:
         console.print()
         console.print(
             Panel(
-                "The [bold]git[/bold] extension is currently enabled by default, "
-                "but starting with [bold]v1.0.0[/bold] it will require explicit opt-in.\n\n"
-                "To opt in after v1.0.0:\n"
-                "  • [cyan]specify init --extension git[/cyan]\n"
-                "  • [cyan]specify extension add git[/cyan]  (post-init)",
-                title="[yellow]⚠ Upcoming Change: git Extension[/yellow]",
+                _git_ext_install_notice.strip(),
+                title="[yellow]⚠ Deprecation notice: git Extension[/yellow]",
                 border_style="yellow",
                 padding=(1, 2),
             )
