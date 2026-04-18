@@ -27,9 +27,10 @@ jobs:
         run: uvx ruff check src/
 
   pytest:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - name: Checkout
@@ -46,5 +47,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra test
 
+      # On windows-latest, bash tests auto-skip unless Git-for-Windows
+      # bash (MSYS2/MINGW) is detected. The WSL launcher is rejected
+      # because it cannot handle native Windows paths in test fixtures.
+      # See tests/conftest.py::_has_working_bash() for details.
       - name: Run tests
         run: uv run pytest

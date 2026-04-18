@@ -59,22 +59,20 @@ class TestClaudeIntegration:
         parsed = yaml.safe_load(parts[1])
         assert parsed["name"] == "speckit-plan"
         assert parsed["user-invocable"] is True
-        assert parsed["disable-model-invocation"] is True
+        assert parsed["disable-model-invocation"] is False
         assert parsed["metadata"]["source"] == "templates/commands/plan.md"
 
-    def test_setup_installs_update_context_scripts(self, tmp_path):
+    def test_setup_upserts_context_section(self, tmp_path):
         integration = get_integration("claude")
         manifest = IntegrationManifest("claude", tmp_path)
-        created = integration.setup(tmp_path, manifest, script_type="sh")
+        integration.setup(tmp_path, manifest, script_type="sh")
 
-        scripts_dir = tmp_path / ".specify" / "integrations" / "claude" / "scripts"
-        assert scripts_dir.is_dir()
-        assert (scripts_dir / "update-context.sh").exists()
-        assert (scripts_dir / "update-context.ps1").exists()
-
-        tracked = {path.resolve().relative_to(tmp_path.resolve()).as_posix() for path in created}
-        assert ".specify/integrations/claude/scripts/update-context.sh" in tracked
-        assert ".specify/integrations/claude/scripts/update-context.ps1" in tracked
+        ctx_path = tmp_path / integration.context_file
+        assert ctx_path.exists()
+        content = ctx_path.read_text(encoding="utf-8")
+        assert "<!-- SPECKIT START -->" in content
+        assert "<!-- SPECKIT END -->" in content
+        assert "read the current plan" in content
 
     def test_ai_flag_auto_promotes_and_enables_skills(self, tmp_path):
         from typer.testing import CliRunner
@@ -179,7 +177,7 @@ class TestClaudeIntegration:
         assert skill_file.exists()
         skill_content = skill_file.read_text(encoding="utf-8")
         assert "user-invocable: true" in skill_content
-        assert "disable-model-invocation: true" in skill_content
+        assert "disable-model-invocation: false" in skill_content
 
         init_options = json.loads(
             (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
@@ -280,7 +278,7 @@ class TestClaudeIntegration:
         assert "preset:claude-skill-command" in content
         assert "name: speckit-research" in content
         assert "user-invocable: true" in content
-        assert "disable-model-invocation: true" in content
+        assert "disable-model-invocation: false" in content
 
         metadata = manager.registry.get("claude-skill-command")
         assert "speckit-research" in metadata.get("registered_skills", [])
@@ -400,3 +398,115 @@ class TestClaudeArgumentHints:
         lines = result.splitlines()
         hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
         assert hint_count == 1
+
+
+class TestClaudeDisableModelInvocation:
+    """Verify disable-model-invocation is false for Claude skills."""
+
+    def test_setup_sets_disable_model_invocation_false(self, tmp_path):
+        """Generated SKILL.md files must have disable-model-invocation: false."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        created = i.setup(tmp_path, m, script_type="sh")
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            parts = content.split("---", 2)
+            parsed = yaml.safe_load(parts[1])
+            assert parsed["disable-model-invocation"] is False, (
+                f"{f.parent.name}: expected disable-model-invocation: false"
+            )
+
+    def test_disable_model_invocation_not_true(self, tmp_path):
+        """No Claude skill should have disable-model-invocation: true."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        created = i.setup(tmp_path, m, script_type="sh")
+        for f in created:
+            if f.name != "SKILL.md":
+                continue
+            content = f.read_text(encoding="utf-8")
+            assert "disable-model-invocation: true" not in content, (
+                f"{f.parent.name}: must not have disable-model-invocation: true"
+            )
+
+    def test_non_claude_agents_lack_disable_model_invocation(self, tmp_path):
+        """Non-Claude skill agents should not get disable-model-invocation."""
+        from specify_cli.agents import CommandRegistrar
+
+        fm = CommandRegistrar.build_skill_frontmatter(
+            "codex", "speckit-plan", "desc", "templates/commands/plan.md"
+        )
+        assert "disable-model-invocation" not in fm
+        assert "user-invocable" not in fm
+
+    def test_non_claude_post_process_is_identity(self, tmp_path):
+        """Non-Claude integrations should not modify skill content."""
+        codex = get_integration("codex")
+        if codex is None:
+            return  # codex not registered in this build
+        content = "---\nname: test\n---\nBody"
+        assert codex.post_process_skill_content(content) == content
+
+
+class TestClaudeHookCommandNote:
+    """Verify dot-to-hyphen normalization note is injected in hook sections."""
+
+    def test_hook_note_injected_in_skills_with_hooks(self, tmp_path):
+        """Skills that have hook sections should get the normalization note."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        created = i.setup(tmp_path, m, script_type="sh")
+        specify_skill = tmp_path / ".claude/skills/speckit-specify/SKILL.md"
+        assert specify_skill.exists()
+        content = specify_skill.read_text(encoding="utf-8")
+        # specify.md has hook sections
+        assert "replace dots" in content, (
+            "speckit-specify should have dot-to-hyphen hook note"
+        )
+
+    def test_hook_note_not_in_skills_without_hooks(self, tmp_path):
+        """Skills without hook sections should not get the note."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        content = "---\nname: test\ndescription: test\n---\n\nNo hooks here.\n"
+        result = ClaudeIntegration._inject_hook_command_note(content)
+        assert "replace dots" not in result
+
+    def test_hook_note_idempotent(self, tmp_path):
+        """Injecting the note twice should not duplicate it."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        content = (
+            "---\nname: test\n---\n\n"
+            "- For each executable hook, output the following based on its flag:\n"
+        )
+        once = ClaudeIntegration._inject_hook_command_note(content)
+        twice = ClaudeIntegration._inject_hook_command_note(once)
+        assert once == twice, "Hook note injection should be idempotent"
+
+    def test_hook_note_preserves_indentation(self, tmp_path):
+        """The injected note should match the indentation of the target line."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        content = (
+            "---\nname: test\n---\n\n"
+            "   - For each executable hook, output the following\n"
+        )
+        result = ClaudeIntegration._inject_hook_command_note(content)
+        lines = result.splitlines()
+        note_line = [l for l in lines if "replace dots" in l][0]
+        assert note_line.startswith("   "), "Note should preserve indentation"
+
+    def test_post_process_injects_all_claude_flags(self):
+        """post_process_skill_content should inject all Claude-specific fields."""
+        i = get_integration("claude")
+        content = (
+            "---\nname: test\ndescription: test\n---\n\n"
+            "- For each executable hook, output the following\n"
+        )
+        result = i.post_process_skill_content(content)
+        assert "user-invocable: true" in result
+        assert "disable-model-invocation: false" in result
+        assert "replace dots" in result
