@@ -857,8 +857,8 @@ class TestGitExtDeprecationNotice:
         mock_manifest = MagicMock()
         mock_manifest.install_notice = (
             "The git extension is currently enabled by default, but starting with\n"
-            "v1.0.0 it will require explicit opt-in.\n\n"
-            "To opt in after v1.0.0:\n"
+            "specify-cli v1.0.0 it will require explicit opt-in.\n\n"
+            "To opt in after specify-cli v1.0.0:\n"
             "  • specify init --extension git\n"
             "  • specify extension add git  (post-init)"
         )
@@ -878,7 +878,7 @@ class TestGitExtDeprecationNotice:
             )
 
         assert result.exit_code == 0, result.output
-        assert "Deprecation notice: git Extension" in result.output
+        assert "Deprecation notice: git extension" in result.output
         assert "v1.0.0" in result.output
         assert "specify extension add git" in result.output
 
@@ -905,7 +905,7 @@ class TestGitExtDeprecationNotice:
             )
 
         assert result.exit_code == 0, result.output
-        assert "Deprecation notice: git Extension" not in result.output
+        assert "Deprecation notice: git extension" not in result.output
 
     def test_deprecation_notice_not_shown_with_no_git_flag(self, tmp_path: Path):
         """specify init does NOT show the deprecation notice when --no-git is passed."""
@@ -922,7 +922,7 @@ class TestGitExtDeprecationNotice:
         )
 
         assert result.exit_code == 0, result.output
-        assert "Deprecation notice: git Extension" not in result.output
+        assert "Deprecation notice: git extension" not in result.output
 
     def test_deprecation_notice_not_shown_when_no_install_notice(self, tmp_path: Path):
         """specify init does NOT show the deprecation notice if extension has no install_notice."""
@@ -951,4 +951,4 @@ class TestGitExtDeprecationNotice:
             )
 
         assert result.exit_code == 0, result.output
-        assert "Deprecation notice: git Extension" not in result.output
+        assert "Deprecation notice: git extension" not in result.output
