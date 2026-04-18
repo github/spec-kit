@@ -850,6 +850,7 @@ class TestGitExtDeprecationNotice:
         from typer.testing import CliRunner
         from unittest.mock import patch, MagicMock
         from specify_cli import app
+        from tests.conftest import strip_ansi
 
         project_dir = tmp_path / "test-project"
         runner = CliRunner()
@@ -870,7 +871,9 @@ class TestGitExtDeprecationNotice:
         mock_manager.registry = mock_registry
         mock_manager.install_from_directory.return_value = mock_manifest
 
-        with patch("specify_cli.extensions.ExtensionManager", return_value=mock_manager):
+        # Patch _locate_bundled_extension to ensure deterministic behavior
+        with patch("specify_cli.extensions.ExtensionManager", return_value=mock_manager), \
+             patch("specify_cli._locate_bundled_extension", return_value=tmp_path):
             result = runner.invoke(
                 app,
                 ["init", str(project_dir), "--ai", "claude", "--ignore-agent-tools", "--script", "sh"],
@@ -878,15 +881,17 @@ class TestGitExtDeprecationNotice:
             )
 
         assert result.exit_code == 0, result.output
-        assert "Deprecation notice: git extension" in result.output
-        assert "v1.0.0" in result.output
-        assert "specify extension add git" in result.output
+        plain = strip_ansi(result.output)
+        assert "Deprecation notice: git extension" in plain
+        assert "v1.0.0" in plain
+        assert "specify extension add git" in plain
 
     def test_deprecation_notice_not_shown_when_already_installed(self, tmp_path: Path):
         """specify init does NOT show the deprecation notice when git extension is already installed."""
         from typer.testing import CliRunner
         from unittest.mock import patch, MagicMock
         from specify_cli import app
+        from tests.conftest import strip_ansi
 
         project_dir = tmp_path / "test-project"
         runner = CliRunner()
@@ -897,7 +902,8 @@ class TestGitExtDeprecationNotice:
         mock_manager = MagicMock()
         mock_manager.registry = mock_registry
 
-        with patch("specify_cli.extensions.ExtensionManager", return_value=mock_manager):
+        with patch("specify_cli.extensions.ExtensionManager", return_value=mock_manager), \
+             patch("specify_cli._locate_bundled_extension", return_value=tmp_path):
             result = runner.invoke(
                 app,
                 ["init", str(project_dir), "--ai", "claude", "--ignore-agent-tools", "--script", "sh"],
@@ -905,12 +911,14 @@ class TestGitExtDeprecationNotice:
             )
 
         assert result.exit_code == 0, result.output
-        assert "Deprecation notice: git extension" not in result.output
+        plain = strip_ansi(result.output)
+        assert "Deprecation notice: git extension" not in plain
 
     def test_deprecation_notice_not_shown_with_no_git_flag(self, tmp_path: Path):
         """specify init does NOT show the deprecation notice when --no-git is passed."""
         from typer.testing import CliRunner
         from specify_cli import app
+        from tests.conftest import strip_ansi
 
         project_dir = tmp_path / "test-project"
         runner = CliRunner()
@@ -922,13 +930,15 @@ class TestGitExtDeprecationNotice:
         )
 
         assert result.exit_code == 0, result.output
-        assert "Deprecation notice: git extension" not in result.output
+        plain = strip_ansi(result.output)
+        assert "Deprecation notice: git extension" not in plain
 
     def test_deprecation_notice_not_shown_when_no_install_notice(self, tmp_path: Path):
         """specify init does NOT show the deprecation notice if extension has no install_notice."""
         from typer.testing import CliRunner
         from unittest.mock import patch, MagicMock
         from specify_cli import app
+        from tests.conftest import strip_ansi
 
         project_dir = tmp_path / "test-project"
         runner = CliRunner()
@@ -943,7 +953,8 @@ class TestGitExtDeprecationNotice:
         mock_manager.registry = mock_registry
         mock_manager.install_from_directory.return_value = mock_manifest
 
-        with patch("specify_cli.extensions.ExtensionManager", return_value=mock_manager):
+        with patch("specify_cli.extensions.ExtensionManager", return_value=mock_manager), \
+             patch("specify_cli._locate_bundled_extension", return_value=tmp_path):
             result = runner.invoke(
                 app,
                 ["init", str(project_dir), "--ai", "claude", "--ignore-agent-tools", "--script", "sh"],
@@ -951,4 +962,5 @@ class TestGitExtDeprecationNotice:
             )
 
         assert result.exit_code == 0, result.output
-        assert "Deprecation notice: git extension" not in result.output
+        plain = strip_ansi(result.output)
+        assert "Deprecation notice: git extension" not in plain

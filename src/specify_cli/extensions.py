@@ -353,7 +353,12 @@ class ExtensionManifest:
         Extensions can specify an 'install_notice' field to display
         important information to users when the extension is first installed.
         """
-        return self.data.get("extension", {}).get("install_notice")
+        notice = self.data.get("extension", {}).get("install_notice")
+        if notice is None:
+            return None
+        if isinstance(notice, str):
+            return notice
+        return str(notice)
 
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
