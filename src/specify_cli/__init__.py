@@ -1463,7 +1463,7 @@ def init(
         console.print(
             Panel(
                 _git_ext_install_notice.strip(),
-                title="[yellow]⚠ Deprecation notice: git Extension[/yellow]",
+                title="[yellow]⚠ Deprecation notice: git extension[/yellow]",
                 border_style="yellow",
                 padding=(1, 2),
             )
