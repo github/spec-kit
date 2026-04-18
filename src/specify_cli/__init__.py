@@ -1371,7 +1371,6 @@ def init(
                 "branch_numbering": branch_numbering or "sequential",
                 "context_file": resolved_integration.context_file,
                 "here": here,
-                "preset": preset,
                 "script": selected_script,
                 "speckit_version": get_speckit_version(),
             }

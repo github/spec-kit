@@ -3040,6 +3040,7 @@ class TestBundledPresetLocator:
         assert result.exit_code == 1
         output = strip_ansi(result.output).lower()
         assert "bundled" in output, result.output
+        assert "reinstall" in output, result.output
 
 
 class TestWrapStrategy:
@@ -3059,12 +3060,13 @@ class TestWrapStrategy:
 
         registrar = CommandRegistrar()
         body = "## Pre-Logic\n\nBefore stuff.\n\n{CORE_TEMPLATE}\n\n## Post-Logic\n\nAfter stuff.\n"
-        result = _substitute_core_template(body, "specify", project_dir, registrar)
+        result, core_fm = _substitute_core_template(body, "specify", project_dir, registrar)
 
         assert "{CORE_TEMPLATE}" not in result
         assert "# Core Specify" in result
         assert "## Pre-Logic" in result
         assert "## Post-Logic" in result
+        assert core_fm.get("description") == "core"
 
     def test_substitute_core_template_no_op_when_placeholder_absent(self, project_dir):
         """Returns body unchanged when {CORE_TEMPLATE} is not present."""
@@ -3077,8 +3079,9 @@ class TestWrapStrategy:
 
         registrar = CommandRegistrar()
         body = "## No placeholder here.\n"
-        result = _substitute_core_template(body, "specify", project_dir, registrar)
+        result, core_fm = _substitute_core_template(body, "specify", project_dir, registrar)
         assert result == body
+        assert core_fm == {}
 
     def test_substitute_core_template_no_op_when_core_missing(self, project_dir):
         """Returns body unchanged when core template file does not exist."""
@@ -3087,9 +3090,10 @@ class TestWrapStrategy:
 
         registrar = CommandRegistrar()
         body = "Pre.\n\n{CORE_TEMPLATE}\n\nPost.\n"
-        result = _substitute_core_template(body, "nonexistent", project_dir, registrar)
+        result, core_fm = _substitute_core_template(body, "nonexistent", project_dir, registrar)
         assert result == body
         assert "{CORE_TEMPLATE}" in result
+        assert core_fm == {}
 
     def test_register_commands_substitutes_core_template_for_wrap_strategy(self, project_dir):
         """register_commands substitutes {CORE_TEMPLATE} when strategy: wrap."""
@@ -3133,7 +3137,8 @@ class TestWrapStrategy:
                 project_dir / "preset", project_dir
             )
         finally:
-            registrar.AGENT_CONFIGS = original
+            CommandRegistrar.AGENT_CONFIGS.clear()
+            CommandRegistrar.AGENT_CONFIGS.update(original)
 
         written = (agent_dir / "speckit.specify.md").read_text()
         assert "{CORE_TEMPLATE}" not in written
@@ -3173,3 +3178,207 @@ class TestWrapStrategy:
         assert "# Core Wrap-Test Body" in written
         assert "preset:self-test wrap-pre" in written
         assert "preset:self-test wrap-post" in written
+
+    def test_substitute_core_template_returns_core_scripts(self, project_dir):
+        """core_frontmatter in the returned tuple includes scripts/agent_scripts."""
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\nscripts:\n  sh: run.sh\nagent_scripts:\n  sh: agent-run.sh\n---\n\n# Body\n"
+        )
+
+        registrar = CommandRegistrar()
+        body = "## Wrapper\n\n{CORE_TEMPLATE}\n"
+        result, core_fm = _substitute_core_template(body, "specify", project_dir, registrar)
+
+        assert "# Body" in result
+        assert core_fm.get("scripts") == {"sh": "run.sh"}
+        assert core_fm.get("agent_scripts") == {"sh": "agent-run.sh"}
+
+    def test_register_skills_inherits_scripts_from_core_when_preset_omits_them(self, project_dir):
+        """_register_skills merges scripts/agent_scripts from core when preset lacks them."""
+        from specify_cli.presets import PresetManager
+        import json
+
+        # Core template with scripts
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "wrap-test.md").write_text(
+            "---\ndescription: core\nscripts:\n  sh: .specify/scripts/run.sh\n---\n\n"
+            "Run: {SCRIPT}\n"
+        )
+
+        # Skills dir for claude
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        skill_subdir = skills_dir / "speckit-wrap-test"
+        skill_subdir.mkdir()
+        (skill_subdir / "SKILL.md").write_text("---\nname: speckit-wrap-test\n---\n\nold\n")
+
+        (project_dir / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "claude", "ai_skills": True})
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+
+        written = (skill_subdir / "SKILL.md").read_text()
+        # {SCRIPT} should have been resolved (not left as a literal placeholder)
+        assert "{SCRIPT}" not in written
+
+    def test_register_skills_preset_scripts_take_precedence_over_core(self, project_dir):
+        """preset-defined scripts/agent_scripts are not overwritten by core frontmatter."""
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\nscripts:\n  sh: core-run.sh\n---\n\nCore body.\n"
+        )
+
+        registrar = CommandRegistrar()
+        body = "{CORE_TEMPLATE}"
+        _, core_fm = _substitute_core_template(body, "specify", project_dir, registrar)
+
+        # Simulate preset frontmatter that already defines scripts
+        preset_fm = {"description": "preset", "strategy": "wrap", "scripts": {"sh": "preset-run.sh"}}
+        for key in ("scripts", "agent_scripts"):
+            if key not in preset_fm and key in core_fm:
+                preset_fm[key] = core_fm[key]
+
+        # Preset's scripts must not be overwritten by core
+        assert preset_fm["scripts"] == {"sh": "preset-run.sh"}
+
+    def test_register_commands_inherits_scripts_from_core(self, project_dir):
+        """register_commands merges scripts/agent_scripts from core and normalizes paths."""
+        from specify_cli.agents import CommandRegistrar
+        import copy
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\nscripts:\n  sh: .specify/scripts/run.sh {ARGS}\n---\n\n"
+            "Run: {SCRIPT}\n"
+        )
+
+        cmd_dir = project_dir / "preset" / "commands"
+        cmd_dir.mkdir(parents=True, exist_ok=True)
+        # Preset has strategy: wrap but no scripts of its own
+        (cmd_dir / "speckit.specify.md").write_text(
+            "---\ndescription: wrap no scripts\nstrategy: wrap\n---\n\n"
+            "## Pre\n\n{CORE_TEMPLATE}\n\n## Post\n"
+        )
+
+        agent_dir = project_dir / ".claude" / "commands"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+
+        registrar = CommandRegistrar()
+        original = copy.deepcopy(registrar.AGENT_CONFIGS)
+        registrar.AGENT_CONFIGS["test-agent"] = {
+            "dir": str(agent_dir.relative_to(project_dir)),
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md",
+            "strip_frontmatter_keys": [],
+        }
+        try:
+            registrar.register_commands(
+                "test-agent",
+                [{"name": "speckit.specify", "file": "commands/speckit.specify.md"}],
+                "test-preset",
+                project_dir / "preset",
+                project_dir,
+            )
+        finally:
+            CommandRegistrar.AGENT_CONFIGS.clear()
+            CommandRegistrar.AGENT_CONFIGS.update(original)
+
+        written = (agent_dir / "speckit.specify.md").read_text()
+        assert "{CORE_TEMPLATE}" not in written
+        assert "Run:" in written
+        assert "scripts:" in written
+        assert "run.sh" in written
+
+    def test_register_commands_toml_resolves_inherited_scripts(self, project_dir):
+        """TOML agents resolve {SCRIPT} from inherited core scripts when preset omits them."""
+        from specify_cli.agents import CommandRegistrar
+        import copy
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\nscripts:\n  sh: .specify/scripts/run.sh {ARGS}\n---\n\n"
+            "Run: {SCRIPT}\n"
+        )
+
+        cmd_dir = project_dir / "preset" / "commands"
+        cmd_dir.mkdir(parents=True, exist_ok=True)
+        (cmd_dir / "speckit.specify.md").write_text(
+            "---\ndescription: toml wrap\nstrategy: wrap\n---\n\n"
+            "## Pre\n\n{CORE_TEMPLATE}\n\n## Post\n"
+        )
+
+        toml_dir = project_dir / ".gemini" / "commands"
+        toml_dir.mkdir(parents=True, exist_ok=True)
+
+        registrar = CommandRegistrar()
+        original = copy.deepcopy(registrar.AGENT_CONFIGS)
+        registrar.AGENT_CONFIGS["test-toml-agent"] = {
+            "dir": str(toml_dir.relative_to(project_dir)),
+            "format": "toml",
+            "args": "{{args}}",
+            "extension": ".toml",
+            "strip_frontmatter_keys": [],
+        }
+        try:
+            registrar.register_commands(
+                "test-toml-agent",
+                [{"name": "speckit.specify", "file": "commands/speckit.specify.md"}],
+                "test-preset",
+                project_dir / "preset",
+                project_dir,
+            )
+        finally:
+            CommandRegistrar.AGENT_CONFIGS.clear()
+            CommandRegistrar.AGENT_CONFIGS.update(original)
+
+        written = (toml_dir / "speckit.specify.toml").read_text()
+        assert "{CORE_TEMPLATE}" not in written
+        assert "{SCRIPT}" not in written
+        assert "run.sh" in written
+        # args token must use TOML format, not the intermediate $ARGUMENTS
+        assert "$ARGUMENTS" not in written
+        assert "{{args}}" in written
+
+    def test_extension_command_resolves_via_extension_directory(self, project_dir):
+        """Extension commands (e.g. speckit.git.feature) resolve from the extension directory.
+
+        Both _register_skills and register_commands pass the full cmd_name to
+        _substitute_core_template, which tries the full name first via PresetResolver
+        and finds speckit.git.feature.md in the extension commands directory.
+        """
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        # Place the template where a real extension would install it
+        ext_cmd_dir = project_dir / ".specify" / "extensions" / "git" / "commands"
+        ext_cmd_dir.mkdir(parents=True, exist_ok=True)
+        (ext_cmd_dir / "speckit.git.feature.md").write_text(
+            "---\ndescription: git feature core\n---\n\n# Git Feature Core\n"
+        )
+        # Ensure a hyphenated or dot-separated fallback does NOT exist
+        assert not (project_dir / ".specify" / "templates" / "commands" / "git.feature.md").exists()
+        assert not (project_dir / ".specify" / "templates" / "commands" / "git-feature.md").exists()
+
+        registrar = CommandRegistrar()
+        body = "## Wrapper\n\n{CORE_TEMPLATE}\n"
+
+        # Both call sites now pass the full cmd_name
+        result, _ = _substitute_core_template(body, "speckit.git.feature", project_dir, registrar)
+
+        assert "# Git Feature Core" in result
+        assert "{CORE_TEMPLATE}" not in result

@@ -16,7 +16,10 @@ import zipfile
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict, List, Any
+from typing import TYPE_CHECKING, Optional, Dict, List, Any
+
+if TYPE_CHECKING:
+    from .agents import CommandRegistrar
 from datetime import datetime, timezone
 import re
 
@@ -29,31 +32,44 @@ from .extensions import ExtensionRegistry, normalize_priority
 
 def _substitute_core_template(
     body: str,
-    short_name: str,
+    cmd_name: str,
     project_root: "Path",
     registrar: "CommandRegistrar",
-) -> str:
+) -> "tuple[str, dict]":
     """Substitute {CORE_TEMPLATE} with the body of the installed core command template.
 
     Args:
         body: Preset command body (may contain {CORE_TEMPLATE} placeholder).
-        short_name: Short command name (e.g. "specify" from "speckit.specify").
+        cmd_name: Full command name (e.g. "speckit.git.feature" or "speckit.specify").
         project_root: Project root path.
         registrar: CommandRegistrar instance for parse_frontmatter.
 
     Returns:
-        Body with {CORE_TEMPLATE} replaced by core template body, or body unchanged
-        if the placeholder is absent or the core template file does not exist.
+        A tuple of (body, core_frontmatter) where body has {CORE_TEMPLATE} replaced
+        by the core template body and core_frontmatter holds the core template's parsed
+        frontmatter (so callers can inherit scripts/agent_scripts from it).  Both are
+        unchanged / empty when the placeholder is absent or the core template file does
+        not exist.
     """
     if "{CORE_TEMPLATE}" not in body:
-        return body
+        return body, {}
 
-    core_file = project_root / ".specify" / "templates" / "commands" / f"{short_name}.md"
-    if not core_file.exists():
-        return body
+    # Derive the short name (strip "speckit." prefix) used by core command templates.
+    short_name = cmd_name
+    if short_name.startswith("speckit."):
+        short_name = short_name[len("speckit."):]
 
-    _, core_body = registrar.parse_frontmatter(core_file.read_text(encoding="utf-8"))
-    return body.replace("{CORE_TEMPLATE}", core_body)
+    resolver = PresetResolver(project_root)
+    # Try the full command name first so extension commands
+    # (e.g. speckit.git.feature -> extensions/git/commands/speckit.git.feature.md)
+    # are found before falling back to the short name used by core commands
+    # (e.g. specify -> templates/commands/specify.md).
+    core_file = resolver.resolve(cmd_name, "command") or resolver.resolve(short_name, "command")
+    if core_file is None:
+        return body, {}
+
+    core_frontmatter, core_body = registrar.parse_frontmatter(core_file.read_text(encoding="utf-8"))
+    return body.replace("{CORE_TEMPLATE}", core_body), core_frontmatter
 
 
 @dataclass
@@ -791,7 +807,11 @@ class PresetManager:
             frontmatter, body = registrar.parse_frontmatter(content)
 
             if frontmatter.get("strategy") == "wrap":
-                body = _substitute_core_template(body, short_name, self.project_root, registrar)
+                body, core_frontmatter = _substitute_core_template(body, cmd_name, self.project_root, registrar)
+                frontmatter = dict(frontmatter)
+                for key in ("scripts", "agent_scripts"):
+                    if key not in frontmatter and key in core_frontmatter:
+                        frontmatter[key] = core_frontmatter[key]
 
             original_desc = frontmatter.get("description", "")
             enhanced_desc = SKILL_DESCRIPTIONS.get(

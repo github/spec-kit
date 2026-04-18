@@ -447,10 +447,12 @@ class CommandRegistrar:
 
             if frontmatter.get("strategy") == "wrap":
                 from .presets import _substitute_core_template
-                short_name = cmd_name
-                if short_name.startswith("speckit."):
-                    short_name = short_name[len("speckit."):]
-                body = _substitute_core_template(body, short_name, project_root, self)
+                body, core_frontmatter = _substitute_core_template(body, cmd_name, project_root, self)
+                frontmatter = dict(frontmatter)
+                for key in ("scripts", "agent_scripts"):
+                    if key not in frontmatter and key in core_frontmatter:
+                        frontmatter[key] = core_frontmatter[key]
+                frontmatter.pop("strategy", None)
 
             frontmatter = self._adjust_script_paths(frontmatter)
 
@@ -479,10 +481,12 @@ class CommandRegistrar:
                     project_root,
                 )
             elif agent_config["format"] == "markdown":
-                output = self.render_markdown_command(
-                    frontmatter, body, source_id, context_note
-                )
+                body = self.resolve_skill_placeholders(agent_name, frontmatter, body, project_root)
+                body = self._convert_argument_placeholder(body, "$ARGUMENTS", agent_config["args"])
+                output = self.render_markdown_command(frontmatter, body, source_id, context_note)
             elif agent_config["format"] == "toml":
+                body = self.resolve_skill_placeholders(agent_name, frontmatter, body, project_root)
+                body = self._convert_argument_placeholder(body, "$ARGUMENTS", agent_config["args"])
                 output = self.render_toml_command(frontmatter, body, source_id)
             elif agent_config["format"] == "yaml":
                 output = self.render_yaml_command(
