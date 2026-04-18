@@ -127,6 +127,16 @@ function Test-HasGit {
     }
 }
 
+# Strip a single optional path segment (e.g. gitflow "feat/004-name" -> "004-name").
+# Only when the full name is exactly two slash-free segments; otherwise returns the raw name.
+function Get-SpecKitEffectiveBranchName {
+    param([string]$Branch)
+    if ($Branch -match '^([^/]+)/([^/]+)$') {
+        return $Matches[2]
+    }
+    return $Branch
+}
+
 function Test-FeatureBranch {
     param(
         [string]$Branch,
@@ -138,22 +148,69 @@ function Test-FeatureBranch {
         Write-Warning "[specify] Warning: Git repository not detected; skipped branch validation"
         return $true
     }
+
+    $raw = $Branch
+    $Branch = Get-SpecKitEffectiveBranchName $raw
     
     # Accept sequential prefix (3+ digits) but exclude malformed timestamps
     # Malformed: 7-or-8 digit date + 6-digit time with no trailing slug (e.g. "2026031-143022" or "20260319-143022")
     $hasMalformedTimestamp = ($Branch -match '^[0-9]{7}-[0-9]{6}-') -or ($Branch -match '^(?:\d{7}|\d{8})-\d{6}$')
     $isSequential = ($Branch -match '^[0-9]{3,}-') -and (-not $hasMalformedTimestamp)
     if (-not $isSequential -and $Branch -notmatch '^\d{8}-\d{6}-') {
-        Write-Output "ERROR: Not on a feature branch. Current branch: $Branch"
-        Write-Output "Feature branches should be named like: 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name"
+        [Console]::Error.WriteLine("ERROR: Not on a feature branch. Current branch: $raw")
+        [Console]::Error.WriteLine("Feature branches should be named like: 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name")
         return $false
     }
     return $true
 }
 
-function Get-FeatureDir {
-    param([string]$RepoRoot, [string]$Branch)
-    Join-Path $RepoRoot "specs/$Branch"
+# Resolve specs/<feature-dir> by numeric/timestamp prefix (mirrors scripts/bash/common.sh find_feature_dir_by_prefix).
+function Find-FeatureDirByPrefix {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$Branch
+    )
+    $specsDir = Join-Path $RepoRoot 'specs'
+    $branchName = Get-SpecKitEffectiveBranchName $Branch
+
+    $prefix = $null
+    if ($branchName -match '^(\d{8}-\d{6})-') {
+        $prefix = $Matches[1]
+    } elseif ($branchName -match '^(\d{3,})-') {
+        $prefix = $Matches[1]
+    } else {
+        return (Join-Path $specsDir $branchName)
+    }
+
+    $dirMatches = @()
+    if (Test-Path -LiteralPath $specsDir -PathType Container) {
+        $dirMatches = @(Get-ChildItem -LiteralPath $specsDir -Filter "$prefix-*" -Directory -ErrorAction SilentlyContinue)
+    }
+
+    if ($dirMatches.Count -eq 0) {
+        return (Join-Path $specsDir $branchName)
+    }
+    if ($dirMatches.Count -eq 1) {
+        return $dirMatches[0].FullName
+    }
+    $names = ($dirMatches | ForEach-Object { $_.Name }) -join ' '
+    [Console]::Error.WriteLine("ERROR: Multiple spec directories found with prefix '$prefix': $names")
+    [Console]::Error.WriteLine('Please ensure only one spec directory exists per prefix.')
+    return $null
+}
+
+# Branch-based prefix resolution; mirrors bash get_feature_paths failure (stderr + exit 1).
+function Get-FeatureDirFromBranchPrefixOrExit {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$CurrentBranch
+    )
+    $resolved = Find-FeatureDirByPrefix -RepoRoot $RepoRoot -Branch $CurrentBranch
+    if ($null -eq $resolved) {
+        [Console]::Error.WriteLine('ERROR: Failed to resolve feature directory')
+        exit 1
+    }
+    return $resolved
 }
 
 function Get-FeaturePathsEnv {
@@ -164,7 +221,7 @@ function Get-FeaturePathsEnv {
     # Resolve feature directory.  Priority:
     #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit override)
     #   2. .specify/feature.json "feature_directory" key (persisted by /speckit.specify)
-    #   3. Exact branch-to-directory mapping via Get-FeatureDir (legacy fallback)
+    #   3. Branch-name-based prefix lookup (same as scripts/bash/common.sh)
     $featureJson = Join-Path $repoRoot '.specify/feature.json'
     if ($env:SPECIFY_FEATURE_DIRECTORY) {
         $featureDir = $env:SPECIFY_FEATURE_DIRECTORY
@@ -173,22 +230,24 @@ function Get-FeaturePathsEnv {
             $featureDir = Join-Path $repoRoot $featureDir
         }
     } elseif (Test-Path $featureJson) {
+        $featureJsonRaw = Get-Content -LiteralPath $featureJson -Raw
         try {
-            $featureConfig = Get-Content $featureJson -Raw | ConvertFrom-Json
-            if ($featureConfig.feature_directory) {
-                $featureDir = $featureConfig.feature_directory
-                # Normalize relative paths to absolute under repo root
-                if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
-                    $featureDir = Join-Path $repoRoot $featureDir
-                }
-            } else {
-                $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
-            }
+            $featureConfig = $featureJsonRaw | ConvertFrom-Json
         } catch {
-            $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
+            [Console]::Error.WriteLine("ERROR: Failed to parse .specify/feature.json: $_")
+            exit 1
+        }
+        if ($featureConfig.feature_directory) {
+            $featureDir = $featureConfig.feature_directory
+            # Normalize relative paths to absolute under repo root
+            if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
+                $featureDir = Join-Path $repoRoot $featureDir
+            }
+        } else {
+            $featureDir = Get-FeatureDirFromBranchPrefixOrExit -RepoRoot $repoRoot -CurrentBranch $currentBranch
         }
     } else {
-        $featureDir = Get-FeatureDir -RepoRoot $repoRoot -Branch $currentBranch
+        $featureDir = Get-FeatureDirFromBranchPrefixOrExit -RepoRoot $repoRoot -CurrentBranch $currentBranch
     }
     
     [PSCustomObject]@{

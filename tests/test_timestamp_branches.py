@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import requires_bash
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CREATE_FEATURE = PROJECT_ROOT / "scripts" / "bash" / "create-new-feature.sh"
 CREATE_FEATURE_PS = PROJECT_ROOT / "scripts" / "powershell" / "create-new-feature.ps1"
@@ -25,6 +27,13 @@ EXT_CREATE_FEATURE_PS = (
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
 EXT_CREATE_FEATURE = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
 EXT_CREATE_FEATURE_PS = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
+
+HAS_PWSH = shutil.which("pwsh") is not None
+
+
+def _has_pwsh() -> bool:
+    """Check if pwsh is available."""
+    return HAS_PWSH
 
 
 @pytest.fixture
@@ -142,6 +151,7 @@ def source_and_call(func_call: str, env: dict | None = None) -> subprocess.Compl
 # ── Timestamp Branch Tests ───────────────────────────────────────────────────
 
 
+@requires_bash
 class TestTimestampBranch:
     def test_timestamp_creates_branch(self, git_repo: Path):
         """Test 1: --timestamp creates branch with YYYYMMDD-HHMMSS prefix."""
@@ -187,6 +197,7 @@ class TestTimestampBranch:
 # ── Sequential Branch Tests ──────────────────────────────────────────────────
 
 
+@requires_bash
 class TestSequentialBranch:
     def test_sequential_default_with_existing_specs(self, git_repo: Path):
         """Test 2: Sequential default with existing specs."""
@@ -225,6 +236,8 @@ class TestSequentialBranch:
                 branch = line.split(":", 1)[1].strip()
         assert branch == "1001-next-feat", f"expected 1001-next-feat, got: {branch}"
 
+
+class TestSequentialBranchPowerShell:
     def test_powershell_scanner_uses_long_tryparse_for_large_prefixes(self):
         """PowerShell scanner should parse large prefixes without [int] casts."""
         content = CREATE_FEATURE_PS.read_text(encoding="utf-8")
@@ -235,6 +248,7 @@ class TestSequentialBranch:
 # ── check_feature_branch Tests ───────────────────────────────────────────────
 
 
+@requires_bash
 class TestCheckFeatureBranch:
     def test_accepts_timestamp_branch(self):
         """Test 6: check_feature_branch accepts timestamp branch."""
@@ -271,10 +285,35 @@ class TestCheckFeatureBranch:
         result = source_and_call('check_feature_branch "2026031-143022" "true"')
         assert result.returncode != 0
 
+    def test_accepts_single_prefix_sequential(self):
+        """Optional gitflow-style prefix: one segment + sequential feature name."""
+        result = source_and_call('check_feature_branch "feat/004-my-feature" "true"')
+        assert result.returncode == 0
+
+    def test_accepts_single_prefix_timestamp(self):
+        """Optional prefix + timestamp-style feature name."""
+        result = source_and_call('check_feature_branch "release/20260319-143022-feat" "true"')
+        assert result.returncode == 0
+
+    def test_rejects_invalid_suffix_with_single_prefix(self):
+        result = source_and_call('check_feature_branch "feat/main" "true"')
+        assert result.returncode != 0
+        assert "feat/main" in result.stderr
+
+    def test_rejects_two_level_prefix_before_feature(self):
+        """More than one slash: no stripping; whole name must match (fails)."""
+        result = source_and_call('check_feature_branch "feat/fix/004-feat" "true"')
+        assert result.returncode != 0
+
+    def test_rejects_malformed_timestamp_with_prefix(self):
+        result = source_and_call('check_feature_branch "feat/2026031-143022-feat" "true"')
+        assert result.returncode != 0
+
 
 # ── find_feature_dir_by_prefix Tests ─────────────────────────────────────────
 
 
+@requires_bash
 class TestFindFeatureDirByPrefix:
     def test_timestamp_branch(self, tmp_path: Path):
         """Test 10: find_feature_dir_by_prefix with timestamp branch."""
@@ -303,10 +342,73 @@ class TestFindFeatureDirByPrefix:
         assert result.returncode == 0
         assert result.stdout.strip() == f"{tmp_path}/specs/1000-original-feat"
 
+    def test_sequential_with_single_path_prefix(self, tmp_path: Path):
+        """Strip one optional prefix segment before prefix directory lookup."""
+        (tmp_path / "specs" / "004-only-dir").mkdir(parents=True)
+        result = source_and_call(
+            f'find_feature_dir_by_prefix "{tmp_path}" "feat/004-other-suffix"'
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == f"{tmp_path}/specs/004-only-dir"
+
+    def test_timestamp_with_single_path_prefix_cross_branch(self, tmp_path: Path):
+        (tmp_path / "specs" / "20260319-143022-canonical").mkdir(parents=True)
+        result = source_and_call(
+            f'find_feature_dir_by_prefix "{tmp_path}" "hotfix/20260319-143022-alias"'
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == f"{tmp_path}/specs/20260319-143022-canonical"
+
+
+# ── get_feature_paths + single-prefix integration ───────────────────────────
+
+
+class TestGetFeaturePathsSinglePrefix:
+    @requires_bash
+    def test_bash_specify_feature_prefixed_resolves_by_prefix(self, tmp_path: Path):
+        """get_feature_paths: SPECIFY_FEATURE with one optional prefix uses effective name for lookup."""
+        (tmp_path / ".specify").mkdir()
+        (tmp_path / "specs" / "001-target-spec").mkdir(parents=True)
+        cmd = (
+            f'cd "{tmp_path}" && export SPECIFY_FEATURE="feat/001-other" && '
+            f'source "{COMMON_SH}" && eval "$(get_feature_paths)" && printf "%s" "$FEATURE_DIR"'
+        )
+        result = subprocess.run(
+            ["bash", "-c", cmd],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == str(tmp_path / "specs" / "001-target-spec")
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_ps_specify_feature_prefixed_resolves_by_prefix(self, git_repo: Path):
+        """PowerShell Get-FeaturePathsEnv: same prefix stripping as bash."""
+        common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
+        spec_dir = git_repo / "specs" / "001-ps-prefix-spec"
+        spec_dir.mkdir(parents=True)
+        ps_cmd = f'. "{common_ps}"; $r = Get-FeaturePathsEnv; Write-Output "FEATURE_DIR=$($r.FEATURE_DIR)"'
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-Command", ps_cmd],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "SPECIFY_FEATURE": "feat/001-other"},
+        )
+        assert result.returncode == 0, result.stderr
+        for line in result.stdout.splitlines():
+            if line.startswith("FEATURE_DIR="):
+                val = line.split("=", 1)[1].strip()
+                assert val == str(spec_dir)
+                break
+        else:
+            pytest.fail("FEATURE_DIR not found in PowerShell output")
+
 
 # ── get_current_branch Tests ─────────────────────────────────────────────────
 
 
+@requires_bash
 class TestGetCurrentBranch:
     def test_env_var(self):
         """Test 12: get_current_branch returns SPECIFY_FEATURE env var."""
@@ -317,6 +419,7 @@ class TestGetCurrentBranch:
 # ── No-git Tests ─────────────────────────────────────────────────────────────
 
 
+@requires_bash
 class TestNoGitTimestamp:
     def test_no_git_timestamp(self, no_git_dir: Path):
         """Test 13: No-git repo + timestamp creates spec dir with warning."""
@@ -330,6 +433,7 @@ class TestNoGitTimestamp:
 # ── E2E Flow Tests ───────────────────────────────────────────────────────────
 
 
+@requires_bash
 class TestE2EFlow:
     def test_e2e_timestamp(self, git_repo: Path):
         """Test 14: E2E timestamp flow — branch, dir, validation."""
@@ -363,6 +467,7 @@ class TestE2EFlow:
 # ── Allow Existing Branch Tests ──────────────────────────────────────────────
 
 
+@requires_bash
 class TestAllowExistingBranch:
     def test_allow_existing_switches_to_branch(self, git_repo: Path):
         """T006: Pre-create branch, verify script switches to it."""
@@ -563,6 +668,7 @@ class TestGitExtensionParity:
 # ── Dry-Run Tests ────────────────────────────────────────────────────────────
 
 
+@requires_bash
 class TestDryRun:
     def test_dry_run_sequential_outputs_name(self, git_repo: Path):
         """T009: Dry-run computes correct branch name with existing specs."""
@@ -791,15 +897,6 @@ class TestDryRun:
 # ── PowerShell Dry-Run Tests ─────────────────────────────────────────────────
 
 
-def _has_pwsh() -> bool:
-    """Check if pwsh is available."""
-    try:
-        subprocess.run(["pwsh", "--version"], capture_output=True, check=True)
-        return True
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return False
-
-
 def run_ps_script(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     """Run create-new-feature.ps1 from the temp repo's scripts directory."""
     script = cwd / "scripts" / "powershell" / "create-new-feature.ps1"
@@ -901,6 +998,7 @@ class TestPowerShellDryRun:
 # ── GIT_BRANCH_NAME Override Tests ──────────────────────────────────────────
 
 
+@requires_bash
 class TestGitBranchNameOverrideBash:
     """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature.sh."""
 
@@ -1005,6 +1103,7 @@ class TestGitBranchNameOverridePowerShell:
 class TestFeatureDirectoryResolution:
     """Tests for SPECIFY_FEATURE_DIRECTORY and .specify/feature.json resolution."""
 
+    @requires_bash
     def test_env_var_overrides_branch_lookup(self, git_repo: Path):
         """SPECIFY_FEATURE_DIRECTORY env var takes priority over branch-based lookup."""
         custom_dir = git_repo / "my-custom-specs" / "my-feature"
@@ -1027,6 +1126,7 @@ class TestFeatureDirectoryResolution:
         else:
             pytest.fail("FEATURE_DIR not found in output")
 
+    @requires_bash
     def test_feature_json_overrides_branch_lookup(self, git_repo: Path):
         """feature.json feature_directory takes priority over branch-based lookup."""
         custom_dir = git_repo / "specs" / "custom-feature"
@@ -1034,7 +1134,7 @@ class TestFeatureDirectoryResolution:
 
         feature_json = git_repo / ".specify" / "feature.json"
         feature_json.write_text(
-            f'{{"feature_directory": "{custom_dir}"}}\n',
+            json.dumps({"feature_directory": str(custom_dir)}) + "\n",
             encoding="utf-8",
         )
 
@@ -1053,6 +1153,7 @@ class TestFeatureDirectoryResolution:
         else:
             pytest.fail("FEATURE_DIR not found in output")
 
+    @requires_bash
     def test_env_var_takes_priority_over_feature_json(self, git_repo: Path):
         """Env var wins over feature.json."""
         env_dir = git_repo / "specs" / "env-feature"
@@ -1062,7 +1163,7 @@ class TestFeatureDirectoryResolution:
 
         feature_json = git_repo / ".specify" / "feature.json"
         feature_json.write_text(
-            f'{{"feature_directory": "{json_dir}"}}\n',
+            json.dumps({"feature_directory": str(json_dir)}) + "\n",
             encoding="utf-8",
         )
 
@@ -1082,6 +1183,7 @@ class TestFeatureDirectoryResolution:
         else:
             pytest.fail("FEATURE_DIR not found in output")
 
+    @requires_bash
     def test_fallback_to_branch_lookup(self, git_repo: Path):
         """Without env var or feature.json, falls back to branch-based lookup."""
         subprocess.run(["git", "checkout", "-q", "-b", "001-test-feat"], cwd=git_repo, check=True)
@@ -1136,7 +1238,7 @@ class TestFeatureDirectoryResolution:
 
         feature_json = git_repo / ".specify" / "feature.json"
         feature_json.write_text(
-            f'{{"feature_directory": "{custom_dir}"}}\n',
+            json.dumps({"feature_directory": str(custom_dir)}) + "\n",
             encoding="utf-8",
         )
 

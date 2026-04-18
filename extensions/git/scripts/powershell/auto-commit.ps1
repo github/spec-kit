@@ -36,10 +36,17 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     exit 0
 }
 
+# Temporarily relax ErrorActionPreference so git stderr warnings
+# (e.g. CRLF notices on Windows) do not become terminating errors.
+$savedEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 try {
     git rev-parse --is-inside-work-tree 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "not a repo" }
-} catch {
+    $isRepo = $LASTEXITCODE -eq 0
+} finally {
+    $ErrorActionPreference = $savedEAP
+}
+if (-not $isRepo) {
     Write-Warning "[specify] Warning: Not a Git repository; skipped auto-commit"
     exit 0
 }
@@ -117,9 +124,16 @@ if (-not $enabled) {
 }
 
 # Check if there are changes to commit
-$diffHead = git diff --quiet HEAD 2>$null; $d1 = $LASTEXITCODE
-$diffCached = git diff --cached --quiet 2>$null; $d2 = $LASTEXITCODE
-$untracked = git ls-files --others --exclude-standard 2>$null
+# Relax ErrorActionPreference so CRLF warnings on stderr do not terminate.
+$savedEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    git diff --quiet HEAD 2>$null; $d1 = $LASTEXITCODE
+    git diff --cached --quiet 2>$null; $d2 = $LASTEXITCODE
+    $untracked = git ls-files --others --exclude-standard 2>$null
+} finally {
+    $ErrorActionPreference = $savedEAP
+}
 
 if ($d1 -eq 0 -and $d2 -eq 0 -and -not $untracked) {
     Write-Host "[specify] No changes to commit after $EventName" -ForegroundColor DarkGray
@@ -136,6 +150,10 @@ if (-not $commitMsg) {
 }
 
 # Stage and commit
+# Relax ErrorActionPreference so CRLF warnings on stderr do not terminate,
+# while still allowing redirected error output to be captured for diagnostics.
+$savedEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 try {
     $out = git add . 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) { throw "git add failed: $out" }
@@ -144,6 +162,8 @@ try {
 } catch {
     Write-Warning "[specify] Error: $_"
     exit 1
+} finally {
+    $ErrorActionPreference = $savedEAP
 }
 
-Write-Host "✓ Changes committed $phase $commandName"
+Write-Host "[OK] Changes committed $phase $commandName"

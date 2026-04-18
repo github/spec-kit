@@ -14,9 +14,12 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+from tests.conftest import requires_bash
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "git"
@@ -211,6 +214,7 @@ class TestGitExtensionInstall:
 # ── initialize-repo.sh Tests ─────────────────────────────────────────────────
 
 
+@requires_bash
 class TestInitializeRepoBash:
     def test_initializes_git_repo(self, tmp_path: Path):
         """initialize-repo.sh creates a git repo with initial commit."""
@@ -269,6 +273,7 @@ class TestInitializeRepoPowerShell:
 # ── create-new-feature.sh Tests ──────────────────────────────────────────────
 
 
+@requires_bash
 class TestCreateFeatureBash:
     def test_creates_branch_sequential(self, tmp_path: Path):
         """Extension create-new-feature.sh creates sequential branch."""
@@ -376,6 +381,7 @@ class TestCreateFeaturePowerShell:
 # ── auto-commit.sh Tests ─────────────────────────────────────────────────────
 
 
+@requires_bash
 class TestAutoCommitBash:
     def test_disabled_by_default(self, tmp_path: Path):
         """auto-commit.sh exits silently when config is all false."""
@@ -491,6 +497,34 @@ class TestAutoCommitBash:
         result = _run_bash("auto-commit.sh", project)
         assert result.returncode != 0
 
+    def test_success_message_uses_ok_prefix(self, tmp_path: Path):
+        """auto-commit.sh success message uses [OK] (not Unicode)."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+        assert "[OK] Changes committed" in result.stderr
+
+    def test_success_message_no_unicode_checkmark(self, tmp_path: Path):
+        """auto-commit.sh must not use Unicode checkmark in output."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_plan:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash("auto-commit.sh", project, "after_plan")
+        assert result.returncode == 0
+        assert "\u2713" not in result.stderr, "Must not use Unicode checkmark"
+
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
 class TestAutoCommitPowerShell:
@@ -523,10 +557,189 @@ class TestAutoCommitPowerShell:
         )
         assert "ps commit" in log.stdout
 
+    def test_success_message_uses_ok_prefix(self, tmp_path: Path):
+        """auto-commit.ps1 success message uses [OK] (not Unicode)."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        assert "[OK] Changes committed" in result.stdout
+
+    def test_success_message_no_unicode_checkmark(self, tmp_path: Path):
+        """auto-commit.ps1 must not use Unicode checkmark in output."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_plan:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh("auto-commit.ps1", project, "after_plan")
+        assert result.returncode == 0
+        assert "\u2713" not in result.stdout, "Must not use Unicode checkmark"
+
+
+# ── auto-commit.ps1 CRLF warning tests (issue #2253) ────────────────────────
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
+class TestAutoCommitPowerShellCRLF:
+    """Tests for CRLF warning handling in auto-commit.ps1 (issue #2253).
+
+    On Windows, git emits CRLF warnings to stderr when core.autocrlf=true
+    and files use LF line endings.  PowerShell's $ErrorActionPreference='Stop'
+    converts stderr output into terminating errors, crashing the script.
+
+    These tests use core.autocrlf=true + explicit LF-ending files.  On Windows
+    the CRLF warnings fire and exercise the fix; on other platforms the tests
+    still run (they just won't produce stderr warnings, so they pass trivially).
+    """
+
+    # -- positive tests (fix works) ----------------------------------------
+
+    def test_commit_succeeds_with_autocrlf(self, tmp_path: Path):
+        """auto-commit.ps1 creates a commit when core.autocrlf=true (CRLF
+        warnings on stderr must not crash the script)."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "crlf commit"\n'
+        ))
+        # Create and commit a tracked LF-ending file first so the script's
+        # `git diff --quiet HEAD` checks inspect a tracked modification.
+        tracked = project / "crlf-test.txt"
+        tracked.write_bytes(b"line one\nline two\nline three\n")
+        subprocess.run(["git", "add", "crlf-test.txt"], cwd=project, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "seed tracked file"],
+            cwd=project, check=True, env={**os.environ, **_GIT_ENV},
+        )
+        subprocess.run(
+            ["git", "config", "core.autocrlf", "true"],
+            cwd=project, check=True,
+        )
+        # Modify the tracked file with explicit LF endings to trigger the
+        # CRLF warning during diff/status checks on Windows.
+        tracked.write_bytes(b"line one\nline two changed\nline three\n")
+
+        # On Windows, verify the test setup actually produces a CRLF warning.
+        if sys.platform == "win32":
+            probe = subprocess.run(
+                ["git", "diff", "--quiet", "HEAD"],
+                cwd=project, capture_output=True, text=True,
+            )
+            assert "LF will be replaced by CRLF" in probe.stderr, (
+                "Expected CRLF warning from git on Windows; test setup may be wrong"
+            )
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+
+        assert result.returncode == 0, (
+            f"Script crashed (likely CRLF stderr); stderr:\n{result.stderr}"
+        )
+        assert "[OK] Changes committed" in result.stdout
+
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "crlf commit" in log.stdout
+
+    def test_custom_message_not_corrupted_by_crlf(self, tmp_path: Path):
+        """Commit message is the configured value, not a CRLF warning."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_plan:\n"
+            "    enabled: true\n"
+            '    message: "[Project] Plan done"\n'
+        ))
+        subprocess.run(
+            ["git", "config", "core.autocrlf", "true"],
+            cwd=project, check=True,
+        )
+        (project / "plan.txt").write_bytes(b"plan\ncontent\n")
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_plan")
+        assert result.returncode == 0
+
+        log = subprocess.run(
+            ["git", "log", "--format=%s", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Project] Plan done" in log.stdout.strip()
+
+    def test_no_changes_still_skips_with_autocrlf(self, tmp_path: Path):
+        """Script correctly detects 'no changes' even with core.autocrlf=true."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        subprocess.run(
+            ["git", "config", "core.autocrlf", "true"],
+            cwd=project, check=True,
+        )
+        # Stage and commit everything so the working tree is clean.
+        subprocess.run(["git", "add", "."], cwd=project, check=True,
+                        env={**os.environ, **_GIT_ENV})
+        subprocess.run(["git", "commit", "-m", "setup", "-q"], cwd=project,
+                        check=True, env={**os.environ, **_GIT_ENV})
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        assert "[OK]" not in result.stdout, "Should not have committed anything"
+
+    # -- negative tests (real errors still surface) ------------------------
+
+    def test_not_a_repo_still_detected_with_autocrlf(self, tmp_path: Path):
+        """Script still exits gracefully when not in a git repo, even though
+        ErrorActionPreference is relaxed around the rev-parse call."""
+        project = _setup_project(tmp_path, git=False)
+        _write_config(project, "auto_commit:\n  default: true\n")
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        combined = result.stdout + result.stderr
+        assert "not a git repository" in combined.lower() or "warning" in combined.lower()
+
+    def test_missing_config_still_exits_cleanly_with_autocrlf(self, tmp_path: Path):
+        """Script exits 0 when git-config.yml is absent (no over-suppression)."""
+        project = _setup_project(tmp_path)
+        subprocess.run(
+            ["git", "config", "core.autocrlf", "true"],
+            cwd=project, check=True,
+        )
+        config = project / ".specify" / "extensions" / "git" / "git-config.yml"
+        config.unlink(missing_ok=True)
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        # Should not have committed anything — config file missing means disabled.
+        log = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert log.stdout.strip().count("\n") == 0  # only the seed commit
+
 
 # ── git-common.sh Tests ──────────────────────────────────────────────────────
 
 
+@requires_bash
 class TestGitCommonBash:
     def test_has_git_true(self, tmp_path: Path):
         """has_git returns 0 in a git repo."""
@@ -587,6 +800,43 @@ class TestGitCommonBash:
             capture_output=True, text=True,
         )
         assert result.returncode != 0
+        
+    def test_check_feature_branch_accepts_single_prefix(self, tmp_path: Path):
+        """git-common check_feature_branch matches core: one optional path prefix."""
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}" && check_feature_branch "feat/001-my-feature" "true"'],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+
+    def test_check_feature_branch_rejects_nested_prefix(self, tmp_path: Path):
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}" && check_feature_branch "feat/fix/001-x" "true"'],
+            capture_output=True, text=True,
+        )
+        assert result.returncode != 0
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
+class TestGitCommonPowerShell:
+    def test_test_feature_branch_accepts_single_prefix(self, tmp_path: Path):
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "git-common.ps1"
+        result = subprocess.run(
+            [
+                "pwsh",
+                "-NoProfile",
+                "-Command",
+                f'. "{script}"; if (Test-FeatureBranch -Branch "feat/001-x" -HasGit $true) {{ exit 0 }} else {{ exit 1 }}',
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
 
 
 # ── Deprecation Notice Tests ──────────────────────────────────────────────────
