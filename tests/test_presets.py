@@ -3545,6 +3545,45 @@ class TestWrapStrategy:
         assert "# Git Feature Core" in result
         assert "{CORE_TEMPLATE}" not in result
 
+    def test_extension_command_resolves_via_manifest_when_filename_differs(self, project_dir):
+        """Extension commands whose filename differs from the command name resolve via extension.yml.
+
+        The selftest extension maps speckit.selftest.extension → commands/selftest.md.
+        Name-based lookup would look for commands/speckit.selftest.extension.md and fail;
+        manifest-based lookup must find the actual file declared in the manifest.
+        """
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        ext_dir = project_dir / ".specify" / "extensions" / "selftest"
+        cmd_dir = ext_dir / "commands"
+        cmd_dir.mkdir(parents=True, exist_ok=True)
+
+        # File is named selftest.md, NOT speckit.selftest.extension.md
+        (cmd_dir / "selftest.md").write_text(
+            "---\ndescription: selftest core\n---\n\n# Selftest Core\n"
+        )
+        # Manifest maps the command name to the actual file
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: selftest\n  name: Self-Test\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  commands:\n"
+            "    - name: speckit.selftest.extension\n"
+            "      file: commands/selftest.md\n"
+            "      description: Selftest command\n"
+        )
+
+        registrar = CommandRegistrar()
+        body = "## Wrapper\n\n{CORE_TEMPLATE}\n"
+        result, _ = _substitute_core_template(body, "speckit.selftest.extension", project_dir, registrar)
+
+        assert "# Selftest Core" in result
+        assert "{CORE_TEMPLATE}" not in result
+
 
 # ===== _replay_wraps_for_command Tests =====
 
