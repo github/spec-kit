@@ -10,9 +10,9 @@ extension:
   license: MIT
   install_notice: |
     The git extension is currently enabled by default, but starting with
-    v1.0.0 it will require explicit opt-in.
+    specify-cli v1.0.0 it will require explicit opt-in.
 
-    To opt in after v1.0.0:
+    To opt in after specify-cli v1.0.0:
       • specify init --extension git
       • specify extension add git  (post-init)
 
