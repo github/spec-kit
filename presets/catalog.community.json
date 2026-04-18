@@ -81,11 +81,11 @@
     "fiction-book-writing": {
       "name": "Fiction Book Writing",
       "id": "fiction-book-writing",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "description": "Spec-Driven Development for novel and long-form fiction. Replaces software engineering terminology with storytelling craft: specs become story briefs, plans become story structures, and tasks become scene-by-scene writing tasks. Supports 8 POV modes, all major plot structure frameworks, 5 humanized-AI prose profiles, and exports to DOCX/EPUB/LaTeX via pandoc.",
       "author": "Andreas Daumann",
       "repository": "https://github.com/adaumann/speckit-preset-fiction-book-writing",
-      "download_url": "https://github.com/adaumann/speckit-preset-fiction-book-writing/archive/refs/tags/v1.5.0.zip",
+      "download_url": "https://github.com/adaumann/speckit-preset-fiction-book-writing/archive/refs/tags/v1.6.0.zip",
       "homepage": "https://github.com/adaumann/speckit-preset-fiction-book-writing",
       "documentation": "https://github.com/adaumann/speckit-preset-fiction-book-writing/blob/main/fiction-book-writing/README.md",
       "license": "MIT",
@@ -93,8 +93,8 @@
         "speckit_version": ">=0.5.0"
       },
       "provides": {
-        "templates": 21,
-        "commands": 26,
+        "templates": 22,
+        "commands": 27,
         "scripts": 1
       },
       "tags": [
@@ -109,7 +109,8 @@
         "book",
         "brainstorming",
         "roleplay",
-        "audiobook"
+        "audiobook",
+        "language-support"
       ],
       "created_at": "2026-04-09T08:00:00Z",
       "updated_at": "2026-04-16T08:00:00Z"
