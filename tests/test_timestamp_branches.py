@@ -180,6 +180,19 @@ class TestTimestampBranch:
             assert key in data, f"missing {key} in JSON: {data}"
         assert re.match(r"^\d{8}-\d{6}$", data["FEATURE_NUM"])
 
+    def test_writes_feature_metadata_file(self, git_repo: Path):
+        """The create script persists .specify/feature.json for downstream commands."""
+        import json
+
+        result = run_script(git_repo, "--json", "--short-name", "meta-test", "Metadata test")
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+
+        metadata_file = git_repo / ".specify" / "feature.json"
+        assert metadata_file.exists(), "feature metadata file was not created"
+        metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+        assert metadata == {"feature_directory": f"specs/{data['BRANCH_NAME']}"}
+
     def test_long_name_truncation(self, git_repo: Path):
         """Test 5: Long branch name is truncated to <= 244 chars."""
         long_name = "a-" * 150 + "end"
@@ -993,7 +1006,19 @@ class TestPowerShellDryRun:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert "DRY_RUN" not in data, f"DRY_RUN should not be in normal JSON: {data}"
+    
+    def test_ps_writes_feature_metadata_file(self, ps_git_repo: Path):
+        """PowerShell create script persists .specify/feature.json."""
+        result = run_ps_script(
+            ps_git_repo, "-Json", "-ShortName", "ps-meta", "PowerShell metadata"
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
 
+        metadata_file = ps_git_repo / ".specify" / "feature.json"
+        assert metadata_file.exists(), "feature metadata file was not created"
+        metadata = json.loads(metadata_file.read_text(encoding="utf-8-sig"))
+        assert metadata == {"feature_directory": f"specs/{data['BRANCH_NAME']}"}
 
 # ── GIT_BRANCH_NAME Override Tests ──────────────────────────────────────────
 

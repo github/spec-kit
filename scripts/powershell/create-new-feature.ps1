@@ -289,6 +289,7 @@ if ($branchName.Length -gt $maxBranchLength) {
 
 $featureDir = Join-Path $specsDir $branchName
 $specFile = Join-Path $featureDir 'spec.md'
+$featureMetadataFile = Join-Path $repoRoot '.specify/feature.json'
 
 if (-not $DryRun) {
     if ($hasGit) {
@@ -346,6 +347,7 @@ if (-not $DryRun) {
     }
 
     New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
+    New-Item -ItemType Directory -Path (Split-Path $featureMetadataFile -Parent) -Force | Out-Null
 
     if (-not (Test-Path -PathType Leaf $specFile)) {
         $template = Resolve-Template -TemplateName 'spec-template' -RepoRoot $repoRoot
@@ -355,6 +357,10 @@ if (-not $DryRun) {
             New-Item -ItemType File -Path $specFile -Force | Out-Null
         }
     }
+
+    [PSCustomObject]@{
+        feature_directory = "specs/$branchName"
+    } | ConvertTo-Json -Compress | Set-Content -Path $featureMetadataFile -Encoding utf8
 
     # Set the SPECIFY_FEATURE environment variable for the current session
     $env:SPECIFY_FEATURE = $branchName

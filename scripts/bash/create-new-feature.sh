@@ -324,6 +324,7 @@ fi
 
 FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
 SPEC_FILE="$FEATURE_DIR/spec.md"
+FEATURE_METADATA_FILE="$REPO_ROOT/.specify/feature.json"
 
 if [ "$DRY_RUN" != true ]; then
     if [ "$HAS_GIT" = true ]; then
@@ -366,6 +367,7 @@ if [ "$DRY_RUN" != true ]; then
     fi
 
     mkdir -p "$FEATURE_DIR"
+    mkdir -p "$(dirname "$FEATURE_METADATA_FILE")"
 
     if [ ! -f "$SPEC_FILE" ]; then
         TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT") || true
@@ -375,6 +377,14 @@ if [ "$DRY_RUN" != true ]; then
             echo "Warning: Spec template not found; created empty spec file" >&2
             touch "$SPEC_FILE"
         fi
+    fi
+
+    if command -v jq >/dev/null 2>&1; then
+        jq -cn \
+            --arg feature_directory "specs/$BRANCH_NAME" \
+            '{feature_directory:$feature_directory}' >"$FEATURE_METADATA_FILE"
+    else
+        printf '{"feature_directory":"%s"}\n' "$(json_escape "specs/$BRANCH_NAME")" >"$FEATURE_METADATA_FILE"
     fi
 
     # Inform the user how to persist the feature variable in their own shell

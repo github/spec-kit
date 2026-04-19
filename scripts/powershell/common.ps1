@@ -353,4 +353,3 @@ function Resolve-Template {
 
     return $null
 }
-
