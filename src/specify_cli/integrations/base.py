@@ -1200,7 +1200,11 @@ class SkillsIntegration(IntegrationBase):
             if isinstance(behavior, dict) and behavior:
                 try:
                     from specify_cli.behavior import translate_behavior
-                    behavior_fields = translate_behavior(self.key, behavior, {})
+                    agents_overrides = frontmatter.get("agents") or {}
+                    behavior_fields = translate_behavior(
+                        self.key, behavior,
+                        agents_overrides if isinstance(agents_overrides, dict) else {}
+                    )
                     for bk, bv in behavior_fields.items():
                         if isinstance(bv, bool):
                             behavior_fm_lines += f"{bk}: {'true' if bv else 'false'}\n"

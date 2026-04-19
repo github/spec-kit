@@ -22,6 +22,7 @@ import re
 import pathspec
 
 import yaml
+from specify_cli.behavior import get_deployment_type as _get_deployment_type
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
@@ -894,33 +895,27 @@ class ExtensionManager:
                 # Do not overwrite user-customized skills
                 continue
 
-            # Skip commands that behavior-routing deploys as agent definitions
-            # (to .claude/agents/) rather than as skill files.
-            from specify_cli.behavior import get_deployment_type
-            _source_fm, _ = registrar.parse_frontmatter(
-                source_file.read_text(encoding="utf-8")
-            )
-            # Merge manifest-level behavior when source file has none
-            if "behavior" not in _source_fm and "behavior" in cmd_info:
-                _source_fm["behavior"] = cmd_info["behavior"]
-            if get_deployment_type(_source_fm) == "agent":
-                continue
-
-            # Create skill directory; track whether we created it so we can clean
-            # up safely if reading the source file subsequently fails.
-            created_now = not skill_subdir.exists()
-            skill_subdir.mkdir(parents=True, exist_ok=True)
-
-            # Parse the command file — guard against IsADirectoryError / decode errors
+            # Read the source file once; reuse for both the deployment-type check
+            # below and the subsequent skill rendering.
             try:
                 content = source_file.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
-                if created_now:
-                    try:
-                        skill_subdir.rmdir()  # undo the mkdir; dir is empty at this point
-                    except OSError:
-                        pass  # best-effort cleanup
                 continue
+
+            # Skip commands that behavior-routing deploys as agent definitions
+            # (to .claude/agents/) rather than as skill files.
+            _source_fm, _ = registrar.parse_frontmatter(content)
+            # Merge manifest-level behavior when source file has none or has an
+            # invalid (non-dict / empty) value.  A non-dict value (string, list,
+            # null) cannot carry execution:agent, so the manifest entry must win
+            # for the agent-deployment skip to work correctly.
+            _source_behavior = _source_fm.get("behavior")
+            if (not isinstance(_source_behavior, dict) or not _source_behavior) and "behavior" in cmd_info:
+                _source_fm["behavior"] = cmd_info["behavior"]
+            if _get_deployment_type(_source_fm) == "agent":
+                continue
+
+            skill_subdir.mkdir(parents=True, exist_ok=True)
             frontmatter, body = registrar.parse_frontmatter(content)
             frontmatter = registrar._adjust_script_paths(frontmatter)
             body = registrar.rewrite_extension_paths(body, manifest.id, extension_dir)

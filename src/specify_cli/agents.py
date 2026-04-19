@@ -446,7 +446,10 @@ class CommandRegistrar:
         # Merge behavior translation — passthrough (already in skill_frontmatter) wins
         # because we only set behavior fields if they are not already set via passthrough,
         # EXCEPT for the set of fields that behavior can legitimately override defaults for.
-        _behavior_overridable = {"disable-model-invocation", "user-invocable", "model", "effort", "context", "agent", "allowed-tools"}
+        # Only the two boolean defaults injected by build_skill_frontmatter may be
+        # overridden by behavior translation.  Content fields (model, effort, context,
+        # agent, allowed-tools) set explicitly in source frontmatter must win.
+        _behavior_overridable = {"disable-model-invocation", "user-invocable"}
         for k, v in behavior_fields.items():
             if k not in skill_frontmatter or k in _behavior_overridable:
                 skill_frontmatter[k] = v
@@ -693,9 +696,12 @@ class CommandRegistrar:
                     source_dir=source_dir,
                 )
             elif agent_config["format"] == "markdown":
-                # For Copilot execution:agent, inject behavior-derived fields into frontmatter
-                if agent_name == "copilot" and cmd_type == "agent":
-                    behavior = frontmatter.get("behavior") if isinstance(frontmatter.get("behavior"), dict) else {}
+                # For Copilot, translate any behavior: block into agent-native fields.
+                # This covers execution:agent, execution:isolated (→ mode:agent), and
+                # any other behavior keys with a Copilot translation.  Without this,
+                # behavior:/agents: keys would leak into the generated .agent.md file.
+                behavior = frontmatter.get("behavior") if isinstance(frontmatter.get("behavior"), dict) else {}
+                if agent_name == "copilot" and behavior:
                     agents_overrides = frontmatter.get("agents") or {}
                     extra_fields = translate_behavior(
                         agent_name, behavior,
