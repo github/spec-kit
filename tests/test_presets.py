@@ -1010,7 +1010,9 @@ class TestResolveCore:
 
         resolver = PresetResolver(project_dir)
         result = resolver.resolve_core("specify", "command")
-        assert result is None
+        # The preset file must never be returned — but the bundled core may be.
+        if result is not None:
+            assert ".specify/presets" not in str(result)
 
     def test_resolve_core_returns_core_template(self, project_dir):
         """resolve_core falls through to core templates (tier 4)."""
@@ -3648,7 +3650,7 @@ class TestReplayWrapsForCommand:
         from specify_cli.agents import CommandRegistrar
         import copy
 
-        preset_dir = _make_wrap_preset_dir(temp_dir, "preset-a", "speckit.specify", "pre-a", "post-a")
+        preset_dir = _make_wrap_preset_dir(temp_dir, "preset-a", "speckit.nonexistent-cmd", "pre-a", "post-a")
         installed = project_dir / ".specify" / "presets" / "preset-a"
         import shutil as _shutil
         _shutil.copytree(preset_dir, installed)
@@ -3658,7 +3660,7 @@ class TestReplayWrapsForCommand:
             "version": "1.0.0", "source": "local", "enabled": True,
             "priority": 10, "manifest_hash": "x",
             "registered_commands": {}, "registered_skills": [],
-            "wrap_commands": ["speckit.specify"],
+            "wrap_commands": ["speckit.nonexistent-cmd"],
         })
 
         agent_dir = project_dir / ".claude" / "commands"
@@ -3672,13 +3674,13 @@ class TestReplayWrapsForCommand:
             "extension": ".md", "strip_frontmatter_keys": [],
         }
         try:
-            # No core file exists — replay should return without writing
-            manager._replay_wraps_for_command("speckit.specify")
+            # No core file exists for this command — replay should return without writing
+            manager._replay_wraps_for_command("speckit.nonexistent-cmd")
         finally:
             CommandRegistrar.AGENT_CONFIGS.clear()
             CommandRegistrar.AGENT_CONFIGS.update(original)
 
-        assert not (agent_dir / "speckit.specify.md").exists()
+        assert not (agent_dir / "speckit.nonexistent-cmd.md").exists()
 
     def test_replay_single_preset_writes_composed_output(self, project_dir, temp_dir):
         """Single wrap preset: replay writes pre + core + post to agent dirs."""

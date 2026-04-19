@@ -2060,7 +2060,7 @@ class PresetResolver:
         Args:
             template_name: Template name (e.g., "spec-template")
             template_type: Template type ("template", "command", or "script")
-            skip_presets: When True, skip tier 2 (installed presets). Use
+            skip_presets: When True, skip is  2 (installed presets). Use
                 resolve_core() as the preferred caller-facing API for this.
 
         Returns:
@@ -2128,6 +2128,38 @@ class PresetResolver:
             core = self.templates_dir / "scripts" / f"{template_name}{ext}"
             if core.exists():
                 return core
+
+        # Priority 5: Bundled core_pack (wheel install) or repo-root templates
+        # (source-checkout / editable install).  This is the canonical home for
+        # speckit's built-in command/template files and must always be checked
+        # so that strategy:wrap presets can locate {CORE_TEMPLATE}.
+        from specify_cli import _locate_core_pack  # local import to avoid cycles
+        _core_pack = _locate_core_pack()
+        if _core_pack is not None:
+            # Wheel install path
+            if template_type == "template":
+                candidate = _core_pack / "templates" / f"{template_name}.md"
+            elif template_type == "command":
+                candidate = _core_pack / "commands" / f"{template_name}.md"
+            elif template_type == "script":
+                candidate = _core_pack / "scripts" / f"{template_name}{ext}"
+            else:
+                candidate = _core_pack / f"{template_name}.md"
+            if candidate.exists():
+                return candidate
+        else:
+            # Source-checkout / editable install: templates live at repo root
+            repo_root = Path(__file__).parent.parent.parent
+            if template_type == "template":
+                candidate = repo_root / "templates" / f"{template_name}.md"
+            elif template_type == "command":
+                candidate = repo_root / "templates" / "commands" / f"{template_name}.md"
+            elif template_type == "script":
+                candidate = repo_root / "scripts" / f"{template_name}{ext}"
+            else:
+                candidate = repo_root / f"{template_name}.md"
+            if candidate.exists():
+                return candidate
 
         return None
 
