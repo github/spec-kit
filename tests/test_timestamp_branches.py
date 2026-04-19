@@ -181,7 +181,7 @@ class TestTimestampBranch:
         assert re.match(r"^\d{8}-\d{6}$", data["FEATURE_NUM"])
 
     def test_writes_feature_metadata_file(self, git_repo: Path):
-        """The create script persists .specify/feature.json for downstream commands."""
+        """Feature creation persists .specify/feature.json with the created spec dir."""
         import json
 
         result = run_script(git_repo, "--json", "--short-name", "meta-test", "Metadata test")
@@ -656,6 +656,12 @@ class TestAllowExistingBranchPowerShell:
         assert "-AllowExistingBranch" in contents
         # Ensure the flag is referenced in script logic, not just declared
         assert "AllowExistingBranch" in contents.replace("-AllowExistingBranch", "")
+
+    def test_powershell_persists_feature_metadata(self):
+        """Static guard: PS script writes .specify/feature.json."""
+        contents = CREATE_FEATURE_PS.read_text(encoding="utf-8")
+        assert "feature_directory = \"specs/$branchName\"" in contents
+        assert "feature.json" in contents
 
     def test_powershell_surfaces_checkout_errors(self):
         """Static guard: PS script preserves checkout stderr on existing-branch failures."""
