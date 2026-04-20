@@ -143,7 +143,20 @@ class TestCopilotIntegration:
             assert "__AGENT__" not in content, f"{agent_file.name} has unprocessed __AGENT__"
             assert "{ARGS}" not in content, f"{agent_file.name} has unprocessed {{ARGS}}"
             assert "\nscripts:\n" not in content
-            assert "\nagent_scripts:\n" not in content
+
+    def test_plan_references_correct_context_file(self, tmp_path):
+        """The generated plan command must reference copilot's context file."""
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+        copilot.setup(tmp_path, m)
+        plan_file = tmp_path / ".github" / "agents" / "speckit.plan.agent.md"
+        assert plan_file.exists()
+        content = plan_file.read_text(encoding="utf-8")
+        assert copilot.context_file in content, (
+            f"Plan command should reference {copilot.context_file!r}"
+        )
+        assert "__CONTEXT_FILE__" not in content
 
     def test_complete_file_inventory_sh(self, tmp_path):
         """Every file produced by specify init --integration copilot --script sh."""
@@ -181,24 +194,23 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.tasks.prompt.md",
             ".github/prompts/speckit.taskstoissues.prompt.md",
             ".vscode/settings.json",
+            ".github/copilot-instructions.md",
             ".specify/integration.json",
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
             ".specify/integrations/speckit.manifest.json",
-            ".specify/integrations/copilot/scripts/update-context.ps1",
-            ".specify/integrations/copilot/scripts/update-context.sh",
             ".specify/scripts/bash/check-prerequisites.sh",
             ".specify/scripts/bash/common.sh",
             ".specify/scripts/bash/create-new-feature.sh",
             ".specify/scripts/bash/setup-plan.sh",
-            ".specify/scripts/bash/update-agent-context.sh",
-            ".specify/templates/agent-file-template.md",
             ".specify/templates/checklist-template.md",
             ".specify/templates/constitution-template.md",
             ".specify/templates/plan-template.md",
             ".specify/templates/spec-template.md",
             ".specify/templates/tasks-template.md",
             ".specify/memory/constitution.md",
+            ".specify/workflows/speckit/workflow.yml",
+            ".specify/workflows/workflow-registry.json",
         ])
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
@@ -241,24 +253,23 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.tasks.prompt.md",
             ".github/prompts/speckit.taskstoissues.prompt.md",
             ".vscode/settings.json",
+            ".github/copilot-instructions.md",
             ".specify/integration.json",
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
             ".specify/integrations/speckit.manifest.json",
-            ".specify/integrations/copilot/scripts/update-context.ps1",
-            ".specify/integrations/copilot/scripts/update-context.sh",
             ".specify/scripts/powershell/check-prerequisites.ps1",
             ".specify/scripts/powershell/common.ps1",
             ".specify/scripts/powershell/create-new-feature.ps1",
             ".specify/scripts/powershell/setup-plan.ps1",
-            ".specify/scripts/powershell/update-agent-context.ps1",
-            ".specify/templates/agent-file-template.md",
             ".specify/templates/checklist-template.md",
             ".specify/templates/constitution-template.md",
             ".specify/templates/plan-template.md",
             ".specify/templates/spec-template.md",
             ".specify/templates/tasks-template.md",
             ".specify/memory/constitution.md",
+            ".specify/workflows/speckit/workflow.yml",
+            ".specify/workflows/workflow-registry.json",
         ])
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"

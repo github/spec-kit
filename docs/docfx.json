@@ -4,7 +4,9 @@
       {
         "files": [
           "*.md",
-          "toc.yml"
+          "toc.yml",
+          "community/*.md",
+          "reference/*.md"
         ]
       },
       {

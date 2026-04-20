@@ -5,6 +5,14 @@ import os
 
 import yaml
 
+from tests.conftest import strip_ansi
+
+
+def _normalize_cli_output(output: str) -> str:
+    output = strip_ansi(output)
+    output = " ".join(output.split())
+    return output.strip()
+
 
 class TestInitIntegrationFlag:
     def test_integration_and_ai_mutually_exclusive(self, tmp_path):
@@ -48,14 +56,19 @@ class TestInitIntegrationFlag:
 
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "copilot"
-        assert "scripts" in data
-        assert "update-context" in data["scripts"]
 
         opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
         assert opts["integration"] == "copilot"
+        assert opts["context_file"] == ".github/copilot-instructions.md"
 
         assert (project / ".specify" / "integrations" / "copilot.manifest.json").exists()
-        assert (project / ".specify" / "integrations" / "copilot" / "scripts" / "update-context.sh").exists()
+
+        # Context section should be upserted into the copilot instructions file
+        ctx_file = project / ".github" / "copilot-instructions.md"
+        assert ctx_file.exists()
+        ctx_content = ctx_file.read_text(encoding="utf-8")
+        assert "<!-- SPECKIT START -->" in ctx_content
+        assert "<!-- SPECKIT END -->" in ctx_content
 
         shared_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
         assert shared_manifest.exists()
@@ -76,6 +89,59 @@ class TestInitIntegrationFlag:
             os.chdir(old_cwd)
         assert result.exit_code == 0
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+
+    def test_ai_emits_deprecation_warning_with_integration_replacement(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "warn-ai"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here", "--ai", "copilot", "--script", "sh", "--no-git",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 0, result.output
+        assert "Deprecation Warning" in normalized_output
+        assert "--ai" in normalized_output
+        assert "deprecated" in normalized_output
+        assert "no longer be available" in normalized_output
+        assert "1.0.0" in normalized_output
+        assert "--integration copilot" in normalized_output
+        assert normalized_output.index("Deprecation Warning") < normalized_output.index("Next Steps")
+        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+
+    def test_ai_generic_warning_suggests_integration_options_equivalent(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "warn-generic"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here", "--ai", "generic", "--ai-commands-dir", ".myagent/commands",
+                "--script", "sh", "--no-git",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 0, result.output
+        assert "Deprecation Warning" in normalized_output
+        assert "--integration generic" in normalized_output
+        assert "--integration-options" in normalized_output
+        assert ".myagent/commands" in normalized_output
+        assert normalized_output.index("Deprecation Warning") < normalized_output.index("Next Steps")
+        assert (project / ".myagent" / "commands" / "speckit.plan.md").exists()
 
     def test_ai_claude_here_preserves_preexisting_commands(self, tmp_path):
         from typer.testing import CliRunner
