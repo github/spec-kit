@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-17T02:00:00Z",
+  "updated_at": "2026-04-20T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1166,6 +1166,37 @@
       "stars": 0,
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
+    },
+    "memory-loader": {
+      "name": "Memory Loader",
+      "id": "memory-loader",
+      "description": "Loads .specify/memory/ files before spec-kit lifecycle commands so LLM agents have project governance context",
+      "author": "KevinBrown5280",
+      "version": "1.0.0",
+      "download_url": "https://github.com/KevinBrown5280/spec-kit-memory-loader/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/KevinBrown5280/spec-kit-memory-loader",
+      "homepage": "https://github.com/KevinBrown5280/spec-kit-memory-loader",
+      "documentation": "https://github.com/KevinBrown5280/spec-kit-memory-loader/blob/main/README.md",
+      "changelog": "https://github.com/KevinBrown5280/spec-kit-memory-loader/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 7
+      },
+      "tags": [
+        "context",
+        "memory",
+        "governance",
+        "hooks"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-20T00:00:00Z",
+      "updated_at": "2026-04-20T00:00:00Z"
     },
     "memorylint": {
       "name": "MemoryLint",
