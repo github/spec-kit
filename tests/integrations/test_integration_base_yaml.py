@@ -370,6 +370,7 @@ class YamlIntegrationTests:
         "specify",
         "tasks",
         "taskstoissues",
+        "threatmodel",
     ]
 
     def _expected_files(self, script_variant: str) -> list[str]:

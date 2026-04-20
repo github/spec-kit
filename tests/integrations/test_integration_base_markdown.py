@@ -253,6 +253,7 @@ class MarkdownIntegrationTests:
     COMMAND_STEMS = [
         "analyze", "checklist", "clarify", "constitution",
         "implement", "plan", "specify", "tasks", "taskstoissues",
+        "threatmodel",
     ]
 
     def _expected_files(self, script_variant: str) -> list[str]:

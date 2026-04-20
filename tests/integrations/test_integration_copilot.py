@@ -123,10 +123,11 @@ class TestCopilotIntegration:
         agents_dir = tmp_path / ".github" / "agents"
         assert agents_dir.is_dir()
         agent_files = sorted(agents_dir.glob("speckit.*.agent.md"))
-        assert len(agent_files) == 9
+        assert len(agent_files) == 10
         expected_commands = {
             "analyze", "checklist", "clarify", "constitution",
             "implement", "plan", "specify", "tasks", "taskstoissues",
+            "threatmodel",
         }
         actual_commands = {f.name.removeprefix("speckit.").removesuffix(".agent.md") for f in agent_files}
         assert actual_commands == expected_commands
@@ -184,6 +185,7 @@ class TestCopilotIntegration:
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
             ".github/agents/speckit.taskstoissues.agent.md",
+            ".github/agents/speckit.threatmodel.agent.md",
             ".github/prompts/speckit.analyze.prompt.md",
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
@@ -193,6 +195,7 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.specify.prompt.md",
             ".github/prompts/speckit.tasks.prompt.md",
             ".github/prompts/speckit.taskstoissues.prompt.md",
+            ".github/prompts/speckit.threatmodel.prompt.md",
             ".vscode/settings.json",
             ".github/copilot-instructions.md",
             ".specify/integration.json",
@@ -243,6 +246,7 @@ class TestCopilotIntegration:
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
             ".github/agents/speckit.taskstoissues.agent.md",
+            ".github/agents/speckit.threatmodel.agent.md",
             ".github/prompts/speckit.analyze.prompt.md",
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
@@ -252,6 +256,7 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.specify.prompt.md",
             ".github/prompts/speckit.tasks.prompt.md",
             ".github/prompts/speckit.taskstoissues.prompt.md",
+            ".github/prompts/speckit.threatmodel.prompt.md",
             ".vscode/settings.json",
             ".github/copilot-instructions.md",
             ".specify/integration.json",
