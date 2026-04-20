@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-13T23:01:30Z",
+  "updated_at": "2026-04-20T05:50:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1103,6 +1103,38 @@
       "stars": 0,
       "created_at": "2026-04-03T00:00:00Z",
       "updated_at": "2026-04-03T00:00:00Z"
+    },
+    "orchestrator": {
+      "name": "Intelligent Agent Orchestrator",
+      "id": "orchestrator",
+      "description": "Cross-catalog agent discovery and intelligent prompt-to-command routing",
+      "author": "pragya247",
+      "version": "0.1.0",
+      "download_url": "https://github.com/pragya247/spec-kit-orchestrator/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/pragya247/spec-kit-orchestrator",
+      "homepage": "https://github.com/pragya247/spec-kit-orchestrator",
+      "documentation": "https://github.com/pragya247/spec-kit-orchestrator/blob/main/README.md",
+      "changelog": "https://github.com/pragya247/spec-kit-orchestrator/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.1"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "orchestrator",
+        "routing",
+        "discovery",
+        "agent",
+        "ai"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-20T00:00:00Z",
+      "updated_at": "2026-04-20T00:00:00Z"
     },
     "plan-review-gate": {
       "name": "Plan Review Gate",
