@@ -400,6 +400,7 @@ class TestCommandStep:
     """Test the command step type."""
 
     def test_execute_basic(self):
+        from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
@@ -413,7 +414,8 @@ class TestCommandStep:
             "command": "speckit.specify",
             "input": {"args": "{{ inputs.name }}"},
         }
-        result = step.execute(config, ctx)
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+            result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["command"] == "speckit.specify"
         assert result.output["integration"] == "claude"
@@ -474,6 +476,7 @@ class TestCommandStep:
 
     def test_dispatch_not_attempted_without_cli(self):
         """When the CLI tool is not installed, step should fail."""
+        from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
@@ -488,7 +491,8 @@ class TestCommandStep:
             "command": "speckit.specify",
             "input": {"args": "{{ inputs.name }}"},
         }
-        result = step.execute(config, ctx)
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+            result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["dispatched"] is False
         assert result.error is not None
@@ -566,6 +570,7 @@ class TestPromptStep:
     """Test the prompt step type."""
 
     def test_execute_basic(self):
+        from unittest.mock import patch
         from specify_cli.workflows.steps.prompt import PromptStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
@@ -579,7 +584,8 @@ class TestPromptStep:
             "type": "prompt",
             "prompt": "Review {{ inputs.file }} for security issues",
         }
-        result = step.execute(config, ctx)
+        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value=None):
+            result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["prompt"] == "Review auth.py for security issues"
         assert result.output["integration"] == "claude"
@@ -1311,6 +1317,7 @@ class TestWorkflowEngine:
             engine.load_workflow("nonexistent")
 
     def test_execute_simple_workflow(self, project_dir):
+        from unittest.mock import patch
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
         from specify_cli.workflows.base import RunStatus
 
@@ -1333,7 +1340,8 @@ steps:
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
-        state = engine.execute(definition, {"name": "login"})
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+            state = engine.execute(definition, {"name": "login"})
 
         assert state.status == RunStatus.FAILED
         assert "step-one" in state.step_results
