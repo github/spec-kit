@@ -16,13 +16,13 @@ class AgyIntegration(SkillsIntegration):
     key = "agy"
     config = {
         "name": "Antigravity",
-        "folder": ".agent/",
+        "folder": ".agents/",
         "commands_subdir": "skills",
         "install_url": None,
         "requires_cli": False,
     }
     registrar_config = {
-        "dir": ".agent/skills",
+        "dir": ".agents/skills",
         "format": "markdown",
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
@@ -36,6 +36,6 @@ class AgyIntegration(SkillsIntegration):
                 "--skills",
                 is_flag=True,
                 default=True,
-                help="Install as agent skills (default for Antigravity since v1.20.5)",
+                help="Install as agent skills (default for Antigravity since v1.23.2)",
             ),
         ]
