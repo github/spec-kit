@@ -43,5 +43,4 @@ class TestAgyAutoPromote:
         result = runner.invoke(app, ["init", str(target), "--ai", "agy", "--no-git", "--script", "sh"])
 
         assert result.exit_code == 0
-        output = result.stderr if getattr(result, "stderr", None) is not None else result.output
-        assert "Warning: The .agents/ layout requires Antigravity v1.19.5 or newer" in output
+        assert "Warning: The .agents/ layout requires Antigravity v1.19.5 or newer" in result.stderr
