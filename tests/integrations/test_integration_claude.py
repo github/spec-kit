@@ -84,7 +84,6 @@ class TestClaudeIntegration:
         bom = codecs.BOM_UTF8
         ctx_path.write_bytes(bom + b"# CLAUDE.md\n\nSome existing content.\n")
 
-        manifest = IntegrationManifest("claude", tmp_path)
         integration.upsert_context_section(tmp_path)
 
         result = ctx_path.read_bytes()
