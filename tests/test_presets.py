@@ -2447,7 +2447,7 @@ class TestPresetSkills:
     def test_agy_skill_restored_on_preset_remove(self, project_dir, temp_dir):
         """Agy preset removal should restore native skills instead of deleting them."""
         self._write_init_options(project_dir, ai="agy", ai_skills=True)
-        skills_dir = project_dir / ".agent" / "skills"
+        skills_dir = project_dir / ".agents" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="before override")
 
         core_command = project_dir / ".specify" / "templates" / "commands" / "specify.md"

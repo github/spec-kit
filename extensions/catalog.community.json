@@ -1167,6 +1167,37 @@
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
     },
+    "memory-loader": {
+      "name": "Memory Loader",
+      "id": "memory-loader",
+      "description": "Loads .specify/memory/ files before spec-kit lifecycle commands so LLM agents have project governance context",
+      "author": "KevinBrown5280",
+      "version": "1.0.0",
+      "download_url": "https://github.com/KevinBrown5280/spec-kit-memory-loader/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/KevinBrown5280/spec-kit-memory-loader",
+      "homepage": "https://github.com/KevinBrown5280/spec-kit-memory-loader",
+      "documentation": "https://github.com/KevinBrown5280/spec-kit-memory-loader/blob/main/README.md",
+      "changelog": "https://github.com/KevinBrown5280/spec-kit-memory-loader/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 7
+      },
+      "tags": [
+        "context",
+        "memory",
+        "governance",
+        "hooks"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-20T00:00:00Z",
+      "updated_at": "2026-04-20T00:00:00Z"
+    },
     "memorylint": {
       "name": "MemoryLint",
       "id": "memorylint",
@@ -1657,6 +1688,38 @@
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-04-09T00:00:00Z"
     },
+    "ripple": {
+      "name": "Ripple",
+      "id": "ripple",
+      "description": "Detect side effects that tests can't catch after implementation — delta-anchored analysis across 9 domain-agnostic categories with fix-induced side effect detection",
+      "author": "chordpli",
+      "version": "1.0.0",
+      "download_url": "https://github.com/chordpli/spec-kit-ripple/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/chordpli/spec-kit-ripple",
+      "homepage": "https://github.com/chordpli/spec-kit-ripple",
+      "documentation": "https://github.com/chordpli/spec-kit-ripple/blob/main/README.md",
+      "changelog": "https://github.com/chordpli/spec-kit-ripple/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "side-effects",
+        "post-implementation",
+        "analysis",
+        "quality",
+        "risk-detection"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-20T00:00:00Z",
+      "updated_at": "2026-04-20T00:00:00Z"
+    },
     "scope": {
       "name": "Spec Scope",
       "id": "scope",
@@ -1795,6 +1858,37 @@
       "stars": 0,
       "created_at": "2026-04-01T00:00:00Z",
       "updated_at": "2026-04-01T00:00:00Z"
+    },
+    "spec-reference-loader": {
+      "name": "Spec Reference Loader",
+      "id": "spec-reference-loader",
+      "description": "Reads the ## References section from the current feature spec and loads the listed files into context",
+      "author": "KevinBrown5280",
+      "version": "1.0.0",
+      "download_url": "https://github.com/KevinBrown5280/spec-kit-spec-reference-loader/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/KevinBrown5280/spec-kit-spec-reference-loader",
+      "homepage": "https://github.com/KevinBrown5280/spec-kit-spec-reference-loader",
+      "documentation": "https://github.com/KevinBrown5280/spec-kit-spec-reference-loader/blob/main/README.md",
+      "changelog": "https://github.com/KevinBrown5280/spec-kit-spec-reference-loader/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 6
+      },
+      "tags": [
+        "context",
+        "references",
+        "docs",
+        "hooks"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-20T00:00:00Z",
+      "updated_at": "2026-04-20T00:00:00Z"
     },
     "spec-validate": {
       "name": "Spec Validate",
@@ -2186,6 +2280,37 @@
       "stars": 0,
       "created_at": "2026-03-16T00:00:00Z",
       "updated_at": "2026-03-16T00:00:00Z"
+    },
+    "version-guard": {
+      "name": "Version Guard",
+      "id": "version-guard",
+      "description": "Verify tech stack versions against live registries before planning and implementation",
+      "author": "KevinBrown5280",
+      "version": "1.0.0",
+      "download_url": "https://github.com/KevinBrown5280/spec-kit-version-guard/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/KevinBrown5280/spec-kit-version-guard",
+      "homepage": "https://github.com/KevinBrown5280/spec-kit-version-guard",
+      "documentation": "https://github.com/KevinBrown5280/spec-kit-version-guard/blob/main/README.md",
+      "changelog": "https://github.com/KevinBrown5280/spec-kit-version-guard/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 2
+      },
+      "tags": [
+        "versioning",
+        "npm",
+        "validation",
+        "hooks"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-20T00:00:00Z",
+      "updated_at": "2026-04-20T00:00:00Z"
     },
     "whatif": {
       "name": "What-if Analysis",
