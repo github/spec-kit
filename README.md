@@ -27,7 +27,8 @@
 - [🚶 Community Walkthroughs](#-community-walkthroughs)
 - [🛠️ Community Friends](#️-community-friends)
 - [🤖 Supported AI Coding Agent Integrations](#-supported-ai-coding-agent-integrations)
-- [🔧 Specify CLI Reference](#-specify-cli-reference)
+- [� Security Analysis](#-security-analysis)
+- [�🔧 Specify CLI Reference](#-specify-cli-reference)
 - [🧩 Making Spec Kit Your Own: Extensions & Presets](#-making-spec-kit-your-own-extensions--presets)
 - [📚 Core Philosophy](#-core-philosophy)
 - [🌟 Development Phases](#-development-phases)
@@ -339,6 +340,30 @@ Additional commands for enhanced quality and validation:
 | `/speckit.clarify`   | `speckit-clarify`      | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`)                                                |
 | `/speckit.analyze`   | `speckit-analyze`      | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`)                             |
 | `/speckit.checklist` | `speckit-checklist`    | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| `/speckit.threatmodel` | `speckit-threatmodel` | OWASP LLM Top 10 2025 threat analysis on skills, templates, and memory files — generates `threat-model.md` and security checklist |
+
+### 🔒 Security Analysis
+
+Use `/speckit.threatmodel` to scan your project's skills, templates, and memory files for LLM-specific security threats. It's strictly read-only — it never modifies existing files.
+
+**What it does:**
+- Scans skills (`SKILL.md`), templates, and memory files for threats mapped to the OWASP LLM Top 10 2025 categories (prompt injection, excessive agency, sensitive data leakage, etc.)
+- Assigns risk ratings (Likelihood × Impact) and flags blocking threats that should be resolved before implementation
+- Generates two artifacts:
+  - `threat-model.md` — structured threat inventory with mitigations
+  - `checklists/security-llm.md` — actionable 24-item checklist mapped to OWASP categories
+
+**Usage:**
+
+```bash
+# Scan all skills, templates, and memory
+/speckit.threatmodel
+
+# Scan a specific skill
+/speckit.threatmodel speckit-git-feature
+```
+
+**When to run:** Any time — before `/speckit.implement`, after adding new skills or extensions, or as part of a periodic security review.
 
 ## 🔧 Specify CLI Reference
 
