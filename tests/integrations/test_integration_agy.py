@@ -11,20 +11,11 @@ class TestAgyIntegration(SkillsIntegrationTests):
     CONTEXT_FILE = "AGENTS.md"
 
     def test_options_include_skills_flag(self):
-        """Override inherited test: AgyIntegration no longer supports the --skills flag."""
+        """Override inherited test: AgyIntegration should not expose a --skills flag because .agents/ is its only layout."""
         from specify_cli.integrations import get_integration
         i = get_integration(self.KEY)
         skills_opts = [o for o in i.options() if o.name == "--skills"]
         assert len(skills_opts) == 0
-
-    def test_options_exclude_skills_flag(self):
-        """AgyIntegration no longer supports the --skills flag (it's the only layout)."""
-        from specify_cli.integrations import get_integration
-        i = get_integration(self.KEY)
-        skills_opts = [o for o in i.options() if o.name == "--skills"]
-        assert len(skills_opts) == 0
-
-
 class TestAgyAutoPromote:
     """--ai agy auto-promotes to integration path."""
 
