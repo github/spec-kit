@@ -1261,15 +1261,11 @@ def init(
             manifest.save()
 
             # Write .specify/integration.json
-            script_ext = "sh" if selected_script == "sh" else "ps1"
             integration_json = project_path / ".specify" / "integration.json"
             integration_json.parent.mkdir(parents=True, exist_ok=True)
             integration_json.write_text(json.dumps({
                 "integration": resolved_integration.key,
                 "version": get_speckit_version(),
-                "scripts": {
-                    "update-context": f".specify/integrations/{resolved_integration.key}/scripts/update-context.{script_ext}",
-                },
             }, indent=2) + "\n", encoding="utf-8")
 
             tracker.complete("integration", resolved_integration.config.get("name", resolved_integration.key))
@@ -1373,6 +1369,7 @@ def init(
                 "ai": selected_ai,
                 "integration": resolved_integration.key,
                 "branch_numbering": branch_numbering or "sequential",
+                "context_file": resolved_integration.context_file,
                 "here": here,
                 "preset": preset,
                 "script": selected_script,
@@ -1737,18 +1734,13 @@ def _read_integration_json(project_root: Path) -> dict[str, Any]:
 def _write_integration_json(
     project_root: Path,
     integration_key: str,
-    script_type: str,
 ) -> None:
     """Write ``.specify/integration.json`` for *integration_key*."""
-    script_ext = "sh" if script_type == "sh" else "ps1"
     dest = project_root / INTEGRATION_JSON
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps({
         "integration": integration_key,
         "version": get_speckit_version(),
-        "scripts": {
-            "update-context": f".specify/integrations/{integration_key}/scripts/update-context.{script_ext}",
-        },
     }, indent=2) + "\n", encoding="utf-8")
 
 
@@ -1936,7 +1928,7 @@ def integration_install(
             raw_options=integration_options,
         )
         manifest.save()
-        _write_integration_json(project_root, integration.key, selected_script)
+        _write_integration_json(project_root, integration.key)
         _update_init_options_for_integration(project_root, integration, script_type=selected_script)
 
     except Exception as e:
@@ -2013,6 +2005,7 @@ def _update_init_options_for_integration(
     opts = load_init_options(project_root)
     opts["integration"] = integration.key
     opts["ai"] = integration.key
+    opts["context_file"] = integration.context_file
     if script_type:
         opts["script"] = script_type
     if isinstance(integration, SkillsIntegration):
@@ -2064,6 +2057,7 @@ def integration_uninstall(
             opts.pop("integration", None)
             opts.pop("ai", None)
             opts.pop("ai_skills", None)
+            opts.pop("context_file", None)
             save_init_options(project_root, opts)
         raise typer.Exit(0)
 
@@ -2082,6 +2076,10 @@ def integration_uninstall(
 
     removed, skipped = manifest.uninstall(project_root, force=force)
 
+    # Remove managed context section from the agent context file
+    if integration:
+        integration.remove_context_section(project_root)
+
     _remove_integration_json(project_root)
 
     # Update init-options.json to clear the integration
@@ -2090,6 +2088,7 @@ def integration_uninstall(
         opts.pop("integration", None)
         opts.pop("ai", None)
         opts.pop("ai_skills", None)
+        opts.pop("context_file", None)
         save_init_options(project_root, opts)
 
     name = (integration.config or {}).get("name", key) if integration else key
@@ -2156,6 +2155,7 @@ def integration_switch(
                 )
                 raise typer.Exit(1)
             removed, skipped = old_manifest.uninstall(project_root, force=force)
+            current_integration.remove_context_section(project_root)
             if removed:
                 console.print(f"  Removed {len(removed)} file(s)")
             if skipped:
@@ -2186,6 +2186,7 @@ def integration_switch(
         opts.pop("integration", None)
         opts.pop("ai", None)
         opts.pop("ai_skills", None)
+        opts.pop("context_file", None)
         save_init_options(project_root, opts)
 
     # Ensure shared infrastructure is present (safe to run unconditionally;
@@ -2212,7 +2213,7 @@ def integration_switch(
             raw_options=integration_options,
         )
         manifest.save()
-        _write_integration_json(project_root, target_integration.key, selected_script)
+        _write_integration_json(project_root, target_integration.key)
         _update_init_options_for_integration(project_root, target_integration, script_type=selected_script)
 
     except Exception as e:
@@ -2320,7 +2321,7 @@ def integration_upgrade(
             raw_options=integration_options,
         )
         new_manifest.save()
-        _write_integration_json(project_root, key, selected_script)
+        _write_integration_json(project_root, key)
         _update_init_options_for_integration(project_root, integration, script_type=selected_script)
     except Exception as exc:
         # Don't teardown — setup overwrites in-place, so teardown would

@@ -62,19 +62,17 @@ class TestClaudeIntegration:
         assert parsed["disable-model-invocation"] is False
         assert parsed["metadata"]["source"] == "templates/commands/plan.md"
 
-    def test_setup_installs_update_context_scripts(self, tmp_path):
+    def test_setup_upserts_context_section(self, tmp_path):
         integration = get_integration("claude")
         manifest = IntegrationManifest("claude", tmp_path)
-        created = integration.setup(tmp_path, manifest, script_type="sh")
+        integration.setup(tmp_path, manifest, script_type="sh")
 
-        scripts_dir = tmp_path / ".specify" / "integrations" / "claude" / "scripts"
-        assert scripts_dir.is_dir()
-        assert (scripts_dir / "update-context.sh").exists()
-        assert (scripts_dir / "update-context.ps1").exists()
-
-        tracked = {path.resolve().relative_to(tmp_path.resolve()).as_posix() for path in created}
-        assert ".specify/integrations/claude/scripts/update-context.sh" in tracked
-        assert ".specify/integrations/claude/scripts/update-context.ps1" in tracked
+        ctx_path = tmp_path / integration.context_file
+        assert ctx_path.exists()
+        content = ctx_path.read_text(encoding="utf-8")
+        assert "<!-- SPECKIT START -->" in content
+        assert "<!-- SPECKIT END -->" in content
+        assert "read the current plan" in content
 
     def test_ai_flag_auto_promotes_and_enables_skills(self, tmp_path):
         from typer.testing import CliRunner

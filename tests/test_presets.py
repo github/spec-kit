@@ -1648,7 +1648,6 @@ CORE_TEMPLATE_NAMES = [
     "tasks-template",
     "checklist-template",
     "constitution-template",
-    "agent-file-template",
 ]
 
 
@@ -2448,7 +2447,7 @@ class TestPresetSkills:
     def test_agy_skill_restored_on_preset_remove(self, project_dir, temp_dir):
         """Agy preset removal should restore native skills instead of deleting them."""
         self._write_init_options(project_dir, ai="agy", ai_skills=True)
-        skills_dir = project_dir / ".agent" / "skills"
+        skills_dir = project_dir / ".agents" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="before override")
 
         core_command = project_dir / ".specify" / "templates" / "commands" / "specify.md"
@@ -2911,7 +2910,7 @@ class TestLeanPreset:
             assert tmpl_path.exists(), f"Missing command file: {tmpl['file']}"
 
     def test_lean_commands_have_no_scripts(self):
-        """Verify lean commands have no scripts or agent_scripts in frontmatter."""
+        """Verify lean commands have no scripts in frontmatter."""
         from specify_cli.agents import CommandRegistrar
 
         for name in LEAN_COMMAND_NAMES:
@@ -2919,7 +2918,6 @@ class TestLeanPreset:
             content = cmd_path.read_text()
             frontmatter, _ = CommandRegistrar.parse_frontmatter(content)
             assert "scripts" not in frontmatter, f"{name} should not have scripts in frontmatter"
-            assert "agent_scripts" not in frontmatter, f"{name} should not have agent_scripts in frontmatter"
 
     def test_lean_commands_have_no_hooks(self):
         """Verify lean commands do not contain extension hook boilerplate."""

@@ -56,14 +56,19 @@ class TestInitIntegrationFlag:
 
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "copilot"
-        assert "scripts" in data
-        assert "update-context" in data["scripts"]
 
         opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
         assert opts["integration"] == "copilot"
+        assert opts["context_file"] == ".github/copilot-instructions.md"
 
         assert (project / ".specify" / "integrations" / "copilot.manifest.json").exists()
-        assert (project / ".specify" / "integrations" / "copilot" / "scripts" / "update-context.sh").exists()
+
+        # Context section should be upserted into the copilot instructions file
+        ctx_file = project / ".github" / "copilot-instructions.md"
+        assert ctx_file.exists()
+        ctx_content = ctx_file.read_text(encoding="utf-8")
+        assert "<!-- SPECKIT START -->" in ctx_content
+        assert "<!-- SPECKIT END -->" in ctx_content
 
         shared_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
         assert shared_manifest.exists()
