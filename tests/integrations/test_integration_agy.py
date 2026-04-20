@@ -5,9 +5,9 @@ from .test_integration_base_skills import SkillsIntegrationTests
 
 class TestAgyIntegration(SkillsIntegrationTests):
     KEY = "agy"
-    FOLDER = ".agent/"
+    FOLDER = ".agents/"
     COMMANDS_SUBDIR = "skills"
-    REGISTRAR_DIR = ".agent/skills"
+    REGISTRAR_DIR = ".agents/skills"
     CONTEXT_FILE = "AGENTS.md"
 
 
@@ -24,4 +24,16 @@ class TestAgyAutoPromote:
         result = runner.invoke(app, ["init", str(target), "--ai", "agy", "--no-git", "--script", "sh"])
 
         assert result.exit_code == 0, f"init --ai agy failed: {result.output}"
-        assert (target / ".agent" / "skills" / "speckit-plan" / "SKILL.md").exists()
+        assert (target / ".agents" / "skills" / "speckit-plan" / "SKILL.md").exists()
+
+    def test_agy_setup_warning(self, tmp_path):
+        """Agy integration should print a warning about v1.19.5 requirement during setup."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        target = tmp_path / "test-proj2"
+        result = runner.invoke(app, ["init", str(target), "--ai", "agy", "--no-git", "--script", "sh"])
+
+        assert result.exit_code == 0
+        assert "Warning: The .agents/ layout requires Antigravity v1.19.5 or newer" in result.output
