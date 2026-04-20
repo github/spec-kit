@@ -10,6 +10,13 @@ class TestAgyIntegration(SkillsIntegrationTests):
     REGISTRAR_DIR = ".agents/skills"
     CONTEXT_FILE = "AGENTS.md"
 
+    def test_options_include_skills_flag(self):
+        """AgyIntegration no longer supports the --skills flag (it's the only layout)."""
+        from specify_cli.integrations import get_integration
+        i = get_integration(self.KEY)
+        skills_opts = [o for o in i.options() if o.name == "--skills"]
+        assert len(skills_opts) == 0
+
 
 class TestAgyAutoPromote:
     """--ai agy auto-promotes to integration path."""
@@ -36,4 +43,5 @@ class TestAgyAutoPromote:
         result = runner.invoke(app, ["init", str(target), "--ai", "agy", "--no-git", "--script", "sh"])
 
         assert result.exit_code == 0
-        assert "Warning: The .agents/ layout requires Antigravity v1.19.5 or newer" in result.output
+        output = result.stderr if getattr(result, "stderr", None) is not None else result.output
+        assert "Warning: The .agents/ layout requires Antigravity v1.19.5 or newer" in output

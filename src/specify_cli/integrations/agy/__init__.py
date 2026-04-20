@@ -1,8 +1,7 @@
 """Antigravity (agy) integration — skills-based agent.
 
-Antigravity uses ``.agents/skills/speckit-<name>/SKILL.md`` layout.
-Explicit command support was deprecated in version 1.20.5;
-``--skills`` defaults to ``True``. The ``.agents/`` path replaces ``.agent/`` starting in v1.19.5.
+Antigravity uses ``.agents/skills/speckit-<name>/SKILL.md`` layout (starting in v1.19.5).
+Explicit command support was deprecated in version 1.20.5.
 """
 
 from __future__ import annotations
@@ -35,17 +34,6 @@ class AgyIntegration(SkillsIntegration):
         "extension": "/SKILL.md",
     }
     context_file = "AGENTS.md"
-
-    @classmethod
-    def options(cls) -> list[IntegrationOption]:
-        return [
-            IntegrationOption(
-                "--skills",
-                is_flag=True,
-                default=True,
-                help="Install as agent skills (default for Antigravity since v1.19.5)",
-            ),
-        ]
 
     def setup(
         self,
