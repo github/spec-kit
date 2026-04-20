@@ -1,7 +1,6 @@
 """Antigravity (agy) integration — skills-based agent.
 
-Antigravity uses ``.agents/skills/speckit-<name>/SKILL.md`` layout (starting in v1.19.5).
-Explicit command support was deprecated in version 1.20.5.
+Antigravity uses ``.agents/skills/speckit-<name>/SKILL.md`` layout (enforced since v1.20.5).
 """
 
 from __future__ import annotations
@@ -45,7 +44,7 @@ class AgyIntegration(SkillsIntegration):
         import click
 
         click.secho(
-            "Warning: The .agents/ layout requires Antigravity v1.19.5 or newer. "
+            "Warning: The .agents/ layout requires Antigravity v1.20.5 or newer. "
             "Please ensure your agy installation is up to date.",
             fg="yellow",
             err=True,
