@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-17T02:00:00Z",
+  "updated_at": "2026-04-20T19:39:55Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -169,38 +169,6 @@
       "stars": 0,
       "created_at": "2026-03-03T00:00:00Z",
       "updated_at": "2026-03-03T00:00:00Z"
-    },
-    "blueprint": {
-      "name": "Blueprint",
-      "id": "blueprint",
-      "description": "Stay code-literate in AI-driven development: review a complete code blueprint for every task from spec artifacts before /speckit.implement runs",
-      "author": "chordpli",
-      "version": "1.0.0",
-      "download_url": "https://github.com/chordpli/spec-kit-blueprint/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/chordpli/spec-kit-blueprint",
-      "homepage": "https://github.com/chordpli/spec-kit-blueprint",
-      "documentation": "https://github.com/chordpli/spec-kit-blueprint/blob/main/README.md",
-      "changelog": "https://github.com/chordpli/spec-kit-blueprint/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.2.0"
-      },
-      "provides": {
-        "commands": 2,
-        "hooks": 1
-      },
-      "tags": [
-        "blueprint",
-        "pre-implementation",
-        "review",
-        "scaffolding",
-        "code-literacy"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-04-17T00:00:00Z",
-      "updated_at": "2026-04-17T00:00:00Z"
     },
     "branch-convention": {
       "name": "Branch Convention",
@@ -1295,6 +1263,37 @@
       "created_at": "2026-03-27T08:22:30Z",
       "updated_at": "2026-03-27T08:22:30Z"
     },
+    "prep-specify": {
+      "name": "Prep Specify",
+      "id": "prep-specify",
+      "description": "Clarify rough feature ideas into paste-ready /speckit.specify prompts",
+      "author": "Nick",
+      "version": "1.0.0",
+      "download_url": "https://github.com/nalthoff/spec-kit-prep-specify/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/nalthoff/spec-kit-prep-specify",
+      "homepage": "https://github.com/nalthoff/spec-kit-prep-specify",
+      "documentation": "https://github.com/nalthoff/spec-kit-prep-specify/blob/main/README.md",
+      "changelog": "https://github.com/nalthoff/spec-kit-prep-specify/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "docs",
+        "process",
+        "specification",
+        "prompt-prep"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-20T19:39:55Z",
+      "updated_at": "2026-04-20T19:39:55Z"
+    },
     "pr-bridge": {
       "name": "PR Bridge",
       "id": "pr-bridge",
@@ -1656,39 +1655,6 @@
       "stars": 0,
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-04-09T00:00:00Z"
-    },
-    "scope": {
-      "name": "Spec Scope",
-      "id": "scope",
-      "description": "Effort estimation and scope tracking — estimate work, detect creep, and budget time per phase.",
-      "author": "Quratulain-bilal",
-      "version": "1.0.0",
-      "download_url": "https://github.com/Quratulain-bilal/spec-kit-scope-/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/Quratulain-bilal/spec-kit-scope-",
-      "homepage": "https://github.com/Quratulain-bilal/spec-kit-scope-",
-      "documentation": "https://github.com/Quratulain-bilal/spec-kit-scope-/blob/main/README.md",
-      "changelog": "https://github.com/Quratulain-bilal/spec-kit-scope-/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.4.0"
-      },
-      "provides": {
-        "commands": 4,
-        "hooks": 1
-      },
-      "tags": [
-        "estimation",
-        "scope",
-        "effort",
-        "planning",
-        "project-management",
-        "tracking"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-04-17T02:00:00Z",
-      "updated_at": "2026-04-17T02:00:00Z"
     },
     "security-review": {
       "name": "Security Review",
