@@ -482,7 +482,7 @@ class IntegrationBase(ABC):
         )
 
         if ctx_path.exists():
-            content = ctx_path.read_text(encoding="utf-8")
+            content = ctx_path.read_text(encoding="utf-8-sig")
             start_idx = content.find(self.CONTEXT_MARKER_START)
             end_idx = content.find(
                 self.CONTEXT_MARKER_END,
@@ -547,7 +547,7 @@ class IntegrationBase(ABC):
         if not ctx_path.exists():
             return False
 
-        content = ctx_path.read_text(encoding="utf-8")
+        content = ctx_path.read_text(encoding="utf-8-sig")
         start_idx = content.find(self.CONTEXT_MARKER_START)
         end_idx = content.find(
             self.CONTEXT_MARKER_END,
