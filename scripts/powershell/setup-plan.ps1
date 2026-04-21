@@ -37,9 +37,10 @@ New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 $template = Resolve-Template -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
 if ($template -and (Test-Path $template)) { 
     # Read the template content and write it to the implementation plan file with UTF-8 encoding without BOM
-    $content = Get-Content -Raw -Path $template
-    $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $Utf8NoBom)
+   # Read the template content as UTF-8 and write it to the implementation plan file with UTF-8 encoding without BOM
+    $content = Get-Content -Raw -Encoding UTF8 -Path $template
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
     Write-Output "Copied plan template to $($paths.IMPL_PLAN)"
 } else {
     Write-Warning "Plan template not found"
