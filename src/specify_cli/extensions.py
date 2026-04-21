@@ -140,11 +140,16 @@ class ExtensionManifest:
         """Load YAML file safely."""
         try:
             with open(path, 'r') as f:
-                return yaml.safe_load(f) or {}
+                data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise ValidationError(f"Invalid YAML in {path}: {e}")
         except FileNotFoundError:
             raise ValidationError(f"Manifest not found: {path}")
+        if not isinstance(data, dict):
+            raise ValidationError(
+                f"Manifest must be a YAML mapping, got {type(data).__name__}: {path}"
+            )
+        return data
 
     def _validate(self):
         """Validate manifest structure and required fields."""

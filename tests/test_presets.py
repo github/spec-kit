@@ -1059,6 +1059,33 @@ class TestResolveCore:
         result = resolver.resolve_core("nonexistent", "command")
         assert result is None
 
+    def test_resolve_extension_command_via_manifest_skips_oserror_manifests(self, project_dir):
+        """resolve_extension_command_via_manifest skips extensions whose manifest raises OSError."""
+        import unittest.mock as mock
+
+        ext_dir = project_dir / ".specify" / "extensions" / "bad-ext"
+        cmd_dir = ext_dir / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "mycmd.md").write_text("---\ndescription: d\n---\n\nbody\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: bad-ext\n  name: Bad\n  version: 1.0.0\n"
+            "  description: d\n  author: a\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n  commands:\n"
+            "    - name: speckit.bad-ext.mycmd\n"
+            "      file: commands/mycmd.md\n"
+            "      description: My command\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+        # Simulate a permission error when opening the manifest file.
+        with mock.patch("builtins.open", side_effect=PermissionError("denied")):
+            result = resolver.resolve_extension_command_via_manifest("speckit.bad-ext.mycmd")
+
+        assert result is None, "OSError during manifest load must be silently skipped"
+
 
 class TestExtensionPriorityResolution:
     """Test extension priority resolution with registered and unregistered extensions."""
@@ -3966,6 +3993,44 @@ class TestReplayWrapsForCommand:
         assert "[pre-a]" in written
         assert "CORE" in written
         assert "[post-a]" in written
+
+    def test_replay_applies_integration_post_processing_to_skill(self, project_dir, temp_dir):
+        """_replay_skill_override must call post_process_skill_content, matching _register_skills."""
+        import json
+        import shutil as _shutil
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text("---\ndescription: core\n---\n\nCORE\n")
+
+        preset_dir = _make_wrap_preset_dir(temp_dir, "preset-a", "speckit.specify", "pre-a", "post-a")
+        _shutil.copytree(preset_dir, project_dir / ".specify" / "presets" / "preset-a")
+
+        manager = PresetManager(project_dir)
+        manager.registry.add("preset-a", {
+            "version": "1.0.0", "source": "local", "enabled": True,
+            "priority": 10, "manifest_hash": "x",
+            "registered_commands": {}, "registered_skills": [],
+            "wrap_commands": ["speckit.specify"],
+        })
+
+        skills_dir = project_dir / ".claude" / "skills"
+        skill_subdir = skills_dir / "speckit-specify"
+        skill_subdir.mkdir(parents=True)
+        (skill_subdir / "SKILL.md").write_text("---\nname: speckit-specify\n---\n\nold\n")
+        (project_dir / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "claude", "ai_skills": True})
+        )
+
+        manager._replay_wraps_for_command("speckit.specify")
+
+        # ClaudeIntegration.post_process_skill_content injects these flags.
+        # Their presence proves the integration hook ran during replay.
+        written = (skill_subdir / "SKILL.md").read_text()
+        assert "disable-model-invocation: false" in written, (
+            "_replay_skill_override must call post_process_skill_content "
+            "(same as _register_skills)"
+        )
 
 
 class TestInstallRemoveWrapLifecycle:

@@ -217,6 +217,14 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="Missing required field"):
             ExtensionManifest(manifest_path)
 
+    def test_non_mapping_yaml_raises_validation_error(self, temp_dir):
+        """Manifest whose YAML root is a scalar or list raises ValidationError, not TypeError."""
+        manifest_path = temp_dir / "extension.yml"
+        for bad_content in ("42\n", "[]\n", "null\n"):
+            manifest_path.write_text(bad_content)
+            with pytest.raises(ValidationError, match="YAML mapping"):
+                ExtensionManifest(manifest_path)
+
     def test_invalid_extension_id(self, temp_dir, valid_manifest_data):
         """Test manifest with invalid extension ID format."""
         import yaml

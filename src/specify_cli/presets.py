@@ -771,6 +771,7 @@ class PresetManager:
 
         from . import SKILL_DESCRIPTIONS, load_init_options
         from .agents import CommandRegistrar
+        from .integrations import get_integration
 
         init_opts = load_init_options(self.project_root)
         if not isinstance(init_opts, dict):
@@ -780,6 +781,7 @@ class PresetManager:
             return
 
         registrar = CommandRegistrar()
+        integration = get_integration(selected_ai)
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
         create_missing_skills = bool(init_opts.get("ai_skills")) and agent_config.get("extension") != "/SKILL.md"
 
@@ -831,6 +833,8 @@ class PresetManager:
                 f"# Speckit {skill_title} Skill\n\n"
                 f"{body}\n"
             )
+            if integration is not None and hasattr(integration, "post_process_skill_content"):
+                skill_content = integration.post_process_skill_content(skill_content)
             (skill_subdir / "SKILL.md").write_text(skill_content, encoding="utf-8")
 
     def _get_skills_dir(self) -> Optional[Path]:
@@ -902,7 +906,7 @@ class PresetManager:
 
             try:
                 manifest = ExtensionManifest(manifest_path)
-            except ValidationError:
+            except (ValidationError, TypeError, AttributeError):
                 continue
 
             ext_root = ext_dir.resolve()
@@ -2196,8 +2200,9 @@ class PresetResolver:
         template_name: str,
         template_type: str = "template",
     ) -> Optional[Path]:
-        """Resolve against tiers 1, 3, and 4 only — skipping installed presets.
+        """Resolve while skipping installed presets (tier 2).
 
+        Searches tiers 1, 3, 4, and 5 (bundled core_pack / repo-root fallback).
         Use when resolving {CORE_TEMPLATE} to guarantee the result is actual
         base content, never another preset's wrap output.
         """
@@ -2228,7 +2233,7 @@ class PresetResolver:
                 continue
             try:
                 manifest = ExtensionManifest(manifest_path)
-            except (ValidationError, Exception):
+            except (ValidationError, OSError, TypeError, AttributeError):
                 continue
             for cmd_info in manifest.commands:
                 if cmd_info.get("name") != cmd_name:
