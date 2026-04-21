@@ -373,7 +373,7 @@ class TestBuildExecArgs:
         args = impl.build_exec_args("do stuff", model="claude-sonnet-4-20250514")
         assert args[0] == "copilot"
         assert "-p" in args
-        assert "--allow-all-tools" in args
+        assert "--yolo" in args
         assert "--model" in args
 
     def test_ide_only_returns_none(self):

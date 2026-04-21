@@ -50,13 +50,14 @@ class CopilotIntegration(IntegrationBase):
         output_json: bool = True,
     ) -> list[str] | None:
         # GitHub Copilot CLI uses ``copilot -p "prompt"`` for
-        # non-interactive mode.  --allow-all-tools is required for the
-        # agent to perform file edits and shell commands.  Controlled
-        # by SPECKIT_ALLOW_ALL_TOOLS env var (default: enabled).
+        # non-interactive mode.  --yolo enables all permissions
+        # (tools, paths, and URLs) so the agent can perform file
+        # edits and shell commands without interactive prompts.
+        # Controlled by SPECKIT_COPILOT_ALLOW_ALL env var (default: enabled).
         import os
         args = ["copilot", "-p", prompt]
-        if os.environ.get("SPECKIT_ALLOW_ALL_TOOLS", "1") != "0":
-            args.append("--allow-all-tools")
+        if os.environ.get("SPECKIT_COPILOT_ALLOW_ALL", "1") != "0":
+            args.append("--yolo")
         if model:
             args.extend(["--model", model])
         if output_json:
@@ -96,8 +97,8 @@ class CopilotIntegration(IntegrationBase):
             "copilot", "-p", prompt,
             "--agent", agent_name,
         ]
-        if os.environ.get("SPECKIT_ALLOW_ALL_TOOLS", "1") != "0":
-            cli_args.append("--allow-all-tools")
+        if os.environ.get("SPECKIT_COPILOT_ALLOW_ALL", "1") != "0":
+            cli_args.append("--yolo")
         if model:
             cli_args.extend(["--model", model])
         if not stream:
