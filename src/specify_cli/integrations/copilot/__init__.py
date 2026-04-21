@@ -36,7 +36,7 @@ def _allow_all() -> bool:
         warnings.warn(
             "SPECKIT_ALLOW_ALL_TOOLS is deprecated; "
             "use SPECKIT_COPILOT_ALLOW_ALL_TOOLS instead.",
-            DeprecationWarning,
+            UserWarning,
             stacklevel=2,
         )
         return old_var != "0"

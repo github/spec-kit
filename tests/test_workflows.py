@@ -396,7 +396,11 @@ class TestBuildExecArgs:
             warnings.simplefilter("always")
             args = impl.build_exec_args("do stuff")
         assert "--yolo" not in args
-        assert any("SPECKIT_ALLOW_ALL_TOOLS is deprecated" in str(x.message) for x in w)
+        assert any(
+            "SPECKIT_ALLOW_ALL_TOOLS is deprecated" in str(x.message)
+            and issubclass(x.category, UserWarning)
+            for x in w
+        )
 
     def test_copilot_new_env_var_takes_precedence(self, monkeypatch):
         monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "1")
