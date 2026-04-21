@@ -1359,10 +1359,16 @@ class PresetManager:
             t["name"] for t in manifest.templates if t.get("type") == "command"
         ]
         if cmd_names:
-            self._reconcile_composed_commands(cmd_names)
-            # Also reconcile skills so SKILL.md files reflect the actual
-            # winning command layer, not just the last-installed preset.
-            self._reconcile_skills(cmd_names)
+            try:
+                self._reconcile_composed_commands(cmd_names)
+                self._reconcile_skills(cmd_names)
+            except Exception as exc:
+                import warnings
+                warnings.warn(
+                    f"Post-install reconciliation failed for {manifest.id}: {exc}. "
+                    f"Agent command files may not reflect the current priority stack.",
+                    stacklevel=2,
+                )
 
         return manifest
 
@@ -1471,10 +1477,17 @@ class PresetManager:
         # Reconcile: if other presets still provide these commands,
         # re-resolve from the remaining stack so the next layer takes effect.
         if removed_cmd_names:
-            self._reconcile_composed_commands(list(removed_cmd_names))
-            # Also reconcile skills so SKILL.md files reflect the new winning
-            # command layer rather than being left absent or stale.
-            self._reconcile_skills(list(removed_cmd_names))
+            try:
+                self._reconcile_composed_commands(list(removed_cmd_names))
+                self._reconcile_skills(list(removed_cmd_names))
+            except Exception as exc:
+                import warnings
+                warnings.warn(
+                    f"Post-removal reconciliation failed for {pack_id}: {exc}. "
+                    f"Agent command files may be stale; reinstall affected presets "
+                    f"or run 'specify preset add' to refresh.",
+                    stacklevel=2,
+                )
 
         return True
 
@@ -2551,8 +2564,68 @@ class PresetResolver:
                 "source": "core",
                 "strategy": "replace",
             })
+        else:
+            # Priority 5: Bundled core_pack (wheel install) or repo-root
+            # templates (source-checkout), matching resolve()'s tier-5 fallback.
+            bundled = self._find_bundled_core(template_name, template_type, ext)
+            if bundled:
+                layers.append({
+                    "path": bundled,
+                    "source": "core (bundled)",
+                    "strategy": "replace",
+                })
 
         return layers
+
+    def _find_bundled_core(
+        self,
+        template_name: str,
+        template_type: str,
+        ext: str,
+    ) -> Optional[Path]:
+        """Find a core template from the bundled pack or source checkout.
+
+        Mirrors the tier-5 fallback logic in ``resolve()`` so that
+        ``collect_all_layers()`` can locate base layers even when
+        ``.specify/templates/`` doesn't contain the core file.
+        """
+        try:
+            from specify_cli import _locate_core_pack
+        except ImportError:
+            return None
+
+        stem = self._core_stem(template_name)
+        names = [template_name]
+        if stem and stem != template_name:
+            names.append(stem)
+
+        core_pack = _locate_core_pack()
+        if core_pack is not None:
+            for name in names:
+                if template_type == "template":
+                    c = core_pack / "templates" / f"{name}.md"
+                elif template_type == "command":
+                    c = core_pack / "commands" / f"{name}.md"
+                elif template_type == "script":
+                    c = core_pack / "scripts" / f"{name}{ext}"
+                else:
+                    c = core_pack / f"{name}.md"
+                if c.exists():
+                    return c
+        else:
+            repo_root = Path(__file__).parent.parent.parent
+            for name in names:
+                if template_type == "template":
+                    c = repo_root / "templates" / f"{name}.md"
+                elif template_type == "command":
+                    c = repo_root / "templates" / "commands" / f"{name}.md"
+                elif template_type == "script":
+                    c = repo_root / "scripts" / f"{name}{ext}"
+                else:
+                    c = repo_root / f"{name}.md"
+                if c.exists():
+                    return c
+        return None
 
     def resolve_content(
         self,
@@ -2613,6 +2686,7 @@ class PresetResolver:
         # layer's frontmatter will be reattached at the end.
         is_command = template_type == "command"
         top_frontmatter_text = None
+        base_frontmatter_text = None
 
         def _split_frontmatter(text: str) -> tuple:
             """Return (frontmatter_block_with_fences, body) or (None, text).
@@ -2641,6 +2715,7 @@ class PresetResolver:
             fm, body = _split_frontmatter(content)
             if fm:
                 top_frontmatter_text = fm
+                base_frontmatter_text = fm
                 content = body
 
         # Apply composition layers from bottom to top
@@ -2679,8 +2754,33 @@ class PresetResolver:
                     )
                 content = layer_content.replace(placeholder, content)
 
-        # Reattach the highest-priority frontmatter for commands
+        # Reattach the highest-priority frontmatter for commands,
+        # inheriting scripts/agent_scripts from the base if missing.
         if is_command and top_frontmatter_text:
+            if base_frontmatter_text and base_frontmatter_text != top_frontmatter_text:
+                # Parse both frontmatters to check for missing keys
+                try:
+                    from .agents import CommandRegistrar
+                    _, _ = CommandRegistrar.parse_frontmatter("placeholder")  # ensure import
+                    base_fm, _ = CommandRegistrar.parse_frontmatter(
+                        base_frontmatter_text + "\nbody"
+                    )
+                    top_fm, _ = CommandRegistrar.parse_frontmatter(
+                        top_frontmatter_text + "\nbody"
+                    )
+                    inherited = False
+                    for key in ("scripts", "agent_scripts"):
+                        if key not in top_fm and key in base_fm:
+                            top_fm[key] = base_fm[key]
+                            inherited = True
+                    if inherited:
+                        top_frontmatter_text = (
+                            "---\n"
+                            + yaml.safe_dump(top_fm, sort_keys=False).strip()
+                            + "\n---"
+                        )
+                except Exception:
+                    pass  # best-effort; fall back to top frontmatter as-is
             content = top_frontmatter_text + "\n\n" + content
 
         return content
