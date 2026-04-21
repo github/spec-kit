@@ -2,6 +2,22 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.7.4] - 2026-04-21
+
+### Changed
+
+- fix(copilot): use --yolo to grant all permissions in non-interactive mode (#2298)
+- feat: add CITATION.cff and .zenodo.json for academic citation support (#2291)
+- Add spec-validate to community catalog (#2274)
+- feat: register Ripple in community catalog (#2272)
+- Add version-guard to community catalog (#2286)
+- Add spec-reference-loader to community catalog (#2285)
+- Add memory-loader to community catalog (#2284)
+- fix(integrations): strip UTF-8 BOM when reading agent context files (#2283)
+- Preset fiction book writing1.6 (#2270)
+- fix(integrations): migrate Antigravity (agy) layout to .agents/ and deprecate --skills (#2276)
+- chore: release 0.7.3, begin 0.7.4.dev0 development (#2263)
+
 ## [0.7.3] - 2026-04-17
 
 ### Changed
