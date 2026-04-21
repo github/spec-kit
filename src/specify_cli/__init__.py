@@ -328,8 +328,14 @@ def callback(ctx: typer.Context):
         console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
         console.print()
     # Addresses #1320: nudge users running outdated CLIs. The `version` subcommand
-    # already surfaces the version, so skip there to avoid double-printing.
-    if ctx.invoked_subcommand not in (None, "version"):
+    # already surfaces the version, so skip there to avoid double-printing; also
+    # skip help invocations. Runs on bare `specify` too so the banner launch
+    # benefits from the nudge when the user has opted in.
+    if (
+        ctx.invoked_subcommand != "version"
+        and "--help" not in sys.argv
+        and "-h" not in sys.argv
+    ):
         _check_for_updates()
 
 def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> Optional[str]:
@@ -1592,17 +1598,21 @@ def get_speckit_version() -> str:
 
 # ===== Update check (addresses #1320) =====
 #
-# Cached once per 24h in the platform user-cache dir. Triggered from the top-level
-# callback. Never blocks the user — every failure path swallows the exception.
+# Opt-in only (set SPECIFY_ENABLE_UPDATE_CHECK=1). Air-gapped / network-constrained
+# environments never reach GitHub, so the check is off by default. When enabled,
+# it is cached once per 24h in the platform user-cache dir and triggered from the
+# top-level callback. Best-effort: every failure path swallows the exception so
+# the check never fails the command, though cache misses may add a small startup
+# delay (bounded by the fetch timeout) while contacting GitHub.
 
 _UPDATE_CHECK_URL = "https://api.github.com/repos/github/spec-kit/releases/latest"
 _UPDATE_CHECK_CACHE_TTL_SECONDS = 24 * 60 * 60
 _UPDATE_CHECK_TIMEOUT_SECONDS = 2.0
 
 
-def _parse_version_tuple(version: str) -> tuple[int, ...] | None:
+def _parse_version_tuple(version: str | None) -> tuple[int, ...] | None:
     """Parse `v0.6.2` / `0.6.2` / `0.6.2.dev0` → tuple of ints. Returns None if unparseable."""
-    if not version:
+    if not isinstance(version, str) or not version:
         return None
     s = version.strip().lstrip("vV")
     # Drop PEP 440 pre/post/dev/local segments; we only compare release numbers.
@@ -1631,7 +1641,7 @@ def _read_update_check_cache(path: Path) -> dict | None:
         import time
         if not path.exists():
             return None
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         checked_at = float(data.get("checked_at", 0))
         if time.time() - checked_at > _UPDATE_CHECK_CACHE_TTL_SECONDS:
             return None
@@ -1644,7 +1654,10 @@ def _write_update_check_cache(path: Path, latest: str) -> None:
     try:
         import time
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"checked_at": time.time(), "latest": latest}))
+        path.write_text(
+            json.dumps({"checked_at": time.time(), "latest": latest}),
+            encoding="utf-8",
+        )
     except Exception:
         # Cache write failures are non-fatal.
         pass
@@ -1667,8 +1680,15 @@ def _fetch_latest_version() -> str | None:
 
 
 def _should_skip_update_check() -> bool:
-    if os.environ.get("SPECIFY_SKIP_UPDATE_CHECK", "").strip().lower() in ("1", "true", "yes", "on"):
+    # Opt-in only: skip unless the user has explicitly enabled the check.
+    # Air-gapped / network-constrained environments cannot reach GitHub, so a
+    # default-on network call is a non-starter; keeping this off by default
+    # also means users never pay the fetch latency unless they asked for it.
+    if os.environ.get("SPECIFY_ENABLE_UPDATE_CHECK", "").strip().lower() not in ("1", "true", "yes", "on"):
         return True
+    # Belt-and-suspenders: even when opted in, suppress in CI and when the
+    # caller isn't a TTY (piped output, redirected logs, etc.) so we don't
+    # dirty machine-readable output with a human-facing warning.
     if os.environ.get("CI"):
         return True
     try:
@@ -1720,7 +1740,7 @@ def _check_for_updates() -> None:
             f"--from git+https://github.com/github/spec-kit.git@v{latest_display}[/dim]"
         )
         console.print(
-            "[dim]   (set SPECIFY_SKIP_UPDATE_CHECK=1 to silence this check)[/dim]"
+            "[dim]   (unset SPECIFY_ENABLE_UPDATE_CHECK to disable this check)[/dim]"
         )
     except Exception:
         # Update check must never surface an error to the user.

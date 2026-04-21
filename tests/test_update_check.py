@@ -201,8 +201,52 @@ class TestCheckForUpdates:
 
         assert out == ""
 
-    def test_skip_env_var_short_circuits(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("SPECIFY_SKIP_UPDATE_CHECK", "1")
+    def test_opt_in_default_off_short_circuits(self, monkeypatch, tmp_path):
+        """Without SPECIFY_ENABLE_UPDATE_CHECK the helper must not hit the network."""
+        monkeypatch.delenv("SPECIFY_ENABLE_UPDATE_CHECK", raising=False)
+
+        fetched = {"called": False}
+
+        def _fetch():
+            fetched["called"] = True
+            return "v99.0.0"
+
+        monkeypatch.setattr("specify_cli._fetch_latest_version", _fetch)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.0.1")
+        monkeypatch.setattr(
+            "specify_cli._update_check_cache_path", lambda: tmp_path / "vc.json"
+        )
+
+        _check_for_updates()
+
+        assert fetched["called"] is False
+
+    def test_opt_in_env_var_allows_check(self, monkeypatch, tmp_path):
+        """With SPECIFY_ENABLE_UPDATE_CHECK=1 and a TTY, the helper proceeds."""
+        monkeypatch.setenv("SPECIFY_ENABLE_UPDATE_CHECK", "1")
+        monkeypatch.delenv("CI", raising=False)
+        monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+
+        fetched = {"called": False}
+
+        def _fetch():
+            fetched["called"] = True
+            return "v99.0.0"
+
+        monkeypatch.setattr("specify_cli._fetch_latest_version", _fetch)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.0.1")
+        monkeypatch.setattr(
+            "specify_cli._update_check_cache_path", lambda: tmp_path / "vc.json"
+        )
+
+        _check_for_updates()
+
+        assert fetched["called"] is True
+
+    def test_ci_suppresses_even_when_opted_in(self, monkeypatch, tmp_path):
+        """Belt-and-suspenders: CI=1 wins over the opt-in flag."""
+        monkeypatch.setenv("SPECIFY_ENABLE_UPDATE_CHECK", "1")
+        monkeypatch.setenv("CI", "1")
 
         fetched = {"called": False}
 
