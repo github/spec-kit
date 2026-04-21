@@ -12,8 +12,30 @@
     - name: Upgrade
       href: upgrade.md
 
+# Reference
+- name: Reference
+  items:
+    - name: Overview
+      href: reference/overview.md
+    - name: Core Commands
+      href: reference/core.md
+    - name: Integrations
+      href: reference/integrations.md
+    - name: Extensions
+      href: reference/extensions.md
+    - name: Presets
+      href: reference/presets.md
+    - name: Workflows
+      href: reference/workflows.md
+
 # Development workflows
 - name: Development
   items:
     - name: Local Development
       href: local-development.md
+
+# Community
+- name: Community
+  items:
+    - name: Friends
+      href: community/friends.md

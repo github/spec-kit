@@ -1175,8 +1175,7 @@ class TestPresetCatalog:
         """Test search with cached catalog data."""
         from unittest.mock import patch
 
-        # Only use the default catalog to prevent fetching the community catalog from the network
-        monkeypatch.setenv("SPECKIT_PRESET_CATALOG_URL", PresetCatalog.DEFAULT_CATALOG_URL)
+        monkeypatch.delenv("SPECKIT_PRESET_CATALOG_URL", raising=False)
         catalog = PresetCatalog(project_dir)
         catalog.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1649,7 +1648,6 @@ CORE_TEMPLATE_NAMES = [
     "tasks-template",
     "checklist-template",
     "constitution-template",
-    "agent-file-template",
 ]
 
 
@@ -1976,7 +1974,7 @@ class TestPresetSkills:
         assert skill_file.exists()
         content = skill_file.read_text()
         assert "preset:self-test" in content, "Skill should reference preset source"
-        assert "disable-model-invocation: true" in content
+        assert "disable-model-invocation: false" in content
 
         # Verify it was recorded in registry
         metadata = manager.registry.get("self-test")
@@ -2058,7 +2056,7 @@ class TestPresetSkills:
         content = skill_file.read_text()
         assert "preset:self-test" not in content, "Preset content should be gone"
         assert "templates/commands/specify.md" in content, "Should reference core template"
-        assert "disable-model-invocation: true" in content
+        assert "disable-model-invocation: false" in content
 
     def test_skill_restored_on_remove_resolves_script_placeholders(self, project_dir):
         """Core restore should resolve {SCRIPT}/{ARGS} placeholders like other skill paths."""
@@ -2449,7 +2447,7 @@ class TestPresetSkills:
     def test_agy_skill_restored_on_preset_remove(self, project_dir, temp_dir):
         """Agy preset removal should restore native skills instead of deleting them."""
         self._write_init_options(project_dir, ai="agy", ai_skills=True)
-        skills_dir = project_dir / ".agent" / "skills"
+        skills_dir = project_dir / ".agents" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="before override")
 
         core_command = project_dir / ".specify" / "templates" / "commands" / "specify.md"
@@ -2912,7 +2910,7 @@ class TestLeanPreset:
             assert tmpl_path.exists(), f"Missing command file: {tmpl['file']}"
 
     def test_lean_commands_have_no_scripts(self):
-        """Verify lean commands have no scripts or agent_scripts in frontmatter."""
+        """Verify lean commands have no scripts in frontmatter."""
         from specify_cli.agents import CommandRegistrar
 
         for name in LEAN_COMMAND_NAMES:
@@ -2920,7 +2918,6 @@ class TestLeanPreset:
             content = cmd_path.read_text()
             frontmatter, _ = CommandRegistrar.parse_frontmatter(content)
             assert "scripts" not in frontmatter, f"{name} should not have scripts in frontmatter"
-            assert "agent_scripts" not in frontmatter, f"{name} should not have agent_scripts in frontmatter"
 
     def test_lean_commands_have_no_hooks(self):
         """Verify lean commands do not contain extension hook boilerplate."""

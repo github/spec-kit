@@ -8,6 +8,62 @@
 
 - feat(cli): opt-in launch warning when a newer spec-kit release is available; enable with `SPECIFY_ENABLE_UPDATE_CHECK=1` (or `true`/`yes`/`on`), cached for 24h, and suppressed in non-interactive shells and `CI=1` (#1320)
 
+## [0.7.3] - 2026-04-17
+
+### Changed
+
+- fix: replace shell-based context updates with marker-based upsert (#2259)
+- Add Community Friends page to docs site (#2261)
+- Add Spec Scope extension to community catalog (#2172)
+- docs: add Community-maintained plugin for Claude Code and GitHub Copilot CLI that installs Spec Kit skills via the plugin marketplace to README (#2250)
+- fix: suppress CRLF warnings in auto-commit.ps1 (#2258)
+- feat: register Blueprint in community catalog (#2252)
+- preset: Update preset-fiction-book-writing to community catalog -> v1.5.0 (#2256)
+- chore(deps): bump actions/upload-pages-artifact from 3 to 5 (#2251)
+- fix: add reference/*.md to docfx content glob (#2248)
+- chore: release 0.7.2, begin 0.7.3.dev0 development (#2247)
+
+## [0.7.2] - 2026-04-16
+
+### Changed
+
+- docs: add core commands reference and simplify README CLI section (#2245)
+- docs: add workflows reference, reorganize into docs/reference/, and add --version flag (#2244)
+- docs: add presets reference page and rename pack_id to preset_id (#2243)
+- docs: add extensions reference page and integrations FAQ (#2242)
+- docs: consolidate integration documentation into docs/integrations.md (#2241)
+- feat: update memorylint and superpowers-bridge versions to 1.3.0 with new download URLs (#2240)
+- feat: Integration catalog — discovery, versioning, and community distribution (#2130)
+- Add Catalog CI extension to community catalog (#2239)
+- Added issues extension (#2194)
+- chore: release 0.7.1, begin 0.7.2.dev0 development (#2235)
+
+## [0.7.1] - 2026-04-15
+
+### Changed
+
+- ci: add windows-latest to test matrix (#2233)
+- docs: remove deprecated --skip-tls references from local-development guide (#2231)
+- fix: allow Claude to chain skills for hook execution (#2227)
+- docs: merge TESTING.md into CONTRIBUTING.md, remove TESTING.md (#2228)
+- Add agent-assign extension to community catalog (#2030)
+- fix: unofficial PyPI warning (#1982) and legacy extension command name auto-correction (#2017) (#2027)
+- feat: register architect-preview in community catalog (#2214)
+- chore: deprecate --ai flag in favor of --integration on specify init (#2218)
+- chore: release 0.7.0, begin 0.7.1.dev0 development (#2217)
+
+## [0.7.0] - 2026-04-14
+
+### Changed
+
+- Add workflow engine with catalog system (#2158)
+- docs(catalog): add claude-ask-questions to community preset catalog (#2191)
+- Add SFSpeckit — Salesforce SDD Extension (#2208)
+- feat(scripts): optional single-segment branch prefix for gitflow (#2202)
+- chore: release 0.6.2, begin 0.6.3.dev0 development (#2205)
+- Add Worktrees extension to community catalog (#2207)
+- feat: Update catalog.community.json for preset-fiction-book-writing (#2199)
+
 ## [0.6.2] - 2026-04-13
 
 ### Changed

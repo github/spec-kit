@@ -137,4 +137,4 @@ fi
 _git_out=$(git add . 2>&1) || { echo "[specify] Error: git add failed: $_git_out" >&2; exit 1; }
 _git_out=$(git commit -q -m "$_commit_msg" 2>&1) || { echo "[specify] Error: git commit failed: $_git_out" >&2; exit 1; }
 
-echo "✓ Changes committed ${_phase} ${_command_name}" >&2
+echo "[OK] Changes committed ${_phase} ${_command_name}" >&2

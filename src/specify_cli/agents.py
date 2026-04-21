@@ -110,9 +110,9 @@ class CommandRegistrar:
         """Normalize script paths in frontmatter to generated project locations.
 
         Rewrites known repo-relative and top-level script paths under the
-        `scripts` and `agent_scripts` keys (for example `../../scripts/`,
-        `../../templates/`, `../../memory/`, `scripts/`, `templates/`, and
-        `memory/`) to the `.specify/...` paths used in generated projects.
+        ``scripts`` key (for example ``../../scripts/``,
+        ``../../templates/``, ``../../memory/``, ``scripts/``, ``templates/``, and
+        ``memory/``) to the ``.specify/...`` paths used in generated projects.
 
         Args:
             frontmatter: Frontmatter dictionary
@@ -122,11 +122,8 @@ class CommandRegistrar:
         """
         frontmatter = deepcopy(frontmatter)
 
-        for script_key in ("scripts", "agent_scripts"):
-            scripts = frontmatter.get(script_key)
-            if not isinstance(scripts, dict):
-                continue
-
+        scripts = frontmatter.get("scripts")
+        if isinstance(scripts, dict):
             for key, script_path in scripts.items():
                 if isinstance(script_path, str):
                     scripts[key] = self.rewrite_project_relative_paths(script_path)
@@ -317,11 +314,6 @@ class CommandRegistrar:
                 "source": source,
             },
         }
-        if agent_name == "claude":
-            # Claude skills should be user-invocable (accessible via /command)
-            # and only run when explicitly invoked (not auto-triggered by the model).
-            skill_frontmatter["user-invocable"] = True
-            skill_frontmatter["disable-model-invocation"] = True
         return skill_frontmatter
 
     @staticmethod
@@ -338,11 +330,8 @@ class CommandRegistrar:
             frontmatter = {}
 
         scripts = frontmatter.get("scripts", {}) or {}
-        agent_scripts = frontmatter.get("agent_scripts", {}) or {}
         if not isinstance(scripts, dict):
             scripts = {}
-        if not isinstance(agent_scripts, dict):
-            agent_scripts = {}
 
         init_opts = load_init_options(project_root)
         if not isinstance(init_opts, dict):
@@ -356,15 +345,12 @@ class CommandRegistrar:
             )
             secondary_variant = "sh" if default_variant == "ps" else "ps"
 
-            if default_variant in scripts or default_variant in agent_scripts:
+            if default_variant in scripts:
                 fallback_order.append(default_variant)
-            if secondary_variant in scripts or secondary_variant in agent_scripts:
+            if secondary_variant in scripts:
                 fallback_order.append(secondary_variant)
 
             for key in scripts:
-                if key not in fallback_order:
-                    fallback_order.append(key)
-            for key in agent_scripts:
                 if key not in fallback_order:
                     fallback_order.append(key)
 
@@ -375,14 +361,12 @@ class CommandRegistrar:
             script_command = script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{SCRIPT}", script_command)
 
-        agent_script_command = (
-            agent_scripts.get(script_variant) if script_variant else None
-        )
-        if agent_script_command:
-            agent_script_command = agent_script_command.replace("{ARGS}", "$ARGUMENTS")
-            body = body.replace("{AGENT_SCRIPT}", agent_script_command)
-
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
+
+        # Resolve __CONTEXT_FILE__ from init-options
+        context_file = init_opts.get("context_file") or ""
+        body = body.replace("__CONTEXT_FILE__", context_file)
+
         return CommandRegistrar.rewrite_project_relative_paths(body)
 
     def _convert_argument_placeholder(
@@ -660,6 +644,15 @@ class CommandRegistrar:
                 cmd_file = commands_dir / f"{output_name}{agent_config['extension']}"
                 if cmd_file.exists():
                     cmd_file.unlink()
+                    # For SKILL.md agents each command lives in its own subdirectory
+                    # (e.g. .agents/skills/speckit-ext-cmd/SKILL.md). Remove the
+                    # parent dir when it becomes empty to avoid orphaned directories.
+                    parent = cmd_file.parent
+                    if parent != commands_dir and parent.exists():
+                        try:
+                            parent.rmdir()  # no-op if dir still has other files
+                        except OSError:
+                            pass
 
                 if agent_name == "copilot":
                     prompt_file = (
