@@ -382,9 +382,11 @@ if (-not $DryRun) {
     }
 
     New-Item -ItemType Directory -Path (Split-Path $featureMetadataFile -Parent) -Force | Out-Null
-    [PSCustomObject]@{
+    $featureMetadataJson = [PSCustomObject]@{
         feature_directory = "specs/$branchName"
-    } | ConvertTo-Json -Compress | Set-Content -Path $featureMetadataFile -Encoding utf8
+    } | ConvertTo-Json -Compress
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($featureMetadataFile, $featureMetadataJson, $utf8NoBom)
 
     $env:SPECIFY_FEATURE = $branchName
 }

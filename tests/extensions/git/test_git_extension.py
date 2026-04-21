@@ -404,7 +404,7 @@ class TestCreateFeaturePowerShell:
 
         metadata_file = project / ".specify" / "feature.json"
         assert metadata_file.exists(), "feature metadata file was not created"
-        metadata = json.loads(metadata_file.read_text(encoding="utf-8-sig"))
+        metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
         assert metadata == {"feature_directory": f"specs/{data['BRANCH_NAME']}"}
 
 
