@@ -18,7 +18,7 @@ authors:
     family-names: Riem
     alias: mnriem
 repository-code: "https://github.com/github/spec-kit"
-url: "https://github.github.com/spec-kit/"
+url: "https://github.github.io/spec-kit/"
 license: MIT
 version: "0.7.3"
 date-released: "2026-04-17"
