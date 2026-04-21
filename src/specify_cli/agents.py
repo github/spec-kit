@@ -6,6 +6,7 @@ Used by both the extension system and the preset system to write
 command files into agent-specific directories in the correct format.
 """
 
+import os
 from pathlib import Path
 from typing import Dict, List, Any
 
@@ -399,6 +400,28 @@ class CommandRegistrar:
 
         return f"speckit-{short_name}"
 
+    @staticmethod
+    def _ensure_inside(candidate: Path, base: Path) -> None:
+        """Validate that a write target stays within the expected base directory.
+
+        Uses lexical normalization so traversal via ``..`` or absolute paths is
+        rejected while intentionally symlinked sub-directories remain
+        supported.
+
+        Args:
+            candidate: Path that will be written.
+            base: Directory the write must remain within.
+
+        Raises:
+            ValueError: If the normalized candidate path escapes ``base``.
+        """
+        normalized = Path(os.path.normpath(candidate))
+        base_normalized = Path(os.path.normpath(base))
+        if not normalized.is_relative_to(base_normalized):
+            raise ValueError(
+                f"Output path {candidate!r} escapes directory {base!r}"
+            )
+
     def register_commands(
         self,
         agent_name: str,
@@ -485,6 +508,7 @@ class CommandRegistrar:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
             dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
+            self._ensure_inside(dest_file, commands_dir)
             dest_file.parent.mkdir(parents=True, exist_ok=True)
             dest_file.write_text(output, encoding="utf-8")
 
@@ -550,12 +574,7 @@ class CommandRegistrar:
                 alias_file = (
                     commands_dir / f"{alias_output_name}{agent_config['extension']}"
                 )
-                try:
-                    alias_file.resolve().relative_to(commands_dir.resolve())
-                except ValueError:
-                    raise ValueError(
-                        f"Alias output path escapes commands directory: {alias_file!r}"
-                    )
+                self._ensure_inside(alias_file, commands_dir)
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
                 alias_file.write_text(alias_output, encoding="utf-8")
                 if agent_name == "copilot":
@@ -575,6 +594,7 @@ class CommandRegistrar:
         prompts_dir = project_root / ".github" / "prompts"
         prompts_dir.mkdir(parents=True, exist_ok=True)
         prompt_file = prompts_dir / f"{cmd_name}.prompt.md"
+        CommandRegistrar._ensure_inside(prompt_file, prompts_dir)
         prompt_file.write_text(f"---\nagent: {cmd_name}\n---\n", encoding="utf-8")
 
     def register_commands_for_all_agents(
