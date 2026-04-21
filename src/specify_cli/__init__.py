@@ -880,16 +880,32 @@ INIT_OPTIONS_FILE = ".specify/init-options.json"
 
 
 def save_init_options(project_path: Path, options: dict[str, Any]) -> None:
-    """Persist the CLI options used during ``specify init``.
-
-    Writes a small JSON file to ``.specify/init-options.json`` so that
-    later operations (e.g. preset install) can adapt their behaviour
-    without scanning the filesystem.
-    """
     dest = project_path / INIT_OPTIONS_FILE
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(json.dumps(options, indent=2, sort_keys=True))
+    
+    existing_data = {}
+    if dest.exists():
+        try:
+            existing_data = json.loads(dest.read_text())
+        except Exception:
+            pass
 
+    new_ai = options.get("ai")
+    installed = existing_data.get("installed_integrations", [])
+    
+    if not installed and "ai" in existing_data:
+        installed.append(existing_data["ai"])
+    
+    if new_ai and new_ai not in installed:
+        installed.append(new_ai)
+
+    final_options = {**existing_data, **options}
+    
+    final_options["default_integration"] = new_ai
+    final_options["installed_integrations"] = installed
+    final_options["ai"] = new_ai  # Current active agent
+    
+    dest.write_text(json.dumps(final_options, indent=2, sort_keys=True))
 
 def load_init_options(project_path: Path) -> dict[str, Any]:
     """Load the init options previously saved by ``specify init``.
@@ -1114,17 +1130,20 @@ def init(
                     console.print("[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]")
                 console.print(f"[cyan]--force supplied: merging into existing directory '[cyan]{project_name}[/cyan]'[/cyan]")
             else:
-                error_panel = Panel(
-                    f"Directory '[cyan]{project_name}[/cyan]' already exists\n"
-                    "Please choose a different project name or remove the existing directory.\n"
-                    "Use [bold]--force[/bold] to merge into the existing directory.",
-                    title="[red]Directory Conflict[/red]",
-                    border_style="red",
-                    padding=(1, 2)
-                )
-                console.print()
-                console.print(error_panel)
-                raise typer.Exit(1)
+                if (project_path / ".specify").exists():
+                    console.print(f"[cyan]Project folder detected. Adding new integration/agent to existing setup...[/cyan]")
+                elif existing_items:
+                    if force:
+                        console.print(f"[cyan]--force supplied: merging into existing directory '[cyan]{project_name}[/cyan]'[/cyan]")
+                    else:
+                        error_panel = Panel(
+                            f"Directory '[cyan]{project_name}[/cyan]' already exists and is not empty.\n"
+                            "Use [bold]--force[/bold] to initialize anyway.",
+                            title="[red]Directory Conflict[/red]",
+                            border_style="red"
+                        )
+                        console.print(error_panel)
+                        raise typer.Exit(1)
 
     if ai_assistant:
         if ai_assistant not in AGENT_CONFIG:
@@ -1641,6 +1660,51 @@ def version():
     console.print(panel)
     console.print()
 
+@app.command()
+def list_integrations(project_path: Path = typer.Option(Path.cwd(), "--path")):
+    """List all installed integrations in the project."""
+    options = load_init_options(project_path)
+    installed = options.get("installed_integrations", [])
+    active = options.get("ai")
+
+    if not installed:
+        console.print("[yellow]No integrations installed yet.[/yellow]")
+        return
+
+    console.print("\n[bold cyan]Installed Integrations:[/bold cyan]")
+    for agent in installed:
+        status = "[green](active)[/green]" if agent == active else ""
+        console.print(f" - {agent} {status}")
+        
+@app.command()
+def use(
+    integration: str = typer.Argument(..., help="The integration/agent to switch to (e.g., claude, codex)"),
+    project_path: Path = typer.Option(Path.cwd(), "--path", help="Project directory path")
+):
+    """
+    Switch the active AI integration for the project.
+    """
+    options = load_init_options(project_path)
+    installed = options.get("installed_integrations", [])
+
+    if not installed:
+        if "ai" in options:
+            installed = [options["ai"]]
+        else:
+            console.print("[red]Error:[/red] No integrations found in this project.")
+            raise typer.Exit(1)
+
+    if integration not in installed:
+        console.print(f"[red]Error:[/red] Integration '{integration}' is not installed.")
+        console.print(f"[yellow]Installed integrations:[/yellow] {', '.join(installed)}")
+        console.print(f"[dim]Hint: Run 'specify init --ai {integration}' to install it first.[/dim]")
+        raise typer.Exit(1)
+
+    options["ai"] = integration
+    options["default_integration"] = integration
+    
+    save_init_options(project_path, options)
+    console.print(f"[green]✓[/green] Switched to [bold]{integration}[/bold] as the active integration.")
 
 # ===== Extension Commands =====
 
