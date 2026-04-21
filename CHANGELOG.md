@@ -2,6 +2,12 @@
 
 <!-- insert new changelog below this comment -->
 
+## [Unreleased]
+
+### Added
+
+- feat(cli): opt-in launch warning when a newer spec-kit release is available; enable with `SPECIFY_ENABLE_UPDATE_CHECK=1` (or `true`/`yes`/`on`), cached for 24h, and suppressed in non-interactive shells and `CI=1` (#1320)
+
 ## [0.7.3] - 2026-04-17
 
 ### Changed

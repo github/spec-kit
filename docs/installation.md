@@ -87,6 +87,23 @@ After initialization, you should see the following commands available in your AI
 
 The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
 
+### Update Notifications
+
+`specify` can check once per 24 hours whether a newer release is available on GitHub and print an upgrade hint. This is **opt-in**: the check is off by default because air-gapped and network-constrained environments cannot reach GitHub.
+
+To enable it, set:
+
+```bash
+export SPECIFY_ENABLE_UPDATE_CHECK=1   # or true / yes / on
+```
+
+Even when enabled, the check stays silent when:
+
+- stdout is not a TTY (piped output, redirected to a file, etc.)
+- the `CI` environment variable is set
+
+Network failures and rate-limit responses are swallowed — the check never fails the command you ran, though a cache miss may add a small startup delay (bounded by a 2-second fetch timeout) while contacting GitHub.
+
 ## Troubleshooting
 
 ### Enterprise / Air-Gapped Installation
