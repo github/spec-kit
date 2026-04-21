@@ -2408,7 +2408,7 @@
     "wireframe": {
       "name": "Wireframe Visual Feedback Loop",
       "id": "wireframe",
-      "description": "SVG wireframe generation, review, and sign-off for spec-driven development. Approved wireframes become spec constraints honored by /plan, /tasks, and /implement.",
+      "description": "SVG wireframe generation, review, and sign-off for spec-driven development. Approved wireframes become spec constraints honored by /speckit.plan, /speckit.tasks, and /speckit.implement.",
       "author": "TortoiseWolfe",
       "version": "0.1.0",
       "download_url": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/archive/refs/tags/v0.1.0.zip",
