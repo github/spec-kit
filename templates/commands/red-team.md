@@ -54,7 +54,11 @@ Goal: Run an adversarial review of a functional spec using project-configured le
 
 **Schema references**: a concrete schema for the lens catalog (`.specify/red-team-lenses.yml`) and the findings report format is **TODO — to be added as sibling template files in a follow-up PR if this core approach lands**. Until then, the minimal required lens-catalog shape is inline in §2 preconditions and the findings-report sections are enumerated in §6.5 below.
 
-Invocation: `/speckit.red-team <target-spec-path> [--yes] [--lenses name1,name2,...] [--dry-run] [--session-suffix NN]`
+### Usage
+
+```
+/speckit.red-team <target-spec-path> [--yes] [--lenses name1,name2,...] [--dry-run] [--session-suffix NN]
+```
 
 ## 1. Invocation parsing
 
@@ -66,7 +70,7 @@ Parse `$ARGUMENTS` into:
 - `--dry-run` (flag): report which lenses would run and why, without dispatching adversary agents.
 - `--session-suffix <NN>` (flag with value): override the session ID's trailing ordinal when multiple sessions occur on the same day.
 
-If `$ARGUMENTS` is empty OR the target spec path is missing, print the usage block above and STOP. Do NOT try to infer the target from context.
+If `$ARGUMENTS` is empty OR the target spec path is missing, print the fenced Usage block from §Outline above and STOP. Do NOT try to infer the target from context.
 
 ## 2. Preconditions check
 
@@ -132,12 +136,13 @@ Resolve each name against the catalog. Unknown names produce a warning and are d
      - The proposed top-5 default with, for each, a one-line rationale (which triggers it covers + severity_weight).
      - The dropped lenses with the reason they ranked below.
    - **If `--yes` was passed**: auto-accept the proposed default. Set `selection_method: auto` in the session record with a note that --yes was used. Skip to §5.
-   - **If `--yes` was NOT passed AND the invocation is non-interactive**: FAIL FAST. Print: `ERROR: more than 5 lenses match; interactive confirmation required. Re-run with --yes to accept the proposed default, or --lenses to specify explicitly.` and STOP.
-   - **If interactive**: ask the maintainer to respond:
+   - **Otherwise** (no `--yes`): prompt the maintainer to respond:
      - "accept" / "yes" → use proposed default; `selection_method: proposed-and-confirmed`.
      - "swap A for B" → swap a default lens with a dropped lens; `selection_method: swapped`.
      - "expand to N" (N > 5) → run more than 5 lenses (maintainer opts into the cost); `selection_method: expanded`.
      - Anything else → re-prompt with the three options above.
+
+     *(CI / batch runs MUST pass `--yes` to auto-accept the proposed default; running without `--yes` in a non-interactive context will stall waiting for input. This keeps the behavior simple: interactivity is determined by whether `--yes` was passed, not by detecting the terminal.)*
 
 Write the final `selected_lenses` list. Validate 3 ≤ `len(selected_lenses)` ≤ 5 (unless `selection_method == expanded`). If below 3, warn the maintainer that lens diversity is weak — offer to abort.
 
@@ -152,7 +157,7 @@ Target: <target-spec-path>
 Matched triggers: <list>
 Selected lenses: <list>
 Selection method: <method>
-Proposed session ID: RT-<feature-id>-<YYYY-MM-DD>-<NN>
+Proposed session ID: RT-<feature-id>-<YYYY-MM-DD>[-<NN>]
 ```
 and STOP.
 
@@ -218,7 +223,7 @@ Collect the responses from all dispatched agents.
 | `specs/<feature-id>/contracts/*` | **HISTORICAL SpecKit working record** | ❌ **NO — never edit** |
 | `specs/<feature-id>/quickstart.md` | **HISTORICAL SpecKit working record** | ❌ **NO — never edit** |
 | `specs/<feature-id>/checklists/*` | **HISTORICAL SpecKit working record** | ❌ **NO — never edit** |
-| `specs/<feature-id>/red-team-findings-*.md` | **Session artefact** (created by THIS skill) | ✅ Yes — this skill owns it |
+| `specs/<feature-id>/red-team-findings-*.md` | **Session artifact** (created by THIS skill) | ✅ Yes — this skill owns it |
 | `99_Archive/*` | **Archived historical** | ❌ **NO — never edit** |
 
 **Rationale**: SpecKit working records in `specs/<feature-id>/` capture a point-in-time decision state. They serve as the audit trail of "what was decided at time T." Rewriting them destroys that audit trail. If the correct fix for a red team finding would require editing one of these files, the correct resolution category is:
@@ -248,7 +253,7 @@ Walk the maintainer through each finding. For each finding in the table (group b
 
 ## 8. Failure-mode handling
 
-| Condition | Behaviour |
+| Condition | Behavior |
 |---|---|
 | Target spec missing | Fail fast with `ERROR: target spec not found at <path>`. No session created. |
 | Lens catalog missing | Fail fast with the minimal-required-shape error printed in §2.2 above (no external doc references). |
@@ -258,9 +263,9 @@ Walk the maintainer through each finding. For each finding in the table (group b
 | Constitution lacks trigger criteria | Warn and proceed in bootstrap mode using the six default categories. UNLESS `--lenses` was passed (bypass). |
 | Target spec matches zero triggers AND no `--lenses` | Print info message and STOP. Not an error. |
 | No lens in catalog covers matched triggers | Fail fast — asks maintainer to extend catalog or pass --lenses. |
-| >5 matches in non-interactive without `--yes` | Fail fast. Maintainer must re-run with `--yes` or `--lenses`. |
+| >5 matches without `--yes` | Prompt the maintainer for accept / swap / expand. CI / batch runs MUST pass `--yes` to auto-accept the proposed default; otherwise the run will stall waiting for input. |
 | Individual adversary agent fails (timeout, parse error, empty response) | Record failure in session metadata with lens name + reason. Continue with other lenses. Flag for re-run via `--lenses`. Do NOT abort the session. |
-| Overwhelming findings (e.g., >50 HIGH after aggregation) | After §6 completes, if total findings exceed a threshold (default: ≥25 HIGH+CRITICAL), warn the maintainer the spec may not be ready for red team and offer an abort path. Abort records session state for later resumption. |
+| Overwhelming findings (≥25 HIGH+CRITICAL combined after aggregation) | After §6 completes, if the combined count of HIGH and CRITICAL findings meets or exceeds **25**, warn the maintainer the spec may not be ready for red team and offer an abort path. Abort records session state for later resumption. |
 | Spec was updated since prior red team | On session start, check for prior findings report in the feature dir. If present and older than a material-change threshold (heuristic: target spec has new FRs or section count changed), warn the maintainer and ask whether to proceed or abort. |
 | Session interrupted mid-resolution | Report file is saved atomically after every resolution update. On re-invocation with same session ID, offer to resume from last-resolved finding. |
 
