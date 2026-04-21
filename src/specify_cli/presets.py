@@ -855,10 +855,21 @@ class PresetManager:
             return
 
         resolver = PresetResolver(self.project_root)
+        skills_dir = self._get_skills_dir()
+
         for cmd_name in command_names:
             layers = resolver.collect_all_layers(cmd_name, "command")
             if not layers:
                 continue
+
+            # Ensure skill directory exists so _register_skills can write to it.
+            # After _unregister_skills removes a skill dir, this re-creates it
+            # so the next winning preset's skill content can be registered.
+            if skills_dir:
+                skill_name, _ = self._skill_names_for_command(cmd_name)
+                skill_subdir = skills_dir / skill_name
+                if not skill_subdir.exists():
+                    skill_subdir.mkdir(parents=True, exist_ok=True)
 
             top_path = layers[0]["path"]
             # Find the preset that owns the winning layer
