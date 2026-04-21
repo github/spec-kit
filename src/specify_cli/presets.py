@@ -673,6 +673,7 @@ class PresetManager:
         # Apply wraps innermost-first (reverse of ascending list).
         accumulated_body = core_body
         outermost_frontmatter = {}
+        outermost_pack_id = wrap_presets[0][0]  # fallback; updated per contributing preset
         for pack_id, pack_dir in reversed(wrap_presets):
             manifest_path = pack_dir / "preset.yml"
             cmd_file: Optional[Path] = None
@@ -714,6 +715,7 @@ class PresetManager:
             )
             accumulated_body = wrap_body.replace("{CORE_TEMPLATE}", accumulated_body)
             outermost_frontmatter = wrap_fm  # last iteration = outermost preset
+            outermost_pack_id = pack_id
 
         # Build final frontmatter: outermost preset wins; fall back to core for
         # scripts/agent_scripts if the outermost preset does not define them.
@@ -723,7 +725,6 @@ class PresetManager:
             if key not in final_frontmatter and key in core_frontmatter:
                 final_frontmatter[key] = core_frontmatter[key]
 
-        outermost_pack_id = wrap_presets[0][0]
         composed_content = (
             registrar.render_frontmatter(final_frontmatter) + "\n" + accumulated_body
         )

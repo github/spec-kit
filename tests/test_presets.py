@@ -1012,7 +1012,7 @@ class TestResolveCore:
         result = resolver.resolve_core("specify", "command")
         # The preset file must never be returned — but the bundled core may be.
         if result is not None:
-            assert ".specify/presets" not in str(result)
+            assert "presets" not in result.parts
 
     def test_resolve_core_returns_core_template(self, project_dir):
         """resolve_core falls through to core templates (tier 4)."""
@@ -1028,8 +1028,8 @@ class TestResolveCore:
         resolver = PresetResolver(project_dir)
         result = resolver.resolve_core("specify", "command")
         assert result is not None
-        assert "presets" not in str(result)
-        assert "templates/commands/specify.md" in str(result)
+        assert "presets" not in result.parts
+        assert result.parts[-3:] == ("templates", "commands", "specify.md")
 
     def test_resolve_core_returns_override(self, project_dir):
         """resolve_core returns tier-1 override if present."""
@@ -1040,7 +1040,7 @@ class TestResolveCore:
         resolver = PresetResolver(project_dir)
         result = resolver.resolve_core("specify", "command")
         assert result is not None
-        assert "overrides/specify.md" in str(result)
+        assert result.parts[-2:] == ("overrides", "specify.md")
 
     def test_resolve_core_returns_extension_template(self, project_dir):
         """resolve_core returns extension templates (tier 3)."""
@@ -1051,7 +1051,7 @@ class TestResolveCore:
         resolver = PresetResolver(project_dir)
         result = resolver.resolve_core("myext-cmd", "command")
         assert result is not None
-        assert "extensions/myext/commands" in str(result)
+        assert result.parts[-4:-1] == ("extensions", "myext", "commands")
 
     def test_resolve_core_returns_none_when_nothing_found(self, project_dir):
         """resolve_core returns None when no file found in tiers 1/3/4."""
