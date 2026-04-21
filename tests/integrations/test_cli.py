@@ -261,7 +261,7 @@ class TestForceExistingDirectory:
         ], catch_exceptions=False)
 
         assert result.exit_code == 1
-        assert "already exists" in result.output
+        assert "already exists" in _normalize_cli_output(result.output)
 
 
 class TestGitExtensionAutoInstall:
