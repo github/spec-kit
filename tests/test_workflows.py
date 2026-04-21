@@ -367,7 +367,9 @@ class TestBuildExecArgs:
         assert args[2] == "do stuff"
         assert "--json" in args
 
-    def test_copilot_exec_args(self):
+    def test_copilot_exec_args(self, monkeypatch):
+        monkeypatch.delenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", raising=False)
+        monkeypatch.delenv("SPECKIT_ALLOW_ALL_TOOLS", raising=False)
         from specify_cli.integrations.copilot import CopilotIntegration
         impl = CopilotIntegration()
         args = impl.build_exec_args("do stuff", model="claude-sonnet-4-20250514")
@@ -375,6 +377,34 @@ class TestBuildExecArgs:
         assert "-p" in args
         assert "--yolo" in args
         assert "--model" in args
+
+    def test_copilot_new_env_var_disables_yolo(self, monkeypatch):
+        monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
+        monkeypatch.delenv("SPECKIT_ALLOW_ALL_TOOLS", raising=False)
+        from specify_cli.integrations.copilot import CopilotIntegration
+        impl = CopilotIntegration()
+        args = impl.build_exec_args("do stuff")
+        assert "--yolo" not in args
+
+    def test_copilot_deprecated_env_var_still_honoured(self, monkeypatch):
+        monkeypatch.delenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", raising=False)
+        monkeypatch.setenv("SPECKIT_ALLOW_ALL_TOOLS", "0")
+        import warnings
+        from specify_cli.integrations.copilot import CopilotIntegration
+        impl = CopilotIntegration()
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            args = impl.build_exec_args("do stuff")
+        assert "--yolo" not in args
+        assert any("SPECKIT_ALLOW_ALL_TOOLS is deprecated" in str(x.message) for x in w)
+
+    def test_copilot_new_env_var_takes_precedence(self, monkeypatch):
+        monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "1")
+        monkeypatch.setenv("SPECKIT_ALLOW_ALL_TOOLS", "0")
+        from specify_cli.integrations.copilot import CopilotIntegration
+        impl = CopilotIntegration()
+        args = impl.build_exec_args("do stuff")
+        assert "--yolo" in args
 
     def test_ide_only_returns_none(self):
         from specify_cli.integrations.windsurf import WindsurfIntegration

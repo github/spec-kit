@@ -10,12 +10,38 @@ Copilot has several unique behaviors compared to standard markdown agents:
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import warnings
 from pathlib import Path
 from typing import Any
 
 from ..base import IntegrationBase
 from ..manifest import IntegrationManifest
+
+
+def _allow_all() -> bool:
+    """Return True if the Copilot CLI should run with full permissions.
+
+    Checks ``SPECKIT_COPILOT_ALLOW_ALL_TOOLS`` first (new canonical name).
+    Falls back to the deprecated ``SPECKIT_ALLOW_ALL_TOOLS`` if set,
+    emitting a deprecation warning.  Default when neither is set: enabled.
+    """
+    new_var = os.environ.get("SPECKIT_COPILOT_ALLOW_ALL_TOOLS")
+    if new_var is not None:
+        return new_var != "0"
+
+    old_var = os.environ.get("SPECKIT_ALLOW_ALL_TOOLS")
+    if old_var is not None:
+        warnings.warn(
+            "SPECKIT_ALLOW_ALL_TOOLS is deprecated; "
+            "use SPECKIT_COPILOT_ALLOW_ALL_TOOLS instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return old_var != "0"
+
+    return True
 
 
 class CopilotIntegration(IntegrationBase):
@@ -53,10 +79,11 @@ class CopilotIntegration(IntegrationBase):
         # non-interactive mode.  --yolo enables all permissions
         # (tools, paths, and URLs) so the agent can perform file
         # edits and shell commands without interactive prompts.
-        # Controlled by SPECKIT_COPILOT_ALLOW_ALL env var (default: enabled).
-        import os
+        # Controlled by SPECKIT_COPILOT_ALLOW_ALL_TOOLS env var
+        # (default: enabled).  The deprecated SPECKIT_ALLOW_ALL_TOOLS
+        # is also honoured as a fallback.
         args = ["copilot", "-p", prompt]
-        if os.environ.get("SPECKIT_COPILOT_ALLOW_ALL", "1") != "0":
+        if _allow_all():
             args.append("--yolo")
         if model:
             args.extend(["--model", model])
@@ -92,12 +119,11 @@ class CopilotIntegration(IntegrationBase):
         agent_name = f"speckit.{stem}"
 
         prompt = args or ""
-        import os
         cli_args = [
             "copilot", "-p", prompt,
             "--agent", agent_name,
         ]
-        if os.environ.get("SPECKIT_COPILOT_ALLOW_ALL", "1") != "0":
+        if _allow_all():
             cli_args.append("--yolo")
         if model:
             cli_args.extend(["--model", model])
