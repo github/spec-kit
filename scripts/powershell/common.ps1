@@ -287,6 +287,21 @@ function Test-DirHasFiles {
     }
 }
 
+# Find a usable Python 3 executable (python3, python, or py -3).
+# Returns the command/arguments as an array, or $null if none found.
+function Get-Python3Command {
+    if (Get-Command python3 -ErrorAction SilentlyContinue) { return @('python3') }
+    if (Get-Command python -ErrorAction SilentlyContinue) {
+        $ver = & python --version 2>&1
+        if ($ver -match 'Python 3') { return @('python') }
+    }
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+        $ver = & py -3 --version 2>&1
+        if ($ver -match 'Python 3') { return @('py', '-3') }
+    }
+    return $null
+}
+
 # Resolve a template name to a file path using the priority stack:
 #   1. .specify/templates/overrides/
 #   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)
@@ -315,6 +330,7 @@ function Resolve-Template {
                 $presets = $registryData.presets
                 if ($presets) {
                     $sortedPresets = $presets.PSObject.Properties |
+                        Where-Object { $null -eq $_.Value.enabled -or $_.Value.enabled -ne $false } |
                         Sort-Object { if ($null -ne $_.Value.priority) { $_.Value.priority } else { 10 } } |
                         ForEach-Object { $_.Name }
                 }
@@ -354,3 +370,199 @@ function Resolve-Template {
     return $null
 }
 
+# Resolve a template name to composed content using composition strategies.
+# Reads strategy metadata from preset manifests and composes content
+# from multiple layers using prepend, append, or wrap strategies.
+function Resolve-TemplateContent {
+    param(
+        [Parameter(Mandatory=$true)][string]$TemplateName,
+        [Parameter(Mandatory=$true)][string]$RepoRoot
+    )
+
+    $base = Join-Path $RepoRoot '.specify/templates'
+
+    # Collect all layers (highest priority first)
+    $layerPaths = @()
+    $layerStrategies = @()
+
+    # Priority 1: Project overrides (always "replace")
+    $override = Join-Path $base "overrides/$TemplateName.md"
+    if (Test-Path $override) {
+        $layerPaths += $override
+        $layerStrategies += 'replace'
+    }
+
+    # Priority 2: Installed presets (sorted by priority from .registry)
+    $presetsDir = Join-Path $RepoRoot '.specify/presets'
+    if (Test-Path $presetsDir) {
+        $registryFile = Join-Path $presetsDir '.registry'
+        $sortedPresets = @()
+        if (Test-Path $registryFile) {
+            try {
+                $registryData = Get-Content $registryFile -Raw | ConvertFrom-Json
+                $presets = $registryData.presets
+                if ($presets) {
+                    $sortedPresets = $presets.PSObject.Properties |
+                        Where-Object { $null -eq $_.Value.enabled -or $_.Value.enabled -ne $false } |
+                        Sort-Object { if ($null -ne $_.Value.priority) { $_.Value.priority } else { 10 } } |
+                        ForEach-Object { $_.Name }
+                }
+            } catch {
+                $sortedPresets = @()
+            }
+        }
+
+        if ($sortedPresets.Count -gt 0) {
+            $pyCmd = Get-Python3Command
+            foreach ($presetId in $sortedPresets) {
+                # Read strategy and file path from preset manifest
+                $strategy = 'replace'
+                $manifestFilePath = ''
+                $manifest = Join-Path $presetsDir "$presetId/preset.yml"
+                if ((Test-Path $manifest) -and $pyCmd) {
+                    try {
+                        # Use Python to parse YAML manifest for strategy and file path
+                        $pyArgs = if ($pyCmd.Count -gt 1) { $pyCmd[1..($pyCmd.Count-1)] } else { @() }
+                        $pyStderrFile = [System.IO.Path]::GetTempFileName()
+                        $stratResult = & $pyCmd[0] @pyArgs -c @"
+import sys
+try:
+    import yaml
+except ImportError:
+    print('yaml_missing', file=sys.stderr)
+    print('replace\t')
+    sys.exit(0)
+try:
+    with open(sys.argv[1]) as f:
+        data = yaml.safe_load(f)
+    for t in data.get('provides', {}).get('templates', []):
+        if t.get('name') == sys.argv[2] and t.get('type', 'template') == 'template':
+            print(t.get('strategy', 'replace') + '\t' + t.get('file', ''))
+            sys.exit(0)
+    print('replace\t')
+except Exception:
+    print('replace\t')
+"@ $manifest $TemplateName 2>$pyStderrFile
+                        if ($stratResult) {
+                            $parts = $stratResult.Trim() -split "`t", 2
+                            $strategy = $parts[0].ToLowerInvariant()
+                            if ($parts.Count -gt 1 -and $parts[1]) { $manifestFilePath = $parts[1] }
+                        }
+                        # Warn only when PyYAML is explicitly missing
+                        if ((Test-Path $pyStderrFile) -and (Get-Content $pyStderrFile -Raw -ErrorAction SilentlyContinue) -match 'yaml_missing') {
+                            Write-Warning "PyYAML not available; composition strategies in $manifest may be ignored"
+                        }
+                        Remove-Item $pyStderrFile -Force -ErrorAction SilentlyContinue
+                    } catch {
+                        $strategy = 'replace'
+                        if ($pyStderrFile) { Remove-Item $pyStderrFile -Force -ErrorAction SilentlyContinue }
+                    }
+                }
+                # Try manifest file path first, then convention path
+                $candidate = $null
+                if ($manifestFilePath) {
+                    $mf = Join-Path $presetsDir "$presetId/$manifestFilePath"
+                    if (Test-Path $mf) { $candidate = $mf }
+                }
+                if (-not $candidate) {
+                    $cf = Join-Path $presetsDir "$presetId/templates/$TemplateName.md"
+                    if (Test-Path $cf) { $candidate = $cf }
+                }
+                if ($candidate) {
+                    $layerPaths += $candidate
+                    $layerStrategies += $strategy
+                }
+            }
+        } else {
+            # Fallback: alphabetical directory order (no registry or parse failure)
+            foreach ($preset in Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' }) {
+                $candidate = Join-Path $preset.FullName "templates/$TemplateName.md"
+                if (Test-Path $candidate) {
+                    $layerPaths += $candidate
+                    $layerStrategies += 'replace'
+                }
+            }
+        }
+    }
+
+    # Priority 3: Extension-provided templates (always "replace")
+    $extDir = Join-Path $RepoRoot '.specify/extensions'
+    if (Test-Path $extDir) {
+        foreach ($ext in Get-ChildItem -Path $extDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' } | Sort-Object Name) {
+            $candidate = Join-Path $ext.FullName "templates/$TemplateName.md"
+            if (Test-Path $candidate) {
+                $layerPaths += $candidate
+                $layerStrategies += 'replace'
+            }
+        }
+    }
+
+    # Priority 4: Core templates (always "replace")
+    $core = Join-Path $base "$TemplateName.md"
+    if (Test-Path $core) {
+        $layerPaths += $core
+        $layerStrategies += 'replace'
+    }
+
+    if ($layerPaths.Count -eq 0) { return $null }
+
+    # If the top (highest-priority) layer is replace, it wins entirely —
+    # lower layers are irrelevant regardless of their strategies.
+    if ($layerStrategies[0] -eq 'replace') {
+        return (Get-Content $layerPaths[0] -Raw)
+    }
+
+    # Check if any layer uses a non-replace strategy
+    $hasComposition = $false
+    foreach ($s in $layerStrategies) {
+        if ($s -ne 'replace') { $hasComposition = $true; break }
+    }
+
+    if (-not $hasComposition) {
+        return (Get-Content $layerPaths[0] -Raw)
+    }
+
+    # Compose bottom-up: start from lowest priority
+    $content = $null
+    $started = $false
+    for ($i = $layerPaths.Count - 1; $i -ge 0; $i--) {
+        $path = $layerPaths[$i]
+        $strat = $layerStrategies[$i]
+        $layerContent = Get-Content $path -Raw
+
+        if (-not $started) {
+            if ($strat -eq 'replace') {
+                $content = $layerContent
+            }
+            if ($strat -ne 'replace') {
+                # No base content to compose onto
+                if ($null -eq $content) { return $null }
+                $started = $true
+                switch ($strat) {
+                    'prepend' { $content = "$layerContent`n`n$content" }
+                    'append'  { $content = "$content`n`n$layerContent" }
+                    'wrap'    {
+                        if (-not $layerContent.Contains('{CORE_TEMPLATE}')) {
+                            throw "Wrap strategy missing {CORE_TEMPLATE} placeholder"
+                        }
+                        $content = $layerContent.Replace('{CORE_TEMPLATE}', $content)
+                    }
+                }
+            }
+        } else {
+            switch ($strat) {
+                'replace' { $content = $layerContent }
+                'prepend' { $content = "$layerContent`n`n$content" }
+                'append'  { $content = "$content`n`n$layerContent" }
+                'wrap'    {
+                    if (-not $layerContent.Contains('{CORE_TEMPLATE}')) {
+                        throw "Wrap strategy missing {CORE_TEMPLATE} placeholder"
+                    }
+                    $content = $layerContent.Replace('{CORE_TEMPLATE}', $content)
+                }
+            }
+        }
+    }
+
+    return $content
+}
