@@ -841,6 +841,27 @@ class PresetManager:
             commands, source_id, source_dir, self.project_root
         )
 
+    class _FilteredManifest:
+        """Wrapper that exposes only selected command templates from a manifest.
+
+        Used by _reconcile_skills to avoid overwriting skills for commands
+        that aren't being reconciled.
+        """
+
+        def __init__(self, manifest: "PresetManifest", cmd_names: set):
+            self._manifest = manifest
+            self._cmd_names = cmd_names
+
+        def __getattr__(self, name: str):
+            return getattr(self._manifest, name)
+
+        @property
+        def templates(self) -> List[Dict[str, Any]]:
+            return [
+                t for t in self._manifest.templates
+                if t.get("name") in self._cmd_names
+            ]
+
     def _reconcile_skills(self, command_names: List[str]) -> None:
         """Re-register skills for commands whose winning layer changed.
 
@@ -857,14 +878,16 @@ class PresetManager:
         resolver = PresetResolver(self.project_root)
         skills_dir = self._get_skills_dir()
 
+        # Group command names by winning preset to batch _register_skills calls
+        # while only registering skills for the specific commands being reconciled.
+        preset_cmds: Dict[str, List[str]] = {}
+
         for cmd_name in command_names:
             layers = resolver.collect_all_layers(cmd_name, "command")
             if not layers:
                 continue
 
             # Ensure skill directory exists so _register_skills can write to it.
-            # After _unregister_skills removes a skill dir, this re-creates it
-            # so the next winning preset's skill content can be registered.
             if skills_dir:
                 skill_name, _ = self._skill_names_for_command(cmd_name)
                 skill_subdir = skills_dir / skill_name
@@ -876,14 +899,24 @@ class PresetManager:
             for pack_id, _meta in PresetRegistry(self.presets_dir).list_by_priority():
                 pack_dir = self.presets_dir / pack_id
                 if top_path.is_relative_to(pack_dir):
-                    manifest_path = pack_dir / "preset.yml"
-                    if manifest_path.exists():
-                        try:
-                            manifest = PresetManifest(manifest_path)
-                        except PresetValidationError:
-                            break
-                        self._register_skills(manifest, pack_dir)
+                    preset_cmds.setdefault(pack_id, []).append(cmd_name)
                     break
+
+        # Register skills only for the specific commands being reconciled,
+        # not all commands in each winning preset's manifest.
+        for pack_id, cmds in preset_cmds.items():
+            pack_dir = self.presets_dir / pack_id
+            manifest_path = pack_dir / "preset.yml"
+            if not manifest_path.exists():
+                continue
+            try:
+                manifest = PresetManifest(manifest_path)
+            except PresetValidationError:
+                continue
+            # Filter manifest to only the commands being reconciled
+            cmds_set = set(cmds)
+            filtered_manifest = self._FilteredManifest(manifest, cmds_set)
+            self._register_skills(filtered_manifest, pack_dir)
 
     def _get_skills_dir(self) -> Optional[Path]:
         """Return the active skills directory for preset skill overrides.
@@ -2755,32 +2788,37 @@ class PresetResolver:
                 content = layer_content.replace(placeholder, content)
 
         # Reattach the highest-priority frontmatter for commands,
-        # inheriting scripts/agent_scripts from the base if missing.
+        # inheriting scripts/agent_scripts from the base if missing
+        # and stripping the strategy key (internal-only, not for agent output).
         if is_command and top_frontmatter_text:
-            if base_frontmatter_text and base_frontmatter_text != top_frontmatter_text:
-                # Parse both frontmatters to check for missing keys
+            def _parse_fm_yaml(fm_block: str) -> dict:
+                """Parse YAML from a frontmatter block (with --- fences)."""
+                lines = fm_block.splitlines()
+                # Strip opening/closing --- fences
+                yaml_lines = [line for line in lines if line.strip() != "---"]
                 try:
-                    from .agents import CommandRegistrar
-                    _, _ = CommandRegistrar.parse_frontmatter("placeholder")  # ensure import
-                    base_fm, _ = CommandRegistrar.parse_frontmatter(
-                        base_frontmatter_text + "\nbody"
-                    )
-                    top_fm, _ = CommandRegistrar.parse_frontmatter(
-                        top_frontmatter_text + "\nbody"
-                    )
-                    inherited = False
-                    for key in ("scripts", "agent_scripts"):
-                        if key not in top_fm and key in base_fm:
-                            top_fm[key] = base_fm[key]
-                            inherited = True
-                    if inherited:
-                        top_frontmatter_text = (
-                            "---\n"
-                            + yaml.safe_dump(top_fm, sort_keys=False).strip()
-                            + "\n---"
-                        )
-                except Exception:
-                    pass  # best-effort; fall back to top frontmatter as-is
+                    return yaml.safe_load("\n".join(yaml_lines)) or {}
+                except yaml.YAMLError:
+                    return {}
+
+            top_fm = _parse_fm_yaml(top_frontmatter_text)
+
+            # Inherit scripts/agent_scripts from base frontmatter if missing
+            if base_frontmatter_text and base_frontmatter_text != top_frontmatter_text:
+                base_fm = _parse_fm_yaml(base_frontmatter_text)
+                for key in ("scripts", "agent_scripts"):
+                    if key not in top_fm and key in base_fm:
+                        top_fm[key] = base_fm[key]
+
+            # Strip strategy key — it's an internal composition directive,
+            # not meant for rendered agent command files
+            top_fm.pop("strategy", None)
+
+            top_frontmatter_text = (
+                "---\n"
+                + yaml.safe_dump(top_fm, sort_keys=False).strip()
+                + "\n---"
+            )
             content = top_frontmatter_text + "\n\n" + content
 
         return content
