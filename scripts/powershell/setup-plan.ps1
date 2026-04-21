@@ -36,10 +36,10 @@ $template = Resolve-Template -TemplateName 'plan-template' -RepoRoot $paths.REPO
 if ($template -and (Test-Path $template)) { 
     # Read the template content and write it to the implementation plan file with UTF-8 encoding without BOM
    # Read the template content as UTF-8 and write it to the implementation plan file with UTF-8 encoding without BOM
-    $content = Get-Content -Raw -Encoding UTF8 -Path $template
+    # Read the template content and write it to the implementation plan file with UTF-8 encoding without BOM
+    $content = [System.IO.File]::ReadAllText($template)
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
-    Write-Output "Copied plan template to $($paths.IMPL_PLAN)"
 } else {
     Write-Warning "Plan template not found"
     # Create a basic plan file if template doesn't exist
