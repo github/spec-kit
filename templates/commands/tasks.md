@@ -172,7 +172,7 @@ Every task MUST strictly follow this format:
 - ✅ CORRECT: `- [ ] T005 [P] Implement authentication middleware in src/middleware/auth.py`
 - ✅ CORRECT: `- [ ] T012 [P] [US1] Create User model in src/models/user.py`
 - ✅ CORRECT: `- [ ] T014 [US1] Implement UserService in src/services/user_service.py`
-- ✅ CORRECT (governed): `- [ ] T008 Push packages to NuGet feed: \`dotnet nuget push "*.nupkg" --api-key $NUGET_API_KEY --source $NUGET_FEED_URL\``
+- ✅ CORRECT (governed): ``- [ ] T008 Push packages to NuGet feed: `dotnet nuget push "*.nupkg" --api-key $NUGET_API_KEY --source $NUGET_FEED_URL````
 - ❌ WRONG: `- [ ] Create User model` (missing ID and Story label)
 - ❌ WRONG: `T001 [US1] Create model` (missing checkbox)
 - ❌ WRONG: `- [ ] [US1] Create User model` (missing Task ID)
