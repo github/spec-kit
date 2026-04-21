@@ -24,6 +24,13 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <PROJE
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
 
+> [!NOTE]
+> For a persistent installation, `pipx` works equally well:
+> ```bash
+> pipx install git+https://github.com/github/spec-kit.git@vX.Y.Z
+> ```
+> The project uses a standard `hatchling` build backend and has no uv-specific dependencies.
+
 Or initialize in the current directory:
 
 ```bash

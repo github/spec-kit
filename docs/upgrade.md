@@ -34,6 +34,14 @@ Specify the desired release tag:
 uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here --ai copilot
 ```
 
+### If you installed with `pipx`
+
+Upgrade to a specific release:
+
+```bash
+pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z
+```
+
 ### Verify the upgrade
 
 ```bash

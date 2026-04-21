@@ -22,6 +22,12 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 uvx --from git+https://github.com/github/spec-kit.git specify init .
 ```
 
+> [!NOTE]
+> You can also install the CLI persistently with `pipx`:
+> ```bash
+> pipx install git+https://github.com/github/spec-kit.git
+> ```
+
 Pick script type explicitly (optional):
 
 ```bash

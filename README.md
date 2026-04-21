@@ -62,6 +62,10 @@ uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX
 
 # Or install latest from main (may include unreleased changes)
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+
+# Alternative: using pipx (also works)
+pipx install git+https://github.com/github/spec-kit.git@vX.Y.Z
+pipx install git+https://github.com/github/spec-kit.git
 ```
 
 Then verify the correct version is installed:
