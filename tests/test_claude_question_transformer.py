@@ -11,6 +11,7 @@ from specify_cli.integrations.claude.question_transformer import (
 # _parse_table_rows (tested indirectly via parse_clarify / parse_checklist)
 # ---------------------------------------------------------------------------
 
+
 class TestParseClarify:
     def test_basic_options(self):
         block = (
@@ -29,7 +30,7 @@ class TestParseClarify:
             "| Option | Description |\n"
             "|--------|-------------|\n"
             "| A | Plain option |\n"
-            "| B | Recommended \u2014 best practice |\n"
+            "| B | Recommended — best practice |\n"
             "| C | Another option |\n"
         )
         result = parse_clarify(block)
@@ -174,7 +175,7 @@ class TestTransformQuestionBlock:
     def test_clarify_recommended_first(self):
         content = self._clarify_fenced(
             "| A | Plain |\n"
-            "| B | Recommended \u2014 best choice |\n"
+            "| B | Recommended — best choice |\n"
         )
         out = transform_question_block(content)
         b_pos = out.index('"label": "B"')
@@ -262,7 +263,7 @@ class TestEdgeCases:
             "| Option | Description |\n"
             "|--------|-------------|\n"
             "| A | Plain |\n"
-            "| B | recommended \u2014 lowercase |\n"
+            "| B | recommended — lowercase |\n"
         )
         result = parse_clarify(block)
         assert result[0]["label"] == "B"
