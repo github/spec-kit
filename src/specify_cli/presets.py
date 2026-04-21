@@ -652,6 +652,12 @@ class PresetManager:
         resolver = PresetResolver(self.project_root)
         core_file = (
             resolver.resolve_core(cmd_name, "command")
+            or resolver.resolve_extension_command_via_manifest(cmd_name)
+            or (
+                resolver.resolve_extension_command_via_manifest(short_name)
+                if short_name != cmd_name
+                else None
+            )
             or resolver.resolve_core(short_name, "command")
         )
         if core_file is None:
@@ -668,22 +674,41 @@ class PresetManager:
         accumulated_body = core_body
         outermost_frontmatter = {}
         for pack_id, pack_dir in reversed(wrap_presets):
-            cmd_file = pack_dir / "commands" / f"{cmd_name}.md"
+            manifest_path = pack_dir / "preset.yml"
+            cmd_file: Optional[Path] = None
+            if manifest_path.exists():
+                try:
+                    manifest = PresetManifest(manifest_path)
+                except (PresetValidationError, KeyError, TypeError, ValueError):
+                    manifest = None
+                if manifest is not None:
+                    for template in manifest.templates:
+                        if template.get("type") != "command" or template.get("name") != cmd_name:
+                            continue
+                        file_rel = template.get("file")
+                        if isinstance(file_rel, str):
+                            rel_path = Path(file_rel)
+                            if not rel_path.is_absolute():
+                                try:
+                                    preset_root = pack_dir.resolve()
+                                    candidate = (preset_root / rel_path).resolve()
+                                    candidate.relative_to(preset_root)
+                                except (OSError, ValueError):
+                                    candidate = None
+                                if candidate is not None:
+                                    cmd_file = candidate
+                        aliases = template.get("aliases", [])
+                        if not isinstance(aliases, list):
+                            aliases = []
+                        for alias in aliases:
+                            if isinstance(alias, str) and alias not in seen_aliases:
+                                replay_aliases.append(alias)
+                                seen_aliases.add(alias)
+                        break
+            if cmd_file is None:
+                cmd_file = pack_dir / "commands" / f"{cmd_name}.md"
             if not cmd_file.exists():
                 continue
-            manifest_path = pack_dir / "preset.yml"
-            if manifest_path.exists():
-                manifest = PresetManifest(manifest_path)
-                for template in manifest.templates:
-                    if template.get("type") != "command" or template.get("name") != cmd_name:
-                        continue
-                    aliases = template.get("aliases", [])
-                    if not isinstance(aliases, list):
-                        aliases = []
-                    for alias in aliases:
-                        if isinstance(alias, str) and alias not in seen_aliases:
-                            replay_aliases.append(alias)
-                            seen_aliases.add(alias)
             wrap_fm, wrap_body = registrar.parse_frontmatter(
                 cmd_file.read_text(encoding="utf-8")
             )
@@ -698,7 +723,7 @@ class PresetManager:
             if key not in final_frontmatter and key in core_frontmatter:
                 final_frontmatter[key] = core_frontmatter[key]
 
-        outermost_pack_id = wrap_presets[-1][0]
+        outermost_pack_id = wrap_presets[0][0]
         composed_content = (
             registrar.render_frontmatter(final_frontmatter) + "\n" + accumulated_body
         )
@@ -1360,12 +1385,14 @@ class PresetManager:
                     if CommandRegistrar.AGENT_CONFIGS.get(agent_name, {}).get("extension") != "/SKILL.md"
                 }
 
-        # Remove from registry BEFORE deleting the directory so that
-        # _replay_wraps_for_command sees the post-removal registry state.
-        self.registry.remove(pack_id)
-
+        # Delete the preset directory before mutating the registry so a
+        # filesystem failure cannot leave files on disk without a registry entry.
         if pack_dir.exists():
             shutil.rmtree(pack_dir)
+
+        # Remove from registry before replaying so _replay_wraps_for_command sees
+        # the post-removal registry state.
+        self.registry.remove(pack_id)
 
         # Separate wrap commands from non-wrap commands in registered_commands.
         non_wrap_commands = {
@@ -2060,7 +2087,7 @@ class PresetResolver:
         Args:
             template_name: Template name (e.g., "spec-template")
             template_type: Template type ("template", "command", or "script")
-            skip_presets: When True, skip is  2 (installed presets). Use
+            skip_presets: When True, skip tier 2 (installed presets). Use
                 resolve_core() as the preferred caller-facing API for this.
 
         Returns:
