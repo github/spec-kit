@@ -1,12 +1,9 @@
 ---
-description: Attack a functional specification with parallel adversarial lens agents before `/speckit-plan` locks in architecture. Aggregates findings and walks the maintainer through resolution into one of four categories.
+description: Attack a functional specification with parallel adversarial lens agents before `/speckit.plan` locks in architecture. Aggregates findings and walks the maintainer through resolution into one of four categories.
 handoffs:
   - label: Proceed to planning
     agent: speckit.plan
     prompt: "Create a plan for the spec, which has now been red-team-reviewed and hardened."
-scripts:
-   sh: scripts/bash/check-prerequisites.sh --json --paths-only
-   ps: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
 ---
 
 ## User Input
@@ -53,18 +50,18 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-Goal: Run an adversarial review of a functional spec using project-configured lenses. Produce a structured findings report at `specs/<feature-id>/red-team-findings-<YYYY-MM-DD>[-NN].md`; walk the maintainer through per-finding resolution. Do NOT auto-apply spec changes. Complementary to `/speckit-clarify` (correctness) and `/speckit-analyze` (consistency) — the red team is the adversarial layer.
+Goal: Run an adversarial review of a functional spec using project-configured lenses. Produce a structured findings report at `specs/<feature-id>/red-team-findings-<YYYY-MM-DD>[-NN].md`; walk the maintainer through per-finding resolution. Do NOT auto-apply spec changes. Complementary to `/speckit.clarify` (correctness) and `/speckit.analyze` (consistency) — the red team is the adversarial layer.
 
-Schema references for input (lens catalog) and output (findings report) ship alongside this command in the skill directory and are authoritative for format.
+**Schema references**: a concrete schema for the lens catalog (`.specify/red-team-lenses.yml`) and the findings report format is **TODO — to be added as sibling template files in a follow-up PR if this core approach lands**. Until then, the minimal required lens-catalog shape is inline in §2 preconditions and the findings-report sections are enumerated in §6.5 below.
 
-Invocation: `/speckit-red-team <target-spec-path> [--yes] [--lenses name1,name2,...] [--dry-run] [--session-suffix NN]`
+Invocation: `/speckit.red-team <target-spec-path> [--yes] [--lenses name1,name2,...] [--dry-run] [--session-suffix NN]`
 
 ## 1. Invocation parsing
 
 Parse `$ARGUMENTS` into:
 
 - `<target-spec-path>` (positional, required): path relative to repo root of the functional spec to attack. Examples: `specs/<NNN-feature-slug>/spec.md` (SpecKit working record), or a project-specific canonical location for graduated specs (e.g. `04_Functional_Specs/<Component>_Functional_Spec_v0.1_DRAFT.md` in repos that use a graduated docs tree). Both are valid inputs.
-- `--yes` / `--accept-defaults` (flag): auto-confirm the proposed lens selection when >5 lenses match triggers. Required for non-interactive / CI invocations.
+- `--yes` (flag): auto-confirm the proposed lens selection when >5 lenses match triggers. Required for non-interactive / CI invocations.
 - `--lenses <comma-separated-names>` (flag with value): explicit override of the lens set. Skips trigger-matching; runs exactly the listed lenses.
 - `--dry-run` (flag): report which lenses would run and why, without dispatching adversary agents.
 - `--session-suffix <NN>` (flag with value): override the session ID's trailing ordinal when multiple sessions occur on the same day.
@@ -76,7 +73,22 @@ If `$ARGUMENTS` is empty OR the target spec path is missing, print the usage blo
 Before dispatching any adversary, verify in order. Fail fast on the first failure.
 
 1. **Target spec exists**. Resolve the given path relative to repo root. If not found, print: `ERROR: target spec not found at <path>` and STOP.
-2. **Lens catalog exists** at `<repo-root>/.specify/red-team-lenses.yml`. If not found, print: `ERROR: no lens catalog at .specify/red-team-lenses.yml. See the skill README §Adoption for setup.` and STOP.
+2. **Lens catalog exists** at `<repo-root>/.specify/red-team-lenses.yml`. If not found, print the error below and STOP:
+   ```
+   ERROR: no lens catalog at .specify/red-team-lenses.yml
+   Minimal required shape:
+     version: v1
+     lenses:
+       - name: <lens-name>
+         description: <one-sentence description of the adversarial angle>
+         core_questions:
+           - <attack question 1>
+           - <attack question 2>
+         trigger_match: [<one or more of: money_path, regulatory_path, ai_llm, immutability_audit, multi_party, contracts>]
+         severity_weight: <integer, default 5>    # optional
+         finding_bound: <integer, default 5>       # optional
+   Define at least 1 lens covering each trigger category your project cares about.
+   ```
 3. **Lens catalog parses**. Read the YAML. If parse fails, print: `ERROR: .specify/red-team-lenses.yml failed to parse: <error>` and STOP.
 4. **Catalog non-empty**. If top-level `lenses` list is missing or empty, print: `ERROR: lens catalog has no lenses defined` and STOP.
 5. **Each lens entry has required fields**: `name`, `description`, `core_questions`, `trigger_match`. Entries missing any of these are skipped with a warning — session proceeds on the remainder. If ALL entries are malformed, fail the catalog check.
@@ -227,7 +239,7 @@ Walk the maintainer through each finding. For each finding in the table (group b
    - **new-OQ** — route to the target spec's `## Open Questions` section. The "target spec" here is the forward-facing canonical doc, not the SpecKit working record. Prompt for owner name + what it blocks. Compose the OQ entry and offer to insert it; maintainer confirms. Record assigned OQ ID (format `OQ-<feature-id>-<NN>`) as `downstream_ref`.
    - **accepted-risk** — route to the target spec's `## Accepted Risks` section on the forward-facing canonical doc. Prompt for rationale; auto-detect `[regulatory-review]` tag candidates by scanning the finding description for regulated-domain signals (money path, regulatory path, compliance-critical guarantees, disclosure surfaces — as defined by the project's constitution). Offer to insert the AR entry with the next sequential `AR-NNN`. Record AR ID as `downstream_ref`. If tagged, add a reminder about the project's governance-confirmation requirement.
    - **out-of-scope** — finding belongs to a different spec, or the fix belongs in a forward-facing doc that does not yet exist (in which case create a placeholder `specs/<next-feature-id>/README.md` and cross-reference it). Prompt for the owning spec path. Record the cross-reference in the resolution log only; do not edit the other spec.
-3. **`/speckit-analyze` cross-reference rule**: for each finding, detect overlap with `/speckit-analyze` output if a recent analyze report is present in the feature directory. If overlap is detected, ASK the maintainer: "This finding appears to overlap with analyze finding <ref>. Cross-reference instead of duplicating? (yes/no)". If yes, record as `resolution.downstream_ref: analyze:<ref>` and SKIP creating a new OQ/AR entry — the analyze finding is authoritative.
+3. **`/speckit.analyze` cross-reference rule**: for each finding, detect overlap with `/speckit.analyze` output if a recent analyze report is present in the feature directory. If overlap is detected, ASK the maintainer: "This finding appears to overlap with analyze finding <ref>. Cross-reference instead of duplicating? (yes/no)". If yes, record as `resolution.downstream_ref: analyze:<ref>` and SKIP creating a new OQ/AR entry — the analyze finding is authoritative.
 4. **MUST NOT auto-apply spec changes**. For spec-fix resolutions, the skill may PROPOSE an edit diff but the maintainer applies it themselves. For AR/OQ insertions, the skill may draft the entry text but the maintainer confirms before the Edit tool actually writes.
 5. **MUST NOT edit historical SpecKit working records** (the hard-and-fast rule above). If the maintainer directs the skill to edit such a file, the skill refuses and proposes a forward-facing alternative. If the finding genuinely cannot be resolved at a forward-facing location, the correct category is **accepted-risk** (recording the historical-record gap as an accepted risk) or **out-of-scope** (pointing at a future feature that will do the work properly).
 6. **Update the findings table** (`status` column) and append the resolution block to §3 Resolutions Log as each finding is categorised.
@@ -239,7 +251,7 @@ Walk the maintainer through each finding. For each finding in the table (group b
 | Condition | Behaviour |
 |---|---|
 | Target spec missing | Fail fast with `ERROR: target spec not found at <path>`. No session created. |
-| Lens catalog missing | Fail fast with `ERROR: no lens catalog at .specify/red-team-lenses.yml. See skill README §Adoption.` |
+| Lens catalog missing | Fail fast with the minimal-required-shape error printed in §2.2 above (no external doc references). |
 | Catalog unparseable | Fail fast with `ERROR: .specify/red-team-lenses.yml failed to parse: <error>`. |
 | Catalog empty (no `lenses` list) | Fail fast with `ERROR: lens catalog has no lenses defined`. |
 | Individual lens entry malformed | Warn, skip that lens, proceed with the rest. If ALL entries malformed, fail. |
