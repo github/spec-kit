@@ -222,6 +222,7 @@ if (Get-Command Test-HasGit -ErrorAction SilentlyContinue) {
 Set-Location $repoRoot
 
 $specsDir = Join-Path $repoRoot 'specs'
+$featureMetadataFile = Join-Path $repoRoot '.specify/feature.json'
 
 function Get-BranchName {
     param([string]$Description)
@@ -379,6 +380,11 @@ if (-not $DryRun) {
             Write-Warning "[specify] Warning: Git repository not detected; skipped branch creation for $branchName"
         }
     }
+
+    New-Item -ItemType Directory -Path (Split-Path $featureMetadataFile -Parent) -Force | Out-Null
+    [PSCustomObject]@{
+        feature_directory = "specs/$branchName"
+    } | ConvertTo-Json -Compress | Set-Content -Path $featureMetadataFile -Encoding utf8
 
     $env:SPECIFY_FEATURE = $branchName
 }

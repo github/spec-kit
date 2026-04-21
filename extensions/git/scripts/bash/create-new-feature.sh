@@ -262,6 +262,7 @@ fi
 cd "$REPO_ROOT"
 
 SPECS_DIR="$REPO_ROOT/specs"
+FEATURE_METADATA_FILE="$REPO_ROOT/.specify/feature.json"
 
 # Function to generate branch name with stop word filtering
 generate_branch_name() {
@@ -412,6 +413,20 @@ if [ "$DRY_RUN" != true ]; then
         fi
     else
         >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+    fi
+
+    mkdir -p "$(dirname "$FEATURE_METADATA_FILE")"
+    if command -v jq >/dev/null 2>&1; then
+        jq -cn \
+            --arg feature_directory "specs/$BRANCH_NAME" \
+            '{feature_directory:$feature_directory}' >"$FEATURE_METADATA_FILE"
+    else
+        if type json_escape >/dev/null 2>&1; then
+            _je_feature_dir=$(json_escape "specs/$BRANCH_NAME")
+        else
+            _je_feature_dir="specs/$BRANCH_NAME"
+        fi
+        printf '{"feature_directory":"%s"}\n' "$_je_feature_dir" >"$FEATURE_METADATA_FILE"
     fi
 
     printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2

@@ -337,6 +337,21 @@ class TestCreateFeatureBash:
         assert data.get("DRY_RUN") is True
         assert not (project / "specs" / data["BRANCH_NAME"]).exists()
 
+    def test_persists_feature_metadata(self, tmp_path: Path):
+        """Extension create-new-feature.sh updates .specify/feature.json."""
+        project = _setup_project(tmp_path)
+        result = _run_bash(
+            "create-new-feature.sh", project,
+            "--json", "--short-name", "meta-test", "Metadata test",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+
+        metadata_file = project / ".specify" / "feature.json"
+        assert metadata_file.exists(), "feature metadata file was not created"
+        metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+        assert metadata == {"feature_directory": f"specs/{data['BRANCH_NAME']}"}
+
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
 class TestCreateFeaturePowerShell:
@@ -376,6 +391,21 @@ class TestCreateFeaturePowerShell:
         data = json.loads(json_line[-1])
         assert "BRANCH_NAME" in data
         assert "FEATURE_NUM" in data
+
+    def test_persists_feature_metadata(self, tmp_path: Path):
+        """Extension create-new-feature.ps1 updates .specify/feature.json."""
+        project = _setup_project(tmp_path)
+        result = _run_pwsh(
+            "create-new-feature.ps1", project,
+            "-Json", "-ShortName", "ps-meta", "PowerShell metadata",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+
+        metadata_file = project / ".specify" / "feature.json"
+        assert metadata_file.exists(), "feature metadata file was not created"
+        metadata = json.loads(metadata_file.read_text(encoding="utf-8-sig"))
+        assert metadata == {"feature_directory": f"specs/{data['BRANCH_NAME']}"}
 
 
 # ── auto-commit.sh Tests ─────────────────────────────────────────────────────
