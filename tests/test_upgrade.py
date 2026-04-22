@@ -10,12 +10,14 @@ the stub is contractually network-free. Run this module under `pytest-socket`
 
 import json
 import urllib.error
+import importlib.metadata
 from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
 from specify_cli import (
+    _get_installed_version,
     _fetch_latest_release_tag,
     _is_newer,
     _normalize_tag,
@@ -89,6 +91,21 @@ class TestIsNewer:
 
     def test_invalid_version_returns_false(self):
         assert _is_newer("not-a-version", "0.7.4") is False
+
+    def test_local_version_containing_unknown_is_not_treated_as_sentinel(self):
+        assert _is_newer("1.2.4", "1.2.3+unknown") is True
+
+
+class TestInstalledVersion:
+    def test_invalid_metadata_error_returns_unknown(self):
+        invalid_metadata_error = getattr(importlib.metadata, "InvalidMetadataError", None)
+        if invalid_metadata_error is None:
+            pytest.skip("InvalidMetadataError is not available on this Python version")
+        with patch(
+            "importlib.metadata.version",
+            side_effect=invalid_metadata_error("bad metadata"),
+        ):
+            assert _get_installed_version() == "unknown"
 
 
 class TestNormalizeTag:

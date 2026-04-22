@@ -1645,9 +1645,14 @@ def _get_installed_version() -> str:
 
     import importlib.metadata
 
+    metadata_errors = [importlib.metadata.PackageNotFoundError]
+    invalid_metadata_error = getattr(importlib.metadata, "InvalidMetadataError", None)
+    if invalid_metadata_error is not None:
+        metadata_errors.append(invalid_metadata_error)
+
     try:
         return importlib.metadata.version("specify-cli")
-    except importlib.metadata.PackageNotFoundError:
+    except tuple(metadata_errors):
         return "unknown"
 
 def _normalize_tag(tag: str) -> str:
@@ -1666,7 +1671,7 @@ def _is_newer(latest: str, current: str) -> bool:
     keeps the comparison indeterminate (rather than crashing or falsely
     recommending a downgrade) on edge inputs.
     """
-    if "unknown" in (latest, current):
+    if latest == "unknown" or current == "unknown":
         return False
     try:
         return Version(latest) > Version(current)
