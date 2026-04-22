@@ -2876,8 +2876,11 @@ class PresetResolver:
             def _parse_fm_yaml(fm_block: str) -> dict:
                 """Parse YAML from a frontmatter block (with --- fences)."""
                 lines = fm_block.splitlines()
-                # Strip opening/closing --- fences
-                yaml_lines = [line for line in lines if line.strip() != "---"]
+                # Parse only interior lines (between --- fences)
+                if len(lines) >= 2:
+                    yaml_lines = lines[1:-1]
+                else:
+                    yaml_lines = []
                 try:
                     return yaml.safe_load("\n".join(yaml_lines)) or {}
                 except yaml.YAMLError:
@@ -2896,11 +2899,17 @@ class PresetResolver:
             # not meant for rendered agent command files
             top_fm.pop("strategy", None)
 
-            top_frontmatter_text = (
-                "---\n"
-                + yaml.safe_dump(top_fm, sort_keys=False).strip()
-                + "\n---"
-            )
-            content = top_frontmatter_text + "\n\n" + content
+            if top_fm:
+                top_frontmatter_text = (
+                    "---\n"
+                    + yaml.safe_dump(top_fm, sort_keys=False).strip()
+                    + "\n---"
+                )
+            else:
+                # Empty frontmatter — omit rather than emitting {}
+                top_frontmatter_text = None
+
+            if top_frontmatter_text:
+                content = top_frontmatter_text + "\n\n" + content
 
         return content

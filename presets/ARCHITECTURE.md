@@ -55,9 +55,9 @@ Templates, commands, and scripts support a `strategy` field that controls how a 
 Composition is recursive — multiple composing presets chain. The `PresetResolver.resolve_content()` method walks the full priority stack bottom-up and applies each layer's strategy.
 
 Content resolution functions for composition:
-- **Python**: `PresetResolver.resolve_content()` in `src/specify_cli/presets.py`
-- **Bash**: `resolve_template_content()` in `scripts/bash/common.sh`
-- **PowerShell**: `Resolve-TemplateContent` in `scripts/powershell/common.ps1`
+- **Python**: `PresetResolver.resolve_content()` in `src/specify_cli/presets.py` (templates, commands, and scripts)
+- **Bash**: `resolve_template_content()` in `scripts/bash/common.sh` (templates only; command/script composition is handled by the Python resolver)
+- **PowerShell**: `Resolve-TemplateContent` in `scripts/powershell/common.ps1` (templates only; command/script composition is handled by the Python resolver)
 
 ## Command Registration
 

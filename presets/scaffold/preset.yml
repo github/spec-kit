@@ -37,7 +37,8 @@ provides:
     #   replace  - Fully replaces the lower-priority template (default)
     #   prepend  - Places this content BEFORE the lower-priority template
     #   append   - Places this content AFTER the lower-priority template
-    #   wrap     - Uses {CORE_TEMPLATE} placeholder, replaced with lower-priority content
+    #   wrap     - Uses {CORE_TEMPLATE} placeholder (templates/commands) or
+    #              $CORE_SCRIPT placeholder (scripts), replaced with lower-priority content
     #
     # Note: Scripts only support "replace" and "wrap" strategies.
     - type: "template"
