@@ -1437,9 +1437,12 @@ class PresetManager:
                 "registered_skills": registered_skills,
             })
         except Exception:
-            # Roll back all side effects: unregister any commands/skills that
-            # were written (using local vars which capture partial progress),
-            # remove the copied preset dir, and drop the registry entry.
+            # Roll back all side effects. Note: if _register_commands or
+            # _register_skills raised mid-way (e.g. I/O error after writing
+            # some files), registered_commands/registered_skills may be empty
+            # and some agent command files could be orphaned. Removing dest_dir
+            # (which contains .composed/) and the registry entry ensures the
+            # preset system is consistent even if orphaned files remain.
             if registered_commands:
                 self._unregister_commands(registered_commands)
             if registered_skills:
@@ -2571,12 +2574,14 @@ class PresetResolver:
                 # Read strategy and manifest file path from preset manifest
                 strategy = "replace"
                 manifest_file_path = None
+                manifest_has_strategy = False
                 manifest = self._get_manifest(pack_dir)
                 if manifest:
                     for tmpl in manifest.templates:
                         if (tmpl.get("name") == template_name
                                 and tmpl.get("type") == template_type):
                             strategy = tmpl.get("strategy", "replace")
+                            manifest_has_strategy = "strategy" in tmpl
                             manifest_file_path = tmpl.get("file")
                             break
                 # Use manifest file path if specified, otherwise convention-based lookup
@@ -2588,9 +2593,11 @@ class PresetResolver:
                 if candidate is None:
                     candidate = _find_in_subdirs(pack_dir)
                 if candidate:
-                    # Legacy fallback: if manifest doesn't declare a strategy,
-                    # check the command file's frontmatter for any valid strategy
-                    if strategy == "replace" and template_type == "command":
+                    # Legacy fallback: if manifest doesn't explicitly declare a
+                    # strategy, check the command file's frontmatter for any valid
+                    # strategy. Skip when the manifest entry includes strategy key
+                    # (even if it's "replace") to avoid overriding explicit declarations.
+                    if not manifest_has_strategy and strategy == "replace" and template_type == "command":
                         try:
                             cmd_content = candidate.read_text(encoding="utf-8")
                             lines = cmd_content.splitlines(keepends=True)
