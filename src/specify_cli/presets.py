@@ -741,11 +741,17 @@ class PresetManager:
                             try:
                                 from .extensions import ExtensionManifest
                                 ext_manifest = ExtensionManifest(ext_manifest_path)
-                                registrar.register_commands_for_non_skill_agents(
-                                    ext_manifest.commands, ext_id, ext_dir,
-                                    self.project_root,
-                                )
-                                registered = True
+                                # Filter to only the command being reconciled
+                                matching_cmds = [
+                                    c for c in ext_manifest.commands
+                                    if c.get("name") == cmd_name
+                                ]
+                                if matching_cmds:
+                                    registrar.register_commands_for_non_skill_agents(
+                                        matching_cmds, ext_id, ext_dir,
+                                        self.project_root,
+                                    )
+                                    registered = True
                             except Exception:
                                 # Extension registration failed; fall back to
                                 # generic path-based registration below.
@@ -934,7 +940,7 @@ class PresetManager:
         # Group command names by winning preset to batch _register_skills calls
         # while only registering skills for the specific commands being reconciled.
         preset_cmds: Dict[str, List[str]] = {}
-        non_preset_skills: List[str] = []
+        non_preset_skills: List[tuple] = []
 
         for cmd_name in command_names:
             layers = resolver.collect_all_layers(cmd_name, "command")
