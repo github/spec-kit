@@ -2875,16 +2875,20 @@ class PresetResolver:
         # layers is ordered highest-priority first. We process in reverse.
         reversed_layers = list(reversed(layers))
 
-        # Find the base content: the first "replace" layer from the bottom
+        # Find the base content: scan bottom-up for the highest-priority
+        # "replace" layer that can serve as a base. Non-replace layers below
+        # the base are irrelevant (they have nothing to compose onto).
         content = None
         start_idx = 0
         for i, layer in enumerate(reversed_layers):
             if layer["strategy"] == "replace":
                 content = layer["path"].read_text(encoding="utf-8")
                 start_idx = i + 1
-            else:
-                # Once we hit a non-replace layer, stop looking for base
+            elif content is not None:
+                # Found a non-replace layer above a replace — stop scanning.
+                # The replace layer(s) form the base; composition starts here.
                 break
+            # Non-replace layers below any replace are skipped (no base yet)
 
         # If no base content found, there's nothing to compose onto
         if content is None:
