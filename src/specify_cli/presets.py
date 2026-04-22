@@ -2550,6 +2550,8 @@ class PresetResolver:
                                         if isinstance(fm_strategy, str) and fm_strategy.lower() in VALID_PRESET_STRATEGIES:
                                             strategy = fm_strategy.lower()
                         except (yaml.YAMLError, OSError):
+                            # Best-effort legacy frontmatter parsing: keep default
+                            # strategy ("replace") when content is unreadable/invalid.
                             pass
                     version = metadata.get("version", "?") if metadata else "?"
                     layers.append({
