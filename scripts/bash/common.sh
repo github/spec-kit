@@ -537,69 +537,57 @@ except Exception:
         return 0
     fi
 
-    # Compose bottom-up: start from lowest priority
+    # Compose bottom-up: start from the effective base.
+    # Find the highest-priority replace layer that sits below composing layers.
+    # Skip non-replace layers below any replace (they have no base to compose onto).
     local content=""
     local has_base=false
-    local started=false
+    local base_idx=-1
     local i
     for (( i=count-1; i>=0; i-- )); do
+        local strat="${layer_strategies[$i]}"
+        if [ "$strat" = "replace" ]; then
+            base_idx=$i
+        elif [ $base_idx -ge 0 ]; then
+            # Found a non-replace above a replace — this is where composition starts
+            break
+        fi
+    done
+
+    if [ $base_idx -lt 0 ]; then
+        return 1  # no base layer found
+    fi
+
+    # Read the base content; start composing from the layer above the base
+    content=$(cat "${layer_paths[$base_idx]}"; printf x)
+    content="${content%x}"
+
+    for (( i=base_idx-1; i>=0; i-- )); do
         local path="${layer_paths[$i]}"
         local strat="${layer_strategies[$i]}"
         local layer_content
-        # Preserve trailing newlines: append sentinel, then strip it
+        # Preserve trailing newlines
         layer_content=$(cat "$path"; printf x)
         layer_content="${layer_content%x}"
 
-        if [ "$started" = false ]; then
-            if [ "$strat" = "replace" ]; then
-                content="$layer_content"
-                has_base=true
-            fi
-            # Keep consuming replace layers from the bottom until we hit a non-replace
-            if [ "$strat" != "replace" ]; then
-                # No base content to compose onto
-                [ "$has_base" = false ] && return 1
-                started=true
-                case "$strat" in
-                    prepend) content="$(printf '%s\n\n%s' "$layer_content" "$content")" ;;
-                    append)  content="$(printf '%s\n\n%s' "$content" "$layer_content")" ;;
-                    wrap)
-                        # Validate placeholder exists
-                        case "$layer_content" in
-                            *'{CORE_TEMPLATE}'*) ;;
-                            *) echo "Error: wrap strategy missing {CORE_TEMPLATE} placeholder" >&2; return 1 ;;
-                        esac
-                        # Replace all occurrences to match Python/PowerShell behavior
-                        while [[ "$layer_content" == *'{CORE_TEMPLATE}'* ]]; do
-                            local before="${layer_content%%\{CORE_TEMPLATE\}*}"
-                            local after="${layer_content#*\{CORE_TEMPLATE\}}"
-                            layer_content="${before}${content}${after}"
-                        done
-                        content="$layer_content"
-                        ;;
-                    *) echo "Error: unknown strategy '$strat'" >&2; return 1 ;;
+        case "$strat" in
+            replace) content="$layer_content" ;;
+            prepend) content="$(printf '%s\n\n%s' "$layer_content" "$content")" ;;
+            append)  content="$(printf '%s\n\n%s' "$content" "$layer_content")" ;;
+            wrap)
+                case "$layer_content" in
+                    *'{CORE_TEMPLATE}'*) ;;
+                    *) echo "Error: wrap strategy missing {CORE_TEMPLATE} placeholder" >&2; return 1 ;;
                 esac
-            fi
-        else
-            case "$strat" in
-                replace) content="$layer_content" ;;
-                prepend) content="$(printf '%s\n\n%s' "$layer_content" "$content")" ;;
-                append)  content="$(printf '%s\n\n%s' "$content" "$layer_content")" ;;
-                wrap)
-                    case "$layer_content" in
-                        *'{CORE_TEMPLATE}'*) ;;
-                        *) echo "Error: wrap strategy missing {CORE_TEMPLATE} placeholder" >&2; return 1 ;;
-                    esac
-                    while [[ "$layer_content" == *'{CORE_TEMPLATE}'* ]]; do
-                        local before="${layer_content%%\{CORE_TEMPLATE\}*}"
-                        local after="${layer_content#*\{CORE_TEMPLATE\}}"
-                        layer_content="${before}${content}${after}"
-                    done
-                    content="$layer_content"
-                    ;;
-                *) echo "Error: unknown strategy '$strat'" >&2; return 1 ;;
-            esac
-        fi
+                while [[ "$layer_content" == *'{CORE_TEMPLATE}'* ]]; do
+                    local before="${layer_content%%\{CORE_TEMPLATE\}*}"
+                    local after="${layer_content#*\{CORE_TEMPLATE\}}"
+                    layer_content="${before}${content}${after}"
+                done
+                content="$layer_content"
+                ;;
+            *) echo "Error: unknown strategy '$strat'" >&2; return 1 ;;
+        esac
     done
 
     printf '%s' "$content"

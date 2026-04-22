@@ -522,47 +522,37 @@ except Exception:
         return (Get-Content $layerPaths[0] -Raw)
     }
 
-    # Compose bottom-up: start from lowest priority
-    $content = $null
-    $started = $false
+    # Find the effective base: highest-priority replace below composing layers.
+    # Skip non-replace layers below any replace (they have no base to compose onto).
+    $baseIdx = -1
     for ($i = $layerPaths.Count - 1; $i -ge 0; $i--) {
+        $strat = $layerStrategies[$i]
+        if ($strat -eq 'replace') {
+            $baseIdx = $i
+        } elseif ($baseIdx -ge 0) {
+            break  # non-replace above a replace — composition starts here
+        }
+    }
+    if ($baseIdx -lt 0) { return $null }
+
+    $content = Get-Content $layerPaths[$baseIdx] -Raw
+
+    for ($i = $baseIdx - 1; $i -ge 0; $i--) {
         $path = $layerPaths[$i]
         $strat = $layerStrategies[$i]
         $layerContent = Get-Content $path -Raw
 
-        if (-not $started) {
-            if ($strat -eq 'replace') {
-                $content = $layerContent
-            }
-            if ($strat -ne 'replace') {
-                # No base content to compose onto
-                if ($null -eq $content) { return $null }
-                $started = $true
-                switch ($strat) {
-                    'prepend' { $content = "$layerContent`n`n$content" }
-                    'append'  { $content = "$content`n`n$layerContent" }
-                    'wrap'    {
-                        if (-not $layerContent.Contains('{CORE_TEMPLATE}')) {
-                            throw "Wrap strategy missing {CORE_TEMPLATE} placeholder"
-                        }
-                        $content = $layerContent.Replace('{CORE_TEMPLATE}', $content)
-                    }
-                    default { throw "Unknown strategy: $strat" }
+        switch ($strat) {
+            'replace' { $content = $layerContent }
+            'prepend' { $content = "$layerContent`n`n$content" }
+            'append'  { $content = "$content`n`n$layerContent" }
+            'wrap'    {
+                if (-not $layerContent.Contains('{CORE_TEMPLATE}')) {
+                    throw "Wrap strategy missing {CORE_TEMPLATE} placeholder"
                 }
+                $content = $layerContent.Replace('{CORE_TEMPLATE}', $content)
             }
-        } else {
-            switch ($strat) {
-                'replace' { $content = $layerContent }
-                'prepend' { $content = "$layerContent`n`n$content" }
-                'append'  { $content = "$content`n`n$layerContent" }
-                'wrap'    {
-                    if (-not $layerContent.Contains('{CORE_TEMPLATE}')) {
-                        throw "Wrap strategy missing {CORE_TEMPLATE} placeholder"
-                    }
-                    $content = $layerContent.Replace('{CORE_TEMPLATE}', $content)
-                }
-                default { throw "Unknown strategy: $strat" }
-            }
+            default { throw "Unknown strategy: $strat" }
         }
     }
 
