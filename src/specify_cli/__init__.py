@@ -789,7 +789,9 @@ def _install_shared_infra(
         for f in skipped_files:
             console.print(f"    {f}")
         console.print(
-            "Use [cyan]--force[/cyan] to overwrite with the latest versions."
+            "To refresh shared infrastructure, run "
+            "[cyan]specify init --here --force[/cyan] or "
+            "[cyan]specify integration upgrade --force[/cyan]."
         )
 
     manifest.save()

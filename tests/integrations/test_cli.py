@@ -249,7 +249,10 @@ class TestInitIntegrationFlag:
 
         captured = capsys.readouterr()
         assert "already exist and were not updated" in captured.out
-        assert "--force" in captured.out
+        assert "specify init --here --force" in captured.out
+        # Rich may wrap long lines; normalize whitespace for the second command
+        normalized = " ".join(captured.out.split())
+        assert "specify integration upgrade --force" in normalized
 
     def test_shared_infra_no_warning_when_forced(self, tmp_path, capsys):
         """No skip warning when force=True (all files overwritten)."""
