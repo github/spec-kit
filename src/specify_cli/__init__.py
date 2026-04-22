@@ -7,6 +7,8 @@
 #     "platformdirs",
 #     "readchar",
 #     "json5",
+#     "pyyaml",
+#     "packaging",
 # ]
 # ///
 """
@@ -1605,25 +1607,10 @@ def check():
 def version():
     """Display version and system information."""
     import platform
-    import importlib.metadata
 
     show_banner()
 
-    # Get CLI version from package metadata
-    cli_version = "unknown"
-    try:
-        cli_version = importlib.metadata.version("specify-cli")
-    except Exception:
-        # Fallback: try reading from pyproject.toml if running from source
-        try:
-            import tomllib
-            pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
-            if pyproject_path.exists():
-                with open(pyproject_path, "rb") as f:
-                    data = tomllib.load(f)
-                    cli_version = data.get("project", {}).get("version", "unknown")
-        except Exception:
-            pass
+    cli_version = get_speckit_version()
 
     info_table = Table(show_header=False, box=None, padding=(0, 2))
     info_table.add_column("Key", style="cyan", justify="right")
@@ -1650,8 +1637,10 @@ def _get_installed_version() -> str:
     """Return the installed specify-cli distribution version or 'unknown'.
 
     Uses importlib.metadata so the value reflects what was actually installed
-    by pip/uv/pipx — not a value read from pyproject.toml. Callers must treat
-    the sentinel string 'unknown' as an indeterminate value (see FR-020).
+    by pip/uv/pipx — not a value read from pyproject.toml. This is
+    intentional for `specify self check`, which should reason about the
+    installed distribution rather than a source-tree fallback. Callers must
+    treat the sentinel string 'unknown' as an indeterminate value (see FR-020).
     """
 
     import importlib.metadata
@@ -1719,7 +1708,7 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
         if e.code == 403:
             return None, "rate limited (try setting GH_TOKEN or GITHUB_TOKEN)"
         return None, f"HTTP {e.code}"
-    except (urllib.error.URLError, TimeoutError, OSError):
+    except (urllib.error.URLError, OSError):
         return None, "offline or timeout"
 
 
