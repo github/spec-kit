@@ -626,7 +626,7 @@ class PresetManager:
                 # Resolve composed content using the full priority stack
                 composed = resolver.resolve_content(cmd["name"], "command")
                 if composed is not None:
-                    # Write composed content to a temporary subdirectory
+                    # Write composed content to the preset's .composed directory
                     if composed_dir is None:
                         composed_dir = preset_dir / ".composed"
                         composed_dir.mkdir(parents=True, exist_ok=True)
@@ -912,6 +912,11 @@ class PresetManager:
         resolver = PresetResolver(self.project_root)
         skills_dir = self._get_skills_dir()
 
+        # Cache registry once to avoid repeated filesystem reads
+        presets_by_priority = list(
+            PresetRegistry(self.presets_dir).list_by_priority()
+        ) if self.presets_dir.exists() else []
+
         # Group command names by winning preset to batch _register_skills calls
         # while only registering skills for the specific commands being reconciled.
         preset_cmds: Dict[str, List[str]] = {}
@@ -931,7 +936,7 @@ class PresetManager:
                 if not skill_subdir.exists():
                     # Check if any preset previously registered this skill
                     was_managed = False
-                    for _pid, meta in PresetRegistry(self.presets_dir).list_by_priority():
+                    for _pid, meta in presets_by_priority:
                         if not isinstance(meta, dict):
                             continue
                         if skill_name in meta.get("registered_skills", []):
@@ -943,7 +948,7 @@ class PresetManager:
             top_path = layers[0]["path"]
             # Find the preset that owns the winning layer
             found_preset = False
-            for pack_id, _meta in PresetRegistry(self.presets_dir).list_by_priority():
+            for pack_id, _meta in presets_by_priority:
                 pack_dir = self.presets_dir / pack_id
                 if top_path.is_relative_to(pack_dir):
                     preset_cmds.setdefault(pack_id, []).append(cmd_name)
@@ -2584,7 +2589,7 @@ class PresetResolver:
                     candidate = _find_in_subdirs(pack_dir)
                 if candidate:
                     # Legacy fallback: if manifest doesn't declare a strategy,
-                    # check the command file's frontmatter for strategy: wrap
+                    # check the command file's frontmatter for any valid strategy
                     if strategy == "replace" and template_type == "command":
                         try:
                             cmd_content = candidate.read_text(encoding="utf-8")

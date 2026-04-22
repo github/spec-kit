@@ -577,6 +577,7 @@ except Exception:
                         done
                         content="$layer_content"
                         ;;
+                    *) echo "Error: unknown strategy '$strat'" >&2; return 1 ;;
                 esac
             fi
         else
@@ -596,6 +597,7 @@ except Exception:
                     done
                     content="$layer_content"
                     ;;
+                *) echo "Error: unknown strategy '$strat'" >&2; return 1 ;;
             esac
         fi
     done

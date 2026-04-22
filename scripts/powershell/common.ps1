@@ -547,6 +547,7 @@ except Exception:
                         }
                         $content = $layerContent.Replace('{CORE_TEMPLATE}', $content)
                     }
+                    default { throw "Unknown strategy: $strat" }
                 }
             }
         } else {
@@ -560,6 +561,7 @@ except Exception:
                     }
                     $content = $layerContent.Replace('{CORE_TEMPLATE}', $content)
                 }
+                default { throw "Unknown strategy: $strat" }
             }
         }
     }

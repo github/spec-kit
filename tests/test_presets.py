@@ -4202,7 +4202,7 @@ class TestResolveContent:
 
 
 class TestCollectAllLayers:
-    """Test PresetResolver._collect_all_layers() method."""
+    """Test PresetResolver.collect_all_layers() method."""
 
     def test_single_core_layer(self, project_dir):
         """Test collecting layers with only core template."""
