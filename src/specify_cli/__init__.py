@@ -2620,19 +2620,22 @@ def preset_resolve(
             else:
                 console.print("    [dim]Final output is composed from multiple preset layers; the path above is the highest-priority contributing layer.[/dim]")
             console.print("\n  [bold]Composition chain:[/bold]")
-            # Compute the effective base: the last consecutive replace layer
-            # from the bottom before the first non-replace (same logic as
-            # PresetResolver.resolve_content).
-            reversed_display = list(reversed(layers))
-            effective_base_idx = 0
-            for idx, lyr in enumerate(reversed_display):
+            # Compute the effective base: first replace layer scanning from
+            # highest priority (matching resolve_content top-down logic).
+            # Only show layers from the base upward (lower layers are ignored).
+            effective_base_idx = None
+            for idx, lyr in enumerate(layers):
                 if lyr["strategy"] == "replace":
                     effective_base_idx = idx
-                else:
                     break
-            for i, layer in enumerate(reversed_display):
+            # Show only contributing layers (base and above)
+            if effective_base_idx is not None:
+                contributing = layers[:effective_base_idx + 1]
+            else:
+                contributing = layers
+            for i, layer in enumerate(reversed(contributing)):
                 strategy_label = layer["strategy"]
-                if strategy_label == "replace" and i == effective_base_idx:
+                if strategy_label == "replace" and i == 0:
                     strategy_label = "base"
                 console.print(f"    {i + 1}. [{strategy_label}] {layer['source']} → {layer['path']}")
     else:
