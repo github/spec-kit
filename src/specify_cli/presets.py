@@ -746,6 +746,20 @@ class PresetManager:
                 # Composed command — resolve from full stack
                 composed = resolver.resolve_content(cmd_name, "command")
                 if composed is None:
+                    # Composition no longer possible (e.g. base layer removed).
+                    # Unregister any stale command file from non-skill agents.
+                    import warnings
+                    warnings.warn(
+                        f"Cannot compose command '{cmd_name}': no base layer. "
+                        f"Stale command files may remain.",
+                        stacklevel=2,
+                    )
+                    registrar._ensure_configs()
+                    registrar.unregister_commands(
+                        {agent: [cmd_name] for agent in registrar.AGENT_CONFIGS
+                         if registrar.AGENT_CONFIGS[agent].get("extension") != "/SKILL.md"},
+                        self.project_root,
+                    )
                     continue
 
                 # Write to the highest-priority preset's .composed dir
@@ -808,11 +822,31 @@ class PresetManager:
         """
         if not cmd_path.exists():
             return
-        cmd_tmpl = {
+        cmd_tmpl: Dict[str, Any] = {
             "name": cmd_name,
             "type": "command",
             "file": cmd_path.name,
         }
+        # Load aliases from extension manifest when the winning layer is an extension
+        if source_id and not source_id.startswith("preset:"):
+            try:
+                from .extensions import ExtensionManifest
+                for ext_dir in self.extensions_dir.iterdir():
+                    if not ext_dir.is_dir():
+                        continue
+                    if cmd_path.is_relative_to(ext_dir):
+                        manifest_path = ext_dir / "extension.yml"
+                        if manifest_path.exists():
+                            ext_manifest = ExtensionManifest(manifest_path)
+                            for cmd in ext_manifest.commands:
+                                if cmd.get("name") == cmd_name:
+                                    aliases = cmd.get("aliases", [])
+                                    if isinstance(aliases, list) and aliases:
+                                        cmd_tmpl["aliases"] = aliases
+                                    break
+                        break
+            except Exception:
+                pass  # best-effort alias loading
         self._register_for_non_skill_agents(
             registrar, [cmd_tmpl], source_id, cmd_path.parent
         )
@@ -2541,10 +2575,16 @@ class PresetResolver:
                     if strategy == "replace" and template_type == "command":
                         try:
                             cmd_content = candidate.read_text(encoding="utf-8")
-                            if cmd_content.startswith("---"):
-                                fm_yaml = cmd_content.split("---", 2)
-                                if len(fm_yaml) >= 3:
-                                    fm_data = yaml.safe_load(fm_yaml[1])
+                            lines = cmd_content.splitlines(keepends=True)
+                            if lines and lines[0].rstrip("\r\n") == "---":
+                                fence_end = -1
+                                for fi, fline in enumerate(lines[1:], start=1):
+                                    if fline.rstrip("\r\n") == "---":
+                                        fence_end = fi
+                                        break
+                                if fence_end > 0:
+                                    fm_text = "".join(lines[1:fence_end])
+                                    fm_data = yaml.safe_load(fm_text)
                                     if isinstance(fm_data, dict):
                                         fm_strategy = fm_data.get("strategy")
                                         if isinstance(fm_strategy, str) and fm_strategy.lower() in VALID_PRESET_STRATEGIES:
