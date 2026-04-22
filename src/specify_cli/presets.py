@@ -1516,9 +1516,20 @@ class PresetManager:
 
         # Reconcile all affected commands from the full priority stack so that
         # install order doesn't determine the winning command file.
-        cmd_names = [
-            t["name"] for t in manifest.templates if t.get("type") == "command"
-        ]
+        # Apply the same extension-installed filter as _register_commands to
+        # avoid reconciling extension commands when the extension isn't installed.
+        extensions_dir = self.project_root / ".specify" / "extensions"
+        cmd_names = []
+        for t in manifest.templates:
+            if t.get("type") != "command":
+                continue
+            name = t["name"]
+            parts = name.split(".")
+            if len(parts) >= 3 and parts[0] == "speckit":
+                ext_id = parts[1]
+                if not (extensions_dir / ext_id).is_dir():
+                    continue
+            cmd_names.append(name)
         if cmd_names:
             try:
                 self._reconcile_composed_commands(cmd_names)
