@@ -1651,9 +1651,21 @@ class PresetManager:
 
         # Collect ALL command names before filtering for reconciliation,
         # so commands registered only for skill-based agents are also reconciled.
+        # Also include aliases from the manifest (not tracked in registered_commands).
         removed_cmd_names = set()
         for cmd_names in registered_commands.values():
             removed_cmd_names.update(cmd_names)
+        manifest_path = pack_dir / "preset.yml"
+        if manifest_path.exists():
+            try:
+                manifest = PresetManifest(manifest_path)
+                for tmpl in manifest.templates:
+                    if tmpl.get("type") == "command":
+                        for alias in tmpl.get("aliases", []):
+                            if isinstance(alias, str):
+                                removed_cmd_names.add(alias)
+            except PresetValidationError:
+                pass
 
         if registered_skills:
             self._unregister_skills(registered_skills, pack_dir)
