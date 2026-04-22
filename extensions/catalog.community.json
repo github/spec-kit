@@ -1526,7 +1526,7 @@
     "red-team": {
       "name": "Red Team",
       "id": "red-team",
-      "description": "Adversarial review of functional specs before /speckit.plan locks in architecture. Dispatches 3-5 parallel lens agents, aggregates findings into a structured report, and walks the maintainer through spec-fix / new-OQ / accepted-risk / out-of-scope resolution.",
+      "description": "Adversarial review of functional specs before /speckit.plan. Parallel adversarial lens agents catch hostile actors, silent failures, and regulatory blind spots that clarify/analyze cannot.",
       "author": "Ash Brener",
       "version": "1.0.0",
       "download_url": "https://github.com/ashbrener/spec-kit-red-team/releases/download/v1.0.0/red-team-v1.0.0.zip",
