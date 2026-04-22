@@ -324,7 +324,7 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
 
     return selected_key
 
-console = Console()
+console = Console(highlight=False)
 
 class BannerGroup(TyperGroup):
     """Custom group that shows banner before help."""
