@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-21T00:00:00Z",
+  "updated_at": "2026-04-22T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2125,7 +2125,7 @@
     "superpowers-bridge": {
       "name": "Superpowers Bridge",
       "id": "superpowers-bridge",
-      "description": "Bridges spec-kit specification-driven development with obra/superpowers agent capabilities (brainstorming, writing-plans, TDD, subagent-driven-development, code-review) into a unified, resumable workflow with graceful degradation and session progress tracking.",
+      "description": "Bridges spec-kit workflows with obra/superpowers capabilities for brainstorming, TDD, code review, and resumable execution.",
       "author": "WangX0111",
       "version": "1.0.0",
       "download_url": "https://github.com/WangX0111/superspec/archive/refs/tags/v1.0.0.zip",
