@@ -3,6 +3,8 @@
 import json
 import os
 
+import yaml
+
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.manifest import IntegrationManifest
 
@@ -268,6 +270,330 @@ class TestCopilotIntegration:
             ".specify/templates/spec-template.md",
             ".specify/templates/tasks-template.md",
             ".specify/memory/constitution.md",
+            ".specify/workflows/speckit/workflow.yml",
+            ".specify/workflows/workflow-registry.json",
+        ])
+        assert actual == expected, (
+            f"Missing: {sorted(set(expected) - set(actual))}\n"
+            f"Extra: {sorted(set(actual) - set(expected))}"
+        )
+
+
+class TestCopilotSkillsMode:
+    """Tests for Copilot integration in --skills mode."""
+
+    _SKILL_COMMANDS = [
+        "analyze", "checklist", "clarify", "constitution",
+        "implement", "plan", "specify", "tasks", "taskstoissues",
+    ]
+
+    def _make_copilot(self):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        return CopilotIntegration()
+
+    def _setup_skills(self, copilot, tmp_path):
+        m = IntegrationManifest("copilot", tmp_path)
+        created = copilot.setup(tmp_path, m, parsed_options={"skills": True})
+        return created, m
+
+    # -- Options ----------------------------------------------------------
+
+    def test_options_include_skills_flag(self):
+        copilot = get_integration("copilot")
+        opts = copilot.options()
+        skills_opts = [o for o in opts if o.name == "--skills"]
+        assert len(skills_opts) == 1
+        assert skills_opts[0].is_flag is True
+        assert skills_opts[0].default is False
+
+    # -- Skills directory structure ---------------------------------------
+
+    def test_skills_creates_skill_files(self, tmp_path):
+        copilot = self._make_copilot()
+        created, _ = self._setup_skills(copilot, tmp_path)
+        assert len(created) > 0
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            assert f.exists()
+            assert f.parent.name.startswith("speckit-")
+
+    def test_skills_directory_under_github_skills(self, tmp_path):
+        copilot = self._make_copilot()
+        created, _ = self._setup_skills(copilot, tmp_path)
+        skills_dir = tmp_path / ".github" / "skills"
+        assert skills_dir.is_dir()
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        for f in skill_files:
+            assert f.resolve().parent.parent == skills_dir.resolve(), (
+                f"{f} is not under {skills_dir}"
+            )
+
+    def test_skills_directory_structure(self, tmp_path):
+        """Each command produces speckit-<name>/SKILL.md."""
+        copilot = self._make_copilot()
+        created, _ = self._setup_skills(copilot, tmp_path)
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        expected_commands = set(self._SKILL_COMMANDS)
+        actual_commands = set()
+        for f in skill_files:
+            skill_dir_name = f.parent.name
+            assert skill_dir_name.startswith("speckit-")
+            actual_commands.add(skill_dir_name.removeprefix("speckit-"))
+        assert actual_commands == expected_commands
+
+    # -- No companion files in skills mode --------------------------------
+
+    def test_skills_no_prompt_md_companions(self, tmp_path):
+        """Skills mode must not generate .prompt.md companion files."""
+        copilot = self._make_copilot()
+        created, _ = self._setup_skills(copilot, tmp_path)
+        prompt_files = [f for f in created if f.name.endswith(".prompt.md")]
+        assert prompt_files == []
+        prompts_dir = tmp_path / ".github" / "prompts"
+        if prompts_dir.exists():
+            assert list(prompts_dir.iterdir()) == []
+
+    def test_skills_no_vscode_settings(self, tmp_path):
+        """Skills mode must not create or merge .vscode/settings.json."""
+        copilot = self._make_copilot()
+        self._setup_skills(copilot, tmp_path)
+        settings = tmp_path / ".vscode" / "settings.json"
+        assert not settings.exists()
+
+    def test_skills_no_agent_md_files(self, tmp_path):
+        """Skills mode must not produce .agent.md files."""
+        copilot = self._make_copilot()
+        created, _ = self._setup_skills(copilot, tmp_path)
+        agent_files = [f for f in created if f.name.endswith(".agent.md")]
+        assert agent_files == []
+
+    # -- Frontmatter structure --------------------------------------------
+
+    def test_skill_frontmatter_structure(self, tmp_path):
+        """SKILL.md must have name, description, compatibility, metadata."""
+        copilot = self._make_copilot()
+        created, _ = self._setup_skills(copilot, tmp_path)
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            assert content.startswith("---\n"), f"{f} missing frontmatter"
+            parts = content.split("---", 2)
+            fm = yaml.safe_load(parts[1])
+            assert "name" in fm, f"{f} frontmatter missing 'name'"
+            assert "description" in fm, f"{f} frontmatter missing 'description'"
+            assert "compatibility" in fm, f"{f} frontmatter missing 'compatibility'"
+            assert "metadata" in fm, f"{f} frontmatter missing 'metadata'"
+            assert fm["metadata"]["author"] == "github-spec-kit"
+
+    # -- Copilot-specific post-processing ---------------------------------
+
+    def test_post_process_skill_content_injects_mode(self):
+        """post_process_skill_content() should inject mode: field."""
+        copilot = self._make_copilot()
+        content = (
+            "---\n"
+            'name: "speckit-plan"\n'
+            'description: "Plan workflow"\n'
+            "---\n"
+            "\nBody content\n"
+        )
+        updated = copilot.post_process_skill_content(content)
+        assert "mode: speckit.plan" in updated
+
+    def test_post_process_idempotent(self):
+        """post_process_skill_content() must be idempotent."""
+        copilot = self._make_copilot()
+        content = (
+            "---\n"
+            'name: "speckit-plan"\n'
+            'description: "Plan workflow"\n'
+            "---\n"
+            "\nBody content\n"
+        )
+        first = copilot.post_process_skill_content(content)
+        second = copilot.post_process_skill_content(first)
+        assert first == second
+
+    def test_skills_have_mode_in_frontmatter(self, tmp_path):
+        """Generated SKILL.md files should have mode: field from post-processing."""
+        copilot = self._make_copilot()
+        created, _ = self._setup_skills(copilot, tmp_path)
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            parts = content.split("---", 2)
+            fm = yaml.safe_load(parts[1])
+            assert "mode" in fm, f"{f} frontmatter missing 'mode'"
+            # mode should be speckit.<stem>
+            skill_dir_name = f.parent.name
+            stem = skill_dir_name.removeprefix("speckit-")
+            assert fm["mode"] == f"speckit.{stem}"
+
+    # -- Template processing ----------------------------------------------
+
+    def test_skills_templates_are_processed(self, tmp_path):
+        """Skill body must have placeholders replaced."""
+        copilot = self._make_copilot()
+        created, _ = self._setup_skills(copilot, tmp_path)
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            assert "{SCRIPT}" not in content, f"{f.name} has unprocessed {{SCRIPT}}"
+            assert "__AGENT__" not in content, f"{f.name} has unprocessed __AGENT__"
+            assert "{ARGS}" not in content, f"{f.name} has unprocessed {{ARGS}}"
+
+    def test_skill_body_has_content(self, tmp_path):
+        """Each SKILL.md body should contain template content."""
+        copilot = self._make_copilot()
+        created, _ = self._setup_skills(copilot, tmp_path)
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            parts = content.split("---", 2)
+            body = parts[2].strip() if len(parts) >= 3 else ""
+            assert len(body) > 0, f"{f} has empty body"
+
+    def test_plan_references_correct_context_file(self, tmp_path):
+        """The generated plan skill must reference copilot's context file."""
+        copilot = self._make_copilot()
+        self._setup_skills(copilot, tmp_path)
+        plan_file = tmp_path / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+        assert plan_file.exists()
+        content = plan_file.read_text(encoding="utf-8")
+        assert copilot.context_file in content
+        assert "__CONTEXT_FILE__" not in content
+
+    # -- Manifest tracking ------------------------------------------------
+
+    def test_all_files_tracked_in_manifest(self, tmp_path):
+        copilot = self._make_copilot()
+        created, m = self._setup_skills(copilot, tmp_path)
+        for f in created:
+            rel = f.resolve().relative_to(tmp_path.resolve()).as_posix()
+            assert rel in m.files, f"{rel} not tracked in manifest"
+
+    # -- Install/uninstall roundtrip --------------------------------------
+
+    def test_install_uninstall_roundtrip(self, tmp_path):
+        copilot = self._make_copilot()
+        m = IntegrationManifest("copilot", tmp_path)
+        created = copilot.install(tmp_path, m, parsed_options={"skills": True})
+        assert len(created) > 0
+        m.save()
+        for f in created:
+            assert f.exists()
+        removed, skipped = copilot.uninstall(tmp_path, m)
+        assert len(removed) == len(created)
+        assert skipped == []
+
+    def test_modified_file_survives_uninstall(self, tmp_path):
+        copilot = self._make_copilot()
+        m = IntegrationManifest("copilot", tmp_path)
+        created = copilot.install(tmp_path, m, parsed_options={"skills": True})
+        m.save()
+        modified_file = created[0]
+        modified_file.write_text("user modified this", encoding="utf-8")
+        removed, skipped = copilot.uninstall(tmp_path, m)
+        assert modified_file.exists()
+        assert modified_file in skipped
+
+    # -- build_command_invocation -----------------------------------------
+
+    def test_build_command_invocation_skills_mode(self):
+        copilot = self._make_copilot()
+        copilot._skills_mode = True
+        assert copilot.build_command_invocation("speckit.plan") == "/speckit-plan"
+        assert copilot.build_command_invocation("plan") == "/speckit-plan"
+        assert copilot.build_command_invocation("plan", "my args") == "/speckit-plan my args"
+
+    def test_build_command_invocation_default_mode(self):
+        copilot = self._make_copilot()
+        assert copilot.build_command_invocation("plan", "my args") == "my args"
+        assert copilot.build_command_invocation("plan") == ""
+
+    # -- Context section ---------------------------------------------------
+
+    def test_skills_setup_upserts_context_section(self, tmp_path):
+        copilot = self._make_copilot()
+        self._setup_skills(copilot, tmp_path)
+        ctx_path = tmp_path / copilot.context_file
+        assert ctx_path.exists()
+        content = ctx_path.read_text(encoding="utf-8")
+        assert "<!-- SPECKIT START -->" in content
+        assert "<!-- SPECKIT END -->" in content
+
+    # -- CLI integration test ---------------------------------------------
+
+    def test_init_with_integration_options_skills(self, tmp_path):
+        """specify init --integration copilot --integration-options='--skills' scaffolds skills."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        project = tmp_path / "copilot-skills"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "copilot",
+                "--integration-options", "--skills",
+                "--script", "sh", "--no-git",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, f"init failed: {result.output}"
+        skills_dir = project / ".github" / "skills"
+        assert skills_dir.is_dir(), "Skills directory was not created"
+        plan_skill = skills_dir / "speckit-plan" / "SKILL.md"
+        assert plan_skill.exists(), "speckit-plan/SKILL.md not found"
+        # Verify no default-mode artifacts
+        assert not (project / ".github" / "agents").exists()
+        assert not (project / ".github" / "prompts").exists()
+        assert not (project / ".vscode" / "settings.json").exists()
+
+    def test_complete_file_inventory_skills_sh(self, tmp_path):
+        """Every file produced by specify init --integration copilot --integration-options='--skills' --script sh."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        project = tmp_path / "inventory-skills-sh"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "copilot",
+                "--integration-options", "--skills",
+                "--script", "sh", "--no-git",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, f"init failed: {result.output}"
+        actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file())
+        expected = sorted([
+            # Skill files
+            *[f".github/skills/speckit-{cmd}/SKILL.md" for cmd in self._SKILL_COMMANDS],
+            # Context file
+            ".github/copilot-instructions.md",
+            # Integration metadata
+            ".specify/init-options.json",
+            ".specify/integration.json",
+            ".specify/integrations/copilot.manifest.json",
+            ".specify/integrations/speckit.manifest.json",
+            # Scripts (sh)
+            ".specify/scripts/bash/check-prerequisites.sh",
+            ".specify/scripts/bash/common.sh",
+            ".specify/scripts/bash/create-new-feature.sh",
+            ".specify/scripts/bash/setup-plan.sh",
+            # Templates
+            ".specify/templates/checklist-template.md",
+            ".specify/templates/constitution-template.md",
+            ".specify/templates/plan-template.md",
+            ".specify/templates/spec-template.md",
+            ".specify/templates/tasks-template.md",
+            ".specify/memory/constitution.md",
+            # Bundled workflow
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
         ])
