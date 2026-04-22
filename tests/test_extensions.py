@@ -1361,6 +1361,79 @@ Agent __AGENT__
         assert "{ARGS}" not in content
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
 
+    @pytest.mark.parametrize("agent_name,skills_path", [
+        ("codex", ".agents/skills"),
+        ("kimi", ".kimi/skills"),
+        ("claude", ".claude/skills"),
+        ("cursor-agent", ".cursor/skills"),
+        ("trae", ".trae/skills"),
+        ("agy", ".agents/skills"),
+    ])
+    def test_all_skill_agents_register_commands_with_resolved_placeholders(
+        self, project_dir, temp_dir, agent_name, skills_path
+    ):
+        """All SKILL.md agents must produce fully resolved SKILL.md files when commands are registered."""
+        import yaml
+
+        ext_dir = temp_dir / f"ext-{agent_name}"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": f"ext-{agent_name}",
+                "name": "Scripted Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": f"speckit.ext-{agent_name}.run",
+                        "file": "commands/run.md",
+                        "description": "Scripted command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Scripted command\n"
+            "scripts:\n"
+            '  sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"\n'
+            "---\n\n"
+            "Run {SCRIPT}\n"
+            "Agent is __AGENT__.\n"
+        )
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(f'{{"ai":"{agent_name}","script":"sh"}}')
+
+        skills_dir = project_dir
+        for part in skills_path.split("/"):
+            skills_dir = skills_dir / part
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(agent_name, manifest, ext_dir, project_dir)
+
+        skill_dir_name = f"speckit-ext-{agent_name}-run"
+        skill_file = skills_dir / skill_dir_name / "SKILL.md"
+        assert skill_file.exists(), f"SKILL.md not created for {agent_name}"
+
+        content = skill_file.read_text()
+        assert "{SCRIPT}" not in content, f"{{SCRIPT}} not resolved for {agent_name}"
+        assert "__AGENT__" not in content, f"__AGENT__ not resolved for {agent_name}"
+        assert "{ARGS}" not in content, f"{{ARGS}} not resolved for {agent_name}"
+        assert '.specify/scripts/bash/setup-plan.sh' in content
+
     def test_codex_skill_alias_frontmatter_matches_alias_name(self, project_dir, temp_dir):
         """Codex alias skills should render their own matching `name:` frontmatter."""
         import yaml

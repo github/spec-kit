@@ -282,7 +282,8 @@ class CommandRegistrar:
         if not isinstance(frontmatter, dict):
             frontmatter = {}
 
-        if agent_name in {"codex", "kimi"}:
+        agent_config = self.AGENT_CONFIGS.get(agent_name, {})
+        if agent_config.get("extension") == "/SKILL.md":
             body = self.resolve_skill_placeholders(
                 agent_name, frontmatter, body, project_root
             )
