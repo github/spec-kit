@@ -657,6 +657,7 @@ class CommandRegistrar:
         source_id: str,
         source_dir: Path,
         project_root: Path,
+        context_note: str = None,
     ) -> Dict[str, List[str]]:
         """Register commands for all non-skill agents in the project.
 
@@ -669,6 +670,7 @@ class CommandRegistrar:
             source_id: Identifier of the source
             source_dir: Directory containing command source files
             project_root: Path to project root
+            context_note: Custom context comment for markdown output
 
         Returns:
             Dictionary mapping agent names to list of registered commands
@@ -684,6 +686,7 @@ class CommandRegistrar:
                     registered = self.register_commands(
                         agent_name, commands, source_id,
                         source_dir, project_root,
+                        context_note=context_note,
                     )
                     if registered:
                         results[agent_name] = registered

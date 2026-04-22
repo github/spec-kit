@@ -747,9 +747,11 @@ class PresetManager:
                                     if c.get("name") == cmd_name
                                 ]
                                 if matching_cmds:
+                                    ext_name = ext_manifest.data.get("extension", {}).get("name", ext_id)
                                     registrar.register_commands_for_non_skill_agents(
                                         matching_cmds, ext_id, ext_dir,
                                         self.project_root,
+                                        context_note=f"Extension: {ext_name} ({ext_id})",
                                     )
                                     registered = True
                             except Exception:
