@@ -93,6 +93,7 @@ To upgrade Specify, see the [Upgrade Guide](./docs/upgrade.md) for detailed inst
 
 ```bash
 uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+# pipx users: pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z
 ```
 
 #### Option 2: One-time Usage
@@ -459,7 +460,7 @@ Our research and experimentation focus on:
 
 - **Linux/macOS/Windows**
 - [Supported](#-supported-ai-coding-agent-integrations) AI coding agent.
-- [uv](https://docs.astral.sh/uv/) for package management
+- [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pypa.github.io/pipx/) for persistent installation
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
 
