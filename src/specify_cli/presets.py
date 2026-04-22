@@ -777,8 +777,20 @@ class PresetManager:
                         stacklevel=2,
                     )
                     registrar._ensure_configs()
+                    # Include aliases from the top layer's manifest
+                    cmd_names_to_unregister = [cmd_name]
+                    for _pid, _meta in presets_by_priority:
+                        _pd = self.presets_dir / _pid
+                        _m = resolver._get_manifest(_pd)
+                        if _m:
+                            for _t in _m.templates:
+                                if _t.get("name") == cmd_name and _t.get("type") == "command":
+                                    for alias in _t.get("aliases", []):
+                                        if isinstance(alias, str):
+                                            cmd_names_to_unregister.append(alias)
+                                    break
                     registrar.unregister_commands(
-                        {agent: [cmd_name] for agent in registrar.AGENT_CONFIGS
+                        {agent: cmd_names_to_unregister for agent in registrar.AGENT_CONFIGS
                          if registrar.AGENT_CONFIGS[agent].get("extension") != "/SKILL.md"},
                         self.project_root,
                     )
@@ -1034,6 +1046,11 @@ class PresetManager:
                         f"---\n{fm_text}\n---\n\n"
                         f"# Speckit {skill_title} Skill\n\n{body}\n"
                     )
+                    # Apply integration post-processing (e.g. Claude flags)
+                    from .integrations import get_integration
+                    integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
+                    if integration is not None and hasattr(integration, "post_process_skill_content"):
+                        skill_content = integration.post_process_skill_content(skill_content)
                     skill_file.write_text(skill_content, encoding="utf-8")
                 except Exception:
                     pass  # best-effort override skill restoration
