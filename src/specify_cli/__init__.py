@@ -367,14 +367,14 @@ def callback(
         console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
         console.print()
 
-def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> Optional[str]:
+def run_command(cmd: list[str], check_return: bool = True, capture: bool = False) -> Optional[str]:
     """Run a shell command and optionally capture output."""
     try:
         if capture:
-            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True, shell=shell)
+            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True, shell=False)
             return result.stdout.strip()
         else:
-            subprocess.run(cmd, check=check_return, shell=shell)
+            subprocess.run(cmd, check=check_return, shell=False)
             return None
     except subprocess.CalledProcessError as e:
         if check_return:
@@ -2435,16 +2435,16 @@ def preset_add(
                 raise typer.Exit(1)
 
             console.print(f"Installing preset from [cyan]{from_url}[/cyan]...")
-            import urllib.request
-            import urllib.error
+            import requests as _requests
             import tempfile
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 zip_path = Path(tmpdir) / "preset.zip"
                 try:
-                    with urllib.request.urlopen(from_url, timeout=60) as response:
-                        zip_path.write_bytes(response.read())
-                except urllib.error.URLError as e:
+                    response = _requests.get(from_url, timeout=60)
+                    response.raise_for_status()
+                    zip_path.write_bytes(response.content)
+                except _requests.RequestException as e:
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
                     raise typer.Exit(1)
 
@@ -3378,8 +3378,7 @@ def extension_add(
 
             elif from_url:
                 # Install from URL (ZIP file)
-                import urllib.request
-                import urllib.error
+                import requests as _requests
                 from urllib.parse import urlparse
 
                 # Validate URL
@@ -3402,13 +3401,13 @@ def extension_add(
                 zip_path = download_dir / f"{extension}-url-download.zip"
 
                 try:
-                    with urllib.request.urlopen(from_url, timeout=60) as response:
-                        zip_data = response.read()
-                    zip_path.write_bytes(zip_data)
+                    response = _requests.get(from_url, timeout=60)
+                    response.raise_for_status()
+                    zip_path.write_bytes(response.content)
 
                     # Install from downloaded ZIP
                     manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
-                except urllib.error.URLError as e:
+                except _requests.RequestException as e:
                     console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
                     raise typer.Exit(1)
                 finally:
@@ -4692,7 +4691,7 @@ def workflow_add(
     if source.startswith("http://") or source.startswith("https://"):
         from ipaddress import ip_address
         from urllib.parse import urlparse
-        from urllib.request import urlopen  # noqa: S310
+        import requests as _requests
 
         parsed_src = urlparse(source)
         src_host = parsed_src.hostname or ""
@@ -4709,23 +4708,24 @@ def workflow_add(
 
         import tempfile
         try:
-            with urlopen(source, timeout=30) as resp:  # noqa: S310
-                final_url = resp.geturl()
-                final_parsed = urlparse(final_url)
-                final_host = final_parsed.hostname or ""
-                final_lb = final_host == "localhost"
-                if not final_lb:
-                    try:
-                        final_lb = ip_address(final_host).is_loopback
-                    except ValueError:
-                        # Redirect host is not an IP literal; keep loopback as determined above.
-                        pass
-                if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
-                    console.print(f"[red]Error:[/red] URL redirected to non-HTTPS: {final_url}")
-                    raise typer.Exit(1)
-                with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
-                    tmp.write(resp.read())
-                    tmp_path = Path(tmp.name)
+            resp = _requests.get(source, timeout=30)
+            resp.raise_for_status()
+            final_url = resp.url
+            final_parsed = urlparse(final_url)
+            final_host = final_parsed.hostname or ""
+            final_lb = final_host == "localhost"
+            if not final_lb:
+                try:
+                    final_lb = ip_address(final_host).is_loopback
+                except ValueError:
+                    # Redirect host is not an IP literal; keep loopback as determined above.
+                    pass
+            if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
+                console.print(f"[red]Error:[/red] URL redirected to non-HTTPS: {final_url}")
+                raise typer.Exit(1)
+            with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
+                tmp.write(resp.content)
+                tmp_path = Path(tmp.name)
         except typer.Exit:
             raise
         except Exception as exc:
@@ -4805,30 +4805,31 @@ def workflow_add(
     workflow_file = workflow_dir / "workflow.yml"
 
     try:
-        from urllib.request import urlopen  # noqa: S310 — URL comes from catalog
+        import requests as _requests
 
         workflow_dir.mkdir(parents=True, exist_ok=True)
-        with urlopen(workflow_url, timeout=30) as response:  # noqa: S310
-            # Validate final URL after redirects
-            final_url = response.geturl()
-            final_parsed = urlparse(final_url)
-            final_host = final_parsed.hostname or ""
-            final_loopback = final_host == "localhost"
-            if not final_loopback:
-                try:
-                    final_loopback = ip_address(final_host).is_loopback
-                except ValueError:
-                    # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
-                    pass
-            if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_loopback):
-                if workflow_dir.exists():
-                    import shutil
-                    shutil.rmtree(workflow_dir, ignore_errors=True)
-                console.print(
-                    f"[red]Error:[/red] Workflow '{source}' redirected to non-HTTPS URL: {final_url}"
-                )
-                raise typer.Exit(1)
-            workflow_file.write_bytes(response.read())
+        response = _requests.get(workflow_url, timeout=30)
+        response.raise_for_status()
+        # Validate final URL after redirects
+        final_url = response.url
+        final_parsed = urlparse(final_url)
+        final_host = final_parsed.hostname or ""
+        final_loopback = final_host == "localhost"
+        if not final_loopback:
+            try:
+                final_loopback = ip_address(final_host).is_loopback
+            except ValueError:
+                # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
+                pass
+        if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_loopback):
+            if workflow_dir.exists():
+                import shutil
+                shutil.rmtree(workflow_dir, ignore_errors=True)
+            console.print(
+                f"[red]Error:[/red] Workflow '{source}' redirected to non-HTTPS URL: {final_url}"
+            )
+            raise typer.Exit(1)
+        workflow_file.write_bytes(response.content)
     except Exception as exc:
         if workflow_dir.exists():
             import shutil
