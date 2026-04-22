@@ -920,7 +920,6 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
 
 # Constants kept for backward compatibility with presets and extensions.
 DEFAULT_SKILLS_DIR = ".agents/skills"
-NATIVE_SKILLS_AGENTS = {"codex", "kimi"}
 SKILL_DESCRIPTIONS = {
     "specify": "Create or update feature specifications from natural language descriptions.",
     "plan": "Generate technical implementation plans from feature specifications.",
