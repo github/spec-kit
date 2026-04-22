@@ -1697,7 +1697,14 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
         GITHUB_API_LATEST,
         headers={"Accept": "application/vnd.github+json"},
     )
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    token = None
+    for env_var in ("GH_TOKEN", "GITHUB_TOKEN"):
+        candidate = os.environ.get(env_var)
+        if candidate is not None:
+            candidate = candidate.strip()
+            if candidate:
+                token = candidate
+                break
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     try:
@@ -1710,7 +1717,7 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     except urllib.error.HTTPError as e:
         # Order matters: HTTPError is a subclass of URLError.
         if e.code == 403:
-            return None, "rate limited (try setting GH_TOKEN)"
+            return None, "rate limited (try setting GH_TOKEN or GITHUB_TOKEN)"
         return None, f"HTTP {e.code}"
     except (urllib.error.URLError, TimeoutError, OSError):
         return None, "offline or timeout"

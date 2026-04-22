@@ -163,6 +163,8 @@ class TestUserStory1:
         output = strip_ansi(result.output)
         assert result.exit_code == 0
         assert "Update available" not in output
+        assert "Up to date" in output
+        assert "0.7.4" in output
 
 
 class TestFailureCategorization:
@@ -191,7 +193,7 @@ class TestFailureCategorization:
         ):
             tag, reason = _fetch_latest_release_tag()
         assert tag is None
-        assert reason == "rate limited (try setting GH_TOKEN)"
+        assert reason == "rate limited (try setting GH_TOKEN or GITHUB_TOKEN)"
 
     @pytest.mark.parametrize("code", [404, 500, 502])
     def test_other_http_uses_code_string(self, code):
@@ -215,7 +217,7 @@ class TestFailureCategorization:
 
 _FAILURE_CASES = [
     ("offline or timeout", urllib.error.URLError("down")),
-    ("rate limited (try setting GH_TOKEN)", _http_error(403)),
+    ("rate limited (try setting GH_TOKEN or GITHUB_TOKEN)", _http_error(403)),
     ("HTTP 500", _http_error(500)),
 ]
 
@@ -231,7 +233,12 @@ class TestUserStory2:
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
         assert "Installed: 0.7.4" in output
-        assert f"Could not check latest release: {expected_reason}" in output
+        if expected_reason == "rate limited (try setting GH_TOKEN or GITHUB_TOKEN)":
+            assert "Could not check latest release: rate limited" in output
+            assert "GH_TOKEN" in output
+            assert "GITHUB_TOKEN" in output
+        else:
+            assert f"Could not check latest release: {expected_reason}" in output
 
     @pytest.mark.parametrize("_expected_reason, side_effect", _FAILURE_CASES)
     def test_failure_exits_zero(self, _expected_reason, side_effect):
@@ -301,6 +308,24 @@ class TestUserStory3:
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") is None
+
+    def test_whitespace_only_gh_token_treated_as_unset(self, monkeypatch):
+        monkeypatch.setenv("GH_TOKEN", "   ")
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        captured, side_effect = _capture_request_via_urlopen()
+        with patch("specify_cli.urllib.request.urlopen", side_effect=side_effect):
+            _fetch_latest_release_tag()
+        req = captured["request"]
+        assert req.get_header("Authorization") is None
+
+    def test_whitespace_only_gh_token_falls_back_to_github_token(self, monkeypatch):
+        monkeypatch.setenv("GH_TOKEN", "   ")
+        monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
+        captured, side_effect = _capture_request_via_urlopen()
+        with patch("specify_cli.urllib.request.urlopen", side_effect=side_effect):
+            _fetch_latest_release_tag()
+        req = captured["request"]
+        assert req.get_header("Authorization") == f"Bearer {SENTINEL_GITHUB_TOKEN}"
 
     @pytest.mark.parametrize("_reason, side_effect", _FAILURE_CASES)
     def test_gh_token_never_appears_in_failure_output(
