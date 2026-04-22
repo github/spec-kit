@@ -601,3 +601,89 @@ class TestCopilotSkillsMode:
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
         )
+
+    # -- Singleton leak: _skills_mode must reset --------------------------
+
+    def test_skills_mode_resets_on_default_setup(self, tmp_path):
+        """setup() with skills=True then without must reset _skills_mode."""
+        copilot = self._make_copilot()
+
+        # First call: skills mode
+        (tmp_path / "proj1").mkdir()
+        m1 = IntegrationManifest("copilot", tmp_path / "proj1")
+        copilot.setup(tmp_path / "proj1", m1, parsed_options={"skills": True})
+        assert copilot._skills_mode is True
+
+        # Second call: default mode (no skills option)
+        (tmp_path / "proj2").mkdir()
+        m2 = IntegrationManifest("copilot", tmp_path / "proj2")
+        copilot.setup(tmp_path / "proj2", m2)
+        assert copilot._skills_mode is False
+
+        # build_command_invocation must use default (dotted) mode
+        assert copilot.build_command_invocation("plan", "args") == "args"
+
+    # -- Auto-detection must ignore unrelated .github/skills/ -------------
+
+    def test_dispatch_ignores_unrelated_skills_directory(self, tmp_path):
+        """dispatch_command() must not treat unrelated .github/skills/ as skills mode."""
+        copilot = self._make_copilot()
+        # Create a .github/skills/ with non-speckit content (e.g. GitHub Skills training)
+        unrelated = tmp_path / ".github" / "skills" / "introduction-to-github"
+        unrelated.mkdir(parents=True)
+        (unrelated / "README.md").write_text("# GitHub Skills training\n")
+
+        # Should NOT detect skills mode — cli_args should contain --agent
+        import unittest.mock as mock
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = mock.Mock(returncode=0, stdout="", stderr="")
+            copilot.dispatch_command("plan", "my args", project_root=tmp_path, stream=False)
+            call_args = mock_run.call_args[0][0]
+            assert "--agent" in call_args, (
+                f"Expected --agent in cli_args but got: {call_args}"
+            )
+            assert "speckit.plan" in call_args
+
+    def test_dispatch_detects_speckit_skills_layout(self, tmp_path):
+        """dispatch_command() detects speckit-*/SKILL.md as skills mode."""
+        copilot = self._make_copilot()
+        skill_dir = tmp_path / ".github" / "skills" / "speckit-plan"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: speckit-plan\n---\n")
+
+        import unittest.mock as mock
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = mock.Mock(returncode=0, stdout="", stderr="")
+            copilot.dispatch_command("plan", "my args", project_root=tmp_path, stream=False)
+            call_args = mock_run.call_args[0][0]
+            assert "--agent" not in call_args, (
+                f"Skills mode should not use --agent, got: {call_args}"
+            )
+
+    # -- Next-steps display for Copilot skills mode -----------------------
+
+    def test_init_skills_next_steps_show_skill_syntax(self, tmp_path):
+        """specify init --integration copilot --integration-options='--skills' shows /speckit-plan not /speckit.plan."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        project = tmp_path / "copilot-nextsteps"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "copilot",
+                "--integration-options", "--skills",
+                "--script", "sh", "--no-git",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, f"init failed: {result.output}"
+        # Skills mode should show /speckit-plan (hyphenated)
+        assert "/speckit-plan" in result.output, (
+            f"Expected /speckit-plan in next steps but got:\n{result.output}"
+        )
+        # Must NOT show the dotted /speckit.plan form
+        assert "/speckit.plan" not in result.output, (
+            f"Should not show /speckit.plan in skills mode:\n{result.output}"
+        )

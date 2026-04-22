@@ -100,12 +100,25 @@ class TestInstalledVersion:
     def test_invalid_metadata_error_returns_unknown(self):
         invalid_metadata_error = getattr(importlib.metadata, "InvalidMetadataError", None)
         if invalid_metadata_error is None:
-            pytest.skip("InvalidMetadataError is not available on this Python version")
-        with patch(
-            "importlib.metadata.version",
-            side_effect=invalid_metadata_error("bad metadata"),
-        ):
-            assert _get_installed_version() == "unknown"
+            # Python versions without InvalidMetadataError: simulate with a
+            # custom exception to verify the guarded except path works.
+            class _FakeInvalidMetadataError(Exception):
+                pass
+            invalid_metadata_error = _FakeInvalidMetadataError
+            # Patch the attribute onto importlib.metadata so the production
+            # getattr() finds it during this test.
+            with patch.object(importlib.metadata, "InvalidMetadataError", invalid_metadata_error, create=True):
+                with patch(
+                    "importlib.metadata.version",
+                    side_effect=invalid_metadata_error("bad metadata"),
+                ):
+                    assert _get_installed_version() == "unknown"
+        else:
+            with patch(
+                "importlib.metadata.version",
+                side_effect=invalid_metadata_error("bad metadata"),
+            ):
+                assert _get_installed_version() == "unknown"
 
 
 class TestNormalizeTag:

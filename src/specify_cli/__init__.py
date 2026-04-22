@@ -1514,7 +1514,7 @@ def init(
     # Determine skill display mode for the next-steps panel.
     # Skills integrations (codex, kimi, agy, trae, cursor-agent) should show skill invocation syntax.
     from .integrations.base import SkillsIntegration as _SkillsInt
-    _is_skills_integration = isinstance(resolved_integration, _SkillsInt)
+    _is_skills_integration = isinstance(resolved_integration, _SkillsInt) or getattr(resolved_integration, "_skills_mode", False)
 
     codex_skill_mode = selected_ai == "codex" and (ai_skills or _is_skills_integration)
     claude_skill_mode = selected_ai == "claude" and (ai_skills or _is_skills_integration)
@@ -1522,7 +1522,8 @@ def init(
     agy_skill_mode = selected_ai == "agy" and _is_skills_integration
     trae_skill_mode = selected_ai == "trae"
     cursor_agent_skill_mode = selected_ai == "cursor-agent" and (ai_skills or _is_skills_integration)
-    native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode or trae_skill_mode or cursor_agent_skill_mode
+    copilot_skill_mode = selected_ai == "copilot" and _is_skills_integration
+    native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode or trae_skill_mode or cursor_agent_skill_mode or copilot_skill_mode
 
     if codex_skill_mode and not ai_skills:
         # Integration path installed skills; show the helpful notice
@@ -1543,7 +1544,7 @@ def init(
             return f"/speckit-{name}"
         if kimi_skill_mode:
             return f"/skill:speckit-{name}"
-        if cursor_agent_skill_mode:
+        if cursor_agent_skill_mode or copilot_skill_mode:
             return f"/speckit-{name}"
         return f"/speckit.{name}"
 

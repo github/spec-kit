@@ -182,8 +182,11 @@ class CopilotIntegration(IntegrationBase):
         skills_mode = self._skills_mode
         if not skills_mode and project_root:
             skills_dir = project_root / ".github" / "skills"
-            if skills_dir.is_dir() and any(skills_dir.iterdir()):
-                skills_mode = True
+            if skills_dir.is_dir():
+                skills_mode = any(
+                    d.is_dir() and (d / "SKILL.md").is_file()
+                    for d in skills_dir.glob("speckit-*")
+                )
 
         if skills_mode:
             prompt = self.build_command_invocation(command_name, args)
@@ -242,7 +245,7 @@ class CopilotIntegration(IntegrationBase):
     def post_process_skill_content(self, content: str) -> str:
         """Inject Copilot-specific ``mode:`` field into SKILL.md frontmatter.
 
-        Inserts ``mode: "speckit.<stem>"`` before the closing ``---`` so
+        Inserts ``mode: speckit.<stem>`` before the closing ``---`` so
         Copilot can associate the skill with its agent mode.
         """
         lines = content.splitlines(keepends=True)
@@ -306,8 +309,8 @@ class CopilotIntegration(IntegrationBase):
         Otherwise uses the default ``.agent.md`` + ``.prompt.md`` layout.
         """
         parsed_options = parsed_options or {}
-        if parsed_options.get("skills"):
-            self._skills_mode = True
+        self._skills_mode = bool(parsed_options.get("skills"))
+        if self._skills_mode:
             return self._setup_skills(project_root, manifest, parsed_options, **opts)
         return self._setup_default(project_root, manifest, parsed_options, **opts)
 
