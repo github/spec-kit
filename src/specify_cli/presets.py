@@ -887,12 +887,23 @@ class PresetManager:
             if not layers:
                 continue
 
-            # Ensure skill directory exists so _register_skills can write to it.
+            # Re-create the skill directory only if it was previously managed
+            # (i.e., listed in some preset's registered_skills). This avoids
+            # creating new skill dirs that _register_skills would normally skip.
             if skills_dir:
                 skill_name, _ = self._skill_names_for_command(cmd_name)
                 skill_subdir = skills_dir / skill_name
                 if not skill_subdir.exists():
-                    skill_subdir.mkdir(parents=True, exist_ok=True)
+                    # Check if any preset previously registered this skill
+                    was_managed = False
+                    for _pid, meta in PresetRegistry(self.presets_dir).list_by_priority():
+                        if not isinstance(meta, dict):
+                            continue
+                        if skill_name in meta.get("registered_skills", []):
+                            was_managed = True
+                            break
+                    if was_managed:
+                        skill_subdir.mkdir(parents=True, exist_ok=True)
 
             top_path = layers[0]["path"]
             # Find the preset that owns the winning layer
@@ -2525,6 +2536,21 @@ class PresetResolver:
                 if candidate is None:
                     candidate = _find_in_subdirs(pack_dir)
                 if candidate:
+                    # Legacy fallback: if manifest doesn't declare a strategy,
+                    # check the command file's frontmatter for strategy: wrap
+                    if strategy == "replace" and template_type == "command":
+                        try:
+                            cmd_content = candidate.read_text(encoding="utf-8")
+                            if cmd_content.startswith("---"):
+                                fm_yaml = cmd_content.split("---", 2)
+                                if len(fm_yaml) >= 3:
+                                    fm_data = yaml.safe_load(fm_yaml[1])
+                                    if isinstance(fm_data, dict):
+                                        fm_strategy = fm_data.get("strategy")
+                                        if isinstance(fm_strategy, str) and fm_strategy.lower() in VALID_PRESET_STRATEGIES:
+                                            strategy = fm_strategy.lower()
+                        except (yaml.YAMLError, OSError):
+                            pass
                     version = metadata.get("version", "?") if metadata else "?"
                     layers.append({
                         "path": candidate,
