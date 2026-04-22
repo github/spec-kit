@@ -1743,6 +1743,7 @@ def self_check() -> None:
         # Graceful-failure path (FR-008). `failure_reason` is one of the
         # enumerated strings produced by _fetch_latest_release_tag() — it
         # never contains a URL, headers, response body, or traceback.
+        assert failure_reason is not None
         console.print(f"Installed: {installed}")
         console.print(f"[yellow]Could not check latest release:[/yellow] {failure_reason}")
         return
