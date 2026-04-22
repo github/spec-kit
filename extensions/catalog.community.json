@@ -2410,8 +2410,8 @@
       "id": "wireframe",
       "description": "SVG wireframe generation, review, and sign-off for spec-driven development. Approved wireframes become spec constraints honored by /speckit.plan, /speckit.tasks, and /speckit.implement.",
       "author": "TortoiseWolfe",
-      "version": "0.1.0",
-      "download_url": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/archive/refs/tags/v0.1.0.zip",
+      "version": "0.1.1",
+      "download_url": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/archive/refs/tags/v0.1.1.zip",
       "repository": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe",
       "homepage": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe",
       "documentation": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/blob/main/README.md",
@@ -2438,7 +2438,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-17T00:00:00Z",
-      "updated_at": "2026-04-17T00:00:00Z"
+      "updated_at": "2026-04-22T00:00:00Z"
     },
     "worktree": {
       "name": "Worktree Isolation",
