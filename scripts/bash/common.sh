@@ -537,19 +537,13 @@ except Exception:
         return 0
     fi
 
-    # Compose bottom-up: start from the effective base.
-    # Find the highest-priority replace layer that sits below composing layers.
-    # Skip non-replace layers below any replace (they have no base to compose onto).
-    local content=""
-    local has_base=false
+    # Find the effective base: scan from highest priority (index 0) downward
+    # to find the nearest replace layer. Only compose layers above that base.
     local base_idx=-1
     local i
-    for (( i=count-1; i>=0; i-- )); do
-        local strat="${layer_strategies[$i]}"
-        if [ "$strat" = "replace" ]; then
+    for (( i=0; i<count; i++ )); do
+        if [ "${layer_strategies[$i]}" = "replace" ]; then
             base_idx=$i
-        elif [ $base_idx -ge 0 ]; then
-            # Found a non-replace above a replace — this is where composition starts
             break
         fi
     done
@@ -558,7 +552,8 @@ except Exception:
         return 1  # no base layer found
     fi
 
-    # Read the base content; start composing from the layer above the base
+    # Read the base content; compose layers above the base (higher priority)
+    local content
     content=$(cat "${layer_paths[$base_idx]}"; printf x)
     content="${content%x}"
 

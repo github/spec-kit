@@ -532,15 +532,13 @@ except Exception:
         return (Get-Content $layerPaths[0] -Raw)
     }
 
-    # Find the effective base: highest-priority replace below composing layers.
-    # Skip non-replace layers below any replace (they have no base to compose onto).
+    # Find the effective base: scan from highest priority (index 0) downward
+    # to find the nearest replace layer. Only compose layers above that base.
     $baseIdx = -1
-    for ($i = $layerPaths.Count - 1; $i -ge 0; $i--) {
-        $strat = $layerStrategies[$i]
-        if ($strat -eq 'replace') {
+    for ($i = 0; $i -lt $layerPaths.Count; $i++) {
+        if ($layerStrategies[$i] -eq 'replace') {
             $baseIdx = $i
-        } elseif ($baseIdx -ge 0) {
-            break  # non-replace above a replace — composition starts here
+            break
         }
     }
     if ($baseIdx -lt 0) { return $null }

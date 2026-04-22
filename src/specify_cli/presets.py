@@ -2920,24 +2920,24 @@ class PresetResolver:
         # layers is ordered highest-priority first. We process in reverse.
         reversed_layers = list(reversed(layers))
 
-        # Find the base content: scan bottom-up for the highest-priority
-        # "replace" layer that can serve as a base. Non-replace layers below
-        # the base are irrelevant (they have nothing to compose onto).
-        content = None
-        start_idx = 0
-        for i, layer in enumerate(reversed_layers):
+        # Find the effective base: scan from highest priority (layers[0]) downward
+        # to find the nearest replace layer. Only compose layers above that base.
+        # layers is highest-priority first; reversed_layers is lowest first.
+        base_layer_idx = None  # index in layers[] (highest-priority first)
+        for idx, layer in enumerate(layers):
             if layer["strategy"] == "replace":
-                content = layer["path"].read_text(encoding="utf-8")
-                start_idx = i + 1
-            elif content is not None:
-                # Found a non-replace layer above a replace — stop scanning.
-                # The replace layer(s) form the base; composition starts here.
+                base_layer_idx = idx
                 break
-            # Non-replace layers below any replace are skipped (no base yet)
 
-        # If no base content found, there's nothing to compose onto
-        if content is None:
-            return None
+        if base_layer_idx is None:
+            return None  # no replace base found
+
+        # Convert to reversed_layers index
+        base_reversed_idx = len(layers) - 1 - base_layer_idx
+        content = layers[base_layer_idx]["path"].read_text(encoding="utf-8")
+        # Compose only the layers above the base (higher priority = lower index in layers,
+        # higher index in reversed_layers). Process bottom-up from base+1.
+        start_idx = base_reversed_idx + 1
 
         # For command composition, strip frontmatter from each layer to avoid
         # leaking YAML metadata into the composed body. The highest-priority
