@@ -193,7 +193,7 @@ class CopilotIntegration(IntegrationBase):
 
         cli_args = ["copilot", "-p", prompt]
         if not skills_mode:
-            cli_args.extend(["--agent", f"speckit.{stem}"])
+            cli_args.extend(["--agent", agent_name])
         if _allow_all():
             cli_args.append("--yolo")
         if model:
