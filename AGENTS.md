@@ -264,13 +264,13 @@ The base classes handle most work automatically. Override only when the agent de
 | Override | When to use | Example |
 |---|---|---|
 | `command_filename(template_name)` | Custom file naming or extension | Copilot → `speckit.{name}.agent.md` |
-| `options()` | Integration-specific CLI flags via `--integration-options` | Codex → `--skills` flag |
-| `setup()` | Custom install logic (companion files, settings merge) | Copilot → `.agent.md` + `.prompt.md` + `.vscode/settings.json` |
+| `options()` | Integration-specific CLI flags via `--integration-options` | Codex → `--skills` flag, Copilot → `--skills` flag |
+| `setup()` | Custom install logic (companion files, settings merge) | Copilot → `.agent.md` + `.prompt.md` + `.vscode/settings.json` (default) or `speckit-<name>/SKILL.md` (skills mode) |
 | `teardown()` | Custom uninstall logic | Rarely needed; base handles manifest-tracked files |
 
 **Example — Copilot (fully custom `setup`):**
 
-Copilot extends `IntegrationBase` directly because it creates `.agent.md` commands, companion `.prompt.md` files, and merges `.vscode/settings.json`. See `src/specify_cli/integrations/copilot/__init__.py` for the full implementation.
+Copilot extends `IntegrationBase` directly because it creates `.agent.md` commands, companion `.prompt.md` files, and merges `.vscode/settings.json`. It also supports a `--skills` mode that scaffolds `speckit-<name>/SKILL.md` under `.github/skills/` using composition with an internal `_CopilotSkillsHelper`. See `src/specify_cli/integrations/copilot/__init__.py` for the full implementation.
 
 ### 7. Update Devcontainer files (Optional)
 
@@ -390,6 +390,24 @@ Implementation: Extends `IntegrationBase` with custom `setup()` method that:
 1. Processes templates with `process_template()`
 2. Generates companion `.prompt.md` files
 3. Merges VS Code settings
+
+**Skills mode (`--skills`):** Copilot also supports an alternative skills-based layout
+via `--integration-options="--skills"`. When enabled:
+- Commands are scaffolded as `speckit-<name>/SKILL.md` under `.github/skills/`
+- No companion `.prompt.md` files are generated
+- No `.vscode/settings.json` merge
+- `post_process_skill_content()` injects a `mode: speckit.<stem>` frontmatter field
+- `build_command_invocation()` returns `/speckit-<stem>` instead of bare args
+
+The two modes are mutually exclusive — a project uses one or the other:
+
+```bash
+# Default mode: .agent.md agents + .prompt.md companions + settings merge
+specify init my-project --integration copilot
+
+# Skills mode: speckit-<name>/SKILL.md under .github/skills/
+specify init my-project --integration copilot --integration-options="--skills"
+```
 
 ### Forge Integration
 
