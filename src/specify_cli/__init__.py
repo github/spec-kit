@@ -714,12 +714,18 @@ def _install_shared_infra(
     project_path: Path,
     script_type: str,
     tracker: StepTracker | None = None,
+    force: bool = False,
 ) -> bool:
     """Install shared infrastructure files into *project_path*.
 
     Copies ``.specify/scripts/`` and ``.specify/templates/`` from the
     bundled core_pack or source checkout.  Tracks all installed files
     in ``speckit.manifest.json``.
+
+    When *force* is ``True``, existing files are overwritten with the
+    latest bundled versions.  When ``False`` (default), only missing
+    files are added and existing ones are skipped.
+
     Returns ``True`` on success.
     """
     from .integrations.manifest import IntegrationManifest
@@ -744,12 +750,11 @@ def _install_shared_infra(
         if variant_src.is_dir():
             dest_variant = dest_scripts / variant_dir
             dest_variant.mkdir(parents=True, exist_ok=True)
-            # Merge without overwriting — only add files that don't exist yet
             for src_path in variant_src.rglob("*"):
                 if src_path.is_file():
                     rel_path = src_path.relative_to(variant_src)
                     dst_path = dest_variant / rel_path
-                    if dst_path.exists():
+                    if dst_path.exists() and not force:
                         skipped_files.append(str(dst_path.relative_to(project_path)))
                     else:
                         dst_path.parent.mkdir(parents=True, exist_ok=True)
@@ -770,7 +775,7 @@ def _install_shared_infra(
         for f in templates_src.iterdir():
             if f.is_file() and f.name != "vscode-settings.json" and not f.name.startswith("."):
                 dst = dest_templates / f.name
-                if dst.exists():
+                if dst.exists() and not force:
                     skipped_files.append(str(dst.relative_to(project_path)))
                 else:
                     shutil.copy2(f, dst)
@@ -778,10 +783,13 @@ def _install_shared_infra(
                     manifest.record_existing(rel)
 
     if skipped_files:
-        import logging
-        logging.getLogger(__name__).warning(
-            "The following shared files already exist and were not overwritten:\n%s",
-            "\n".join(f"  {f}" for f in skipped_files),
+        console.print(
+            f"[yellow]⚠[/yellow]  {len(skipped_files)} shared infrastructure file(s) already exist and were not updated:"
+        )
+        for f in skipped_files:
+            console.print(f"    {f}")
+        console.print(
+            "Use [cyan]--force[/cyan] to overwrite with the latest versions."
         )
 
     manifest.save()
@@ -1272,7 +1280,7 @@ def init(
 
             # Install shared infrastructure (scripts, templates)
             tracker.start("shared-infra")
-            _install_shared_infra(project_path, selected_script, tracker=tracker)
+            _install_shared_infra(project_path, selected_script, tracker=tracker, force=force)
             tracker.complete("shared-infra", f"scripts ({selected_script}) + templates")
 
             ensure_constitution_from_template(project_path, tracker=tracker)
@@ -2297,9 +2305,8 @@ def integration_upgrade(
 
     selected_script = _resolve_script_type(project_root, script)
 
-    # Ensure shared infrastructure is present (safe to run unconditionally;
-    # _install_shared_infra merges missing files without overwriting).
-    _install_shared_infra(project_root, selected_script)
+    # Ensure shared infrastructure is up to date; --force overwrites existing files.
+    _install_shared_infra(project_root, selected_script, force=force)
     if os.name != "nt":
         ensure_executable_scripts(project_root)
 

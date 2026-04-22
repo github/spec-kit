@@ -53,8 +53,8 @@ When Spec Kit releases new features (like new slash commands or updated template
 Running `specify init --here --force` will update:
 
 - ✅ **Slash command files** (`.claude/commands/`, `.github/prompts/`, etc.)
-- ✅ **Script files** (`.specify/scripts/`)
-- ✅ **Template files** (`.specify/templates/`)
+- ✅ **Script files** (`.specify/scripts/`) — **only with `--force`**; without it, only missing files are added
+- ✅ **Template files** (`.specify/templates/`) — **only with `--force`**; without it, only missing files are added
 - ✅ **Shared memory files** (`.specify/memory/`) - **⚠️ See warnings below**
 
 ### What stays safe?
@@ -94,7 +94,9 @@ Template files will be merged with existing content and may overwrite existing f
 Proceed? [y/N]
 ```
 
-With `--force`, it skips the confirmation and proceeds immediately.
+With `--force`, it skips the confirmation and proceeds immediately. It also **overwrites shared infrastructure files** (`.specify/scripts/` and `.specify/templates/`) with the latest versions from the installed Spec Kit release.
+
+Without `--force`, shared infrastructure files that already exist are skipped — the CLI will print a warning listing the skipped files so you know which ones were not updated.
 
 **Important: Your `specs/` directory is always safe.** The `--force` flag only affects template files (commands, scripts, templates, memory). Your feature specifications, plans, and tasks in `specs/` are never included in upgrade packages and cannot be overwritten.
 
@@ -126,13 +128,14 @@ Or use git to restore it:
 git restore .specify/memory/constitution.md
 ```
 
-### 2. Custom template modifications
+### 2. Custom script or template modifications
 
-If you customized any templates in `.specify/templates/`, the upgrade will overwrite them. Back them up first:
+If you customized files in `.specify/scripts/` or `.specify/templates/`, the `--force` flag will overwrite them. Back them up first:
 
 ```bash
-# Back up custom templates
+# Back up custom templates and scripts
 cp -r .specify/templates .specify/templates-backup
+cp -r .specify/scripts .specify/scripts-backup
 
 # After upgrade, merge your changes back manually
 ```

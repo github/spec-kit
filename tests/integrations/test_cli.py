@@ -173,13 +173,13 @@ class TestInitIntegrationFlag:
         assert "speckit-specify" in command_file.read_text(encoding="utf-8")
         assert (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
-    def test_shared_infra_skips_existing_files(self, tmp_path):
-        """Pre-existing shared files are not overwritten by _install_shared_infra."""
-        from typer.testing import CliRunner
-        from specify_cli import app
+    def test_shared_infra_skips_existing_files_without_force(self, tmp_path):
+        """Pre-existing shared files are not overwritten without --force."""
+        from specify_cli import _install_shared_infra
 
         project = tmp_path / "skip-test"
         project.mkdir()
+        (project / ".specify").mkdir()
 
         # Pre-create a shared script with custom content
         scripts_dir = project / ".specify" / "scripts" / "bash"
@@ -192,6 +192,94 @@ class TestInitIntegrationFlag:
         templates_dir.mkdir(parents=True)
         custom_template = "# user-modified spec-template\n"
         (templates_dir / "spec-template.md").write_text(custom_template, encoding="utf-8")
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # User's files should be preserved (not overwritten)
+        assert (scripts_dir / "common.sh").read_text(encoding="utf-8") == custom_content
+        assert (templates_dir / "spec-template.md").read_text(encoding="utf-8") == custom_template
+
+        # Other shared files should still be installed
+        assert (scripts_dir / "setup-plan.sh").exists()
+        assert (templates_dir / "plan-template.md").exists()
+
+    def test_shared_infra_overwrites_existing_files_with_force(self, tmp_path):
+        """Pre-existing shared files ARE overwritten when force=True."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "force-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        # Pre-create a shared script with custom content
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        custom_content = "# user-modified common.sh\n"
+        (scripts_dir / "common.sh").write_text(custom_content, encoding="utf-8")
+
+        # Pre-create a shared template with custom content
+        templates_dir = project / ".specify" / "templates"
+        templates_dir.mkdir(parents=True)
+        custom_template = "# user-modified spec-template\n"
+        (templates_dir / "spec-template.md").write_text(custom_template, encoding="utf-8")
+
+        _install_shared_infra(project, "sh", force=True)
+
+        # Files should be overwritten with bundled versions
+        assert (scripts_dir / "common.sh").read_text(encoding="utf-8") != custom_content
+        assert (templates_dir / "spec-template.md").read_text(encoding="utf-8") != custom_template
+
+        # Other shared files should also be installed
+        assert (scripts_dir / "setup-plan.sh").exists()
+        assert (templates_dir / "plan-template.md").exists()
+
+    def test_shared_infra_skip_warning_displayed(self, tmp_path, capsys):
+        """Console warning is displayed when files are skipped."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "warn-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        (scripts_dir / "common.sh").write_text("# custom\n", encoding="utf-8")
+
+        _install_shared_infra(project, "sh", force=False)
+
+        captured = capsys.readouterr()
+        assert "already exist and were not updated" in captured.out
+        assert "--force" in captured.out
+
+    def test_shared_infra_no_warning_when_forced(self, tmp_path, capsys):
+        """No skip warning when force=True (all files overwritten)."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "no-warn-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        (scripts_dir / "common.sh").write_text("# custom\n", encoding="utf-8")
+
+        _install_shared_infra(project, "sh", force=True)
+
+        captured = capsys.readouterr()
+        assert "already exist and were not updated" not in captured.out
+
+    def test_init_here_force_overwrites_shared_infra(self, tmp_path):
+        """E2E: specify init --here --force overwrites shared infra files."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "e2e-force"
+        project.mkdir()
+
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        custom_content = "# user-modified common.sh\n"
+        (scripts_dir / "common.sh").write_text(custom_content, encoding="utf-8")
 
         old_cwd = os.getcwd()
         try:
@@ -207,14 +295,40 @@ class TestInitIntegrationFlag:
             os.chdir(old_cwd)
 
         assert result.exit_code == 0
+        # --force should overwrite the custom file
+        assert (scripts_dir / "common.sh").read_text(encoding="utf-8") != custom_content
 
-        # User's files should be preserved
+    def test_init_here_without_force_preserves_shared_infra(self, tmp_path):
+        """E2E: specify init --here (no --force) preserves existing shared infra files."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "e2e-no-force"
+        project.mkdir()
+
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        custom_content = "# user-modified common.sh\n"
+        (scripts_dir / "common.sh").write_text(custom_content, encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here",
+                "--integration", "copilot",
+                "--script", "sh",
+                "--no-git",
+            ], input="y\n", catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0
+        # Without --force, custom file should be preserved
         assert (scripts_dir / "common.sh").read_text(encoding="utf-8") == custom_content
-        assert (templates_dir / "spec-template.md").read_text(encoding="utf-8") == custom_template
-
-        # Other shared files should still be installed
-        assert (scripts_dir / "setup-plan.sh").exists()
-        assert (templates_dir / "plan-template.md").exists()
+        # Warning about skipped files should appear
+        assert "not updated" in result.output
 
 
 class TestForceExistingDirectory:
