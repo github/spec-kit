@@ -2440,6 +2440,10 @@ class PresetResolver:
                 candidate = _core_pack / "templates" / f"{template_name}.md"
             elif template_type == "command":
                 candidate = _core_pack / "commands" / f"{template_name}.md"
+                if not candidate.exists():
+                    stem = self._core_stem(template_name)
+                    if stem:
+                        candidate = _core_pack / "commands" / f"{stem}.md"
             elif template_type == "script":
                 candidate = _core_pack / "scripts" / f"{template_name}{ext}"
             else:
@@ -2453,6 +2457,10 @@ class PresetResolver:
                 candidate = repo_root / "templates" / f"{template_name}.md"
             elif template_type == "command":
                 candidate = repo_root / "templates" / "commands" / f"{template_name}.md"
+                if not candidate.exists():
+                    stem = self._core_stem(template_name)
+                    if stem:
+                        candidate = repo_root / "templates" / "commands" / f"{stem}.md"
             elif template_type == "script":
                 candidate = repo_root / "scripts" / f"{template_name}{ext}"
             else:
@@ -2663,7 +2671,9 @@ class PresetResolver:
                     manifest_candidate = pack_dir / manifest_file_path
                     if manifest_candidate.exists():
                         candidate = manifest_candidate
-                if candidate is None:
+                    # Explicit file path that doesn't exist: skip convention
+                    # fallback to avoid masking typos or picking up unintended files.
+                elif candidate is None:
                     candidate = _find_in_subdirs(pack_dir)
                 if candidate:
                     # Legacy fallback: if manifest doesn't explicitly declare a
