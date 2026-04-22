@@ -1528,15 +1528,15 @@
       "id": "red-team",
       "description": "Adversarial review of functional specs before /speckit.plan. Parallel adversarial lens agents catch hostile actors, silent failures, and regulatory blind spots that clarify/analyze cannot.",
       "author": "Ash Brener",
-      "version": "1.0.0",
-      "download_url": "https://github.com/ashbrener/spec-kit-red-team/releases/download/v1.0.0/red-team-v1.0.0.zip",
+      "version": "1.0.1",
+      "download_url": "https://github.com/ashbrener/spec-kit-red-team/releases/download/v1.0.1/red-team-v1.0.1.zip",
       "repository": "https://github.com/ashbrener/spec-kit-red-team",
       "homepage": "https://github.com/ashbrener/spec-kit-red-team",
       "documentation": "https://github.com/ashbrener/spec-kit-red-team/blob/main/README.md",
       "changelog": "https://github.com/ashbrener/spec-kit-red-team/blob/main/CHANGELOG.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.7.0"
+        "speckit_version": ">=0.1.0"
       },
       "provides": {
         "commands": 1,
