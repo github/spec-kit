@@ -2122,6 +2122,39 @@
       "created_at": "2026-03-30T00:00:00Z",
       "updated_at": "2026-04-16T14:08:23Z"
     },
+    "superpowers-bridge": {
+      "name": "Superpowers Bridge",
+      "id": "superpowers-bridge",
+      "description": "Bridges spec-kit specification-driven development with obra/superpowers agent capabilities (brainstorming, writing-plans, TDD, subagent-driven-development, code-review) into a unified, resumable workflow with graceful degradation and session progress tracking.",
+      "author": "WangX0111",
+      "version": "1.0.0",
+      "download_url": "https://github.com/WangX0111/superspec/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/WangX0111/superspec",
+      "homepage": "https://github.com/WangX0111/superspec",
+      "documentation": "https://github.com/WangX0111/superspec/blob/main/README.md",
+      "changelog": "https://github.com/WangX0111/superspec/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 3
+      },
+      "tags": [
+        "superpowers",
+        "brainstorming",
+        "tdd",
+        "code-review",
+        "subagent",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-22T00:00:00Z",
+      "updated_at": "2026-04-22T00:00:00Z"
+    },
     "sync": {
       "name": "Spec Sync",
       "id": "sync",
