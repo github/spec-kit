@@ -37,5 +37,7 @@
 # Community
 - name: Community
   items:
+    - name: Walkthroughs
+      href: community/walkthroughs.md
     - name: Friends
       href: community/friends.md

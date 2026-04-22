@@ -290,7 +290,7 @@ To build and publish your own preset, see the [Presets Publishing Guide](presets
 
 ## 🚶 Community Walkthroughs
 
-See Spec-Driven Development in action across different scenarios with community-contributed walkthroughs. See the full list on the [Community Walkthroughs](https://github.github.io/spec-kit/community/walkthroughs.html) page.
+See Spec-Driven Development in action across different scenarios with community-contributed walkthroughs; find the full list on the [Community Walkthroughs](https://github.github.io/spec-kit/community/walkthroughs.html) page.
 
 ## 🛠️ Community Friends
 
