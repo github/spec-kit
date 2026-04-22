@@ -915,6 +915,7 @@ class PresetManager:
         # Group command names by winning preset to batch _register_skills calls
         # while only registering skills for the specific commands being reconciled.
         preset_cmds: Dict[str, List[str]] = {}
+        non_preset_skills: List[str] = []
 
         for cmd_name in command_names:
             layers = resolver.collect_all_layers(cmd_name, "command")
@@ -941,11 +942,23 @@ class PresetManager:
 
             top_path = layers[0]["path"]
             # Find the preset that owns the winning layer
+            found_preset = False
             for pack_id, _meta in PresetRegistry(self.presets_dir).list_by_priority():
                 pack_dir = self.presets_dir / pack_id
                 if top_path.is_relative_to(pack_dir):
                     preset_cmds.setdefault(pack_id, []).append(cmd_name)
+                    found_preset = True
                     break
+            if not found_preset:
+                # Winner is a non-preset source (core/extension/override).
+                # Restore skill from that source using _unregister_skills logic.
+                skill_name, _ = self._skill_names_for_command(cmd_name)
+                non_preset_skills.append(skill_name)
+
+        # Restore skills for commands whose winner is non-preset
+        if non_preset_skills and skills_dir:
+            # Use a dummy preset_dir (won't be read for core/extension restore)
+            self._unregister_skills(non_preset_skills, self.presets_dir)
 
         # Register skills only for the specific commands being reconciled,
         # not all commands in each winning preset's manifest.
@@ -2828,10 +2841,11 @@ class PresetResolver:
                 fm, layer_body = _split_frontmatter(layer_content)
                 layer_content = layer_body
                 # Track the highest-priority frontmatter seen;
-                # replace layers reset frontmatter (even to None) since
+                # replace layers reset both top and base frontmatter since
                 # they replace the entire command including metadata.
                 if strategy == "replace":
                     top_frontmatter_text = fm
+                    base_frontmatter_text = fm
                 elif fm:
                     top_frontmatter_text = fm
 
