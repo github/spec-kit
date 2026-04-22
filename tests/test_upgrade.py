@@ -1,9 +1,11 @@
 """Tests for the `specify self` sub-app (`self check` and `self upgrade`).
 
-Network isolation contract (SC-004 / FR-014): every test in this module MUST
-mock `urllib.request.urlopen` so no real outbound call ever reaches
-api.github.com. Run this module under `pytest-socket` (if installed) with
-`--disable-socket` as an extra safety net.
+Network isolation contract (SC-004 / FR-014): every test that exercises
+`specify self check` or `_fetch_latest_release_tag()` MUST mock
+`urllib.request.urlopen` so no real outbound call ever reaches
+api.github.com. The `self upgrade` stub tests do not need that patch because
+the stub is contractually network-free. Run this module under `pytest-socket`
+(if installed) with `--disable-socket` as an extra safety net.
 """
 
 import json

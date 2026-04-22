@@ -1653,7 +1653,7 @@ def _get_installed_version() -> str:
     by pip/uv/pipx — not a value read from pyproject.toml. Callers must treat
     the sentinel string 'unknown' as an indeterminate value (see FR-020).
     """
-        
+
     import importlib.metadata
 
     try:
@@ -1683,8 +1683,9 @@ def _is_newer(latest: str, current: str) -> bool:
         return Version(latest) > Version(current)
     except InvalidVersion:
         return False
-    
-def _fetch_latest_release_tag() -> tuple[str | None, str | None] :
+
+
+def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     """Return (tag, failure_category). Exactly one outbound call, 5 s timeout.
 
     On success: (tag_name, None).
@@ -1695,7 +1696,7 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None] :
     req = urllib.request.Request(
         GITHUB_API_LATEST,
         headers={"Accept": "application/vnd.github+json"},
-    )    
+    )
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
@@ -1785,7 +1786,7 @@ def self_upgrade() -> None:
     """
     console.print("specify self upgrade is not implemented yet.")
     console.print("Run 'specify self check' to see whether a newer release is available.")
-    console.print("Actual self-upgrade is planned as follow-up work.")  
+    console.print("Actual self-upgrade is planned as follow-up work.")
 
 
 # ===== Extension Commands =====
