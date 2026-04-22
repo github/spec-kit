@@ -747,6 +747,8 @@ class PresetManager:
                                 )
                                 registered = True
                             except Exception:
+                                # Extension registration failed; fall back to
+                                # generic path-based registration below.
                                 pass
                     if not registered:
                         source_id = source.split(":", 1)[1].split(" ", 1)[0] if source.startswith("extension:") else source
