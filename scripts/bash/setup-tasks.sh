@@ -91,4 +91,3 @@ else
     check_dir "$CONTRACTS_DIR" "contracts/"
     check_file "$QUICKSTART" "quickstart.md"
 fi
-EOF
