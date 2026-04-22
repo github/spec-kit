@@ -2,6 +2,23 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.7.5] - 2026-04-22
+
+### Changed
+
+- fix: resolve skill placeholders for all SKILL.md agents, not just codex/kimi (#2313)
+- feat(cli): add specify self check and self upgrade stub (#2316)
+- Update version-guard to v1.1.0 (#2318)
+- docs: move community presets from README to docs/community (#2314)
+- catalog: add wireframe extension (v0.1.1) (#2262)
+- Move community walkthroughs from README to docs/community (#2312)
+- docs(readme): list red-team in community-extensions table (#2311)
+- feat(catalog): add red-team extension to community catalog (#2306)
+- Add superpowers-bridge community extension (#2309)
+- feat: implement preset wrap strategy (#2189)
+- fix(agents): block directory traversal in command write paths (#2229) (#2296)
+- chore: release 0.7.4, begin 0.7.5.dev0 development (#2299)
+
 ## [0.7.4] - 2026-04-21
 
 ### Changed
