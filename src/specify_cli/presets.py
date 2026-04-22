@@ -2701,6 +2701,7 @@ class PresetResolver:
                 strategy = "replace"
                 manifest_file_path = None
                 manifest_has_strategy = False
+                manifest_found_entry = False
                 manifest = self._get_manifest(pack_dir)
                 if manifest:
                     for tmpl in manifest.templates:
@@ -2709,8 +2710,11 @@ class PresetResolver:
                             strategy = tmpl.get("strategy", "replace")
                             manifest_has_strategy = "strategy" in tmpl
                             manifest_file_path = tmpl.get("file")
+                            manifest_found_entry = True
                             break
-                # Use manifest file path if specified, otherwise convention-based lookup
+                # Use manifest file path if specified, otherwise convention-based
+                # lookup — but only when the manifest doesn't exist or doesn't
+                # list this template, so preset.yml stays authoritative.
                 candidate = None
                 if manifest_file_path:
                     manifest_candidate = pack_dir / manifest_file_path
@@ -2718,7 +2722,8 @@ class PresetResolver:
                         candidate = manifest_candidate
                     # Explicit file path that doesn't exist: skip convention
                     # fallback to avoid masking typos or picking up unintended files.
-                elif candidate is None:
+                elif not manifest_found_entry:
+                    # Manifest doesn't list this template — check convention paths
                     candidate = _find_in_subdirs(pack_dir)
                 if candidate:
                     # Legacy fallback: if manifest doesn't explicitly declare a

@@ -320,8 +320,8 @@ try:
     with open(os.environ['SPECKIT_REGISTRY']) as f:
         data = json.load(f)
     presets = data.get('presets', {})
-    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10)):
-        if meta.get('enabled', True) is not False:
+    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10) if isinstance(x[1], dict) else 10):
+        if isinstance(meta, dict) and meta.get('enabled', True) is not False:
             print(pid)
 except Exception:
     sys.exit(1)
@@ -408,8 +408,8 @@ try:
     with open(os.environ['SPECKIT_REGISTRY']) as f:
         data = json.load(f)
     presets = data.get('presets', {})
-    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10)):
-        if meta.get('enabled', True) is not False:
+    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10) if isinstance(x[1], dict) else 10):
+        if isinstance(meta, dict) and meta.get('enabled', True) is not False:
             print(pid)
 except Exception:
     sys.exit(1)
