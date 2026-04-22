@@ -1665,6 +1665,8 @@ class PresetManager:
                             if isinstance(alias, str):
                                 removed_cmd_names.add(alias)
             except PresetValidationError:
+                # Invalid manifest — skip alias extraction; primary command
+                # names from registered_commands are still unregistered.
                 pass
 
         if registered_skills:
