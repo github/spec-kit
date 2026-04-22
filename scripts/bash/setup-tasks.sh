@@ -55,7 +55,8 @@ fi
 # Resolve tasks template through override stack
 TASKS_TEMPLATE=$(resolve_template "tasks-template" "$REPO_ROOT") || true
 if [[ -z "$TASKS_TEMPLATE" ]] || [[ ! -f "$TASKS_TEMPLATE" ]]; then
-    echo "Error: could not resolve required tasks-template in $REPO_ROOT" >&2
+    echo "ERROR: Could not resolve required tasks-template in $REPO_ROOT" >&2
+    echo "Expected shared core template at .specify/templates/tasks-template.md; run 'specify init' or reinstall shared infra to restore it." >&2
     exit 1
 fi
 
