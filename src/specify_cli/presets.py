@@ -731,17 +731,29 @@ class PresetManager:
                 if not registered:
                     # Top layer is a non-preset source (extension, core, or
                     # project override). Register directly from the layer path.
-                    # Extract stable source_id from display label
                     source = layers[0]["source"]
                     if source.startswith("extension:"):
-                        # "extension:foo v1.0" → "foo"
-                        source_id = source.split(":", 1)[1].split(" ", 1)[0]
-                    else:
-                        source_id = source
-                    self._register_command_from_path(
-                        registrar, cmd_name, top_path,
-                        source_id=source_id,
-                    )
+                        # Use extension's own registration to preserve context formatting
+                        ext_id = source.split(":", 1)[1].split(" ", 1)[0]
+                        ext_dir = self.project_root / ".specify" / "extensions" / ext_id
+                        ext_manifest_path = ext_dir / "extension.yml"
+                        if ext_manifest_path.exists():
+                            try:
+                                from .extensions import ExtensionManifest
+                                ext_manifest = ExtensionManifest(ext_manifest_path)
+                                registrar.register_commands_for_non_skill_agents(
+                                    ext_manifest.commands, ext_id, ext_dir,
+                                    self.project_root,
+                                )
+                                registered = True
+                            except Exception:
+                                pass
+                    if not registered:
+                        source_id = source.split(":", 1)[1].split(" ", 1)[0] if source.startswith("extension:") else source
+                        self._register_command_from_path(
+                            registrar, cmd_name, top_path,
+                            source_id=source_id,
+                        )
             else:
                 # Composed command — resolve from full stack
                 composed = resolver.resolve_content(cmd_name, "command")
@@ -831,7 +843,7 @@ class PresetManager:
         if source_id and not source_id.startswith("preset:"):
             try:
                 from .extensions import ExtensionManifest
-                for ext_dir in self.extensions_dir.iterdir():
+                for ext_dir in (self.project_root / ".specify" / "extensions").iterdir():
                     if not ext_dir.is_dir():
                         continue
                     if cmd_path.is_relative_to(ext_dir):
@@ -956,14 +968,56 @@ class PresetManager:
                     break
             if not found_preset:
                 # Winner is a non-preset source (core/extension/override).
-                # Restore skill from that source using _unregister_skills logic.
+                # Track the winning layer path for skill restoration.
                 skill_name, _ = self._skill_names_for_command(cmd_name)
-                non_preset_skills.append(skill_name)
+                non_preset_skills.append((skill_name, cmd_name, layers[0]))
 
-        # Restore skills for commands whose winner is non-preset
+        # Restore skills for commands whose winner is non-preset.
+        # Use _unregister_skills which restores from core/extension, but
+        # also handles project overrides by reading the winning layer directly.
         if non_preset_skills and skills_dir:
-            # Use a dummy preset_dir (won't be read for core/extension restore)
-            self._unregister_skills(non_preset_skills, self.presets_dir)
+            skill_names_only = [s[0] for s in non_preset_skills]
+            self._unregister_skills(skill_names_only, self.presets_dir)
+            # For project overrides, _unregister_skills restores from core.
+            # Re-write from the actual winning layer if it's an override.
+            for skill_name, cmd_name, top_layer in non_preset_skills:
+                if top_layer["source"] == "project override":
+                    skill_subdir = skills_dir / skill_name
+                    if skill_subdir.is_dir():
+                        skill_file = skill_subdir / "SKILL.md"
+                        try:
+                            from .agents import CommandRegistrar
+                            from . import SKILL_DESCRIPTIONS, load_init_options
+                            registrar = CommandRegistrar()
+                            content = top_layer["path"].read_text(encoding="utf-8")
+                            fm, body = registrar.parse_frontmatter(content)
+                            short_name = cmd_name
+                            if short_name.startswith("speckit."):
+                                short_name = short_name[len("speckit."):]
+                            desc = SKILL_DESCRIPTIONS.get(
+                                short_name.replace(".", "-"),
+                                fm.get("description", f"Command: {short_name}"),
+                            )
+                            init_opts = load_init_options(self.project_root)
+                            selected_ai = init_opts.get("ai") if isinstance(init_opts, dict) else ""
+                            if isinstance(selected_ai, str):
+                                body = registrar.resolve_skill_placeholders(
+                                    selected_ai, fm, body, self.project_root
+                                )
+                            fm_data = registrar.build_skill_frontmatter(
+                                selected_ai if isinstance(selected_ai, str) else "",
+                                skill_name, desc,
+                                f"override:{cmd_name}",
+                            )
+                            fm_text = yaml.safe_dump(fm_data, sort_keys=False).strip()
+                            skill_title = self._skill_title_from_command(cmd_name)
+                            skill_content = (
+                                f"---\n{fm_text}\n---\n\n"
+                                f"# Speckit {skill_title} Skill\n\n{body}\n"
+                            )
+                            skill_file.write_text(skill_content, encoding="utf-8")
+                        except Exception:
+                            pass  # best-effort override skill restoration
 
         # Register skills only for the specific commands being reconciled,
         # not all commands in each winning preset's manifest.
