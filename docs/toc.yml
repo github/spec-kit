@@ -37,6 +37,8 @@
 # Community
 - name: Community
   items:
+    - name: Presets
+      href: community/presets.md
     - name: Walkthroughs
       href: community/walkthroughs.md
     - name: Friends
