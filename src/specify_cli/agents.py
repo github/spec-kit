@@ -8,7 +8,7 @@ command files into agent-specific directories in the correct format.
 
 import os
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 import platform
 import re
@@ -657,7 +657,7 @@ class CommandRegistrar:
         source_id: str,
         source_dir: Path,
         project_root: Path,
-        context_note: str = None,
+        context_note: Optional[str] = None,
     ) -> Dict[str, List[str]]:
         """Register commands for all non-skill agents in the project.
 

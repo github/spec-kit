@@ -983,51 +983,60 @@ class PresetManager:
                 non_preset_skills.append((skill_name, cmd_name, layers[0]))
 
         # Restore skills for commands whose winner is non-preset.
-        # Use _unregister_skills which restores from core/extension, but
-        # also handles project overrides by reading the winning layer directly.
         if non_preset_skills and skills_dir:
-            skill_names_only = [s[0] for s in non_preset_skills]
-            self._unregister_skills(skill_names_only, self.presets_dir)
-            # For project overrides, _unregister_skills restores from core.
-            # Re-write from the actual winning layer if it's an override.
-            for skill_name, cmd_name, top_layer in non_preset_skills:
-                if top_layer["source"] == "project override":
-                    skill_subdir = skills_dir / skill_name
-                    if skill_subdir.is_dir():
-                        skill_file = skill_subdir / "SKILL.md"
-                        try:
-                            from .agents import CommandRegistrar
-                            from . import SKILL_DESCRIPTIONS, load_init_options
-                            registrar = CommandRegistrar()
-                            content = top_layer["path"].read_text(encoding="utf-8")
-                            fm, body = registrar.parse_frontmatter(content)
-                            short_name = cmd_name
-                            if short_name.startswith("speckit."):
-                                short_name = short_name[len("speckit."):]
-                            desc = SKILL_DESCRIPTIONS.get(
-                                short_name.replace(".", "-"),
-                                fm.get("description", f"Command: {short_name}"),
-                            )
-                            init_opts = load_init_options(self.project_root)
-                            selected_ai = init_opts.get("ai") if isinstance(init_opts, dict) else ""
-                            if isinstance(selected_ai, str):
-                                body = registrar.resolve_skill_placeholders(
-                                    selected_ai, fm, body, self.project_root
-                                )
-                            fm_data = registrar.build_skill_frontmatter(
-                                selected_ai if isinstance(selected_ai, str) else "",
-                                skill_name, desc,
-                                f"override:{cmd_name}",
-                            )
-                            fm_text = yaml.safe_dump(fm_data, sort_keys=False).strip()
-                            skill_title = self._skill_title_from_command(cmd_name)
-                            skill_content = (
-                                f"---\n{fm_text}\n---\n\n"
-                                f"# Speckit {skill_title} Skill\n\n{body}\n"
-                            )
-                            skill_file.write_text(skill_content, encoding="utf-8")
-                        except Exception:
-                            pass  # best-effort override skill restoration
+            # Separate override-backed skills from core/extension-backed ones.
+            # _unregister_skills can rmtree the skill dir, so overrides must
+            # be handled directly (create dir + write) without that call.
+            core_ext_skills = []
+            override_skills = []
+            for item in non_preset_skills:
+                if item[2]["source"] == "project override":
+                    override_skills.append(item)
+                else:
+                    core_ext_skills.append(item)
+
+            if core_ext_skills:
+                self._unregister_skills(
+                    [s[0] for s in core_ext_skills], self.presets_dir
+                )
+
+            for skill_name, cmd_name, top_layer in override_skills:
+                skill_subdir = skills_dir / skill_name
+                skill_subdir.mkdir(parents=True, exist_ok=True)
+                skill_file = skill_subdir / "SKILL.md"
+                try:
+                    from .agents import CommandRegistrar
+                    from . import SKILL_DESCRIPTIONS, load_init_options
+                    registrar = CommandRegistrar()
+                    content = top_layer["path"].read_text(encoding="utf-8")
+                    fm, body = registrar.parse_frontmatter(content)
+                    short_name = cmd_name
+                    if short_name.startswith("speckit."):
+                        short_name = short_name[len("speckit."):]
+                    desc = SKILL_DESCRIPTIONS.get(
+                        short_name.replace(".", "-"),
+                        fm.get("description", f"Command: {short_name}"),
+                    )
+                    init_opts = load_init_options(self.project_root)
+                    selected_ai = init_opts.get("ai") if isinstance(init_opts, dict) else ""
+                    if isinstance(selected_ai, str):
+                        body = registrar.resolve_skill_placeholders(
+                            selected_ai, fm, body, self.project_root
+                        )
+                    fm_data = registrar.build_skill_frontmatter(
+                        selected_ai if isinstance(selected_ai, str) else "",
+                        skill_name, desc,
+                        f"override:{cmd_name}",
+                    )
+                    fm_text = yaml.safe_dump(fm_data, sort_keys=False).strip()
+                    skill_title = self._skill_title_from_command(cmd_name)
+                    skill_content = (
+                        f"---\n{fm_text}\n---\n\n"
+                        f"# Speckit {skill_title} Skill\n\n{body}\n"
+                    )
+                    skill_file.write_text(skill_content, encoding="utf-8")
+                except Exception:
+                    pass  # best-effort override skill restoration
 
         # Register skills only for the specific commands being reconciled,
         # not all commands in each winning preset's manifest.
@@ -1511,8 +1520,11 @@ class PresetManager:
                 self._unregister_commands(registered_commands)
             if registered_skills:
                 self._unregister_skills(registered_skills, dest_dir)
-            if dest_dir.exists():
-                shutil.rmtree(dest_dir)
+            try:
+                if dest_dir.exists():
+                    shutil.rmtree(dest_dir)
+            except OSError:
+                pass  # best-effort cleanup; don't mask the original error
             self.registry.remove(manifest.id)
             raise
 
