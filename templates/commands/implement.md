@@ -25,6 +25,7 @@ You **MUST** consider the user input before proceeding (if not empty).
   - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
 - For each executable hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
+
     ```text
     ## Extension Hooks
 
@@ -36,6 +37,7 @@ You **MUST** consider the user input before proceeding (if not empty).
     To execute: `/{command}`
     ```
   - **Mandatory hook** (`optional: false`):
+
     ```text
     ## Extension Hooks
 
@@ -181,6 +183,7 @@ Note: This command assumes a complete task breakdown exists in tasks.md. If task
       - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
     - For each executable hook, output the following based on its `optional` flag:
       - **Optional hook** (`optional: true`):
+
         ```text
         ## Extension Hooks
 
@@ -192,6 +195,7 @@ Note: This command assumes a complete task breakdown exists in tasks.md. If task
         To execute: `/{command}`
         ```
       - **Mandatory hook** (`optional: false`):
+
         ```text
         ## Extension Hooks
 
