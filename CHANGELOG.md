@@ -2,6 +2,18 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.0] - 2026-04-23
+
+### Changed
+
+- feat(presets): Composition strategies (prepend, append, wrap) for templates, commands, and scripts (#2133)
+- feat(copilot): support `--integration-options="--skills"` for skills-based scaffolding (#2324)
+- docs(install): add pipx as alternative installation method (#2288)
+- Add Memory MD community extension (#2327)
+- Update version-guard to v1.2.0 (#2321)
+- fix: `--force` now overwrites shared infra files during init and upgrade (#2320)
+- chore: release 0.7.5, begin 0.7.6.dev0 development (#2322)
+
 ## [0.7.5] - 2026-04-22
 
 ### Changed
