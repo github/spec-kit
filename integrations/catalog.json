@@ -102,6 +102,15 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
     },
+    "lingma": {
+      "id": "lingma",
+      "name": "Lingma",
+      "version": "1.0.0",
+      "description": "Lingma IDE skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide", "skills"]
+    },
     "junie": {
       "id": "junie",
       "name": "Junie",
