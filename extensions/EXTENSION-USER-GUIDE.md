@@ -423,7 +423,7 @@ In addition to extension-specific environment variables (`SPECKIT_{EXT_ID}_*`), 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SPECKIT_CATALOG_URL`       | Override the full catalog stack with a single URL (backward compat) | Built-in default stack |
-| `GH_TOKEN` / `GITHUB_TOKEN` | GitHub API token for downloads     | None                  |
+| `GH_TOKEN` / `GITHUB_TOKEN` | GitHub token for authenticated requests to GitHub-hosted URLs (`raw.githubusercontent.com`, `github.com`, `api.github.com`). Required when your catalog JSON or extension ZIPs are hosted in a private GitHub repository. | None |
 
 #### Example: Using a custom catalog for testing
 
@@ -434,6 +434,21 @@ export SPECKIT_CATALOG_URL="http://localhost:8000/catalog.json"
 # Or use a staging catalog
 export SPECKIT_CATALOG_URL="https://example.com/staging/catalog.json"
 ```
+
+#### Example: Using a private GitHub-hosted catalog
+
+```bash
+# Authenticate with a token (gh CLI, PAT, or GITHUB_TOKEN in CI)
+export GITHUB_TOKEN=$(gh auth token)
+
+# Search a private catalog added via `specify extension catalog add`
+specify extension search jira
+
+# Install from a private catalog
+specify extension add jira-sync
+```
+
+The token is attached automatically to requests targeting GitHub domains. Non-GitHub catalog URLs are always fetched without credentials.
 
 ---
 

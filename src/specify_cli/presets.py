@@ -1542,6 +1542,22 @@ class PresetCatalog:
                 "Catalog URL must be a valid URL with a host."
             )
 
+    def _make_request(self, url: str):
+        """Build a urllib Request, adding a GitHub auth header when available.
+
+        Delegates to :func:`specify_cli._github_http.build_github_request`.
+        """
+        from specify_cli._github_http import build_github_request
+        return build_github_request(url)
+
+    def _open_url(self, url: str, timeout: int = 10):
+        """Open a URL with GitHub auth, stripping the header on cross-host redirects.
+
+        Delegates to :func:`specify_cli._github_http.open_github_url`.
+        """
+        from specify_cli._github_http import open_github_url
+        return open_github_url(url, timeout)
+
     def _load_catalog_config(self, config_path: Path) -> Optional[List[PresetCatalogEntry]]:
         """Load catalog stack configuration from a YAML file.
 
@@ -1724,10 +1740,7 @@ class PresetCatalog:
                 pass
 
         try:
-            import urllib.request
-            import urllib.error
-
-            with urllib.request.urlopen(entry.url, timeout=10) as response:
+            with self._open_url(entry.url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
             if (
@@ -1820,10 +1833,7 @@ class PresetCatalog:
                 pass
 
         try:
-            import urllib.request
-            import urllib.error
-
-            with urllib.request.urlopen(catalog_url, timeout=10) as response:
+            with self._open_url(catalog_url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
             if (
@@ -1942,7 +1952,6 @@ class PresetCatalog:
         Raises:
             PresetError: If pack not found or download fails
         """
-        import urllib.request
         import urllib.error
 
         pack_info = self.get_pack_info(pack_id)
@@ -1994,7 +2003,7 @@ class PresetCatalog:
         zip_path = target_dir / zip_filename
 
         try:
-            with urllib.request.urlopen(download_url, timeout=60) as response:
+            with self._open_url(download_url, timeout=60) as response:
                 zip_data = response.read()
 
             zip_path.write_bytes(zip_data)
