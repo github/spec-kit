@@ -653,6 +653,9 @@ class PresetManager:
                 else:
                     # Not the top layer — register raw file; reconciliation
                     # will overwrite with the correct composed/winning content.
+                    # Note: CommandRegistrar may process frontmatter strategy: wrap
+                    # from the raw file (legacy compat), but reconciliation runs
+                    # immediately after install and corrects the final output.
                     commands_to_register.append(cmd)
             else:
                 commands_to_register.append(cmd)
