@@ -424,6 +424,7 @@ function Resolve-TemplateContent {
                     }
                 }
             }
+            $yamlWarned = $false
             foreach ($presetId in $sortedPresets) {
                 # Read strategy and file path from preset manifest
                 $strategy = 'replace'
@@ -458,9 +459,9 @@ except Exception:
                             $strategy = $parts[0].ToLowerInvariant()
                             if ($parts.Count -gt 1 -and $parts[1]) { $manifestFilePath = $parts[1] }
                         }
-                        # Warn only when PyYAML is explicitly missing
-                        if ((Test-Path $pyStderrFile) -and (Get-Content $pyStderrFile -Raw -ErrorAction SilentlyContinue) -match 'yaml_missing') {
-                            Write-Warning "PyYAML not available; composition strategies in $manifest may be ignored"
+                        if (-not $yamlWarned -and (Test-Path $pyStderrFile) -and (Get-Content $pyStderrFile -Raw -ErrorAction SilentlyContinue) -match 'yaml_missing') {
+                            Write-Warning "PyYAML not available; composition strategies may be ignored"
+                            $yamlWarned = $true
                         }
                         Remove-Item $pyStderrFile -Force -ErrorAction SilentlyContinue
                     } catch {

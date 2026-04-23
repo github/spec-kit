@@ -706,7 +706,7 @@ class PresetManager:
 
         # Cache registry and manifests outside the loop to avoid
         # repeated filesystem reads for each command name.
-        presets_by_priority = list(PresetRegistry(self.presets_dir).list_by_priority()) if self.presets_dir.exists() else []
+        presets_by_priority = list(self.registry.list_by_priority())
 
         for cmd_name in command_names:
             layers = resolver.collect_all_layers(cmd_name, "command")
@@ -956,9 +956,7 @@ class PresetManager:
         skills_dir = self._get_skills_dir()
 
         # Cache registry once to avoid repeated filesystem reads
-        presets_by_priority = list(
-            PresetRegistry(self.presets_dir).list_by_priority()
-        ) if self.presets_dir.exists() else []
+        presets_by_priority = list(self.registry.list_by_priority())
 
         # Group command names by winning preset to batch _register_skills calls
         # while only registering skills for the specific commands being reconciled.

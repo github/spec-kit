@@ -415,6 +415,7 @@ except Exception:
     sys.exit(1)
 " 2>/dev/null); then
                 if [ -n "$sorted_presets" ]; then
+                    local yaml_warned=false
                     while IFS= read -r preset_id; do
                         # Read strategy and file path from preset manifest
                         local strategy="replace"
@@ -449,9 +450,9 @@ except Exception:
                                 IFS=$'\t' read -r strategy manifest_file <<< "$result"
                                 strategy=$(printf '%s' "$strategy" | tr '[:upper:]' '[:lower:]')
                             fi
-                            # Warn only when PyYAML is explicitly missing
-                            if grep -q 'yaml_missing' "$py_stderr" 2>/dev/null; then
-                                echo "Warning: PyYAML not available; composition strategies in $manifest may be ignored" >&2
+                            if [ "$yaml_warned" = false ] && grep -q 'yaml_missing' "$py_stderr" 2>/dev/null; then
+                                echo "Warning: PyYAML not available; composition strategies may be ignored" >&2
+                                yaml_warned=true
                             fi
                             rm -f "$py_stderr"
                         fi
