@@ -2431,27 +2431,13 @@ class PresetResolver:
             registry = PresetRegistry(self.presets_dir)
             for pack_id, _metadata in registry.list_by_priority():
                 pack_dir = self.presets_dir / pack_id
-                # Check manifest file path first
-                manifest = self._get_manifest(pack_dir)
-                if manifest:
-                    for tmpl in manifest.templates:
-                        if (tmpl.get("name") == template_name
-                                and tmpl.get("type") == template_type):
-                            file_path = tmpl.get("file")
-                            if file_path:
-                                candidate = pack_dir / file_path
-                                if candidate.exists():
-                                    return candidate
-                            break
-                # Convention-based fallback (only when manifest doesn't list this template)
-                else:
-                    for subdir in subdirs:
-                        if subdir:
-                            candidate = pack_dir / subdir / f"{template_name}{ext}"
-                        else:
-                            candidate = pack_dir / f"{template_name}{ext}"
-                        if candidate.exists():
-                            return candidate
+                for subdir in subdirs:
+                    if subdir:
+                        candidate = pack_dir / subdir / f"{template_name}{ext}"
+                    else:
+                        candidate = pack_dir / f"{template_name}{ext}"
+                    if candidate.exists():
+                        return candidate
 
         # Priority 3: Extension-provided templates (sorted by priority — lower number wins)
         for _priority, ext_id, _metadata in self._get_all_extensions_by_priority():
