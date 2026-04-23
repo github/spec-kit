@@ -11,10 +11,22 @@ has_git() {
         git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
 
+# Strip a single optional path segment (e.g. gitflow "feat/004-name" -> "004-name").
+# Only when the full name is exactly two slash-free segments; otherwise returns the raw name.
+spec_kit_effective_branch_name() {
+    local raw="$1"
+    if [[ "$raw" =~ ^([^/]+)/([^/]+)$ ]]; then
+        printf '%s\n' "${BASH_REMATCH[2]}"
+    else
+        printf '%s\n' "$raw"
+    fi
+}
+
 # Validate that a branch name matches the expected feature branch pattern.
 # Accepts sequential (###-* with >=3 digits) or timestamp (YYYYMMDD-HHMMSS-*) formats.
+# Logic aligned with scripts/bash/common.sh check_feature_branch after effective-name normalization.
 check_feature_branch() {
-    local branch="$1"
+    local raw="$1"
     local has_git_repo="$2"
 
     # For non-git repos, we can't enforce branch naming but still provide output
@@ -23,19 +35,20 @@ check_feature_branch() {
         return 0
     fi
 
-    # Reject malformed timestamps (7-digit date, 8-digit date without trailing slug, or 7-digit with slug)
-    if [[ "$branch" =~ ^[0-9]{7}-[0-9]{6} ]] || [[ "$branch" =~ ^[0-9]{8}-[0-9]{6}$ ]]; then
-        echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
-        echo "Feature branches should be named like: 001-feature-name or 20260319-143022-feature-name" >&2
+    local branch
+    branch=$(spec_kit_effective_branch_name "$raw")
+
+    # Accept sequential prefix (3+ digits) but exclude malformed timestamps
+    # Malformed: 7-or-8 digit date + 6-digit time with no trailing slug (e.g. "2026031-143022" or "20260319-143022")
+    local is_sequential=false
+    if [[ "$branch" =~ ^[0-9]{3,}- ]] && [[ ! "$branch" =~ ^[0-9]{7}-[0-9]{6}- ]] && [[ ! "$branch" =~ ^[0-9]{7,8}-[0-9]{6}$ ]]; then
+        is_sequential=true
+    fi
+    if [[ "$is_sequential" != "true" ]] && [[ ! "$branch" =~ ^[0-9]{8}-[0-9]{6}- ]]; then
+        echo "ERROR: Not on a feature branch. Current branch: $raw" >&2
+        echo "Feature branches should be named like: 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name" >&2
         return 1
     fi
 
-    # Accept sequential (>=3 digits followed by hyphen) or timestamp (YYYYMMDD-HHMMSS-*)
-    if [[ "$branch" =~ ^[0-9]{3,}- ]] || [[ "$branch" =~ ^[0-9]{8}-[0-9]{6}- ]]; then
-        return 0
-    fi
-
-    echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
-    echo "Feature branches should be named like: 001-feature-name or 20260319-143022-feature-name" >&2
-    return 1
+    return 0
 }

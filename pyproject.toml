@@ -1,6 +1,6 @@
 [project]
 name = "specify-cli"
-version = "0.6.2.dev0"
+version = "0.7.6.dev0"
 description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
 requires-python = ">=3.11"
 dependencies = [
@@ -28,7 +28,6 @@ packages = ["src/specify_cli"]
 [tool.hatch.build.targets.wheel.force-include]
 # Bundle core assets so `specify init` works without network access (air-gapped / enterprise)
 # Page templates (exclude commands/ — bundled separately below to avoid duplication)
-"templates/agent-file-template.md" = "specify_cli/core_pack/templates/agent-file-template.md"
 "templates/checklist-template.md" = "specify_cli/core_pack/templates/checklist-template.md"
 "templates/constitution-template.md" = "specify_cli/core_pack/templates/constitution-template.md"
 "templates/plan-template.md" = "specify_cli/core_pack/templates/plan-template.md"
@@ -41,6 +40,8 @@ packages = ["src/specify_cli"]
 "scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
 # Bundled extensions (installable via `specify extension add <name>`)
 "extensions/git" = "specify_cli/core_pack/extensions/git"
+# Bundled workflows (auto-installed during `specify init`)
+"workflows/speckit" = "specify_cli/core_pack/workflows/speckit"
 # Bundled presets (installable via `specify preset add <name>` or `specify init --preset <name>`)
 "presets/lean" = "specify_cli/core_pack/presets/lean"
 

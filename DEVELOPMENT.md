@@ -11,8 +11,7 @@ Spec Kit is a toolkit for spec-driven development. At its core, it is a coordina
 | [spec-driven.md](spec-driven.md)                           | End-to-end explanation of the Spec-Driven Development workflow supported by Spec Kit. |
 | [RELEASE-PROCESS.md](.github/workflows/RELEASE-PROCESS.md) | Release workflow, versioning rules, and changelog generation process.                 |
 | [docs/index.md](docs/index.md)                             | Entry point to the `docs/` documentation set.                                         |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                         | Contribution process, review expectations, and required development practices.        |
-| [TESTING.md](TESTING.md)                                   | Validation strategy and testing procedures.                                           |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                         | Contribution process, review expectations, testing, and required development practices. |
 
 **Main repository components:**
 

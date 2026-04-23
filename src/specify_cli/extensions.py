@@ -132,6 +132,7 @@ class ExtensionManifest:
             ValidationError: If manifest is invalid
         """
         self.path = manifest_path
+        self.warnings: List[str] = []
         self.data = self._load_yaml(manifest_path)
         self._validate()
 
@@ -139,11 +140,16 @@ class ExtensionManifest:
         """Load YAML file safely."""
         try:
             with open(path, 'r') as f:
-                return yaml.safe_load(f) or {}
+                data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise ValidationError(f"Invalid YAML in {path}: {e}")
         except FileNotFoundError:
             raise ValidationError(f"Manifest not found: {path}")
+        if not isinstance(data, dict):
+            raise ValidationError(
+                f"Manifest must be a YAML mapping, got {type(data).__name__}: {path}"
+            )
+        return data
 
     def _validate(self):
         """Validate manifest structure and required fields."""
@@ -217,17 +223,98 @@ class ExtensionManifest:
                         f"Hook '{hook_name}' missing required 'command' field"
                     )
 
-        # Validate commands (if present)
+        # Validate commands; track renames so hook references can be rewritten.
+        rename_map: Dict[str, str] = {}
         for cmd in commands:
+            if not isinstance(cmd, dict):
+                raise ValidationError(
+                    "Each command entry in 'provides.commands' must be a mapping"
+                )
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
 
             # Validate command name format
-            if EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]) is None:
+            if not EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]):
+                corrected = self._try_correct_command_name(cmd["name"], ext["id"])
+                if corrected:
+                    self.warnings.append(
+                        f"Command name '{cmd['name']}' does not follow the required pattern "
+                        f"'speckit.{{extension}}.{{command}}'. Registering as '{corrected}'. "
+                        f"The extension author should update the manifest to use this name."
+                    )
+                    rename_map[cmd["name"]] = corrected
+                    cmd["name"] = corrected
+                else:
+                    raise ValidationError(
+                        f"Invalid command name '{cmd['name']}': "
+                        "must follow pattern 'speckit.{extension}.{command}'"
+                    )
+
+            # Validate alias types; no pattern enforcement on aliases — they are
+            # intentionally free-form to preserve community extension compatibility
+            # (e.g. 'speckit.verify' short aliases used by existing extensions).
+            aliases = cmd.get("aliases")
+            if aliases is None:
+                cmd["aliases"] = []
+                aliases = []
+            if not isinstance(aliases, list):
                 raise ValidationError(
-                    f"Invalid command name '{cmd['name']}': "
-                    "must follow pattern 'speckit.{extension}.{command}'"
+                    f"Aliases for command '{cmd['name']}' must be a list"
                 )
+            for alias in aliases:
+                if not isinstance(alias, str):
+                    raise ValidationError(
+                        f"Aliases for command '{cmd['name']}' must be strings"
+                    )
+
+        # Rewrite any hook command references that pointed at a renamed command or
+        # an alias-form ref (ext.cmd → speckit.ext.cmd).  Always emit a warning when
+        # the reference is changed so extension authors know to update the manifest.
+        for hook_name, hook_data in self.data.get("hooks", {}).items():
+            if not isinstance(hook_data, dict):
+                raise ValidationError(
+                    f"Hook '{hook_name}' must be a mapping, got {type(hook_data).__name__}"
+                )
+            command_ref = hook_data.get("command")
+            if not isinstance(command_ref, str):
+                continue
+            # Step 1: apply any rename from the auto-correction pass.
+            after_rename = rename_map.get(command_ref, command_ref)
+            # Step 2: lift alias-form '{ext_id}.cmd' to canonical 'speckit.{ext_id}.cmd'.
+            parts = after_rename.split(".")
+            if len(parts) == 2 and parts[0] == ext["id"]:
+                final_ref = f"speckit.{ext['id']}.{parts[1]}"
+            else:
+                final_ref = after_rename
+            if final_ref != command_ref:
+                hook_data["command"] = final_ref
+                self.warnings.append(
+                    f"Hook '{hook_name}' referenced command '{command_ref}'; "
+                    f"updated to canonical form '{final_ref}'. "
+                    f"The extension author should update the manifest."
+                )
+
+    @staticmethod
+    def _try_correct_command_name(name: str, ext_id: str) -> Optional[str]:
+        """Try to auto-correct a non-conforming command name to the required pattern.
+
+        Handles the two legacy formats used by community extensions:
+          - 'speckit.command'  → 'speckit.{ext_id}.command'
+          - '{ext_id}.command' → 'speckit.{ext_id}.command'
+
+        The 'X.Y' form is only corrected when X matches ext_id to ensure the
+        result passes the install-time namespace check. Any other prefix is
+        uncorrectable and will produce a ValidationError at the call site.
+
+        Returns the corrected name, or None if no safe correction is possible.
+        """
+        parts = name.split('.')
+        if len(parts) == 2:
+            if parts[0] == 'speckit' or parts[0] == ext_id:
+                candidate = f"speckit.{ext_id}.{parts[1]}"
+                if EXTENSION_COMMAND_NAME_PATTERN.match(candidate):
+                    return candidate
+        return None
 
     @property
     def id(self) -> str:
@@ -768,6 +855,7 @@ class ExtensionManager:
 
         from . import load_init_options
         from .agents import CommandRegistrar
+        from .integrations import get_integration
         import yaml
 
         written: List[str] = []
@@ -778,6 +866,7 @@ class ExtensionManager:
         if not isinstance(selected_ai, str) or not selected_ai:
             return []
         registrar = CommandRegistrar()
+        integration = get_integration(selected_ai)
 
         for cmd_info in manifest.commands:
             cmd_name = cmd_info["name"]
@@ -857,6 +946,10 @@ class ExtensionManager:
                 f"# {title_name} Skill\n\n"
                 f"{body}\n"
             )
+            if integration is not None and hasattr(integration, "post_process_skill_content"):
+                skill_content = integration.post_process_skill_content(
+                    skill_content
+                )
 
             skill_file.write_text(skill_content, encoding="utf-8")
             written.append(skill_name)

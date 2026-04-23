@@ -32,6 +32,15 @@ provides:
   templates:
     # CUSTOMIZE: Define your template overrides
     # Templates are document scaffolds (spec-template.md, plan-template.md, etc.)
+    #
+    # Strategy options (optional, defaults to "replace"):
+    #   replace  - Fully replaces the lower-priority template (default)
+    #   prepend  - Places this content BEFORE the lower-priority template
+    #   append   - Places this content AFTER the lower-priority template
+    #   wrap     - Uses {CORE_TEMPLATE} placeholder (templates/commands) or
+    #              $CORE_SCRIPT placeholder (scripts), replaced with lower-priority content
+    #
+    # Note: Scripts only support "replace" and "wrap" strategies.
     - type: "template"
       name: "spec-template"
       file: "templates/spec-template.md"
@@ -44,6 +53,26 @@ provides:
     #   file: "templates/plan-template.md"
     #   description: "Custom plan template"
     #   replaces: "plan-template"
+
+    # COMPOSITION EXAMPLES:
+    # The `file` field points to the content file (can differ from the
+    # convention path `templates/<name>.md`). The `name` field identifies
+    # which template to compose with in the priority stack.
+    #
+    # Append additional sections to an existing template:
+    # - type: "template"
+    #   name: "spec-template"
+    #   file: "templates/spec-addendum.md"
+    #   description: "Add compliance section to spec template"
+    #   strategy: "append"
+    #
+    # Wrap a command with preamble/sign-off:
+    # - type: "command"
+    #   name: "speckit.specify"
+    #   file: "commands/specify-wrapper.md"
+    #   description: "Wrap specify command with compliance checks"
+    #   strategy: "wrap"
+    #   # In the wrapper file, use {CORE_TEMPLATE} where the original content goes
 
     # OVERRIDE EXTENSION TEMPLATES:
     # Presets sit above extensions in the resolution stack, so you can

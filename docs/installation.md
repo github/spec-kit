@@ -4,11 +4,13 @@
 
 - **Linux/macOS** (or Windows; PowerShell scripts now supported without WSL)
 - AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Codebuddy CLI](https://www.codebuddy.ai/cli), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Pi Coding Agent](https://pi.dev)
-- [uv](https://docs.astral.sh/uv/) for package management
+- [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pypa.github.io/pipx/) for persistent installation
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
 
 ## Installation
+
+> **Important:** The only official, maintained packages for Spec Kit come from the [github/spec-kit](https://github.com/github/spec-kit) GitHub repository. Any packages with the same name available on PyPI (e.g. `specify-cli` on pypi.org) are **not** affiliated with this project and are not maintained by the Spec Kit maintainers. For normal installs, use the GitHub-based commands shown below. For offline or air-gapped environments, locally built wheels created from this repository are also valid.
 
 ### Initialize a New Project
 
@@ -21,6 +23,13 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <PROJE
 # Or install latest from main (may include unreleased changes)
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
+
+> [!NOTE]
+> For a persistent installation, `pipx` works equally well:
+> ```bash
+> pipx install git+https://github.com/github/spec-kit.git@vX.Y.Z
+> ```
+> The project uses a standard `hatchling` build backend and has no uv-specific dependencies.
 
 Or initialize in the current directory:
 
@@ -68,6 +77,14 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <proje
 ```
 
 ## Verification
+
+After installation, run the following command to confirm the correct version is installed:
+
+```bash
+specify version
+```
+
+This helps verify you are running the official Spec Kit build from GitHub, not an unrelated package with the same name.
 
 After initialization, you should see the following commands available in your AI agent:
 

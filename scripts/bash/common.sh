@@ -114,8 +114,19 @@ has_git() {
     git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
 
+# Strip a single optional path segment (e.g. gitflow "feat/004-name" -> "004-name").
+# Only when the full name is exactly two slash-free segments; otherwise returns the raw name.
+spec_kit_effective_branch_name() {
+    local raw="$1"
+    if [[ "$raw" =~ ^([^/]+)/([^/]+)$ ]]; then
+        printf '%s\n' "${BASH_REMATCH[2]}"
+    else
+        printf '%s\n' "$raw"
+    fi
+}
+
 check_feature_branch() {
-    local branch="$1"
+    local raw="$1"
     local has_git_repo="$2"
 
     # For non-git repos, we can't enforce branch naming but still provide output
@@ -124,6 +135,9 @@ check_feature_branch() {
         return 0
     fi
 
+    local branch
+    branch=$(spec_kit_effective_branch_name "$raw")
+
     # Accept sequential prefix (3+ digits) but exclude malformed timestamps
     # Malformed: 7-or-8 digit date + 6-digit time with no trailing slug (e.g. "2026031-143022" or "20260319-143022")
     local is_sequential=false
@@ -131,7 +145,7 @@ check_feature_branch() {
         is_sequential=true
     fi
     if [[ "$is_sequential" != "true" ]] && [[ ! "$branch" =~ ^[0-9]{8}-[0-9]{6}- ]]; then
-        echo "ERROR: Not on a feature branch. Current branch: $branch" >&2
+        echo "ERROR: Not on a feature branch. Current branch: $raw" >&2
         echo "Feature branches should be named like: 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name" >&2
         return 1
     fi
@@ -139,13 +153,12 @@ check_feature_branch() {
     return 0
 }
 
-get_feature_dir() { echo "$1/specs/$2"; }
-
 # Find feature directory by numeric prefix instead of exact branch match
 # This allows multiple branches to work on the same spec (e.g., 004-fix-bug, 004-add-feature)
 find_feature_dir_by_prefix() {
     local repo_root="$1"
-    local branch_name="$2"
+    local branch_name
+    branch_name=$(spec_kit_effective_branch_name "$2")
     local specs_dir="$repo_root/specs"
 
     # Extract prefix from branch (e.g., "004" from "004-whatever" or "20260319-143022" from timestamp branches)
@@ -307,8 +320,9 @@ try:
     with open(os.environ['SPECKIT_REGISTRY']) as f:
         data = json.load(f)
     presets = data.get('presets', {})
-    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10)):
-        print(pid)
+    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10) if isinstance(x[1], dict) else 10):
+        if isinstance(meta, dict) and meta.get('enabled', True) is not False:
+            print(pid)
 except Exception:
     sys.exit(1)
 " 2>/dev/null); then
@@ -358,5 +372,227 @@ except Exception:
     # Return 1 so callers can distinguish "not found" from "found".
     # Callers running under set -e should use: TEMPLATE=$(resolve_template ...) || true
     return 1
+}
+
+# Resolve a template name to composed content using composition strategies.
+# Reads strategy metadata from preset manifests and composes content
+# from multiple layers using prepend, append, or wrap strategies.
+#
+# Usage: CONTENT=$(resolve_template_content "template-name" "$REPO_ROOT")
+# Returns composed content string on stdout; exit code 1 if not found.
+resolve_template_content() {
+    local template_name="$1"
+    local repo_root="$2"
+    local base="$repo_root/.specify/templates"
+
+    # Collect all layers (highest priority first)
+    local -a layer_paths=()
+    local -a layer_strategies=()
+
+    # Priority 1: Project overrides (always "replace")
+    local override="$base/overrides/${template_name}.md"
+    if [ -f "$override" ]; then
+        layer_paths+=("$override")
+        layer_strategies+=("replace")
+    fi
+
+    # Priority 2: Installed presets (sorted by priority from .registry)
+    local presets_dir="$repo_root/.specify/presets"
+    if [ -d "$presets_dir" ]; then
+        local registry_file="$presets_dir/.registry"
+        local sorted_presets=""
+        if [ -f "$registry_file" ] && command -v python3 >/dev/null 2>&1; then
+            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" python3 -c "
+import json, sys, os
+try:
+    with open(os.environ['SPECKIT_REGISTRY']) as f:
+        data = json.load(f)
+    presets = data.get('presets', {})
+    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10) if isinstance(x[1], dict) else 10):
+        if isinstance(meta, dict) and meta.get('enabled', True) is not False:
+            print(pid)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null); then
+                if [ -n "$sorted_presets" ]; then
+                    local yaml_warned=false
+                    while IFS= read -r preset_id; do
+                        # Read strategy and file path from preset manifest
+                        local strategy="replace"
+                        local manifest_file=""
+                        local manifest="$presets_dir/$preset_id/preset.yml"
+                        if [ -f "$manifest" ] && command -v python3 >/dev/null 2>&1; then
+                            # Requires PyYAML; falls back to replace/convention if unavailable
+                            local result
+                            local py_stderr
+                            py_stderr=$(mktemp)
+                            result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" python3 -c "
+import sys, os
+try:
+    import yaml
+except ImportError:
+    print('yaml_missing', file=sys.stderr)
+    print('replace\t')
+    sys.exit(0)
+try:
+    with open(os.environ['SPECKIT_MANIFEST']) as f:
+        data = yaml.safe_load(f)
+    for t in data.get('provides', {}).get('templates', []):
+        if t.get('name') == os.environ['SPECKIT_TMPL'] and t.get('type', 'template') == 'template':
+            print(t.get('strategy', 'replace') + '\t' + t.get('file', ''))
+            sys.exit(0)
+    print('replace\t')
+except Exception:
+    print('replace\t')
+" 2>"$py_stderr")
+                            local parse_status=$?
+                            if [ $parse_status -eq 0 ] && [ -n "$result" ]; then
+                                IFS=$'\t' read -r strategy manifest_file <<< "$result"
+                                strategy=$(printf '%s' "$strategy" | tr '[:upper:]' '[:lower:]')
+                            fi
+                            if [ "$yaml_warned" = false ] && grep -q 'yaml_missing' "$py_stderr" 2>/dev/null; then
+                                echo "Warning: PyYAML not available; composition strategies may be ignored" >&2
+                                yaml_warned=true
+                            fi
+                            rm -f "$py_stderr"
+                        fi
+                        # Try manifest file path first, then convention path
+                        local candidate=""
+                        if [ -n "$manifest_file" ]; then
+                            # Reject absolute paths and parent traversal
+                            case "$manifest_file" in
+                                /*|*../*|../*) manifest_file="" ;;
+                            esac
+                        fi
+                        if [ -n "$manifest_file" ]; then
+                            local mf="$presets_dir/$preset_id/$manifest_file"
+                            [ -f "$mf" ] && candidate="$mf"
+                        fi
+                        if [ -z "$candidate" ]; then
+                            local cf="$presets_dir/$preset_id/templates/${template_name}.md"
+                            [ -f "$cf" ] && candidate="$cf"
+                        fi
+                        if [ -n "$candidate" ]; then
+                            layer_paths+=("$candidate")
+                            layer_strategies+=("$strategy")
+                        fi
+                    done <<< "$sorted_presets"
+                fi
+            else
+                # python3 failed — fall back to unordered directory scan (replace only)
+                for preset in "$presets_dir"/*/; do
+                    [ -d "$preset" ] || continue
+                    local candidate="$preset/templates/${template_name}.md"
+                    if [ -f "$candidate" ]; then
+                        layer_paths+=("$candidate")
+                        layer_strategies+=("replace")
+                    fi
+                done
+            fi
+        else
+            # No python3 or registry — fall back to unordered directory scan (replace only)
+            for preset in "$presets_dir"/*/; do
+                [ -d "$preset" ] || continue
+                local candidate="$preset/templates/${template_name}.md"
+                if [ -f "$candidate" ]; then
+                    layer_paths+=("$candidate")
+                    layer_strategies+=("replace")
+                fi
+            done
+        fi
+    fi
+
+    # Priority 3: Extension-provided templates (always "replace")
+    local ext_dir="$repo_root/.specify/extensions"
+    if [ -d "$ext_dir" ]; then
+        for ext in "$ext_dir"/*/; do
+            [ -d "$ext" ] || continue
+            case "$(basename "$ext")" in .*) continue;; esac
+            local candidate="$ext/templates/${template_name}.md"
+            if [ -f "$candidate" ]; then
+                layer_paths+=("$candidate")
+                layer_strategies+=("replace")
+            fi
+        done
+    fi
+
+    # Priority 4: Core templates (always "replace")
+    local core="$base/${template_name}.md"
+    if [ -f "$core" ]; then
+        layer_paths+=("$core")
+        layer_strategies+=("replace")
+    fi
+
+    local count=${#layer_paths[@]}
+    [ "$count" -eq 0 ] && return 1
+
+    # Check if any layer uses a non-replace strategy
+    local has_composition=false
+    for s in "${layer_strategies[@]}"; do
+        [ "$s" != "replace" ] && has_composition=true && break
+    done
+
+    # If the top (highest-priority) layer is replace, it wins entirely —
+    # lower layers are irrelevant regardless of their strategies.
+    if [ "${layer_strategies[0]}" = "replace" ]; then
+        cat "${layer_paths[0]}"
+        return 0
+    fi
+
+    if [ "$has_composition" = false ]; then
+        cat "${layer_paths[0]}"
+        return 0
+    fi
+
+    # Find the effective base: scan from highest priority (index 0) downward
+    # to find the nearest replace layer. Only compose layers above that base.
+    local base_idx=-1
+    local i
+    for (( i=0; i<count; i++ )); do
+        if [ "${layer_strategies[$i]}" = "replace" ]; then
+            base_idx=$i
+            break
+        fi
+    done
+
+    if [ $base_idx -lt 0 ]; then
+        return 1  # no base layer found
+    fi
+
+    # Read the base content; compose layers above the base (higher priority)
+    local content
+    content=$(cat "${layer_paths[$base_idx]}"; printf x)
+    content="${content%x}"
+
+    for (( i=base_idx-1; i>=0; i-- )); do
+        local path="${layer_paths[$i]}"
+        local strat="${layer_strategies[$i]}"
+        local layer_content
+        # Preserve trailing newlines
+        layer_content=$(cat "$path"; printf x)
+        layer_content="${layer_content%x}"
+
+        case "$strat" in
+            replace) content="$layer_content" ;;
+            prepend) content="$(printf '%s\n\n%s' "$layer_content" "$content")" ;;
+            append)  content="$(printf '%s\n\n%s' "$content" "$layer_content")" ;;
+            wrap)
+                case "$layer_content" in
+                    *'{CORE_TEMPLATE}'*) ;;
+                    *) echo "Error: wrap strategy missing {CORE_TEMPLATE} placeholder" >&2; return 1 ;;
+                esac
+                while [[ "$layer_content" == *'{CORE_TEMPLATE}'* ]]; do
+                    local before="${layer_content%%\{CORE_TEMPLATE\}*}"
+                    local after="${layer_content#*\{CORE_TEMPLATE\}}"
+                    layer_content="${before}${content}${after}"
+                done
+                content="$layer_content"
+                ;;
+            *) echo "Error: unknown strategy '$strat'" >&2; return 1 ;;
+        esac
+    done
+
+    printf '%s' "$content"
+    return 0
 }
 
