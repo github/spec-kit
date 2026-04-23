@@ -1387,7 +1387,7 @@ class TestPresetCatalog:
         monkeypatch.setenv("GH_TOKEN", "ghp_fallback")
         catalog = PresetCatalog(project_dir)
         req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
-        assert req.get_header("Authorization") == "token ghp_fallback"
+        assert req.get_header("Authorization") == "Bearer ghp_fallback"
 
     def test_make_request_github_token_added_for_github_url(self, project_dir, monkeypatch):
         """GITHUB_TOKEN is attached for raw.githubusercontent.com URLs."""
@@ -1395,7 +1395,7 @@ class TestPresetCatalog:
         monkeypatch.delenv("GH_TOKEN", raising=False)
         catalog = PresetCatalog(project_dir)
         req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
-        assert req.get_header("Authorization") == "token ghp_testtoken"
+        assert req.get_header("Authorization") == "Bearer ghp_testtoken"
 
     def test_make_request_gh_token_fallback(self, project_dir, monkeypatch):
         """GH_TOKEN is used when GITHUB_TOKEN is absent."""
@@ -1403,7 +1403,7 @@ class TestPresetCatalog:
         monkeypatch.setenv("GH_TOKEN", "ghp_ghtoken")
         catalog = PresetCatalog(project_dir)
         req = catalog._make_request("https://github.com/org/repo/releases/download/v1/pack.zip")
-        assert req.get_header("Authorization") == "token ghp_ghtoken"
+        assert req.get_header("Authorization") == "Bearer ghp_ghtoken"
 
     def test_make_request_github_token_takes_precedence(self, project_dir, monkeypatch):
         """GITHUB_TOKEN takes precedence over GH_TOKEN when both are set."""
@@ -1411,14 +1411,14 @@ class TestPresetCatalog:
         monkeypatch.setenv("GH_TOKEN", "ghp_secondary")
         catalog = PresetCatalog(project_dir)
         req = catalog._make_request("https://api.github.com/repos/org/repo")
-        assert req.get_header("Authorization") == "token ghp_primary"
+        assert req.get_header("Authorization") == "Bearer ghp_primary"
 
     def test_make_request_token_added_for_codeload_github_com(self, project_dir, monkeypatch):
         """GITHUB_TOKEN is attached for codeload.github.com URLs (GitHub archive redirects)."""
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
         catalog = PresetCatalog(project_dir)
         req = catalog._make_request("https://codeload.github.com/org/repo/zip/refs/tags/v1.0.0")
-        assert req.get_header("Authorization") == "token ghp_testtoken"
+        assert req.get_header("Authorization") == "Bearer ghp_testtoken"
 
     def test_make_request_token_not_added_for_non_github_url(self, project_dir, monkeypatch):
         """Auth header is never attached to non-GitHub URLs to prevent credential leakage."""
@@ -1480,7 +1480,7 @@ class TestPresetCatalog:
         with patch("urllib.request.build_opener", return_value=mock_opener):
             catalog._fetch_single_catalog(entry, force_refresh=True)
 
-        assert captured["req"].get_header("Authorization") == "token ghp_testtoken"
+        assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
 
     def test_download_pack_sends_auth_header(self, project_dir, monkeypatch):
         """download_pack passes Authorization header via opener for GitHub URLs."""
@@ -1520,7 +1520,7 @@ class TestPresetCatalog:
              patch("urllib.request.build_opener", return_value=mock_opener):
             catalog.download_pack("test-pack", target_dir=project_dir)
 
-        assert captured["req"].get_header("Authorization") == "token ghp_testtoken"
+        assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
 
 
 # ===== Integration Tests =====

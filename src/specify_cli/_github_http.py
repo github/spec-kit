@@ -37,7 +37,7 @@ def build_github_request(url: str) -> urllib.request.Request:
     token = github_token or gh_token or None
     hostname = (urlparse(url).hostname or "").lower()
     if token and hostname in GITHUB_HOSTS:
-        headers["Authorization"] = f"token {token}"
+        headers["Authorization"] = f"Bearer {token}"
     return urllib.request.Request(url, headers=headers)
 
 
