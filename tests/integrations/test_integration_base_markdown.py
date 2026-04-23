@@ -274,11 +274,11 @@ class MarkdownIntegrationTests:
 
         if script_variant == "sh":
             for name in ["check-prerequisites.sh", "common.sh", "create-new-feature.sh",
-                         "setup-plan.sh"]:
+                         "setup-plan.sh", "setup-tasks.sh"]:
                 files.append(f".specify/scripts/bash/{name}")
         else:
             for name in ["check-prerequisites.ps1", "common.ps1", "create-new-feature.ps1",
-                         "setup-plan.ps1"]:
+                         "setup-plan.ps1", "setup-tasks.ps1"]:
                 files.append(f".specify/scripts/powershell/{name}")
 
         for name in ["checklist-template.md",
