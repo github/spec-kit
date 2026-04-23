@@ -657,18 +657,18 @@
       "id": "extensify",
       "description": "Create and validate extensions and extension catalogs.",
       "author": "mnriem",
-      "version": "1.0.0",
-      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/extensify-v1.0.0/extensify.zip",
+      "version": "1.1.0",
+      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/extensify-v1.1.0/extensify.zip",
       "repository": "https://github.com/mnriem/spec-kit-extensions",
       "homepage": "https://github.com/mnriem/spec-kit-extensions",
       "documentation": "https://github.com/mnriem/spec-kit-extensions/blob/main/extensify/README.md",
       "changelog": "https://github.com/mnriem/spec-kit-extensions/blob/main/extensify/CHANGELOG.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.2.0"
+        "speckit_version": ">=0.8.0"
       },
       "provides": {
-        "commands": 4,
+        "commands": 5,
         "hooks": 0
       },
       "tags": [
@@ -681,7 +681,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
-      "updated_at": "2026-03-18T00:00:00Z"
+      "updated_at": "2026-04-23T00:00:00Z"
     },
     "fix-findings": {
       "name": "Fix Findings",
