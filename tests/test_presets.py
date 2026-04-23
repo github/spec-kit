@@ -2886,16 +2886,27 @@ class TestPresetEnableDisable:
         assert result.exit_code == 1, result.output
         assert "not installed" in result.output.lower()
 
-    def test_disabled_preset_excluded_from_resolution(self, project_dir, pack_dir):
+    def test_disabled_preset_excluded_from_resolution(self, project_dir, temp_dir, valid_pack_data):
         """Test that disabled presets are excluded from template resolution."""
-        # Install preset with a template
+        # Install preset with a template declared in the manifest
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "test-pack", "name": "Test"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "test-template",
+                "file": "templates/test-template.md",
+            }]
+        }
+        pack_dir = temp_dir / "test-pack"
+        pack_dir.mkdir(exist_ok=True)
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir(exist_ok=True)
+        (pack_dir / "templates" / "test-template.md").write_text("# Template from test-pack")
+
         manager = PresetManager(project_dir)
         manager.install_from_directory(pack_dir, "0.1.5")
-
-        # Create a template in the preset directory
-        preset_template = project_dir / ".specify" / "presets" / "test-pack" / "templates" / "test-template.md"
-        preset_template.parent.mkdir(parents=True, exist_ok=True)
-        preset_template.write_text("# Template from test-pack")
 
         resolver = PresetResolver(project_dir)
 
