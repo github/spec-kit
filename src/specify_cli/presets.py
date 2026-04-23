@@ -1661,7 +1661,8 @@ class PresetManager:
 
         # Collect ALL command names before filtering for reconciliation,
         # so commands registered only for skill-based agents are also reconciled.
-        # Also include aliases from the manifest (not tracked in registered_commands).
+        # Also include aliases from the manifest as a safety net for registries
+        # populated by older versions that may not track aliases.
         removed_cmd_names = set()
         for cmd_names in registered_commands.values():
             removed_cmd_names.update(cmd_names)
@@ -2928,9 +2929,9 @@ class PresetResolver:
         if layers[0]["strategy"] == "replace":
             return layers[0]["path"].read_text(encoding="utf-8")
 
-        # Composition: build content bottom-up (lowest priority first)
-        # Start from the lowest-priority "replace" layer as the base,
-        # then apply composition layers on top.
+        # Composition: build content bottom-up from the effective base.
+        # The base is the nearest replace layer scanning from highest priority
+        # downward. Only layers above the base contribute to composition.
         #
         # layers is ordered highest-priority first. We process in reverse.
         reversed_layers = list(reversed(layers))
