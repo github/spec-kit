@@ -198,7 +198,7 @@
       "name": "Screenwriting",
       "id": "screenwriting",
       "version": "1.0.0",
-      "description": "Spec-Driven Development for screenwriting/scriptwriting/tutorials: feature films, television (pilot, episode, limited series), and stage plays. Adapts the Speckit workflow to screenplay craft — slug lines, action lines, act breaks, beat sheets, and industry-standard pitch documents replace prose fiction conventions. Supports three-act, Save the Cat, TV pilot, network episode, cable/streaming episode, and stage-play structural frameworks.",
+      "description": "Spec-Driven Development for screenwriting/scriptwriting/tutorials: feature films, television (pilot, episode, limited series), and stage plays. Adapts the Spec Kit workflow to screenplay craft — slug lines, action lines, act breaks, beat sheets, and industry-standard pitch documents replace prose fiction conventions. Supports three-act, Save the Cat, TV pilot, network episode, cable/streaming episode, and stage-play structural frameworks.",
       "author": "Andreas Daumann",
       "repository": "https://github.com/adaumann/speckit-preset-screenwriting",
       "download_url": "https://github.com/adaumann/speckit-preset-screenwriting/archive/refs/tags/v1.0.0.zip",
