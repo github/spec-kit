@@ -10,7 +10,14 @@
       "description": "Minimal core workflow commands - just the prompt, just the artifact",
       "author": "github",
       "repository": "https://github.com/github/spec-kit",
+      "license": "MIT",
       "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 5
+      },
       "tags": [
         "lean",
         "minimal",
