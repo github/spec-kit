@@ -1,11 +1,11 @@
 """Tests for VibeIntegration."""
 
-from .test_integration_base_markdown import MarkdownIntegrationTests
+from .test_integration_base_skills import SkillsIntegrationTests
 
 
-class TestVibeIntegration(MarkdownIntegrationTests):
+class TestVibeIntegration(SkillsIntegrationTests):
     KEY = "vibe"
     FOLDER = ".vibe/"
-    COMMANDS_SUBDIR = "prompts"
-    REGISTRAR_DIR = ".vibe/prompts"
-    CONTEXT_FILE = ".vibe/agents/specify-agents.md"
+    COMMANDS_SUBDIR = "skills"
+    REGISTRAR_DIR = ".vibe/skills"
+    CONTEXT_FILE = "AGENTS.md"
