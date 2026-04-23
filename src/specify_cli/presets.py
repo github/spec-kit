@@ -623,27 +623,37 @@ class PresetManager:
         for cmd in filtered:
             strategy = cmd.get("strategy", "replace")
             if strategy != "replace":
-                # Resolve composed content using the full priority stack
-                composed = resolver.resolve_content(cmd["name"], "command")
-                if composed is not None:
-                    # Write composed content to the preset's .composed directory
-                    if composed_dir is None:
-                        composed_dir = preset_dir / ".composed"
-                        composed_dir.mkdir(parents=True, exist_ok=True)
-                    composed_file = composed_dir / f"{cmd['name']}.md"
-                    composed_file.write_text(composed, encoding="utf-8")
-                    commands_to_register.append({
-                        **cmd,
-                        "file": f".composed/{cmd['name']}.md",
-                    })
+                # Only pre-compose if this preset is the top composing layer.
+                # If a higher-priority replace already wins, skip composition
+                # here — reconciliation will write the correct content.
+                layers = resolver.collect_all_layers(cmd["name"], "command")
+                top_layer_is_ours = (
+                    layers and layers[0]["path"].is_relative_to(preset_dir)
+                )
+                if top_layer_is_ours:
+                    composed = resolver.resolve_content(cmd["name"], "command")
+                    if composed is not None:
+                        if composed_dir is None:
+                            composed_dir = preset_dir / ".composed"
+                            composed_dir.mkdir(parents=True, exist_ok=True)
+                        composed_file = composed_dir / f"{cmd['name']}.md"
+                        composed_file.write_text(composed, encoding="utf-8")
+                        commands_to_register.append({
+                            **cmd,
+                            "file": f".composed/{cmd['name']}.md",
+                        })
+                    else:
+                        raise PresetValidationError(
+                            f"Command '{cmd['name']}' uses '{strategy}' strategy "
+                            f"but no base command layer exists to compose onto. "
+                            f"Ensure a lower-priority preset, extension, or core "
+                            f"command provides this command before using "
+                            f"composition strategies."
+                        )
                 else:
-                    raise PresetValidationError(
-                        f"Command '{cmd['name']}' uses '{strategy}' strategy "
-                        f"but no base command layer exists to compose onto. "
-                        f"Ensure a lower-priority preset, extension, or core "
-                        f"command provides this command before using "
-                        f"composition strategies."
-                    )
+                    # Not the top layer — register raw file; reconciliation
+                    # will overwrite with the correct composed/winning content.
+                    commands_to_register.append(cmd)
             else:
                 commands_to_register.append(cmd)
 
