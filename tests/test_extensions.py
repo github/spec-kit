@@ -2514,11 +2514,10 @@ class TestExtensionCatalog:
         req = catalog._make_request("https://codeload.github.com/org/repo/zip/refs/tags/v1.0.0")
         assert req.get_header("Authorization") == "Bearer ghp_testtoken"
 
-    def test_redirect_preserves_auth_for_github_to_codeload(self, temp_dir, monkeypatch):
+    def test_redirect_preserves_auth_for_github_to_codeload(self):
         """Auth header is preserved when GitHub redirects to codeload.github.com."""
-        from specify_cli._github_http import _StripAuthOnRedirect, GITHUB_HOSTS
+        from specify_cli._github_http import _StripAuthOnRedirect
         from urllib.request import Request
-        from unittest.mock import MagicMock
         import io
 
         handler = _StripAuthOnRedirect()
@@ -2531,7 +2530,7 @@ class TestExtensionCatalog:
         auth = new_req.get_header("Authorization") or new_req.unredirected_hdrs.get("Authorization")
         assert auth == "Bearer ghp_test"
 
-    def test_redirect_strips_auth_for_github_to_external(self, temp_dir, monkeypatch):
+    def test_redirect_strips_auth_for_github_to_external(self):
         """Auth header is stripped when GitHub redirects to a non-GitHub host."""
         from specify_cli._github_http import _StripAuthOnRedirect
         from urllib.request import Request

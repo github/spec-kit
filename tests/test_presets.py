@@ -1489,7 +1489,8 @@ class TestPresetCatalog:
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
         catalog = PresetCatalog(project_dir)
 
-        zip_buf = __import__("io").BytesIO()
+        import io
+        zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w") as zf:
             zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
         zip_bytes = zip_buf.getvalue()

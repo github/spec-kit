@@ -27,7 +27,7 @@ def build_github_request(url: str) -> urllib.request.Request:
     """Build a urllib Request, adding a GitHub auth header when available.
 
     Reads GITHUB_TOKEN or GH_TOKEN from the environment and attaches an
-    ``Authorization: token <value>`` header when the target hostname is one
+    ``Authorization: Bearer <value>`` header when the target hostname is one
     of the known GitHub-owned domains. Non-GitHub URLs are returned as plain
     requests so credentials are never leaked to third-party hosts.
     """
