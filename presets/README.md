@@ -96,7 +96,7 @@ See [scaffold/](scaffold/) for a scaffold you can copy to create your own preset
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SPECKIT_PRESET_CATALOG_URL` | Override the full catalog stack with a single URL (replaces all defaults) | Built-in default stack |
-| `GH_TOKEN` / `GITHUB_TOKEN` | GitHub token for authenticated requests to GitHub-hosted URLs (`raw.githubusercontent.com`, `github.com`, `api.github.com`). Required when your catalog JSON or preset ZIPs are hosted in a private GitHub repository. | None |
+| `GH_TOKEN` / `GITHUB_TOKEN` | GitHub token for authenticated requests to GitHub-hosted URLs (`raw.githubusercontent.com`, `github.com`, `api.github.com`, `codeload.github.com`). Required when your catalog JSON or preset ZIPs are hosted in a private GitHub repository. | None |
 
 #### Example: Using a private GitHub-hosted catalog
 

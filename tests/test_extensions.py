@@ -2514,6 +2514,41 @@ class TestExtensionCatalog:
         req = catalog._make_request("https://codeload.github.com/org/repo/zip/refs/tags/v1.0.0")
         assert req.get_header("Authorization") == "token ghp_testtoken"
 
+    def test_redirect_preserves_auth_for_github_to_codeload(self, temp_dir, monkeypatch):
+        """Auth header is preserved when GitHub redirects to codeload.github.com."""
+        from specify_cli._github_http import _StripAuthOnRedirect, GITHUB_HOSTS
+        from urllib.request import Request
+        from unittest.mock import MagicMock
+        import io
+
+        handler = _StripAuthOnRedirect()
+        original_url = "https://github.com/org/repo/archive/refs/tags/v1.zip"
+        redirect_url = "https://codeload.github.com/org/repo/zip/refs/tags/v1"
+        req = Request(original_url, headers={"Authorization": "token ghp_test"})
+        fp = io.BytesIO(b"")
+        new_req = handler.redirect_request(req, fp, 302, "Found", {}, redirect_url)
+        assert new_req is not None
+        auth = new_req.get_header("Authorization") or new_req.unredirected_hdrs.get("Authorization")
+        assert auth == "token ghp_test"
+
+    def test_redirect_strips_auth_for_github_to_external(self, temp_dir, monkeypatch):
+        """Auth header is stripped when GitHub redirects to a non-GitHub host."""
+        from specify_cli._github_http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+
+        handler = _StripAuthOnRedirect()
+        original_url = "https://github.com/org/repo/releases/download/v1/asset.zip"
+        redirect_url = "https://objects.githubusercontent.com/github-production-release-asset/12345"
+        req = Request(original_url, headers={"Authorization": "token ghp_test"})
+        fp = io.BytesIO(b"")
+        new_req = handler.redirect_request(req, fp, 302, "Found", {}, redirect_url)
+        assert new_req is not None
+        auth_header = new_req.headers.get("Authorization")
+        auth_unredirected = new_req.unredirected_hdrs.get("Authorization")
+        assert auth_header is None
+        assert auth_unredirected is None
+
     def test_fetch_single_catalog_sends_auth_header(self, temp_dir, monkeypatch):
         """_fetch_single_catalog passes Authorization header via opener for GitHub URLs."""
         from unittest.mock import patch, MagicMock

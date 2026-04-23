@@ -50,11 +50,16 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
     """
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        original_auth = req.get_header("Authorization")
         new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
         if new_req is not None:
             hostname = (urlparse(newurl).hostname or "").lower()
-            if hostname not in GITHUB_HOSTS:
+            if hostname in GITHUB_HOSTS:
+                if original_auth:
+                    new_req.add_unredirected_header("Authorization", original_auth)
+            else:
                 new_req.headers.pop("Authorization", None)
+                new_req.unredirected_hdrs.pop("Authorization", None)
         return new_req
 
 
