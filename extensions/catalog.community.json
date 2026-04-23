@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-22T21:10:00Z",
+  "updated_at": "2026-04-23T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1197,6 +1197,38 @@
       "stars": 0,
       "created_at": "2026-04-20T00:00:00Z",
       "updated_at": "2026-04-20T00:00:00Z"
+    },
+    "memory-md": {
+      "name": "Memory MD",
+      "id": "memory-md",
+      "description": "Repository-native durable memory for Spec Kit projects",
+      "author": "DyanGalih",
+      "version": "0.6.2",
+      "download_url": "https://github.com/DyanGalih/spec-kit-memory-hub/archive/refs/tags/v0.6.2.zip",
+      "repository": "https://github.com/DyanGalih/spec-kit-memory-hub",
+      "homepage": "https://github.com/DyanGalih/spec-kit-memory-hub",
+      "documentation": "https://github.com/DyanGalih/spec-kit-memory-hub/blob/main/README.md",
+      "changelog": "https://github.com/DyanGalih/spec-kit-memory-hub/blob/main/docs/memory-workflow-v0.6.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 0
+      },
+      "tags": [
+        "memory",
+        "workflow",
+        "docs",
+        "copilot",
+        "markdown"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-23T00:00:00Z",
+      "updated_at": "2026-04-23T00:00:00Z"
     },
     "memorylint": {
       "name": "MemoryLint",
