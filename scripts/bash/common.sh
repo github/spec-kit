@@ -459,6 +459,12 @@ except Exception:
                         # Try manifest file path first, then convention path
                         local candidate=""
                         if [ -n "$manifest_file" ]; then
+                            # Reject absolute paths and parent traversal
+                            case "$manifest_file" in
+                                /*|*../*|../*) manifest_file="" ;;
+                            esac
+                        fi
+                        if [ -n "$manifest_file" ]; then
                             local mf="$presets_dir/$preset_id/$manifest_file"
                             [ -f "$mf" ] && candidate="$mf"
                         fi

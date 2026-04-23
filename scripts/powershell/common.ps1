@@ -472,6 +472,12 @@ except Exception:
                 # Try manifest file path first, then convention path
                 $candidate = $null
                 if ($manifestFilePath) {
+                    # Reject absolute paths and parent traversal
+                    if ([System.IO.Path]::IsPathRooted($manifestFilePath) -or $manifestFilePath -match '\.\.[\\/]') {
+                        $manifestFilePath = ''
+                    }
+                }
+                if ($manifestFilePath) {
                     $mf = Join-Path $presetsDir "$presetId/$manifestFilePath"
                     if (Test-Path $mf) { $candidate = $mf }
                 }
