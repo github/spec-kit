@@ -659,6 +659,13 @@ class TestCopilotSkillsMode:
             assert "--agent" not in call_args, (
                 f"Skills mode should not use --agent, got: {call_args}"
             )
+            prompt = call_args[call_args.index("-p") + 1]
+            assert "/speckit-plan" in prompt, (
+                f"Skills mode prompt should invoke /speckit-plan, got: {prompt}"
+            )
+            assert "my args" in prompt, (
+                f"Skills mode prompt should preserve user args, got: {prompt}"
+            )
 
     # -- Next-steps display for Copilot skills mode -----------------------
 

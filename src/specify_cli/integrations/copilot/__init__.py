@@ -189,7 +189,9 @@ class CopilotIntegration(IntegrationBase):
                 )
 
         if skills_mode:
-            prompt = self.build_command_invocation(command_name, args)
+            prompt = f"/speckit-{stem}"
+            if args:
+                prompt = f"{prompt} {args}"
         else:
             agent_name = f"speckit.{stem}"
             prompt = args or ""
