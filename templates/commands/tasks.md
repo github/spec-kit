@@ -172,7 +172,7 @@ Every task MUST strictly follow this format:
 - ✅ CORRECT: `- [ ] T005 [P] Implement authentication middleware in src/middleware/auth.py`
 - ✅ CORRECT: `- [ ] T012 [P] [US1] Create User model in src/models/user.py`
 - ✅ CORRECT: `- [ ] T014 [US1] Implement UserService in src/services/user_service.py`
-- ✅ CORRECT (governed): ``- [ ] T008 Push packages to NuGet feed: `dotnet nuget push "*.nupkg" --api-key $NUGET_API_KEY --source $NUGET_FEED_URL````
+- ✅ CORRECT (governed): ``- [ ] T008 dist/*.nupkg Push packages to NuGet feed: `dotnet nuget push "*.nupkg" --api-key $NUGET_API_KEY --source $NUGET_FEED_URL````
 - ❌ WRONG: `- [ ] Create User model` (missing ID and Story label)
 - ❌ WRONG: `T001 [US1] Create model` (missing checkbox)
 - ❌ WRONG: `- [ ] [US1] Create User model` (missing Task ID)
@@ -183,10 +183,10 @@ Every task MUST strictly follow this format:
 
 A **governed operation** is any operation the project constitution defines with specific command syntax, required flags, or environment variable references (for example: a package publish step, a deployment command, a signed git tag).
 
-When a task covers a governed operation, its description MUST include the exact executable command from the constitution, parameterized with environment variable names rather than literal credential values. Do not paraphrase the command.
+When a task covers a governed operation, it MUST still include the required file path from the standard task format, and its description MUST include the exact executable command from the constitution, parameterized with environment variable names rather than literal credential values. Do not paraphrase the command.
 
 ```text
-- [ ] [TaskID] [P?] [Story?] Description: `<exact-command --flag $ENV_VAR>`
+- [ ] [TaskID] [P?] [Story?] path/to/file.ext Description: `<exact-command --flag $ENV_VAR>`
 ```
 
 **Why this matters**: Tasks are surfaced in agent context every session. The constitution may be compacted out of active context by the time a task is executed — especially across session boundaries or late in long sessions. Embedding the exact command in the task body ensures the agent executes the correct syntax without re-reading the constitution.
