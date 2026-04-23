@@ -33,7 +33,6 @@ uvx --from git+https://github.com/github/spec-kit.git specify init .
 > specify init .
 > ```
 
-
 Pick script type explicitly (optional):
 
 ```bash
