@@ -4853,6 +4853,41 @@ def workflow_list():
         console.print()
 
 
+def _is_loopback_host(hostname: str) -> bool:
+    """Check if a hostname is a loopback address."""
+    from ipaddress import ip_address
+
+    if hostname == "localhost":
+        return True
+    try:
+        return ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_url_scheme(url: str) -> None:
+    """Raise ValueError if URL is not HTTPS (or HTTP for localhost)."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    if parsed.scheme != "https" and not (parsed.scheme == "http" and _is_loopback_host(host)):
+        raise ValueError(f"Non-HTTPS URL not allowed: {url}")
+
+
+def _download_validated(source_url: str, destination: Path) -> None:
+    """Download a URL to *destination*, validating HTTPS on redirects."""
+    from urllib.request import urlopen  # noqa: S310
+
+    with urlopen(source_url, timeout=30) as resp:  # noqa: S310
+        final_url = resp.geturl()
+        try:
+            _validate_url_scheme(final_url)
+        except ValueError:
+            raise ValueError(f"Redirected to non-HTTPS: {final_url}")
+        destination.write_bytes(resp.read())
+
+
 @workflow_app.command("add")
 def workflow_add(
     source: Optional[str] = typer.Argument(None, help="Workflow ID, URL, or local path"),
@@ -4936,19 +4971,9 @@ def workflow_add(
 
     # --from: install from custom URL
     if from_url:
-        from ipaddress import ip_address
-        from urllib.parse import urlparse
-        from urllib.request import urlopen  # noqa: S310
-
-        parsed_from = urlparse(from_url)
-        from_host = parsed_from.hostname or ""
-        is_lb = from_host == "localhost"
-        if not is_lb:
-            try:
-                is_lb = ip_address(from_host).is_loopback
-            except ValueError:
-                pass
-        if parsed_from.scheme != "https" and not (parsed_from.scheme == "http" and is_lb):
+        try:
+            _validate_url_scheme(from_url)
+        except ValueError:
             console.print("[red]Error:[/red] URL must use HTTPS for security.")
             console.print("HTTP is only allowed for localhost URLs.")
             raise typer.Exit(1)
@@ -4958,22 +4983,9 @@ def workflow_add(
 
         import tempfile
         try:
-            with urlopen(from_url, timeout=30) as resp:  # noqa: S310
-                final_url = resp.geturl()
-                final_parsed = urlparse(final_url)
-                final_host = final_parsed.hostname or ""
-                final_lb = final_host == "localhost"
-                if not final_lb:
-                    try:
-                        final_lb = ip_address(final_host).is_loopback
-                    except ValueError:
-                        pass
-                if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
-                    console.print(f"[red]Error:[/red] URL redirected to non-HTTPS: {final_url}")
-                    raise typer.Exit(1)
-                with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
-                    tmp.write(resp.read())
-                    tmp_path = Path(tmp.name)
+            with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
+                tmp_path = Path(tmp.name)
+            _download_validated(from_url, tmp_path)
         except typer.Exit:
             raise
         except Exception as exc:
@@ -4987,42 +4999,17 @@ def workflow_add(
 
     # Try as URL (http/https)
     if source.startswith("http://") or source.startswith("https://"):
-        from ipaddress import ip_address
-        from urllib.parse import urlparse
-        from urllib.request import urlopen  # noqa: S310
-
-        parsed_src = urlparse(source)
-        src_host = parsed_src.hostname or ""
-        src_loopback = src_host == "localhost"
-        if not src_loopback:
-            try:
-                src_loopback = ip_address(src_host).is_loopback
-            except ValueError:
-                # Host is not an IP literal (e.g., a DNS name); keep default non-loopback.
-                pass
-        if parsed_src.scheme != "https" and not (parsed_src.scheme == "http" and src_loopback):
+        try:
+            _validate_url_scheme(source)
+        except ValueError:
             console.print("[red]Error:[/red] Only HTTPS URLs are allowed, except HTTP for localhost.")
             raise typer.Exit(1)
 
         import tempfile
         try:
-            with urlopen(source, timeout=30) as resp:  # noqa: S310
-                final_url = resp.geturl()
-                final_parsed = urlparse(final_url)
-                final_host = final_parsed.hostname or ""
-                final_lb = final_host == "localhost"
-                if not final_lb:
-                    try:
-                        final_lb = ip_address(final_host).is_loopback
-                    except ValueError:
-                        # Redirect host is not an IP literal; keep loopback as determined above.
-                        pass
-                if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
-                    console.print(f"[red]Error:[/red] URL redirected to non-HTTPS: {final_url}")
-                    raise typer.Exit(1)
-                with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
-                    tmp.write(resp.read())
-                    tmp_path = Path(tmp.name)
+            with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
+                tmp_path = Path(tmp.name)
+            _download_validated(source, tmp_path)
         except typer.Exit:
             raise
         except Exception as exc:
@@ -5071,21 +5058,9 @@ def workflow_add(
         raise typer.Exit(1)
 
     # Validate URL scheme (HTTPS required, HTTP allowed for localhost only)
-    from ipaddress import ip_address
-    from urllib.parse import urlparse
-
-    parsed_url = urlparse(workflow_url)
-    url_host = parsed_url.hostname or ""
-    is_loopback = False
-    if url_host == "localhost":
-        is_loopback = True
-    else:
-        try:
-            is_loopback = ip_address(url_host).is_loopback
-        except ValueError:
-            # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
-            pass
-    if parsed_url.scheme != "https" and not (parsed_url.scheme == "http" and is_loopback):
+    try:
+        _validate_url_scheme(workflow_url)
+    except ValueError:
         console.print(
             f"[red]Error:[/red] Workflow '{source}' has an invalid install URL. "
             "Only HTTPS URLs are allowed, except HTTP for localhost/loopback."
@@ -5102,30 +5077,8 @@ def workflow_add(
     workflow_file = workflow_dir / "workflow.yml"
 
     try:
-        from urllib.request import urlopen  # noqa: S310 — URL comes from catalog
-
         workflow_dir.mkdir(parents=True, exist_ok=True)
-        with urlopen(workflow_url, timeout=30) as response:  # noqa: S310
-            # Validate final URL after redirects
-            final_url = response.geturl()
-            final_parsed = urlparse(final_url)
-            final_host = final_parsed.hostname or ""
-            final_loopback = final_host == "localhost"
-            if not final_loopback:
-                try:
-                    final_loopback = ip_address(final_host).is_loopback
-                except ValueError:
-                    # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
-                    pass
-            if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_loopback):
-                if workflow_dir.exists():
-                    import shutil
-                    shutil.rmtree(workflow_dir, ignore_errors=True)
-                console.print(
-                    f"[red]Error:[/red] Workflow '{source}' redirected to non-HTTPS URL: {final_url}"
-                )
-                raise typer.Exit(1)
-            workflow_file.write_bytes(response.read())
+        _download_validated(workflow_url, workflow_file)
     except Exception as exc:
         if workflow_dir.exists():
             import shutil
@@ -5352,6 +5305,9 @@ def workflow_update(
     updates_available = []
     for wf_id in workflows_to_update:
         metadata = installed.get(wf_id, {})
+        if not isinstance(metadata, dict):
+            console.print(f"⚠  {wf_id}: Malformed workflow registry entry (skipping)")
+            continue
         installed_ver_str = metadata.get("version", "0.0.0")
         try:
             installed_version = pkg_version.Version(installed_ver_str)
@@ -5416,43 +5372,27 @@ def workflow_update(
 
         console.print(f"📦 Updating {update['name']}...")
 
-        from ipaddress import ip_address
-        from urllib.parse import urlparse
-        from urllib.request import urlopen  # noqa: S310
-
-        parsed_url = urlparse(wf_url)
-        url_host = parsed_url.hostname or ""
-        is_loopback = url_host == "localhost"
-        if not is_loopback:
-            try:
-                is_loopback = ip_address(url_host).is_loopback
-            except ValueError:
-                pass
-        if parsed_url.scheme != "https" and not (parsed_url.scheme == "http" and is_loopback):
+        try:
+            _validate_url_scheme(wf_url)
+        except ValueError:
             console.print(f"⚠  {wf_id}: Invalid URL scheme (skipping)")
             continue
 
         wf_dir = workflows_dir / wf_id
+        # Validate that wf_id is a safe directory name (no path traversal)
+        try:
+            wf_dir.resolve().relative_to(workflows_dir.resolve())
+        except ValueError:
+            console.print(f"⚠  {wf_id}: Invalid workflow ID (skipping)")
+            continue
         try:
             # Download and validate in a temporary directory so failures do not
             # leave a partially-created workflow directory behind.
             with tempfile.TemporaryDirectory(prefix=f"{wf_id}-", dir=workflows_dir) as tmp_dir:
                 staged_dir = Path(tmp_dir) / wf_id
                 staged_dir.mkdir(parents=True, exist_ok=True)
-                with urlopen(wf_url, timeout=30) as resp:  # noqa: S310
-                    final_url = resp.geturl()
-                    final_parsed = urlparse(final_url)
-                    final_host = final_parsed.hostname or ""
-                    final_lb = final_host == "localhost"
-                    if not final_lb:
-                        try:
-                            final_lb = ip_address(final_host).is_loopback
-                        except ValueError:
-                            pass
-                    if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
-                        raise ValueError(f"Redirected to non-HTTPS: {final_url}")
-                    wf_file = staged_dir / "workflow.yml"
-                    wf_file.write_bytes(resp.read())
+                wf_file = staged_dir / "workflow.yml"
+                _download_validated(wf_url, wf_file)
 
                 # Validate staged contents before replacing the live workflow
                 definition = WorkflowDefinition.from_yaml(wf_file)

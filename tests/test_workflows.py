@@ -2063,3 +2063,64 @@ class TestWorkflowCLI:
         monkeypatch.chdir(project_dir)
         result = runner.invoke(app, ["workflow", "add", "--dev", "--from", "https://example.com/wf.yml"])
         assert result.exit_code != 0
+
+    def test_update_success_path(self, project_dir, monkeypatch):
+        """Test workflow update happy path: download, validate, swap, registry update."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        runner = CliRunner()
+        monkeypatch.chdir(project_dir)
+
+        # Pre-install a workflow
+        registry = WorkflowRegistry(project_dir)
+        registry.add("test-wf", {"name": "Test WF", "version": "1.0.0", "source": "catalog"})
+
+        # Create the existing workflow directory
+        wf_dir = project_dir / ".specify" / "workflows" / "test-wf"
+        wf_dir.mkdir(parents=True, exist_ok=True)
+        (wf_dir / "workflow.yml").write_text(
+            'schema_version: "1.0"\nworkflow:\n  id: test-wf\n  name: Test WF\n  version: "1.0.0"\nsteps:\n  - id: step1\n    type: shell\n    run: "echo hello"\n'
+        )
+
+        # Prepare updated workflow YAML
+        updated_yaml = (
+            'schema_version: "1.0"\nworkflow:\n  id: test-wf\n  name: Test WF Updated\n  version: "2.0.0"\n'
+            'steps:\n  - id: step1\n    type: shell\n    run: "echo hello"\n'
+        )
+
+        # Mock catalog to report v2.0.0 available
+        mock_cat_info = {
+            "name": "Test WF",
+            "version": "2.0.0",
+            "url": "https://example.com/test-wf/workflow.yml",
+            "_install_allowed": True,
+            "_catalog_name": "default",
+        }
+
+        with patch("specify_cli.workflows.catalog.WorkflowCatalog") as MockCatalog, \
+             patch("specify_cli._download_validated") as mock_download:
+
+            mock_instance = MagicMock()
+            mock_instance.get_workflow_info.return_value = mock_cat_info
+            MockCatalog.return_value = mock_instance
+
+            def fake_download(url, dest):
+                dest.write_text(updated_yaml)
+            mock_download.side_effect = fake_download
+
+            result = runner.invoke(app, ["workflow", "update", "test-wf"], input="y\n")
+
+        assert result.exit_code == 0, result.output
+        assert "2.0.0" in result.output
+
+        # Verify registry was updated
+        registry2 = WorkflowRegistry(project_dir)
+        entry = registry2.get("test-wf")
+        assert entry["version"] == "2.0.0"
+
+        # Verify workflow file was swapped
+        new_content = (wf_dir / "workflow.yml").read_text()
+        assert "2.0.0" in new_content
