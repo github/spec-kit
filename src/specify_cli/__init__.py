@@ -4687,6 +4687,14 @@ def workflow_run(
         console.print(f"[red]Error:[/red] Invalid workflow: {exc}")
         raise typer.Exit(1)
 
+    # Also check by loaded definition ID (covers file-path invocations)
+    if definition.id and definition.id != source:
+        wf_meta_by_id = wf_registry.get(definition.id)
+        if isinstance(wf_meta_by_id, dict) and not wf_meta_by_id.get("enabled", True):
+            console.print(f"[red]Error:[/red] Workflow '{definition.id}' is disabled")
+            console.print(f"\nTo re-enable: specify workflow enable {definition.id}")
+            raise typer.Exit(1)
+
     # Validate
     errors = engine.validate(definition)
     if errors:
@@ -5097,8 +5105,8 @@ def workflow_add(
 
     workflow_dir = workflows_dir / source
     # Validate workflow ID format and path safety
-    import re as _re
-    if not _re.match(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$", source):
+    from .workflows.engine import _ID_PATTERN as _WORKFLOW_ID_PATTERN
+    if not _WORKFLOW_ID_PATTERN.fullmatch(source):
         console.print(f"[red]Error:[/red] Invalid workflow ID: {source!r}")
         raise typer.Exit(1)
     try:
@@ -5412,8 +5420,8 @@ def workflow_update(
 
         wf_dir = workflows_dir / wf_id
         # Validate workflow ID format and path safety
-        import re as _re
-        if not _re.match(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$", wf_id):
+        from .workflows.engine import _ID_PATTERN as _WORKFLOW_ID_PATTERN
+        if not _WORKFLOW_ID_PATTERN.fullmatch(wf_id):
             console.print(f"⚠  {wf_id}: Invalid workflow ID format (skipping)")
             continue
         try:
@@ -5487,6 +5495,8 @@ def workflow_update(
                     except OSError:
                         pass
                     registry_snapshot = None
+                    # Reload in-memory state from restored file
+                    registry.data = registry._load()
                 # Restore workflow from backup
                 if backup_dir and backup_dir.exists():
                     if wf_dir.exists():
