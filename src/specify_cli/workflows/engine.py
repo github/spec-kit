@@ -82,6 +82,11 @@ class WorkflowDefinition:
 # ID format: lowercase alphanumeric with hyphens
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
 
+
+def is_valid_workflow_id(workflow_id: str) -> bool:
+    """Return True if *workflow_id* matches the allowed ID format."""
+    return bool(_ID_PATTERN.fullmatch(workflow_id))
+
 # Valid step types (matching STEP_REGISTRY keys)
 def _get_valid_step_types() -> set[str]:
     """Return valid step types from the registry, with a built-in fallback."""

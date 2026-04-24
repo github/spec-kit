@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -72,20 +73,51 @@ class WorkflowRegistry:
 
     def _load(self) -> dict[str, Any]:
         """Load registry from disk or create default."""
+        default = {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, encoding="utf-8") as f:
-                    return json.load(f)
+                    data = json.load(f)
             except (json.JSONDecodeError, ValueError):
-                # Corrupted registry file — reset to default
-                return {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
-        return {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
+                return default
+            if not isinstance(data, dict):
+                return default
+            # Normalize 'workflows' to a dict in case the file is corrupted
+            if not isinstance(data.get("workflows"), dict):
+                data["workflows"] = {}
+            return data
+        return default
 
     def save(self) -> None:
-        """Persist registry to disk."""
+        """Persist registry to disk atomically (write to temp, then rename)."""
         self.workflows_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.registry_path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+
+        # Capture existing file permissions to preserve after replace
+        existing_stat = None
+        if self.registry_path.exists():
+            try:
+                existing_stat = self.registry_path.stat()
+            except OSError:
+                pass
+
+        fd, tmp_path = tempfile.mkstemp(
+            suffix=".json", dir=self.workflows_dir
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=2)
+            if existing_stat is not None:
+                try:
+                    os.chmod(tmp_path, existing_stat.st_mode & 0o7777)
+                except OSError:
+                    pass
+            os.replace(tmp_path, self.registry_path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
     def add(self, workflow_id: str, metadata: dict[str, Any]) -> None:
         """Add or update an installed workflow entry."""
@@ -106,6 +138,42 @@ class WorkflowRegistry:
             self.save()
             return True
         return False
+
+    def update(self, workflow_id: str, fields: dict[str, Any]) -> None:
+        """Update specific fields on an installed workflow entry.
+
+        Raises:
+            KeyError: If the workflow is not installed.
+        """
+        from datetime import datetime, timezone
+
+        if workflow_id not in self.data["workflows"]:
+            raise KeyError(f"Workflow '{workflow_id}' is not installed")
+
+        existing = self.data["workflows"][workflow_id]
+        if not isinstance(existing, dict):
+            now = datetime.now(timezone.utc).isoformat()
+            repaired = dict(fields)
+            repaired.pop("installed_at", None)
+            repaired.setdefault("installed_at", now)
+            repaired["updated_at"] = now
+            self.data["workflows"][workflow_id] = repaired
+            self.save()
+            return
+        installed_at = existing.get("installed_at")
+
+        import copy
+        safe_fields = copy.deepcopy(fields)
+        safe_fields.pop("installed_at", None)  # always preserve original
+        now = datetime.now(timezone.utc).isoformat()
+        existing.update(safe_fields)
+        # Preserve installed_at only if it's a valid string; otherwise reset
+        if isinstance(installed_at, str) and installed_at:
+            existing["installed_at"] = installed_at
+        else:
+            existing["installed_at"] = now
+        existing["updated_at"] = now
+        self.save()
 
     def get(self, workflow_id: str) -> dict[str, Any] | None:
         """Get metadata for an installed workflow."""
@@ -412,6 +480,7 @@ class WorkflowCatalog:
         self,
         query: str | None = None,
         tag: str | None = None,
+        author: str | None = None,
     ) -> list[dict[str, Any]]:
         """Search workflows across all configured catalogs."""
         merged = self._get_merged_workflows()
@@ -419,6 +488,11 @@ class WorkflowCatalog:
 
         for wf_id, wf_data in merged.items():
             wf_data.setdefault("id", wf_id)
+            if author:
+                raw_author = wf_data.get("author", "")
+                normalized_author = raw_author if isinstance(raw_author, str) else ""
+                if normalized_author.lower() != author.lower():
+                    continue
             if query:
                 q = query.lower()
                 searchable = " ".join(
