@@ -94,7 +94,7 @@ uv pip install -e .
 # Ensure the `specify` binary in this environment points at your working tree so the agent runs the branch you're testing.
 
 # Initialize a test project using your local changes
-uv run specify init <temp-dir>/speckit-test --ai <agent> --offline
+uv run specify init <temp-dir>/speckit-test --integration <agent> --offline
 cd <temp-dir>/speckit-test
 
 # Open in your agent

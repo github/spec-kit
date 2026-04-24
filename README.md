@@ -81,9 +81,9 @@ And use the tool directly:
 specify init <PROJECT_NAME>
 
 # Or initialize in existing project
-specify init . --ai copilot
+specify init . --integration copilot
 # or
-specify init --here --ai copilot
+specify init --here --integration copilot
 
 # Check installed tools
 specify check
@@ -105,9 +105,9 @@ Run directly without installing:
 uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <PROJECT_NAME>
 
 # Or initialize in existing project
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init . --ai copilot
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init . --integration copilot
 # or
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here --ai copilot
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here --integration copilot
 ```
 
 **Benefits of persistent installation:**
@@ -302,7 +302,7 @@ Run `specify integration list` to see all available integrations in your install
 
 ## Available Slash Commands
 
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development. If you pass `--ai <agent> --ai-skills`, Spec Kit installs agent skills instead of slash-command prompt files; `--ai-skills` requires `--ai`.
+After running `specify init`, your AI coding agent will have access to these slash commands for structured development. If you pass `--integration <agent> --integration-options="--skills"`, Spec Kit installs agent skills instead of slash-command prompt files.
 
 #### Core Commands
 
@@ -478,29 +478,29 @@ specify init --here --force
 You will be prompted to select the AI agent you are using. You can also proactively specify it directly in the terminal:
 
 ```bash
-specify init <project_name> --ai copilot
-specify init <project_name> --ai gemini
-specify init <project_name> --ai copilot
+specify init <project_name> --integration copilot
+specify init <project_name> --integration gemini
+specify init <project_name> --integration copilot
 
 # Or in current directory:
-specify init . --ai copilot
-specify init . --ai codex --ai-skills
+specify init . --integration copilot
+specify init . --integration codex --integration-options="--skills"
 
 # or use --here flag
-specify init --here --ai copilot
-specify init --here --ai codex --ai-skills
+specify init --here --integration copilot
+specify init --here --integration codex --integration-options="--skills"
 
 # Force merge into a non-empty current directory
-specify init . --force --ai copilot
+specify init . --force --integration copilot
 
 # or
-specify init --here --force --ai copilot
+specify init --here --force --integration copilot
 ```
 
 The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, Qoder CLI, Tabnine CLI, Kiro CLI, Pi, Forge, Goose, or Mistral Vibe installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
-specify init <project_name> --ai copilot --ignore-agent-tools
+specify init <project_name> --integration copilot --ignore-agent-tools
 ```
 
 ### **STEP 1:** Establish project principles

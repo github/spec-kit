@@ -10,7 +10,7 @@
 |----------------|---------|-------------|
 | **CLI Tool Only** | `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@vX.Y.Z` | Get latest CLI features without touching project files |
 | **CLI Tool Only (pipx)** | `pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z` | Reinstall/upgrade a pipx-installed CLI to a specific release |
-| **Project Files** | `specify init --here --force --ai <your-agent>` | Update slash commands, templates, and scripts in your project |
+| **Project Files** | `specify init --here --force --integration <your-agent>` | Update slash commands, templates, and scripts in your project |
 | **Both** | Run CLI upgrade, then project update | Recommended for major version updates |
 
 ---
@@ -32,7 +32,7 @@ uv tool install specify-cli --force --from git+https://github.com/github/spec-ki
 Specify the desired release tag:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here --ai copilot
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here --integration copilot
 ```
 
 ### If you installed with `pipx`
@@ -82,7 +82,7 @@ The `specs/` directory is completely excluded from template packages and will ne
 Run this inside your project directory:
 
 ```bash
-specify init --here --force --ai <your-agent>
+specify init --here --force --integration <your-agent>
 ```
 
 Replace `<your-agent>` with your AI coding agent. Refer to this list of [Supported AI Coding Agent Integrations](reference/integrations.md)
@@ -90,7 +90,7 @@ Replace `<your-agent>` with your AI coding agent. Refer to this list of [Support
 **Example:**
 
 ```bash
-specify init --here --force --ai copilot
+specify init --here --force --integration copilot
 ```
 
 ### Understanding the `--force` flag
@@ -124,7 +124,7 @@ Without `--force`, shared infrastructure files that already exist are skipped â€
 cp .specify/memory/constitution.md .specify/memory/constitution-backup.md
 
 # 2. Run the upgrade
-specify init --here --force --ai copilot
+specify init --here --force --integration copilot
 
 # 3. Restore your customized constitution
 mv .specify/memory/constitution-backup.md .specify/memory/constitution.md
@@ -182,7 +182,7 @@ Restart your IDE to refresh the command list.
 uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git
 
 # Update project files to get new commands
-specify init --here --force --ai copilot
+specify init --here --force --integration copilot
 
 # Restore your constitution if customized
 git restore .specify/memory/constitution.md
@@ -199,7 +199,7 @@ cp -r .specify/templates /tmp/templates-backup
 uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git
 
 # 3. Update project
-specify init --here --force --ai copilot
+specify init --here --force --integration copilot
 
 # 4. Restore customizations
 mv /tmp/constitution-backup.md .specify/memory/constitution.md
@@ -232,7 +232,7 @@ If you initialized your project with `--no-git`, you can still upgrade:
 cp .specify/memory/constitution.md /tmp/constitution-backup.md
 
 # Run upgrade
-specify init --here --force --ai copilot --no-git
+specify init --here --force --integration copilot --no-git
 
 # Restore customizations
 mv /tmp/constitution-backup.md .specify/memory/constitution.md
@@ -253,13 +253,13 @@ The `--no-git` flag tells Spec Kit to **skip git repository initialization**. Th
 **During initial setup:**
 
 ```bash
-specify init my-project --ai copilot --no-git
+specify init my-project --integration copilot --no-git
 ```
 
 **During upgrade:**
 
 ```bash
-specify init --here --force --ai copilot --no-git
+specify init --here --force --integration copilot --no-git
 ```
 
 ### What `--no-git` does NOT do
@@ -367,7 +367,7 @@ Only Spec Kit infrastructure files:
 - **Use `--force` flag** - Skip this confirmation entirely:
 
   ```bash
-  specify init --here --force --ai copilot
+  specify init --here --force --integration copilot
   ```
 
 **When you see this warning:**

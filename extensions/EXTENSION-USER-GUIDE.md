@@ -189,7 +189,7 @@ Provided commands:
 
 ### Automatic Agent Skill Registration
 
-If your project was initialized with `--ai-skills`, extension commands are **automatically registered as agent skills** during installation. This ensures that extensions are discoverable by agents that use the [agentskills.io](https://agentskills.io) skill specification.
+If your project was initialized with `--integration-options="--skills"`, extension commands are **automatically registered as agent skills** during installation. This ensures that extensions are discoverable by agents that use the [agentskills.io](https://agentskills.io) skill specification.
 
 ```text
 ✓ Extension installed successfully!

@@ -1004,22 +1004,22 @@ def init(
 
     Examples:
         specify init my-project
-        specify init my-project --ai claude
-        specify init my-project --ai copilot --no-git
+        specify init my-project --integration claude
+        specify init my-project --integration copilot --no-git
         specify init --ignore-agent-tools my-project
-        specify init . --ai claude         # Initialize in current directory
+        specify init . --integration claude         # Initialize in current directory
         specify init .                     # Initialize in current directory (interactive AI selection)
-        specify init --here --ai claude    # Alternative syntax for current directory
-        specify init --here --ai codex --ai-skills
-        specify init --here --ai codebuddy
-        specify init --here --ai vibe      # Initialize with Mistral Vibe support
+        specify init --here --integration claude    # Alternative syntax for current directory
+        specify init --here --integration codex --integration-options="--skills"
+        specify init --here --integration codebuddy
+        specify init --here --integration vibe      # Initialize with Mistral Vibe support
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
-        specify init my-project --ai claude   # Claude installs skills by default
-        specify init --here --ai gemini --ai-skills
-        specify init my-project --ai generic --ai-commands-dir .myagent/commands/  # Unsupported agent
+        specify init my-project --integration claude   # Claude installs skills by default
+        specify init --here --integration gemini --integration-options="--skills"
+        specify init my-project --integration generic --integration-options="--commands-dir .myagent/commands/"  # Unsupported agent
         specify init my-project --offline  # Use bundled assets (no network access)
-        specify init my-project --ai claude --preset healthcare-compliance  # With preset
+        specify init my-project --integration claude --preset healthcare-compliance  # With preset
     """
 
     show_banner()
@@ -1029,14 +1029,14 @@ def init(
     if ai_assistant and ai_assistant.startswith("--"):
         console.print(f"[red]Error:[/red] Invalid value for --ai: '{ai_assistant}'")
         console.print("[yellow]Hint:[/yellow] Did you forget to provide a value for --ai?")
-        console.print("[yellow]Example:[/yellow] specify init --ai claude --here")
+        console.print("[yellow]Example:[/yellow] specify init --integration claude --here")
         console.print(f"[yellow]Available agents:[/yellow] {', '.join(AGENT_CONFIG.keys())}")
         raise typer.Exit(1)
 
     if ai_commands_dir and ai_commands_dir.startswith("--"):
         console.print(f"[red]Error:[/red] Invalid value for --ai-commands-dir: '{ai_commands_dir}'")
         console.print("[yellow]Hint:[/yellow] Did you forget to provide a value for --ai-commands-dir?")
-        console.print("[yellow]Example:[/yellow] specify init --ai generic --ai-commands-dir .myagent/commands/")
+        console.print("[yellow]Example:[/yellow] specify init --integration generic --integration-options=\"--commands-dir .myagent/commands/\"")
         raise typer.Exit(1)
 
     if ai_assistant:

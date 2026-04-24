@@ -39,16 +39,16 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init .
 uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here
 ```
 
-### Specify AI Agent
+### Specify Integration
 
 You can proactively specify your AI agent during initialization:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai claude
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai gemini
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai copilot
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai codebuddy
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai pi
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration claude
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration gemini
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration copilot
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration codebuddy
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration pi
 ```
 
 ### Specify Script Type (Shell vs PowerShell)
@@ -73,7 +73,7 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <proje
 If you prefer to get the templates without checking for the right tools:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai claude --ignore-agent-tools
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration claude --ignore-agent-tools
 ```
 
 ## Verification
@@ -131,7 +131,7 @@ pip install --no-index --find-links=./dist specify-cli
 
 ```bash
 # Initialize a project — no GitHub access needed
-specify init my-project --ai claude --offline
+specify init my-project --integration claude --offline
 ```
 
 The `--offline` flag tells the CLI to use the templates, commands, and scripts bundled inside the wheel instead of downloading from GitHub.
