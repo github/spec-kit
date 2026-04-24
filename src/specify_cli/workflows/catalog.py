@@ -140,11 +140,15 @@ class WorkflowRegistry:
         return False
 
     def update(self, workflow_id: str, fields: dict[str, Any]) -> None:
-        """Update specific fields on an installed workflow entry."""
+        """Update specific fields on an installed workflow entry.
+
+        Raises:
+            KeyError: If the workflow is not installed.
+        """
         from datetime import datetime, timezone
 
         if workflow_id not in self.data["workflows"]:
-            return
+            raise KeyError(workflow_id)
 
         existing = self.data["workflows"][workflow_id]
         if not isinstance(existing, dict):

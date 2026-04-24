@@ -4921,14 +4921,18 @@ def _download_validated(source_url: str, destination: Path) -> None:
 
     class _SafeRedirectHandler(HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
+            redirect_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+            if redirect_req is None:
+                return None
+            redirect_url = redirect_req.full_url
             try:
                 _validate_url_scheme(
-                    newurl,
+                    redirect_url,
                     allow_http_loopback=source_allows_http_loopback,
                 )
             except ValueError:
-                raise ValueError(f"Redirected to non-HTTPS: {newurl}")
-            return super().redirect_request(req, fp, code, msg, headers, newurl)
+                raise ValueError(f"Redirected to non-HTTPS: {redirect_url}")
+            return redirect_req
 
     opener = build_opener(_SafeRedirectHandler)
     with opener.open(source_url, timeout=30) as resp:

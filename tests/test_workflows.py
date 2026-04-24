@@ -1661,10 +1661,11 @@ class TestWorkflowRegistry:
 
     def test_update_nonexistent(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowRegistry
+        import pytest
 
         registry = WorkflowRegistry(project_dir)
-        # Should not raise, just no-op
-        registry.update("missing", {"version": "2.0.0"})
+        with pytest.raises(KeyError):
+            registry.update("missing", {"version": "2.0.0"})
         assert registry.get("missing") is None
 
     def test_enable_disable_via_update(self, project_dir):
