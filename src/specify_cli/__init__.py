@@ -5018,19 +5018,20 @@ def workflow_add(
         console.print("Only install workflows from sources you trust.\n")
 
         import tempfile
+        tmp_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
                 tmp_path = Path(tmp.name)
             _download_validated(from_url, tmp_path)
+            _validate_and_install_local(tmp_path, from_url)
         except typer.Exit:
             raise
         except Exception as exc:
             console.print(f"[red]Error:[/red] Failed to download workflow: {exc}")
             raise typer.Exit(1)
-        try:
-            _validate_and_install_local(tmp_path, from_url)
         finally:
-            tmp_path.unlink(missing_ok=True)
+            if tmp_path:
+                tmp_path.unlink(missing_ok=True)
         return
 
     # Try as URL (http/https)
@@ -5042,19 +5043,20 @@ def workflow_add(
             raise typer.Exit(1)
 
         import tempfile
+        tmp_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
                 tmp_path = Path(tmp.name)
             _download_validated(source, tmp_path)
+            _validate_and_install_local(tmp_path, source)
         except typer.Exit:
             raise
         except Exception as exc:
             console.print(f"[red]Error:[/red] Failed to download workflow: {exc}")
             raise typer.Exit(1)
-        try:
-            _validate_and_install_local(tmp_path, source)
         finally:
-            tmp_path.unlink(missing_ok=True)
+            if tmp_path:
+                tmp_path.unlink(missing_ok=True)
         return
 
     # Try as a local file/directory
@@ -5497,11 +5499,14 @@ def workflow_update(
                     registry_snapshot = None
                     # Reload in-memory state from restored file
                     registry.data = registry._load()
-                # Restore workflow from backup
+                # Restore workflow from backup, or remove new dir if no backup existed
                 if backup_dir and backup_dir.exists():
                     if wf_dir.exists():
                         shutil.rmtree(wf_dir)
                     backup_dir.rename(wf_dir)
+                elif wf_dir.exists() and not backup_dir:
+                    # No prior directory existed; remove the newly placed one
+                    shutil.rmtree(wf_dir, ignore_errors=True)
                 raise
             finally:
                 if registry_snapshot and registry_snapshot.exists():
