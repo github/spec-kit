@@ -2061,8 +2061,9 @@ class TestWorkflowCLI:
 
         runner = CliRunner()
         monkeypatch.chdir(project_dir)
-        result = runner.invoke(app, ["workflow", "add", "--dev", "--from", "https://example.com/wf.yml"])
+        result = runner.invoke(app, ["workflow", "add", "--dev"])
         assert result.exit_code != 0
+        assert "--dev requires" in result.output or "path" in result.output.lower()
 
     def test_update_success_path(self, project_dir, monkeypatch):
         """Test workflow update happy path: download, validate, swap, registry update."""

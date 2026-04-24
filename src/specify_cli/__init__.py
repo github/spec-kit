@@ -4908,14 +4908,14 @@ def workflow_add(
     from .workflows.engine import WorkflowDefinition
 
     # Validate source selection and disallow incompatible options
-    if not source and not from_url:
-        console.print("[red]Error:[/red] Provide a workflow ID/URL/path, or use --from <url>")
-        raise typer.Exit(1)
     if dev and from_url:
         console.print("[red]Error:[/red] --dev cannot be combined with --from")
         raise typer.Exit(1)
     if dev and not source:
         console.print("[red]Error:[/red] --dev requires a local workflow path")
+        raise typer.Exit(1)
+    if not source and not from_url:
+        console.print("[red]Error:[/red] Provide a workflow ID/URL/path, or use --from <url>")
         raise typer.Exit(1)
 
     project_root = Path.cwd()
@@ -5399,7 +5399,7 @@ def workflow_update(
             workflows_dir.mkdir(parents=True, exist_ok=True)
             # Download and validate in a temporary directory so failures do not
             # leave a partially-created workflow directory behind.
-            with tempfile.TemporaryDirectory(prefix=f"{wf_id}-", dir=workflows_dir) as tmp_dir:
+            with tempfile.TemporaryDirectory(prefix="wf-update-", dir=workflows_dir) as tmp_dir:
                 staged_dir = Path(tmp_dir) / wf_id
                 staged_dir.mkdir(parents=True, exist_ok=True)
                 wf_file = staged_dir / "workflow.yml"
