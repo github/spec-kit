@@ -25,7 +25,13 @@ class TestVibeUserInvocable:
         assert skill_files
         for f in skill_files:
             content = f.read_text(encoding="utf-8")
+            assert content.startswith("---"), (
+                f"{f.parent.name}/SKILL.md is missing the opening frontmatter delimiter '---'"
+            )
             parts = content.split("---", 2)
+            assert len(parts) >= 3, (
+                f"{f.parent.name}/SKILL.md has malformed frontmatter; expected a '--- ... ---' block"
+            )
             parsed = yaml.safe_load(parts[1])
             assert parsed.get("user-invocable") is True, (
                 f"{f.parent.name}/SKILL.md is missing user-invocable: true in frontmatter"
