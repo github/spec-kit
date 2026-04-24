@@ -157,9 +157,12 @@ class WorkflowRegistry:
             return
         installed_at = existing.get("installed_at")
 
-        existing.update(fields)
+        import copy
+        existing.update(copy.deepcopy(fields))
         if installed_at is not None and "installed_at" not in fields:
             existing["installed_at"] = installed_at
+        if "installed_at" not in existing:
+            existing["installed_at"] = datetime.now(timezone.utc).isoformat()
         existing["updated_at"] = datetime.now(timezone.utc).isoformat()
         self.save()
 
