@@ -1523,7 +1523,8 @@ def init(
     trae_skill_mode = selected_ai == "trae"
     cursor_agent_skill_mode = selected_ai == "cursor-agent" and (ai_skills or _is_skills_integration)
     copilot_skill_mode = selected_ai == "copilot" and _is_skills_integration
-    native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode or trae_skill_mode or cursor_agent_skill_mode or copilot_skill_mode
+    devin_skill_mode = selected_ai == "devin"
+    native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode or trae_skill_mode or cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode
 
     if codex_skill_mode and not ai_skills:
         # Integration path installed skills; show the helpful notice
@@ -1535,6 +1536,9 @@ def init(
     if cursor_agent_skill_mode and not ai_skills:
         steps_lines.append(f"{step_num}. Start Cursor Agent in this project directory; spec-kit skills were installed to [cyan].cursor/skills[/cyan]")
         step_num += 1
+    if devin_skill_mode:
+        steps_lines.append(f"{step_num}. Start Devin in this project directory; spec-kit skills were installed to [cyan].devin/skills[/cyan]")
+        step_num += 1
     usage_label = "skills" if native_skill_mode else "slash commands"
 
     def _display_cmd(name: str) -> str:
@@ -1544,7 +1548,7 @@ def init(
             return f"/speckit-{name}"
         if kimi_skill_mode:
             return f"/skill:speckit-{name}"
-        if cursor_agent_skill_mode or copilot_skill_mode:
+        if cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode:
             return f"/speckit-{name}"
         return f"/speckit.{name}"
 
