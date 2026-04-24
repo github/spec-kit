@@ -5030,7 +5030,7 @@ def workflow_add(
             _validate_url_scheme(from_url)
         except ValueError as exc:
             console.print(f"[red]Error:[/red] Invalid URL: {exc}")
-            console.print("URL must use HTTPS for security. HTTP is only allowed for localhost URLs.")
+            console.print("URL must use HTTPS for security. HTTP is only allowed for localhost/loopback URLs.")
             raise typer.Exit(1)
 
         console.print("[yellow]Warning:[/yellow] Installing from external URL.")
@@ -5058,7 +5058,7 @@ def workflow_add(
         try:
             _validate_url_scheme(source)
         except ValueError:
-            console.print("[red]Error:[/red] Only HTTPS URLs are allowed, except HTTP for localhost.")
+            console.print("[red]Error:[/red] Only HTTPS URLs are allowed, except HTTP for localhost/loopback.")
             raise typer.Exit(1)
 
         import tempfile
