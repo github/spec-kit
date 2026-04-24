@@ -88,10 +88,24 @@ class WorkflowRegistry:
         return default
 
     def save(self) -> None:
-        """Persist registry to disk."""
+        """Persist registry to disk atomically (write to temp, then rename)."""
+        import os
+        import tempfile as _tempfile
+
         self.workflows_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.registry_path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+        fd, tmp_path = _tempfile.mkstemp(
+            suffix=".json", dir=self.workflows_dir
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=2)
+            os.replace(tmp_path, self.registry_path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
     def add(self, workflow_id: str, metadata: dict[str, Any]) -> None:
         """Add or update an installed workflow entry."""

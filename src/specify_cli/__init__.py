@@ -5442,10 +5442,12 @@ def workflow_update(
                 if errors:
                     raise ValueError(f"Validation failed: {'; '.join(errors)}")
 
-                # Atomic swap: move old to backup, move staged in, remove backup on success
+                # Atomic swap: move old to hidden backup, move staged in
                 backup_dir = None
                 if wf_dir.exists():
-                    backup_dir = wf_dir.with_name(f"{wf_id}.bak")
+                    backup_parent = workflows_dir / ".backup"
+                    backup_parent.mkdir(parents=True, exist_ok=True)
+                    backup_dir = backup_parent / wf_id
                     if backup_dir.exists():
                         shutil.rmtree(backup_dir)
                     wf_dir.rename(backup_dir)
@@ -5459,26 +5461,57 @@ def workflow_update(
                         backup_dir.rename(wf_dir)
                     raise
 
-            # Update registry (backup still exists until this succeeds)
+            # Snapshot registry file, then update; restore both on failure
+            import os
+            registry_file = registry.registry_path
+            registry_snapshot = None
             try:
+                if registry_file.exists():
+                    fd, snap = tempfile.mkstemp(
+                        prefix="registry-", suffix=".json", dir=workflows_dir
+                    )
+                    os.close(fd)
+                    registry_snapshot = Path(snap)
+                    shutil.copy2(registry_file, registry_snapshot)
+
                 registry.update(wf_id, {
                     "version": update["available"],
                     "name": definition.name or update["name"],
                     "description": definition.description or "",
                 })
             except BaseException:
-                # Restore from backup if registry update fails (including KeyboardInterrupt)
+                # Restore registry snapshot
+                if registry_snapshot and registry_snapshot.exists():
+                    try:
+                        os.replace(registry_snapshot, registry_file)
+                    except OSError:
+                        pass
+                    registry_snapshot = None
+                # Restore workflow from backup
                 if backup_dir and backup_dir.exists():
                     if wf_dir.exists():
                         shutil.rmtree(wf_dir)
                     backup_dir.rename(wf_dir)
                 raise
+            finally:
+                if registry_snapshot and registry_snapshot.exists():
+                    try:
+                        registry_snapshot.unlink()
+                    except OSError:
+                        pass
             # Clean up backup after fully successful update
             if backup_dir and backup_dir.exists():
                 try:
                     shutil.rmtree(backup_dir)
                 except OSError as cleanup_exc:
                     console.print(f"  [yellow]⚠[/yellow] {wf_id}: Updated successfully, but failed to remove backup: {cleanup_exc}")
+            # Clean up empty .backup directory
+            backup_parent = workflows_dir / ".backup"
+            if backup_parent.exists():
+                try:
+                    backup_parent.rmdir()  # only succeeds if empty
+                except OSError:
+                    pass
             console.print(f"  [green]✓[/green] {wf_id}: {update['installed']} → {update['available']}")
 
         except Exception as exc:
