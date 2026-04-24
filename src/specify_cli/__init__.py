@@ -4893,17 +4893,22 @@ def _validate_url_scheme(url: str) -> None:
 
 
 def _download_validated(source_url: str, destination: Path) -> None:
-    """Download a URL to *destination*, validating HTTPS before and after redirects."""
+    """Download a URL to *destination*, rejecting non-HTTPS redirects before following them."""
     import shutil as _shutil
-    from urllib.request import urlopen  # noqa: S310
+    from urllib.request import build_opener, HTTPRedirectHandler, Request  # noqa: S310
 
     _validate_url_scheme(source_url)
-    with urlopen(source_url, timeout=30) as resp:  # noqa: S310
-        final_url = resp.geturl()
-        try:
-            _validate_url_scheme(final_url)
-        except ValueError:
-            raise ValueError(f"Redirected to non-HTTPS: {final_url}")
+
+    class _SafeRedirectHandler(HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            try:
+                _validate_url_scheme(newurl)
+            except ValueError:
+                raise ValueError(f"Redirected to non-HTTPS: {newurl}")
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    opener = build_opener(_SafeRedirectHandler)
+    with opener.open(source_url, timeout=30) as resp:
         with destination.open("wb") as dest_file:
             _shutil.copyfileobj(resp, dest_file)
 
@@ -5088,7 +5093,11 @@ def workflow_add(
         raise typer.Exit(1)
 
     workflow_dir = workflows_dir / source
-    # Validate that source is a safe directory name (no path traversal)
+    # Validate workflow ID format and path safety
+    import re as _re
+    if not _re.match(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$", source):
+        console.print(f"[red]Error:[/red] Invalid workflow ID: {source!r}")
+        raise typer.Exit(1)
     try:
         workflow_dir.resolve().relative_to(workflows_dir.resolve())
     except ValueError:
@@ -5399,7 +5408,11 @@ def workflow_update(
             continue
 
         wf_dir = workflows_dir / wf_id
-        # Validate that wf_id is a safe directory name (no path traversal)
+        # Validate workflow ID format and path safety
+        import re as _re
+        if not _re.match(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$", wf_id):
+            console.print(f"⚠  {wf_id}: Invalid workflow ID format (skipping)")
+            continue
         try:
             wf_dir.resolve().relative_to(workflows_dir.resolve())
         except ValueError:
