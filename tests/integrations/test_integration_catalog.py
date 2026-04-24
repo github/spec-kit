@@ -881,6 +881,42 @@ class TestCatalogSourceManagement:
         # max(implicit [1, 2]) + 1 == 3
         assert new_entry["priority"] == 3
 
+    def test_add_catalog_strips_whitespace_in_url(self, tmp_path, monkeypatch):
+        """Whitespace around the incoming URL should be normalized before write."""
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("  https://a.example.com/catalog.json\n", name="a")
+
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert data["catalogs"][0]["url"] == "https://a.example.com/catalog.json"
+
+    def test_add_catalog_rejects_whitespace_only_duplicate(self, tmp_path, monkeypatch):
+        """A second add with only whitespace differences must be rejected as a duplicate."""
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://a.example.com/catalog.json", name="a")
+        with pytest.raises(IntegrationValidationError, match="already configured"):
+            cat.add_catalog("  https://a.example.com/catalog.json  ")
+
+    def test_remove_catalog_wraps_unlink_oserror(self, tmp_path, monkeypatch):
+        """An OSError from `Path.unlink` surfaces as IntegrationValidationError."""
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://only.example.com/catalog.json", name="only")
+
+        from pathlib import Path as _Path
+
+        def boom(self, *args, **kwargs):
+            raise OSError("simulated unlink failure")
+
+        monkeypatch.setattr(_Path, "unlink", boom)
+
+        with pytest.raises(
+            IntegrationValidationError, match="Failed to delete catalog config"
+        ):
+            cat.remove_catalog(0)
+
     def test_remove_catalog_empty_list_gives_clear_error(self, tmp_path, monkeypatch):
         """Hand-edited empty `catalogs:` produces a clear error, not '0--1'."""
         self._isolate(tmp_path, monkeypatch)
