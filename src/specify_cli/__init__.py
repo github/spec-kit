@@ -1092,7 +1092,7 @@ def init(
         console.print(
             "[yellow]⚠️  --no-git is deprecated and will be removed in v0.10.0.[/yellow]\n"
             "[yellow]The git extension will no longer be enabled by default "
-            "— use --extension git to opt in.[/yellow]"
+            "— use the [bold]specify extension[/bold] commands to install or enable the git extension if needed.[/yellow]"
         )
 
     if project_name == ".":

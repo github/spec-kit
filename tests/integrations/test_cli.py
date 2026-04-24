@@ -446,6 +446,31 @@ class TestGitExtensionAutoInstall:
         ext_dir = project / ".specify" / "extensions" / "git"
         assert not ext_dir.exists(), "git extension should not be installed with --no-git"
 
+    def test_no_git_emits_deprecation_warning(self, tmp_path):
+        """Using --no-git emits a visible deprecation warning."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "no-git-warn"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here", "--ai", "claude", "--script", "sh",
+                "--no-git", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 0, result.output
+        assert "--no-git" in normalized_output
+        assert "deprecated" in normalized_output
+        assert "0.10.0" in normalized_output
+        assert "specify extension" in normalized_output
+
     def test_git_extension_commands_registered(self, tmp_path):
         """Git extension commands are registered with the agent during init."""
         from typer.testing import CliRunner
