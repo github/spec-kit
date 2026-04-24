@@ -4888,29 +4888,44 @@ def _is_loopback_host(hostname: str) -> bool:
         return False
 
 
-def _validate_url_scheme(url: str) -> None:
-    """Raise ValueError if URL is not HTTPS (or HTTP for localhost)."""
+def _validate_url_scheme(url: str, *, allow_http_loopback: bool = True) -> None:
+    """Raise ValueError if URL is not HTTPS, optionally allowing HTTP loopback URLs."""
     from urllib.parse import urlparse
 
     parsed = urlparse(url)
     if not parsed.hostname:
         raise ValueError(f"URL has no hostname: {url}")
     host = parsed.hostname
-    if parsed.scheme != "https" and not (parsed.scheme == "http" and _is_loopback_host(host)):
-        raise ValueError(f"Non-HTTPS URL not allowed: {url}")
+    if parsed.scheme == "https":
+        return
+    if allow_http_loopback and parsed.scheme == "http" and _is_loopback_host(host):
+        return
+    raise ValueError(f"Non-HTTPS URL not allowed: {url}")
 
 
 def _download_validated(source_url: str, destination: Path) -> None:
-    """Download a URL to *destination*, rejecting non-HTTPS redirects before following them."""
+    """Download a URL to *destination*, rejecting insecure redirects before following them."""
     import shutil as _shutil
+    from urllib.parse import urlparse
     from urllib.request import build_opener, HTTPRedirectHandler  # noqa: S310
 
     _validate_url_scheme(source_url)
 
+    # Only allow HTTP loopback redirects if the source was already HTTP loopback
+    source_parsed = urlparse(source_url)
+    source_allows_http_loopback = (
+        source_parsed.scheme == "http"
+        and source_parsed.hostname is not None
+        and _is_loopback_host(source_parsed.hostname)
+    )
+
     class _SafeRedirectHandler(HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             try:
-                _validate_url_scheme(newurl)
+                _validate_url_scheme(
+                    newurl,
+                    allow_http_loopback=source_allows_http_loopback,
+                )
             except ValueError:
                 raise ValueError(f"Redirected to non-HTTPS: {newurl}")
             return super().redirect_request(req, fp, code, msg, headers, newurl)
@@ -5484,10 +5499,17 @@ def workflow_update(
                     registry_snapshot = Path(snap)
                     shutil.copy2(registry_file, registry_snapshot)
 
+                existing_entry = installed.get(wf_id, {})
+                description = (
+                    definition.description
+                    or update.get("description")
+                    or (existing_entry.get("description", "") if isinstance(existing_entry, dict) else "")
+                )
+
                 registry.update(wf_id, {
                     "version": update["available"],
                     "name": definition.name or update["name"],
-                    "description": definition.description or "",
+                    "description": description,
                 })
             except BaseException:
                 # Restore registry snapshot
