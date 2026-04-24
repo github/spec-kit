@@ -200,8 +200,8 @@ feature_json_matches_feature_dir() {
     [[ -d "$_fd" ]] || return 1
 
     local norm_json norm_active
-    norm_json="$(cd -- "$_fd" 2>/dev/null && pwd)" || return 1
-    norm_active="$(cd -- "$active_feature_dir" 2>/dev/null && pwd)" || return 1
+    norm_json="$(cd -- "$_fd" 2>/dev/null && pwd -P)" || return 1
+    norm_active="$(cd -- "$active_feature_dir" 2>/dev/null && pwd -P)" || return 1
 
     [[ "$norm_json" == "$norm_active" ]]
 }
