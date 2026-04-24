@@ -2028,7 +2028,7 @@ class TestWorkflowCLI:
         monkeypatch.chdir(project_dir)
         result = runner.invoke(app, ["workflow", "add", "--dev", "/nonexistent/path"])
         assert result.exit_code != 0
-        assert "not found" in result.output.lower() or "Error" in result.output
+        assert "not found" in result.output.lower()
 
     def test_list_shows_disabled(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
