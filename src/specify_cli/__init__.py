@@ -4884,9 +4884,10 @@ def _validate_url_scheme(url: str) -> None:
 
 
 def _download_validated(source_url: str, destination: Path) -> None:
-    """Download a URL to *destination*, validating HTTPS on redirects."""
+    """Download a URL to *destination*, validating HTTPS before and after redirects."""
     from urllib.request import urlopen  # noqa: S310
 
+    _validate_url_scheme(source_url)
     with urlopen(source_url, timeout=30) as resp:  # noqa: S310
         final_url = resp.geturl()
         try:
