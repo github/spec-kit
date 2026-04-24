@@ -1645,6 +1645,9 @@ class TestWorkflowRegistry:
         registry = WorkflowRegistry(project_dir)
         registry.add("test-wf", {"name": "Test", "version": "1.0.0"})
 
+        original_entry = registry.get("test-wf")
+        original_installed_at = original_entry["installed_at"]
+
         registry.update("test-wf", {"version": "2.0.0", "enabled": False})
 
         entry = registry.get("test-wf")
@@ -1652,6 +1655,9 @@ class TestWorkflowRegistry:
         assert entry["enabled"] is False
         # Original fields preserved
         assert entry["name"] == "Test"
+        # installed_at preserved, updated_at set
+        assert entry["installed_at"] == original_installed_at
+        assert "updated_at" in entry
 
     def test_update_nonexistent(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowRegistry
@@ -1914,3 +1920,127 @@ steps:
         assert state.status == RunStatus.COMPLETED
         assert "do-plan" in state.step_results
         assert "do-specify" not in state.step_results
+
+
+# ===== CLI Integration Tests =====
+
+
+class TestWorkflowCLI:
+    """CLI integration tests for workflow commands via CliRunner."""
+
+    def test_enable_not_installed(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        monkeypatch.chdir(project_dir)
+        result = runner.invoke(app, ["workflow", "enable", "nonexistent"])
+        assert result.exit_code != 0
+        assert "not installed" in result.output
+
+    def test_disable_not_installed(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        monkeypatch.chdir(project_dir)
+        result = runner.invoke(app, ["workflow", "disable", "nonexistent"])
+        assert result.exit_code != 0
+        assert "not installed" in result.output
+
+    def test_enable_disable_roundtrip(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        runner = CliRunner()
+        monkeypatch.chdir(project_dir)
+
+        # Pre-install a workflow in the registry
+        registry = WorkflowRegistry(project_dir)
+        registry.add("test-wf", {"name": "Test", "version": "1.0.0"})
+
+        # Disable
+        result = runner.invoke(app, ["workflow", "disable", "test-wf"])
+        assert result.exit_code == 0
+        assert "disabled" in result.output
+
+        # Already disabled
+        result = runner.invoke(app, ["workflow", "disable", "test-wf"])
+        assert result.exit_code == 0
+        assert "already disabled" in result.output
+
+        # Enable
+        result = runner.invoke(app, ["workflow", "enable", "test-wf"])
+        assert result.exit_code == 0
+        assert "enabled" in result.output
+
+        # Already enabled
+        result = runner.invoke(app, ["workflow", "enable", "test-wf"])
+        assert result.exit_code == 0
+        assert "already enabled" in result.output
+
+    def test_update_no_project(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(app, ["workflow", "update"])
+        assert result.exit_code != 0
+        assert "Not a spec-kit project" in result.output
+
+    def test_update_not_installed(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        monkeypatch.chdir(project_dir)
+        result = runner.invoke(app, ["workflow", "update", "nonexistent"])
+        assert result.exit_code != 0
+        assert "not installed" in result.output
+
+    def test_add_no_source(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        monkeypatch.chdir(project_dir)
+        result = runner.invoke(app, ["workflow", "add"])
+        assert result.exit_code != 0
+
+    def test_add_from_url_without_source(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        monkeypatch.chdir(project_dir)
+        # --from with non-HTTPS should be rejected with URL scheme error, not missing source
+        result = runner.invoke(app, ["workflow", "add", "--from", "http://evil.example.com/wf.yml"])
+        assert result.exit_code != 0
+        assert "HTTPS" in result.output
+
+    def test_add_dev_missing_path(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        monkeypatch.chdir(project_dir)
+        result = runner.invoke(app, ["workflow", "add", "--dev", "/nonexistent/path"])
+        assert result.exit_code != 0
+        assert "not found" in result.output.lower() or "Error" in result.output
+
+    def test_list_shows_disabled(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        runner = CliRunner()
+        monkeypatch.chdir(project_dir)
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("test-wf", {"name": "Test WF", "version": "1.0.0", "enabled": False})
+
+        result = runner.invoke(app, ["workflow", "list"])
+        assert result.exit_code == 0
+        assert "disabled" in result.output

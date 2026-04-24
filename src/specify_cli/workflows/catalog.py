@@ -109,9 +109,18 @@ class WorkflowRegistry:
 
     def update(self, workflow_id: str, fields: dict[str, Any]) -> None:
         """Update specific fields on an installed workflow entry."""
+        from datetime import datetime, timezone
+
         if workflow_id not in self.data["workflows"]:
             return
-        self.data["workflows"][workflow_id].update(fields)
+
+        existing = self.data["workflows"][workflow_id]
+        installed_at = existing.get("installed_at")
+
+        existing.update(fields)
+        if installed_at is not None and "installed_at" not in fields:
+            existing["installed_at"] = installed_at
+        existing["updated_at"] = datetime.now(timezone.utc).isoformat()
         self.save()
 
     def get(self, workflow_id: str) -> dict[str, Any] | None:
@@ -428,7 +437,9 @@ class WorkflowCatalog:
         for wf_id, wf_data in merged.items():
             wf_data.setdefault("id", wf_id)
             if author:
-                if wf_data.get("author", "").lower() != author.lower():
+                raw_author = wf_data.get("author", "")
+                normalized_author = raw_author if isinstance(raw_author, str) else ""
+                if normalized_author.lower() != author.lower():
                     continue
             if query:
                 q = query.lower()

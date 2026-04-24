@@ -4855,13 +4855,18 @@ def workflow_list():
 
 @workflow_app.command("add")
 def workflow_add(
-    source: str = typer.Argument(..., help="Workflow ID, URL, or local path"),
+    source: Optional[str] = typer.Argument(None, help="Workflow ID, URL, or local path"),
     dev: bool = typer.Option(False, "--dev", help="Install from local directory"),
     from_url: Optional[str] = typer.Option(None, "--from", help="Install from custom URL"),
 ):
     """Install a workflow from catalog, URL, or local path."""
     from .workflows.catalog import WorkflowCatalog, WorkflowRegistry, WorkflowCatalogError
     from .workflows.engine import WorkflowDefinition
+
+    # Validate that at least one source is provided
+    if not source and not from_url:
+        console.print("[red]Error:[/red] Provide a workflow ID/URL/path, or use --from <url>")
+        raise typer.Exit(1)
 
     project_root = Path.cwd()
     specify_dir = project_root / ".specify"
@@ -5304,13 +5309,14 @@ def workflow_info(
 
 @workflow_app.command("update")
 def workflow_update(
-    workflow_id: str = typer.Argument(None, help="Workflow ID to update (or all)"),
+    workflow_id: Optional[str] = typer.Argument(None, help="Workflow ID to update (or all)"),
 ):
     """Update workflow(s) to latest version."""
     from .workflows.catalog import WorkflowCatalog, WorkflowRegistry, WorkflowCatalogError
     from .workflows.engine import WorkflowDefinition, validate_workflow
     from packaging import version as pkg_version
     import shutil
+    import tempfile
 
     project_root = Path.cwd()
     specify_dir = project_root / ".specify"
@@ -5420,37 +5426,41 @@ def workflow_update(
             continue
 
         wf_dir = workflows_dir / wf_id
-        backup_dir = workflows_dir / ".backup" / wf_id
         try:
-            # Backup existing
-            if wf_dir.exists():
-                backup_dir.parent.mkdir(parents=True, exist_ok=True)
-                if backup_dir.exists():
-                    shutil.rmtree(backup_dir)
-                shutil.copytree(wf_dir, backup_dir)
+            # Download and validate in a temporary directory so failures do not
+            # leave a partially-created workflow directory behind.
+            with tempfile.TemporaryDirectory(prefix=f"{wf_id}-", dir=workflows_dir) as tmp_dir:
+                staged_dir = Path(tmp_dir) / wf_id
+                staged_dir.mkdir(parents=True, exist_ok=True)
+                with urlopen(wf_url, timeout=30) as resp:  # noqa: S310
+                    final_url = resp.geturl()
+                    final_parsed = urlparse(final_url)
+                    final_host = final_parsed.hostname or ""
+                    final_lb = final_host == "localhost"
+                    if not final_lb:
+                        try:
+                            final_lb = ip_address(final_host).is_loopback
+                        except ValueError:
+                            pass
+                    if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
+                        raise ValueError(f"Redirected to non-HTTPS: {final_url}")
+                    wf_file = staged_dir / "workflow.yml"
+                    wf_file.write_bytes(resp.read())
 
-            # Download new version
-            wf_dir.mkdir(parents=True, exist_ok=True)
-            with urlopen(wf_url, timeout=30) as resp:  # noqa: S310
-                final_url = resp.geturl()
-                final_parsed = urlparse(final_url)
-                final_host = final_parsed.hostname or ""
-                final_lb = final_host == "localhost"
-                if not final_lb:
-                    try:
-                        final_lb = ip_address(final_host).is_loopback
-                    except ValueError:
-                        pass
-                if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
-                    raise ValueError(f"Redirected to non-HTTPS: {final_url}")
-                wf_file = wf_dir / "workflow.yml"
-                wf_file.write_bytes(resp.read())
+                # Validate staged contents before replacing the live workflow
+                definition = WorkflowDefinition.from_yaml(wf_file)
+                if definition.id != wf_id:
+                    raise ValueError(
+                        f"Workflow ID mismatch: expected '{wf_id}', got '{definition.id}'"
+                    )
+                errors = validate_workflow(definition)
+                if errors:
+                    raise ValueError(f"Validation failed: {'; '.join(errors)}")
 
-            # Validate
-            definition = WorkflowDefinition.from_yaml(wf_file)
-            errors = validate_workflow(definition)
-            if errors:
-                raise ValueError(f"Validation failed: {'; '.join(errors)}")
+                # Swap: remove old, move staged into place
+                if wf_dir.exists():
+                    shutil.rmtree(wf_dir)
+                shutil.move(str(staged_dir), str(wf_dir))
 
             # Update registry
             registry.update(wf_id, {
@@ -5460,22 +5470,8 @@ def workflow_update(
             })
             console.print(f"  [green]✓[/green] {wf_id}: {update['installed']} → {update['available']}")
 
-            # Clean up backup
-            if backup_dir.exists():
-                shutil.rmtree(backup_dir)
-
         except Exception as exc:
             console.print(f"  [red]✗[/red] {wf_id}: {exc}")
-            # Restore from backup
-            if backup_dir.exists():
-                if wf_dir.exists():
-                    shutil.rmtree(wf_dir)
-                shutil.move(str(backup_dir), str(wf_dir))
-
-    # Clean up backup directory if empty
-    backup_parent = workflows_dir / ".backup"
-    if backup_parent.exists() and not any(backup_parent.iterdir()):
-        backup_parent.rmdir()
 
 
 @workflow_app.command("enable")
