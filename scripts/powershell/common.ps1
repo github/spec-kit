@@ -197,9 +197,39 @@ function Test-FeatureJsonMatchesFeatureDir {
         return $false
     }
 
-    $normJson = [System.IO.Path]::GetFullPath($fd)
-    $normActive = [System.IO.Path]::GetFullPath($ActiveFeatureDir)
-    return [string]::Equals($normJson, $normActive, [System.StringComparison]::OrdinalIgnoreCase)
+    # Resolve both paths to canonical absolute form. Prefer Resolve-Path (follows
+    # symlinks and is the canonical PS way); fall back to [Path]::GetFullPath when
+    # Resolve-Path can't produce a value. Mirrors the pattern used by Find-SpecifyRoot.
+    $resolvedJson = Resolve-Path -LiteralPath $fd -ErrorAction SilentlyContinue
+    if ($resolvedJson) {
+        $normJson = $resolvedJson.Path
+    } else {
+        $normJson = [System.IO.Path]::GetFullPath($fd)
+    }
+
+    $resolvedActive = Resolve-Path -LiteralPath $ActiveFeatureDir -ErrorAction SilentlyContinue
+    if ($resolvedActive) {
+        $normActive = $resolvedActive.Path
+    } else {
+        $normActive = [System.IO.Path]::GetFullPath($ActiveFeatureDir)
+    }
+
+    # Use case-insensitive compare only on Windows; POSIX filesystems are case-sensitive.
+    # PowerShell 5.1 is Windows-only and does not define $IsWindows, so treat its
+    # absence as "we're on Windows".
+    if ($null -ne $IsWindows) {
+        $onWindows = $IsWindows
+    } else {
+        $onWindows = $true
+    }
+
+    if ($onWindows) {
+        $comparison = [System.StringComparison]::OrdinalIgnoreCase
+    } else {
+        $comparison = [System.StringComparison]::Ordinal
+    }
+
+    return [string]::Equals($normJson, $normActive, $comparison)
 }
 
 # Resolve specs/<feature-dir> by numeric/timestamp prefix (mirrors scripts/bash/common.sh find_feature_dir_by_prefix).

@@ -153,32 +153,47 @@ check_feature_branch() {
     return 0
 }
 
+# Safely read .specify/feature.json's "feature_directory" value.
+# Prints the raw value (possibly relative) to stdout, or empty string if the file
+# is missing, unparseable, or does not contain the key. Always returns 0 so callers
+# under `set -e` cannot be aborted by parser failure.
+# Parser order mirrors the historical get_feature_paths behavior: jq -> python3 -> grep/sed.
+read_feature_json_feature_directory() {
+    local repo_root="$1"
+    local fj="$repo_root/.specify/feature.json"
+    [[ -f "$fj" ]] || { printf '%s' ''; return 0; }
+
+    local _fd=''
+    if command -v jq >/dev/null 2>&1; then
+        if ! _fd=$(jq -r '.feature_directory // empty' "$fj" 2>/dev/null); then
+            _fd=''
+        fi
+    elif command -v python3 >/dev/null 2>&1; then
+        # Use Python so pretty-printed/multi-line JSON still parses correctly.
+        if ! _fd=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); v=d.get('feature_directory'); print(v if v else '')" "$fj" 2>/dev/null); then
+            _fd=''
+        fi
+    else
+        # Last-resort single-line grep/sed fallback. The `|| true` guards against
+        # grep returning 1 (no match) aborting under `set -e` / `pipefail`.
+        _fd=$( { grep -E '"feature_directory"[[:space:]]*:' "$fj" 2>/dev/null || true; } \
+            | head -n 1 \
+            | sed -E 's/^[^:]*:[[:space:]]*"([^"]*)".*$/\1/' )
+    fi
+
+    printf '%s' "$_fd"
+    return 0
+}
+
 # Returns 0 when .specify/feature.json lists feature_directory that exists as a directory
 # and matches the resolved active FEATURE_DIR (so /speckit.plan can skip git branch pattern checks).
-# Parser fallback order mirrors get_feature_paths: jq -> python3 -> grep/sed.
-# All parser failures are treated as "no match" (return 1) so callers under `set -e`
-# fall through to the existing branch validation instead of aborting the script.
+# Delegates parsing to read_feature_json_feature_directory, which is safe under `set -e`.
 feature_json_matches_feature_dir() {
     local repo_root="$1"
     local active_feature_dir="$2"
-    local fj="$repo_root/.specify/feature.json"
-
-    [[ -f "$fj" ]] || return 1
 
     local _fd
-    if command -v jq >/dev/null 2>&1; then
-        if ! _fd=$(jq -r '.feature_directory // empty' "$fj" 2>/dev/null); then
-            return 1
-        fi
-    elif command -v python3 >/dev/null 2>&1; then
-        if ! _fd=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); v=d.get('feature_directory'); print(v if v else '')" "$fj" 2>/dev/null); then
-            return 1
-        fi
-    else
-        _fd=$(grep -E '"feature_directory"[[:space:]]*:' "$fj" 2>/dev/null \
-            | head -n 1 \
-            | sed -E 's/^[^:]*:[[:space:]]*"([^"]*)".*$/\1/')
-    fi
+    _fd=$(read_feature_json_feature_directory "$repo_root")
 
     [[ -n "$_fd" ]] || return 1
     [[ "$_fd" != /* ]] && _fd="$repo_root/$_fd"
@@ -255,16 +270,10 @@ get_feature_paths() {
         # Normalize relative paths to absolute under repo root
         [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
     elif [[ -f "$repo_root/.specify/feature.json" ]]; then
+        # Shared, set -e-safe parser: jq -> python3 -> grep/sed. Returns empty on
+        # missing/unparseable/unset so we fall through to the branch-prefix lookup.
         local _fd
-        if command -v jq >/dev/null 2>&1; then
-            _fd=$(jq -r '.feature_directory // empty' "$repo_root/.specify/feature.json" 2>/dev/null)
-        elif command -v python3 >/dev/null 2>&1; then
-            # Fallback: use Python to parse JSON so pretty-printed/multi-line files work
-            _fd=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('feature_directory',''))" "$repo_root/.specify/feature.json" 2>/dev/null)
-        else
-            # Last resort: single-line grep fallback (won't work on multi-line JSON)
-            _fd=$(grep -o '"feature_directory"[[:space:]]*:[[:space:]]*"[^"]*"' "$repo_root/.specify/feature.json" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/')
-        fi
+        _fd=$(read_feature_json_feature_directory "$repo_root")
         if [[ -n "$_fd" ]]; then
             feature_dir="$_fd"
             # Normalize relative paths to absolute under repo root
