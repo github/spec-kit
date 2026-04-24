@@ -436,10 +436,13 @@ class IntegrationCatalog:
     def add_catalog(self, url: str, name: Optional[str] = None) -> None:
         """Add a catalog source to the project-level config file.
 
-        The URL is validated before being written. Duplicate URLs are rejected.
-        Priority is derived as ``max(existing) + 1`` so the new entry sorts last
-        in the resolution order unless the user edits the file manually.
+        The URL is normalized (whitespace stripped) and validated before being
+        written. Duplicate URLs are rejected, including near-duplicates that
+        differ only by surrounding whitespace. Priority is derived as
+        ``max(existing) + 1`` so the new entry sorts last in the resolution
+        order unless the user edits the file manually.
         """
+        url = url.strip()
         self._validate_catalog_url(url)
         config_path = self.project_root / ".specify" / self.CONFIG_FILENAME
 
@@ -581,7 +584,12 @@ class IntegrationCatalog:
             # Deleting the file lets the project fall back to built-in
             # defaults, which matches the behavior before any
             # `catalog add` was ever run.
-            config_path.unlink()
+            try:
+                config_path.unlink()
+            except OSError as exc:
+                raise IntegrationValidationError(
+                    f"Failed to delete catalog config {config_path}: {exc}"
+                ) from exc
 
         if isinstance(removed, dict):
             return removed.get("name", f"catalog-{index + 1}")
