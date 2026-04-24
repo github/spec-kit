@@ -351,6 +351,14 @@ class ExtensionManifest:
         """Get hook definitions."""
         return self.data.get("hooks", {})
 
+    @property
+    def config(self) -> List[Dict[str, Any]]:
+        """Get list of provided config templates."""
+        raw = self.data.get("provides", {}).get("config", [])
+        if not isinstance(raw, list):
+            return []
+        return [entry for entry in raw if isinstance(entry, dict)]
+
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
         with open(self.path, 'rb') as f:
@@ -1249,6 +1257,57 @@ class ExtensionManager:
 
             # Install from extracted directory
             return self.install_from_directory(extension_dir, speckit_version, priority=priority)
+
+    def scaffold_config(self, extension_id: str) -> tuple:
+        """Deploy config templates from an installed extension to the project.
+
+        Reads the extension's manifest provides.config section and copies
+        each config template to the project's .specify/ directory. Existing
+        config files are never overwritten (user customizations are preserved).
+
+        Args:
+            extension_id: ID of the installed extension
+
+        Returns:
+            Tuple of (deployed, skipped_existing) where each is a list of
+            config file names.
+        """
+        ext_dir = self.extensions_dir / extension_id
+        manifest_path = ext_dir / "extension.yml"
+        if not manifest_path.exists():
+            return []
+
+        manifest = ExtensionManifest(manifest_path)
+        deployed = []
+
+        skipped_existing = []
+
+        for config_entry in manifest.config:
+            template_name = config_entry.get("template", "")
+            target_name = config_entry.get("name", template_name)
+            if not template_name:
+                continue
+
+            # Reject path traversal and absolute paths
+            if Path(template_name).is_absolute() or ".." in Path(template_name).parts:
+                continue
+            if Path(target_name).is_absolute() or ".." in Path(target_name).parts:
+                continue
+
+            template_path = ext_dir / template_name
+            if not template_path.exists() or not template_path.is_file():
+                continue
+
+            target_path = self.project_root / ".specify" / target_name
+            if target_path.exists():
+                skipped_existing.append(target_name)
+                continue
+
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(template_path, target_path)
+            deployed.append(target_name)
+
+        return deployed, skipped_existing
 
     def remove(self, extension_id: str, keep_config: bool = False) -> bool:
         """Remove an installed extension.
