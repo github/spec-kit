@@ -4863,9 +4863,15 @@ def workflow_add(
     from .workflows.catalog import WorkflowCatalog, WorkflowRegistry, WorkflowCatalogError
     from .workflows.engine import WorkflowDefinition
 
-    # Validate that at least one source is provided
+    # Validate source selection and disallow incompatible options
     if not source and not from_url:
         console.print("[red]Error:[/red] Provide a workflow ID/URL/path, or use --from <url>")
+        raise typer.Exit(1)
+    if dev and from_url:
+        console.print("[red]Error:[/red] --dev cannot be combined with --from")
+        raise typer.Exit(1)
+    if dev and not source:
+        console.print("[red]Error:[/red] --dev requires a local workflow path")
         raise typer.Exit(1)
 
     project_root = Path.cwd()
@@ -5400,6 +5406,7 @@ def workflow_update(
         raise typer.Exit(0)
 
     console.print()
+    had_failures = False
     for update in updates_available:
         wf_id = update["id"]
         wf_url = update.get("url")
@@ -5457,10 +5464,25 @@ def workflow_update(
                 if errors:
                     raise ValueError(f"Validation failed: {'; '.join(errors)}")
 
-                # Swap: remove old, move staged into place
+                # Atomic swap: move old to backup, move staged in, remove backup on success
+                backup_dir = None
                 if wf_dir.exists():
-                    shutil.rmtree(wf_dir)
-                shutil.move(str(staged_dir), str(wf_dir))
+                    backup_dir = wf_dir.with_name(f"{wf_id}.bak")
+                    if backup_dir.exists():
+                        shutil.rmtree(backup_dir)
+                    wf_dir.rename(backup_dir)
+                try:
+                    shutil.move(str(staged_dir), str(wf_dir))
+                except Exception:
+                    # Restore from backup if swap fails
+                    if backup_dir and backup_dir.exists():
+                        if wf_dir.exists():
+                            shutil.rmtree(wf_dir)
+                        backup_dir.rename(wf_dir)
+                    raise
+                # Clean up backup after successful swap
+                if backup_dir and backup_dir.exists():
+                    shutil.rmtree(backup_dir)
 
             # Update registry
             registry.update(wf_id, {
@@ -5472,6 +5494,10 @@ def workflow_update(
 
         except Exception as exc:
             console.print(f"  [red]✗[/red] {wf_id}: {exc}")
+            had_failures = True
+
+    if had_failures:
+        raise typer.Exit(1)
 
 
 @workflow_app.command("enable")

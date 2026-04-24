@@ -2044,3 +2044,22 @@ class TestWorkflowCLI:
         result = runner.invoke(app, ["workflow", "list"])
         assert result.exit_code == 0
         assert "disabled" in result.output
+
+    def test_add_dev_and_from_mutually_exclusive(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        monkeypatch.chdir(project_dir)
+        result = runner.invoke(app, ["workflow", "add", "--dev", "--from", "https://example.com/wf.yml", "./local"])
+        assert result.exit_code != 0
+        assert "cannot be combined" in result.output
+
+    def test_add_dev_requires_source(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        monkeypatch.chdir(project_dir)
+        result = runner.invoke(app, ["workflow", "add", "--dev", "--from", "https://example.com/wf.yml"])
+        assert result.exit_code != 0
