@@ -12,6 +12,7 @@ from specify_cli.integrations.catalog import (
     IntegrationCatalogError,
     IntegrationDescriptor,
     IntegrationDescriptorError,
+    IntegrationValidationError,
 )
 
 
@@ -654,3 +655,206 @@ class TestIntegrationUpgrade:
             os.chdir(old)
         assert result.exit_code == 0
         assert "Nothing to upgrade" in result.output
+
+
+# ---------------------------------------------------------------------------
+# IntegrationCatalog — catalog source management (get_catalog_configs / add / remove)
+# ---------------------------------------------------------------------------
+
+
+class TestCatalogSourceManagement:
+    """Unit tests for add_catalog / remove_catalog / get_catalog_configs."""
+
+    def _isolate(self, tmp_path, monkeypatch):
+        """Point HOME at tmp_path and clear the env override so we read built-ins."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        (tmp_path / ".specify").mkdir()
+
+    def test_get_catalog_configs_returns_builtin_stack(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        configs = cat.get_catalog_configs()
+        assert [c["name"] for c in configs] == ["default", "community"]
+        assert all(isinstance(c["url"], str) and c["url"] for c in configs)
+        assert configs[0]["install_allowed"] is True
+        assert configs[1]["install_allowed"] is False
+
+    def test_add_catalog_creates_config_file(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://new.example.com/catalog.json", name="mine")
+
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        assert cfg_path.exists()
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert data["catalogs"] == [
+            {
+                "name": "mine",
+                "url": "https://new.example.com/catalog.json",
+                "priority": 1,
+                "install_allowed": True,
+                "description": "",
+            }
+        ]
+        # Round-trip: active catalogs should now come from the config file.
+        active = cat.get_active_catalogs()
+        assert [e.name for e in active] == ["mine"]
+
+    def test_add_catalog_auto_derives_name_and_priority(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://a.example.com/catalog.json")
+        cat.add_catalog("https://b.example.com/catalog.json")
+
+        data = yaml.safe_load(
+            (tmp_path / ".specify" / "integration-catalogs.yml").read_text(encoding="utf-8")
+        )
+        entries = data["catalogs"]
+        assert [e["name"] for e in entries] == ["catalog-1", "catalog-2"]
+        assert [e["priority"] for e in entries] == [1, 2]
+
+    def test_add_catalog_rejects_duplicate_url(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://dup.example.com/catalog.json")
+        with pytest.raises(IntegrationValidationError, match="already configured"):
+            cat.add_catalog("https://dup.example.com/catalog.json")
+
+    def test_add_catalog_rejects_invalid_url(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(IntegrationCatalogError, match="HTTPS"):
+            cat.add_catalog("http://insecure.example.com/catalog.json")
+        assert not (tmp_path / ".specify" / "integration-catalogs.yml").exists()
+
+    def test_remove_catalog_without_config_errors(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(IntegrationValidationError, match="No catalog config"):
+            cat.remove_catalog(0)
+
+    def test_remove_catalog_happy_path(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://a.example.com/catalog.json", name="a")
+        cat.add_catalog("https://b.example.com/catalog.json", name="b")
+
+        removed = cat.remove_catalog(0)
+        assert removed == "a"
+
+        data = yaml.safe_load(
+            (tmp_path / ".specify" / "integration-catalogs.yml").read_text(encoding="utf-8")
+        )
+        assert [e["name"] for e in data["catalogs"]] == ["b"]
+
+    def test_remove_catalog_index_out_of_range(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://a.example.com/catalog.json", name="a")
+        with pytest.raises(IntegrationValidationError, match="out of range"):
+            cat.remove_catalog(5)
+        with pytest.raises(IntegrationValidationError, match="out of range"):
+            cat.remove_catalog(-1)
+
+    def test_corrupt_config_rejected_on_add(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text("- just\n- a\n- list\n", encoding="utf-8")
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(IntegrationValidationError, match="corrupted"):
+            cat.add_catalog("https://new.example.com/catalog.json")
+
+    def test_add_catalog_rejects_corrupt_sibling_entry(self, tmp_path, monkeypatch):
+        """add_catalog must fail fast if an existing entry is structurally invalid."""
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump({"catalogs": [{"url": "", "name": "broken"}]}),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(IntegrationValidationError, match="non-empty string"):
+            cat.add_catalog("https://new.example.com/catalog.json")
+
+    def test_add_catalog_rejects_non_integer_priority(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "url": "https://a.example.com/catalog.json",
+                            "name": "a",
+                            "priority": "first",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(IntegrationValidationError, match="'priority' must be an integer"):
+            cat.add_catalog("https://b.example.com/catalog.json")
+
+    def test_add_catalog_rejects_existing_entry_with_bad_url(self, tmp_path, monkeypatch):
+        """A sibling entry with an http:// URL should block a new add."""
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "url": "http://insecure.example.com/catalog.json",
+                            "name": "bad",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(IntegrationCatalogError, match="HTTPS"):
+            cat.add_catalog("https://good.example.com/catalog.json")
+
+    def test_remove_catalog_empty_list_gives_clear_error(self, tmp_path, monkeypatch):
+        """Hand-edited empty `catalogs:` produces a clear error, not '0--1'."""
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(yaml.dump({"catalogs": []}), encoding="utf-8")
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(
+            IntegrationValidationError, match="contains no catalog entries"
+        ):
+            cat.remove_catalog(0)
+
+    def test_remove_last_catalog_deletes_file_and_restores_defaults(
+        self, tmp_path, monkeypatch
+    ):
+        """Removing the final catalog must not leave behind `catalogs: []`.
+
+        `_load_catalog_config` treats an empty `catalogs` list as an error,
+        so writing that file would break every subsequent `integration`
+        command. Removing the last entry should delete the config file so the
+        project falls back to built-in defaults.
+        """
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+
+        cat.add_catalog("https://only.example.com/catalog.json", name="only")
+        assert cfg_path.exists()
+        assert [e.name for e in cat.get_active_catalogs()] == ["only"]
+
+        removed = cat.remove_catalog(0)
+        assert removed == "only"
+
+        assert not cfg_path.exists(), (
+            "remove_catalog should delete the config file when emptying it"
+        )
+        # Follow-up loads fall back to built-in defaults, not an error.
+        active = cat.get_active_catalogs()
+        assert [e.name for e in active] == ["default", "community"]
