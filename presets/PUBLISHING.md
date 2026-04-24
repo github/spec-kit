@@ -213,7 +213,7 @@ Add your preset to the Community Presets table on the docs site at `docs/communi
 | Your Preset Name | Brief description of what your preset does | N templates, M commands | — | [repo-name](https://github.com/your-org/spec-kit-preset-your-preset) |
 ```
 
-Insert your preset in alphabetical order in the table.
+Insert your row in alphabetical order by preset **name** (the first column of the table).
 
 ### 4. Submit Pull Request
 
