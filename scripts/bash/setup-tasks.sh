@@ -28,7 +28,10 @@ eval "$_paths_output"
 unset _paths_output
 
 # Validate branch
-check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
+# If feature.json pins an existing feature directory, branch naming is not required.
+if ! feature_json_matches_feature_dir "$REPO_ROOT" "$FEATURE_DIR"; then
+    check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
+fi
 
 # Validate prerequisites
 if [[ ! -d "$FEATURE_DIR" ]]; then
