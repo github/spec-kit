@@ -956,6 +956,22 @@ class TestCatalogSourceManagement:
         active = cat.get_active_catalogs()
         assert [e.name for e in active] == ["default", "community"]
 
+    def test_load_catalog_config_raises_validation_error_for_invalid_yaml(
+        self, tmp_path, monkeypatch
+    ):
+        """Local-config problems must surface as IntegrationValidationError so
+        CLI handlers can route them to local-config (not network) guidance."""
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text("catalogs:\n  - [bad\n", encoding="utf-8")
+
+        cat = IntegrationCatalog(tmp_path)
+        # Subclass match: IntegrationValidationError (specifically), not the
+        # bare IntegrationCatalogError parent that callers used previously.
+        with pytest.raises(IntegrationValidationError, match="Failed to read catalog config"):
+            cat.get_active_catalogs()
+
     def test_remove_catalog_uses_display_order_with_explicit_priorities(
         self, tmp_path, monkeypatch
     ):
