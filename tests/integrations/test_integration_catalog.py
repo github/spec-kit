@@ -820,6 +820,67 @@ class TestCatalogSourceManagement:
         with pytest.raises(IntegrationCatalogError, match="HTTPS"):
             cat.add_catalog("https://good.example.com/catalog.json")
 
+    def test_add_catalog_wraps_yaml_parse_errors(self, tmp_path, monkeypatch):
+        """Invalid YAML on disk surfaces as IntegrationValidationError, not a raw YAMLError."""
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            "catalogs:\n  - url: 'https://a.example.com/cat.json'\n  - [bad\n",
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(
+            IntegrationValidationError, match="Failed to read catalog config"
+        ):
+            cat.add_catalog("https://b.example.com/catalog.json")
+
+    def test_remove_catalog_wraps_yaml_parse_errors(self, tmp_path, monkeypatch):
+        """Invalid YAML on disk surfaces as IntegrationValidationError from remove_catalog too."""
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            "catalogs:\n  - url: 'https://a.example.com/cat.json'\n  - [bad\n",
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(
+            IntegrationValidationError, match="Failed to read catalog config"
+        ):
+            cat.remove_catalog(0)
+
+    def test_add_catalog_defaults_missing_priority_to_index_plus_one(
+        self, tmp_path, monkeypatch
+    ):
+        """Existing entries without `priority` should be treated as idx + 1.
+
+        Matches the rule in `_load_catalog_config()`: a valid catalog entry
+        without an explicit `priority` sorts at `idx + 1`, so the new entry
+        should get `max(...) + 1` from those derived values.
+        """
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        # No explicit priority → should be treated as 1
+                        {"url": "https://a.example.com/cat.json", "name": "a"},
+                        # No explicit priority → should be treated as 2
+                        {"url": "https://b.example.com/cat.json", "name": "b"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://c.example.com/cat.json", name="c")
+
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        new_entry = data["catalogs"][-1]
+        assert new_entry["name"] == "c"
+        # max(implicit [1, 2]) + 1 == 3
+        assert new_entry["priority"] == 3
+
     def test_remove_catalog_empty_list_gives_clear_error(self, tmp_path, monkeypatch):
         """Hand-edited empty `catalogs:` produces a clear error, not '0--1'."""
         self._isolate(tmp_path, monkeypatch)

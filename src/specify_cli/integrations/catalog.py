@@ -445,7 +445,12 @@ class IntegrationCatalog:
 
         data: Dict[str, Any] = {"catalogs": []}
         if config_path.exists():
-            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            try:
+                raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            except (yaml.YAMLError, OSError, UnicodeError) as exc:
+                raise IntegrationValidationError(
+                    f"Failed to read catalog config {config_path}: {exc}"
+                ) from exc
             if not isinstance(raw, dict):
                 raise IntegrationValidationError(
                     "Catalog config file is corrupted (expected a mapping)."
@@ -491,6 +496,10 @@ class IntegrationCatalog:
                         f"{type(raw_priority).__name__}."
                     )
                 existing_priorities.append(raw_priority)
+            else:
+                # Match `_load_catalog_config()`'s defaulting rule so the new
+                # entry still sorts after implicit-priority siblings.
+                existing_priorities.append(idx + 1)
 
         max_priority = max(existing_priorities, default=0)
         catalogs.append(
@@ -520,7 +529,12 @@ class IntegrationCatalog:
         if not config_path.exists():
             raise IntegrationValidationError("No catalog config file found.")
 
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        try:
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except (yaml.YAMLError, OSError, UnicodeError) as exc:
+            raise IntegrationValidationError(
+                f"Failed to read catalog config {config_path}: {exc}"
+            ) from exc
         if not isinstance(data, dict):
             raise IntegrationValidationError(
                 "Catalog config file is corrupted (expected a mapping)."
