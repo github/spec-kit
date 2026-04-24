@@ -5360,6 +5360,7 @@ def workflow_update(
     console.print("🔄 Checking for updates...\n")
 
     updates_available = []
+    catalog_errors = 0
     for wf_id in workflows_to_update:
         metadata = installed.get(wf_id, {})
         if not isinstance(metadata, dict):
@@ -5374,7 +5375,9 @@ def workflow_update(
 
         try:
             cat_info = catalog.get_workflow_info(wf_id)
-        except WorkflowCatalogError:
+        except WorkflowCatalogError as exc:
+            console.print(f"⚠  {wf_id}: Catalog error: {exc}")
+            catalog_errors += 1
             cat_info = None
 
         if not cat_info:
@@ -5405,6 +5408,9 @@ def workflow_update(
             console.print(f"✓ {wf_id}: Up to date (v{installed_version})")
 
     if not updates_available:
+        if catalog_errors:
+            console.print(f"\n[yellow]Could not check {catalog_errors} workflow(s) due to catalog errors[/yellow]")
+            raise typer.Exit(1)
         console.print("\n[green]All workflows are up to date![/green]")
         raise typer.Exit(0)
 

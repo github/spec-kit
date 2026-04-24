@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -89,11 +90,8 @@ class WorkflowRegistry:
 
     def save(self) -> None:
         """Persist registry to disk atomically (write to temp, then rename)."""
-        import os
-        import tempfile as _tempfile
-
         self.workflows_dir.mkdir(parents=True, exist_ok=True)
-        fd, tmp_path = _tempfile.mkstemp(
+        fd, tmp_path = tempfile.mkstemp(
             suffix=".json", dir=self.workflows_dir
         )
         try:
