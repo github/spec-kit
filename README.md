@@ -280,6 +280,10 @@ To submit your own extension, see the [Extension Publishing Guide](extensions/EX
 
 Community-contributed presets customize how Spec Kit behaves — overriding templates, commands, and terminology without changing any tooling. See the full list on the [Community Presets](https://github.github.io/spec-kit/community/presets.html) page.
 
+> **Note:** Community presets are third-party contributions and are not maintained by the Spec Kit team. Review them carefully before use, and see the docs page above for the full disclaimer.
+
+To submit your own preset, see the [Presets Publishing Guide](presets/PUBLISHING.md).
+
 ## 🚶 Community Walkthroughs
 
 See Spec-Driven Development in action across different scenarios with community-contributed walkthroughs; find the full list on the [Community Walkthroughs](https://github.github.io/spec-kit/community/walkthroughs.html) page.
