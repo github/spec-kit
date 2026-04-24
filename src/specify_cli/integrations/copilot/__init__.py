@@ -185,8 +185,8 @@ class CopilotIntegration(IntegrationBase):
         import subprocess
 
         stem = command_name
-        if "." in stem:
-            stem = stem.rsplit(".", 1)[-1]
+        if stem.startswith("speckit."):
+            stem = stem[len("speckit."):]
 
         # Detect skills mode from project layout when not set via setup()
         skills_mode = self._skills_mode
@@ -199,7 +199,7 @@ class CopilotIntegration(IntegrationBase):
                 )
 
         if skills_mode:
-            prompt = f"/speckit-{stem}"
+            prompt = "/speckit-" + stem.replace(".", "-")
             if args:
                 prompt = f"{prompt} {args}"
         else:
