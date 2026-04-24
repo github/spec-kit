@@ -4895,7 +4895,7 @@ def _validate_url_scheme(url: str) -> None:
 def _download_validated(source_url: str, destination: Path) -> None:
     """Download a URL to *destination*, rejecting non-HTTPS redirects before following them."""
     import shutil as _shutil
-    from urllib.request import build_opener, HTTPRedirectHandler, Request  # noqa: S310
+    from urllib.request import build_opener, HTTPRedirectHandler  # noqa: S310
 
     _validate_url_scheme(source_url)
 
@@ -4926,6 +4926,9 @@ def workflow_add(
     # Validate source selection and disallow incompatible options
     if dev and from_url:
         console.print("[red]Error:[/red] --dev cannot be combined with --from")
+        raise typer.Exit(1)
+    if source and from_url:
+        console.print("[red]Error:[/red] Cannot combine a positional source with --from")
         raise typer.Exit(1)
     if dev and not source:
         console.print("[red]Error:[/red] --dev requires a local workflow path")
@@ -5337,10 +5340,10 @@ def workflow_update(
         if not isinstance(metadata, dict):
             console.print(f"⚠  {wf_id}: Malformed workflow registry entry (skipping)")
             continue
-        installed_ver_str = metadata.get("version", "0.0.0")
+        installed_ver_str = str(metadata.get("version", "0.0.0"))
         try:
             installed_version = pkg_version.Version(installed_ver_str)
-        except pkg_version.InvalidVersion:
+        except (pkg_version.InvalidVersion, TypeError):
             console.print(f"⚠  {wf_id}: Invalid installed version '{installed_ver_str}' (skipping)")
             continue
 
@@ -5357,10 +5360,10 @@ def workflow_update(
             console.print(f"⚠  {wf_id}: Updates not allowed from '{cat_info.get('_catalog_name', 'catalog')}' (skipping)")
             continue
 
-        cat_ver_str = cat_info.get("version", "0.0.0")
+        cat_ver_str = str(cat_info.get("version", "0.0.0"))
         try:
             catalog_version = pkg_version.Version(cat_ver_str)
-        except pkg_version.InvalidVersion:
+        except (pkg_version.InvalidVersion, TypeError):
             console.print(f"⚠  {wf_id}: Invalid catalog version '{cat_ver_str}' (skipping)")
             continue
 
