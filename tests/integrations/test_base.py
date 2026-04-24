@@ -170,6 +170,47 @@ class TestBasePrimitives:
             assert f.name.endswith(".md")
 
 
+class TestBuildCommandInvocation:
+    """Tests for build_command_invocation across integration types."""
+
+    def test_base_core_command_dotted(self):
+        i = StubIntegration()
+        assert i.build_command_invocation("speckit.plan") == "/speckit.plan"
+
+    def test_base_core_command_bare(self):
+        i = StubIntegration()
+        assert i.build_command_invocation("plan") == "/speckit.plan"
+
+    def test_base_core_command_with_args(self):
+        i = StubIntegration()
+        assert i.build_command_invocation("plan", "my feature") == "/speckit.plan my feature"
+
+    def test_base_extension_command(self):
+        i = StubIntegration()
+        assert i.build_command_invocation("speckit.git.commit") == "/speckit.git.commit"
+
+    def test_base_extension_command_bare(self):
+        i = StubIntegration()
+        assert i.build_command_invocation("git.commit") == "/speckit.git.commit"
+
+    def test_skills_core_command(self):
+        from specify_cli.integrations import get_integration
+        i = get_integration("codex")
+        assert i.build_command_invocation("speckit.plan") == "/speckit-plan"
+        assert i.build_command_invocation("plan") == "/speckit-plan"
+
+    def test_skills_extension_command(self):
+        from specify_cli.integrations import get_integration
+        i = get_integration("codex")
+        assert i.build_command_invocation("speckit.git.commit") == "/speckit-git-commit"
+        assert i.build_command_invocation("git.commit") == "/speckit-git-commit"
+
+    def test_skills_extension_command_with_args(self):
+        from specify_cli.integrations import get_integration
+        i = get_integration("codex")
+        assert i.build_command_invocation("speckit.git.commit", "fix typo") == "/speckit-git-commit fix typo"
+
+
 class TestResolveCommandRefs:
     """Tests for __SPECKIT_COMMAND_<NAME>__ placeholder resolution."""
 

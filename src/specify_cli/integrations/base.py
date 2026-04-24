@@ -137,11 +137,12 @@ class IntegrationBase(ABC):
         agents or ``"/speckit-specify my-feature"`` for skills agents.
 
         *command_name* may be a full dotted name like
-        ``"speckit.specify"`` or a bare stem like ``"specify"``.
+        ``"speckit.specify"``, an extension command like
+        ``"speckit.git.commit"``, or a bare stem like ``"specify"``.
         """
         stem = command_name
-        if "." in stem:
-            stem = stem.rsplit(".", 1)[-1]
+        if stem.startswith("speckit."):
+            stem = stem[len("speckit."):]
 
         invocation = f"/speckit.{stem}"
         if args:
@@ -1351,10 +1352,10 @@ class SkillsIntegration(IntegrationBase):
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
         """Skills use ``/speckit-<stem>`` (hyphenated directory name)."""
         stem = command_name
-        if "." in stem:
-            stem = stem.rsplit(".", 1)[-1]
+        if stem.startswith("speckit."):
+            stem = stem[len("speckit."):]
 
-        invocation = f"/speckit-{stem}"
+        invocation = "/speckit-" + stem.replace(".", "-")
         if args:
             invocation = f"{invocation} {args}"
         return invocation

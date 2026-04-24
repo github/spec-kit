@@ -531,6 +531,12 @@ class TestCopilotSkillsMode:
         assert copilot.build_command_invocation("plan") == "/speckit-plan"
         assert copilot.build_command_invocation("plan", "my args") == "/speckit-plan my args"
 
+    def test_build_command_invocation_skills_extension_command(self):
+        copilot = self._make_copilot()
+        copilot._skills_mode = True
+        assert copilot.build_command_invocation("speckit.git.commit") == "/speckit-git-commit"
+        assert copilot.build_command_invocation("git.commit") == "/speckit-git-commit"
+
     def test_build_command_invocation_default_mode(self):
         copilot = self._make_copilot()
         assert copilot.build_command_invocation("plan", "my args") == "my args"

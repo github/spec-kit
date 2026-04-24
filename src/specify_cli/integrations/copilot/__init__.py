@@ -155,9 +155,9 @@ class CopilotIntegration(IntegrationBase):
         """
         if self._skills_mode:
             stem = command_name
-            if "." in stem:
-                stem = stem.rsplit(".", 1)[-1]
-            invocation = f"/speckit-{stem}"
+            if stem.startswith("speckit."):
+                stem = stem[len("speckit."):]
+            invocation = "/speckit-" + stem.replace(".", "-")
             if args:
                 invocation = f"{invocation} {args}"
             return invocation
