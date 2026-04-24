@@ -2571,13 +2571,23 @@ def integration_search(
 ):
     """Search for integrations in the active catalog stack."""
     from .integrations import INTEGRATION_REGISTRY
-    from .integrations.catalog import IntegrationCatalog, IntegrationCatalogError
+    from .integrations.catalog import (
+        IntegrationCatalog,
+        IntegrationCatalogError,
+        IntegrationValidationError,
+    )
 
     project_root = _require_specify_project()
     catalog = IntegrationCatalog(project_root)
 
     try:
         results = catalog.search(query=query, tag=tag, author=author)
+    except IntegrationValidationError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        console.print(
+            "\nTip: Check .specify/integration-catalogs.yml for invalid catalog configuration."
+        )
+        raise typer.Exit(1)
     except IntegrationCatalogError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         console.print("\nTip: The catalog may be temporarily unavailable. Try again later.")
@@ -2639,7 +2649,11 @@ def integration_info(
 ):
     """Show catalog details for a single integration."""
     from .integrations import INTEGRATION_REGISTRY
-    from .integrations.catalog import IntegrationCatalog, IntegrationCatalogError
+    from .integrations.catalog import (
+        IntegrationCatalog,
+        IntegrationCatalogError,
+        IntegrationValidationError,
+    )
 
     project_root = _require_specify_project()
     catalog = IntegrationCatalog(project_root)
@@ -2649,7 +2663,9 @@ def integration_info(
         info = catalog.get_integration_info(integration_id)
     except IntegrationCatalogError as exc:
         info = None
-        catalog_error: Optional[str] = str(exc)
+        # Keep the live exception so the fallback branch below can give
+        # different guidance for local-config vs. network failures.
+        catalog_error: Optional[IntegrationCatalogError] = exc
     else:
         catalog_error = None
 
@@ -2698,7 +2714,13 @@ def integration_info(
 
     if catalog_error:
         console.print(f"[red]Error:[/red] Could not query integration catalog: {catalog_error}")
-        console.print("\nTry again when online, or use a built-in integration ID directly.")
+        if isinstance(catalog_error, IntegrationValidationError):
+            console.print(
+                "\nCheck .specify/integration-catalogs.yml, "
+                "or use a built-in integration ID directly."
+            )
+        else:
+            console.print("\nTry again when online, or use a built-in integration ID directly.")
     else:
         console.print(f"[red]Error:[/red] Integration '{integration_id}' not found")
         console.print("\nTry: specify integration search")

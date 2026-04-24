@@ -784,6 +784,46 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert result.exit_code == 0, result.output
         assert "Built-in integration" in result.output
 
+    # -- validation vs network guidance ------------------------------------
+
+    def test_search_local_config_error_shows_local_config_tip(
+        self, tmp_path, monkeypatch
+    ):
+        """`integration search` must point at .specify/integration-catalogs.yml
+        for local-config errors (not the generic 'temporarily unavailable')."""
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        # Corrupt YAML to drive _load_catalog_config -> IntegrationValidationError.
+        cfg = project / ".specify" / "integration-catalogs.yml"
+        cfg.write_text("catalogs:\n  - [bad\n", encoding="utf-8")
+
+        result = self._invoke(["integration", "search"], project)
+        assert result.exit_code == 1, result.output
+        assert ".specify/integration-catalogs.yml" in result.output
+        assert "invalid catalog configuration" in result.output
+        assert "temporarily unavailable" not in result.output
+
+    def test_info_unknown_with_local_config_error_shows_local_config_tip(
+        self, tmp_path, monkeypatch
+    ):
+        """`integration info <unknown>` falls back to the catalog-error branch
+        and must show local-config guidance, not 'Try again when online'."""
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        cfg = project / ".specify" / "integration-catalogs.yml"
+        cfg.write_text("catalogs:\n  - [bad\n", encoding="utf-8")
+
+        result = self._invoke(
+            ["integration", "info", "definitely-not-real"], project
+        )
+        assert result.exit_code == 1, result.output
+        assert ".specify/integration-catalogs.yml" in result.output
+        assert "Try again when online" not in result.output
+
     # -- catalog list / add / remove ---------------------------------------
 
     def test_catalog_list_shows_builtin_defaults(self, tmp_path, monkeypatch):
