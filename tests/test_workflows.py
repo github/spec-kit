@@ -1664,7 +1664,7 @@ class TestWorkflowRegistry:
         import pytest
 
         registry = WorkflowRegistry(project_dir)
-        with pytest.raises(KeyError):
+        with pytest.raises(KeyError, match="not installed"):
             registry.update("missing", {"version": "2.0.0"})
         assert registry.get("missing") is None
 

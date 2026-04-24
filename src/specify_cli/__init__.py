@@ -5407,6 +5407,7 @@ def workflow_update(
                 "available": str(catalog_version),
                 "url": cat_info.get("url"),
                 "catalog_name": cat_info.get("_catalog_name", ""),
+                "description": cat_info.get("description", ""),
             })
         else:
             console.print(f"✓ {wf_id}: Up to date (v{installed_version})")

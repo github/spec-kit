@@ -148,12 +148,13 @@ class WorkflowRegistry:
         from datetime import datetime, timezone
 
         if workflow_id not in self.data["workflows"]:
-            raise KeyError(workflow_id)
+            raise KeyError(f"Workflow '{workflow_id}' is not installed")
 
         existing = self.data["workflows"][workflow_id]
         if not isinstance(existing, dict):
             now = datetime.now(timezone.utc).isoformat()
             repaired = dict(fields)
+            repaired.pop("installed_at", None)
             repaired.setdefault("installed_at", now)
             repaired["updated_at"] = now
             self.data["workflows"][workflow_id] = repaired
@@ -162,8 +163,10 @@ class WorkflowRegistry:
         installed_at = existing.get("installed_at")
 
         import copy
-        existing.update(copy.deepcopy(fields))
-        if installed_at is not None and "installed_at" not in fields:
+        safe_fields = copy.deepcopy(fields)
+        safe_fields.pop("installed_at", None)  # always preserve original
+        existing.update(safe_fields)
+        if installed_at is not None:
             existing["installed_at"] = installed_at
         if "installed_at" not in existing:
             existing["installed_at"] = datetime.now(timezone.utc).isoformat()
