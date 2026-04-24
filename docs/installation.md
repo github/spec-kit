@@ -131,12 +131,10 @@ pip install --no-index --find-links=./dist specify-cli
 
 ```bash
 # Initialize a project — no GitHub access needed
-specify init my-project --integration claude --offline
+specify init my-project --integration claude
 ```
 
-The `--offline` flag tells the CLI to use the templates, commands, and scripts bundled inside the wheel instead of downloading from GitHub.
-
-> **Deprecation notice:** Starting with v0.6.0, `specify init` will use bundled assets by default and the `--offline` flag will be removed. The GitHub download path will be retired because bundled assets eliminate the need for network access, avoid proxy/firewall issues, and guarantee that templates always match the installed CLI version. No action will be needed — `specify init` will simply work without network access out of the box.
+Bundled assets are used by default — no network access is required.
 
 > **Note:** Python 3.11+ is required.
 
