@@ -210,7 +210,7 @@ Edit `presets/catalog.community.json` and add your preset.
 Add your preset to the Community Presets table on the docs site at `docs/community/presets.md`:
 
 ```markdown
-| Your Preset Name | Brief description of what your preset does | N templates, M commands | — | [repo-name](https://github.com/your-org/spec-kit-preset-your-preset) |
+| Your Preset Name | Brief description of what your preset does | N templates, M commands[, P scripts] | — | [repo-name](https://github.com/your-org/spec-kit-preset-your-preset) |
 ```
 
 Insert your row in alphabetical order by preset **name** (the first column of the table).
