@@ -5028,9 +5028,9 @@ def workflow_add(
     if from_url:
         try:
             _validate_url_scheme(from_url)
-        except ValueError:
-            console.print("[red]Error:[/red] URL must use HTTPS for security.")
-            console.print("HTTP is only allowed for localhost URLs.")
+        except ValueError as exc:
+            console.print(f"[red]Error:[/red] Invalid URL: {exc}")
+            console.print("URL must use HTTPS for security. HTTP is only allowed for localhost URLs.")
             raise typer.Exit(1)
 
         console.print("[yellow]Warning:[/yellow] Installing from external URL.")
@@ -5365,16 +5365,19 @@ def workflow_update(
 
     updates_available = []
     catalog_errors = 0
+    skipped = 0
     for wf_id in workflows_to_update:
         metadata = installed.get(wf_id, {})
         if not isinstance(metadata, dict):
             console.print(f"⚠  {wf_id}: Malformed workflow registry entry (skipping)")
+            skipped += 1
             continue
         installed_ver_str = str(metadata.get("version", "0.0.0"))
         try:
             installed_version = pkg_version.Version(installed_ver_str)
         except (pkg_version.InvalidVersion, TypeError):
             console.print(f"⚠  {wf_id}: Invalid installed version '{installed_ver_str}' (skipping)")
+            skipped += 1
             continue
 
         try:
@@ -5386,10 +5389,12 @@ def workflow_update(
 
         if not cat_info:
             console.print(f"⚠  {wf_id}: Not found in catalog (skipping)")
+            skipped += 1
             continue
 
         if not cat_info.get("_install_allowed", True):
             console.print(f"⚠  {wf_id}: Updates not allowed from '{cat_info.get('_catalog_name', 'catalog')}' (skipping)")
+            skipped += 1
             continue
 
         cat_ver_str = str(cat_info.get("version", "0.0.0"))
@@ -5397,6 +5402,7 @@ def workflow_update(
             catalog_version = pkg_version.Version(cat_ver_str)
         except (pkg_version.InvalidVersion, TypeError):
             console.print(f"⚠  {wf_id}: Invalid catalog version '{cat_ver_str}' (skipping)")
+            skipped += 1
             continue
 
         if catalog_version > installed_version:
@@ -5416,7 +5422,10 @@ def workflow_update(
         if catalog_errors:
             console.print(f"\n[yellow]Could not check {catalog_errors} workflow(s) due to catalog errors[/yellow]")
             raise typer.Exit(1)
-        console.print("\n[green]All workflows are up to date![/green]")
+        if skipped:
+            console.print(f"\n[green]No updates found[/green] ({skipped} workflow(s) skipped)")
+        else:
+            console.print("\n[green]All workflows are up to date![/green]")
         raise typer.Exit(0)
 
     console.print("\n[bold]Updates available:[/bold]\n")

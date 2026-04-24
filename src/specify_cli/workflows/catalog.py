@@ -165,12 +165,13 @@ class WorkflowRegistry:
         import copy
         safe_fields = copy.deepcopy(fields)
         safe_fields.pop("installed_at", None)  # always preserve original
+        now = datetime.now(timezone.utc).isoformat()
         existing.update(safe_fields)
         if installed_at is not None:
             existing["installed_at"] = installed_at
         if "installed_at" not in existing:
-            existing["installed_at"] = datetime.now(timezone.utc).isoformat()
-        existing["updated_at"] = datetime.now(timezone.utc).isoformat()
+            existing["installed_at"] = now
+        existing["updated_at"] = now
         self.save()
 
     def get(self, workflow_id: str) -> dict[str, Any] | None:
