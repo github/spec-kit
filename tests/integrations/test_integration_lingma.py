@@ -8,4 +8,4 @@ class TestLingmaIntegration(SkillsIntegrationTests):
     FOLDER = ".lingma/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".lingma/skills"
-    CONTEXT_FILE = ".lingma/rules/project_rules.md"
+    CONTEXT_FILE = ".lingma/rules/specify-rules.md"
