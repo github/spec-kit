@@ -172,7 +172,7 @@ function Test-FeatureJsonMatchesFeatureDir {
         [Parameter(Mandatory = $true)][string]$ActiveFeatureDir
     )
 
-    $featureJson = Join-Path $RepoRoot '.specify\feature.json'
+    $featureJson = Join-Path (Join-Path $RepoRoot '.specify') 'feature.json'
     if (-not (Test-Path -LiteralPath $featureJson -PathType Leaf)) {
         return $false
     }
