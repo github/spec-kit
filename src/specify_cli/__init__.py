@@ -2744,15 +2744,19 @@ def integration_catalog_add(
     project_root = _require_specify_project()
     catalog = IntegrationCatalog(project_root)
 
+    # Normalize once here so the success message reflects what was actually
+    # stored. ``IntegrationCatalog.add_catalog`` strips again defensively.
+    normalized_url = url.strip()
+
     try:
-        catalog.add_catalog(url, name)
+        catalog.add_catalog(normalized_url, name)
     except IntegrationCatalogError as exc:
         # Covers both URL validation (base class) and config-file validation
         # (IntegrationValidationError subclass).
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
 
-    console.print(f"[green]✓[/green] Catalog source added: {url}")
+    console.print(f"[green]✓[/green] Catalog source added: {normalized_url}")
 
 
 @integration_catalog_app.command("remove")
