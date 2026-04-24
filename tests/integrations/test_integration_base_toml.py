@@ -516,6 +516,7 @@ class TomlIntegrationTests:
                 "common.sh",
                 "create-new-feature.sh",
                 "setup-plan.sh",
+                "setup-tasks.sh",
             ]:
                 files.append(f".specify/scripts/bash/{name}")
         else:
@@ -524,6 +525,7 @@ class TomlIntegrationTests:
                 "common.ps1",
                 "create-new-feature.ps1",
                 "setup-plan.ps1",
+                "setup-tasks.ps1",
             ]:
                 files.append(f".specify/scripts/powershell/{name}")
 
