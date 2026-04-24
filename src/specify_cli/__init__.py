@@ -5478,6 +5478,9 @@ def workflow_enable(
         raise typer.Exit(1)
 
     metadata = registry.get(workflow_id)
+    if not isinstance(metadata, dict):
+        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' has corrupted registry metadata")
+        raise typer.Exit(1)
     if metadata.get("enabled", True):
         console.print(f"[yellow]Workflow '{workflow_id}' is already enabled[/yellow]")
         raise typer.Exit(0)
@@ -5506,6 +5509,9 @@ def workflow_disable(
         raise typer.Exit(1)
 
     metadata = registry.get(workflow_id)
+    if not isinstance(metadata, dict):
+        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' has corrupted registry metadata")
+        raise typer.Exit(1)
     if not metadata.get("enabled", True):
         console.print(f"[yellow]Workflow '{workflow_id}' is already disabled[/yellow]")
         raise typer.Exit(0)

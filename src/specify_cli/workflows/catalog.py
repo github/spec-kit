@@ -72,14 +72,20 @@ class WorkflowRegistry:
 
     def _load(self) -> dict[str, Any]:
         """Load registry from disk or create default."""
+        default = {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, encoding="utf-8") as f:
-                    return json.load(f)
+                    data = json.load(f)
             except (json.JSONDecodeError, ValueError):
-                # Corrupted registry file — reset to default
-                return {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
-        return {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
+                return default
+            if not isinstance(data, dict):
+                return default
+            # Normalize 'workflows' to a dict in case the file is corrupted
+            if not isinstance(data.get("workflows"), dict):
+                data["workflows"] = {}
+            return data
+        return default
 
     def save(self) -> None:
         """Persist registry to disk."""
