@@ -107,6 +107,13 @@ class WorkflowRegistry:
             return True
         return False
 
+    def update(self, workflow_id: str, fields: dict[str, Any]) -> None:
+        """Update specific fields on an installed workflow entry."""
+        if workflow_id not in self.data["workflows"]:
+            return
+        self.data["workflows"][workflow_id].update(fields)
+        self.save()
+
     def get(self, workflow_id: str) -> dict[str, Any] | None:
         """Get metadata for an installed workflow."""
         return self.data["workflows"].get(workflow_id)
@@ -412,6 +419,7 @@ class WorkflowCatalog:
         self,
         query: str | None = None,
         tag: str | None = None,
+        author: str | None = None,
     ) -> list[dict[str, Any]]:
         """Search workflows across all configured catalogs."""
         merged = self._get_merged_workflows()
@@ -419,6 +427,9 @@ class WorkflowCatalog:
 
         for wf_id, wf_data in merged.items():
             wf_data.setdefault("id", wf_id)
+            if author:
+                if wf_data.get("author", "").lower() != author.lower():
+                    continue
             if query:
                 q = query.lower()
                 searchable = " ".join(

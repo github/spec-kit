@@ -1639,6 +1639,44 @@ class TestWorkflowRegistry:
         registry2 = WorkflowRegistry(project_dir)
         assert registry2.is_installed("test-wf")
 
+    def test_update(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("test-wf", {"name": "Test", "version": "1.0.0"})
+
+        registry.update("test-wf", {"version": "2.0.0", "enabled": False})
+
+        entry = registry.get("test-wf")
+        assert entry["version"] == "2.0.0"
+        assert entry["enabled"] is False
+        # Original fields preserved
+        assert entry["name"] == "Test"
+
+    def test_update_nonexistent(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        # Should not raise, just no-op
+        registry.update("missing", {"version": "2.0.0"})
+        assert registry.get("missing") is None
+
+    def test_enable_disable_via_update(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("test-wf", {"name": "Test", "version": "1.0.0"})
+
+        # Disable
+        registry.update("test-wf", {"enabled": False})
+        entry = registry.get("test-wf")
+        assert entry["enabled"] is False
+
+        # Enable
+        registry.update("test-wf", {"enabled": True})
+        entry = registry.get("test-wf")
+        assert entry["enabled"] is True
+
 
 # ===== Workflow Catalog Tests =====
 
@@ -1748,6 +1786,39 @@ class TestWorkflowCatalog:
         assert len(configs) == 2
         assert configs[0]["name"] == "default"
         assert isinstance(configs[0]["install_allowed"], bool)
+
+    def test_search_author_filter(self, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        catalog = WorkflowCatalog(project_dir)
+
+        # Mock _get_merged_workflows to return test data
+        def mock_merged(force_refresh=False):
+            return {
+                "wf-a": {"id": "wf-a", "name": "Alpha", "author": "Alice", "tags": []},
+                "wf-b": {"id": "wf-b", "name": "Beta", "author": "Bob", "tags": ["sdd"]},
+                "wf-c": {"id": "wf-c", "name": "Charlie", "author": "Alice", "tags": ["deploy"]},
+            }
+
+        monkeypatch.setattr(catalog, "_get_merged_workflows", mock_merged)
+
+        # Filter by author
+        results = catalog.search(author="Alice")
+        assert len(results) == 2
+        assert all(r["author"] == "Alice" for r in results)
+
+        # Filter by author (case-insensitive)
+        results = catalog.search(author="alice")
+        assert len(results) == 2
+
+        # Filter by author + tag
+        results = catalog.search(author="Alice", tag="deploy")
+        assert len(results) == 1
+        assert results[0]["id"] == "wf-c"
+
+        # No match
+        results = catalog.search(author="Nobody")
+        assert len(results) == 0
 
 
 # ===== Integration Test =====
