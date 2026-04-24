@@ -5107,8 +5107,8 @@ def workflow_add(
 
     workflow_dir = workflows_dir / source
     # Validate workflow ID format and path safety
-    from .workflows.engine import _ID_PATTERN as _WORKFLOW_ID_PATTERN
-    if not _WORKFLOW_ID_PATTERN.fullmatch(source):
+    from .workflows.engine import is_valid_workflow_id
+    if not is_valid_workflow_id(source):
         console.print(f"[red]Error:[/red] Invalid workflow ID: {source!r}")
         raise typer.Exit(1)
     try:
@@ -5422,8 +5422,8 @@ def workflow_update(
 
         wf_dir = workflows_dir / wf_id
         # Validate workflow ID format and path safety
-        from .workflows.engine import _ID_PATTERN as _WORKFLOW_ID_PATTERN
-        if not _WORKFLOW_ID_PATTERN.fullmatch(wf_id):
+        from .workflows.engine import is_valid_workflow_id
+        if not is_valid_workflow_id(wf_id):
             console.print(f"⚠  {wf_id}: Invalid workflow ID format (skipping)")
             continue
         try:
