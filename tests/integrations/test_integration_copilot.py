@@ -144,6 +144,7 @@ class TestCopilotIntegration:
             assert "{SCRIPT}" not in content, f"{agent_file.name} has unprocessed {{SCRIPT}}"
             assert "__AGENT__" not in content, f"{agent_file.name} has unprocessed __AGENT__"
             assert "{ARGS}" not in content, f"{agent_file.name} has unprocessed {{ARGS}}"
+            assert "__SPECKIT_COMMAND_" not in content, f"{agent_file.name} has unprocessed __SPECKIT_COMMAND_*__"
             assert "\nscripts:\n" not in content
 
     def test_plan_references_correct_context_file(self, tmp_path):

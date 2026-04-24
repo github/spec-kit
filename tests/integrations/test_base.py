@@ -6,6 +6,7 @@ from specify_cli.integrations.base import (
     IntegrationBase,
     IntegrationOption,
     MarkdownIntegration,
+    SkillsIntegration,
 )
 from specify_cli.integrations.manifest import IntegrationManifest
 from .conftest import StubIntegration
@@ -167,3 +168,82 @@ class TestBasePrimitives:
             assert f.parent.name == "commands"
             assert f.name.startswith("speckit.")
             assert f.name.endswith(".md")
+
+
+class TestResolveCommandRefs:
+    """Tests for __SPECKIT_COMMAND_<NAME>__ placeholder resolution."""
+
+    def test_dot_separator_core_command(self):
+        text = "Run `__SPECKIT_COMMAND_PLAN__` to plan."
+        result = IntegrationBase.resolve_command_refs(text, ".")
+        assert result == "Run `/speckit.plan` to plan."
+
+    def test_hyphen_separator_core_command(self):
+        text = "Run `__SPECKIT_COMMAND_PLAN__` to plan."
+        result = IntegrationBase.resolve_command_refs(text, "-")
+        assert result == "Run `/speckit-plan` to plan."
+
+    def test_multiple_placeholders(self):
+        text = "__SPECKIT_COMMAND_SPECIFY__ then __SPECKIT_COMMAND_PLAN__ then __SPECKIT_COMMAND_TASKS__"
+        result = IntegrationBase.resolve_command_refs(text, ".")
+        assert result == "/speckit.specify then /speckit.plan then /speckit.tasks"
+
+    def test_extension_command_dot(self):
+        text = "Run __SPECKIT_COMMAND_GIT_COMMIT__ to commit."
+        result = IntegrationBase.resolve_command_refs(text, ".")
+        assert result == "Run /speckit.git.commit to commit."
+
+    def test_extension_command_hyphen(self):
+        text = "Run __SPECKIT_COMMAND_GIT_COMMIT__ to commit."
+        result = IntegrationBase.resolve_command_refs(text, "-")
+        assert result == "Run /speckit-git-commit to commit."
+
+    def test_no_placeholders_unchanged(self):
+        text = "No placeholders here."
+        assert IntegrationBase.resolve_command_refs(text, ".") == text
+
+    def test_default_separator_is_dot(self):
+        text = "__SPECKIT_COMMAND_PLAN__"
+        assert IntegrationBase.resolve_command_refs(text) == "/speckit.plan"
+
+    def test_invoke_separator_class_attribute(self):
+        assert IntegrationBase.invoke_separator == "."
+        assert SkillsIntegration.invoke_separator == "-"
+
+    def test_process_template_resolves_placeholders(self):
+        content = "---\ndescription: test\n---\nRun __SPECKIT_COMMAND_PLAN__ now."
+        result = IntegrationBase.process_template(
+            content, "test-agent", "sh", invoke_separator="."
+        )
+        assert "/speckit.plan" in result
+        assert "__SPECKIT_COMMAND_" not in result
+
+    def test_process_template_skills_separator(self):
+        content = "---\ndescription: test\n---\nRun __SPECKIT_COMMAND_PLAN__ now."
+        result = IntegrationBase.process_template(
+            content, "test-agent", "sh", invoke_separator="-"
+        )
+        assert "/speckit-plan" in result
+        assert "__SPECKIT_COMMAND_" not in result
+
+    def test_unclosed_placeholder_unchanged(self):
+        text = "Run __SPECKIT_COMMAND_PLAN to plan."
+        assert IntegrationBase.resolve_command_refs(text, ".") == text
+
+    def test_empty_name_not_matched(self):
+        text = "Run __SPECKIT_COMMAND___ to plan."
+        assert IntegrationBase.resolve_command_refs(text, ".") == text
+
+    def test_lowercase_placeholder_not_matched(self):
+        text = "Run __SPECKIT_COMMAND_plan__ to plan."
+        assert IntegrationBase.resolve_command_refs(text, ".") == text
+
+    def test_placeholder_adjacent_to_text(self):
+        text = "foo__SPECKIT_COMMAND_PLAN__bar"
+        result = IntegrationBase.resolve_command_refs(text, ".")
+        assert result == "foo/speckit.planbar"
+
+    def test_placeholder_with_digits(self):
+        text = "__SPECKIT_COMMAND_V2_PLAN__"
+        result = IntegrationBase.resolve_command_refs(text, ".")
+        assert result == "/speckit.v2.plan"
