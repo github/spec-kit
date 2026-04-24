@@ -955,3 +955,95 @@ class TestCatalogSourceManagement:
         # Follow-up loads fall back to built-in defaults, not an error.
         active = cat.get_active_catalogs()
         assert [e.name for e in active] == ["default", "community"]
+
+    def test_remove_catalog_uses_display_order_with_explicit_priorities(
+        self, tmp_path, monkeypatch
+    ):
+        """`remove_catalog(index)` must remove the entry shown at that index by
+        `catalog list`, not the entry at that raw YAML position."""
+        self._isolate(tmp_path, monkeypatch)
+        # YAML order: alpha (priority=20), beta (priority=10), gamma (priority=15).
+        # Display (sorted by priority asc): beta (10), gamma (15), alpha (20).
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {"url": "https://alpha.example.com/c.json", "name": "alpha", "priority": 20},
+                        {"url": "https://beta.example.com/c.json", "name": "beta", "priority": 10},
+                        {"url": "https://gamma.example.com/c.json", "name": "gamma", "priority": 15},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+
+        # Display index 0 = beta (lowest priority), not alpha (raw YAML idx 0).
+        removed = cat.remove_catalog(0)
+        assert removed == "beta"
+
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        remaining_names = [c["name"] for c in data["catalogs"]]
+        # YAML order is preserved for the survivors; only beta is gone.
+        assert remaining_names == ["alpha", "gamma"]
+
+    def test_remove_catalog_display_order_with_missing_priorities(
+        self, tmp_path, monkeypatch
+    ):
+        """Entries without `priority` default to `idx + 1` (matching
+        `_load_catalog_config`), so display order tracks YAML order and the
+        first display entry is the first YAML entry."""
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {"url": "https://one.example.com/c.json", "name": "one"},
+                        {"url": "https://two.example.com/c.json", "name": "two"},
+                        {"url": "https://three.example.com/c.json", "name": "three"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+
+        # Implicit priorities: one=1, two=2, three=3 → display order matches YAML.
+        removed = cat.remove_catalog(0)
+        assert removed == "one"
+
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert [c["name"] for c in data["catalogs"]] == ["two", "three"]
+
+    def test_remove_catalog_display_order_mixes_explicit_and_default(
+        self, tmp_path, monkeypatch
+    ):
+        """An explicit low priority should sort ahead of default-priority
+        siblings, even if it appears later in the YAML."""
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        # Defaults: a=1, b=2 (implicit). Explicit c=0 → display: c, a, b.
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {"url": "https://a.example.com/c.json", "name": "a"},
+                        {"url": "https://b.example.com/c.json", "name": "b"},
+                        {"url": "https://c.example.com/c.json", "name": "c", "priority": 0},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+
+        removed = cat.remove_catalog(0)
+        assert removed == "c"
+
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert [c["name"] for c in data["catalogs"]] == ["a", "b"]

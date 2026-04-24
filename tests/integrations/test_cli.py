@@ -832,6 +832,41 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert remove_result.exit_code == 0, remove_result.output
         assert "'mine' removed" in remove_result.output
 
+    def test_catalog_add_strips_whitespace_in_success_output_and_storage(
+        self, tmp_path, monkeypatch
+    ):
+        """Surrounding whitespace in the URL must not appear in the success
+        message or be persisted to the YAML config."""
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+
+        padded_url = "  https://padded.example.com/catalog.json  "
+        clean_url = "https://padded.example.com/catalog.json"
+
+        add_result = self._invoke(
+            [
+                "integration",
+                "catalog",
+                "add",
+                padded_url,
+                "--name",
+                "padded",
+            ],
+            project,
+        )
+        assert add_result.exit_code == 0, add_result.output
+        assert clean_url in add_result.output
+        assert padded_url not in add_result.output
+
+        cfg_path = project / ".specify" / "integration-catalogs.yml"
+        import yaml as _yaml
+        data = _yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        urls = [c["url"] for c in data["catalogs"]]
+        assert clean_url in urls
+        assert padded_url not in urls
+
     def test_catalog_add_rejects_invalid_url(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         result = self._invoke(

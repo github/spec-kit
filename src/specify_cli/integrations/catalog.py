@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 from packaging import version as pkg_version
@@ -527,7 +527,18 @@ class IntegrationCatalog:
             )
 
     def remove_catalog(self, index: int) -> str:
-        """Remove a catalog source by 0-based index. Returns the removed name."""
+        """Remove a catalog source by 0-based index.
+
+        ``index`` is interpreted in the same display order shown by
+        ``integration catalog list`` (i.e. sorted ascending by priority,
+        with missing priority defaulting to ``yaml_index + 1``, matching
+        ``_load_catalog_config()``). This way, the index a user sees in
+        ``catalog list`` is the index they pass to ``catalog remove``,
+        even if the underlying YAML lists entries in a different order
+        from how they sort by priority.
+
+        Returns the removed catalog's name.
+        """
         config_path = self.project_root / ".specify" / self.CONFIG_FILENAME
         if not config_path.exists():
             raise IntegrationValidationError("No catalog config file found.")
@@ -558,12 +569,33 @@ class IntegrationCatalog:
                 "Catalog config contains no catalog entries."
             )
 
-        if index < 0 or index >= len(catalogs):
+        # Map displayed index -> raw YAML index using the same priority
+        # defaulting as ``_load_catalog_config``. We deliberately stay
+        # tolerant here (no new validation errors) because the goal is
+        # only to mirror the order shown by ``catalog list``; entries
+        # that ``_load_catalog_config`` would have rejected outright
+        # would have failed ``catalog list`` already.
+        priority_pairs: List[Tuple[int, int]] = []
+        for yaml_idx, item in enumerate(catalogs):
+            if isinstance(item, dict):
+                try:
+                    priority = int(item.get("priority", yaml_idx + 1))
+                except (TypeError, ValueError):
+                    priority = yaml_idx + 1
+            else:
+                priority = yaml_idx + 1
+            priority_pairs.append((priority, yaml_idx))
+        # Stable sort: ties keep their YAML order, matching list-view ordering.
+        priority_pairs.sort(key=lambda p: p[0])
+        display_order: List[int] = [yaml_idx for _, yaml_idx in priority_pairs]
+
+        if index < 0 or index >= len(display_order):
             raise IntegrationValidationError(
-                f"Catalog index {index} out of range (0-{len(catalogs) - 1})."
+                f"Catalog index {index} out of range (0-{len(display_order) - 1})."
             )
 
-        removed = catalogs.pop(index)
+        target_yaml_idx = display_order[index]
+        removed = catalogs.pop(target_yaml_idx)
 
         if catalogs:
             data["catalogs"] = catalogs
@@ -592,8 +624,8 @@ class IntegrationCatalog:
                 ) from exc
 
         if isinstance(removed, dict):
-            return removed.get("name", f"catalog-{index + 1}")
-        return f"catalog-{index + 1}"
+            return removed.get("name", f"catalog-{target_yaml_idx + 1}")
+        return f"catalog-{target_yaml_idx + 1}"
 
 
 # ---------------------------------------------------------------------------
