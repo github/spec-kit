@@ -967,7 +967,7 @@ def init(
     ai_assistant: str = typer.Option(None, "--ai", help=AI_ASSISTANT_HELP),
     ai_commands_dir: str = typer.Option(None, "--ai-commands-dir", help="Directory for agent command files (required with --ai generic, e.g. .myagent/commands/)"),
     script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
-    ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for AI agent tools like Claude Code"),
+    ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for coding agent tools like Claude Code"),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
     here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
     force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
@@ -997,10 +997,10 @@ def init(
 
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your AI assistant
+    2. Let you choose your coding agent integration
     3. Download template from GitHub (or use bundled assets with --offline)
     4. Initialize a fresh git repository (if not --no-git and no existing repo)
-    5. Optionally set up AI assistant commands
+    5. Optionally set up coding agent integration commands
 
     Examples:
         specify init my-project
@@ -1008,7 +1008,7 @@ def init(
         specify init my-project --integration copilot --no-git
         specify init --ignore-agent-tools my-project
         specify init . --integration claude         # Initialize in current directory
-        specify init .                     # Initialize in current directory (interactive AI selection)
+        specify init .                     # Initialize in current directory (interactive integration selection)
         specify init --here --integration claude    # Alternative syntax for current directory
         specify init --here --integration codex --integration-options="--skills"
         specify init --here --integration codebuddy
@@ -1170,7 +1170,7 @@ def init(
         ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
         selected_ai = select_with_arrows(
             ai_choices,
-            "Choose your AI assistant:",
+            "Choose your coding agent integration:",
             "copilot"
         )
 
@@ -1241,7 +1241,7 @@ def init(
         else:
             selected_script = default_script
 
-    console.print(f"[cyan]Selected AI assistant:[/cyan] {selected_ai}")
+    console.print(f"[cyan]Selected coding agent integration:[/cyan] {selected_ai}")
     console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
 
     tracker = StepTracker("Initialize Specify Project")
@@ -1250,7 +1250,7 @@ def init(
 
     tracker.add("precheck", "Check required tools")
     tracker.complete("precheck", "ok")
-    tracker.add("ai-select", "Select AI assistant")
+    tracker.add("ai-select", "Select coding agent integration")
     tracker.complete("ai-select", f"{selected_ai}")
     tracker.add("script-select", "Select script type")
     tracker.complete("script-select", selected_script)
@@ -1565,7 +1565,7 @@ def init(
             return f"/speckit-{name}"
         return f"/speckit.{name}"
 
-    steps_lines.append(f"{step_num}. Start using {usage_label} with your AI agent:")
+    steps_lines.append(f"{step_num}. Start using {usage_label} with your coding agent:")
 
     steps_lines.append(f"   {step_num}.1 [cyan]{_display_cmd('constitution')}[/] - Establish project principles")
     steps_lines.append(f"   {step_num}.2 [cyan]{_display_cmd('specify')}[/] - Create baseline specification")
@@ -1636,7 +1636,7 @@ def check():
         console.print("[dim]Tip: Install git for repository management[/dim]")
 
     if not any(agent_results.values()):
-        console.print("[dim]Tip: Install an AI assistant for the best experience[/dim]")
+        console.print("[dim]Tip: Install a coding agent for the best experience[/dim]")
 
 @app.command()
 def version():
@@ -1882,7 +1882,7 @@ def get_speckit_version() -> str:
 
 integration_app = typer.Typer(
     name="integration",
-    help="Manage AI agent integrations",
+    help="Manage coding agent integrations",
     add_completion=False,
 )
 app.add_typer(integration_app, name="integration")
@@ -2020,7 +2020,7 @@ def integration_list(
         console.print(table)
         return
 
-    table = Table(title="AI Agent Integrations")
+    table = Table(title="Coding Agent Integrations")
     table.add_column("Key", style="cyan")
     table.add_column("Name")
     table.add_column("Status")

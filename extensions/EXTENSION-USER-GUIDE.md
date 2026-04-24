@@ -153,7 +153,7 @@ This will:
 2. Validate the manifest
 3. Check compatibility with your spec-kit version
 4. Install to `.specify/extensions/jira/`
-5. Register commands with your AI agent
+5. Register commands with your coding agent
 6. Create config template
 
 ### Install from URL
@@ -208,7 +208,7 @@ When an extension is removed, its corresponding skills are also cleaned up autom
 
 ### Using Extension Commands
 
-Extensions add commands that appear in your AI agent (Claude Code):
+Extensions add commands that appear in your coding agent (Claude Code):
 
 ```text
 # In Claude Code
@@ -780,12 +780,12 @@ specify extension add --dev /path/to/extension
 
 ### Command Not Available
 
-**Issue**: Extension command not appearing in AI agent
+**Issue**: Extension command not appearing in coding agent
 
 **Solutions**:
 
 1. Check extension is enabled: `specify extension list`
-2. Restart AI agent (Claude Code)
+2. Restart coding agent (Claude Code)
 3. Check command file exists:
 
    ```bash
@@ -819,8 +819,8 @@ specify extension add --dev /path/to/extension
 **Solutions**:
 
 1. Check MCP server is installed
-2. Check AI agent MCP configuration
-3. Restart AI agent
+2. Check coding agent MCP configuration
+3. Restart coding agent
 4. Check extension requirements: `specify extension info jira`
 
 ### Permission Denied

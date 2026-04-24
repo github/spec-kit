@@ -41,7 +41,7 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here
 
 ### Specify Integration
 
-You can proactively specify your AI agent during initialization:
+You can proactively specify your coding agent integration during initialization:
 
 ```bash
 uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration claude
@@ -86,7 +86,7 @@ specify version
 
 This helps verify you are running the official Spec Kit build from GitHub, not an unrelated package with the same name.
 
-After initialization, you should see the following commands available in your AI agent:
+After initialization, you should see the following commands available in your coding agent:
 
 - `/speckit.specify` - Create specifications
 - `/speckit.plan` - Generate implementation plans  

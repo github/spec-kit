@@ -102,7 +102,7 @@ cd <temp-dir>/speckit-test
 
 #### Manual testing process
 
-Any change that affects a slash command's behavior requires manually testing that command through an AI agent and submitting results with the PR.
+Any change that affects a slash command's behavior requires manually testing that command through a coding agent and submitting results with the PR.
 
 1. **Identify affected commands** — use the [prompt below](#determining-which-tests-to-run) to have your agent analyze your changed files and determine which commands need testing.
 2. **Set up a test project** — scaffold from your local branch (see [Testing setup](#testing-setup)).
