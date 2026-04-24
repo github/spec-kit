@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-24T00:00:00Z",
+  "updated_at": "2026-04-24T14:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1326,6 +1326,38 @@
       "stars": 0,
       "created_at": "2026-04-03T00:00:00Z",
       "updated_at": "2026-04-03T00:00:00Z"
+    },
+    "orchestrator": {
+      "name": "Spec Orchestrator",
+      "id": "orchestrator",
+      "description": "Cross-feature orchestration — track state, select tasks, and detect conflicts across parallel specs.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-orchestrator/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-orchestrator",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-orchestrator",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-orchestrator/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-orchestrator/releases",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "orchestration",
+        "multi-feature",
+        "coordination",
+        "workflow",
+        "parallel"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-24T14:00:00Z",
+      "updated_at": "2026-04-24T14:00:00Z"
     },
     "plan-review-gate": {
       "name": "Plan Review Gate",
