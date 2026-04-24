@@ -164,6 +164,44 @@ function Test-FeatureBranch {
     return $true
 }
 
+# True when .specify/feature.json pins an existing feature directory that matches the
+# active FEATURE_DIR from Get-FeaturePathsEnv (so /speckit.plan can skip git branch pattern checks).
+function Test-FeatureJsonMatchesFeatureDir {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$ActiveFeatureDir
+    )
+
+    $featureJson = Join-Path $RepoRoot '.specify\feature.json'
+    if (-not (Test-Path -LiteralPath $featureJson -PathType Leaf)) {
+        return $false
+    }
+
+    try {
+        $raw = Get-Content -LiteralPath $featureJson -Raw
+        $cfg = $raw | ConvertFrom-Json
+    } catch {
+        return $false
+    }
+
+    $fd = $cfg.feature_directory
+    if ([string]::IsNullOrWhiteSpace([string]$fd)) {
+        return $false
+    }
+
+    if (-not [System.IO.Path]::IsPathRooted($fd)) {
+        $fd = Join-Path $RepoRoot $fd
+    }
+
+    if (-not (Test-Path -LiteralPath $fd -PathType Container)) {
+        return $false
+    }
+
+    $normJson = [System.IO.Path]::GetFullPath($fd)
+    $normActive = [System.IO.Path]::GetFullPath($ActiveFeatureDir)
+    return [string]::Equals($normJson, $normActive, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
 # Resolve specs/<feature-dir> by numeric/timestamp prefix (mirrors scripts/bash/common.sh find_feature_dir_by_prefix).
 function Find-FeatureDirByPrefix {
     param(
