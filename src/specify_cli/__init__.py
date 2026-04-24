@@ -4669,6 +4669,15 @@ def workflow_run(
     engine = WorkflowEngine(project_root)
     engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
+    # Check if workflow is disabled in registry before loading
+    from .workflows.catalog import WorkflowRegistry
+    wf_registry = WorkflowRegistry(project_root)
+    wf_meta = wf_registry.get(source)
+    if isinstance(wf_meta, dict) and not wf_meta.get("enabled", True):
+        console.print(f"[red]Error:[/red] Workflow '{source}' is disabled")
+        console.print(f"\nTo re-enable: specify workflow enable {source}")
+        raise typer.Exit(1)
+
     try:
         definition = engine.load_workflow(source)
     except FileNotFoundError:
@@ -4676,15 +4685,6 @@ def workflow_run(
         raise typer.Exit(1)
     except ValueError as exc:
         console.print(f"[red]Error:[/red] Invalid workflow: {exc}")
-        raise typer.Exit(1)
-
-    # Check if workflow is disabled in registry
-    from .workflows.catalog import WorkflowRegistry
-    wf_registry = WorkflowRegistry(project_root)
-    wf_meta = wf_registry.get(source)
-    if isinstance(wf_meta, dict) and not wf_meta.get("enabled", True):
-        console.print(f"[red]Error:[/red] Workflow '{source}' is disabled")
-        console.print(f"\nTo re-enable: specify workflow enable {source}")
         raise typer.Exit(1)
 
     # Validate
@@ -4894,6 +4894,7 @@ def _validate_url_scheme(url: str) -> None:
 
 def _download_validated(source_url: str, destination: Path) -> None:
     """Download a URL to *destination*, validating HTTPS before and after redirects."""
+    import shutil as _shutil
     from urllib.request import urlopen  # noqa: S310
 
     _validate_url_scheme(source_url)
@@ -4903,7 +4904,8 @@ def _download_validated(source_url: str, destination: Path) -> None:
             _validate_url_scheme(final_url)
         except ValueError:
             raise ValueError(f"Redirected to non-HTTPS: {final_url}")
-        destination.write_bytes(resp.read())
+        with destination.open("wb") as dest_file:
+            _shutil.copyfileobj(resp, dest_file)
 
 
 @workflow_app.command("add")
@@ -5457,7 +5459,10 @@ def workflow_update(
                 raise
             # Clean up backup after fully successful update
             if backup_dir and backup_dir.exists():
-                shutil.rmtree(backup_dir)
+                try:
+                    shutil.rmtree(backup_dir)
+                except OSError as cleanup_exc:
+                    console.print(f"  [yellow]⚠[/yellow] {wf_id}: Updated successfully, but failed to remove backup: {cleanup_exc}")
             console.print(f"  [green]✓[/green] {wf_id}: {update['installed']} → {update['available']}")
 
         except Exception as exc:
