@@ -122,8 +122,11 @@ class WorkflowRegistry:
 
         existing = self.data["workflows"][workflow_id]
         if not isinstance(existing, dict):
-            self.data["workflows"][workflow_id] = dict(fields)
-            self.data["workflows"][workflow_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(timezone.utc).isoformat()
+            repaired = dict(fields)
+            repaired.setdefault("installed_at", now)
+            repaired["updated_at"] = now
+            self.data["workflows"][workflow_id] = repaired
             self.save()
             return
         installed_at = existing.get("installed_at")

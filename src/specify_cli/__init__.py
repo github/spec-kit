@@ -4678,6 +4678,15 @@ def workflow_run(
         console.print(f"[red]Error:[/red] Invalid workflow: {exc}")
         raise typer.Exit(1)
 
+    # Check if workflow is disabled in registry
+    from .workflows.catalog import WorkflowRegistry
+    wf_registry = WorkflowRegistry(project_root)
+    wf_meta = wf_registry.get(source)
+    if isinstance(wf_meta, dict) and not wf_meta.get("enabled", True):
+        console.print(f"[red]Error:[/red] Workflow '{source}' is disabled")
+        console.print(f"\nTo re-enable: specify workflow enable {source}")
+        raise typer.Exit(1)
+
     # Validate
     errors = engine.validate(definition)
     if errors:
@@ -5424,8 +5433,8 @@ def workflow_update(
                     wf_dir.rename(backup_dir)
                 try:
                     shutil.move(str(staged_dir), str(wf_dir))
-                except Exception:
-                    # Restore from backup if swap fails
+                except BaseException:
+                    # Restore from backup if swap fails (including KeyboardInterrupt)
                     if backup_dir and backup_dir.exists():
                         if wf_dir.exists():
                             shutil.rmtree(wf_dir)
@@ -5439,8 +5448,8 @@ def workflow_update(
                     "name": definition.name or update["name"],
                     "description": definition.description or "",
                 })
-            except Exception:
-                # Restore from backup if registry update fails
+            except BaseException:
+                # Restore from backup if registry update fails (including KeyboardInterrupt)
                 if backup_dir and backup_dir.exists():
                     if wf_dir.exists():
                         shutil.rmtree(wf_dir)
