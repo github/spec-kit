@@ -1,6 +1,7 @@
 """Tests for setup-plan bypassing branch-pattern checks when feature.json is valid."""
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -38,6 +39,21 @@ def _minimal_templates(repo: Path) -> None:
     tdir = repo / ".specify" / "templates"
     tdir.mkdir(parents=True, exist_ok=True)
     shutil.copy(PLAN_TEMPLATE, tdir / "plan-template.md")
+
+
+def _clean_env() -> dict[str, str]:
+    """Return a copy of the current environment with any SPECIFY_* vars removed.
+
+    setup-plan.{sh,ps1} honors SPECIFY_FEATURE, SPECIFY_FEATURE_DIRECTORY, etc.,
+    which would otherwise leak from a developer shell or CI runner and make these
+    tests flaky. Stripping them forces every case to rely purely on git branch +
+    .specify/feature.json state set up by the fixture.
+    """
+    env = os.environ.copy()
+    for key in list(env):
+        if key.startswith("SPECIFY_"):
+            env.pop(key)
+    return env
 
 
 def _git_init(repo: Path) -> None:
@@ -84,6 +100,7 @@ def test_setup_plan_passes_custom_branch_when_feature_json_valid(plan_repo: Path
         capture_output=True,
         text=True,
         check=False,
+        env=_clean_env(),
     )
     assert result.returncode == 0, result.stderr + result.stdout
     assert (feat / "plan.md").is_file()
@@ -103,6 +120,7 @@ def test_setup_plan_fails_custom_branch_without_feature_json(plan_repo: Path) ->
         capture_output=True,
         text=True,
         check=False,
+        env=_clean_env(),
     )
     assert result.returncode != 0
     assert "Not on a feature branch" in result.stderr
@@ -127,6 +145,7 @@ def test_setup_plan_numbered_branch_unchanged_without_feature_json(
         capture_output=True,
         text=True,
         check=False,
+        env=_clean_env(),
     )
     assert result.returncode == 0, result.stderr + result.stdout
     assert (feat / "plan.md").is_file()
@@ -154,6 +173,7 @@ def test_setup_plan_ps_passes_custom_branch_when_feature_json_valid(plan_repo: P
         capture_output=True,
         text=True,
         check=False,
+        env=_clean_env(),
     )
     assert result.returncode == 0, result.stderr + result.stdout
     assert (feat / "plan.md").is_file()
@@ -176,6 +196,7 @@ def test_setup_plan_ps_fails_custom_branch_without_feature_json(
         capture_output=True,
         text=True,
         check=False,
+        env=_clean_env(),
     )
     assert result.returncode != 0
     assert "Not on a feature branch" in result.stderr
