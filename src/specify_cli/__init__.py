@@ -127,7 +127,7 @@ def _build_ai_deprecation_warning(
         ai_commands_dir=ai_commands_dir,
     )
     return (
-        "[bold]--ai[/bold] is deprecated and will no longer be available in version 1.0.0 or later.\n\n"
+        "[bold]--ai[/bold] is deprecated and will no longer be available in version 0.10.0 or later.\n\n"
         f"Use [bold]{replacement}[/bold] instead."
     )
 
@@ -1087,6 +1087,13 @@ def init(
                 "[dim]Note: --ai-commands-dir is deprecated; "
                 'use [bold]--integration generic --integration-options="--commands-dir <dir>"[/bold] instead.[/dim]'
             )
+
+    if no_git:
+        console.print(
+            "[yellow]⚠️  --no-git is deprecated and will be removed in v0.10.0.[/yellow]\n"
+            "[yellow]The git extension will no longer be enabled by default "
+            "— use --extension git to opt in.[/yellow]"
+        )
 
     if project_name == ".":
         here = True

@@ -112,7 +112,7 @@ class TestInitIntegrationFlag:
         assert "--ai" in normalized_output
         assert "deprecated" in normalized_output
         assert "no longer be available" in normalized_output
-        assert "1.0.0" in normalized_output
+        assert "0.10.0" in normalized_output
         assert "--integration copilot" in normalized_output
         assert normalized_output.index("Deprecation Warning") < normalized_output.index("Next Steps")
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
