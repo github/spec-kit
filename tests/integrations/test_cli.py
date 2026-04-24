@@ -628,3 +628,305 @@ class TestSharedInfraCommandRefs:
         assert "/speckit-plan" in content, "Copilot --skills should use /speckit-plan"
         assert "/speckit.plan" not in content, "dot-notation leaked into Copilot skills page template"
         assert "__SPECKIT_COMMAND_" not in content
+
+
+class TestIntegrationCatalogDiscoveryCLI:
+    """End-to-end CLI tests for `integration search`, `info`, and `catalog …`.
+
+    All tests patch `IntegrationCatalog._get_merged_integrations` so no network
+    or on-disk cache is touched. Adds #2344 coverage without affecting any
+    existing integration install/switch/uninstall/upgrade behavior.
+    """
+
+    FAKE_INTEGRATIONS = [
+        {
+            "id": "acme-coder",
+            "name": "Acme Coder",
+            "version": "2.0.0",
+            "description": "Community integration for Acme Coder",
+            "author": "acme-org",
+            "tags": ["cli", "acme"],
+            "_catalog_name": "community",
+            "_install_allowed": False,
+        },
+        {
+            "id": "stellar-agent",
+            "name": "Stellar Agent",
+            "version": "1.3.0",
+            "description": "First-party Stellar agent integration",
+            "author": "stellar-labs",
+            "tags": ["ide"],
+            "_catalog_name": "default",
+            "_install_allowed": True,
+        },
+    ]
+
+    def _make_project(self, tmp_path):
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        return project
+
+    def _patch_catalog(self, monkeypatch, integrations=None):
+        """Return a stubbed `_get_merged_integrations` that yields *integrations*."""
+        from specify_cli.integrations.catalog import IntegrationCatalog
+
+        data = list(integrations if integrations is not None else self.FAKE_INTEGRATIONS)
+
+        def fake_merged(self, force_refresh=False):
+            return data
+
+        monkeypatch.setattr(IntegrationCatalog, "_get_merged_integrations", fake_merged)
+
+    def _invoke(self, argv, cwd):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        old = os.getcwd()
+        try:
+            os.chdir(cwd)
+            return runner.invoke(app, argv, catch_exceptions=False)
+        finally:
+            os.chdir(old)
+
+    # -- Project guard -----------------------------------------------------
+
+    def test_search_requires_specify_project(self, tmp_path):
+        project = tmp_path / "bare"
+        project.mkdir()
+        result = self._invoke(["integration", "search"], project)
+        assert result.exit_code == 1
+        assert "Not a spec-kit project" in result.output
+
+    def test_catalog_list_requires_specify_project(self, tmp_path):
+        project = tmp_path / "bare"
+        project.mkdir()
+        result = self._invoke(["integration", "catalog", "list"], project)
+        assert result.exit_code == 1
+        assert "Not a spec-kit project" in result.output
+
+    # -- search ------------------------------------------------------------
+
+    def test_search_lists_all(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(["integration", "search"], project)
+        assert result.exit_code == 0, result.output
+        assert "Found 2 integration(s)" in result.output
+        assert "acme-coder" in result.output
+        assert "stellar-agent" in result.output
+
+    def test_search_filters_by_tag(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(["integration", "search", "--tag", "acme"], project)
+        assert result.exit_code == 0, result.output
+        assert "Found 1 integration(s)" in result.output
+        assert "acme-coder" in result.output
+        assert "stellar-agent" not in result.output
+
+    def test_search_filters_by_author(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(
+            ["integration", "search", "--author", "stellar-labs"], project
+        )
+        assert result.exit_code == 0, result.output
+        assert "Found 1 integration(s)" in result.output
+        assert "stellar-agent" in result.output
+
+    def test_search_no_match_hint(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(
+            ["integration", "search", "--tag", "nope"], project
+        )
+        assert result.exit_code == 0, result.output
+        assert "No integrations found" in result.output
+        assert "specify integration search" in result.output
+
+    def test_search_marks_discovery_only_entry(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(["integration", "search", "acme"], project)
+        assert result.exit_code == 0, result.output
+        # acme-coder is flagged _install_allowed=False, so we should warn
+        assert "Not directly installable" in result.output
+
+    # -- info --------------------------------------------------------------
+
+    def test_info_found(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(
+            ["integration", "info", "stellar-agent"], project
+        )
+        assert result.exit_code == 0, result.output
+        assert "Stellar Agent" in result.output
+        assert "stellar-agent" in result.output
+        assert "v1.3.0" in result.output
+
+    def test_info_not_found(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(
+            ["integration", "info", "does-not-exist"], project
+        )
+        assert result.exit_code == 1
+        assert "not found" in result.output
+
+    def test_info_builtin_not_in_catalog(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        # Empty catalog, but copilot is a registered built-in.
+        self._patch_catalog(monkeypatch, integrations=[])
+        result = self._invoke(["integration", "info", "copilot"], project)
+        assert result.exit_code == 0, result.output
+        assert "Built-in integration" in result.output
+
+    # -- catalog list / add / remove ---------------------------------------
+
+    def test_catalog_list_shows_builtin_defaults(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        result = self._invoke(["integration", "catalog", "list"], project)
+        assert result.exit_code == 0, result.output
+        assert "Integration Catalog Sources" in result.output
+        assert "default" in result.output
+        assert "community" in result.output
+        # Index markers should be present for `remove <index>` to be usable
+        assert "[0]" in result.output
+        assert "[1]" in result.output
+
+    def test_catalog_add_then_remove_roundtrip(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+
+        add_result = self._invoke(
+            [
+                "integration",
+                "catalog",
+                "add",
+                "https://new.example.com/catalog.json",
+                "--name",
+                "mine",
+            ],
+            project,
+        )
+        assert add_result.exit_code == 0, add_result.output
+        assert "Catalog source added" in add_result.output
+
+        cfg_path = project / ".specify" / "integration-catalogs.yml"
+        assert cfg_path.exists()
+
+        list_result = self._invoke(["integration", "catalog", "list"], project)
+        assert "mine" in list_result.output
+
+        remove_result = self._invoke(
+            ["integration", "catalog", "remove", "0"], project
+        )
+        assert remove_result.exit_code == 0, remove_result.output
+        assert "'mine' removed" in remove_result.output
+
+    def test_catalog_add_rejects_invalid_url(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        result = self._invoke(
+            [
+                "integration",
+                "catalog",
+                "add",
+                "http://insecure.example.com/catalog.json",
+            ],
+            project,
+        )
+        assert result.exit_code == 1
+        assert "HTTPS" in result.output
+
+    def test_catalog_add_rejects_duplicate(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        url = "https://dup.example.com/catalog.json"
+        first = self._invoke(
+            ["integration", "catalog", "add", url], project
+        )
+        assert first.exit_code == 0, first.output
+        second = self._invoke(
+            ["integration", "catalog", "add", url], project
+        )
+        assert second.exit_code == 1
+        assert "already configured" in second.output
+
+    def test_catalog_remove_out_of_range(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        # Need a config file for remove to attempt an index lookup
+        self._invoke(
+            [
+                "integration",
+                "catalog",
+                "add",
+                "https://only.example.com/catalog.json",
+            ],
+            project,
+        )
+        result = self._invoke(
+            ["integration", "catalog", "remove", "9"], project
+        )
+        assert result.exit_code == 1
+        assert "out of range" in result.output
+
+    def test_catalog_remove_without_config(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        result = self._invoke(
+            ["integration", "catalog", "remove", "0"], project
+        )
+        assert result.exit_code == 1
+        assert "No catalog config" in result.output
+
+    def test_catalog_remove_final_entry_restores_defaults(
+        self, tmp_path, monkeypatch
+    ):
+        """End-to-end: add → remove-last-entry → list should not error.
+
+        Regression for the flow where a user adds a catalog, removes it, then
+        runs any follow-up integration command. Without the fix the config
+        file would be left as `catalogs: []` and every subsequent
+        `integration` call would fail with "contains no 'catalogs' entries".
+        """
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+
+        add = self._invoke(
+            [
+                "integration",
+                "catalog",
+                "add",
+                "https://only.example.com/catalog.json",
+                "--name",
+                "only",
+            ],
+            project,
+        )
+        assert add.exit_code == 0, add.output
+
+        remove = self._invoke(
+            ["integration", "catalog", "remove", "0"], project
+        )
+        assert remove.exit_code == 0, remove.output
+        assert "'only' removed" in remove.output
+
+        cfg_path = project / ".specify" / "integration-catalogs.yml"
+        assert not cfg_path.exists(), (
+            "config file should be deleted when the final catalog is removed"
+        )
+
+        # Follow-up command must succeed and show the built-in defaults,
+        # not error out on "contains no 'catalogs' entries".
+        listing = self._invoke(["integration", "catalog", "list"], project)
+        assert listing.exit_code == 0, listing.output
+        assert "default" in listing.output
+        assert "community" in listing.output

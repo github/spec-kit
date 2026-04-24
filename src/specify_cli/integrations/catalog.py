@@ -30,6 +30,10 @@ class IntegrationCatalogError(Exception):
     """Raised when a catalog operation fails."""
 
 
+class IntegrationValidationError(IntegrationCatalogError):
+    """Validation error for catalog config or catalog management operations."""
+
+
 class IntegrationDescriptorError(Exception):
     """Raised when an integration.yml descriptor is invalid."""
 
@@ -196,12 +200,12 @@ class IntegrationCatalog:
                 )
             ]
 
-        project_cfg = self.project_root / ".specify" / "integration-catalogs.yml"
+        project_cfg = self.project_root / ".specify" / self.CONFIG_FILENAME
         catalogs = self._load_catalog_config(project_cfg)
         if catalogs is not None:
             return catalogs
 
-        user_cfg = Path.home() / ".specify" / "integration-catalogs.yml"
+        user_cfg = Path.home() / ".specify" / self.CONFIG_FILENAME
         catalogs = self._load_catalog_config(user_cfg)
         if catalogs is not None:
             return catalogs
@@ -407,6 +411,167 @@ class IntegrationCatalog:
             for pattern in ("catalog-*.json", "catalog-*-metadata.json"):
                 for f in self.cache_dir.glob(pattern):
                     f.unlink(missing_ok=True)
+
+    # -- Catalog-source management ----------------------------------------
+
+    CONFIG_FILENAME = "integration-catalogs.yml"
+
+    def get_catalog_configs(self) -> List[Dict[str, Any]]:
+        """Return the active catalog stack as a list of dicts.
+
+        Thin adapter over :meth:`get_active_catalogs` that yields plain dicts
+        suitable for CLI rendering and JSON-like consumers.
+        """
+        return [
+            {
+                "name": e.name,
+                "url": e.url,
+                "priority": e.priority,
+                "install_allowed": e.install_allowed,
+                "description": e.description,
+            }
+            for e in self.get_active_catalogs()
+        ]
+
+    def add_catalog(self, url: str, name: Optional[str] = None) -> None:
+        """Add a catalog source to the project-level config file.
+
+        The URL is validated before being written. Duplicate URLs are rejected.
+        Priority is derived as ``max(existing) + 1`` so the new entry sorts last
+        in the resolution order unless the user edits the file manually.
+        """
+        self._validate_catalog_url(url)
+        config_path = self.project_root / ".specify" / self.CONFIG_FILENAME
+
+        data: Dict[str, Any] = {"catalogs": []}
+        if config_path.exists():
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                raise IntegrationValidationError(
+                    "Catalog config file is corrupted (expected a mapping)."
+                )
+            data = raw
+
+        catalogs = data.get("catalogs", [])
+        if not isinstance(catalogs, list):
+            raise IntegrationValidationError(
+                "Catalog config 'catalogs' must be a list."
+            )
+
+        # Validate each existing entry before mutating anything. Fail fast so
+        # we don't silently preserve a corrupt sibling entry or derive a new
+        # priority from a bogus value.
+        existing_priorities: List[int] = []
+        for idx, cat in enumerate(catalogs):
+            if not isinstance(cat, dict):
+                raise IntegrationValidationError(
+                    f"Invalid catalog entry at index {idx}: "
+                    f"expected a mapping, got {type(cat).__name__}."
+                )
+            existing_url = cat.get("url")
+            if not isinstance(existing_url, str) or not existing_url.strip():
+                raise IntegrationValidationError(
+                    f"Invalid catalog entry at index {idx}: "
+                    f"'url' must be a non-empty string."
+                )
+            existing_url = existing_url.strip()
+            # Re-run the same URL validation used when loading, so a corrupt
+            # entry surfaces here instead of at the next `integration` call.
+            self._validate_catalog_url(existing_url)
+            if existing_url == url:
+                raise IntegrationValidationError(
+                    f"Catalog URL already configured: {url}"
+                )
+            if "priority" in cat:
+                raw_priority = cat.get("priority")
+                if isinstance(raw_priority, bool) or not isinstance(raw_priority, int):
+                    raise IntegrationValidationError(
+                        f"Invalid catalog entry at index {idx}: "
+                        f"'priority' must be an integer, got "
+                        f"{type(raw_priority).__name__}."
+                    )
+                existing_priorities.append(raw_priority)
+
+        max_priority = max(existing_priorities, default=0)
+        catalogs.append(
+            {
+                "name": name or f"catalog-{len(catalogs) + 1}",
+                "url": url,
+                "priority": max_priority + 1,
+                "install_allowed": True,
+                "description": "",
+            }
+        )
+        data["catalogs"] = catalogs
+
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_path, "w", encoding="utf-8") as f:
+            yaml.dump(
+                data,
+                f,
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True,
+            )
+
+    def remove_catalog(self, index: int) -> str:
+        """Remove a catalog source by 0-based index. Returns the removed name."""
+        config_path = self.project_root / ".specify" / self.CONFIG_FILENAME
+        if not config_path.exists():
+            raise IntegrationValidationError("No catalog config file found.")
+
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(data, dict):
+            raise IntegrationValidationError(
+                "Catalog config file is corrupted (expected a mapping)."
+            )
+
+        catalogs = data.get("catalogs", [])
+        if not isinstance(catalogs, list):
+            raise IntegrationValidationError(
+                "Catalog config 'catalogs' must be a list."
+            )
+
+        if not catalogs:
+            # An empty list is the kind of state that only happens if the
+            # user hand-edited the file; our own `remove_catalog` deletes
+            # the file when the last entry is popped. Surface a clear
+            # message instead of `out of range (0--1)`.
+            raise IntegrationValidationError(
+                "Catalog config contains no catalog entries."
+            )
+
+        if index < 0 or index >= len(catalogs):
+            raise IntegrationValidationError(
+                f"Catalog index {index} out of range (0-{len(catalogs) - 1})."
+            )
+
+        removed = catalogs.pop(index)
+
+        if catalogs:
+            data["catalogs"] = catalogs
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(
+                    data,
+                    f,
+                    default_flow_style=False,
+                    sort_keys=False,
+                    allow_unicode=True,
+                )
+        else:
+            # Removing the final entry: delete the config file rather than
+            # leaving behind an empty `catalogs:` list. `_load_catalog_config`
+            # treats an empty list as an error, so leaving the file would
+            # break every subsequent `integration` command until the user
+            # manually deletes `.specify/integration-catalogs.yml`.
+            # Deleting the file lets the project fall back to built-in
+            # defaults, which matches the behavior before any
+            # `catalog add` was ever run.
+            config_path.unlink()
+
+        if isinstance(removed, dict):
+            return removed.get("name", f"catalog-{index + 1}")
+        return f"catalog-{index + 1}"
 
 
 # ---------------------------------------------------------------------------
