@@ -4844,6 +4844,12 @@ def workflow_list():
 
     console.print("\n[bold cyan]Installed Workflows:[/bold cyan]\n")
     for wf_id, wf_data in installed.items():
+        if not isinstance(wf_data, dict):
+            console.print(
+                f"  [yellow]Warning:[/yellow] Skipping malformed workflow metadata for '{wf_id}' "
+                f"(expected object, got {type(wf_data).__name__})"
+            )
+            continue
         enabled = wf_data.get("enabled", True)
         status = "" if enabled else " [yellow](disabled)[/yellow]"
         console.print(f"  [bold]{wf_data.get('name', wf_id)}[/bold] ({wf_id}) v{wf_data.get('version', '?')}{status}")
@@ -4870,7 +4876,9 @@ def _validate_url_scheme(url: str) -> None:
     from urllib.parse import urlparse
 
     parsed = urlparse(url)
-    host = parsed.hostname or ""
+    if not parsed.hostname:
+        raise ValueError(f"URL has no hostname: {url}")
+    host = parsed.hostname
     if parsed.scheme != "https" and not (parsed.scheme == "http" and _is_loopback_host(host)):
         raise ValueError(f"Non-HTTPS URL not allowed: {url}")
 
@@ -4953,7 +4961,7 @@ def workflow_add(
     if dev:
         source_path = Path(source).expanduser().resolve()
         if not source_path.exists():
-            console.print(f"[red]Error:[/red] Directory not found: {source_path}")
+            console.print(f"[red]Error:[/red] Path not found: {source_path}")
             raise typer.Exit(1)
 
         if source_path.is_file() and source_path.suffix in (".yml", ".yaml"):
@@ -5386,6 +5394,8 @@ def workflow_update(
             console.print(f"⚠  {wf_id}: Invalid workflow ID (skipping)")
             continue
         try:
+            # Ensure workflows directory exists before creating temp dir
+            workflows_dir.mkdir(parents=True, exist_ok=True)
             # Download and validate in a temporary directory so failures do not
             # leave a partially-created workflow directory behind.
             with tempfile.TemporaryDirectory(prefix=f"{wf_id}-", dir=workflows_dir) as tmp_dir:
@@ -5420,16 +5430,24 @@ def workflow_update(
                             shutil.rmtree(wf_dir)
                         backup_dir.rename(wf_dir)
                     raise
-                # Clean up backup after successful swap
-                if backup_dir and backup_dir.exists():
-                    shutil.rmtree(backup_dir)
 
-            # Update registry
-            registry.update(wf_id, {
-                "version": update["available"],
-                "name": definition.name or update["name"],
-                "description": definition.description or "",
-            })
+            # Update registry (backup still exists until this succeeds)
+            try:
+                registry.update(wf_id, {
+                    "version": update["available"],
+                    "name": definition.name or update["name"],
+                    "description": definition.description or "",
+                })
+            except Exception:
+                # Restore from backup if registry update fails
+                if backup_dir and backup_dir.exists():
+                    if wf_dir.exists():
+                        shutil.rmtree(wf_dir)
+                    backup_dir.rename(wf_dir)
+                raise
+            # Clean up backup after fully successful update
+            if backup_dir and backup_dir.exists():
+                shutil.rmtree(backup_dir)
             console.print(f"  [green]✓[/green] {wf_id}: {update['installed']} → {update['available']}")
 
         except Exception as exc:

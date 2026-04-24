@@ -115,6 +115,11 @@ class WorkflowRegistry:
             return
 
         existing = self.data["workflows"][workflow_id]
+        if not isinstance(existing, dict):
+            self.data["workflows"][workflow_id] = dict(fields)
+            self.data["workflows"][workflow_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+            self.save()
+            return
         installed_at = existing.get("installed_at")
 
         existing.update(fields)
