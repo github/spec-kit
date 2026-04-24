@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-23T00:00:00Z",
+  "updated_at": "2026-04-24T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1424,10 +1424,10 @@
     "product-forge": {
       "name": "Product Forge",
       "id": "product-forge",
-      "description": "Full product lifecycle: research → product spec → SpecKit → implement → verify → test",
+      "description": "Full product lifecycle from research to release — portfolio, lite mode, monorepo, optional V-Model",
       "author": "VaiYav",
-      "version": "1.1.1",
-      "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.1.1.zip",
+      "version": "1.5.0",
+      "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.5.0.zip",
       "repository": "https://github.com/VaiYav/speckit-product-forge",
       "homepage": "https://github.com/VaiYav/speckit-product-forge",
       "documentation": "https://github.com/VaiYav/speckit-product-forge/blob/main/README.md",
@@ -1437,21 +1437,21 @@
         "speckit_version": ">=0.1.0"
       },
       "provides": {
-        "commands": 10,
+        "commands": 29,
         "hooks": 0
       },
       "tags": [
         "process",
-        "research",
-        "product-spec",
         "lifecycle",
-        "testing"
+        "monorepo",
+        "v-model",
+        "portfolio"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-28T00:00:00Z",
-      "updated_at": "2026-03-28T00:00:00Z"
+      "updated_at": "2026-04-24T00:00:00Z"
     },
     "qa": {
       "name": "QA Testing Extension",
