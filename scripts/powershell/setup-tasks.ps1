@@ -47,11 +47,12 @@ if (Test-Path $paths.QUICKSTART) { $docs += 'quickstart.md' }
 
 # Resolve tasks template through override stack
 $tasksTemplate = Resolve-Template -TemplateName 'tasks-template' -RepoRoot $paths.REPO_ROOT
-if (-not $tasksTemplate) {
+if (-not $tasksTemplate -or -not (Test-Path -LiteralPath $tasksTemplate -PathType Leaf)) {
     $expectedCoreTemplate = Join-Path $paths.REPO_ROOT '.specify/templates/tasks-template.md'
     [Console]::Error.WriteLine("Tasks template not found for repository root: $($paths.REPO_ROOT)`nExpected shared/core template location: $expectedCoreTemplate`nTo continue, restore the shared templates (for example by re-running 'specify init') so that '.specify/templates/tasks-template.md' exists, or add a valid tasks-template override.")
     exit 1
 }
+$tasksTemplate = (Resolve-Path -LiteralPath $tasksTemplate).Path
 
 # Output results
 if ($Json) {
