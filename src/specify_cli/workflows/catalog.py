@@ -167,9 +167,10 @@ class WorkflowRegistry:
         safe_fields.pop("installed_at", None)  # always preserve original
         now = datetime.now(timezone.utc).isoformat()
         existing.update(safe_fields)
-        if installed_at is not None:
+        # Preserve installed_at only if it's a valid string; otherwise reset
+        if isinstance(installed_at, str) and installed_at:
             existing["installed_at"] = installed_at
-        if "installed_at" not in existing:
+        else:
             existing["installed_at"] = now
         existing["updated_at"] = now
         self.save()

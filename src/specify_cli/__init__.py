@@ -5491,8 +5491,15 @@ def workflow_update(
                 backup_dir = None
                 if wf_dir.exists():
                     backup_parent = workflows_dir / ".backup"
+                    # Guard against symlink attacks
+                    if backup_parent.exists() and backup_parent.is_symlink():
+                        raise ValueError(".backup is a symlink; refusing to use it")
                     backup_parent.mkdir(parents=True, exist_ok=True)
                     backup_dir = backup_parent / wf_id
+                    try:
+                        backup_dir.resolve().relative_to(workflows_dir.resolve())
+                    except ValueError:
+                        raise ValueError(f"Backup path escapes workflows directory: {backup_dir}")
                     if backup_dir.exists():
                         shutil.rmtree(backup_dir)
                     wf_dir.rename(backup_dir)
