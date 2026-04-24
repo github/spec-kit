@@ -1016,8 +1016,8 @@ def init(
         specify init --here
         specify init --here --force  # Skip confirmation when current directory not empty
         specify init my-project --integration claude   # Claude installs skills by default
-        specify init --here --integration gemini --integration-options="--skills"
-        specify init my-project --integration generic --integration-options="--commands-dir .myagent/commands/"  # Unsupported agent
+        specify init --here --integration gemini
+        specify init my-project --integration generic --integration-options="--commands-dir .myagent/commands/"  # Bring your own agent; requires --commands-dir
         specify init my-project --offline  # Use bundled assets (no network access)
         specify init my-project --integration claude --preset healthcare-compliance  # With preset
     """

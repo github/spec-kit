@@ -480,7 +480,7 @@ You will be prompted to select the AI agent you are using. You can also proactiv
 ```bash
 specify init <project_name> --integration copilot
 specify init <project_name> --integration gemini
-specify init <project_name> --integration copilot
+specify init <project_name> --integration codex
 
 # Or in current directory:
 specify init . --integration copilot
