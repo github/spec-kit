@@ -91,12 +91,26 @@ class WorkflowRegistry:
     def save(self) -> None:
         """Persist registry to disk atomically (write to temp, then rename)."""
         self.workflows_dir.mkdir(parents=True, exist_ok=True)
+
+        # Capture existing file permissions to preserve after replace
+        existing_stat = None
+        if self.registry_path.exists():
+            try:
+                existing_stat = self.registry_path.stat()
+            except OSError:
+                pass
+
         fd, tmp_path = tempfile.mkstemp(
             suffix=".json", dir=self.workflows_dir
         )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=2)
+            if existing_stat is not None:
+                try:
+                    os.chmod(tmp_path, existing_stat.st_mode & 0o7777)
+                except OSError:
+                    pass
             os.replace(tmp_path, self.registry_path)
         except BaseException:
             try:
