@@ -1426,8 +1426,8 @@
       "id": "product-forge",
       "description": "Full product lifecycle from research to release — portfolio, lite mode, monorepo, optional V-Model",
       "author": "VaiYav",
-      "version": "1.5.0",
-      "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.5.0.zip",
+      "version": "1.5.1",
+      "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.5.1.zip",
       "repository": "https://github.com/VaiYav/speckit-product-forge",
       "homepage": "https://github.com/VaiYav/speckit-product-forge",
       "documentation": "https://github.com/VaiYav/speckit-product-forge/blob/main/README.md",
@@ -1451,7 +1451,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-28T00:00:00Z",
-      "updated_at": "2026-04-24T00:00:00Z"
+      "updated_at": "2026-04-24T15:52:00Z"
     },
     "qa": {
       "name": "QA Testing Extension",
