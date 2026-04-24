@@ -210,6 +210,13 @@ class TestResolveCommandRefs:
         assert IntegrationBase.invoke_separator == "."
         assert SkillsIntegration.invoke_separator == "-"
 
+    def test_effective_invoke_separator_default(self):
+        """Base classes return invoke_separator regardless of parsed_options."""
+        from .conftest import StubIntegration
+        stub = StubIntegration()
+        assert stub.effective_invoke_separator() == "."
+        assert stub.effective_invoke_separator({"skills": True}) == "."
+
     def test_process_template_resolves_placeholders(self):
         content = "---\ndescription: test\n---\nRun __SPECKIT_COMMAND_PLAN__ now."
         result = IntegrationBase.process_template(

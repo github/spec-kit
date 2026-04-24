@@ -103,6 +103,16 @@ class CopilotIntegration(IntegrationBase):
     # Mutable flag set by setup() — indicates the active scaffolding mode.
     _skills_mode: bool = False
 
+    def effective_invoke_separator(
+        self, parsed_options: dict[str, Any] | None = None
+    ) -> str:
+        """Return ``"-"`` when skills mode is requested, ``"."`` otherwise."""
+        if parsed_options and parsed_options.get("skills"):
+            return "-"
+        if self._skills_mode:
+            return "-"
+        return self.invoke_separator
+
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         return [

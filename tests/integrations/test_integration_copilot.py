@@ -445,6 +445,27 @@ class TestCopilotSkillsMode:
             assert "{SCRIPT}" not in content, f"{f.name} has unprocessed {{SCRIPT}}"
             assert "__AGENT__" not in content, f"{f.name} has unprocessed __AGENT__"
             assert "{ARGS}" not in content, f"{f.name} has unprocessed {{ARGS}}"
+            assert "__SPECKIT_COMMAND_" not in content, f"{f.name} has unprocessed __SPECKIT_COMMAND_*__"
+
+    def test_skills_command_refs_use_hyphen(self, tmp_path):
+        """Copilot skills mode must use /speckit-<name> not /speckit.<name>."""
+        copilot = self._make_copilot()
+        created, _ = self._setup_skills(copilot, tmp_path)
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            assert "/speckit." not in content, (
+                f"{f.name} contains dot-notation /speckit. reference; "
+                f"skills mode must use /speckit-<name>"
+            )
+
+    def test_skills_mode_invoke_separator(self):
+        """Copilot effective_invoke_separator should reflect skills mode."""
+        copilot = self._make_copilot()
+        assert copilot.effective_invoke_separator() == "."
+        assert copilot.effective_invoke_separator({"skills": True}) == "-"
+        assert copilot.effective_invoke_separator({"skills": False}) == "."
 
     def test_skill_body_has_content(self, tmp_path):
         """Each SKILL.md body should contain template content."""

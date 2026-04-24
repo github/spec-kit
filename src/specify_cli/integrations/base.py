@@ -99,6 +99,18 @@ class IntegrationBase(ABC):
         """Return options this integration accepts. Default: none."""
         return []
 
+    def effective_invoke_separator(
+        self, parsed_options: dict[str, Any] | None = None
+    ) -> str:
+        """Return the invoke separator for the given options.
+
+        Subclasses whose separator depends on runtime options (e.g.
+        Copilot in ``--skills`` mode) should override this method.
+        The default implementation ignores *parsed_options* and returns
+        the class-level ``invoke_separator``.
+        """
+        return self.invoke_separator
+
     def build_exec_args(
         self,
         prompt: str,

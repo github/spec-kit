@@ -572,3 +572,32 @@ class TestSharedInfraCommandRefs:
         content = plan.read_text(encoding="utf-8")
         assert "/speckit.plan" in content, "Copilot (markdown) should use /speckit.plan"
         assert "__SPECKIT_COMMAND_" not in content
+
+    def test_full_init_copilot_skills_resolves_page_templates(self, tmp_path):
+        """Full CLI init with Copilot --skills produces hyphen refs in page templates."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        project = tmp_path / "init-copilot-skills"
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            result = runner.invoke(app, [
+                "init", str(project),
+                "--integration", "copilot",
+                "--integration-options", "--skills",
+                "--script", "sh",
+                "--no-git",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        plan = project / ".specify" / "templates" / "plan-template.md"
+        content = plan.read_text(encoding="utf-8")
+        assert "/speckit-plan" in content, "Copilot --skills should use /speckit-plan"
+        assert "/speckit.plan" not in content, "dot-notation leaked into Copilot skills page template"
+        assert "__SPECKIT_COMMAND_" not in content
