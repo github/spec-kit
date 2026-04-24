@@ -470,6 +470,8 @@ class TestGitExtensionAutoInstall:
         assert "deprecated" in normalized_output
         assert "0.10.0" in normalized_output
         assert "specify extension" in normalized_output
+        assert "will be removed" in normalized_output
+        assert "git extension will no longer be enabled by default" in normalized_output
 
     def test_git_extension_commands_registered(self, tmp_path):
         """Git extension commands are registered with the agent during init."""
