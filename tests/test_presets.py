@@ -3317,7 +3317,7 @@ class TestBundledPresetLocator:
             "_install_allowed": True,
         }
         with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("specify_cli._locate_bundled_preset", return_value=None), \
+             patch("specify_cli.commands.preset._locate_bundled_preset", return_value=None), \
              patch("specify_cli.presets.PresetCatalog") as MockCatalog:
             MockCatalog.return_value.get_pack_info.return_value = fake_pack_info
             result = runner.invoke(app, ["preset", "add", "lean"])
