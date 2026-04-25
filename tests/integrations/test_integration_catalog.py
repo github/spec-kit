@@ -972,6 +972,29 @@ class TestCatalogSourceManagement:
         with pytest.raises(IntegrationValidationError, match="Failed to read catalog config"):
             cat.get_active_catalogs()
 
+    def test_load_catalog_config_rejects_boolean_priority(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "url": "https://a.example.com/catalog.json",
+                            "name": "a",
+                            "priority": True,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(IntegrationValidationError, match="Invalid priority|expected integer"):
+            cat.get_active_catalogs()
+
     def test_remove_catalog_uses_display_order_with_explicit_priorities(
         self, tmp_path, monkeypatch
     ):

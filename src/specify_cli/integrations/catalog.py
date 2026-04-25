@@ -153,12 +153,18 @@ class IntegrationCatalog:
                 raise IntegrationValidationError(
                     f"Invalid catalog URL in {config_path} at index {idx}: {exc}"
                 ) from exc
+            raw_priority = item.get("priority", idx + 1)
+            if isinstance(raw_priority, bool):
+                raise IntegrationValidationError(
+                    f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
+                    f"expected integer, got {raw_priority!r}"
+                )
             try:
-                priority = int(item.get("priority", idx + 1))
+                priority = int(raw_priority)
             except (TypeError, ValueError):
                 raise IntegrationValidationError(
                     f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
-                    f"expected integer, got {item.get('priority')!r}"
+                    f"expected integer, got {raw_priority!r}"
                 )
             raw_install = item.get("install_allowed", False)
             if isinstance(raw_install, str):
