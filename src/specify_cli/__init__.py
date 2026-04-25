@@ -53,6 +53,7 @@ from rich.table import Table
 from rich.tree import Tree
 from typer.core import TyperGroup
 
+from ._console import console
 from .integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
     resolve_integration_options as _resolve_integration_options_impl,
@@ -346,7 +347,6 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
 
     return selected_key
 
-from ._console import console
 
 class BannerGroup(TyperGroup):
     """Custom group that shows banner before help."""
