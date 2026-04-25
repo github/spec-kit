@@ -39,7 +39,6 @@ import urllib.request
 import yaml
 from pathlib import Path
 
-from packaging.version import InvalidVersion, Version
 from typing import Any, Optional
 
 import typer
@@ -54,6 +53,7 @@ from ._ui import StepTracker, get_key, select_with_arrows, BannerGroup, show_ban
 from ._fs import handle_vscode_settings, merge_json_files, save_init_options, load_init_options
 from ._assets import AssetService as _AssetService, _asset_service as _svc
 from ._git import GitService as _GitService, _git_service as _git_svc
+from ._version import VersionService as _VersionService, _version_service as _ver_svc, GITHUB_API_LATEST
 from .integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
     resolve_integration_options as _resolve_integration_options_impl,
@@ -74,8 +74,6 @@ from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
 )
-
-GITHUB_API_LATEST = "https://api.github.com/repos/github/spec-kit/releases/latest"
 
 def _build_agent_config() -> dict[str, dict[str, Any]]:
     """Derive AGENT_CONFIG from INTEGRATION_REGISTRY."""
@@ -1200,87 +1198,16 @@ def version():
     console.print()
 
 def _get_installed_version() -> str:
-    """Return the installed specify-cli distribution version or 'unknown'.
-
-    Uses importlib.metadata so the value reflects what was actually installed
-    by pip/uv/pipx — not a value read from pyproject.toml. This is
-    intentional for `specify self check`, which should reason about the
-    installed distribution rather than a source-tree fallback. Callers must
-    treat the sentinel string 'unknown' as an indeterminate value (see FR-020).
-    """
-
-    import importlib.metadata
-
-    metadata_errors = [importlib.metadata.PackageNotFoundError]
-    invalid_metadata_error = getattr(importlib.metadata, "InvalidMetadataError", None)
-    if invalid_metadata_error is not None:
-        metadata_errors.append(invalid_metadata_error)
-
-    try:
-        return importlib.metadata.version("specify-cli")
-    except tuple(metadata_errors):
-        return "unknown"
+    return _ver_svc.get_installed_version()
 
 def _normalize_tag(tag: str) -> str:
-    """Strip exactly one leading 'v' from a release tag.
-
-    Returns the rest of the string unchanged. This handles the common
-    'vX.Y.Z' tag convention in this repo; it MUST NOT strip more
-    aggressively (e.g., two leading 'v's keeps one).
-    """
-    return tag[1:] if tag.startswith("v") else tag
+    return _ver_svc._normalize_tag(tag)
 
 def _is_newer(latest: str, current: str) -> bool:
-    """Return True iff `latest` is strictly greater than `current` under PEP 440.
-
-    Returns False whenever either side is 'unknown' or fails to parse; this
-    keeps the comparison indeterminate (rather than crashing or falsely
-    recommending a downgrade) on edge inputs.
-    """
-    if latest == "unknown" or current == "unknown":
-        return False
-    try:
-        return Version(latest) > Version(current)
-    except InvalidVersion:
-        return False
-
+    return _ver_svc.is_newer(latest, current)
 
 def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
-    """Return (tag, failure_category). Exactly one outbound call, 5 s timeout.
-
-    On success: (tag_name, None).
-    On a documented network/HTTP failure (added in T029/T030): (None, category).
-    On anything else — including a malformed response body — the exception
-    propagates; there is no catch-all (research D-006).
-    """
-    req = urllib.request.Request(
-        GITHUB_API_LATEST,
-        headers={"Accept": "application/vnd.github+json"},
-    )
-    token = None
-    for env_var in ("GH_TOKEN", "GITHUB_TOKEN"):
-        candidate = os.environ.get(env_var)
-        if candidate is not None:
-            candidate = candidate.strip()
-            if candidate:
-                token = candidate
-                break
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
-    try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-            tag = payload.get("tag_name")
-            if not isinstance(tag, str) or not tag:
-                raise ValueError("GitHub API response missing valid tag_name")
-            return tag, None
-    except urllib.error.HTTPError as e:
-        # Order matters: HTTPError is a subclass of URLError.
-        if e.code == 403:
-            return None, "rate limited (try setting GH_TOKEN or GITHUB_TOKEN)"
-        return None, f"HTTP {e.code}"
-    except (urllib.error.URLError, OSError):
-        return None, "offline or timeout"
+    return _ver_svc.fetch_latest_tag()
 
 
 # ===== Self Commands =====
