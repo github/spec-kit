@@ -1316,6 +1316,8 @@ def init(
 
             ensure_constitution_from_template(project_path, tracker=tracker)
 
+            _git_ext_freshly_installed = False
+            _git_ext_install_notice: str | None = None
             if not no_git:
                 tracker.start("git")
                 git_messages = []
@@ -1346,10 +1348,12 @@ def init(
                         if manager.registry.is_installed("git"):
                             git_messages.append("extension already installed")
                         else:
-                            manager.install_from_directory(
+                            ext_manifest = manager.install_from_directory(
                                 bundled_path, get_speckit_version()
                             )
                             git_messages.append("extension installed")
+                            _git_ext_freshly_installed = True
+                            _git_ext_install_notice = ext_manifest.install_notice
                     else:
                         git_has_error = True
                         git_messages.append("bundled extension not found")
@@ -1493,6 +1497,19 @@ def init(
 
     console.print(tracker.render())
     console.print("\n[bold green]Project ready.[/bold green]")
+
+    if _git_ext_freshly_installed and isinstance(_git_ext_install_notice, str):
+        _git_ext_notice_text = _git_ext_install_notice.strip()
+        if _git_ext_notice_text:
+            console.print()
+            console.print(
+                Panel(
+                    _git_ext_notice_text,
+                    title="[yellow]⚠ Deprecation notice: git extension[/yellow]",
+                    border_style="yellow",
+                    padding=(1, 2),
+                )
+            )
 
     # Agent folder security notice
     agent_config = AGENT_CONFIG.get(selected_ai)
