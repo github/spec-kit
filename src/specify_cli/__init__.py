@@ -52,6 +52,7 @@ from rich.table import Table
 from ._console import console
 from ._ui import StepTracker, get_key, select_with_arrows, BannerGroup, show_banner, BANNER, TAGLINE
 from ._fs import handle_vscode_settings, merge_json_files, save_init_options, load_init_options
+from ._assets import AssetService as _AssetService, _asset_service as _svc
 from .integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
     resolve_integration_options as _resolve_integration_options_impl,
@@ -280,20 +281,7 @@ def init_git_repo(project_path: Path, quiet: bool = False) -> tuple[bool, Option
 
 
 def _locate_core_pack() -> Path | None:
-    """Return the filesystem path to the bundled core_pack directory, or None.
-
-    Only present in wheel installs: hatchling's force-include copies
-    templates/, scripts/ etc. into specify_cli/core_pack/ at build time.
-
-    Source-checkout and editable installs do NOT have this directory.
-    Callers that need to work in both environments must check the repo-root
-    trees (templates/, scripts/) as a fallback when this returns None.
-    """
-    # Wheel install: core_pack is a sibling directory of this file
-    candidate = Path(__file__).parent / "core_pack"
-    if candidate.is_dir():
-        return candidate
-    return None
+    return _svc.locate_core_pack()
 
 
 def _repo_root() -> Path:
@@ -302,75 +290,15 @@ def _repo_root() -> Path:
 
 
 def _locate_bundled_extension(extension_id: str) -> Path | None:
-    """Return the path to a bundled extension, or None.
-
-    Checks the wheel's core_pack first, then falls back to the
-    source-checkout ``extensions/<id>/`` directory.
-    """
-    import re as _re
-    if not _re.match(r'^[a-z0-9-]+$', extension_id):
-        return None
-
-    core = _locate_core_pack()
-    if core is not None:
-        candidate = core / "extensions" / extension_id
-        if (candidate / "extension.yml").is_file():
-            return candidate
-
-    # Source-checkout / editable install: look relative to repo root
-    candidate = _repo_root() / "extensions" / extension_id
-    if (candidate / "extension.yml").is_file():
-        return candidate
-
-    return None
+    return _svc.locate_bundled_extension(extension_id)
 
 
 def _locate_bundled_workflow(workflow_id: str) -> Path | None:
-    """Return the path to a bundled workflow directory, or None.
-
-    Checks the wheel's core_pack first, then falls back to the
-    source-checkout ``workflows/<id>/`` directory.
-    """
-    import re as _re
-    if not _re.match(r'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$', workflow_id):
-        return None
-
-    core = _locate_core_pack()
-    if core is not None:
-        candidate = core / "workflows" / workflow_id
-        if (candidate / "workflow.yml").is_file():
-            return candidate
-
-    # Source-checkout / editable install: look relative to repo root
-    candidate = _repo_root() / "workflows" / workflow_id
-    if (candidate / "workflow.yml").is_file():
-        return candidate
-
-    return None
+    return _svc.locate_bundled_workflow(workflow_id)
 
 
 def _locate_bundled_preset(preset_id: str) -> Path | None:
-    """Return the path to a bundled preset, or None.
-
-    Checks the wheel's core_pack first, then falls back to the
-    source-checkout ``presets/<id>/`` directory.
-    """
-    import re as _re
-    if not _re.match(r'^[a-z0-9-]+$', preset_id):
-        return None
-
-    core = _locate_core_pack()
-    if core is not None:
-        candidate = core / "presets" / preset_id
-        if (candidate / "preset.yml").is_file():
-            return candidate
-
-    # Source-checkout / editable install: look relative to repo root
-    candidate = _repo_root() / "presets" / preset_id
-    if (candidate / "preset.yml").is_file():
-        return candidate
-
-    return None
+    return _svc.locate_bundled_preset(preset_id)
 
 
 def _refresh_shared_templates(
