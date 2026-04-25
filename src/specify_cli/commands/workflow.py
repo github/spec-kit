@@ -4,7 +4,7 @@ import shutil
 import tempfile
 import yaml
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import typer
 
