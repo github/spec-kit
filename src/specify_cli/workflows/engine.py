@@ -289,7 +289,11 @@ class RunState:
             raise FileNotFoundError(msg)
 
         with open(state_path, encoding="utf-8") as f:
-            state_data = json.load(f)
+            try:
+                state_data = json.load(f)
+            except json.JSONDecodeError as exc:
+                msg = f"Corrupted run state file: {state_path}: {exc}"
+                raise ValueError(msg) from exc
 
         state = cls(
             run_id=state_data["run_id"],
@@ -306,7 +310,11 @@ class RunState:
         inputs_path = runs_dir / "inputs.json"
         if inputs_path.exists():
             with open(inputs_path, encoding="utf-8") as f:
-                inputs_data = json.load(f)
+                try:
+                    inputs_data = json.load(f)
+                except json.JSONDecodeError as exc:
+                    msg = f"Corrupted inputs file: {inputs_path}: {exc}"
+                    raise ValueError(msg) from exc
             state.inputs = inputs_data.get("inputs", {})
 
         return state
