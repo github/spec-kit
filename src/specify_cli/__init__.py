@@ -33,8 +33,6 @@ import zipfile
 import tempfile
 import shutil
 import json
-import json5
-import stat
 import shlex
 import urllib.error
 import urllib.request
