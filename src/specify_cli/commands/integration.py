@@ -2,7 +2,7 @@
 import os
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import typer
 from rich.table import Table
@@ -13,7 +13,7 @@ from .._helpers import (
     run_command, check_tool,
     _install_shared_infra, ensure_executable_scripts,
     get_speckit_version, _parse_integration_options,
-    AGENT_CONFIG, SCRIPT_TYPE_CHOICES,
+    SCRIPT_TYPE_CHOICES,
 )
 
 integration_app = typer.Typer(
@@ -271,7 +271,7 @@ def integration_install(
         _write_integration_json(project_root, integration.key)
         _update_init_options_for_integration(project_root, integration, script_type=selected_script)
 
-    except Exception as e:
+    except Exception as exc:
         # Attempt rollback of any files written by setup
         try:
             integration.teardown(project_root, manifest, force=True)
@@ -279,7 +279,7 @@ def integration_install(
             # Suppress so the original setup error remains the primary failure
             console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration changes: {rollback_err}")
         _remove_integration_json(project_root)
-        console.print(f"[red]Error:[/red] Failed to install integration: {e}")
+        console.print(f"[red]Error:[/red] Failed to install integration: {exc}")
         raise typer.Exit(1)
 
     name = (integration.config or {}).get("name", key)
@@ -490,7 +490,7 @@ def integration_switch(
         _write_integration_json(project_root, target_integration.key)
         _update_init_options_for_integration(project_root, target_integration, script_type=selected_script)
 
-    except Exception as e:
+    except Exception as exc:
         # Attempt rollback of any files written by setup
         try:
             target_integration.teardown(project_root, manifest, force=True)
@@ -498,7 +498,7 @@ def integration_switch(
             # Suppress so the original setup error remains the primary failure
             console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration '{target}': {rollback_err}")
         _remove_integration_json(project_root)
-        console.print(f"[red]Error:[/red] Failed to install integration '{target}': {e}")
+        console.print(f"[red]Error:[/red] Failed to install integration '{target}': {exc}")
         raise typer.Exit(1)
 
     name = (target_integration.config or {}).get("name", target)
