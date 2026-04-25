@@ -807,6 +807,24 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert "~/.specify/integration-catalogs.yml" in normalized_output
         assert "temporarily unavailable" not in normalized_output
 
+    def test_search_invalid_env_catalog_url_shows_env_tip(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CATALOG_URL",
+            "http://insecure.example.com/catalog.json",
+        )
+
+        result = self._invoke(["integration", "search"], project)
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 1, result.output
+        assert "SPECKIT_INTEGRATION_CATALOG_URL environment variable" in normalized_output
+        assert "unset it to use the configured catalog files" in normalized_output
+        assert ".specify/integration-catalogs.yml" in normalized_output
+        assert "~/.specify/integration-catalogs.yml" in normalized_output
+        assert "temporarily unavailable" not in normalized_output
+
     def test_info_unknown_with_local_config_error_shows_local_config_tip(
         self, tmp_path, monkeypatch
     ):
@@ -839,11 +857,14 @@ class TestIntegrationCatalogDiscoveryCLI:
         result = self._invoke(["integration", "catalog", "list"], project)
         assert result.exit_code == 0, result.output
         assert "Integration Catalog Sources" in result.output
+        assert "No project-level catalog sources configured" in result.output
+        assert "Active catalog sources" in result.output
+        assert "non-removable" in result.output
         assert "default" in result.output
         assert "community" in result.output
-        # Index markers should be present for `remove <index>` to be usable
-        assert "[0]" in result.output
-        assert "[1]" in result.output
+        # Built-in defaults are active, but not removable project entries.
+        assert "[0]" not in result.output
+        assert "[1]" not in result.output
 
     def test_catalog_add_then_remove_roundtrip(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
@@ -869,7 +890,12 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert cfg_path.exists()
 
         list_result = self._invoke(["integration", "catalog", "list"], project)
+        assert list_result.exit_code == 0, list_result.output
+        assert "Project catalog sources" in list_result.output
+        assert "[0]" in list_result.output
         assert "mine" in list_result.output
+        assert "default" not in list_result.output
+        assert "community" not in list_result.output
 
         remove_result = self._invoke(
             ["integration", "catalog", "remove", "0"], project

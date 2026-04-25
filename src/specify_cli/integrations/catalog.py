@@ -125,7 +125,7 @@ class IntegrationCatalog:
         catalogs_data = data.get("catalogs", [])
         if not isinstance(catalogs_data, list):
             raise IntegrationValidationError(
-                f"Invalid catalog config: 'catalogs' must be a list, "
+                f"Invalid catalog config {config_path}: 'catalogs' must be a list, "
                 f"got {type(catalogs_data).__name__}"
             )
         if not catalogs_data:
@@ -138,7 +138,7 @@ class IntegrationCatalog:
         for idx, item in enumerate(catalogs_data):
             if not isinstance(item, dict):
                 raise IntegrationValidationError(
-                    f"Invalid catalog entry at index {idx}: "
+                    f"Invalid catalog config {config_path}: catalog entry at index {idx}: "
                     f"expected a mapping, got {type(item).__name__}"
                 )
             url = str(item.get("url", "")).strip()
@@ -158,6 +158,7 @@ class IntegrationCatalog:
             raw_priority = item.get("priority", idx + 1)
             if isinstance(raw_priority, bool):
                 raise IntegrationValidationError(
+                    f"Invalid catalog config {config_path}: "
                     f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
                     f"expected integer, got {raw_priority!r}"
                 )
@@ -165,6 +166,7 @@ class IntegrationCatalog:
                 priority = int(raw_priority)
             except (TypeError, ValueError):
                 raise IntegrationValidationError(
+                    f"Invalid catalog config {config_path}: "
                     f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
                     f"expected integer, got {raw_priority!r}"
                 )
@@ -456,6 +458,23 @@ class IntegrationCatalog:
             for e in self.get_active_catalogs()
         ]
 
+    def get_project_catalog_configs(self) -> Optional[List[Dict[str, Any]]]:
+        """Return removable project-level catalog config entries, if configured."""
+        config_path = self.project_root / ".specify" / self.CONFIG_FILENAME
+        entries = self._load_catalog_config(config_path)
+        if entries is None:
+            return None
+        return [
+            {
+                "name": e.name,
+                "url": e.url,
+                "priority": e.priority,
+                "install_allowed": e.install_allowed,
+                "description": e.description,
+            }
+            for e in entries
+        ]
+
     def add_catalog(self, url: str, name: Optional[str] = None) -> None:
         """Add a catalog source to the project-level config file.
 
@@ -668,9 +687,14 @@ class IntegrationCatalog:
                     f"Failed to delete catalog config {config_path}: {exc}"
                 ) from exc
 
+        fallback_name = f"catalog-{target_yaml_idx + 1}"
         if isinstance(removed, dict):
-            return removed.get("name", f"catalog-{target_yaml_idx + 1}")
-        return f"catalog-{target_yaml_idx + 1}"
+            removed_name = removed.get("name")
+            if removed_name is not None:
+                normalized_name = str(removed_name).strip()
+                if normalized_name:
+                    return normalized_name
+        return fallback_name
 
 
 # ---------------------------------------------------------------------------

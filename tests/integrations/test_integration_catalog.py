@@ -116,8 +116,9 @@ class TestActiveCatalogs:
         cfg = specify / "integration-catalogs.yml"
         cfg.write_text(yaml.dump({"catalogs": []}))
         cat = IntegrationCatalog(tmp_path)
-        with pytest.raises(IntegrationCatalogError, match="no 'catalogs' entries"):
+        with pytest.raises(IntegrationCatalogError, match="no 'catalogs' entries") as exc_info:
             cat.get_active_catalogs()
+        assert str(cfg) in str(exc_info.value)
 
     def test_empty_config_file_raises_no_catalogs(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HOME", str(tmp_path))
@@ -129,8 +130,11 @@ class TestActiveCatalogs:
         cfg.write_text("", encoding="utf-8")
 
         cat = IntegrationCatalog(tmp_path)
-        with pytest.raises(IntegrationValidationError, match="no 'catalogs' entries"):
+        with pytest.raises(
+            IntegrationValidationError, match="no 'catalogs' entries"
+        ) as exc_info:
             cat.get_active_catalogs()
+        assert str(cfg) in str(exc_info.value)
 
     @pytest.mark.parametrize("config_content", ["[]\n", "false\n", "0\n", "''\n"])
     def test_load_catalog_config_rejects_falsy_non_mapping_roots(
@@ -148,8 +152,9 @@ class TestActiveCatalogs:
         with pytest.raises(
             IntegrationValidationError,
             match="expected a YAML mapping at the root",
-        ):
+        ) as exc_info:
             cat.get_active_catalogs()
+        assert str(cfg) in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -1113,8 +1118,33 @@ class TestCatalogSourceManagement:
         )
 
         cat = IntegrationCatalog(tmp_path)
-        with pytest.raises(IntegrationValidationError, match="Invalid priority|expected integer"):
+        with pytest.raises(
+            IntegrationValidationError, match="Invalid priority|expected integer"
+        ) as exc_info:
             cat.get_active_catalogs()
+        assert str(cfg_path) in str(exc_info.value)
+
+    @pytest.mark.parametrize(
+        ("raw_name", "expected"),
+        [
+            (None, "catalog-1"),
+            ("   ", "catalog-1"),
+            (123, "123"),
+        ],
+    )
+    def test_remove_catalog_normalizes_removed_display_name(
+        self, tmp_path, monkeypatch, raw_name, expected
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://one.example.com/c.json", name="one")
+
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        data["catalogs"][0]["name"] = raw_name
+        cfg_path.write_text(yaml.dump(data), encoding="utf-8")
+
+        assert cat.remove_catalog(0) == expected
 
     def test_remove_catalog_uses_display_order_with_explicit_priorities(
         self, tmp_path, monkeypatch
