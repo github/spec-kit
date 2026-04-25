@@ -527,7 +527,7 @@ class IntegrationCatalog:
                     raise IntegrationValidationError(
                         f"Invalid catalog entry at index {idx}: "
                         f"'priority' must be an integer, got "
-                        f"{type(raw_priority).__name__}."
+                        f"{raw_priority!r}."
                     ) from None
                 existing_priorities.append(normalized_priority)
             else:

@@ -830,7 +830,10 @@ class TestCatalogSourceManagement:
             encoding="utf-8",
         )
         cat = IntegrationCatalog(tmp_path)
-        with pytest.raises(IntegrationValidationError, match="'priority' must be an integer"):
+        with pytest.raises(
+            IntegrationValidationError,
+            match="'priority' must be an integer, got 'first'",
+        ):
             cat.add_catalog("https://b.example.com/catalog.json")
 
     def test_add_catalog_accepts_numeric_string_priority(self, tmp_path, monkeypatch):
