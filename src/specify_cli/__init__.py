@@ -45,7 +45,6 @@ from packaging.version import InvalidVersion, Version
 from typing import Any, Optional
 
 import typer
-from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.live import Live
@@ -347,7 +346,7 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
 
     return selected_key
 
-console = Console(highlight=False)
+from ._console import console
 
 class BannerGroup(TyperGroup):
     """Custom group that shows banner before help."""
