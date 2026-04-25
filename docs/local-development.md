@@ -92,7 +92,7 @@ specify-dev --help
 After running an `init`, check that shell scripts are executable on POSIX systems:
 
 ```bash
-ls -l scripts | grep .sh
+ls -l scripts | grep '\.sh'
 # Expect owner execute bit (e.g. -rwxr-xr-x)
 ```
 
