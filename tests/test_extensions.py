@@ -3469,7 +3469,7 @@ class TestExtensionAddCLI:
         mock_catalog.search.return_value = []
 
         with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog), \
-             patch("specify_cli.commands.extension._locate_bundled_extension", return_value=None), \
+             patch.object(__import__("specify_cli._assets", fromlist=["AssetService"]).AssetService, "locate_bundled_extension", return_value=None), \
              patch.object(Path, "cwd", return_value=project_dir):
             result = runner.invoke(
                 app,

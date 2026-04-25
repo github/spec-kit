@@ -8,10 +8,14 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from rich.table import Table
 
 from .._console import console
 from .._assets import _asset_service as _svc
 from .._helpers import get_speckit_version
+
+_SPECIFY_DIR = ".specify"
+_EXTENSION_CATALOGS_FILE = "extension-catalogs.yml"
 
 extension_app = typer.Typer(
     name="extension",
@@ -26,10 +30,6 @@ catalog_app = typer.Typer(
 )
 
 extension_app.add_typer(catalog_app, name="catalog")
-
-
-def _locate_bundled_extension(extension_id: str) -> Path | None:
-    return _svc.locate_bundled_extension(extension_id)
 
 
 def _resolve_installed_extension(
@@ -52,8 +52,6 @@ def _resolve_installed_extension(
     Raises:
         typer.Exit: If extension not found (and allow_not_found=False) or name is ambiguous
     """
-    from rich.table import Table
-
     # First, try exact ID match
     for ext in installed_extensions:
         if ext["id"] == argument:
@@ -107,7 +105,6 @@ def _resolve_catalog_extension(
         - If catalog error: (None, error)
         - If not found: (None, None)
     """
-    from rich.table import Table
     from ..extensions import ExtensionError
 
     try:
@@ -262,7 +259,7 @@ def extension_list(
     project_root = Path.cwd()
 
     # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
+    specify_dir = project_root / _SPECIFY_DIR
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
@@ -302,7 +299,7 @@ def catalog_list() -> None:
 
     project_root = Path.cwd()
 
-    specify_dir = project_root / ".specify"
+    specify_dir = project_root / _SPECIFY_DIR
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
@@ -330,8 +327,8 @@ def catalog_list() -> None:
         console.print(f"     Install: {install_str}")
         console.print()
 
-    config_path = project_root / ".specify" / "extension-catalogs.yml"
-    user_config_path = Path.home() / ".specify" / "extension-catalogs.yml"
+    config_path = project_root / _SPECIFY_DIR / _EXTENSION_CATALOGS_FILE
+    user_config_path = Path.home() / _SPECIFY_DIR / _EXTENSION_CATALOGS_FILE
     if os.environ.get("SPECKIT_CATALOG_URL"):
         console.print("[dim]Catalog configured via SPECKIT_CATALOG_URL environment variable.[/dim]")
     else:
@@ -371,7 +368,7 @@ def catalog_add(
 
     project_root = Path.cwd()
 
-    specify_dir = project_root / ".specify"
+    specify_dir = project_root / _SPECIFY_DIR
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
@@ -385,7 +382,7 @@ def catalog_add(
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
-    config_path = specify_dir / "extension-catalogs.yml"
+    config_path = specify_dir / _EXTENSION_CATALOGS_FILE
 
     # Load existing config
     if config_path.exists():
@@ -434,13 +431,13 @@ def catalog_remove(
     """Remove a catalog from .specify/extension-catalogs.yml."""
     project_root = Path.cwd()
 
-    specify_dir = project_root / ".specify"
+    specify_dir = project_root / _SPECIFY_DIR
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
 
-    config_path = specify_dir / "extension-catalogs.yml"
+    config_path = specify_dir / _EXTENSION_CATALOGS_FILE
     if not config_path.exists():
         console.print("[red]Error:[/red] No catalog config found. Nothing to remove.")
         raise typer.Exit(1)
@@ -483,7 +480,7 @@ def extension_add(
     project_root = Path.cwd()
 
     # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
+    specify_dir = project_root / _SPECIFY_DIR
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
@@ -533,7 +530,7 @@ def extension_add(
                 console.print(f"Downloading from {from_url}...")
 
                 # Download ZIP to temp location
-                download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+                download_dir = project_root / _SPECIFY_DIR / "extensions" / ".cache" / "downloads"
                 download_dir.mkdir(parents=True, exist_ok=True)
                 zip_path = download_dir / f"{extension}-url-download.zip"
 
@@ -554,7 +551,7 @@ def extension_add(
 
             else:
                 # Try bundled extensions first (shipped with spec-kit)
-                bundled_path = _locate_bundled_extension(extension)
+                bundled_path = _svc.locate_bundled_extension(extension)
                 if bundled_path is not None:
                     manifest = manager.install_from_directory(bundled_path, speckit_version, priority=priority)
                 else:
@@ -575,7 +572,7 @@ def extension_add(
                     # If catalog resolved a display name to an ID, check bundled again
                     resolved_id = ext_info['id']
                     if resolved_id != extension:
-                        bundled_path = _locate_bundled_extension(resolved_id)
+                        bundled_path = _svc.locate_bundled_extension(resolved_id)
                         if bundled_path is not None:
                             manifest = manager.install_from_directory(bundled_path, speckit_version, priority=priority)
 
@@ -665,7 +662,7 @@ def extension_remove(
     project_root = Path.cwd()
 
     # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
+    specify_dir = project_root / _SPECIFY_DIR
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
@@ -741,7 +738,7 @@ def extension_search(
     project_root = Path.cwd()
 
     # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
+    specify_dir = project_root / _SPECIFY_DIR
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
@@ -825,7 +822,7 @@ def extension_info(
     project_root = Path.cwd()
 
     # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
+    specify_dir = project_root / _SPECIFY_DIR
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
@@ -927,7 +924,7 @@ def extension_update(
     project_root = Path.cwd()
 
     # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
+    specify_dir = project_root / _SPECIFY_DIR
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
@@ -1323,7 +1320,7 @@ def extension_enable(
     project_root = Path.cwd()
 
     # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
+    specify_dir = project_root / _SPECIFY_DIR
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
@@ -1370,7 +1367,7 @@ def extension_disable(
     project_root = Path.cwd()
 
     # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
+    specify_dir = project_root / _SPECIFY_DIR
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
@@ -1420,7 +1417,7 @@ def extension_set_priority(
     project_root = Path.cwd()
 
     # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
+    specify_dir = project_root / _SPECIFY_DIR
     if not specify_dir.exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")

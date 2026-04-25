@@ -326,7 +326,7 @@ def self_upgrade() -> None:
 
 # ===== Extension Commands =====
 
-from .commands.extension import extension_app, catalog_app
+from .commands.extension import extension_app
 app.add_typer(extension_app, name="extension")
 
 # ===== Integration Commands =====
