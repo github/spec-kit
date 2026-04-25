@@ -22,7 +22,6 @@ from .._helpers import (
     _install_shared_infra,
     ensure_constitution_from_template,
     ensure_executable_scripts,
-    _get_skills_dir,
     get_speckit_version,
     _parse_integration_options,
     AGENT_CONFIG,
@@ -30,6 +29,8 @@ from .._helpers import (
     AI_ASSISTANT_HELP,
     SCRIPT_TYPE_CHOICES,
 )
+
+_BRANCH_NUMBERING_CHOICES = {"sequential", "timestamp"}
 
 
 def _build_integration_equivalent(
@@ -58,34 +59,6 @@ def _build_ai_deprecation_warning(
         "[bold]--ai[/bold] is deprecated and will no longer be available in version 0.10.0 or later.\n\n"
         f"Use [bold]{replacement}[/bold] instead."
     )
-
-
-def _is_git_repo(path: Path = None) -> bool:
-    """Check if the specified path is inside a git repository."""
-    return _git_svc.is_repo(path)
-
-
-def _init_git_repo(project_path: Path, quiet: bool = False) -> tuple[bool, Optional[str]]:
-    """Initialize a git repository in the specified path."""
-    ok, err = _git_svc.init_repo(project_path)
-    if not quiet:
-        if ok:
-            console.print("[green]✓[/green] Git repository initialized")
-        else:
-            console.print(f"[red]Error initializing git repository:[/red] {err}")
-    return ok, err
-
-
-def _locate_bundled_extension(extension_id: str) -> Path | None:
-    return _svc.locate_bundled_extension(extension_id)
-
-
-def _locate_bundled_workflow(workflow_id: str) -> Path | None:
-    return _svc.locate_bundled_workflow(workflow_id)
-
-
-def _locate_bundled_preset(preset_id: str) -> Path | None:
-    return _svc.locate_bundled_preset(preset_id)
 
 
 def register(app: typer.Typer) -> None:
@@ -239,9 +212,8 @@ def register(app: typer.Typer) -> None:
             console.print("[yellow]Usage:[/yellow] specify init <project> --ai <agent> --ai-skills")
             raise typer.Exit(1)
 
-        BRANCH_NUMBERING_CHOICES = {"sequential", "timestamp"}
-        if branch_numbering and branch_numbering not in BRANCH_NUMBERING_CHOICES:
-            console.print(f"[red]Error:[/red] Invalid --branch-numbering value '{branch_numbering}'. Choose from: {', '.join(sorted(BRANCH_NUMBERING_CHOICES))}")
+        if branch_numbering and branch_numbering not in _BRANCH_NUMBERING_CHOICES:
+            console.print(f"[red]Error:[/red] Invalid --branch-numbering value '{branch_numbering}'. Choose from: {', '.join(sorted(_BRANCH_NUMBERING_CHOICES))}")
             raise typer.Exit(1)
 
         dir_existed_before = False
@@ -456,10 +428,10 @@ def register(app: typer.Typer) -> None:
                     git_messages = []
                     git_has_error = False
                     # Step 1: Initialize git repo if needed
-                    if _is_git_repo(project_path):
+                    if _git_svc.is_repo(project_path):
                         git_messages.append("existing repo detected")
                     elif should_init_git:
-                        success, error_msg = _init_git_repo(project_path, quiet=True)
+                        success, error_msg = _git_svc.init_repo(project_path)
                         if success:
                             git_messages.append("initialized")
                         else:
@@ -475,7 +447,7 @@ def register(app: typer.Typer) -> None:
                     # Step 2: Install bundled git extension
                     try:
                         from ..extensions import ExtensionManager
-                        bundled_path = _locate_bundled_extension("git")
+                        bundled_path = _svc.locate_bundled_extension("git")
                         if bundled_path:
                             manager = ExtensionManager(project_path)
                             if manager.registry.is_installed("git"):
@@ -504,7 +476,7 @@ def register(app: typer.Typer) -> None:
 
                 # Install bundled speckit workflow
                 try:
-                    bundled_wf = _locate_bundled_workflow("speckit")
+                    bundled_wf = _svc.locate_bundled_workflow("speckit")
                     if bundled_wf:
                         from ..workflows.catalog import WorkflowRegistry
                         from ..workflows.engine import WorkflowDefinition
@@ -512,10 +484,9 @@ def register(app: typer.Typer) -> None:
                         if wf_registry.is_installed("speckit"):
                             tracker.complete("workflow", "already installed")
                         else:
-                            import shutil as _shutil
                             dest_wf = project_path / ".specify" / "workflows" / "speckit"
                             dest_wf.mkdir(parents=True, exist_ok=True)
-                            _shutil.copy2(
+                            shutil.copy2(
                                 bundled_wf / "workflow.yml",
                                 dest_wf / "workflow.yml",
                             )
@@ -569,7 +540,7 @@ def register(app: typer.Typer) -> None:
                         if local_path.is_dir() and (local_path / "preset.yml").exists():
                             preset_manager.install_from_directory(local_path, speckit_ver)
                         else:
-                            bundled_path = _locate_bundled_preset(preset)
+                            bundled_path = _svc.locate_bundled_preset(preset)
                             if bundled_path:
                                 preset_manager.install_from_directory(bundled_path, speckit_ver)
                             else:
@@ -623,8 +594,6 @@ def register(app: typer.Typer) -> None:
                 if not here and project_path.exists() and not dir_existed_before:
                     shutil.rmtree(project_path)
                 raise typer.Exit(1)
-            finally:
-                pass
 
         console.print(tracker.render())
         console.print("\n[bold green]Project ready.[/bold green]")
