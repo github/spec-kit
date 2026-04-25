@@ -24,15 +24,11 @@ preset_catalog_app = typer.Typer(
 preset_app.add_typer(preset_catalog_app, name="catalog")
 
 
-def _locate_bundled_preset(preset_id: str) -> Path | None:
-    return _svc.locate_bundled_preset(preset_id)
-
-
 # ===== Preset Commands =====
 
 
 @preset_app.command("list")
-def preset_list():
+def preset_list() -> None:
     """List installed presets."""
     from ..presets import PresetManager
 
@@ -72,7 +68,7 @@ def preset_add(
     from_url: str = typer.Option(None, "--from", help="Install from a URL (ZIP file)"),
     dev: str = typer.Option(None, "--dev", help="Install from local directory (development mode)"),
     priority: int = typer.Option(10, "--priority", help="Resolution priority (lower = higher precedence, default 10)"),
-):
+) -> None:
     """Install a preset."""
     from ..presets import (
         PresetManager,
@@ -138,7 +134,7 @@ def preset_add(
 
         elif preset_id:
             # Try bundled preset first, then catalog
-            bundled_path = _locate_bundled_preset(preset_id)
+            bundled_path = _svc.locate_bundled_preset(preset_id)
             if bundled_path:
                 console.print(f"Installing bundled preset [cyan]{preset_id}[/cyan]...")
                 manifest = manager.install_from_directory(bundled_path, speckit_version, priority)
@@ -199,7 +195,7 @@ def preset_add(
 @preset_app.command("remove")
 def preset_remove(
     preset_id: str = typer.Argument(..., help="Preset ID to remove"),
-):
+) -> None:
     """Remove an installed preset."""
     from ..presets import PresetManager
 
@@ -229,7 +225,7 @@ def preset_search(
     query: str = typer.Argument(None, help="Search query"),
     tag: str = typer.Option(None, "--tag", help="Filter by tag"),
     author: str = typer.Option(None, "--author", help="Filter by author"),
-):
+) -> None:
     """Search for presets in the catalog."""
     from ..presets import PresetCatalog, PresetError
 
@@ -266,7 +262,7 @@ def preset_search(
 @preset_app.command("resolve")
 def preset_resolve(
     template_name: str = typer.Argument(..., help="Template name to resolve (e.g., spec-template)"),
-):
+) -> None:
     """Show which template will be resolved for a given name."""
     from ..presets import PresetResolver
 
@@ -336,7 +332,7 @@ def preset_resolve(
 @preset_app.command("info")
 def preset_info(
     preset_id: str = typer.Argument(..., help="Preset ID to get info about"),
-):
+) -> None:
     """Show detailed information about a preset."""
     from ..extensions import normalize_priority
     from ..presets import PresetCatalog, PresetManager, PresetError
@@ -411,7 +407,7 @@ def preset_info(
 def preset_set_priority(
     preset_id: str = typer.Argument(help="Preset ID"),
     priority: int = typer.Argument(help="New priority (lower = higher precedence)"),
-):
+) -> None:
     """Set the resolution priority of an installed preset."""
     from ..presets import PresetManager
 
@@ -462,7 +458,7 @@ def preset_set_priority(
 @preset_app.command("enable")
 def preset_enable(
     preset_id: str = typer.Argument(help="Preset ID to enable"),
-):
+) -> None:
     """Enable a disabled preset."""
     from ..presets import PresetManager
 
@@ -503,7 +499,7 @@ def preset_enable(
 @preset_app.command("disable")
 def preset_disable(
     preset_id: str = typer.Argument(help="Preset ID to disable"),
-):
+) -> None:
     """Disable a preset without removing it."""
     from ..presets import PresetManager
 
@@ -546,7 +542,7 @@ def preset_disable(
 
 
 @preset_catalog_app.command("list")
-def preset_catalog_list():
+def preset_catalog_list() -> None:
     """List all active preset catalogs."""
     from ..presets import PresetCatalog, PresetValidationError
 
@@ -615,7 +611,7 @@ def preset_catalog_add(
         help="Allow presets from this catalog to be installed",
     ),
     description: str = typer.Option("", "--description", help="Description of the catalog"),
-):
+) -> None:
     """Add a catalog to .specify/preset-catalogs.yml."""
     from ..presets import PresetCatalog, PresetValidationError
 
@@ -680,7 +676,7 @@ def preset_catalog_add(
 @preset_catalog_app.command("remove")
 def preset_catalog_remove(
     name: str = typer.Argument(help="Catalog name to remove"),
-):
+) -> None:
     """Remove a catalog from .specify/preset-catalogs.yml."""
     project_root = Path.cwd()
 
