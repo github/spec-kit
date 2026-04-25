@@ -53,6 +53,7 @@ from ._console import console
 from ._ui import StepTracker, get_key, select_with_arrows, BannerGroup, show_banner, BANNER, TAGLINE
 from ._fs import handle_vscode_settings, merge_json_files, save_init_options, load_init_options
 from ._assets import AssetService as _AssetService, _asset_service as _svc
+from ._git import GitService as _GitService, _git_service as _git_svc
 from .integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
     resolve_integration_options as _resolve_integration_options_impl,
@@ -236,48 +237,18 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
 
 def is_git_repo(path: Path = None) -> bool:
     """Check if the specified path is inside a git repository."""
-    if path is None:
-        path = Path.cwd()
-
-    if not path.is_dir():
-        return False
-
-    try:
-        subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            check=True,
-            capture_output=True,
-            cwd=path,
-        )
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
+    return _git_svc.is_repo(path)
 
 
 def init_git_repo(project_path: Path, quiet: bool = False) -> tuple[bool, Optional[str]]:
     """Initialize a git repository in the specified path."""
-    try:
-        original_cwd = Path.cwd()
-        os.chdir(project_path)
-        if not quiet:
-            console.print("[cyan]Initializing git repository...[/cyan]")
-        subprocess.run(["git", "init"], check=True, capture_output=True, text=True)
-        subprocess.run(["git", "add", "."], check=True, capture_output=True, text=True)
-        subprocess.run(["git", "commit", "-m", "Initial commit from Specify template"], check=True, capture_output=True, text=True)
-        if not quiet:
+    ok, err = _git_svc.init_repo(project_path)
+    if not quiet:
+        if ok:
             console.print("[green]✓[/green] Git repository initialized")
-        return True, None
-    except subprocess.CalledProcessError as e:
-        error_msg = f"Command: {' '.join(e.cmd)}\nExit code: {e.returncode}"
-        if e.stderr:
-            error_msg += f"\nError: {e.stderr.strip()}"
-        elif e.stdout:
-            error_msg += f"\nOutput: {e.stdout.strip()}"
-        if not quiet:
-            console.print(f"[red]Error initializing git repository:[/red] {e}")
-        return False, error_msg
-    finally:
-        os.chdir(original_cwd)
+        else:
+            console.print(f"[red]Error initializing git repository:[/red] {err}")
+    return ok, err
 
 
 def _locate_core_pack() -> Path | None:
