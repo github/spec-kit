@@ -800,10 +800,12 @@ class TestIntegrationCatalogDiscoveryCLI:
         cfg.write_text("catalogs:\n  - [bad\n", encoding="utf-8")
 
         result = self._invoke(["integration", "search"], project)
+        normalized_output = _normalize_cli_output(result.output)
         assert result.exit_code == 1, result.output
-        assert ".specify/integration-catalogs.yml" in result.output
-        assert "invalid catalog configuration" in result.output
-        assert "temporarily unavailable" not in result.output
+        assert "configuration file path shown above" in normalized_output
+        assert ".specify/integration-catalogs.yml" in normalized_output
+        assert "~/.specify/integration-catalogs.yml" in normalized_output
+        assert "temporarily unavailable" not in normalized_output
 
     def test_info_unknown_with_local_config_error_shows_local_config_tip(
         self, tmp_path, monkeypatch
@@ -820,9 +822,12 @@ class TestIntegrationCatalogDiscoveryCLI:
         result = self._invoke(
             ["integration", "info", "definitely-not-real"], project
         )
+        normalized_output = _normalize_cli_output(result.output)
         assert result.exit_code == 1, result.output
-        assert ".specify/integration-catalogs.yml" in result.output
-        assert "Try again when online" not in result.output
+        assert "configuration file path shown above" in normalized_output
+        assert ".specify/integration-catalogs.yml" in normalized_output
+        assert "~/.specify/integration-catalogs.yml" in normalized_output
+        assert "Try again when online" not in normalized_output
 
     # -- catalog list / add / remove ---------------------------------------
 

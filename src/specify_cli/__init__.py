@@ -2585,7 +2585,8 @@ def integration_search(
     except IntegrationValidationError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         console.print(
-            "\nTip: Check .specify/integration-catalogs.yml for invalid catalog configuration."
+            "\nTip: Check the configuration file path shown above for invalid catalog configuration "
+            "(for example, .specify/integration-catalogs.yml or ~/.specify/integration-catalogs.yml)."
         )
         raise typer.Exit(1)
     except IntegrationCatalogError as exc:
@@ -2716,7 +2717,8 @@ def integration_info(
         console.print(f"[red]Error:[/red] Could not query integration catalog: {catalog_error}")
         if isinstance(catalog_error, IntegrationValidationError):
             console.print(
-                "\nCheck .specify/integration-catalogs.yml, "
+                "\nCheck the configuration file path shown above "
+                "(.specify/integration-catalogs.yml or ~/.specify/integration-catalogs.yml), "
                 "or use a built-in integration ID directly."
             )
         else:
@@ -2759,7 +2761,10 @@ def integration_catalog_list():
 def integration_catalog_add(
     url: str = typer.Argument(
         ...,
-        help="Catalog URL to add (HTTPS required, except http://localhost for local testing)",
+        help=(
+            "Catalog URL to add (HTTPS required, except http://localhost, "
+            "http://127.0.0.1, or http://[::1] for local testing)"
+        ),
     ),
     name: Optional[str] = typer.Option(None, "--name", help="Catalog name"),
 ):
