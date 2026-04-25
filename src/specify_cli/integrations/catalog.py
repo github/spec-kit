@@ -604,16 +604,26 @@ class IntegrationCatalog:
         # only to mirror the order shown by ``catalog list``; entries
         # that ``_load_catalog_config`` would have rejected outright
         # would have failed ``catalog list`` already.
+        def _is_removable_catalog_entry(item: Any) -> bool:
+            if not isinstance(item, dict):
+                return False
+            raw_url = item.get("url")
+            return isinstance(raw_url, str) and bool(raw_url.strip())
+
         priority_pairs: List[Tuple[int, int]] = []
         for yaml_idx, item in enumerate(catalogs):
-            if isinstance(item, dict):
-                try:
-                    priority = int(item.get("priority", yaml_idx + 1))
-                except (TypeError, ValueError):
-                    priority = yaml_idx + 1
-            else:
+            if not _is_removable_catalog_entry(item):
+                continue
+
+            try:
+                priority = int(item.get("priority", yaml_idx + 1))
+            except (TypeError, ValueError):
                 priority = yaml_idx + 1
             priority_pairs.append((priority, yaml_idx))
+        if not priority_pairs:
+            raise IntegrationValidationError(
+                "Catalog config contains no removable catalog entries."
+            )
         # Stable sort: ties keep their YAML order, matching list-view ordering.
         priority_pairs.sort(key=lambda p: p[0])
         display_order: List[int] = [yaml_idx for _, yaml_idx in priority_pairs]
@@ -626,7 +636,7 @@ class IntegrationCatalog:
         target_yaml_idx = display_order[index]
         removed = catalogs.pop(target_yaml_idx)
 
-        if catalogs:
+        if any(_is_removable_catalog_entry(item) for item in catalogs):
             data["catalogs"] = catalogs
             with open(config_path, "w", encoding="utf-8") as f:
                 yaml.dump(

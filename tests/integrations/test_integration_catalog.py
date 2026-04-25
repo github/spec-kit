@@ -1082,6 +1082,85 @@ class TestCatalogSourceManagement:
         data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
         assert [c["name"] for c in data["catalogs"]] == ["two", "three"]
 
+    def test_remove_catalog_display_order_skips_blank_url_entries(
+        self, tmp_path, monkeypatch
+    ):
+        """Blank-url entries are not shown by catalog list, so remove skips them too."""
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {"url": "   ", "name": "blank", "priority": 0},
+                        {"url": "https://one.example.com/c.json", "name": "one"},
+                        {"url": "https://two.example.com/c.json", "name": "two"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+
+        removed = cat.remove_catalog(0)
+        assert removed == "one"
+
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert [c["name"] for c in data["catalogs"]] == ["blank", "two"]
+
+    def test_remove_catalog_deletes_file_when_only_skipped_entries_remain(
+        self, tmp_path, monkeypatch
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {"url": "   ", "name": "blank", "priority": 0},
+                        {"url": "https://one.example.com/c.json", "name": "one"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+
+        removed = cat.remove_catalog(0)
+        assert removed == "one"
+        assert not cfg_path.exists()
+
+        active = cat.get_active_catalogs()
+        assert [e.name for e in active] == ["default", "community"]
+
+    def test_remove_catalog_errors_when_no_entries_are_removable(
+        self, tmp_path, monkeypatch
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {"url": "", "name": "empty"},
+                        {"name": "missing"},
+                        "not-a-mapping",
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+
+        with pytest.raises(
+            IntegrationValidationError,
+            match="no removable catalog entries",
+        ):
+            cat.remove_catalog(0)
+
     def test_remove_catalog_display_order_mixes_explicit_and_default(
         self, tmp_path, monkeypatch
     ):
