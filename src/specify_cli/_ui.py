@@ -1,6 +1,4 @@
 # src/specify_cli/_ui.py
-from typing import Any
-from rich.console import Console
 from rich.tree import Tree
 from rich.panel import Panel
 from rich.text import Text
