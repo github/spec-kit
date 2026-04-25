@@ -1,9 +1,8 @@
 import os
-import shlex
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from ._console import console
 from ._ui import StepTracker
