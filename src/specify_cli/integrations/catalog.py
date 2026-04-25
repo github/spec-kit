@@ -475,6 +475,8 @@ class IntegrationCatalog:
                 raise IntegrationValidationError(
                     f"Failed to read catalog config {config_path}: {exc}"
                 ) from exc
+            if raw is None:
+                raw = {}
             if not isinstance(raw, dict):
                 raise IntegrationValidationError(
                     "Catalog config file is corrupted (expected a mapping)."

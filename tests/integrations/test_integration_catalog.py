@@ -702,6 +702,40 @@ class TestCatalogSourceManagement:
         active = cat.get_active_catalogs()
         assert [e.name for e in active] == ["mine"]
 
+    def test_add_catalog_recovers_from_empty_config_file(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text("", encoding="utf-8")
+
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://example.com/catalog.json")
+
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert data["catalogs"] == [
+            {
+                "name": "catalog-1",
+                "url": "https://example.com/catalog.json",
+                "priority": 1,
+                "install_allowed": True,
+                "description": "",
+            }
+        ]
+
+    @pytest.mark.parametrize("config_content", ["[]\n", "false\n", "0\n", "''\n"])
+    def test_add_catalog_rejects_falsy_non_mapping_config_roots(
+        self, tmp_path, monkeypatch, config_content
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(config_content, encoding="utf-8")
+
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(
+            IntegrationValidationError,
+            match="corrupted.*expected a mapping",
+        ):
+            cat.add_catalog("https://example.com/catalog.json")
+
     def test_add_catalog_auto_derives_name_and_priority(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
         cat = IntegrationCatalog(tmp_path)
