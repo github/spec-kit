@@ -119,6 +119,38 @@ class TestActiveCatalogs:
         with pytest.raises(IntegrationCatalogError, match="no 'catalogs' entries"):
             cat.get_active_catalogs()
 
+    def test_empty_config_file_raises_no_catalogs(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        specify = tmp_path / ".specify"
+        specify.mkdir()
+        cfg = specify / "integration-catalogs.yml"
+        cfg.write_text("", encoding="utf-8")
+
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(IntegrationValidationError, match="no 'catalogs' entries"):
+            cat.get_active_catalogs()
+
+    @pytest.mark.parametrize("config_content", ["[]\n", "false\n", "0\n", "''\n"])
+    def test_load_catalog_config_rejects_falsy_non_mapping_roots(
+        self, tmp_path, monkeypatch, config_content
+    ):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        specify = tmp_path / ".specify"
+        specify.mkdir()
+        cfg = specify / "integration-catalogs.yml"
+        cfg.write_text(config_content, encoding="utf-8")
+
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(
+            IntegrationValidationError,
+            match="expected a YAML mapping at the root",
+        ):
+            cat.get_active_catalogs()
+
 
 # ---------------------------------------------------------------------------
 # IntegrationCatalog — fetch & search (using monkeypatched urlopen responses)
@@ -986,6 +1018,34 @@ class TestCatalogSourceManagement:
         cat = IntegrationCatalog(tmp_path)
         with pytest.raises(
             IntegrationValidationError, match="contains no catalog entries"
+        ):
+            cat.remove_catalog(0)
+
+    def test_remove_catalog_empty_config_file_gives_clear_error(
+        self, tmp_path, monkeypatch
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text("", encoding="utf-8")
+
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(
+            IntegrationValidationError, match="contains no catalog entries"
+        ):
+            cat.remove_catalog(0)
+
+    @pytest.mark.parametrize("config_content", ["[]\n", "false\n", "0\n", "''\n"])
+    def test_remove_catalog_rejects_falsy_non_mapping_config_roots(
+        self, tmp_path, monkeypatch, config_content
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(config_content, encoding="utf-8")
+
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(
+            IntegrationValidationError,
+            match="corrupted.*expected a mapping",
         ):
             cat.remove_catalog(0)
 

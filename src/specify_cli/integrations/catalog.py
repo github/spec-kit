@@ -111,11 +111,13 @@ class IntegrationCatalog:
         if not config_path.exists():
             return None
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         except (yaml.YAMLError, OSError, UnicodeError) as exc:
             raise IntegrationValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
             ) from exc
+        if data is None:
+            data = {}
         if not isinstance(data, dict):
             raise IntegrationValidationError(
                 f"Invalid catalog config {config_path}: expected a YAML mapping at the root"
@@ -575,11 +577,13 @@ class IntegrationCatalog:
             raise IntegrationValidationError("No catalog config file found.")
 
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         except (yaml.YAMLError, OSError, UnicodeError) as exc:
             raise IntegrationValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
             ) from exc
+        if data is None:
+            data = {}
         if not isinstance(data, dict):
             raise IntegrationValidationError(
                 "Catalog config file is corrupted (expected a mapping)."
