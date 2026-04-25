@@ -2591,7 +2591,14 @@ def integration_search(
         raise typer.Exit(1)
     except IntegrationCatalogError as exc:
         console.print(f"[red]Error:[/red] {exc}")
-        console.print("\nTip: The catalog may be temporarily unavailable. Try again later.")
+        if os.environ.get("SPECKIT_INTEGRATION_CATALOG_URL"):
+            console.print(
+                "\nTip: Check the SPECKIT_INTEGRATION_CATALOG_URL environment variable for an invalid "
+                "catalog URL, or unset it to use the configured catalog files "
+                "(.specify/integration-catalogs.yml or ~/.specify/integration-catalogs.yml)."
+            )
+        else:
+            console.print("\nTip: The catalog may be temporarily unavailable. Try again later.")
         raise typer.Exit(1)
 
     if not results:
@@ -2738,19 +2745,29 @@ def integration_catalog_list():
     catalog = IntegrationCatalog(project_root)
 
     try:
-        configs = catalog.get_catalog_configs()
+        project_configs = catalog.get_project_catalog_configs()
+        configs = project_configs if project_configs is not None else catalog.get_catalog_configs()
     except IntegrationCatalogError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
 
     console.print("\n[bold cyan]Integration Catalog Sources:[/bold cyan]\n")
+    if project_configs is None:
+        console.print("  No project-level catalog sources configured.\n")
+        console.print("[bold]Active catalog sources (non-removable here):[/bold]\n")
+    else:
+        console.print("[bold]Project catalog sources (removable):[/bold]\n")
+
     for i, cfg in enumerate(configs):
         install_status = (
             "[green]install allowed[/green]"
             if cfg.get("install_allowed")
             else "[yellow]discovery only[/yellow]"
         )
-        console.print(f"  [{i}] [bold]{cfg.get('name', f'catalog-{i + 1}')}[/bold] — {install_status}")
+        if project_configs is None:
+            console.print(f"  - [bold]{cfg.get('name', 'catalog')}[/bold] — {install_status}")
+        else:
+            console.print(f"  [{i}] [bold]{cfg.get('name', f'catalog-{i + 1}')}[/bold] — {install_status}")
         console.print(f"      {cfg.get('url', '')}")
         if cfg.get("description"):
             console.print(f"      [dim]{cfg['description']}[/dim]")
