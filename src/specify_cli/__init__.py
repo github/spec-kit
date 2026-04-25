@@ -27,7 +27,6 @@ Or install globally:
 """
 
 import os
-import subprocess
 import sys
 import zipfile
 import tempfile
@@ -54,6 +53,12 @@ from ._fs import handle_vscode_settings, merge_json_files, save_init_options, lo
 from ._assets import AssetService as _AssetService, _asset_service as _svc
 from ._git import GitService as _GitService, _git_service as _git_svc
 from ._version import VersionService as _VersionService, _version_service as _ver_svc, GITHUB_API_LATEST
+from ._helpers import (
+    run_command, check_tool,
+    _install_shared_infra, ensure_executable_scripts,
+    ensure_constitution_from_template, _get_skills_dir,
+    CLAUDE_LOCAL_PATH, CLAUDE_NPM_LOCAL_PATH,
+)
 from .integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
     resolve_integration_options as _resolve_integration_options_impl,
@@ -149,9 +154,6 @@ def _build_ai_deprecation_warning(
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
-CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
-CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".bin" / "claude"
-
 app = typer.Typer(
     name="specify",
     help="Setup tool for Specify spec-driven development projects",
@@ -175,63 +177,6 @@ def callback(
         show_banner()
         console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
         console.print()
-
-def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> Optional[str]:
-    """Run a shell command and optionally capture output."""
-    try:
-        if capture:
-            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True, shell=shell)
-            return result.stdout.strip()
-        else:
-            subprocess.run(cmd, check=check_return, shell=shell)
-            return None
-    except subprocess.CalledProcessError as e:
-        if check_return:
-            console.print(f"[red]Error running command:[/red] {' '.join(cmd)}")
-            console.print(f"[red]Exit code:[/red] {e.returncode}")
-            if hasattr(e, 'stderr') and e.stderr:
-                console.print(f"[red]Error output:[/red] {e.stderr}")
-            raise
-        return None
-
-def check_tool(tool: str, tracker: StepTracker = None) -> bool:
-    """Check if a tool is installed. Optionally update tracker.
-
-    Args:
-        tool: Name of the tool to check
-        tracker: Optional StepTracker to update with results
-
-    Returns:
-        True if tool is found, False otherwise
-    """
-    # Special handling for Claude CLI local installs
-    # See: https://github.com/github/spec-kit/issues/123
-    # See: https://github.com/github/spec-kit/issues/550
-    # Claude Code can be installed in two local paths:
-    #   1. ~/.claude/local/claude          (after `claude migrate-installer`)
-    #   2. ~/.claude/local/node_modules/.bin/claude  (npm-local install, e.g. via nvm)
-    # Neither path may be on the system PATH, so we check them explicitly.
-    if tool == "claude":
-        if CLAUDE_LOCAL_PATH.is_file() or CLAUDE_NPM_LOCAL_PATH.is_file():
-            if tracker:
-                tracker.complete(tool, "available")
-            return True
-
-    if tool == "kiro-cli":
-        # Kiro currently supports both executable names. Prefer kiro-cli and
-        # accept kiro as a compatibility fallback.
-        found = shutil.which("kiro-cli") is not None or shutil.which("kiro") is not None
-    else:
-        found = shutil.which(tool) is not None
-
-    if tracker:
-        if found:
-            tracker.complete(tool, "available")
-        else:
-            tracker.error(tool, "not found")
-
-    return found
-
 
 def is_git_repo(path: Path = None) -> bool:
     """Check if the specified path is inside a git repository."""
@@ -270,6 +215,7 @@ def _locate_bundled_preset(preset_id: str) -> Path | None:
     return _svc.locate_bundled_preset(preset_id)
 
 
+<<<<<<< HEAD
 def _refresh_shared_templates(
     project_path: Path,
     *,
@@ -444,6 +390,8 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
     return project_path / ".agents" / "skills"
 
 
+=======
+>>>>>>> 232fec5 (refactor: extract init helper utilities to _helpers.py)
 # Constants kept for backward compatibility with presets and extensions.
 DEFAULT_SKILLS_DIR = ".agents/skills"
 SKILL_DESCRIPTIONS = {
