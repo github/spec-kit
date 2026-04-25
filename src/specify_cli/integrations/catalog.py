@@ -513,13 +513,21 @@ class IntegrationCatalog:
                 )
             if "priority" in cat:
                 raw_priority = cat.get("priority")
-                if isinstance(raw_priority, bool) or not isinstance(raw_priority, int):
+                if isinstance(raw_priority, bool):
                     raise IntegrationValidationError(
                         f"Invalid catalog entry at index {idx}: "
                         f"'priority' must be an integer, got "
                         f"{type(raw_priority).__name__}."
                     )
-                existing_priorities.append(raw_priority)
+                try:
+                    normalized_priority = int(raw_priority)
+                except (TypeError, ValueError):
+                    raise IntegrationValidationError(
+                        f"Invalid catalog entry at index {idx}: "
+                        f"'priority' must be an integer, got "
+                        f"{type(raw_priority).__name__}."
+                    ) from None
+                existing_priorities.append(normalized_priority)
             else:
                 # Match `_load_catalog_config()`'s defaulting rule so the new
                 # entry still sorts after implicit-priority siblings.
