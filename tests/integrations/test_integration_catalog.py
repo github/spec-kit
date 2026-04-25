@@ -799,6 +799,30 @@ class TestCatalogSourceManagement:
         with pytest.raises(IntegrationValidationError, match="'priority' must be an integer"):
             cat.add_catalog("https://b.example.com/catalog.json")
 
+    def test_add_catalog_accepts_numeric_string_priority(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "url": "https://a.example.com/catalog.json",
+                            "name": "a",
+                            "priority": "10",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://b.example.com/catalog.json", name="b")
+
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert data["catalogs"][-1]["name"] == "b"
+        assert data["catalogs"][-1]["priority"] == 11
+
     def test_add_catalog_rejects_existing_entry_with_bad_url(self, tmp_path, monkeypatch):
         """A sibling entry with an http:// URL should block a new add."""
         self._isolate(tmp_path, monkeypatch)
