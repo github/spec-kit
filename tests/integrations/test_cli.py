@@ -112,7 +112,7 @@ class TestInitIntegrationFlag:
         assert "--ai" in normalized_output
         assert "deprecated" in normalized_output
         assert "no longer be available" in normalized_output
-        assert "1.0.0" in normalized_output
+        assert "0.10.0" in normalized_output
         assert "--integration copilot" in normalized_output
         assert normalized_output.index("Deprecation Warning") < normalized_output.index("Next Steps")
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
@@ -173,13 +173,13 @@ class TestInitIntegrationFlag:
         assert "speckit-specify" in command_file.read_text(encoding="utf-8")
         assert (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
-    def test_shared_infra_skips_existing_files(self, tmp_path):
-        """Pre-existing shared files are not overwritten by _install_shared_infra."""
-        from typer.testing import CliRunner
-        from specify_cli import app
+    def test_shared_infra_skips_existing_files_without_force(self, tmp_path):
+        """Pre-existing shared files are not overwritten without --force."""
+        from specify_cli import _install_shared_infra
 
         project = tmp_path / "skip-test"
         project.mkdir()
+        (project / ".specify").mkdir()
 
         # Pre-create a shared script with custom content
         scripts_dir = project / ".specify" / "scripts" / "bash"
@@ -192,6 +192,97 @@ class TestInitIntegrationFlag:
         templates_dir.mkdir(parents=True)
         custom_template = "# user-modified spec-template\n"
         (templates_dir / "spec-template.md").write_text(custom_template, encoding="utf-8")
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # User's files should be preserved (not overwritten)
+        assert (scripts_dir / "common.sh").read_text(encoding="utf-8") == custom_content
+        assert (templates_dir / "spec-template.md").read_text(encoding="utf-8") == custom_template
+
+        # Other shared files should still be installed
+        assert (scripts_dir / "setup-plan.sh").exists()
+        assert (templates_dir / "plan-template.md").exists()
+
+    def test_shared_infra_overwrites_existing_files_with_force(self, tmp_path):
+        """Pre-existing shared files ARE overwritten when force=True."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "force-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        # Pre-create a shared script with custom content
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        custom_content = "# user-modified common.sh\n"
+        (scripts_dir / "common.sh").write_text(custom_content, encoding="utf-8")
+
+        # Pre-create a shared template with custom content
+        templates_dir = project / ".specify" / "templates"
+        templates_dir.mkdir(parents=True)
+        custom_template = "# user-modified spec-template\n"
+        (templates_dir / "spec-template.md").write_text(custom_template, encoding="utf-8")
+
+        _install_shared_infra(project, "sh", force=True)
+
+        # Files should be overwritten with bundled versions
+        assert (scripts_dir / "common.sh").read_text(encoding="utf-8") != custom_content
+        assert (templates_dir / "spec-template.md").read_text(encoding="utf-8") != custom_template
+
+        # Other shared files should also be installed
+        assert (scripts_dir / "setup-plan.sh").exists()
+        assert (templates_dir / "plan-template.md").exists()
+
+    def test_shared_infra_skip_warning_displayed(self, tmp_path, capsys):
+        """Console warning is displayed when files are skipped."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "warn-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        (scripts_dir / "common.sh").write_text("# custom\n", encoding="utf-8")
+
+        _install_shared_infra(project, "sh", force=False)
+
+        captured = capsys.readouterr()
+        assert "already exist and were not updated" in captured.out
+        assert "specify init --here --force" in captured.out
+        # Rich may wrap long lines; normalize whitespace for the second command
+        normalized = " ".join(captured.out.split())
+        assert "specify integration upgrade --force" in normalized
+
+    def test_shared_infra_no_warning_when_forced(self, tmp_path, capsys):
+        """No skip warning when force=True (all files overwritten)."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "no-warn-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        (scripts_dir / "common.sh").write_text("# custom\n", encoding="utf-8")
+
+        _install_shared_infra(project, "sh", force=True)
+
+        captured = capsys.readouterr()
+        assert "already exist and were not updated" not in captured.out
+
+    def test_init_here_force_overwrites_shared_infra(self, tmp_path):
+        """E2E: specify init --here --force overwrites shared infra files."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "e2e-force"
+        project.mkdir()
+
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        custom_content = "# user-modified common.sh\n"
+        (scripts_dir / "common.sh").write_text(custom_content, encoding="utf-8")
 
         old_cwd = os.getcwd()
         try:
@@ -207,14 +298,40 @@ class TestInitIntegrationFlag:
             os.chdir(old_cwd)
 
         assert result.exit_code == 0
+        # --force should overwrite the custom file
+        assert (scripts_dir / "common.sh").read_text(encoding="utf-8") != custom_content
 
-        # User's files should be preserved
+    def test_init_here_without_force_preserves_shared_infra(self, tmp_path):
+        """E2E: specify init --here (no --force) preserves existing shared infra files."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "e2e-no-force"
+        project.mkdir()
+
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        custom_content = "# user-modified common.sh\n"
+        (scripts_dir / "common.sh").write_text(custom_content, encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here",
+                "--integration", "copilot",
+                "--script", "sh",
+                "--no-git",
+            ], input="y\n", catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0
+        # Without --force, custom file should be preserved
         assert (scripts_dir / "common.sh").read_text(encoding="utf-8") == custom_content
-        assert (templates_dir / "spec-template.md").read_text(encoding="utf-8") == custom_template
-
-        # Other shared files should still be installed
-        assert (scripts_dir / "setup-plan.sh").exists()
-        assert (templates_dir / "plan-template.md").exists()
+        # Warning about skipped files should appear
+        assert "not updated" in result.output
 
 
 class TestForceExistingDirectory:
@@ -261,7 +378,7 @@ class TestForceExistingDirectory:
         ], catch_exceptions=False)
 
         assert result.exit_code == 1
-        assert "already exists" in result.output
+        assert "already exists" in _normalize_cli_output(result.output)
 
 
 class TestGitExtensionAutoInstall:
@@ -329,6 +446,33 @@ class TestGitExtensionAutoInstall:
         ext_dir = project / ".specify" / "extensions" / "git"
         assert not ext_dir.exists(), "git extension should not be installed with --no-git"
 
+    def test_no_git_emits_deprecation_warning(self, tmp_path):
+        """Using --no-git emits a visible deprecation warning."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "no-git-warn"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here", "--ai", "claude", "--script", "sh",
+                "--no-git", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 0, result.output
+        assert "--no-git" in normalized_output
+        assert "deprecated" in normalized_output
+        assert "0.10.0" in normalized_output
+        assert "specify extension" in normalized_output
+        assert "will be removed" in normalized_output
+        assert "git extension will no longer be enabled by default" in normalized_output
+
     def test_git_extension_commands_registered(self, tmp_path):
         """Git extension commands are registered with the agent during init."""
         from typer.testing import CliRunner
@@ -354,3 +498,133 @@ class TestGitExtensionAutoInstall:
         assert claude_skills.exists(), "Claude skills directory was not created"
         git_skills = [f for f in claude_skills.iterdir() if f.name.startswith("speckit-git-")]
         assert len(git_skills) > 0, "no git extension commands registered"
+
+
+class TestSharedInfraCommandRefs:
+    """Verify _install_shared_infra resolves __SPECKIT_COMMAND_*__ in page templates."""
+
+    def test_dot_separator_in_page_templates(self, tmp_path):
+        """Markdown agents get /speckit.<name> in page templates."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "dot-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        _install_shared_infra(project, "sh", invoke_separator=".")
+
+        plan = project / ".specify" / "templates" / "plan-template.md"
+        assert plan.exists()
+        content = plan.read_text(encoding="utf-8")
+        assert "__SPECKIT_COMMAND_" not in content, "unresolved placeholder in plan-template.md"
+        assert "/speckit.plan" in content
+
+        checklist = project / ".specify" / "templates" / "checklist-template.md"
+        content = checklist.read_text(encoding="utf-8")
+        assert "__SPECKIT_COMMAND_" not in content
+        assert "/speckit.checklist" in content
+
+    def test_hyphen_separator_in_page_templates(self, tmp_path):
+        """Skills agents get /speckit-<name> in page templates."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "hyphen-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        _install_shared_infra(project, "sh", invoke_separator="-")
+
+        plan = project / ".specify" / "templates" / "plan-template.md"
+        assert plan.exists()
+        content = plan.read_text(encoding="utf-8")
+        assert "__SPECKIT_COMMAND_" not in content, "unresolved placeholder in plan-template.md"
+        assert "/speckit-plan" in content
+        assert "/speckit.plan" not in content, "dot-notation leaked into skills page template"
+
+        tasks = project / ".specify" / "templates" / "tasks-template.md"
+        content = tasks.read_text(encoding="utf-8")
+        assert "__SPECKIT_COMMAND_" not in content
+        assert "/speckit-tasks" in content
+
+    def test_full_init_claude_resolves_page_templates(self, tmp_path):
+        """Full CLI init with Claude (skills agent) produces hyphen refs in page templates."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        project = tmp_path / "init-claude"
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            result = runner.invoke(app, [
+                "init", str(project),
+                "--integration", "claude",
+                "--script", "sh",
+                "--no-git",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        plan = project / ".specify" / "templates" / "plan-template.md"
+        content = plan.read_text(encoding="utf-8")
+        assert "/speckit-plan" in content, "Claude (skills) should use /speckit-plan"
+        assert "__SPECKIT_COMMAND_" not in content
+
+    def test_full_init_copilot_resolves_page_templates(self, tmp_path):
+        """Full CLI init with Copilot (markdown agent) produces dot refs in page templates."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        project = tmp_path / "init-copilot"
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            result = runner.invoke(app, [
+                "init", str(project),
+                "--integration", "copilot",
+                "--script", "sh",
+                "--no-git",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        plan = project / ".specify" / "templates" / "plan-template.md"
+        content = plan.read_text(encoding="utf-8")
+        assert "/speckit.plan" in content, "Copilot (markdown) should use /speckit.plan"
+        assert "__SPECKIT_COMMAND_" not in content
+
+    def test_full_init_copilot_skills_resolves_page_templates(self, tmp_path):
+        """Full CLI init with Copilot --skills produces hyphen refs in page templates."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        project = tmp_path / "init-copilot-skills"
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            result = runner.invoke(app, [
+                "init", str(project),
+                "--integration", "copilot",
+                "--integration-options", "--skills",
+                "--script", "sh",
+                "--no-git",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        plan = project / ".specify" / "templates" / "plan-template.md"
+        content = plan.read_text(encoding="utf-8")
+        assert "/speckit-plan" in content, "Copilot --skills should use /speckit-plan"
+        assert "/speckit.plan" not in content, "dot-notation leaked into Copilot skills page template"
+        assert "__SPECKIT_COMMAND_" not in content

@@ -6,8 +6,9 @@ Used by both the extension system and the preset system to write
 command files into agent-specific directories in the correct format.
 """
 
+import os
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 import platform
 import re
@@ -281,7 +282,8 @@ class CommandRegistrar:
         if not isinstance(frontmatter, dict):
             frontmatter = {}
 
-        if agent_name in {"codex", "kimi"}:
+        agent_config = self.AGENT_CONFIGS.get(agent_name, {})
+        if agent_config.get("extension") == "/SKILL.md":
             body = self.resolve_skill_placeholders(
                 agent_name, frontmatter, body, project_root
             )
@@ -399,6 +401,28 @@ class CommandRegistrar:
 
         return f"speckit-{short_name}"
 
+    @staticmethod
+    def _ensure_inside(candidate: Path, base: Path) -> None:
+        """Validate that a write target stays within the expected base directory.
+
+        Uses lexical normalization so traversal via ``..`` or absolute paths is
+        rejected while intentionally symlinked sub-directories remain
+        supported.
+
+        Args:
+            candidate: Path that will be written.
+            base: Directory the write must remain within.
+
+        Raises:
+            ValueError: If the normalized candidate path escapes ``base``.
+        """
+        normalized = Path(os.path.normpath(candidate))
+        base_normalized = Path(os.path.normpath(base))
+        if not normalized.is_relative_to(base_normalized):
+            raise ValueError(
+                f"Output path {candidate!r} escapes directory {base!r}"
+            )
+
     def register_commands(
         self,
         agent_name: str,
@@ -445,6 +469,15 @@ class CommandRegistrar:
             content = source_file.read_text(encoding="utf-8")
             frontmatter, body = self.parse_frontmatter(content)
 
+            if frontmatter.get("strategy") == "wrap":
+                from .presets import _substitute_core_template
+                body, core_frontmatter = _substitute_core_template(body, cmd_name, project_root, self)
+                frontmatter = dict(frontmatter)
+                for key in ("scripts", "agent_scripts"):
+                    if key not in frontmatter and key in core_frontmatter:
+                        frontmatter[key] = core_frontmatter[key]
+                frontmatter.pop("strategy", None)
+
             frontmatter = self._adjust_script_paths(frontmatter)
 
             for key in agent_config.get("strip_frontmatter_keys", []):
@@ -472,10 +505,12 @@ class CommandRegistrar:
                     project_root,
                 )
             elif agent_config["format"] == "markdown":
-                output = self.render_markdown_command(
-                    frontmatter, body, source_id, context_note
-                )
+                body = self.resolve_skill_placeholders(agent_name, frontmatter, body, project_root)
+                body = self._convert_argument_placeholder(body, "$ARGUMENTS", agent_config["args"])
+                output = self.render_markdown_command(frontmatter, body, source_id, context_note)
             elif agent_config["format"] == "toml":
+                body = self.resolve_skill_placeholders(agent_name, frontmatter, body, project_root)
+                body = self._convert_argument_placeholder(body, "$ARGUMENTS", agent_config["args"])
                 output = self.render_toml_command(frontmatter, body, source_id)
             elif agent_config["format"] == "yaml":
                 output = self.render_yaml_command(
@@ -485,6 +520,7 @@ class CommandRegistrar:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
             dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
+            self._ensure_inside(dest_file, commands_dir)
             dest_file.parent.mkdir(parents=True, exist_ok=True)
             dest_file.write_text(output, encoding="utf-8")
 
@@ -550,12 +586,7 @@ class CommandRegistrar:
                 alias_file = (
                     commands_dir / f"{alias_output_name}{agent_config['extension']}"
                 )
-                try:
-                    alias_file.resolve().relative_to(commands_dir.resolve())
-                except ValueError:
-                    raise ValueError(
-                        f"Alias output path escapes commands directory: {alias_file!r}"
-                    )
+                self._ensure_inside(alias_file, commands_dir)
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
                 alias_file.write_text(alias_output, encoding="utf-8")
                 if agent_name == "copilot":
@@ -575,6 +606,7 @@ class CommandRegistrar:
         prompts_dir = project_root / ".github" / "prompts"
         prompts_dir.mkdir(parents=True, exist_ok=True)
         prompt_file = prompts_dir / f"{cmd_name}.prompt.md"
+        CommandRegistrar._ensure_inside(prompt_file, prompts_dir)
         prompt_file.write_text(f"---\nagent: {cmd_name}\n---\n", encoding="utf-8")
 
     def register_commands_for_all_agents(
@@ -618,6 +650,49 @@ class CommandRegistrar:
                 except ValueError:
                     continue
 
+        return results
+
+    def register_commands_for_non_skill_agents(
+        self,
+        commands: List[Dict[str, Any]],
+        source_id: str,
+        source_dir: Path,
+        project_root: Path,
+        context_note: Optional[str] = None,
+    ) -> Dict[str, List[str]]:
+        """Register commands for all non-skill agents in the project.
+
+        Like register_commands_for_all_agents but skips skill-based agents
+        (those with extension '/SKILL.md'). Used by reconciliation to avoid
+        overwriting properly formatted SKILL.md files.
+
+        Args:
+            commands: List of command info dicts
+            source_id: Identifier of the source
+            source_dir: Directory containing command source files
+            project_root: Path to project root
+            context_note: Custom context comment for markdown output
+
+        Returns:
+            Dictionary mapping agent names to list of registered commands
+        """
+        results = {}
+        self._ensure_configs()
+        for agent_name, agent_config in self.AGENT_CONFIGS.items():
+            if agent_config.get("extension") == "/SKILL.md":
+                continue
+            agent_dir = project_root / agent_config["dir"]
+            if agent_dir.exists():
+                try:
+                    registered = self.register_commands(
+                        agent_name, commands, source_id,
+                        source_dir, project_root,
+                        context_note=context_note,
+                    )
+                    if registered:
+                        results[agent_name] = registered
+                except ValueError:
+                    continue
         return results
 
     def unregister_commands(
