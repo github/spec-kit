@@ -26,40 +26,33 @@ Or install globally:
     specify init --here
 """
 
-import os
 import sys
-import zipfile
-import tempfile
-import shutil
-import json
-import shlex
 import urllib.error
 import urllib.request
-import yaml
 from pathlib import Path
 
-from typing import Any, Optional
+from typing import Optional
 
 import typer
 from rich.panel import Panel
-from rich.text import Text
-from rich.live import Live
 from rich.align import Align
 from rich.table import Table
 
 from ._console import console
-from ._ui import StepTracker, get_key, select_with_arrows, BannerGroup, show_banner, BANNER, TAGLINE
+from ._ui import StepTracker, BannerGroup, show_banner, select_with_arrows
 from ._fs import handle_vscode_settings, merge_json_files, save_init_options, load_init_options
-from ._assets import AssetService as _AssetService, _asset_service as _svc
-from ._git import GitService as _GitService, _git_service as _git_svc
-from ._version import VersionService as _VersionService, _version_service as _ver_svc, GITHUB_API_LATEST
+from ._assets import _asset_service as _svc
+from ._git import _git_service as _git_svc
+from ._version import _version_service as _ver_svc
 from ._helpers import (
-    run_command, check_tool,
-    _install_shared_infra, ensure_executable_scripts,
-    ensure_constitution_from_template, _get_skills_dir,
-    CLAUDE_LOCAL_PATH, CLAUDE_NPM_LOCAL_PATH,
-    get_speckit_version, _parse_integration_options,
-    AGENT_CONFIG, AI_ASSISTANT_ALIASES, AI_ASSISTANT_HELP, SCRIPT_TYPE_CHOICES,
+    check_tool,
+    get_speckit_version,
+    AGENT_CONFIG,
+    AI_ASSISTANT_ALIASES,
+    AI_ASSISTANT_HELP,
+    _install_shared_infra,
+    _parse_integration_options,
+    _get_skills_dir,
 )
 from .integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
@@ -81,9 +74,6 @@ from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
 )
-
-# Agents that use TOML command format (others use Markdown)
-_TOML_AGENTS = frozenset({"gemini", "tabnine"})
 
 app = typer.Typer(
     name="specify",
@@ -331,23 +321,14 @@ app.add_typer(extension_app, name="extension")
 
 # ===== Integration Commands =====
 
-from .commands.integration import (
-    integration_app,
-    _read_integration_json,
-    _write_integration_json,
-    _remove_integration_json,
-    _normalize_script_type,
-    _resolve_script_type,
-)
+from .commands.integration import integration_app
 app.add_typer(integration_app, name="integration")
 
 
 # ===== Preset Commands =====
 
-from .commands.preset import preset_app, preset_catalog_app
+from .commands.preset import preset_app
 app.add_typer(preset_app, name="preset")
-
-
 
 
 # ===== Workflow Commands =====
