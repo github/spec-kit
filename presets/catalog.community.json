@@ -109,7 +109,7 @@
       "name": "Fiction Book Writing",
       "id": "fiction-book-writing",
       "version": "1.7.0",
-      "description": "Spec-Driven Development for novel and long-form fiction. 27 AI commands from idea to submission: story bible governance, 9 POV modes, all major plot structure frameworks, scene-by-scene drafting with quality gates, audiobook pipeline (SSML/ElevenLabs), cover design, sensitivity review, pacing and prose statistics, and pandoc-based export to DOCX/EPUB/LaTeX. Two style modes: author voice sample extraction or humanized-AI prose with 5 craft profiles. 12 languages supported. Support for offline sematic search.",
+      "description": "Spec-Driven Development for novel and long-form fiction. 27 AI commands from idea to submission: story bible governance, 9 POV modes, all major plot structure frameworks, scene-by-scene drafting with quality gates, audiobook pipeline (SSML/ElevenLabs), cover design, sensitivity review, pacing and prose statistics, and pandoc-based export to DOCX/EPUB/LaTeX. Two style modes: author voice sample extraction or humanized-AI prose with 5 craft profiles. 12 languages supported. Support for offline semantic search.",
       "author": "Andreas Daumann",
       "repository": "https://github.com/adaumann/speckit-preset-fiction-book-writing",
       "download_url": "https://github.com/adaumann/speckit-preset-fiction-book-writing/archive/refs/tags/v1.7.0.zip",
