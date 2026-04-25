@@ -1,14 +1,144 @@
 import os
 import shutil
+import shlex
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+
+import typer
 
 from ._console import console
 from ._ui import StepTracker
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".bin" / "claude"
+
+
+# ---------------------------------------------------------------------------
+# Version helpers
+# ---------------------------------------------------------------------------
+
+def get_speckit_version() -> str:
+    """Get current spec-kit version."""
+    import importlib.metadata
+    try:
+        return importlib.metadata.version("specify-cli")
+    except Exception:
+        # Fallback: try reading from pyproject.toml
+        try:
+            import tomllib
+            pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
+            if pyproject_path.exists():
+                with open(pyproject_path, "rb") as f:
+                    data = tomllib.load(f)
+                    return data.get("project", {}).get("version", "unknown")
+        except Exception:
+            # Intentionally ignore any errors while reading/parsing pyproject.toml.
+            # If this lookup fails for any reason, we fall back to returning "unknown" below.
+            pass
+    return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Integration option parsing
+# ---------------------------------------------------------------------------
+
+def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, Any] | None:
+    """Parse --integration-options string into a dict matching the integration's declared options.
+
+    Returns ``None`` when no options are provided.
+    """
+    parsed: dict[str, Any] = {}
+    tokens = shlex.split(raw_options)
+    declared_options = list(integration.options())
+    declared = {opt.name.lstrip("-"): opt for opt in declared_options}
+    allowed = ", ".join(sorted(opt.name for opt in declared_options))
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if not token.startswith("-"):
+            console.print(f"[red]Error:[/red] Unexpected integration option value '{token}'.")
+            if allowed:
+                console.print(f"Allowed options: {allowed}")
+            raise typer.Exit(1)
+        name = token.lstrip("-")
+        value: str | None = None
+        # Handle --name=value syntax
+        if "=" in name:
+            name, value = name.split("=", 1)
+        opt = declared.get(name)
+        if not opt:
+            console.print(f"[red]Error:[/red] Unknown integration option '{token}'.")
+            if allowed:
+                console.print(f"Allowed options: {allowed}")
+            raise typer.Exit(1)
+        key = name.replace("-", "_")
+        if opt.is_flag:
+            if value is not None:
+                console.print(f"[red]Error:[/red] Option '{opt.name}' is a flag and does not accept a value.")
+                raise typer.Exit(1)
+            parsed[key] = True
+            i += 1
+        elif value is not None:
+            parsed[key] = value
+            i += 1
+        elif i + 1 < len(tokens) and not tokens[i + 1].startswith("-"):
+            parsed[key] = tokens[i + 1]
+            i += 2
+        else:
+            console.print(f"[red]Error:[/red] Option '{opt.name}' requires a value.")
+            raise typer.Exit(1)
+    return parsed or None
+
+
+# ---------------------------------------------------------------------------
+# Agent / integration configuration (computed at module load time)
+# ---------------------------------------------------------------------------
+
+def _build_agent_config() -> dict[str, dict[str, Any]]:
+    """Derive AGENT_CONFIG from INTEGRATION_REGISTRY."""
+    from .integrations import INTEGRATION_REGISTRY
+    config: dict[str, dict[str, Any]] = {}
+    for key, integration in INTEGRATION_REGISTRY.items():
+        if integration.config:
+            config[key] = dict(integration.config)
+    return config
+
+
+AGENT_CONFIG: dict[str, dict[str, Any]] = _build_agent_config()
+
+AI_ASSISTANT_ALIASES: dict[str, str] = {
+    "kiro": "kiro-cli",
+}
+
+SCRIPT_TYPE_CHOICES: dict[str, str] = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
+
+
+def _build_ai_assistant_help() -> str:
+    """Build the --ai help text from AGENT_CONFIG so it stays in sync with runtime config."""
+
+    non_generic_agents = sorted(agent for agent in AGENT_CONFIG if agent != "generic")
+    base_help = (
+        f"AI assistant to use: {', '.join(non_generic_agents)}, "
+        "or generic (requires --ai-commands-dir)."
+    )
+
+    if not AI_ASSISTANT_ALIASES:
+        return base_help
+
+    alias_phrases = []
+    for alias, target in sorted(AI_ASSISTANT_ALIASES.items()):
+        alias_phrases.append(f"'{alias}' as an alias for '{target}'")
+
+    if len(alias_phrases) == 1:
+        aliases_text = alias_phrases[0]
+    else:
+        aliases_text = ', '.join(alias_phrases[:-1]) + ' and ' + alias_phrases[-1]
+
+    return base_help + " Use " + aliases_text + "."
+
+
+AI_ASSISTANT_HELP: str = _build_ai_assistant_help()
 
 
 def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> Optional[str]:
@@ -271,7 +401,6 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
     Returns ``project_path / <agent_folder> / "skills"``, falling back
     to ``project_path / ".agents/skills"`` for unknown agents.
     """
-    from specify_cli import AGENT_CONFIG
     agent_config = AGENT_CONFIG.get(selected_ai, {})
     agent_folder = agent_config.get("folder", "")
     if agent_folder:
