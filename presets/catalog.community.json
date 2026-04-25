@@ -108,11 +108,11 @@
     "fiction-book-writing": {
       "name": "Fiction Book Writing",
       "id": "fiction-book-writing",
-      "version": "1.6.0",
-      "description": "Spec-Driven Development for novel and long-form fiction. 27 AI commands from idea to submission: story bible governance, 9 POV modes, all major plot structure frameworks, scene-by-scene drafting with quality gates, audiobook pipeline (SSML/ElevenLabs), cover design, sensitivity review, pacing and prose statistics, and pandoc-based export to DOCX/EPUB/LaTeX. Two style modes: author voice sample extraction or humanized-AI prose with 5 craft profiles. 12 languages supported.",
+      "version": "1.7.0",
+      "description": "Spec-Driven Development for novel and long-form fiction. 27 AI commands from idea to submission: story bible governance, 9 POV modes, all major plot structure frameworks, scene-by-scene drafting with quality gates, audiobook pipeline (SSML/ElevenLabs), cover design, sensitivity review, pacing and prose statistics, and pandoc-based export to DOCX/EPUB/LaTeX. Two style modes: author voice sample extraction or humanized-AI prose with 5 craft profiles. 12 languages supported. Support for offline semantic search.",
       "author": "Andreas Daumann",
       "repository": "https://github.com/adaumann/speckit-preset-fiction-book-writing",
-      "download_url": "https://github.com/adaumann/speckit-preset-fiction-book-writing/archive/refs/tags/v1.6.0.zip",
+      "download_url": "https://github.com/adaumann/speckit-preset-fiction-book-writing/archive/refs/tags/v1.7.0.zip",
       "homepage": "https://github.com/adaumann/speckit-preset-fiction-book-writing",
       "documentation": "https://github.com/adaumann/speckit-preset-fiction-book-writing/blob/main/fiction-book-writing/README.md",
       "license": "MIT",
@@ -122,7 +122,7 @@
       "provides": {
         "templates": 22,
         "commands": 27,
-        "scripts": 1
+        "scripts": 2
       },
       "tags": [
         "writing",
@@ -140,34 +140,7 @@
         "language-support"
       ],
       "created_at": "2026-04-09T08:00:00Z",
-      "updated_at": "2026-04-19T08:00:00Z"
-    },
-    "jira": {
-      "name": "Jira Issue Tracking",
-      "id": "jira",
-      "version": "1.0.0",
-      "description": "Overrides speckit.taskstoissues to create Jira epics, stories, and tasks instead of GitHub Issues via Atlassian MCP tools.",
-      "author": "luno",
-      "repository": "https://github.com/luno/spec-kit-preset-jira",
-      "download_url": "https://github.com/luno/spec-kit-preset-jira/archive/refs/tags/v1.0.0.zip",
-      "homepage": "https://github.com/luno/spec-kit-preset-jira",
-      "documentation": "https://github.com/luno/spec-kit-preset-jira/blob/main/README.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "templates": 0,
-        "commands": 1
-      },
-      "tags": [
-        "jira",
-        "atlassian",
-        "issue-tracking",
-        "preset"
-      ],
-      "created_at": "2026-04-15T00:00:00Z",
-      "updated_at": "2026-04-15T00:00:00Z"
+      "updated_at": "2026-04-25T08:00:00Z"
     },
     "multi-repo-branching": {
       "name": "Multi-Repo Branching",
