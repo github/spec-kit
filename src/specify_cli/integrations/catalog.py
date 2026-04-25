@@ -520,16 +520,17 @@ class IntegrationCatalog:
                     f"Invalid catalog entry at index {idx}: "
                     f"expected a mapping, got {type(cat).__name__}."
                 )
-            existing_url = cat.get("url")
-            if not isinstance(existing_url, str) or not existing_url.strip():
-                raise IntegrationValidationError(
-                    f"Invalid catalog entry at index {idx}: "
-                    f"'url' must be a non-empty string."
-                )
-            existing_url = existing_url.strip()
+            existing_url = str(cat.get("url", "")).strip()
+            if not existing_url:
+                continue
             # Re-run the same URL validation used when loading, so a corrupt
             # entry surfaces here instead of at the next `integration` call.
-            self._validate_catalog_url(existing_url)
+            try:
+                self._validate_catalog_url(existing_url)
+            except IntegrationCatalogError as exc:
+                raise IntegrationValidationError(
+                    f"Invalid catalog entry at index {idx} in {config_path}: {exc}"
+                ) from exc
             if existing_url == url:
                 raise IntegrationValidationError(
                     f"Catalog URL already configured: {url}"

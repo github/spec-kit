@@ -903,6 +903,42 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert remove_result.exit_code == 0, remove_result.output
         assert "'mine' removed" in remove_result.output
 
+    def test_catalog_list_env_override_supersedes_project_config(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CATALOG_URL",
+            "https://env.example.com/catalog.json",
+        )
+        cfg_path = project / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "url": "https://project.example.com/catalog.json",
+                            "name": "project",
+                            "priority": 1,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = self._invoke(["integration", "catalog", "list"], project)
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 0, result.output
+        assert "SPECKIT_INTEGRATION_CATALOG_URL is set" in normalized_output
+        assert "supersedes configured catalog files" in normalized_output
+        assert "non-removable" in normalized_output
+        assert "https://env.example.com/catalog.json" in normalized_output
+        assert "https://project.example.com/catalog.json" not in normalized_output
+        assert "[0]" not in normalized_output
+
     def test_catalog_add_strips_whitespace_in_success_output_and_storage(
         self, tmp_path, monkeypatch
     ):

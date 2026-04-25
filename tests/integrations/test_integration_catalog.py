@@ -837,17 +837,30 @@ class TestCatalogSourceManagement:
         with pytest.raises(IntegrationValidationError, match="corrupted"):
             cat.add_catalog("https://new.example.com/catalog.json")
 
-    def test_add_catalog_rejects_corrupt_sibling_entry(self, tmp_path, monkeypatch):
-        """add_catalog must fail fast if an existing entry is structurally invalid."""
+    def test_add_catalog_skips_blank_url_entries(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
         cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
         cfg_path.write_text(
-            yaml.dump({"catalogs": [{"url": "", "name": "broken"}]}),
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {"url": "   ", "name": "blank", "priority": 99},
+                        {
+                            "url": "https://a.example.com/catalog.json",
+                            "name": "a",
+                            "priority": 5,
+                        },
+                    ]
+                }
+            ),
             encoding="utf-8",
         )
         cat = IntegrationCatalog(tmp_path)
-        with pytest.raises(IntegrationValidationError, match="non-empty string"):
-            cat.add_catalog("https://new.example.com/catalog.json")
+        cat.add_catalog("https://b.example.com/catalog.json", name="b")
+
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert data["catalogs"][-1]["name"] == "b"
+        assert data["catalogs"][-1]["priority"] == 6
 
     def test_add_catalog_rejects_non_integer_priority(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
@@ -897,7 +910,16 @@ class TestCatalogSourceManagement:
         assert data["catalogs"][-1]["name"] == "b"
         assert data["catalogs"][-1]["priority"] == 11
 
-    def test_add_catalog_rejects_existing_entry_with_bad_url(self, tmp_path, monkeypatch):
+    @pytest.mark.parametrize(
+        ("bad_url", "reason"),
+        [
+            ("http://insecure.example.com/catalog.json", "HTTPS"),
+            (123, "HTTPS"),
+        ],
+    )
+    def test_add_catalog_rejects_existing_entry_with_bad_url(
+        self, tmp_path, monkeypatch, bad_url, reason
+    ):
         """A sibling entry with an http:// URL should block a new add."""
         self._isolate(tmp_path, monkeypatch)
         cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
@@ -906,7 +928,7 @@ class TestCatalogSourceManagement:
                 {
                     "catalogs": [
                         {
-                            "url": "http://insecure.example.com/catalog.json",
+                            "url": bad_url,
                             "name": "bad",
                         }
                     ]
@@ -915,8 +937,12 @@ class TestCatalogSourceManagement:
             encoding="utf-8",
         )
         cat = IntegrationCatalog(tmp_path)
-        with pytest.raises(IntegrationCatalogError, match="HTTPS"):
+        with pytest.raises(IntegrationValidationError) as exc_info:
             cat.add_catalog("https://good.example.com/catalog.json")
+        message = str(exc_info.value)
+        assert str(cfg_path) in message
+        assert "index 0" in message
+        assert reason in message
 
     def test_add_catalog_wraps_yaml_parse_errors(self, tmp_path, monkeypatch):
         """Invalid YAML on disk surfaces as IntegrationValidationError, not a raw YAMLError."""

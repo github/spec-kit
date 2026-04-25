@@ -2743,16 +2743,29 @@ def integration_catalog_list():
 
     project_root = _require_specify_project()
     catalog = IntegrationCatalog(project_root)
+    env_override = os.environ.get("SPECKIT_INTEGRATION_CATALOG_URL", "").strip()
 
     try:
-        project_configs = catalog.get_project_catalog_configs()
-        configs = project_configs if project_configs is not None else catalog.get_catalog_configs()
+        if env_override:
+            project_configs = None
+            configs = catalog.get_catalog_configs()
+        else:
+            project_configs = catalog.get_project_catalog_configs()
+            configs = project_configs if project_configs is not None else catalog.get_catalog_configs()
     except IntegrationCatalogError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
 
     console.print("\n[bold cyan]Integration Catalog Sources:[/bold cyan]\n")
-    if project_configs is None:
+    if env_override:
+        console.print(
+            "  SPECKIT_INTEGRATION_CATALOG_URL is set; it supersedes configured catalog files."
+        )
+        console.print(
+            "  Project/user catalog sources are not active while the env override is set.\n"
+        )
+        console.print("[bold]Active catalog source from environment (non-removable here):[/bold]\n")
+    elif project_configs is None:
         console.print("  No project-level catalog sources configured.\n")
         console.print("[bold]Active catalog sources (non-removable here):[/bold]\n")
     else:
@@ -2764,7 +2777,7 @@ def integration_catalog_list():
             if cfg.get("install_allowed")
             else "[yellow]discovery only[/yellow]"
         )
-        if project_configs is None:
+        if env_override or project_configs is None:
             console.print(f"  - [bold]{cfg.get('name', 'catalog')}[/bold] — {install_status}")
         else:
             console.print(f"  [{i}] [bold]{cfg.get('name', f'catalog-{i + 1}')}[/bold] — {install_status}")
