@@ -2757,7 +2757,10 @@ def integration_catalog_list():
 
 @integration_catalog_app.command("add")
 def integration_catalog_add(
-    url: str = typer.Argument(..., help="Catalog URL to add (must use HTTPS)"),
+    url: str = typer.Argument(
+        ...,
+        help="Catalog URL to add (HTTPS required, except http://localhost for local testing)",
+    ),
     name: Optional[str] = typer.Option(None, "--name", help="Catalog name"),
 ):
     """Add an integration catalog source to the project config."""
