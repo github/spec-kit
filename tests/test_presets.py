@@ -1899,8 +1899,20 @@ CORE_TEMPLATE_NAMES = [
 ]
 
 
+@pytest.mark.filterwarnings(
+    r"ignore:Cannot compose command 'speckit\.wrap-test'"
+)
+@pytest.mark.filterwarnings(
+    r"ignore:Post-install reconciliation failed for self-test"
+)
 class TestSelfTestPreset:
-    """Tests using the self-test preset that ships with the repo."""
+    """Tests using the self-test preset that ships with the repo.
+
+    The self-test preset ships a wrap-strategy command (``speckit.wrap-test``)
+    without a corresponding core base layer; reconciliation deliberately
+    surfaces a UserWarning in that case. The filters above acknowledge those
+    expected warnings so the suite stays quiet without masking unrelated ones.
+    """
 
     def test_self_test_preset_exists(self):
         """Verify the self-test preset directory and manifest exist."""
@@ -2187,8 +2199,19 @@ class TestInitOptions:
         assert load_init_options(project_dir) == {}
 
 
+@pytest.mark.filterwarnings(
+    r"ignore:Cannot compose command 'speckit\.wrap-test'"
+)
+@pytest.mark.filterwarnings(
+    r"ignore:Post-install reconciliation failed for self-test"
+)
 class TestPresetSkills:
-    """Tests for preset skill registration and unregistration."""
+    """Tests for preset skill registration and unregistration.
+
+    Several tests in this class install the self-test preset, which contains
+    a wrap-strategy command without a base layer. Reconciliation emits an
+    expected UserWarning that the filters above acknowledge.
+    """
 
     def _write_init_options(self, project_dir, ai="claude", ai_skills=True, script="sh"):
         from specify_cli import save_init_options
