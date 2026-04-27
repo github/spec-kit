@@ -1900,10 +1900,10 @@ CORE_TEMPLATE_NAMES = [
 
 
 @pytest.mark.filterwarnings(
-    r"ignore:Cannot compose command 'speckit\.wrap-test'"
+    r"ignore:Cannot compose command 'speckit\.wrap-test':UserWarning"
 )
 @pytest.mark.filterwarnings(
-    r"ignore:Post-install reconciliation failed for self-test"
+    r"ignore:Post-install reconciliation failed for self-test:UserWarning"
 )
 class TestSelfTestPreset:
     """Tests using the self-test preset that ships with the repo.
@@ -2200,10 +2200,10 @@ class TestInitOptions:
 
 
 @pytest.mark.filterwarnings(
-    r"ignore:Cannot compose command 'speckit\.wrap-test'"
+    r"ignore:Cannot compose command 'speckit\.wrap-test':UserWarning"
 )
 @pytest.mark.filterwarnings(
-    r"ignore:Post-install reconciliation failed for self-test"
+    r"ignore:Post-install reconciliation failed for self-test:UserWarning"
 )
 class TestPresetSkills:
     """Tests for preset skill registration and unregistration.
