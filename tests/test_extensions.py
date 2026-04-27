@@ -217,6 +217,14 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="Missing required field"):
             ExtensionManifest(manifest_path)
 
+    def test_non_mapping_yaml_raises_validation_error(self, temp_dir):
+        """Manifest whose YAML root is a scalar or list raises ValidationError, not TypeError."""
+        manifest_path = temp_dir / "extension.yml"
+        for bad_content in ("42\n", "[]\n", "null\n"):
+            manifest_path.write_text(bad_content)
+            with pytest.raises(ValidationError, match="YAML mapping"):
+                ExtensionManifest(manifest_path)
+
     def test_invalid_extension_id(self, temp_dir, valid_manifest_data):
         """Test manifest with invalid extension ID format."""
         import yaml
@@ -1361,6 +1369,79 @@ Agent __AGENT__
         assert "{ARGS}" not in content
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
 
+    @pytest.mark.parametrize("agent_name,skills_path", [
+        ("codex", ".agents/skills"),
+        ("kimi", ".kimi/skills"),
+        ("claude", ".claude/skills"),
+        ("cursor-agent", ".cursor/skills"),
+        ("trae", ".trae/skills"),
+        ("agy", ".agents/skills"),
+    ])
+    def test_all_skill_agents_register_commands_with_resolved_placeholders(
+        self, project_dir, temp_dir, agent_name, skills_path
+    ):
+        """All SKILL.md agents must produce fully resolved SKILL.md files when commands are registered."""
+        import yaml
+
+        ext_dir = temp_dir / f"ext-{agent_name}"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": f"ext-{agent_name}",
+                "name": "Scripted Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": f"speckit.ext-{agent_name}.run",
+                        "file": "commands/run.md",
+                        "description": "Scripted command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Scripted command\n"
+            "scripts:\n"
+            '  sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"\n'
+            "---\n\n"
+            "Run {SCRIPT}\n"
+            "Agent is __AGENT__.\n"
+        )
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(f'{{"ai":"{agent_name}","script":"sh"}}')
+
+        skills_dir = project_dir
+        for part in skills_path.split("/"):
+            skills_dir = skills_dir / part
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(agent_name, manifest, ext_dir, project_dir)
+
+        skill_dir_name = f"speckit-ext-{agent_name}-run"
+        skill_file = skills_dir / skill_dir_name / "SKILL.md"
+        assert skill_file.exists(), f"SKILL.md not created for {agent_name}"
+
+        content = skill_file.read_text()
+        assert "{SCRIPT}" not in content, f"{{SCRIPT}} not resolved for {agent_name}"
+        assert "__AGENT__" not in content, f"__AGENT__ not resolved for {agent_name}"
+        assert "{ARGS}" not in content, f"{{ARGS}} not resolved for {agent_name}"
+        assert '.specify/scripts/bash/setup-plan.sh' in content
+
     def test_codex_skill_alias_frontmatter_matches_alias_name(self, project_dir, temp_dir):
         """Codex alias skills should render their own matching `name:` frontmatter."""
         import yaml
@@ -2334,6 +2415,215 @@ class TestExtensionCatalog:
 
         assert not catalog.cache_file.exists()
         assert not catalog.cache_metadata_file.exists()
+
+    # --- _make_request / GitHub auth ---
+
+    def _make_catalog(self, temp_dir):
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        return ExtensionCatalog(project_dir)
+
+    def test_make_request_no_token_no_auth_header(self, temp_dir, monkeypatch):
+        """Without a token, requests carry no Authorization header."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_whitespace_only_github_token_ignored(self, temp_dir, monkeypatch):
+        """A whitespace-only GITHUB_TOKEN is treated as unset."""
+        monkeypatch.setenv("GITHUB_TOKEN", "   ")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_whitespace_github_token_falls_back_to_gh_token(self, temp_dir, monkeypatch):
+        """When GITHUB_TOKEN is whitespace-only, GH_TOKEN is used as fallback."""
+        monkeypatch.setenv("GITHUB_TOKEN", "   ")
+        monkeypatch.setenv("GH_TOKEN", "ghp_fallback")
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
+        assert req.get_header("Authorization") == "Bearer ghp_fallback"
+
+    def test_make_request_github_token_added_for_raw_githubusercontent(self, temp_dir, monkeypatch):
+        """GITHUB_TOKEN is attached for raw.githubusercontent.com URLs."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
+        assert req.get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_make_request_gh_token_fallback(self, temp_dir, monkeypatch):
+        """GH_TOKEN is used when GITHUB_TOKEN is absent."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.setenv("GH_TOKEN", "ghp_ghtoken")
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://github.com/org/repo/releases/download/v1/ext.zip")
+        assert req.get_header("Authorization") == "Bearer ghp_ghtoken"
+
+    def test_make_request_github_token_takes_precedence_over_gh_token(self, temp_dir, monkeypatch):
+        """GITHUB_TOKEN takes precedence over GH_TOKEN when both are set."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_primary")
+        monkeypatch.setenv("GH_TOKEN", "ghp_secondary")
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://api.github.com/repos/org/repo")
+        assert req.get_header("Authorization") == "Bearer ghp_primary"
+
+    def test_make_request_token_not_added_for_non_github_url(self, temp_dir, monkeypatch):
+        """Auth header is never attached to non-GitHub URLs to prevent credential leakage."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://internal.example.com/catalog.json")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_token_not_added_for_github_lookalike_host(self, temp_dir, monkeypatch):
+        """Auth header is not attached to hosts that include github.com as a suffix."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://github.com.evil.com/org/repo/releases/download/v1/ext.zip")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_token_not_added_for_github_in_path(self, temp_dir, monkeypatch):
+        """Auth header is not attached when github.com appears only in the URL path."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://evil.example.com/github.com/org/repo/releases/download/v1/ext.zip")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_token_not_added_for_github_in_query(self, temp_dir, monkeypatch):
+        """Auth header is not attached when github.com appears only in the query string."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://evil.example.com/download?source=https://github.com/org/repo/v1/ext.zip")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_token_added_for_api_github_com(self, temp_dir, monkeypatch):
+        """GITHUB_TOKEN is attached for api.github.com URLs."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://api.github.com/repos/org/repo/releases/assets/1")
+        assert req.get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_make_request_token_added_for_codeload_github_com(self, temp_dir, monkeypatch):
+        """GITHUB_TOKEN is attached for codeload.github.com URLs (GitHub archive redirects)."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = self._make_catalog(temp_dir)
+        req = catalog._make_request("https://codeload.github.com/org/repo/zip/refs/tags/v1.0.0")
+        assert req.get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_redirect_preserves_auth_for_github_to_codeload(self):
+        """Auth header is preserved when GitHub redirects to codeload.github.com."""
+        from specify_cli._github_http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+
+        handler = _StripAuthOnRedirect()
+        original_url = "https://github.com/org/repo/archive/refs/tags/v1.zip"
+        redirect_url = "https://codeload.github.com/org/repo/zip/refs/tags/v1"
+        req = Request(original_url, headers={"Authorization": "Bearer ghp_test"})
+        fp = io.BytesIO(b"")
+        new_req = handler.redirect_request(req, fp, 302, "Found", {}, redirect_url)
+        assert new_req is not None
+        auth = new_req.get_header("Authorization") or new_req.unredirected_hdrs.get("Authorization")
+        assert auth == "Bearer ghp_test"
+
+    def test_redirect_strips_auth_for_github_to_external(self):
+        """Auth header is stripped when GitHub redirects to a non-GitHub host."""
+        from specify_cli._github_http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+
+        handler = _StripAuthOnRedirect()
+        original_url = "https://github.com/org/repo/releases/download/v1/asset.zip"
+        redirect_url = "https://objects.githubusercontent.com/github-production-release-asset/12345"
+        req = Request(original_url, headers={"Authorization": "Bearer ghp_test"})
+        fp = io.BytesIO(b"")
+        new_req = handler.redirect_request(req, fp, 302, "Found", {}, redirect_url)
+        assert new_req is not None
+        auth_header = new_req.headers.get("Authorization")
+        auth_unredirected = new_req.unredirected_hdrs.get("Authorization")
+        assert auth_header is None
+        assert auth_unredirected is None
+
+    def test_fetch_single_catalog_sends_auth_header(self, temp_dir, monkeypatch):
+        """_fetch_single_catalog passes Authorization header via opener for GitHub URLs."""
+        from unittest.mock import patch, MagicMock
+
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = self._make_catalog(temp_dir)
+
+        catalog_data = {"schema_version": "1.0", "extensions": {}}
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(catalog_data).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        captured = {}
+        mock_opener = MagicMock()
+
+        def fake_open(req, timeout=None):
+            captured["req"] = req
+            return mock_response
+
+        mock_opener.open.side_effect = fake_open
+
+        entry = CatalogEntry(
+            url="https://raw.githubusercontent.com/org/repo/main/catalog.json",
+            name="private",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch("urllib.request.build_opener", return_value=mock_opener):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+        assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
+        """download_extension passes Authorization header via opener for GitHub URLs."""
+        from unittest.mock import patch, MagicMock
+        import zipfile, io
+
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = self._make_catalog(temp_dir)
+
+        # Build a minimal valid ZIP in memory
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("extension.yml", "id: test-ext\nname: Test\nversion: 1.0.0\n")
+        zip_bytes = zip_buf.getvalue()
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = zip_bytes
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        captured = {}
+
+        mock_opener = MagicMock()
+
+        def fake_open(req, timeout=None):
+            captured["req"] = req
+            return mock_response
+
+        mock_opener.open.side_effect = fake_open
+
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://github.com/org/repo/releases/download/v1/test-ext.zip",
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch("urllib.request.build_opener", return_value=mock_opener):
+            catalog.download_extension("test-ext", target_dir=temp_dir)
+
+        assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+
 
 
 # ===== CatalogEntry Tests =====

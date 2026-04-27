@@ -84,6 +84,9 @@ class IntegrationBase(ABC):
     context_file: str | None = None
     """Relative path to the agent context file (e.g. ``CLAUDE.md``)."""
 
+    invoke_separator: str = "."
+    """Separator used in slash-command invocations (``"."`` → ``/speckit.plan``)."""
+
     # -- Markers for managed context section ------------------------------
 
     CONTEXT_MARKER_START = "<!-- SPECKIT START -->"
@@ -95,6 +98,18 @@ class IntegrationBase(ABC):
     def options(cls) -> list[IntegrationOption]:
         """Return options this integration accepts. Default: none."""
         return []
+
+    def effective_invoke_separator(
+        self, parsed_options: dict[str, Any] | None = None
+    ) -> str:
+        """Return the invoke separator for the given options.
+
+        Subclasses whose separator depends on runtime options (e.g.
+        Copilot in ``--skills`` mode) should override this method.
+        The default implementation ignores *parsed_options* and returns
+        the class-level ``invoke_separator``.
+        """
+        return self.invoke_separator
 
     def build_exec_args(
         self,
@@ -122,11 +137,12 @@ class IntegrationBase(ABC):
         agents or ``"/speckit-specify my-feature"`` for skills agents.
 
         *command_name* may be a full dotted name like
-        ``"speckit.specify"`` or a bare stem like ``"specify"``.
+        ``"speckit.specify"``, an extension command like
+        ``"speckit.git.commit"``, or a bare stem like ``"specify"``.
         """
         stem = command_name
-        if "." in stem:
-            stem = stem.rsplit(".", 1)[-1]
+        if stem.startswith("speckit."):
+            stem = stem[len("speckit."):]
 
         invocation = f"/speckit.{stem}"
         if args:
@@ -482,7 +498,7 @@ class IntegrationBase(ABC):
         )
 
         if ctx_path.exists():
-            content = ctx_path.read_text(encoding="utf-8")
+            content = ctx_path.read_text(encoding="utf-8-sig")
             start_idx = content.find(self.CONTEXT_MARKER_START)
             end_idx = content.find(
                 self.CONTEXT_MARKER_END,
@@ -547,7 +563,7 @@ class IntegrationBase(ABC):
         if not ctx_path.exists():
             return False
 
-        content = ctx_path.read_text(encoding="utf-8")
+        content = ctx_path.read_text(encoding="utf-8-sig")
         start_idx = content.find(self.CONTEXT_MARKER_START)
         end_idx = content.find(
             self.CONTEXT_MARKER_END,
@@ -598,12 +614,31 @@ class IntegrationBase(ABC):
         return True
 
     @staticmethod
+    def resolve_command_refs(content: str, separator: str = ".") -> str:
+        """Replace ``__SPECKIT_COMMAND_<NAME>__`` placeholders with invocations.
+
+        Each placeholder encodes a command name in upper-case with
+        underscores (e.g. ``__SPECKIT_COMMAND_PLAN__``,
+        ``__SPECKIT_COMMAND_GIT_COMMIT__``).  The replacement uses
+        *separator* to join the segments:
+
+        * ``separator="."`` → ``/speckit.plan``, ``/speckit.git.commit``
+        * ``separator="-"`` → ``/speckit-plan``, ``/speckit-git-commit``
+        """
+        return re.sub(
+            r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__",
+            lambda m: "/speckit" + separator + m.group(1).lower().replace("_", separator),
+            content,
+        )
+
+    @staticmethod
     def process_template(
         content: str,
         agent_name: str,
         script_type: str,
         arg_placeholder: str = "$ARGUMENTS",
         context_file: str = "",
+        invoke_separator: str = ".",
     ) -> str:
         """Process a raw command template into agent-ready content.
 
@@ -615,6 +650,7 @@ class IntegrationBase(ABC):
         5. Replace ``__AGENT__`` with *agent_name*
         6. Replace ``__CONTEXT_FILE__`` with *context_file*
         7. Rewrite paths: ``scripts/`` → ``.specify/scripts/`` etc.
+        8. Replace ``__SPECKIT_COMMAND_<NAME>__`` with invocation strings
         """
         # 1. Extract script command from frontmatter
         script_command = ""
@@ -683,6 +719,9 @@ class IntegrationBase(ABC):
         from specify_cli.agents import CommandRegistrar
 
         content = CommandRegistrar.rewrite_project_relative_paths(content)
+
+        # 8. Replace __SPECKIT_COMMAND_<NAME>__ with invocation strings
+        content = IntegrationBase.resolve_command_refs(content, invoke_separator)
 
         return content
 
@@ -1274,6 +1313,8 @@ class SkillsIntegration(IntegrationBase):
     ``speckit-<name>/SKILL.md`` file with skills-oriented frontmatter.
     """
 
+    invoke_separator = "-"
+
     def build_exec_args(
         self,
         prompt: str,
@@ -1311,10 +1352,10 @@ class SkillsIntegration(IntegrationBase):
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
         """Skills use ``/speckit-<stem>`` (hyphenated directory name)."""
         stem = command_name
-        if "." in stem:
-            stem = stem.rsplit(".", 1)[-1]
+        if stem.startswith("speckit."):
+            stem = stem[len("speckit."):]
 
-        invocation = f"/speckit-{stem}"
+        invocation = "/speckit-" + stem.replace(".", "-")
         if args:
             invocation = f"{invocation} {args}"
         return invocation
@@ -1395,6 +1436,7 @@ class SkillsIntegration(IntegrationBase):
             processed_body = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
                 context_file=self.context_file or "",
+                invoke_separator=self.invoke_separator,
             )
             # Strip the processed frontmatter — we rebuild it for skills.
             # Preserve leading whitespace in the body to match release ZIP
