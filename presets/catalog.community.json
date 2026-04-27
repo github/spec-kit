@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-15T00:00:00Z",
+  "updated_at": "2026-04-27T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "aide-in-place": {
@@ -16,7 +16,9 @@
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.2.0",
-        "extensions": ["aide"]
+        "extensions": [
+          "aide"
+        ]
       },
       "provides": {
         "templates": 2,
@@ -258,6 +260,34 @@
       ],
       "created_at": "2026-04-23T08:00:00Z",
       "updated_at": "2026-04-23T08:00:00Z"
+    },
+    "security-governance": {
+      "name": "Security Governance",
+      "id": "security-governance",
+      "version": "0.2.0",
+      "description": "Adds secure development governance, MSL preference, ASVS verification, supply-chain transparency, and EU CRA awareness.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-security-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-security-governance/archive/refs/tags/v0.2.0.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-security-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-security-governance/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 12,
+        "commands": 3
+      },
+      "tags": [
+        "security",
+        "governance",
+        "msl",
+        "asvs",
+        "supply-chain"
+      ],
+      "created_at": "2026-04-27T00:00:00Z",
+      "updated_at": "2026-04-27T00:00:00Z"
     },
     "toc-navigation": {
       "name": "Table of Contents Navigation",
