@@ -128,7 +128,86 @@ class TestIntegrationInstall:
             os.chdir(old_cwd)
         assert result.exit_code != 0
         assert "already installed" in result.output
-        assert "uninstall" in result.output
+        assert "--force" in result.output
+
+    def test_install_multi_safe_integration(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "install", "codex",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, result.output
+        assert "installed successfully" in result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "claude"
+        assert data["default_integration"] == "claude"
+        assert data["installed_integrations"] == ["claude", "codex"]
+
+        assert (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
+        assert (project / ".agents" / "skills" / "speckit-plan" / "SKILL.md").exists()
+
+    def test_install_multi_safe_migrates_legacy_state(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        int_json = project / ".specify" / "integration.json"
+        int_json.write_text(json.dumps({
+            "integration": "claude",
+            "version": "0.0.0",
+        }), encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "install", "codex",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, result.output
+
+        data = json.loads(int_json.read_text(encoding="utf-8"))
+        assert data["integration"] == "claude"
+        assert data["default_integration"] == "claude"
+        assert data["installed_integrations"] == ["claude", "codex"]
+
+    def test_install_multi_unsafe_requires_force(self, tmp_path):
+        project = _init_project(tmp_path, "copilot")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "install", "claude",
+                "--script", "sh",
+            ])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code != 0
+        assert "multi-install safe" in result.output
+        assert "--force" in result.output
+
+    def test_install_multi_unsafe_allowed_with_force(self, tmp_path):
+        project = _init_project(tmp_path, "copilot")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "install", "claude",
+                "--script", "sh",
+                "--force",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "copilot"
+        assert data["installed_integrations"] == ["copilot", "claude"]
 
     def test_install_into_bare_project(self, tmp_path):
         """Install into a project with .specify/ but no integration."""
@@ -260,7 +339,31 @@ class TestIntegrationUninstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "not the currently installed" in result.output
+        assert "not installed" in result.output
+
+    def test_uninstall_non_default_preserves_default(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            install = runner.invoke(app, [
+                "integration", "install", "codex",
+                "--script", "sh",
+            ], catch_exceptions=False)
+            assert install.exit_code == 0, install.output
+
+            result = runner.invoke(app, [
+                "integration", "uninstall", "codex",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, result.output
+        assert not (project / ".agents" / "skills" / "speckit-plan" / "SKILL.md").exists()
+        assert (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "claude"
+        assert data["installed_integrations"] == ["claude"]
 
     def test_uninstall_preserves_shared_infra(self, tmp_path):
         """Shared scripts and templates are not removed by integration uninstall."""
@@ -279,6 +382,44 @@ class TestIntegrationUninstall:
         # Shared infrastructure preserved
         assert shared_script.exists()
         assert (project / ".specify" / "templates").is_dir()
+
+
+class TestIntegrationUse:
+    def test_use_installed_integration_sets_default(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            install = runner.invoke(app, [
+                "integration", "install", "codex",
+                "--script", "sh",
+            ], catch_exceptions=False)
+            assert install.exit_code == 0, install.output
+
+            result = runner.invoke(app, ["integration", "use", "codex"], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "codex"
+        assert data["default_integration"] == "codex"
+        assert data["installed_integrations"] == ["claude", "codex"]
+
+        opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
+        assert opts["integration"] == "codex"
+        assert opts["ai"] == "codex"
+
+    def test_use_requires_installed_integration(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["integration", "use", "codex"])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code != 0
+        assert "not installed" in result.output
 
 
 # ── switch ───────────────────────────────────────────────────────────

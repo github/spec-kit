@@ -1902,7 +1902,7 @@ INTEGRATION_JSON = ".specify/integration.json"
 
 
 def _read_integration_json(project_root: Path) -> dict[str, Any]:
-    """Load ``.specify/integration.json``.  Returns ``{}`` when missing."""
+    """Load ``.specify/integration.json``. Returns normalized state when present."""
     path = project_root / INTEGRATION_JSON
     if not path.exists():
         return {}
@@ -1922,20 +1922,95 @@ def _read_integration_json(project_root: Path) -> dict[str, Any]:
         console.print(f"[red]Error:[/red] {path} must contain a JSON object, got {type(data).__name__}.")
         console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
         raise typer.Exit(1)
-    return data
+    return _normalize_integration_state(data)
+
+
+def _dedupe_integration_keys(keys: list[Any]) -> list[str]:
+    """Return a de-duplicated list of non-empty integration keys."""
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for key in keys:
+        if not isinstance(key, str) or not key.strip():
+            continue
+        clean = key.strip()
+        if clean in seen:
+            continue
+        seen.add(clean)
+        deduped.append(clean)
+    return deduped
+
+
+def _normalize_integration_state(data: dict[str, Any]) -> dict[str, Any]:
+    """Normalize legacy and multi-install integration metadata."""
+    legacy_key = data.get("integration")
+    default_key = data.get("default_integration")
+    if not isinstance(default_key, str) or not default_key.strip():
+        default_key = legacy_key if isinstance(legacy_key, str) else None
+
+    installed = data.get("installed_integrations")
+    installed_keys = _dedupe_integration_keys(installed if isinstance(installed, list) else [])
+    if not default_key and installed_keys:
+        default_key = installed_keys[0]
+    if default_key and default_key not in installed_keys:
+        installed_keys.insert(0, default_key)
+
+    normalized = dict(data)
+    if default_key:
+        normalized["integration"] = default_key
+        normalized["default_integration"] = default_key
+    else:
+        normalized.pop("integration", None)
+        normalized.pop("default_integration", None)
+    normalized["installed_integrations"] = installed_keys
+    return normalized
+
+
+def _default_integration_key(state: dict[str, Any]) -> str | None:
+    """Return the default integration key from normalized state."""
+    key = state.get("default_integration") or state.get("integration")
+    return key if isinstance(key, str) and key else None
+
+
+def _installed_integration_keys(state: dict[str, Any]) -> list[str]:
+    """Return installed integration keys from normalized state."""
+    return _dedupe_integration_keys(state.get("installed_integrations", []))
 
 
 def _write_integration_json(
     project_root: Path,
-    integration_key: str,
+    integration_key: str | None,
+    installed_integrations: list[str] | None = None,
 ) -> None:
-    """Write ``.specify/integration.json`` for *integration_key*."""
+    """Write ``.specify/integration.json`` with legacy-compatible state."""
     dest = project_root / INTEGRATION_JSON
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(json.dumps({
-        "integration": integration_key,
+
+    installed = _dedupe_integration_keys(installed_integrations or [])
+    if integration_key and integration_key not in installed:
+        installed.insert(0, integration_key)
+    if not integration_key and installed:
+        integration_key = installed[0]
+
+    data: dict[str, Any] = {
         "version": get_speckit_version(),
-    }, indent=2) + "\n", encoding="utf-8")
+        "installed_integrations": installed,
+    }
+    if integration_key:
+        data["integration"] = integration_key
+        data["default_integration"] = integration_key
+
+    dest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def _clear_init_options_for_integration(project_root: Path, integration_key: str) -> None:
+    """Clear active integration keys from init-options.json when they match."""
+    opts = load_init_options(project_root)
+    if opts.get("integration") == integration_key or opts.get("ai") == integration_key:
+        opts.pop("integration", None)
+        opts.pop("ai", None)
+        opts.pop("ai_skills", None)
+        opts.pop("context_file", None)
+        save_init_options(project_root, opts)
 
 
 def _remove_integration_json(project_root: Path) -> None:
@@ -1987,7 +2062,8 @@ def integration_list(
 
     project_root = _require_specify_project()
     current = _read_integration_json(project_root)
-    installed_key = current.get("integration")
+    default_key = _default_integration_key(current)
+    installed_keys = set(_installed_integration_keys(current))
 
     if catalog:
         from .integrations.catalog import IntegrationCatalog, IntegrationCatalogError
@@ -2014,7 +2090,9 @@ def integration_list(
             eid = entry["id"]
             cat_name = entry.get("_catalog_name", "")
             install_allowed = entry.get("_install_allowed", True)
-            if eid == installed_key:
+            if eid == default_key:
+                status = "[green]installed (default)[/green]"
+            elif eid in installed_keys:
                 status = "[green]installed[/green]"
             elif eid in INTEGRATION_REGISTRY:
                 status = "built-in"
@@ -2045,7 +2123,9 @@ def integration_list(
         name = cfg.get("name", key)
         requires_cli = cfg.get("requires_cli", False)
 
-        if key == installed_key:
+        if key == default_key:
+            status = "[green]installed (default)[/green]"
+        elif key in installed_keys:
             status = "[green]installed[/green]"
         else:
             status = ""
@@ -2055,8 +2135,9 @@ def integration_list(
 
     console.print(table)
 
-    if installed_key:
-        console.print(f"\n[dim]Current integration:[/dim] [cyan]{installed_key}[/cyan]")
+    if installed_keys:
+        console.print(f"\n[dim]Default integration:[/dim] [cyan]{default_key or 'none'}[/cyan]")
+        console.print(f"[dim]Installed integrations:[/dim] [cyan]{', '.join(sorted(installed_keys))}[/cyan]")
     else:
         console.print("\n[yellow]No integration currently installed.[/yellow]")
         console.print("Install one with: [cyan]specify integration install <key>[/cyan]")
@@ -2066,6 +2147,7 @@ def integration_list(
 def integration_install(
     key: str = typer.Argument(help="Integration key to install (e.g. claude, copilot)"),
     script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
+    force: bool = typer.Option(False, "--force", help="Allow multi-install when integrations are not declared safe"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
 ):
     """Install an integration into an existing project."""
@@ -2081,17 +2163,36 @@ def integration_install(
         raise typer.Exit(1)
 
     current = _read_integration_json(project_root)
-    installed_key = current.get("integration")
+    default_key = _default_integration_key(current)
+    installed_keys = _installed_integration_keys(current)
 
-    if installed_key and installed_key == key:
+    if key in installed_keys:
         console.print(f"[yellow]Integration '{key}' is already installed.[/yellow]")
-        console.print("Run [cyan]specify integration uninstall[/cyan] first, then reinstall.")
+        console.print(
+            "Run [cyan]specify integration upgrade[/cyan] to reinstall managed files, "
+            "or [cyan]specify integration uninstall[/cyan] first."
+        )
         raise typer.Exit(0)
 
-    if installed_key:
-        console.print(f"[red]Error:[/red] Integration '{installed_key}' is already installed.")
-        console.print(f"Run [cyan]specify integration uninstall[/cyan] first, or use [cyan]specify integration switch {key}[/cyan].")
-        raise typer.Exit(1)
+    if installed_keys and not force:
+        unsafe_keys = []
+        for installed_key in installed_keys:
+            installed_integration = get_integration(installed_key)
+            if not installed_integration or not getattr(installed_integration, "multi_install_safe", False):
+                unsafe_keys.append(installed_key)
+        if unsafe_keys or not getattr(integration, "multi_install_safe", False):
+            console.print(
+                f"[red]Error:[/red] Integration '{', '.join(installed_keys)}' is already installed."
+            )
+            console.print(
+                "Installing multiple integrations is only automatic when all involved "
+                "integrations are declared multi-install safe."
+            )
+            console.print(
+                f"Run [cyan]specify integration switch {key}[/cyan] to replace the default "
+                f"integration, or retry with [cyan]--force[/cyan] to opt in."
+            )
+            raise typer.Exit(1)
 
     selected_script = _resolve_script_type(project_root, script)
 
@@ -2120,8 +2221,11 @@ def integration_install(
             raw_options=integration_options,
         )
         manifest.save()
-        _write_integration_json(project_root, integration.key)
-        _update_init_options_for_integration(project_root, integration, script_type=selected_script)
+        new_installed = _dedupe_integration_keys([*installed_keys, integration.key])
+        new_default = default_key or integration.key
+        _write_integration_json(project_root, new_default, new_installed)
+        if new_default == integration.key:
+            _update_init_options_for_integration(project_root, integration, script_type=selected_script)
 
     except Exception as e:
         # Attempt rollback of any files written by setup
@@ -2130,12 +2234,17 @@ def integration_install(
         except Exception as rollback_err:
             # Suppress so the original setup error remains the primary failure
             console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration changes: {rollback_err}")
-        _remove_integration_json(project_root)
+        if installed_keys:
+            _write_integration_json(project_root, default_key, installed_keys)
+        else:
+            _remove_integration_json(project_root)
         console.print(f"[red]Error:[/red] Failed to install integration: {e}")
         raise typer.Exit(1)
 
     name = (integration.config or {}).get("name", key)
     console.print(f"\n[green]✓[/green] Integration '{name}' installed successfully")
+    if default_key:
+        console.print(f"[dim]Default integration remains:[/dim] [cyan]{default_key}[/cyan]")
 
 
 def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, Any] | None:
@@ -2207,6 +2316,41 @@ def _update_init_options_for_integration(
     save_init_options(project_root, opts)
 
 
+@integration_app.command("use")
+def integration_use(
+    key: str = typer.Argument(help="Installed integration key to make the default"),
+):
+    """Set the default integration without uninstalling other integrations."""
+    from .integrations import get_integration
+
+    project_root = Path.cwd()
+
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+
+    current = _read_integration_json(project_root)
+    installed_keys = _installed_integration_keys(current)
+    if key not in installed_keys:
+        console.print(f"[red]Error:[/red] Integration '{key}' is not installed.")
+        if installed_keys:
+            console.print(f"[yellow]Installed integrations:[/yellow] {', '.join(installed_keys)}")
+        else:
+            console.print("Install one with: [cyan]specify integration install <key>[/cyan]")
+        raise typer.Exit(1)
+
+    integration = get_integration(key)
+    if integration is None:
+        console.print(f"[red]Error:[/red] Unknown integration '{key}'")
+        raise typer.Exit(1)
+
+    _write_integration_json(project_root, key, installed_keys)
+    _update_init_options_for_integration(project_root, integration)
+    console.print(f"[green]✓[/green] Default integration set to [bold]{key}[/bold].")
+
+
 @integration_app.command("uninstall")
 def integration_uninstall(
     key: str = typer.Argument(None, help="Integration key to uninstall (default: current integration)"),
@@ -2218,16 +2362,17 @@ def integration_uninstall(
 
     project_root = _require_specify_project()
     current = _read_integration_json(project_root)
-    installed_key = current.get("integration")
+    default_key = _default_integration_key(current)
+    installed_keys = _installed_integration_keys(current)
 
     if key is None:
-        if not installed_key:
+        if not default_key:
             console.print("[yellow]No integration is currently installed.[/yellow]")
             raise typer.Exit(0)
-        key = installed_key
+        key = default_key
 
-    if installed_key and installed_key != key:
-        console.print(f"[red]Error:[/red] Integration '{key}' is not the currently installed integration ('{installed_key}').")
+    if key not in installed_keys:
+        console.print(f"[red]Error:[/red] Integration '{key}' is not installed.")
         raise typer.Exit(1)
 
     integration = get_integration(key)
@@ -2235,15 +2380,16 @@ def integration_uninstall(
     manifest_path = project_root / ".specify" / "integrations" / f"{key}.manifest.json"
     if not manifest_path.exists():
         console.print(f"[yellow]No manifest found for integration '{key}'. Nothing to uninstall.[/yellow]")
-        _remove_integration_json(project_root)
-        # Clear integration-related keys from init-options.json
-        opts = load_init_options(project_root)
-        if opts.get("integration") == key or opts.get("ai") == key:
-            opts.pop("integration", None)
-            opts.pop("ai", None)
-            opts.pop("ai_skills", None)
-            opts.pop("context_file", None)
-            save_init_options(project_root, opts)
+        remaining = [installed for installed in installed_keys if installed != key]
+        new_default = default_key if default_key != key else (remaining[0] if remaining else None)
+        if remaining:
+            _write_integration_json(project_root, new_default, remaining)
+        else:
+            _remove_integration_json(project_root)
+        if default_key == key:
+            _clear_init_options_for_integration(project_root, key)
+            if new_default and (new_integration := get_integration(new_default)):
+                _update_init_options_for_integration(project_root, new_integration)
         raise typer.Exit(0)
 
     try:
@@ -2265,16 +2411,17 @@ def integration_uninstall(
     if integration:
         integration.remove_context_section(project_root)
 
-    _remove_integration_json(project_root)
+    remaining = [installed for installed in installed_keys if installed != key]
+    new_default = default_key if default_key != key else (remaining[0] if remaining else None)
+    if remaining:
+        _write_integration_json(project_root, new_default, remaining)
+    else:
+        _remove_integration_json(project_root)
 
-    # Update init-options.json to clear the integration
-    opts = load_init_options(project_root)
-    if opts.get("integration") == key or opts.get("ai") == key:
-        opts.pop("integration", None)
-        opts.pop("ai", None)
-        opts.pop("ai_skills", None)
-        opts.pop("context_file", None)
-        save_init_options(project_root, opts)
+    if default_key == key:
+        _clear_init_options_for_integration(project_root, key)
+        if new_default and (new_integration := get_integration(new_default)):
+            _update_init_options_for_integration(project_root, new_integration)
 
     name = (integration.config or {}).get("name", key) if integration else key
     console.print(f"\n[green]✓[/green] Integration '{name}' uninstalled")
@@ -2307,10 +2454,17 @@ def integration_switch(
         raise typer.Exit(1)
 
     current = _read_integration_json(project_root)
-    installed_key = current.get("integration")
+    installed_keys = _installed_integration_keys(current)
+    installed_key = _default_integration_key(current)
 
     if installed_key == target:
         console.print(f"[yellow]Integration '{target}' is already installed. Nothing to switch.[/yellow]")
+        raise typer.Exit(0)
+
+    if target in installed_keys:
+        _write_integration_json(project_root, target, installed_keys)
+        _update_init_options_for_integration(project_root, target_integration)
+        console.print(f"\n[green]✓[/green] Default integration set to [bold]{target}[/bold].")
         raise typer.Exit(0)
 
     selected_script = _resolve_script_type(project_root, script)
@@ -2372,13 +2526,12 @@ def integration_switch(
             )
 
         # Clear metadata so a failed Phase 2 doesn't leave stale references
-        _remove_integration_json(project_root)
-        opts = load_init_options(project_root)
-        opts.pop("integration", None)
-        opts.pop("ai", None)
-        opts.pop("ai_skills", None)
-        opts.pop("context_file", None)
-        save_init_options(project_root, opts)
+        installed_keys = [installed for installed in installed_keys if installed != installed_key]
+        if installed_keys:
+            _write_integration_json(project_root, installed_keys[0], installed_keys)
+        else:
+            _remove_integration_json(project_root)
+        _clear_init_options_for_integration(project_root, installed_key)
 
     # Build parsed options from --integration-options so the integration
     # can determine its effective invoke separator before shared infra
@@ -2407,7 +2560,7 @@ def integration_switch(
             raw_options=integration_options,
         )
         manifest.save()
-        _write_integration_json(project_root, target_integration.key)
+        _write_integration_json(project_root, target_integration.key, [*installed_keys, target_integration.key])
         _update_init_options_for_integration(project_root, target_integration, script_type=selected_script)
 
         # Re-register extension commands for the new agent so that
@@ -2430,7 +2583,10 @@ def integration_switch(
         except Exception as rollback_err:
             # Suppress so the original setup error remains the primary failure
             console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration '{target}': {rollback_err}")
-        _remove_integration_json(project_root)
+        if installed_keys:
+            _write_integration_json(project_root, installed_keys[0], installed_keys)
+        else:
+            _remove_integration_json(project_root)
         console.print(f"[red]Error:[/red] Failed to install integration '{target}': {e}")
         raise typer.Exit(1)
 
@@ -2455,7 +2611,8 @@ def integration_upgrade(
 
     project_root = _require_specify_project()
     current = _read_integration_json(project_root)
-    installed_key = current.get("integration")
+    installed_key = _default_integration_key(current)
+    installed_keys = _installed_integration_keys(current)
 
     if key is None:
         if not installed_key:
@@ -2463,11 +2620,8 @@ def integration_upgrade(
             raise typer.Exit(0)
         key = installed_key
 
-    if installed_key and installed_key != key:
-        console.print(
-            f"[red]Error:[/red] Integration '{key}' is not the currently installed integration ('{installed_key}')."
-        )
-        console.print(f"Use [cyan]specify integration switch {key}[/cyan] instead.")
+    if key not in installed_keys:
+        console.print(f"[red]Error:[/red] Integration '{key}' is not installed.")
         raise typer.Exit(1)
 
     integration = get_integration(key)
@@ -2523,8 +2677,9 @@ def integration_upgrade(
             raw_options=integration_options,
         )
         new_manifest.save()
-        _write_integration_json(project_root, key)
-        _update_init_options_for_integration(project_root, integration, script_type=selected_script)
+        _write_integration_json(project_root, installed_key, installed_keys)
+        if installed_key == key:
+            _update_init_options_for_integration(project_root, integration, script_type=selected_script)
     except Exception as exc:
         # Don't teardown — setup overwrites in-place, so teardown would
         # delete files that were working before the upgrade.  Just report.

@@ -27,6 +27,7 @@ class CodexIntegration(SkillsIntegration):
         "extension": "/SKILL.md",
     }
     context_file = "AGENTS.md"
+    multi_install_safe = True
 
     def build_exec_args(
         self,

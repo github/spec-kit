@@ -670,7 +670,7 @@ class TestIntegrationUpgrade:
         finally:
             os.chdir(old)
         assert result.exit_code != 0
-        assert "not the currently installed integration" in result.output
+        assert "not installed" in result.output
 
     def test_upgrade_no_manifest(self, tmp_path):
         """Upgrade with missing manifest suggests fresh install."""

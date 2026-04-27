@@ -43,6 +43,7 @@ specify integration list
 ```
 
 Shows all available integrations, which one is currently installed, and whether each requires a CLI tool or is IDE-based.
+When multiple integrations are installed, the list marks the default integration separately from the other installed integrations.
 
 ## Install an Integration
 
@@ -53,9 +54,12 @@ specify integration install <key>
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
 | `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                        |
+| `--force`                | Opt in to installing alongside integrations that are not declared multi-install safe |
 | `--integration-options`  | Integration-specific options (e.g. `--integration-options="--commands-dir .myagent/cmds"`) |
 
-Installs the specified integration into the current project. Fails if another integration is already installed — use `switch` instead. If the installation fails partway through, it automatically rolls back to a clean state.
+Installs the specified integration into the current project. If another integration is already installed, the command only proceeds automatically when all involved integrations are declared multi-install safe. Otherwise, use `switch` to replace the default integration or pass `--force` to explicitly opt in to multi-install. If the installation fails partway through, it automatically rolls back to a clean state.
+
+Installing an additional integration does not change the default integration. Use `specify integration use <key>` to change the default.
 
 > **Note:** All integration management commands require a project already initialized with `specify init`. To start a new project with a specific agent, use `specify init <project> --integration <key>` instead.
 
@@ -87,7 +91,15 @@ specify integration switch <key>
 | `--force`                | Force removal of modified files during uninstall                         |
 | `--integration-options`  | Options for the target integration                                       |
 
-Equivalent to running `uninstall` followed by `install` in a single step.
+If the target integration is not already installed, equivalent to running `uninstall` followed by `install` in a single step. If the target integration is already installed, `switch` only changes the default integration, like `use`.
+
+## Use an Installed Integration
+
+```bash
+specify integration use <key>
+```
+
+Sets the default integration without uninstalling any other installed integrations. This is useful for repositories that keep multiple safe integrations installed for team portability.
 
 ## Upgrade an Integration
 
@@ -120,9 +132,39 @@ specify integration install generic --integration-options="--commands-dir .myage
 
 ## FAQ
 
-### Can I use multiple integrations at the same time?
+### Can I install multiple integrations in the same project?
 
-No. Only one AI coding agent integration can be installed per project. Use `specify integration switch <key>` to change to a different AI coding agent.
+Yes, but it is intended for team portability rather than the default workflow. Multiple integrations are allowed automatically only when the installed integration and the new integration are declared multi-install safe by Spec Kit. For other combinations, pass `--force` to acknowledge that multiple agents may see unrelated agent-specific instructions or commands.
+
+Spec Kit tracks one default integration in `.specify/integration.json` with `default_integration` and all installed integrations with `installed_integrations`. The legacy `integration` field remains as an alias for the default integration.
+
+### Which integrations are multi-install safe?
+
+An integration is multi-install safe when it uses isolated agent directories, a dedicated context file, and a separate install manifest. For example, Claude Code and Codex CLI are declared safe because Claude uses `.claude/skills` and `CLAUDE.md`, while Codex uses `.agents/skills` and `AGENTS.md`.
+
+The currently declared multi-install safe integrations are:
+
+| Key | Isolation |
+| --- | --------- |
+| `auggie` | `.augment/commands`, `.augment/rules/specify-rules.md` |
+| `claude` | `.claude/skills`, `CLAUDE.md` |
+| `codebuddy` | `.codebuddy/commands`, `CODEBUDDY.md` |
+| `codex` | `.agents/skills`, `AGENTS.md` |
+| `cursor-agent` | `.cursor/skills`, `.cursor/rules/specify-rules.mdc` |
+| `gemini` | `.gemini/commands`, `GEMINI.md` |
+| `iflow` | `.iflow/commands`, `IFLOW.md` |
+| `junie` | `.junie/commands`, `.junie/AGENTS.md` |
+| `kilocode` | `.kilocode/workflows`, `.kilocode/rules/specify-rules.md` |
+| `kimi` | `.kimi/skills`, `KIMI.md` |
+| `qodercli` | `.qoder/commands`, `QODER.md` |
+| `qwen` | `.qwen/commands`, `QWEN.md` |
+| `roo` | `.roo/commands`, `.roo/rules/specify-rules.md` |
+| `shai` | `.shai/commands`, `SHAI.md` |
+| `tabnine` | `.tabnine/agent/commands`, `TABNINE.md` |
+| `trae` | `.trae/skills`, `.trae/rules/project_rules.md` |
+| `windsurf` | `.windsurf/workflows`, `.windsurf/rules/specify-rules.md` |
+
+Integrations that share a generic context file such as `AGENTS.md`, reuse another agent's command directory, require a dynamic `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
 
 ### What happens to my changes when I uninstall or switch?
 
