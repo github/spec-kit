@@ -246,12 +246,12 @@ class TestExtensionManifest:
         assert manifest.description == "中文测试 — émojis 🚀"
 
     def test_invalid_utf8_bytes_raises_validation_error(self, temp_dir):
-        """Negative case: file containing invalid UTF-8 bytes should not crash with raw UnicodeDecodeError."""
+        """Negative case: file containing invalid UTF-8 bytes raises ValidationError, not raw UnicodeDecodeError."""
         manifest_path = temp_dir / "extension.yml"
         # 0xFF/0xFE are not valid UTF-8 lead bytes.
         manifest_path.write_bytes(b"\xff\xfe not valid utf-8 \xff\n")
 
-        with pytest.raises((ValidationError, UnicodeDecodeError)):
+        with pytest.raises(ValidationError, match="not valid UTF-8"):
             ExtensionManifest(manifest_path)
 
     def test_invalid_extension_id(self, temp_dir, valid_manifest_data):
