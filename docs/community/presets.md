@@ -7,6 +7,7 @@ The following community-contributed presets customize how Spec Kit behaves — o
 
 | Preset | Purpose | Provides | Requires | URL |
 |--------|---------|----------|----------|-----|
+| A11Y Governance | Adds WCAG 2.2 AA accessibility checks, bilingual DE/EN delivery, CEFR-B2 readability, CLI accessibility, and inclusive-content guidance | 9 templates, 3 commands | — | [spec-kit-preset-a11y-governance](https://github.com/hindermath/spec-kit-preset-a11y-governance) |
 | AIDE In-Place Migration | Adapts the AIDE extension workflow for in-place technology migrations (X → Y pattern) — adds migration objectives, verification gates, knowledge documents, and behavioral equivalence criteria | 2 templates, 8 commands | AIDE extension | [spec-kit-presets](https://github.com/mnriem/spec-kit-presets) |
 | Canon Core | Adapts original Spec Kit workflow to work together with Canon extension | 2 templates, 8 commands | — | [spec-kit-canon](https://github.com/maximiliamus/spec-kit-canon) |
 | Claude AskUserQuestion | Upgrades `/speckit.clarify` and `/speckit.checklist` on Claude Code from Markdown-table prompts to the native AskUserQuestion picker, with a recommended option and reasoning on every question | 2 commands | — | [spec-kit-preset-claude-ask-questions](https://github.com/0xrafasec/spec-kit-preset-claude-ask-questions) |
