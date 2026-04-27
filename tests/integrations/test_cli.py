@@ -720,6 +720,27 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert "specify integration install stellar-agent" not in normalized_output
         assert "Only built-in integration IDs can be installed" in normalized_output
 
+    def test_search_validates_integration_json_before_catalog_lookup(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        (project / ".specify" / "integration.json").write_text(
+            "{bad json\n", encoding="utf-8"
+        )
+
+        from specify_cli.integrations.catalog import IntegrationCatalog
+
+        def fail_search(self, **kwargs):
+            raise AssertionError("catalog search should not be called")
+
+        monkeypatch.setattr(IntegrationCatalog, "search", fail_search)
+
+        result = self._invoke(["integration", "search"], project)
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 1
+        assert "contains invalid JSON" in normalized_output
+        assert "integration.json" in normalized_output
+
     def test_search_filters_by_tag(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         self._patch_catalog(monkeypatch)

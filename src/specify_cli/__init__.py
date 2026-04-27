@@ -2578,6 +2578,8 @@ def integration_search(
     )
 
     project_root = _require_specify_project()
+    integration_config = _read_integration_json(project_root)
+    installed_key = integration_config.get("integration")
     catalog = IntegrationCatalog(project_root)
 
     try:
@@ -2609,8 +2611,6 @@ def integration_search(
             console.print("  • Remove filters")
             console.print("  • specify integration search (show all)")
         return
-
-    installed_key = _read_integration_json(project_root).get("integration")
 
     console.print(f"\n[green]Found {len(results)} integration(s):[/green]\n")
     for integ in sorted(results, key=lambda e: e.get("id", "")):
