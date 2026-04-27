@@ -56,6 +56,11 @@ provides:
       description: "Self-test override of the specify command"
       replaces: "speckit.specify"
 
+    - type: "command"
+      name: "speckit.wrap-test"
+      file: "commands/speckit.wrap-test.md"
+      description: "Self-test wrap strategy command"
+
 tags:
   - "testing"
   - "self-test"
