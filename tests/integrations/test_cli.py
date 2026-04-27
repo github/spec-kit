@@ -850,6 +850,31 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert "~/.specify/integration-catalogs.yml" in normalized_output
         assert "temporarily unavailable" not in normalized_output
 
+    def test_search_whitespace_env_catalog_url_uses_generic_catalog_tip(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("SPECKIT_INTEGRATION_CATALOG_URL", "   ")
+
+        from specify_cli.integrations.catalog import (
+            IntegrationCatalog,
+            IntegrationCatalogError,
+        )
+
+        def fail_search(self, **kwargs):
+            raise IntegrationCatalogError("catalog offline")
+
+        monkeypatch.setattr(IntegrationCatalog, "search", fail_search)
+
+        result = self._invoke(["integration", "search"], project)
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 1, result.output
+        assert "temporarily unavailable" in normalized_output
+        assert (
+            "SPECKIT_INTEGRATION_CATALOG_URL environment variable"
+            not in normalized_output
+        )
+
     def test_info_unknown_with_local_config_error_shows_local_config_tip(
         self, tmp_path, monkeypatch
     ):

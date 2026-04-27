@@ -650,10 +650,14 @@ class IntegrationCatalog:
             if not _is_removable_catalog_entry(item):
                 continue
 
-            try:
-                priority = int(item.get("priority", yaml_idx + 1))
-            except (TypeError, ValueError):
+            raw_priority = item.get("priority", yaml_idx + 1)
+            if isinstance(raw_priority, bool):
                 priority = yaml_idx + 1
+            else:
+                try:
+                    priority = int(raw_priority)
+                except (TypeError, ValueError):
+                    priority = yaml_idx + 1
             priority_pairs.append((priority, yaml_idx))
         if not priority_pairs:
             raise IntegrationValidationError(

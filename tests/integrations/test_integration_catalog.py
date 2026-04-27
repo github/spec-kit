@@ -1325,6 +1325,35 @@ class TestCatalogSourceManagement:
         data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
         assert [c["name"] for c in data["catalogs"]] == ["two", "three"]
 
+    def test_remove_catalog_bool_priority_falls_back_to_yaml_index(
+        self, tmp_path, monkeypatch
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {"url": "https://one.example.com/c.json", "name": "one"},
+                        {
+                            "url": "https://bool.example.com/c.json",
+                            "name": "bool",
+                            "priority": False,
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+
+        removed = cat.remove_catalog(0)
+
+        assert removed == "one"
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert [c["name"] for c in data["catalogs"]] == ["bool"]
+
     def test_remove_catalog_display_order_skips_blank_url_entries(
         self, tmp_path, monkeypatch
     ):

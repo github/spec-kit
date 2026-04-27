@@ -2593,7 +2593,7 @@ def integration_search(
         raise typer.Exit(1)
     except IntegrationCatalogError as exc:
         console.print(f"[red]Error:[/red] {exc}")
-        if os.environ.get("SPECKIT_INTEGRATION_CATALOG_URL"):
+        if os.environ.get("SPECKIT_INTEGRATION_CATALOG_URL", "").strip():
             console.print(
                 "\nTip: Check the SPECKIT_INTEGRATION_CATALOG_URL environment variable for an invalid "
                 "catalog URL, or unset it to use the configured catalog files "
@@ -2731,7 +2731,7 @@ def integration_info(
                 "(.specify/integration-catalogs.yml or ~/.specify/integration-catalogs.yml), "
                 "or use a built-in integration ID directly."
             )
-        elif os.environ.get("SPECKIT_INTEGRATION_CATALOG_URL"):
+        elif os.environ.get("SPECKIT_INTEGRATION_CATALOG_URL", "").strip():
             console.print(
                 "\nCheck whether SPECKIT_INTEGRATION_CATALOG_URL is set correctly and reachable, "
                 "or unset it to use the configured catalog files, or use a built-in integration ID directly."
