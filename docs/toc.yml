@@ -33,3 +33,13 @@
   items:
     - name: Local Development
       href: local-development.md
+
+# Community
+- name: Community
+  items:
+    - name: Presets
+      href: community/presets.md
+    - name: Walkthroughs
+      href: community/walkthroughs.md
+    - name: Friends
+      href: community/friends.md

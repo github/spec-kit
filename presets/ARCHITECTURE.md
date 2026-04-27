@@ -41,6 +41,24 @@ The resolution is implemented three times to ensure consistency:
 - **Bash**: `resolve_template()` in `scripts/bash/common.sh`
 - **PowerShell**: `Resolve-Template` in `scripts/powershell/common.ps1`
 
+### Composition Strategies
+
+Templates, commands, and scripts support a `strategy` field that controls how a preset's content is combined with lower-priority content instead of fully replacing it:
+
+| Strategy | Description | Templates | Commands | Scripts |
+|----------|-------------|-----------|----------|---------|
+| `replace` (default) | Fully replaces lower-priority content | ✓ | ✓ | ✓ |
+| `prepend` | Places content before lower-priority content (separated by a blank line) | ✓ | ✓ | — |
+| `append` | Places content after lower-priority content (separated by a blank line) | ✓ | ✓ | — |
+| `wrap` | Content contains `{CORE_TEMPLATE}` (templates/commands) or `$CORE_SCRIPT` (scripts) placeholder replaced with lower-priority content | ✓ | ✓ | ✓ |
+
+Composition is recursive — multiple composing presets chain. The `PresetResolver.resolve_content()` method walks the full priority stack bottom-up and applies each layer's strategy.
+
+Content resolution functions for composition:
+- **Python**: `PresetResolver.resolve_content()` in `src/specify_cli/presets.py` (templates, commands, and scripts)
+- **Bash**: `resolve_template_content()` in `scripts/bash/common.sh` (templates only; command/script composition is handled by the Python resolver)
+- **PowerShell**: `Resolve-TemplateContent` in `scripts/powershell/common.ps1` (templates only; command/script composition is handled by the Python resolver)
+
 ## Command Registration
 
 When a preset is installed with `type: "command"` entries, the `PresetManager` registers them into all detected agent directories using the shared `CommandRegistrar` from `src/specify_cli/agents.py`.

@@ -73,19 +73,16 @@ class TestForgeIntegration:
         for f in command_files:
             assert f.name.endswith(".md")
 
-    def test_setup_installs_update_scripts(self, tmp_path):
+    def test_setup_upserts_context_section(self, tmp_path):
         from specify_cli.integrations.forge import ForgeIntegration
         forge = ForgeIntegration()
         m = IntegrationManifest("forge", tmp_path)
-        created = forge.setup(tmp_path, m)
-        script_files = [f for f in created if "scripts" in f.parts]
-        assert len(script_files) > 0
-        sh_script = tmp_path / ".specify" / "integrations" / "forge" / "scripts" / "update-context.sh"
-        ps_script = tmp_path / ".specify" / "integrations" / "forge" / "scripts" / "update-context.ps1"
-        assert sh_script in created
-        assert ps_script in created
-        assert sh_script.exists()
-        assert ps_script.exists()
+        forge.setup(tmp_path, m)
+        ctx_path = tmp_path / forge.context_file
+        assert ctx_path.exists()
+        content = ctx_path.read_text(encoding="utf-8")
+        assert "<!-- SPECKIT START -->" in content
+        assert "<!-- SPECKIT END -->" in content
 
     def test_all_created_files_tracked_in_manifest(self, tmp_path):
         from specify_cli.integrations.forge import ForgeIntegration
@@ -155,11 +152,25 @@ class TestForgeIntegration:
             assert "{SCRIPT}" not in content, f"{cmd_file.name} has unprocessed {{SCRIPT}}"
             assert "__AGENT__" not in content, f"{cmd_file.name} has unprocessed __AGENT__"
             assert "{ARGS}" not in content, f"{cmd_file.name} has unprocessed {{ARGS}}"
+            assert "__SPECKIT_COMMAND_" not in content, f"{cmd_file.name} has unprocessed __SPECKIT_COMMAND_*__"
             # Check Forge-specific: $ARGUMENTS should be replaced with {{parameters}}
             assert "$ARGUMENTS" not in content, f"{cmd_file.name} has unprocessed $ARGUMENTS"
             # Frontmatter sections should be stripped
             assert "\nscripts:\n" not in content
-            assert "\nagent_scripts:\n" not in content
+
+    def test_plan_references_correct_context_file(self, tmp_path):
+        """The generated plan command must reference forge's context file."""
+        from specify_cli.integrations.forge import ForgeIntegration
+        forge = ForgeIntegration()
+        m = IntegrationManifest("forge", tmp_path)
+        forge.setup(tmp_path, m)
+        plan_file = tmp_path / ".forge" / "commands" / "speckit.plan.md"
+        assert plan_file.exists()
+        content = plan_file.read_text(encoding="utf-8")
+        assert forge.context_file in content, (
+            f"Plan command should reference {forge.context_file!r}"
+        )
+        assert "__CONTEXT_FILE__" not in content
 
     def test_forge_specific_transformations(self, tmp_path):
         """Test Forge-specific processing: name injection and handoffs stripping."""

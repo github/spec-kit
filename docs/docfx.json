@@ -5,6 +5,7 @@
         "files": [
           "*.md",
           "toc.yml",
+          "community/*.md",
           "reference/*.md"
         ]
       },

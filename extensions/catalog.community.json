@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-16T18:00:00Z",
+  "updated_at": "2026-04-24T14:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -169,6 +169,38 @@
       "stars": 0,
       "created_at": "2026-03-03T00:00:00Z",
       "updated_at": "2026-03-03T00:00:00Z"
+    },
+    "blueprint": {
+      "name": "Blueprint",
+      "id": "blueprint",
+      "description": "Stay code-literate in AI-driven development: review a complete code blueprint for every task from spec artifacts before /speckit.implement runs",
+      "author": "chordpli",
+      "version": "1.0.0",
+      "download_url": "https://github.com/chordpli/spec-kit-blueprint/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/chordpli/spec-kit-blueprint",
+      "homepage": "https://github.com/chordpli/spec-kit-blueprint",
+      "documentation": "https://github.com/chordpli/spec-kit-blueprint/blob/main/README.md",
+      "changelog": "https://github.com/chordpli/spec-kit-blueprint/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 1
+      },
+      "tags": [
+        "blueprint",
+        "pre-implementation",
+        "review",
+        "scaffolding",
+        "code-literacy"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-17T00:00:00Z",
+      "updated_at": "2026-04-17T00:00:00Z"
     },
     "branch-convention": {
       "name": "Branch Convention",
@@ -625,18 +657,18 @@
       "id": "extensify",
       "description": "Create and validate extensions and extension catalogs.",
       "author": "mnriem",
-      "version": "1.0.0",
-      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/extensify-v1.0.0/extensify.zip",
+      "version": "1.1.0",
+      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/extensify-v1.1.0/extensify.zip",
       "repository": "https://github.com/mnriem/spec-kit-extensions",
       "homepage": "https://github.com/mnriem/spec-kit-extensions",
       "documentation": "https://github.com/mnriem/spec-kit-extensions/blob/main/extensify/README.md",
       "changelog": "https://github.com/mnriem/spec-kit-extensions/blob/main/extensify/CHANGELOG.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.2.0"
+        "speckit_version": ">=0.8.0"
       },
       "provides": {
-        "commands": 4,
+        "commands": 5,
         "hooks": 0
       },
       "tags": [
@@ -649,7 +681,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
-      "updated_at": "2026-03-18T00:00:00Z"
+      "updated_at": "2026-04-23T00:00:00Z"
     },
     "fix-findings": {
       "name": "Fix Findings",
@@ -1135,6 +1167,69 @@
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
     },
+    "memory-loader": {
+      "name": "Memory Loader",
+      "id": "memory-loader",
+      "description": "Loads .specify/memory/ files before spec-kit lifecycle commands so LLM agents have project governance context",
+      "author": "KevinBrown5280",
+      "version": "1.0.0",
+      "download_url": "https://github.com/KevinBrown5280/spec-kit-memory-loader/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/KevinBrown5280/spec-kit-memory-loader",
+      "homepage": "https://github.com/KevinBrown5280/spec-kit-memory-loader",
+      "documentation": "https://github.com/KevinBrown5280/spec-kit-memory-loader/blob/main/README.md",
+      "changelog": "https://github.com/KevinBrown5280/spec-kit-memory-loader/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 7
+      },
+      "tags": [
+        "context",
+        "memory",
+        "governance",
+        "hooks"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-20T00:00:00Z",
+      "updated_at": "2026-04-20T00:00:00Z"
+    },
+    "memory-md": {
+      "name": "Memory MD",
+      "id": "memory-md",
+      "description": "Repository-native durable memory for Spec Kit projects",
+      "author": "DyanGalih",
+      "version": "0.6.2",
+      "download_url": "https://github.com/DyanGalih/spec-kit-memory-hub/archive/refs/tags/v0.6.2.zip",
+      "repository": "https://github.com/DyanGalih/spec-kit-memory-hub",
+      "homepage": "https://github.com/DyanGalih/spec-kit-memory-hub",
+      "documentation": "https://github.com/DyanGalih/spec-kit-memory-hub/blob/main/README.md",
+      "changelog": "https://github.com/DyanGalih/spec-kit-memory-hub/blob/main/docs/memory-workflow-v0.6.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 0
+      },
+      "tags": [
+        "memory",
+        "workflow",
+        "docs",
+        "copilot",
+        "markdown"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-23T00:00:00Z",
+      "updated_at": "2026-04-23T00:00:00Z"
+    },
     "memorylint": {
       "name": "MemoryLint",
       "id": "memorylint",
@@ -1231,6 +1326,38 @@
       "stars": 0,
       "created_at": "2026-04-03T00:00:00Z",
       "updated_at": "2026-04-03T00:00:00Z"
+    },
+    "orchestrator": {
+      "name": "Spec Orchestrator",
+      "id": "orchestrator",
+      "description": "Cross-feature orchestration — track state, select tasks, and detect conflicts across parallel specs.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-orchestrator/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-orchestrator",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-orchestrator",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-orchestrator/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-orchestrator/releases",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "orchestration",
+        "multi-feature",
+        "coordination",
+        "workflow",
+        "parallel"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-24T14:00:00Z",
+      "updated_at": "2026-04-24T14:00:00Z"
     },
     "plan-review-gate": {
       "name": "Plan Review Gate",
@@ -1329,10 +1456,10 @@
     "product-forge": {
       "name": "Product Forge",
       "id": "product-forge",
-      "description": "Full product lifecycle: research → product spec → SpecKit → implement → verify → test",
+      "description": "Full product lifecycle from research to release — portfolio, lite mode, monorepo, optional V-Model",
       "author": "VaiYav",
-      "version": "1.1.1",
-      "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.1.1.zip",
+      "version": "1.5.1",
+      "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.5.1.zip",
       "repository": "https://github.com/VaiYav/speckit-product-forge",
       "homepage": "https://github.com/VaiYav/speckit-product-forge",
       "documentation": "https://github.com/VaiYav/speckit-product-forge/blob/main/README.md",
@@ -1342,21 +1469,21 @@
         "speckit_version": ">=0.1.0"
       },
       "provides": {
-        "commands": 10,
+        "commands": 29,
         "hooks": 0
       },
       "tags": [
         "process",
-        "research",
-        "product-spec",
         "lifecycle",
-        "testing"
+        "monorepo",
+        "v-model",
+        "portfolio"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-28T00:00:00Z",
-      "updated_at": "2026-03-28T00:00:00Z"
+      "updated_at": "2026-04-24T15:52:00Z"
     },
     "qa": {
       "name": "QA Testing Extension",
@@ -1459,6 +1586,38 @@
       "stars": 0,
       "created_at": "2026-03-14T00:00:00Z",
       "updated_at": "2026-03-14T00:00:00Z"
+    },
+    "red-team": {
+      "name": "Red Team",
+      "id": "red-team",
+      "description": "Adversarial review of functional specs before /speckit.plan. Parallel adversarial lens agents catch hostile actors, silent failures, and regulatory blind spots that clarify/analyze cannot.",
+      "author": "Ash Brener",
+      "version": "1.0.2",
+      "download_url": "https://github.com/ashbrener/spec-kit-red-team/releases/download/v1.0.2/red-team-v1.0.2.zip",
+      "repository": "https://github.com/ashbrener/spec-kit-red-team",
+      "homepage": "https://github.com/ashbrener/spec-kit-red-team",
+      "documentation": "https://github.com/ashbrener/spec-kit-red-team/blob/main/README.md",
+      "changelog": "https://github.com/ashbrener/spec-kit-red-team/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 1
+      },
+      "tags": [
+        "adversarial-review",
+        "quality-gate",
+        "spec-hardening",
+        "pre-plan",
+        "audit"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-22T00:00:00Z",
+      "updated_at": "2026-04-22T00:00:00Z"
     },
     "refine": {
       "name": "Spec Refine",
@@ -1625,6 +1784,71 @@
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-04-09T00:00:00Z"
     },
+    "ripple": {
+      "name": "Ripple",
+      "id": "ripple",
+      "description": "Detect side effects that tests can't catch after implementation — delta-anchored analysis across 9 domain-agnostic categories with fix-induced side effect detection",
+      "author": "chordpli",
+      "version": "1.0.0",
+      "download_url": "https://github.com/chordpli/spec-kit-ripple/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/chordpli/spec-kit-ripple",
+      "homepage": "https://github.com/chordpli/spec-kit-ripple",
+      "documentation": "https://github.com/chordpli/spec-kit-ripple/blob/main/README.md",
+      "changelog": "https://github.com/chordpli/spec-kit-ripple/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "side-effects",
+        "post-implementation",
+        "analysis",
+        "quality",
+        "risk-detection"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-20T00:00:00Z",
+      "updated_at": "2026-04-20T00:00:00Z"
+    },
+    "scope": {
+      "name": "Spec Scope",
+      "id": "scope",
+      "description": "Effort estimation and scope tracking — estimate work, detect creep, and budget time per phase.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-scope-/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-scope-",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-scope-",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-scope-/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-scope-/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 1
+      },
+      "tags": [
+        "estimation",
+        "scope",
+        "effort",
+        "planning",
+        "project-management",
+        "tracking"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-17T02:00:00Z",
+      "updated_at": "2026-04-17T02:00:00Z"
+    },
     "security-review": {
       "name": "Security Review",
       "id": "security-review",
@@ -1730,6 +1954,69 @@
       "stars": 0,
       "created_at": "2026-04-01T00:00:00Z",
       "updated_at": "2026-04-01T00:00:00Z"
+    },
+    "spec-reference-loader": {
+      "name": "Spec Reference Loader",
+      "id": "spec-reference-loader",
+      "description": "Reads the ## References section from the current feature spec and loads the listed files into context",
+      "author": "KevinBrown5280",
+      "version": "1.0.0",
+      "download_url": "https://github.com/KevinBrown5280/spec-kit-spec-reference-loader/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/KevinBrown5280/spec-kit-spec-reference-loader",
+      "homepage": "https://github.com/KevinBrown5280/spec-kit-spec-reference-loader",
+      "documentation": "https://github.com/KevinBrown5280/spec-kit-spec-reference-loader/blob/main/README.md",
+      "changelog": "https://github.com/KevinBrown5280/spec-kit-spec-reference-loader/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 6
+      },
+      "tags": [
+        "context",
+        "references",
+        "docs",
+        "hooks"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-20T00:00:00Z",
+      "updated_at": "2026-04-20T00:00:00Z"
+    },
+    "spec-validate": {
+      "name": "Spec Validate",
+      "id": "spec-validate",
+      "description": "Comprehension validation, review gating, and approval state for spec-kit artifacts — staged-reveal quizzes, peer review SLA, and a hard gate before /speckit.implement.",
+      "author": "Ahmed Eltayeb",
+      "version": "1.0.1",
+      "download_url": "https://github.com/aeltayeb/spec-kit-spec-validate/archive/refs/tags/v1.0.1.zip",
+      "repository": "https://github.com/aeltayeb/spec-kit-spec-validate",
+      "homepage": "https://github.com/aeltayeb/spec-kit-spec-validate",
+      "documentation": "https://github.com/aeltayeb/spec-kit-spec-validate/blob/main/README.md",
+      "changelog": "https://github.com/aeltayeb/spec-kit-spec-validate/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.5.0"
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 3
+      },
+      "tags": [
+        "validation",
+        "review",
+        "quality",
+        "workflow",
+        "process"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-20T00:00:00Z",
+      "updated_at": "2026-04-21T00:00:00Z"
     },
     "speckit-utils": {
       "name": "SDD Utilities",
@@ -1931,6 +2218,39 @@
       "created_at": "2026-03-30T00:00:00Z",
       "updated_at": "2026-04-16T14:08:23Z"
     },
+    "superpowers-bridge": {
+      "name": "Superpowers Bridge",
+      "id": "superpowers-bridge",
+      "description": "Bridges spec-kit workflows with obra/superpowers capabilities for brainstorming, TDD, code review, and resumable execution.",
+      "author": "WangX0111",
+      "version": "1.0.0",
+      "download_url": "https://github.com/WangX0111/superspec/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/WangX0111/superspec",
+      "homepage": "https://github.com/WangX0111/superspec",
+      "documentation": "https://github.com/WangX0111/superspec/blob/main/README.md",
+      "changelog": "https://github.com/WangX0111/superspec/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 3
+      },
+      "tags": [
+        "superpowers",
+        "brainstorming",
+        "tdd",
+        "code-review",
+        "subagent",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-22T00:00:00Z",
+      "updated_at": "2026-04-22T00:00:00Z"
+    },
     "sync": {
       "name": "Spec Sync",
       "id": "sync",
@@ -2090,6 +2410,37 @@
       "created_at": "2026-03-16T00:00:00Z",
       "updated_at": "2026-03-16T00:00:00Z"
     },
+    "version-guard": {
+      "name": "Version Guard",
+      "id": "version-guard",
+      "description": "Verify tech stack versions against live registries before planning and implementation",
+      "author": "KevinBrown5280",
+      "version": "1.2.0",
+      "download_url": "https://github.com/KevinBrown5280/spec-kit-version-guard/archive/refs/tags/v1.2.0.zip",
+      "repository": "https://github.com/KevinBrown5280/spec-kit-version-guard",
+      "homepage": "https://github.com/KevinBrown5280/spec-kit-version-guard",
+      "documentation": "https://github.com/KevinBrown5280/spec-kit-version-guard/blob/main/README.md",
+      "changelog": "https://github.com/KevinBrown5280/spec-kit-version-guard/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 4
+      },
+      "tags": [
+        "versioning",
+        "npm",
+        "validation",
+        "hooks"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-20T00:00:00Z",
+      "updated_at": "2026-04-22T21:10:00Z"
+    },
     "whatif": {
       "name": "What-if Analysis",
       "id": "whatif",
@@ -2117,6 +2468,41 @@
       "stars": 0,
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "wireframe": {
+      "name": "Wireframe Visual Feedback Loop",
+      "id": "wireframe",
+      "description": "SVG wireframe generation, review, and sign-off for spec-driven development. Approved wireframes become spec constraints honored by /speckit.plan, /speckit.tasks, and /speckit.implement.",
+      "author": "TortoiseWolfe",
+      "version": "0.1.1",
+      "download_url": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/archive/refs/tags/v0.1.1.zip",
+      "repository": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe",
+      "homepage": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe",
+      "documentation": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/blob/main/README.md",
+      "changelog": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 3
+      },
+      "tags": [
+        "wireframe",
+        "visual",
+        "design",
+        "ui",
+        "mockup",
+        "svg",
+        "feedback-loop",
+        "sign-off"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-22T00:00:00Z",
+      "updated_at": "2026-04-22T00:00:00Z"
     },
     "worktree": {
       "name": "Worktree Isolation",

@@ -285,7 +285,7 @@ VALID_DESCRIPTOR = {
         "commands": [
             {"name": "speckit.specify", "file": "templates/speckit.specify.md"},
         ],
-        "scripts": ["update-context.sh"],
+        "scripts": [],
     },
 }
 
@@ -305,7 +305,7 @@ class TestIntegrationDescriptor:
         assert desc.description == "Integration for My Agent"
         assert desc.requires_speckit_version == ">=0.6.0"
         assert len(desc.commands) == 1
-        assert desc.scripts == ["update-context.sh"]
+        assert desc.scripts == []
 
     def test_missing_schema_version(self, tmp_path):
         data = {**VALID_DESCRIPTOR}

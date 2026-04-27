@@ -1257,3 +1257,67 @@ class TestFeatureDirectoryResolution:
                 break
         else:
             pytest.fail("FEATURE_DIR not found in PowerShell output")
+
+
+# ── Description Quoting Tests (issue #2339) ──────────────────────────────────
+
+
+@requires_bash
+class TestDescriptionQuoting:
+    """Descriptions with quotes, apostrophes, and backslashes must not break the script.
+
+    Regression tests for https://github.com/github/spec-kit/issues/2339
+    """
+
+    @pytest.mark.parametrize(
+        "description",
+        [
+            "Add user's profile page",
+            "Fix the \"login\" bug",
+            "Handle path\\with\\backslashes",
+            "It's a \"complex\" feature\\here",
+        ],
+        ids=["apostrophe", "double-quotes", "backslashes", "mixed"],
+    )
+    def test_core_script_handles_special_chars(self, git_repo: Path, description: str):
+        """Core create-new-feature.sh succeeds with special characters in description."""
+        result = run_script(git_repo, "--dry-run", "--short-name", "feat", description)
+        assert result.returncode == 0, (
+            f"Script failed for description {description!r}: {result.stderr}"
+        )
+
+    @pytest.mark.parametrize(
+        "description",
+        [
+            "Add user's profile page",
+            "Fix the \"login\" bug",
+            "Handle path\\with\\backslashes",
+            "It's a \"complex\" feature\\here",
+        ],
+        ids=["apostrophe", "double-quotes", "backslashes", "mixed"],
+    )
+    def test_ext_script_handles_special_chars(self, ext_git_repo: Path, description: str):
+        """Extension create-new-feature.sh succeeds with special characters in description."""
+        script = (
+            ext_git_repo / ".specify" / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
+        )
+        result = subprocess.run(
+            ["bash", str(script), "--dry-run", "--short-name", "feat", description],
+            cwd=ext_git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"Script failed for description {description!r}: {result.stderr}"
+        )
+
+    def test_whitespace_only_still_rejected(self, git_repo: Path):
+        """Whitespace-only descriptions must still be rejected after trimming."""
+        result = run_script(git_repo, "--dry-run", "--short-name", "feat", "   ")
+        assert result.returncode != 0
+        assert "empty" in result.stderr.lower() or "whitespace" in result.stderr.lower()
+
+    def test_plain_description_still_works(self, git_repo: Path):
+        """Plain description without special characters continues to work."""
+        result = run_script(git_repo, "--dry-run", "--short-name", "feat", "Add login feature")
+        assert result.returncode == 0, result.stderr

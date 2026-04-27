@@ -1,5 +1,6 @@
 """Tests for ClaudeIntegration."""
 
+import codecs
 import json
 import os
 from unittest.mock import patch
@@ -54,6 +55,8 @@ class TestClaudeIntegration:
         assert "{SCRIPT}" not in content
         assert "{ARGS}" not in content
         assert "__AGENT__" not in content
+        assert "__SPECKIT_COMMAND_" not in content, "unprocessed __SPECKIT_COMMAND_*__"
+        assert "/speckit." not in content, "skills agent must use /speckit-<name> not /speckit.<name>"
 
         parts = content.split("---", 2)
         parsed = yaml.safe_load(parts[1])
@@ -62,19 +65,57 @@ class TestClaudeIntegration:
         assert parsed["disable-model-invocation"] is False
         assert parsed["metadata"]["source"] == "templates/commands/plan.md"
 
-    def test_setup_installs_update_context_scripts(self, tmp_path):
+    def test_setup_upserts_context_section(self, tmp_path):
         integration = get_integration("claude")
         manifest = IntegrationManifest("claude", tmp_path)
-        created = integration.setup(tmp_path, manifest, script_type="sh")
+        integration.setup(tmp_path, manifest, script_type="sh")
 
-        scripts_dir = tmp_path / ".specify" / "integrations" / "claude" / "scripts"
-        assert scripts_dir.is_dir()
-        assert (scripts_dir / "update-context.sh").exists()
-        assert (scripts_dir / "update-context.ps1").exists()
+        ctx_path = tmp_path / integration.context_file
+        assert ctx_path.exists()
+        content = ctx_path.read_text(encoding="utf-8")
+        assert "<!-- SPECKIT START -->" in content
+        assert "<!-- SPECKIT END -->" in content
+        assert "read the current plan" in content
 
-        tracked = {path.resolve().relative_to(tmp_path.resolve()).as_posix() for path in created}
-        assert ".specify/integrations/claude/scripts/update-context.sh" in tracked
-        assert ".specify/integrations/claude/scripts/update-context.ps1" in tracked
+    def test_upsert_context_section_strips_bom(self, tmp_path):
+        """Existing context file with UTF-8 BOM must be cleaned up on upsert."""
+        integration = get_integration("claude")
+        ctx_path = tmp_path / integration.context_file
+
+        # Write a file that starts with a UTF-8 BOM (as the old PowerShell script did)
+        bom = codecs.BOM_UTF8
+        ctx_path.write_bytes(bom + b"# CLAUDE.md\n\nSome existing content.\n")
+
+        integration.upsert_context_section(tmp_path)
+
+        result = ctx_path.read_bytes()
+        assert not result.startswith(bom), "BOM must be stripped after upsert"
+        content = result.decode("utf-8")
+        assert "<!-- SPECKIT START -->" in content
+        assert "Some existing content." in content
+
+    def test_remove_context_section_strips_bom(self, tmp_path):
+        """remove_context_section must clean BOM from context file on Windows-authored files."""
+        integration = get_integration("claude")
+        ctx_path = tmp_path / integration.context_file
+
+        marker_content = (
+            "# CLAUDE.md\n\n"
+            "<!-- SPECKIT START -->\n"
+            "For additional context about technologies to be used, project structure,\n"
+            "shell commands, and other important information, read the current plan\n"
+            "<!-- SPECKIT END -->\n"
+        )
+        ctx_path.write_bytes(codecs.BOM_UTF8 + marker_content.encode("utf-8"))
+
+        result = integration.remove_context_section(tmp_path)
+
+        assert result is True
+        assert ctx_path.exists(), "File should exist (non-empty content remains)"
+        remaining = ctx_path.read_bytes()
+        assert not remaining.startswith(codecs.BOM_UTF8), "BOM must be stripped after remove"
+        assert b"<!-- SPECKIT" not in remaining
+        assert b"# CLAUDE.md" in remaining
 
     def test_ai_flag_auto_promotes_and_enables_skills(self, tmp_path):
         from typer.testing import CliRunner
