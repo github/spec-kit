@@ -2643,7 +2643,10 @@ def integration_search(
         elif iid in INTEGRATION_REGISTRY:
             console.print(f"\n  [cyan]Install:[/cyan] specify integration install {iid}")
         elif install_allowed:
-            console.print(f"\n  [cyan]Install:[/cyan] specify integration install {iid}")
+            console.print(
+                "\n  [yellow]Found in catalog.[/yellow] Only built-in integration IDs "
+                "can be installed with 'specify integration install'."
+            )
         else:
             console.print(
                 f"\n  [yellow]⚠[/yellow]  Not directly installable from '{cat_name}'."

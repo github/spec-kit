@@ -770,8 +770,9 @@ class TestCatalogSourceManagement:
         with pytest.raises(
             IntegrationValidationError,
             match="corrupted.*expected a mapping",
-        ):
+        ) as exc_info:
             cat.add_catalog("https://example.com/catalog.json")
+        assert str(cfg_path) in str(exc_info.value)
 
     def test_add_catalog_auto_derives_name_and_priority(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
@@ -785,6 +786,17 @@ class TestCatalogSourceManagement:
         entries = data["catalogs"]
         assert [e["name"] for e in entries] == ["catalog-1", "catalog-2"]
         assert [e["priority"] for e in entries] == [1, 2]
+
+    def test_add_catalog_normalizes_name(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://a.example.com/catalog.json", name="  mine  ")
+        cat.add_catalog("https://b.example.com/catalog.json", name="   ")
+
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        entries = data["catalogs"]
+        assert [e["name"] for e in entries] == ["mine", "catalog-2"]
 
     def test_add_catalog_rejects_duplicate_url(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
@@ -834,8 +846,25 @@ class TestCatalogSourceManagement:
         cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
         cfg_path.write_text("- just\n- a\n- list\n", encoding="utf-8")
         cat = IntegrationCatalog(tmp_path)
-        with pytest.raises(IntegrationValidationError, match="corrupted"):
+        with pytest.raises(IntegrationValidationError, match="corrupted") as exc_info:
             cat.add_catalog("https://new.example.com/catalog.json")
+        assert str(cfg_path) in str(exc_info.value)
+
+    def test_add_catalog_rejects_non_list_catalogs_with_config_path(
+        self, tmp_path, monkeypatch
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump({"catalogs": "not-a-list"}), encoding="utf-8"
+        )
+
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(
+            IntegrationValidationError, match="invalid 'catalogs' value"
+        ) as exc_info:
+            cat.add_catalog("https://new.example.com/catalog.json")
+        assert str(cfg_path) in str(exc_info.value)
 
     def test_add_catalog_skips_blank_url_entries(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
@@ -1061,6 +1090,22 @@ class TestCatalogSourceManagement:
         ):
             cat.remove_catalog(0)
 
+    def test_remove_catalog_rejects_non_list_catalogs_with_config_path(
+        self, tmp_path, monkeypatch
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump({"catalogs": "not-a-list"}), encoding="utf-8"
+        )
+
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(
+            IntegrationValidationError, match="invalid 'catalogs' value"
+        ) as exc_info:
+            cat.remove_catalog(0)
+        assert str(cfg_path) in str(exc_info.value)
+
     @pytest.mark.parametrize("config_content", ["[]\n", "false\n", "0\n", "''\n"])
     def test_remove_catalog_rejects_falsy_non_mapping_config_roots(
         self, tmp_path, monkeypatch, config_content
@@ -1073,8 +1118,9 @@ class TestCatalogSourceManagement:
         with pytest.raises(
             IntegrationValidationError,
             match="corrupted.*expected a mapping",
-        ):
+        ) as exc_info:
             cat.remove_catalog(0)
+        assert str(cfg_path) in str(exc_info.value)
 
     def test_remove_last_catalog_deletes_file_and_restores_defaults(
         self, tmp_path, monkeypatch

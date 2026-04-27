@@ -712,10 +712,13 @@ class TestIntegrationCatalogDiscoveryCLI:
         project = self._make_project(tmp_path)
         self._patch_catalog(monkeypatch)
         result = self._invoke(["integration", "search"], project)
+        normalized_output = _normalize_cli_output(result.output)
         assert result.exit_code == 0, result.output
         assert "Found 2 integration(s)" in result.output
         assert "acme-coder" in result.output
         assert "stellar-agent" in result.output
+        assert "specify integration install stellar-agent" not in normalized_output
+        assert "Only built-in integration IDs can be installed" in normalized_output
 
     def test_search_filters_by_tag(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)

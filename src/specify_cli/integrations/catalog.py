@@ -500,14 +500,16 @@ class IntegrationCatalog:
                 raw = {}
             if not isinstance(raw, dict):
                 raise IntegrationValidationError(
-                    "Catalog config file is corrupted (expected a mapping)."
+                    f"Catalog config file {config_path} is corrupted "
+                    "(expected a mapping)."
                 )
             data = raw
 
         catalogs = data.get("catalogs", [])
         if not isinstance(catalogs, list):
             raise IntegrationValidationError(
-                "Catalog config 'catalogs' must be a list."
+                f"Catalog config {config_path} has invalid 'catalogs' value: "
+                "must be a list."
             )
 
         # Validate each existing entry before mutating anything. Fail fast so
@@ -558,9 +560,10 @@ class IntegrationCatalog:
                 existing_priorities.append(idx + 1)
 
         max_priority = max(existing_priorities, default=0)
+        normalized_name = str(name).strip() if name is not None else ""
         catalogs.append(
             {
-                "name": name or f"catalog-{len(catalogs) + 1}",
+                "name": normalized_name or f"catalog-{len(catalogs) + 1}",
                 "url": url,
                 "priority": max_priority + 1,
                 "install_allowed": True,
@@ -606,13 +609,15 @@ class IntegrationCatalog:
             data = {}
         if not isinstance(data, dict):
             raise IntegrationValidationError(
-                "Catalog config file is corrupted (expected a mapping)."
+                f"Catalog config file {config_path} is corrupted "
+                "(expected a mapping)."
             )
 
         catalogs = data.get("catalogs", [])
         if not isinstance(catalogs, list):
             raise IntegrationValidationError(
-                "Catalog config 'catalogs' must be a list."
+                f"Catalog config {config_path} has invalid 'catalogs' value: "
+                "must be a list."
             )
 
         if not catalogs:
