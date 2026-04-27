@@ -1853,7 +1853,7 @@
       "name": "Security Review",
       "id": "security-review",
       "description": "Full-project secure-by-design security audits plus staged, branch/PR, plan, task, follow-up, and apply reviews",
-      "author": "Spec-Kit Security Team",
+      "author": "Dyan Galih",
       "version": "1.3.0",
       "download_url": "https://github.com/DyanGalih/spec-kit-security-review/archive/refs/tags/v1.3.0.zip",
       "repository": "https://github.com/DyanGalih/spec-kit-security-review",
