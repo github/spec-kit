@@ -519,7 +519,7 @@ class IntegrationCatalog:
         for idx, cat in enumerate(catalogs):
             if not isinstance(cat, dict):
                 raise IntegrationValidationError(
-                    f"Invalid catalog entry at index {idx}: "
+                    f"Invalid catalog entry at index {idx} in {config_path}: "
                     f"expected a mapping, got {type(cat).__name__}."
                 )
             existing_url = str(cat.get("url", "")).strip()
@@ -541,7 +541,7 @@ class IntegrationCatalog:
                 raw_priority = cat.get("priority")
                 if isinstance(raw_priority, bool):
                     raise IntegrationValidationError(
-                        f"Invalid catalog entry at index {idx}: "
+                        f"Invalid catalog entry at index {idx} in {config_path}: "
                         f"'priority' must be an integer, got "
                         f"{type(raw_priority).__name__}."
                     )
@@ -549,7 +549,7 @@ class IntegrationCatalog:
                     normalized_priority = int(raw_priority)
                 except (TypeError, ValueError):
                     raise IntegrationValidationError(
-                        f"Invalid catalog entry at index {idx}: "
+                        f"Invalid catalog entry at index {idx} in {config_path}: "
                         f"'priority' must be an integer, got "
                         f"{raw_priority!r}."
                     ) from None
@@ -687,7 +687,7 @@ class IntegrationCatalog:
             # defaults, which matches the behavior before any
             # `catalog add` was ever run.
             try:
-                config_path.unlink()
+                config_path.unlink(missing_ok=True)
             except OSError as exc:
                 raise IntegrationValidationError(
                     f"Failed to delete catalog config {config_path}: {exc}"

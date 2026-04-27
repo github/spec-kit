@@ -866,6 +866,24 @@ class TestCatalogSourceManagement:
             cat.add_catalog("https://new.example.com/catalog.json")
         assert str(cfg_path) in str(exc_info.value)
 
+    def test_add_catalog_rejects_non_mapping_entry_with_config_path(
+        self, tmp_path, monkeypatch
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump({"catalogs": ["not-a-mapping"]}), encoding="utf-8"
+        )
+
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(
+            IntegrationValidationError, match="Invalid catalog entry at index 0"
+        ) as exc_info:
+            cat.add_catalog("https://new.example.com/catalog.json")
+        message = str(exc_info.value)
+        assert str(cfg_path) in message
+        assert "expected a mapping" in message
+
     def test_add_catalog_skips_blank_url_entries(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
         cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
@@ -1065,6 +1083,28 @@ class TestCatalogSourceManagement:
             IntegrationValidationError, match="Failed to delete catalog config"
         ):
             cat.remove_catalog(0)
+
+    def test_remove_catalog_ignores_missing_final_config_during_unlink(
+        self, tmp_path, monkeypatch
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://only.example.com/catalog.json", name="only")
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+
+        from pathlib import Path as _Path
+
+        original_unlink = _Path.unlink
+
+        def delete_first_then_unlink(self, *args, **kwargs):
+            if self == cfg_path and self.exists():
+                original_unlink(self)
+            return original_unlink(self, *args, **kwargs)
+
+        monkeypatch.setattr(_Path, "unlink", delete_first_then_unlink)
+
+        assert cat.remove_catalog(0) == "only"
+        assert not cfg_path.exists()
 
     def test_remove_catalog_empty_list_gives_clear_error(self, tmp_path, monkeypatch):
         """Hand-edited empty `catalogs:` produces a clear error, not '0--1'."""
