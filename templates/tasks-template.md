@@ -29,7 +29,7 @@ description: "Task list template for feature implementation"
   ============================================================================
   IMPORTANT: The tasks below are SAMPLE TASKS for illustration purposes only.
   
-  The /speckit.tasks command MUST replace these with actual tasks based on:
+  The __SPECKIT_COMMAND_TASKS__ command MUST replace these with actual tasks based on:
   - User stories from spec.md (with their priorities P1, P2, P3...)
   - Feature requirements from plan.md
   - Entities from data-model.md
