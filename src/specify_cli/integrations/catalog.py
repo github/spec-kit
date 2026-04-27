@@ -485,6 +485,8 @@ class IntegrationCatalog:
         order unless the user edits the file manually.
         """
         url = url.strip()
+        if not url:
+            raise IntegrationValidationError("Catalog URL must be non-empty.")
         self._validate_catalog_url(url)
         config_path = self.project_root / ".specify" / self.CONFIG_FILENAME
 

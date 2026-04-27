@@ -812,6 +812,13 @@ class TestCatalogSourceManagement:
             cat.add_catalog("http://insecure.example.com/catalog.json")
         assert not (tmp_path / ".specify" / "integration-catalogs.yml").exists()
 
+    def test_add_catalog_rejects_empty_url(self, tmp_path, monkeypatch):
+        self._isolate(tmp_path, monkeypatch)
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(IntegrationValidationError, match="must be non-empty"):
+            cat.add_catalog("   ")
+        assert not (tmp_path / ".specify" / "integration-catalogs.yml").exists()
+
     def test_remove_catalog_without_config_errors(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
         cat = IntegrationCatalog(tmp_path)
