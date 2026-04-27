@@ -2728,6 +2728,11 @@ def integration_info(
                 "(.specify/integration-catalogs.yml or ~/.specify/integration-catalogs.yml), "
                 "or use a built-in integration ID directly."
             )
+        elif os.environ.get("SPECKIT_INTEGRATION_CATALOG_URL"):
+            console.print(
+                "\nCheck whether SPECKIT_INTEGRATION_CATALOG_URL is set correctly and reachable, "
+                "or unset it to use the configured catalog files, or use a built-in integration ID directly."
+            )
         else:
             console.print("\nTry again when online, or use a built-in integration ID directly.")
     else:

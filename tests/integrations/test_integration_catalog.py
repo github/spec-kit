@@ -948,10 +948,8 @@ class TestCatalogSourceManagement:
         """Invalid YAML on disk surfaces as IntegrationValidationError, not a raw YAMLError."""
         self._isolate(tmp_path, monkeypatch)
         cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
-        cfg_path.write_text(
-            "catalogs:\n  - url: 'https://a.example.com/cat.json'\n  - [bad\n",
-            encoding="utf-8",
-        )
+        invalid_yaml = "catalogs:\n  - url: 'https://a.example.com/cat.json'\n  - [bad\n"
+        cfg_path.write_text(invalid_yaml, encoding="utf-8")
         cat = IntegrationCatalog(tmp_path)
         with pytest.raises(
             IntegrationValidationError, match="Failed to read catalog config"
@@ -962,10 +960,8 @@ class TestCatalogSourceManagement:
         """Invalid YAML on disk surfaces as IntegrationValidationError from remove_catalog too."""
         self._isolate(tmp_path, monkeypatch)
         cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
-        cfg_path.write_text(
-            "catalogs:\n  - url: 'https://a.example.com/cat.json'\n  - [bad\n",
-            encoding="utf-8",
-        )
+        invalid_yaml = "catalogs:\n  - url: 'https://a.example.com/cat.json'\n  - [bad\n"
+        cfg_path.write_text(invalid_yaml, encoding="utf-8")
         cat = IntegrationCatalog(tmp_path)
         with pytest.raises(
             IntegrationValidationError, match="Failed to read catalog config"
@@ -1116,7 +1112,8 @@ class TestCatalogSourceManagement:
         self._isolate(tmp_path, monkeypatch)
         cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text("catalogs:\n  - [bad\n", encoding="utf-8")
+        invalid_yaml = "catalogs:\n  - [bad\n"
+        cfg_path.write_text(invalid_yaml, encoding="utf-8")
 
         cat = IntegrationCatalog(tmp_path)
         # Subclass match: IntegrationValidationError (specifically), not the

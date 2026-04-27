@@ -797,7 +797,8 @@ class TestIntegrationCatalogDiscoveryCLI:
         monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
         # Corrupt YAML to drive _load_catalog_config -> IntegrationValidationError.
         cfg = project / ".specify" / "integration-catalogs.yml"
-        cfg.write_text("catalogs:\n  - [bad\n", encoding="utf-8")
+        invalid_yaml = "catalogs:\n  - [bad\n"
+        cfg.write_text(invalid_yaml, encoding="utf-8")
 
         result = self._invoke(["integration", "search"], project)
         normalized_output = _normalize_cli_output(result.output)
@@ -835,7 +836,8 @@ class TestIntegrationCatalogDiscoveryCLI:
         monkeypatch.setenv("USERPROFILE", str(tmp_path))
         monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
         cfg = project / ".specify" / "integration-catalogs.yml"
-        cfg.write_text("catalogs:\n  - [bad\n", encoding="utf-8")
+        invalid_yaml = "catalogs:\n  - [bad\n"
+        cfg.write_text(invalid_yaml, encoding="utf-8")
 
         result = self._invoke(
             ["integration", "info", "definitely-not-real"], project
@@ -845,6 +847,24 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert "configuration file path shown above" in normalized_output
         assert ".specify/integration-catalogs.yml" in normalized_output
         assert "~/.specify/integration-catalogs.yml" in normalized_output
+        assert "Try again when online" not in normalized_output
+
+    def test_info_unknown_with_invalid_env_catalog_url_shows_env_tip(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CATALOG_URL",
+            "http://insecure.example.com/catalog.json",
+        )
+
+        result = self._invoke(
+            ["integration", "info", "definitely-not-real"], project
+        )
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 1, result.output
+        assert "SPECKIT_INTEGRATION_CATALOG_URL" in normalized_output
+        assert "unset it to use the configured catalog files" in normalized_output
         assert "Try again when online" not in normalized_output
 
     # -- catalog list / add / remove ---------------------------------------
