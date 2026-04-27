@@ -641,7 +641,9 @@ class IntegrationCatalog:
             if not isinstance(item, dict):
                 return False
             raw_url = item.get("url")
-            return isinstance(raw_url, str) and bool(raw_url.strip())
+            if raw_url is None:
+                return False
+            return bool(str(raw_url).strip())
 
         priority_pairs: List[Tuple[int, int]] = []
         for yaml_idx, item in enumerate(catalogs):

@@ -1378,6 +1378,23 @@ class TestCatalogSourceManagement:
         active = cat.get_active_catalogs()
         assert [e.name for e in active] == ["default", "community"]
 
+    def test_remove_catalog_allows_numeric_url_entry_cleanup(
+        self, tmp_path, monkeypatch
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            yaml.dump({"catalogs": [{"name": "numeric-url", "url": 123}]}),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+
+        removed = cat.remove_catalog(0)
+
+        assert removed == "numeric-url"
+        assert not cfg_path.exists()
+
     def test_remove_catalog_errors_when_no_entries_are_removable(
         self, tmp_path, monkeypatch
     ):
