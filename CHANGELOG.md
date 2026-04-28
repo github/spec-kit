@@ -6,13 +6,6 @@
 
 ### Changed
 
-- Potential fix for pull request finding
-- Potential fix for pull request finding
-- Potential fix for pull request finding
-- Potential fix for pull request finding
-- Potential fix for pull request finding
-- Potential fix for pull request finding
-- Potential fix for pull request finding
 - Add MarkItDown Document Converter extension to community catalog (#2390)
 - feat: Speckit preset fiction book v1.7 - Support for RAG (Chroma DB) offline semantic search (#2367)
 - fix(extensions): use explicit UTF-8 encoding when reading manifest YAML (#2370)
