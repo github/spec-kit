@@ -24,13 +24,6 @@ from specify_cli import (
     app,
 )
 
-
-@pytest.fixture(autouse=True)
-def _isolate_auth_config(monkeypatch):
-    """Ensure tests never read the real ~/.specify/auth.json."""
-    from specify_cli.authentication import http as _mod
-    monkeypatch.setattr(_mod, "_config_override", [])
-
 from tests.conftest import strip_ansi
 
 runner = CliRunner()
@@ -310,16 +303,8 @@ def _capture_request_via_urlopen():
 
 
 def _inject_github_config(monkeypatch, token_env="GH_TOKEN"):
-    """Inject a GitHub auth.json config entry for testing."""
-    from specify_cli.authentication.config import AuthConfigEntry
-    import specify_cli.authentication.http as _mod
-    entry = AuthConfigEntry(
-        hosts=("github.com", "api.github.com", "raw.githubusercontent.com", "codeload.github.com"),
-        provider="github",
-        auth="bearer",
-        token_env=token_env,
-    )
-    monkeypatch.setattr(_mod, "_config_override", [entry])
+    from tests.auth_helpers import inject_github_config
+    inject_github_config(monkeypatch, token_env)
 
 
 class TestUserStory3:
@@ -350,8 +335,6 @@ class TestUserStory3:
     def test_no_authorization_header_when_both_unset(self, monkeypatch):
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-        import specify_cli.authentication.http as _mod
-        monkeypatch.setattr(_mod, "_config_override", [])
         captured, side_effect = _capture_request_via_urlopen()
         with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
             _fetch_latest_release_tag()
@@ -396,8 +379,6 @@ class TestUserStory3:
     ):
         monkeypatch.setenv("GH_TOKEN", SENTINEL_GH_TOKEN)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-        import specify_cli.authentication.http as _mod
-        monkeypatch.setattr(_mod, "_config_override", [])
         with patch("specify_cli._get_installed_version", return_value="0.7.4"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect
         ):
@@ -411,8 +392,6 @@ class TestUserStory3:
     ):
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
-        import specify_cli.authentication.http as _mod
-        monkeypatch.setattr(_mod, "_config_override", [])
         with patch("specify_cli._get_installed_version", return_value="0.7.4"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect
         ):

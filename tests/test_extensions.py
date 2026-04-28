@@ -2454,16 +2454,8 @@ class TestExtensionCatalog:
         return ExtensionCatalog(project_dir)
 
     def _inject_github_config(self, monkeypatch, token_env="GH_TOKEN"):
-        """Inject a GitHub auth.json config entry for testing."""
-        from specify_cli.authentication.config import AuthConfigEntry
-        import specify_cli.authentication.http as _mod
-        entry = AuthConfigEntry(
-            hosts=("github.com", "api.github.com", "raw.githubusercontent.com", "codeload.github.com"),
-            provider="github",
-            auth="bearer",
-            token_env=token_env,
-        )
-        monkeypatch.setattr(_mod, "_config_override", [entry])
+        from tests.auth_helpers import inject_github_config
+        inject_github_config(monkeypatch, token_env)
 
     def test_make_request_no_token_no_auth_header(self, temp_dir, monkeypatch):
         """Without a token, requests carry no Authorization header."""
@@ -2529,8 +2521,6 @@ class TestExtensionCatalog:
         """No auth header when no auth.json config exists."""
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.delenv("GH_TOKEN", raising=False)
-        import specify_cli.authentication.http as _mod
-        monkeypatch.setattr(_mod, "_config_override", [])
         catalog = self._make_catalog(temp_dir)
         req = catalog._make_request("https://github.com/org/repo/releases/download/v1/ext.zip")
         assert "Authorization" not in req.headers

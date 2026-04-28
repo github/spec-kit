@@ -51,8 +51,10 @@ def load_auth_config(
     Returns an empty list when the file does not exist — this means
     all HTTP requests will be unauthenticated (opt-in model).
 
-    Raises ``ValueError`` on schema violations so misconfigurations
-    surface immediately rather than silently degrading to no-auth.
+    Raises ``ValueError`` on schema violations.  Callers that want
+    misconfigurations to fail fast can allow this exception to
+    propagate; higher-level HTTP helpers may instead catch it,
+    warn, and continue with unauthenticated requests.
     """
     config_path = path or _default_config_path()
 
