@@ -14,6 +14,7 @@ import pytest
 import json
 import tempfile
 import shutil
+import warnings
 import zipfile
 from pathlib import Path
 from datetime import datetime, timezone
@@ -1921,6 +1922,10 @@ class TestPresetCatalogMultiCatalog:
 
 
 SELF_TEST_PRESET_DIR = Path(__file__).parent.parent / "presets" / "self-test"
+SELF_TEST_WRAP_WARNING = (
+    r"Cannot compose command 'speckit\.wrap-test': no base layer\. "
+    r"Stale command files may remain\."
+)
 
 CORE_TEMPLATE_NAMES = [
     "spec-template",
@@ -1929,6 +1934,18 @@ CORE_TEMPLATE_NAMES = [
     "checklist-template",
     "constitution-template",
 ]
+
+
+def install_self_test_preset(manager: PresetManager, speckit_version: str = "0.1.5") -> PresetManifest:
+    """Install self-test while filtering its intentionally missing wrap base."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=SELF_TEST_WRAP_WARNING,
+            category=UserWarning,
+            module=r"specify_cli\.presets",
+        )
+        return manager.install_from_directory(SELF_TEST_PRESET_DIR, speckit_version)
 
 
 class TestSelfTestPreset:
@@ -1971,7 +1988,7 @@ class TestSelfTestPreset:
     def test_install_self_test_preset(self, project_dir):
         """Test installing the self-test preset from its directory."""
         manager = PresetManager(project_dir)
-        manifest = manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        manifest = install_self_test_preset(manager)
         assert manifest.id == "self-test"
         assert manager.registry.is_installed("self-test")
 
@@ -1984,7 +2001,7 @@ class TestSelfTestPreset:
 
         # Install self-test preset
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         # Every core template should now resolve from the preset
         resolver = PresetResolver(project_dir)
@@ -2003,7 +2020,7 @@ class TestSelfTestPreset:
             (templates_dir / f"{name}.md").write_text(f"# Core {name}\n")
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         resolver = PresetResolver(project_dir)
         for name in CORE_TEMPLATE_NAMES:
@@ -2020,7 +2037,7 @@ class TestSelfTestPreset:
             (templates_dir / f"{name}.md").write_text(f"# Core {name}\n")
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
         manager.remove("self-test")
 
         resolver = PresetResolver(project_dir)
@@ -2056,7 +2073,7 @@ class TestSelfTestPreset:
         claude_dir.mkdir(parents=True)
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         # Check the skill was registered
         cmd_file = claude_dir / "speckit-specify" / "SKILL.md"
@@ -2072,7 +2089,7 @@ class TestSelfTestPreset:
         gemini_dir.mkdir(parents=True)
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         # Check the command was registered in TOML format
         cmd_file = gemini_dir / "speckit.specify.toml"
@@ -2087,7 +2104,7 @@ class TestSelfTestPreset:
         claude_dir.mkdir(parents=True)
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         cmd_file = claude_dir / "speckit-specify" / "SKILL.md"
         assert cmd_file.exists()
@@ -2098,7 +2115,7 @@ class TestSelfTestPreset:
     def test_self_test_no_commands_without_agent_dirs(self, project_dir):
         """Test that no commands are registered when no agent dirs exist."""
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         metadata = manager.registry.get("self-test")
         assert metadata["registered_commands"] == {}
@@ -2247,8 +2264,7 @@ class TestPresetSkills:
 
         # Install self-test preset (has a command override for speckit.specify)
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
         assert skill_file.exists()
@@ -2267,8 +2283,7 @@ class TestPresetSkills:
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
         content = skill_file.read_text()
@@ -2300,8 +2315,7 @@ class TestPresetSkills:
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
         file_content = skill_file.read_text()
@@ -2321,8 +2335,7 @@ class TestPresetSkills:
         (core_cmds / "specify.md").write_text("---\ndescription: Core specify command\n---\n\nCore specify body\n")
 
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         # Verify preset content is in the skill
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
@@ -2358,8 +2371,7 @@ class TestPresetSkills:
         )
 
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
         manager.remove("self-test")
 
         content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
@@ -2375,8 +2387,7 @@ class TestPresetSkills:
         (skills_dir / "speckit-specify").write_text("not-a-directory")
 
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         assert (skills_dir / "speckit-specify").is_file()
         metadata = manager.registry.get("self-test")
@@ -2388,8 +2399,7 @@ class TestPresetSkills:
         # Don't create skills dir — simulate --ai-skills never created them
 
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         metadata = manager.registry.get("self-test")
         assert metadata.get("registered_skills", []) == []
@@ -2590,8 +2600,7 @@ class TestPresetSkills:
         (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
-        self_test_dir = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(self_test_dir, "0.1.5")
+        install_self_test_preset(manager)
 
         skill_file = skills_dir / "speckit.specify" / "SKILL.md"
         assert skill_file.exists()
@@ -2611,8 +2620,7 @@ class TestPresetSkills:
         (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
-        self_test_dir = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(self_test_dir, "0.1.5")
+        install_self_test_preset(manager)
 
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
         assert skill_file.exists()
@@ -2791,8 +2799,7 @@ class TestPresetSkills:
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
         manager = PresetManager(project_dir)
-        self_test_dir = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(self_test_dir, "0.1.5")
+        install_self_test_preset(manager)
 
         skill_content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
         assert "untouched" in skill_content
@@ -3451,7 +3458,7 @@ class TestWrapStrategy:
         )
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         written = (skill_subdir / "SKILL.md").read_text()
         assert "{CORE_TEMPLATE}" not in written
@@ -3503,7 +3510,7 @@ class TestWrapStrategy:
         )
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         written = (skill_subdir / "SKILL.md").read_text()
         # {SCRIPT} should have been resolved (not left as a literal placeholder)
