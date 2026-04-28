@@ -3643,6 +3643,7 @@ def extension_add(
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
                 download_dir.mkdir(parents=True, exist_ok=True)
                 archive_fmt = _detect_archive_format(from_url)
+                archive_path = None
 
                 try:
                     with urllib.request.urlopen(from_url, timeout=60) as response:
@@ -3661,11 +3662,9 @@ def extension_add(
                     console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
                     raise typer.Exit(1)
                 finally:
-                    # Clean up downloaded archive
-                    for _suffix in (".zip", ".tar.gz"):
-                        _p = download_dir / f"{extension}-url-download{_suffix}"
-                        if _p.exists():
-                            _p.unlink()
+                    # Clean up the downloaded archive
+                    if archive_path is not None and archive_path.exists():
+                        archive_path.unlink()
 
             else:
                 # Try bundled extensions first (shipped with spec-kit)

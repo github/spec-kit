@@ -155,7 +155,11 @@ def _safe_extract_tarball(
     (devices, FIFOs, etc.) are rejected.
 
     On Python 3.12 and later the ``"data"`` extraction filter is applied
-    for an additional layer of OS-level protection.
+    for an additional layer of OS-level protection.  On earlier versions
+    the explicit member list (containing only pre-validated regular files
+    and directories) is passed to ``extractall()`` — since all symlinks are
+    already rejected in the validation phase, no archive-introduced symlink
+    can be followed during extraction.
 
     Args:
         archive_path: Path to the ``.tar.gz``/``.tgz`` archive.
@@ -169,6 +173,7 @@ def _safe_extract_tarball(
 
     with tarfile.open(archive_path, "r:gz") as tf:
         members = tf.getmembers()
+        safe_members = []
 
         # Validate every member before extracting anything.
         for member in members:
@@ -201,11 +206,15 @@ def _safe_extract_tarball(
                     f"Non-regular file in archive: {member.name}"
                 )
 
+            safe_members.append(member)
+
         # Extract — use the "data" filter on Python 3.12+ for extra hardening.
+        # On older versions pass only the pre-validated members so that no
+        # unvetted entry (added concurrently or via a race) slips through.
         if sys.version_info >= (3, 12):
             tf.extractall(dest_dir, filter="data")  # type: ignore[call-arg]
         else:
-            tf.extractall(dest_dir)  # noqa: S202 — validated manually above
+            tf.extractall(dest_dir, members=safe_members)  # noqa: S202 — validated above
 
 
 @dataclass
