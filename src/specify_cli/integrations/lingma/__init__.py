@@ -27,3 +27,15 @@ class LingmaIntegration(SkillsIntegration):
         "extension": "/SKILL.md",
     }
     context_file = ".lingma/rules/specify-rules.md"
+
+    @classmethod
+    def options(cls) -> list[IntegrationOption]:
+        return [
+            IntegrationOption(
+                "--skills",
+                is_flag=True,
+                default=True,
+                help="Install as agent skills",
+            ),
+        ]
+        
