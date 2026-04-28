@@ -160,6 +160,38 @@ class TestPresetManifest:
         with pytest.raises(PresetValidationError, match="Invalid YAML"):
             PresetManifest(bad_file)
 
+    def test_utf8_non_ascii_description_loads(self, temp_dir, valid_pack_data):
+        """Regression for #2325: non-ASCII (UTF-8) description loads on any platform.
+
+        On Windows, Python's default text-mode encoding is the locale codepage
+        (e.g. cp1252/GBK), which raises UnicodeDecodeError on UTF-8 bytes
+        outside the ASCII range. The loader must open with encoding='utf-8'.
+        """
+        valid_pack_data["preset"]["description"] = "中文测试 — émojis 🚀"
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_bytes(
+            yaml.safe_dump(valid_pack_data, allow_unicode=True).encode("utf-8")
+        )
+
+        manifest = PresetManifest(manifest_path)
+        assert manifest.description == "中文测试 — émojis 🚀"
+
+    def test_invalid_utf8_bytes_raises_validation_error(self, temp_dir):
+        """Negative case: file containing invalid UTF-8 bytes raises PresetValidationError, not raw UnicodeDecodeError."""
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_bytes(b"\xff\xfe not valid utf-8 \xff\n")
+
+        with pytest.raises(PresetValidationError, match="not valid UTF-8"):
+            PresetManifest(manifest_path)
+
+    def test_non_mapping_yaml_raises_validation_error(self, temp_dir):
+        """Manifest whose YAML root is a scalar or list raises PresetValidationError, not TypeError."""
+        manifest_path = temp_dir / "preset.yml"
+        for bad_content in ("42\n", "[1, 2]\n"):
+            manifest_path.write_text(bad_content, encoding="utf-8")
+            with pytest.raises(PresetValidationError, match="YAML mapping"):
+                PresetManifest(manifest_path)
+
     def test_missing_schema_version(self, temp_dir, valid_pack_data):
         """Test missing schema_version field."""
         del valid_pack_data["schema_version"]

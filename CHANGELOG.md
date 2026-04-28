@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.2] - 2026-04-28
+
+### Changed
+
+- Add MarkItDown Document Converter extension to community catalog (#2390)
+- feat: Speckit preset fiction book v1.7 - Support for RAG (Chroma DB) offline semantic search (#2367)
+- fix(extensions): use explicit UTF-8 encoding when reading manifest YAML (#2370)
+- catalog: add m365 community extension
+- docs: replace deprecated --ai flag with --integration in all documentation (#2359)
+- feat(extensions,presets): authenticate GitHub-hosted catalog and download requests with GITHUB_TOKEN/GH_TOKEN (#2331)
+- Update extensify to v1.1.0 in community catalog (#2337)
+- feat(init): deprecate --no-git flag, gate deprecations at v0.10.0 (#2357)
+- Add Spec Orchestrator extension to community catalog (#2350)
+- chore: release 0.8.1, begin 0.8.2.dev0 development (#2356)
+
 ## [0.8.1] - 2026-04-24
 
 ### Changed
