@@ -303,10 +303,12 @@ class TestAuthRegistry:
         class _UniqueStub(_StubProvider):
             key = "__test_duplicate__"
 
-        _register(_UniqueStub())
-        with pytest.raises(KeyError, match="already registered"):
+        try:
             _register(_UniqueStub())
-        AUTH_REGISTRY.pop("__test_duplicate__", None)
+            with pytest.raises(KeyError, match="already registered"):
+                _register(_UniqueStub())
+        finally:
+            AUTH_REGISTRY.pop("__test_duplicate__", None)
 
     def test_register_empty_key_raises_value_error(self):
         class _EmptyKey(_StubProvider):
@@ -406,6 +408,76 @@ class TestAzureDevOpsAuth:
         assert "azure-cli" in schemes
         assert "azure-ad" in schemes
 
+    def test_resolve_token_azure_cli_success(self):
+        """azure-cli acquires token via az CLI."""
+        from unittest.mock import patch, MagicMock
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = '{"accessToken": "cli-acquired-token"}'
+        with patch("specify_cli.authentication.azure_devops.subprocess.run", return_value=result):
+            assert AzureDevOpsAuth().resolve_token(entry) == "cli-acquired-token"
+
+    def test_resolve_token_azure_cli_failure_returns_none(self):
+        """azure-cli returns None when az CLI fails."""
+        from unittest.mock import patch, MagicMock
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        result = MagicMock()
+        result.returncode = 1
+        result.stdout = ""
+        with patch("specify_cli.authentication.azure_devops.subprocess.run", return_value=result):
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
+    def test_resolve_token_azure_cli_not_installed_returns_none(self):
+        """azure-cli returns None when az is not installed."""
+        from unittest.mock import patch
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        with patch("specify_cli.authentication.azure_devops.subprocess.run", side_effect=OSError("not found")):
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
+    def test_resolve_token_azure_ad_success(self, monkeypatch):
+        """azure-ad acquires token via OAuth2 client credentials."""
+        from unittest.mock import patch, MagicMock
+        monkeypatch.setenv("MY_SECRET", "secret-value")
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
+            tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
+        )
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"access_token": "ad-acquired-token"}'
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            assert AzureDevOpsAuth().resolve_token(entry) == "ad-acquired-token"
+
+    def test_resolve_token_azure_ad_missing_secret_returns_none(self, monkeypatch):
+        """azure-ad returns None when client secret env var is missing."""
+        monkeypatch.delenv("MY_SECRET", raising=False)
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
+            tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
+        )
+        assert AzureDevOpsAuth().resolve_token(entry) is None
+
+    def test_resolve_token_azure_ad_network_error_returns_none(self, monkeypatch):
+        """azure-ad returns None on network errors."""
+        import urllib.error
+        from unittest.mock import patch
+        monkeypatch.setenv("MY_SECRET", "secret-value")
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
+            tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
+        )
+        with patch("urllib.request.urlopen",
+                    side_effect=urllib.error.URLError("connection refused")):
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
 
 # ---------------------------------------------------------------------------
 # open_url / build_request — positive tests
@@ -414,7 +486,7 @@ class TestAzureDevOpsAuth:
 
 class TestAuthenticatedHttp:
     def _set_config(self, monkeypatch, entries):
-        import specify_cli.authentication.http as _mod
+        from specify_cli.authentication import http as _mod
         monkeypatch.setattr(_mod, "_config_override", entries)
 
     def test_build_request_attaches_auth_for_matching_host(self, monkeypatch):
@@ -515,7 +587,7 @@ class TestAuthenticatedHttp:
 
 class TestAuthenticatedHttpNegative:
     def _set_config(self, monkeypatch, entries):
-        import specify_cli.authentication.http as _mod
+        from specify_cli.authentication import http as _mod
         monkeypatch.setattr(_mod, "_config_override", entries)
 
     def test_500_raises_immediately(self, monkeypatch):
@@ -601,7 +673,7 @@ class TestRedirectStripping:
 
 class TestFetchLatestReleaseTagDelegation:
     def _set_config(self, monkeypatch, entries):
-        import specify_cli.authentication.http as _mod
+        from specify_cli.authentication import http as _mod
         monkeypatch.setattr(_mod, "_config_override", entries)
 
     def _capture_request(self):

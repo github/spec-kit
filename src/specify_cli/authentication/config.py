@@ -8,12 +8,10 @@ an explicit opt-in via this file.
 from __future__ import annotations
 
 import json
-import os
 import stat
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
 
 
@@ -94,8 +92,10 @@ def load_auth_config(
         hosts = entry_raw.get("hosts")
         if not isinstance(hosts, list) or not hosts:
             raise ValueError(f"providers[{i}]: 'hosts' must be a non-empty array")
-        if not all(isinstance(h, str) and h for h in hosts):
+        if not all(isinstance(h, str) and h.strip() for h in hosts):
             raise ValueError(f"providers[{i}]: each host must be a non-empty string")
+        # Normalize hosts: strip whitespace and lowercase
+        hosts = [h.strip().lower() for h in hosts]
 
         provider = entry_raw.get("provider", "")
         if not isinstance(provider, str) or not provider:
@@ -112,6 +112,21 @@ def load_auth_config(
 
         token = entry_raw.get("token")
         token_env = entry_raw.get("token_env")
+
+        # Validate token/token_env types
+        if token is not None and (not isinstance(token, str) or not token.strip()):
+            raise ValueError(f"providers[{i}]: 'token' must be a non-empty string")
+        if token_env is not None and (not isinstance(token_env, str) or not token_env.strip()):
+            raise ValueError(f"providers[{i}]: 'token_env' must be a non-empty string")
+
+        # Validate provider+scheme compatibility
+        from . import get_provider as _get_provider
+        _prov = _get_provider(provider)
+        if _prov is not None and auth not in _prov.supported_auth_schemes:
+            raise ValueError(
+                f"providers[{i}]: provider {provider!r} does not support "
+                f"auth scheme {auth!r}; supported: {list(_prov.supported_auth_schemes)}"
+            )
 
         # Validate token source based on auth scheme
         if auth in ("bearer", "basic-pat"):

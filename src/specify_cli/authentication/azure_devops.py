@@ -95,12 +95,13 @@ class AzureDevOpsAuth(AuthProvider):
             f"https://login.microsoftonline.com/{entry.tenant_id}"
             "/oauth2/v2.0/token"
         )
-        body = (
-            f"grant_type=client_credentials"
-            f"&client_id={entry.client_id}"
-            f"&client_secret={client_secret}"
-            f"&scope={_ADO_RESOURCE_ID}/.default"
-        ).encode("utf-8")
+        from urllib.parse import urlencode
+        body = urlencode({
+            "grant_type": "client_credentials",
+            "client_id": entry.client_id,
+            "client_secret": client_secret,
+            "scope": f"{_ADO_RESOURCE_ID}/.default",
+        }).encode("utf-8")
 
         req = urllib.request.Request(
             url,

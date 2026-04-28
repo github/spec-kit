@@ -29,7 +29,14 @@ def _load_config() -> list[AuthConfigEntry]:
         return _config_override
     try:
         return load_auth_config()
-    except (ValueError, OSError):
+    except (ValueError, OSError) as exc:
+        import warnings
+        warnings.warn(
+            f"Failed to load ~/.specify/auth.json: {exc}. "
+            "All requests will be unauthenticated.",
+            UserWarning,
+            stacklevel=2,
+        )
         return []
 
 
@@ -67,6 +74,9 @@ def build_request(url: str, extra_headers: dict[str, str] | None = None) -> urll
     Returns a plain request when no entry matches or the file doesn't exist.
     """
     headers: dict[str, str] = {}
+    if extra_headers:
+        headers.update(extra_headers)
+    # Auth headers applied last — cannot be overridden by extra_headers
     entries = find_entries_for_url(url, _load_config())
     for entry in entries:
         provider = get_provider(entry.provider)
@@ -76,8 +86,6 @@ def build_request(url: str, extra_headers: dict[str, str] | None = None) -> urll
         if token:
             headers.update(provider.auth_headers(token, entry.auth))
             break
-    if extra_headers:
-        headers.update(extra_headers)
     return urllib.request.Request(url, headers=headers)
 
 
@@ -95,13 +103,14 @@ def open_url(url: str, timeout: int = 10, extra_headers: dict[str, str] | None =
     entries = find_entries_for_url(url, _load_config())
 
     def _make_req(auth_headers: dict[str, str]) -> urllib.request.Request:
-        merged = {**auth_headers}
+        merged = {}
         if extra_headers:
             merged.update(extra_headers)
+        # Auth headers applied last — cannot be overridden by extra_headers
+        merged.update(auth_headers)
         return urllib.request.Request(url, headers=merged)
 
     # Try each matching entry
-    tried = 0
     for entry in entries:
         provider = get_provider(entry.provider)
         if provider is None:
@@ -109,7 +118,6 @@ def open_url(url: str, timeout: int = 10, extra_headers: dict[str, str] | None =
         token = provider.resolve_token(entry)
         if not token:
             continue
-        tried += 1
 
         req = _make_req(provider.auth_headers(token, entry.auth))
         opener = urllib.request.build_opener(_StripAuthOnRedirect(entry.hosts))

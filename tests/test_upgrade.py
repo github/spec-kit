@@ -24,6 +24,13 @@ from specify_cli import (
     app,
 )
 
+
+@pytest.fixture(autouse=True)
+def _isolate_auth_config(monkeypatch):
+    """Ensure tests never read the real ~/.specify/auth.json."""
+    from specify_cli.authentication import http as _mod
+    monkeypatch.setattr(_mod, "_config_override", [])
+
 from tests.conftest import strip_ansi
 
 runner = CliRunner()
@@ -223,7 +230,7 @@ class TestFailureCategorization:
         ):
             tag, reason = _fetch_latest_release_tag()
         assert tag is None
-        assert reason == "rate limited (try setting GH_TOKEN or GITHUB_TOKEN)"
+        assert reason == "rate limited (try setting GH_TOKEN and configuring ~/.specify/auth.json)"
 
     @pytest.mark.parametrize("code", [404, 500, 502])
     def test_other_http_uses_code_string(self, code):
@@ -247,7 +254,7 @@ class TestFailureCategorization:
 
 _FAILURE_CASES = [
     ("offline or timeout", urllib.error.URLError("down")),
-    ("rate limited (try setting GH_TOKEN or GITHUB_TOKEN)", _http_error(403)),
+    ("rate limited (try setting GH_TOKEN and configuring ~/.specify/auth.json)", _http_error(403)),
     ("HTTP 500", _http_error(500)),
 ]
 
@@ -263,10 +270,10 @@ class TestUserStory2:
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
         assert "Installed: 0.7.4" in output
-        if expected_reason == "rate limited (try setting GH_TOKEN or GITHUB_TOKEN)":
+        if expected_reason == "rate limited (try setting GH_TOKEN and configuring ~/.specify/auth.json)":
             assert "Could not check latest release: rate limited" in output
             assert "GH_TOKEN" in output
-            assert "GITHUB_TOKEN" in output
+            assert "auth.json" in output
         else:
             assert f"Could not check latest release: {expected_reason}" in output
 

@@ -1737,7 +1737,7 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     except urllib.error.HTTPError as e:
         # Order matters: HTTPError is a subclass of URLError.
         if e.code == 403:
-            return None, "rate limited (try setting GH_TOKEN or GITHUB_TOKEN)"
+            return None, "rate limited (try setting GH_TOKEN and configuring ~/.specify/auth.json)"
         return None, f"HTTP {e.code}"
     except (urllib.error.URLError, OSError):
         return None, "offline or timeout"
