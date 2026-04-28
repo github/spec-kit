@@ -11,14 +11,21 @@ INTEGRATION_JSON = ".specify/integration.json"
 INTEGRATION_STATE_SCHEMA = 1
 
 
+def clean_integration_key(key: Any) -> str | None:
+    """Return a stripped integration key, or None for empty/non-string values."""
+    if not isinstance(key, str) or not key.strip():
+        return None
+    return key.strip()
+
+
 def dedupe_integration_keys(keys: list[Any]) -> list[str]:
     """Return a de-duplicated list of non-empty integration keys."""
     seen: set[str] = set()
     deduped: list[str] = []
     for key in keys:
-        if not isinstance(key, str) or not key.strip():
+        clean = clean_integration_key(key)
+        if clean is None:
             continue
-        clean = key.strip()
         if clean in seen:
             continue
         seen.add(clean)
@@ -61,10 +68,8 @@ def normalize_integration_settings(settings: Any) -> dict[str, dict[str, Any]]:
 
 def normalize_integration_state(data: dict[str, Any]) -> dict[str, Any]:
     """Normalize legacy and multi-install integration metadata."""
-    legacy_key = data.get("integration")
-    default_key = data.get("default_integration")
-    if not isinstance(default_key, str) or not default_key.strip():
-        default_key = legacy_key if isinstance(legacy_key, str) else None
+    legacy_key = clean_integration_key(data.get("integration"))
+    default_key = clean_integration_key(data.get("default_integration")) or legacy_key
 
     installed = data.get("installed_integrations")
     installed_keys = dedupe_integration_keys(installed if isinstance(installed, list) else [])
@@ -93,7 +98,7 @@ def normalize_integration_state(data: dict[str, Any]) -> dict[str, Any]:
 def default_integration_key(state: dict[str, Any]) -> str | None:
     """Return the default integration key from normalized state."""
     key = state.get("default_integration") or state.get("integration")
-    return key if isinstance(key, str) and key else None
+    return clean_integration_key(key)
 
 
 def installed_integration_keys(state: dict[str, Any]) -> list[str]:
@@ -123,6 +128,7 @@ def write_integration_json(
     dest = project_root / INTEGRATION_JSON
     dest.parent.mkdir(parents=True, exist_ok=True)
 
+    integration_key = clean_integration_key(integration_key)
     installed = dedupe_integration_keys(installed_integrations or [])
     if integration_key and integration_key not in installed:
         installed.insert(0, integration_key)

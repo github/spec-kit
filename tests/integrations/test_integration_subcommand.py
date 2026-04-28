@@ -91,8 +91,15 @@ class TestIntegrationList:
         assert result.exit_code == 0
         assert "Multi-install" in result.output
         assert "Safe" in result.output
-        assert "yes" in result.output
-        assert "no" in result.output
+        rows = {
+            cells[0]: cells
+            for line in result.output.splitlines()
+            if line.startswith("│")
+            for cells in ([cell.strip() for cell in line.split("│")[1:-1]],)
+            if cells and cells[0]
+        }
+        assert rows["claude"][4] == "yes"
+        assert rows["copilot"][4] == "no"
 
 
 # ── install ──────────────────────────────────────────────────────────

@@ -66,15 +66,17 @@ def _posix_path(value: str | None) -> str | None:
 
 def _integration_root_dir(key: str) -> str | None:
     integration = INTEGRATION_REGISTRY[key]
-    return _posix_path(integration.config.get("folder"))
+    cfg = integration.config if isinstance(integration.config, dict) else {}
+    return _posix_path(cfg.get("folder"))
 
 
 def _integration_commands_dir(key: str) -> str | None:
     integration = INTEGRATION_REGISTRY[key]
-    folder = integration.config.get("folder")
+    cfg = integration.config if isinstance(integration.config, dict) else {}
+    folder = cfg.get("folder")
     if not folder:
         return None
-    subdir = integration.config.get("commands_subdir", "commands")
+    subdir = cfg.get("commands_subdir", "commands")
     return (PurePosixPath(folder) / subdir).as_posix()
 
 
