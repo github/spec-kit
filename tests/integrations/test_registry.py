@@ -31,16 +31,6 @@ ALL_INTEGRATION_KEYS = [
 ]
 
 
-def _multi_install_safe_install_orders() -> list[tuple[str, str]]:
-    safe_keys = _multi_install_safe_keys()
-    return [
-        (first, second)
-        for first in safe_keys
-        for second in safe_keys
-        if first != second
-    ]
-
-
 def _multi_install_safe_keys() -> list[str]:
     return sorted(
         key
@@ -240,7 +230,7 @@ class TestMultiInstallSafeContracts:
             f"commands directory {_integration_commands_dir(first)!r}"
         )
 
-    @pytest.mark.parametrize(("first", "second"), _multi_install_safe_install_orders())
+    @pytest.mark.parametrize(("first", "second"), _multi_install_safe_pairs())
     def test_safe_integrations_have_disjoint_manifests(
         self,
         tmp_path,

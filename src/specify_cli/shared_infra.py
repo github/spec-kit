@@ -23,7 +23,7 @@ def load_speckit_manifest(
             manifest = IntegrationManifest.load("speckit", project_path)
             manifest.version = version
             return manifest
-        except (ValueError, FileNotFoundError) as exc:
+        except (ValueError, FileNotFoundError, OSError, UnicodeDecodeError) as exc:
             if console is not None:
                 console.print(
                     f"[yellow]Warning:[/yellow] Could not read shared infrastructure "

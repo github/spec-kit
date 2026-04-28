@@ -271,6 +271,23 @@ class TestInitIntegrationFlag:
         assert "Could not read shared infrastructure manifest" in captured.out
         assert "A new shared manifest will be created" in captured.out
 
+    def test_shared_infra_warns_when_manifest_cannot_be_decoded(self, tmp_path, capsys):
+        """Non-UTF-8 shared manifests warn before falling back to a new manifest."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "bad-shared-manifest-encoding-test"
+        project.mkdir()
+        integrations_dir = project / ".specify" / "integrations"
+        integrations_dir.mkdir(parents=True)
+        manifest_path = integrations_dir / "speckit.manifest.json"
+        manifest_path.write_bytes(b"\xff\xfe\x00")
+
+        _install_shared_infra(project, "sh")
+
+        captured = capsys.readouterr()
+        assert "Could not read shared infrastructure manifest" in captured.out
+        assert "A new shared manifest will be created" in captured.out
+
     def test_shared_infra_no_warning_when_forced(self, tmp_path, capsys):
         """No skip warning when force=True (all files overwritten)."""
         from specify_cli import _install_shared_infra
