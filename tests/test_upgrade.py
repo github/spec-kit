@@ -69,7 +69,7 @@ class TestSelfUpgradeStub:
         # If the stub ever starts calling urllib, this patch's side_effect
         # would fire and the assertion below would fail.
         with patch(
-            "specify_cli.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             side_effect=AssertionError("stub must not hit the network"),
         ):
             result = runner.invoke(app, ["self", "upgrade"])
@@ -138,7 +138,7 @@ class TestNormalizeTag:
 class TestUserStory1:
     def test_newer_available_prints_update_and_install_command(self):
         with patch("specify_cli._get_installed_version", return_value="0.7.4"), patch(
-            "specify_cli.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             return_value=_mock_urlopen_response({"tag_name": "v0.9.0"}),
         ):
             result = runner.invoke(app, ["self", "check"])
@@ -151,7 +151,7 @@ class TestUserStory1:
 
     def test_up_to_date_prints_current_only(self):
         with patch("specify_cli._get_installed_version", return_value="0.9.0"), patch(
-            "specify_cli.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             return_value=_mock_urlopen_response({"tag_name": "v0.9.0"}),
         ):
             result = runner.invoke(app, ["self", "check"])
@@ -163,7 +163,7 @@ class TestUserStory1:
 
     def test_dev_build_ahead_of_release_is_up_to_date(self):
         with patch("specify_cli._get_installed_version", return_value="0.7.5.dev0"), patch(
-            "specify_cli.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             return_value=_mock_urlopen_response({"tag_name": "v0.7.4"}),
         ):
             result = runner.invoke(app, ["self", "check"])
@@ -174,7 +174,7 @@ class TestUserStory1:
 
     def test_unknown_installed_still_prints_latest_and_reinstall(self):
         with patch("specify_cli._get_installed_version", return_value="unknown"), patch(
-            "specify_cli.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             return_value=_mock_urlopen_response({"tag_name": "v0.7.4"}),
         ):
             result = runner.invoke(app, ["self", "check"])
@@ -186,7 +186,7 @@ class TestUserStory1:
 
     def test_unparseable_tag_routes_to_indeterminate(self):
         with patch("specify_cli._get_installed_version", return_value="0.7.4"), patch(
-            "specify_cli.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             return_value=_mock_urlopen_response({"tag_name": "not-a-version"}),
         ):
             result = runner.invoke(app, ["self", "check"])
@@ -200,7 +200,7 @@ class TestUserStory1:
 class TestFailureCategorization:
     def test_urlerror_maps_to_offline(self):
         with patch(
-            "specify_cli.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             side_effect=urllib.error.URLError("no route to host"),
         ):
             tag, reason = _fetch_latest_release_tag()
@@ -209,7 +209,7 @@ class TestFailureCategorization:
 
     def test_timeout_maps_to_offline(self):
         with patch(
-            "specify_cli.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             side_effect=TimeoutError(),
         ):
             tag, reason = _fetch_latest_release_tag()
@@ -218,7 +218,7 @@ class TestFailureCategorization:
 
     def test_403_maps_to_rate_limited(self):
         with patch(
-            "specify_cli.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             side_effect=_http_error(403, "rate limited"),
         ):
             tag, reason = _fetch_latest_release_tag()
@@ -228,7 +228,7 @@ class TestFailureCategorization:
     @pytest.mark.parametrize("code", [404, 500, 502])
     def test_other_http_uses_code_string(self, code):
         with patch(
-            "specify_cli.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             side_effect=_http_error(code, "oops"),
         ):
             tag, reason = _fetch_latest_release_tag()
@@ -238,7 +238,7 @@ class TestFailureCategorization:
     def test_generic_exception_propagates(self):
         # Per research D-006, no catch-all exists; RuntimeError MUST bubble.
         with patch(
-            "specify_cli.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             side_effect=RuntimeError("boom"),
         ):
             with pytest.raises(RuntimeError):
@@ -258,7 +258,7 @@ class TestUserStory2:
         self, expected_reason, side_effect
     ):
         with patch("specify_cli._get_installed_version", return_value="0.7.4"), patch(
-            "specify_cli.urllib.request.urlopen", side_effect=side_effect
+            "specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect
         ):
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
@@ -273,7 +273,7 @@ class TestUserStory2:
     @pytest.mark.parametrize("_expected_reason, side_effect", _FAILURE_CASES)
     def test_failure_exits_zero(self, _expected_reason, side_effect):
         with patch("specify_cli._get_installed_version", return_value="0.7.4"), patch(
-            "specify_cli.urllib.request.urlopen", side_effect=side_effect
+            "specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect
         ):
             result = runner.invoke(app, ["self", "check"])
         assert result.exit_code == 0
@@ -283,7 +283,7 @@ class TestUserStory2:
         self, _expected_reason, side_effect
     ):
         with patch("specify_cli._get_installed_version", return_value="0.7.4"), patch(
-            "specify_cli.urllib.request.urlopen", side_effect=side_effect
+            "specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect
         ):
             result = runner.invoke(app, ["self", "check"])
         combined = (result.output or "") + (result.stderr or "")
@@ -302,12 +302,28 @@ def _capture_request_via_urlopen():
     return captured, _side_effect
 
 
+def _inject_github_config(monkeypatch, token_env="GH_TOKEN"):
+    """Inject a GitHub auth.json config entry for testing."""
+    from specify_cli.authentication.config import AuthConfigEntry
+    import specify_cli.authentication.http as _mod
+    entry = AuthConfigEntry(
+        hosts=("github.com", "api.github.com", "raw.githubusercontent.com", "codeload.github.com"),
+        provider="github",
+        auth="bearer",
+        token_env=token_env,
+    )
+    monkeypatch.setattr(_mod, "_config_override", [entry])
+
+
 class TestUserStory3:
     def test_gh_token_attached_as_bearer_header(self, monkeypatch):
         monkeypatch.setenv("GH_TOKEN", SENTINEL_GH_TOKEN)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        _inject_github_config(monkeypatch, token_env="GH_TOKEN")
         captured, side_effect = _capture_request_via_urlopen()
-        with patch("specify_cli.urllib.request.urlopen", side_effect=side_effect):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = side_effect
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") == f"Bearer {SENTINEL_GH_TOKEN}"
@@ -315,8 +331,11 @@ class TestUserStory3:
     def test_github_token_used_when_gh_token_unset(self, monkeypatch):
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
+        _inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         captured, side_effect = _capture_request_via_urlopen()
-        with patch("specify_cli.urllib.request.urlopen", side_effect=side_effect):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = side_effect
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") == f"Bearer {SENTINEL_GITHUB_TOKEN}"
@@ -324,8 +343,10 @@ class TestUserStory3:
     def test_no_authorization_header_when_both_unset(self, monkeypatch):
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        import specify_cli.authentication.http as _mod
+        monkeypatch.setattr(_mod, "_config_override", [])
         captured, side_effect = _capture_request_via_urlopen()
-        with patch("specify_cli.urllib.request.urlopen", side_effect=side_effect):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") is None
@@ -333,8 +354,9 @@ class TestUserStory3:
     def test_empty_string_gh_token_treated_as_unset(self, monkeypatch):
         monkeypatch.setenv("GH_TOKEN", "")
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        _inject_github_config(monkeypatch, token_env="GH_TOKEN")
         captured, side_effect = _capture_request_via_urlopen()
-        with patch("specify_cli.urllib.request.urlopen", side_effect=side_effect):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") is None
@@ -342,8 +364,9 @@ class TestUserStory3:
     def test_whitespace_only_gh_token_treated_as_unset(self, monkeypatch):
         monkeypatch.setenv("GH_TOKEN", "   ")
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        _inject_github_config(monkeypatch, token_env="GH_TOKEN")
         captured, side_effect = _capture_request_via_urlopen()
-        with patch("specify_cli.urllib.request.urlopen", side_effect=side_effect):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") is None
@@ -351,8 +374,11 @@ class TestUserStory3:
     def test_whitespace_only_gh_token_falls_back_to_github_token(self, monkeypatch):
         monkeypatch.setenv("GH_TOKEN", "   ")
         monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
+        _inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         captured, side_effect = _capture_request_via_urlopen()
-        with patch("specify_cli.urllib.request.urlopen", side_effect=side_effect):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = side_effect
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") == f"Bearer {SENTINEL_GITHUB_TOKEN}"
@@ -363,8 +389,10 @@ class TestUserStory3:
     ):
         monkeypatch.setenv("GH_TOKEN", SENTINEL_GH_TOKEN)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        import specify_cli.authentication.http as _mod
+        monkeypatch.setattr(_mod, "_config_override", [])
         with patch("specify_cli._get_installed_version", return_value="0.7.4"), patch(
-            "specify_cli.urllib.request.urlopen", side_effect=side_effect
+            "specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect
         ):
             result = runner.invoke(app, ["self", "check"])
         combined = strip_ansi((result.output or "") + (result.stderr or ""))
@@ -376,8 +404,10 @@ class TestUserStory3:
     ):
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
+        import specify_cli.authentication.http as _mod
+        monkeypatch.setattr(_mod, "_config_override", [])
         with patch("specify_cli._get_installed_version", return_value="0.7.4"), patch(
-            "specify_cli.urllib.request.urlopen", side_effect=side_effect
+            "specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect
         ):
             result = runner.invoke(app, ["self", "check"])
         combined = strip_ansi((result.output or "") + (result.stderr or ""))

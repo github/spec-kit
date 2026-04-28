@@ -1,11 +1,9 @@
 """Authentication provider registry for multi-platform support.
 
-Follows the same pattern as ``src/specify_cli/integrations/``.
-
-Each provider is a self-contained module that handles credential resolution
-and header construction for a specific platform (GitHub, Azure DevOps, etc.).
-Built-in providers are instantiated and added to the global ``AUTH_REGISTRY``
-by ``_register_builtins()``.
+Credentials are **opt-in only**.  No authentication headers are sent unless
+the user creates ``~/.specify/auth.json`` mapping hosts to providers.
+Provider classes define *how* to authenticate (Bearer, Basic-PAT, etc.)
+while the config file defines *where* and *with what credentials*.
 """
 
 from __future__ import annotations
@@ -15,7 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .base import AuthProvider
 
-# Maps provider key → AuthProvider instance.
+# Maps provider key → AuthProvider class instance.
 AUTH_REGISTRY: dict[str, AuthProvider] = {}
 
 
@@ -37,21 +35,14 @@ def get_provider(key: str) -> AuthProvider | None:
     return AUTH_REGISTRY.get(key)
 
 
-def configured_providers() -> list[AuthProvider]:
-    """Return all providers that currently have credentials configured."""
-    return [p for p in AUTH_REGISTRY.values() if p.is_configured()]
-
-
 # -- Register built-in providers -----------------------------------------
 
 
 def _register_builtins() -> None:
     """Register all built-in authentication providers (alphabetical)."""
-    # -- Imports (alphabetical) -------------------------------------------
     from .azure_devops import AzureDevOpsAuth
     from .github import GitHubAuth
 
-    # -- Registration (alphabetical) --------------------------------------
     _register(AzureDevOpsAuth())
     _register(GitHubAuth())
 
