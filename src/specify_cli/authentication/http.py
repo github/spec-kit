@@ -75,7 +75,8 @@ def build_request(url: str, extra_headers: dict[str, str] | None = None) -> urll
     """
     headers: dict[str, str] = {}
     if extra_headers:
-        headers.update(extra_headers)
+        # Strip Authorization from extra_headers to prevent bypass
+        headers.update({k: v for k, v in extra_headers.items() if k.lower() != "authorization"})
     # Auth headers applied last — cannot be overridden by extra_headers
     entries = find_entries_for_url(url, _load_config())
     for entry in entries:
@@ -105,7 +106,8 @@ def open_url(url: str, timeout: int = 10, extra_headers: dict[str, str] | None =
     def _make_req(auth_headers: dict[str, str]) -> urllib.request.Request:
         merged = {}
         if extra_headers:
-            merged.update(extra_headers)
+            # Strip Authorization from extra_headers to prevent bypass
+            merged.update({k: v for k, v in extra_headers.items() if k.lower() != "authorization"})
         # Auth headers applied last — cannot be overridden by extra_headers
         merged.update(auth_headers)
         return urllib.request.Request(url, headers=merged)

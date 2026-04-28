@@ -222,6 +222,27 @@ class TestLoadAuthConfig:
         with pytest.raises(ValueError, match="azure-ad"):
             load_auth_config(cfg)
 
+    def test_unknown_provider_raises(self, tmp_path):
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{"hosts": ["example.com"], "provider": "gitlab", "auth": "bearer", "token_env": "X"}]
+        }))
+        with pytest.raises(ValueError, match="unknown provider"):
+            load_auth_config(cfg)
+
+    def test_incompatible_provider_scheme_raises(self, tmp_path):
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["github.com"],
+                "provider": "github",
+                "auth": "basic-pat",
+                "token_env": "X",
+            }]
+        }))
+        with pytest.raises(ValueError, match="does not support"):
+            load_auth_config(cfg)
+
     def test_world_readable_warns(self, tmp_path):
         import stat
 

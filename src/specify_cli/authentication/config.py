@@ -122,7 +122,13 @@ def load_auth_config(
         # Validate provider+scheme compatibility
         from . import get_provider as _get_provider
         _prov = _get_provider(provider)
-        if _prov is not None and auth not in _prov.supported_auth_schemes:
+        if _prov is None:
+            from . import AUTH_REGISTRY
+            raise ValueError(
+                f"providers[{i}]: unknown provider {provider!r}; "
+                f"registered: {sorted(AUTH_REGISTRY.keys())}"
+            )
+        if auth not in _prov.supported_auth_schemes:
             raise ValueError(
                 f"providers[{i}]: provider {provider!r} does not support "
                 f"auth scheme {auth!r}; supported: {list(_prov.supported_auth_schemes)}"
@@ -143,6 +149,15 @@ def load_auth_config(
                     f"providers[{i}]: auth='azure-ad' requires "
                     "'tenant_id', 'client_id', and 'client_secret_env'"
                 )
+            for field_name, field_val in [
+                ("tenant_id", tenant_id),
+                ("client_id", client_id),
+                ("client_secret_env", client_secret_env),
+            ]:
+                if not isinstance(field_val, str) or not field_val.strip():
+                    raise ValueError(
+                        f"providers[{i}]: '{field_name}' must be a non-empty string"
+                    )
         # azure-cli needs no extra fields
 
         entries.append(
