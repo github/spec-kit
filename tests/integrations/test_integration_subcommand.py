@@ -137,7 +137,9 @@ class TestIntegrationInstall:
             os.chdir(old_cwd)
         assert result.exit_code == 0
         assert "already installed" in result.output
-        assert "uninstall" in result.output
+        normalized = " ".join(result.output.split())
+        assert "specify integration upgrade copilot" in normalized
+        assert "specify integration uninstall copilot" in normalized
 
     def test_install_different_when_one_exists(self, tmp_path):
         project = _init_project(tmp_path, "copilot")
@@ -579,7 +581,48 @@ class TestIntegrationSwitch:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        assert "already installed" in result.output
+        assert "already the default integration" in result.output
+
+    def test_switch_same_force_refreshes_shared_templates(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        template = project / ".specify" / "templates" / "plan-template.md"
+        template.write_text("# custom shared template\n", encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "claude",
+                "--force",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, result.output
+        assert "managed shared templates refreshed" in result.output
+        assert "/speckit-plan" in template.read_text(encoding="utf-8")
+
+    def test_switch_installed_target_rejects_integration_options(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            install = runner.invoke(app, [
+                "integration", "install", "codex",
+                "--script", "sh",
+            ], catch_exceptions=False)
+            assert install.exit_code == 0, install.output
+
+            result = runner.invoke(app, [
+                "integration", "switch", "codex",
+                "--integration-options", "--bogus",
+            ])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code != 0
+        assert "--integration-options cannot be used" in result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["default_integration"] == "claude"
 
     def test_switch_between_integrations(self, tmp_path):
         project = _init_project(tmp_path, "claude")

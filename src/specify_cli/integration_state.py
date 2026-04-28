@@ -57,8 +57,8 @@ def normalize_integration_settings(settings: Any) -> dict[str, dict[str, Any]]:
             clean["parsed_options"] = parsed_options
 
         invoke_separator = value.get("invoke_separator")
-        if isinstance(invoke_separator, str) and invoke_separator:
-            clean["invoke_separator"] = invoke_separator
+        if isinstance(invoke_separator, str) and invoke_separator.strip():
+            clean["invoke_separator"] = invoke_separator.strip()
 
         if clean:
             normalized[key.strip()] = clean

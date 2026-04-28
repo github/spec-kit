@@ -5,6 +5,7 @@ import json
 from specify_cli.integration_state import INTEGRATION_JSON
 from specify_cli.integration_state import (
     default_integration_key,
+    integration_setting,
     normalize_integration_state,
     write_integration_json,
 )
@@ -40,6 +41,21 @@ def test_normalize_integration_state_strips_legacy_key_fallback():
 def test_default_integration_key_strips_raw_state_values():
     assert default_integration_key({"default_integration": " claude "}) == "claude"
     assert default_integration_key({"integration": " codex "}) == "codex"
+
+
+def test_integration_settings_strip_invoke_separator():
+    setting = integration_setting(
+        {
+            "integration_settings": {
+                "claude": {
+                    "invoke_separator": " - ",
+                }
+            }
+        },
+        "claude",
+    )
+
+    assert setting["invoke_separator"] == "-"
 
 
 def test_write_integration_json_strips_integration_key(tmp_path):
