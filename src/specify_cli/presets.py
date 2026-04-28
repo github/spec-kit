@@ -27,7 +27,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
-from .extensions import ExtensionRegistry, normalize_priority
+from .extensions import ExtensionRegistry, normalize_priority, _detect_archive_format, _safe_extract_tarball
 
 
 def _substitute_core_template(
@@ -1604,10 +1604,10 @@ class PresetManager:
         speckit_version: str,
         priority: int = 10,
     ) -> PresetManifest:
-        """Install preset from ZIP file.
+        """Install preset from a ZIP or ``.tar.gz``/``.tgz`` archive.
 
         Args:
-            zip_path: Path to preset ZIP file
+            zip_path: Path to the preset archive (ZIP or gzipped tarball).
             speckit_version: Current spec-kit version
             priority: Resolution priority (lower = higher precedence, default 10)
 
@@ -1615,7 +1615,8 @@ class PresetManager:
             Installed preset manifest
 
         Raises:
-            PresetValidationError: If manifest is invalid or priority is invalid
+            PresetValidationError: If manifest is invalid, the archive is unsafe,
+                or priority is invalid
             PresetCompatibilityError: If pack is incompatible
         """
         # Validate priority early
@@ -1625,18 +1626,24 @@ class PresetManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            with zipfile.ZipFile(zip_path, 'r') as zf:
-                temp_path_resolved = temp_path.resolve()
-                for member in zf.namelist():
-                    member_path = (temp_path / member).resolve()
-                    try:
-                        member_path.relative_to(temp_path_resolved)
-                    except ValueError:
-                        raise PresetValidationError(
-                            f"Unsafe path in ZIP archive: {member} "
-                            "(potential path traversal)"
-                        )
-                zf.extractall(temp_path)
+            archive_fmt = _detect_archive_format(str(zip_path))
+
+            if archive_fmt == "tar.gz":
+                # Extract tarball safely (prevent tar slip attack)
+                _safe_extract_tarball(zip_path, temp_path, PresetValidationError)
+            else:
+                with zipfile.ZipFile(zip_path, 'r') as zf:
+                    temp_path_resolved = temp_path.resolve()
+                    for member in zf.namelist():
+                        member_path = (temp_path / member).resolve()
+                        try:
+                            member_path.relative_to(temp_path_resolved)
+                        except ValueError:
+                            raise PresetValidationError(
+                                f"Unsafe path in ZIP archive: {member} "
+                                "(potential path traversal)"
+                            )
+                    zf.extractall(temp_path)
 
             pack_dir = temp_path
             manifest_path = pack_dir / "preset.yml"
@@ -1649,7 +1656,7 @@ class PresetManager:
 
             if not manifest_path.exists():
                 raise PresetValidationError(
-                    "No preset.yml found in ZIP file"
+                    "No preset.yml found in archive"
                 )
 
             return self.install_from_directory(pack_dir, speckit_version, priority)
@@ -2242,14 +2249,18 @@ class PresetCatalog:
     def download_pack(
         self, pack_id: str, target_dir: Optional[Path] = None
     ) -> Path:
-        """Download preset ZIP from catalog.
+        """Download preset archive from catalog.
+
+        Supports both ZIP (``.zip``) and gzipped tarball (``.tar.gz``/``.tgz``)
+        archives.  The format is detected from the download URL's path extension;
+        when ambiguous the ``Content-Type`` header is used as a fallback.
 
         Args:
             pack_id: ID of the preset to download
-            target_dir: Directory to save ZIP file (defaults to cache directory)
+            target_dir: Directory to save the archive (defaults to cache directory)
 
         Returns:
-            Path to downloaded ZIP file
+            Path to downloaded archive file
 
         Raises:
             PresetError: If pack not found or download fails
@@ -2301,22 +2312,36 @@ class PresetCatalog:
         target_dir.mkdir(parents=True, exist_ok=True)
 
         version = pack_info.get("version", "unknown")
-        zip_filename = f"{pack_id}-{version}.zip"
-        zip_path = target_dir / zip_filename
+
+        # Detect archive format from URL; resolve via Content-Type when needed.
+        archive_fmt = _detect_archive_format(download_url)
 
         try:
             with self._open_url(download_url, timeout=60) as response:
-                zip_data = response.read()
-
-            zip_path.write_bytes(zip_data)
-            return zip_path
+                if not archive_fmt:
+                    content_type = response.headers.get("Content-Type", "")
+                    archive_fmt = _detect_archive_format(download_url, content_type)
+                archive_data = response.read()
 
         except urllib.error.URLError as e:
             raise PresetError(
                 f"Failed to download preset from {download_url}: {e}"
             )
         except IOError as e:
-            raise PresetError(f"Failed to save preset ZIP: {e}")
+            raise PresetError(f"Failed to save preset archive: {e}")
+
+        # Choose file extension based on detected format.
+        if archive_fmt == "tar.gz":
+            archive_filename = f"{pack_id}-{version}.tar.gz"
+        else:
+            archive_filename = f"{pack_id}-{version}.zip"
+
+        archive_path = target_dir / archive_filename
+        try:
+            archive_path.write_bytes(archive_data)
+        except IOError as e:
+            raise PresetError(f"Failed to save preset archive: {e}")
+        return archive_path
 
     def clear_cache(self):
         """Clear all catalog cache files, including per-URL hashed caches."""

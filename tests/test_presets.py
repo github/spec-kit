@@ -649,6 +649,74 @@ class TestPresetManager:
         with pytest.raises(PresetValidationError, match="No preset.yml found"):
             manager.install_from_zip(zip_path, "0.1.5")
 
+    def _make_tarball(self, dest, pack_dir, nested=False):
+        import tarfile
+        with tarfile.open(dest, "w:gz") as tf:
+            for file_path in pack_dir.rglob("*"):
+                if file_path.is_file():
+                    arcname = file_path.relative_to(pack_dir)
+                    if nested:
+                        arcname = Path("test-pack-v1.0.0") / arcname
+                    tf.add(file_path, arcname=str(arcname))
+
+    def test_install_from_tar_gz(self, project_dir, pack_dir, temp_dir):
+        """Test installing a preset from a .tar.gz archive."""
+        archive = temp_dir / "test-pack-1.0.tar.gz"
+        self._make_tarball(archive, pack_dir)
+
+        manager = PresetManager(project_dir)
+        manifest = manager.install_from_zip(archive, "0.1.5")
+        assert manifest.id == "test-pack"
+        assert manager.registry.is_installed("test-pack")
+
+    def test_install_from_tgz(self, project_dir, pack_dir, temp_dir):
+        """Test installing a preset from a .tgz archive."""
+        archive = temp_dir / "test-pack-1.0.tgz"
+        self._make_tarball(archive, pack_dir)
+
+        manager = PresetManager(project_dir)
+        manifest = manager.install_from_zip(archive, "0.1.5")
+        assert manifest.id == "test-pack"
+        assert manager.registry.is_installed("test-pack")
+
+    def test_install_from_tar_gz_nested(self, project_dir, pack_dir, temp_dir):
+        """Test installing a preset from a .tar.gz archive with a single nested directory."""
+        archive = temp_dir / "test-pack-nested.tar.gz"
+        self._make_tarball(archive, pack_dir, nested=True)
+
+        manager = PresetManager(project_dir)
+        manifest = manager.install_from_zip(archive, "0.1.5")
+        assert manifest.id == "test-pack"
+        assert manager.registry.is_installed("test-pack")
+
+    def test_install_from_tar_gz_no_manifest(self, project_dir, temp_dir):
+        """Test installing a preset from a .tar.gz without preset.yml raises error."""
+        import tarfile, io
+        archive = temp_dir / "bad.tar.gz"
+        with tarfile.open(archive, "w:gz") as tf:
+            data = b"no manifest here"
+            info = tarfile.TarInfo(name="readme.txt")
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+        manager = PresetManager(project_dir)
+        with pytest.raises(PresetValidationError, match="No preset.yml found"):
+            manager.install_from_zip(archive, "0.1.5")
+
+    def test_install_from_tar_gz_rejects_path_traversal(self, project_dir, temp_dir):
+        """install_from_zip must reject tarballs with path traversal entries."""
+        import tarfile, io
+        archive = temp_dir / "evil.tar.gz"
+        with tarfile.open(archive, "w:gz") as tf:
+            info = tarfile.TarInfo(name="../../evil.txt")
+            data = b"evil"
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+        manager = PresetManager(project_dir)
+        with pytest.raises(PresetValidationError, match="Unsafe path"):
+            manager.install_from_zip(archive, "0.1.5")
+
     def test_remove(self, project_dir, pack_dir):
         """Test removing a preset."""
         manager = PresetManager(project_dir)
