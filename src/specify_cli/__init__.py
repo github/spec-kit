@@ -4320,14 +4320,14 @@ def extension_update(
                 try:
                     # 6. Validate extension ID from archive BEFORE modifying installation
                     # Handle both root-level and nested extension.yml (GitHub auto-generated archives)
-                    from .extensions import _detect_archive_format as _ext_det_fmt
-                    import tarfile as _tarfile
-                    archive_fmt = _ext_det_fmt(str(zip_path))
+                    from .extensions import _detect_archive_format
+                    import tarfile
+                    archive_fmt = _detect_archive_format(str(zip_path))
                     import yaml
                     manifest_data = None
 
                     if archive_fmt == "tar.gz":
-                        with _tarfile.open(zip_path, "r:gz") as tf:
+                        with tarfile.open(zip_path, "r:gz") as tf:
                             # First try root-level extension.yml
                             try:
                                 m = tf.getmember("extension.yml")
@@ -4906,7 +4906,7 @@ def workflow_list():
         console.print()
 
 
-def _wf_extract_workflow_yml(archive_path: Path, archive_fmt: str) -> bytes:
+def _extract_workflow_yml(archive_path: Path, archive_fmt: str) -> bytes:
     """Extract ``workflow.yml`` from a ZIP or ``.tar.gz`` archive.
 
     Searches the archive root and a single nested top-level subdirectory
@@ -4922,11 +4922,10 @@ def _wf_extract_workflow_yml(archive_path: Path, archive_fmt: str) -> bytes:
     Raises:
         ValueError: If no ``workflow.yml`` is found in the archive.
     """
-    import tarfile as _tf
-    import zipfile as _zf
+    import tarfile
 
     if archive_fmt == "tar.gz":
-        with _tf.open(archive_path, "r:gz") as tf:
+        with tarfile.open(archive_path, "r:gz") as tf:
             # Try root-level first.
             try:
                 return tf.extractfile(tf.getmember("workflow.yml")).read()
@@ -4940,7 +4939,7 @@ def _wf_extract_workflow_yml(archive_path: Path, archive_fmt: str) -> bytes:
             if len(candidates) == 1:
                 return tf.extractfile(candidates[0]).read()
     else:
-        with _zf.ZipFile(archive_path, "r") as zf:
+        with zipfile.ZipFile(archive_path, "r") as zf:
             namelist = zf.namelist()
             if "workflow.yml" in namelist:
                 return zf.read("workflow.yml")
@@ -5007,7 +5006,7 @@ def workflow_add(
         from ipaddress import ip_address
         from urllib.parse import urlparse
         from urllib.request import urlopen  # noqa: S310
-        from .extensions import _detect_archive_format as _wf_det_fmt
+        from .extensions import _detect_archive_format
 
         parsed_src = urlparse(source)
         src_host = parsed_src.hostname or ""
@@ -5040,10 +5039,10 @@ def workflow_add(
                     raise typer.Exit(1)
 
                 # Detect archive format from the final URL or Content-Type header.
-                archive_fmt = _wf_det_fmt(final_url)
+                archive_fmt = _detect_archive_format(final_url)
                 if not archive_fmt:
                     content_type = resp.headers.get("Content-Type", "")
-                    archive_fmt = _wf_det_fmt(final_url, content_type)
+                    archive_fmt = _detect_archive_format(final_url, content_type)
 
                 raw_data = resp.read()
         except typer.Exit:
@@ -5061,7 +5060,7 @@ def workflow_add(
                     arc_tmp.write(raw_data)
                     arc_tmp_path = Path(arc_tmp.name)
                 try:
-                    wf_yaml = _wf_extract_workflow_yml(arc_tmp_path, archive_fmt)
+                    wf_yaml = _extract_workflow_yml(arc_tmp_path, archive_fmt)
                     with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
                         tmp.write(wf_yaml)
                         tmp_path = Path(tmp.name)
@@ -5095,10 +5094,10 @@ def workflow_add(
             source.endswith(".tar.gz") or source.endswith(".tgz") or source.endswith(".zip")
         ):
             # Local archive file containing workflow.yml
-            from .extensions import _detect_archive_format as _wf_local_fmt
-            local_fmt = _wf_local_fmt(source)
+            from .extensions import _detect_archive_format
+            local_fmt = _detect_archive_format(source)
             try:
-                wf_yaml = _wf_extract_workflow_yml(source_path, local_fmt)
+                wf_yaml = _extract_workflow_yml(source_path, local_fmt)
             except (ValueError, Exception) as exc:
                 console.print(f"[red]Error:[/red] Failed to extract workflow from archive: {exc}")
                 raise typer.Exit(1)
@@ -5174,8 +5173,7 @@ def workflow_add(
 
     try:
         from urllib.request import urlopen  # noqa: S310 — URL comes from catalog
-        from .extensions import _detect_archive_format as _wf_cat_fmt
-        import tempfile as _wf_tmpmod
+        from .extensions import _detect_archive_format
 
         workflow_dir.mkdir(parents=True, exist_ok=True)
         with urlopen(workflow_url, timeout=30) as response:  # noqa: S310
@@ -5200,21 +5198,21 @@ def workflow_add(
                 raise typer.Exit(1)
 
             # Detect archive format from the final URL or Content-Type header.
-            cat_archive_fmt = _wf_cat_fmt(final_url)
+            cat_archive_fmt = _detect_archive_format(final_url)
             if not cat_archive_fmt:
                 cat_ct = response.headers.get("Content-Type", "")
-                cat_archive_fmt = _wf_cat_fmt(final_url, cat_ct)
+                cat_archive_fmt = _detect_archive_format(final_url, cat_ct)
 
             raw_response = response.read()
 
         if cat_archive_fmt in ("tar.gz", "zip"):
             # Download URL points to an archive — extract workflow.yml from it.
             suffix = ".tar.gz" if cat_archive_fmt == "tar.gz" else ".zip"
-            with _wf_tmpmod.NamedTemporaryFile(suffix=suffix, delete=False) as arc_f:
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as arc_f:
                 arc_f.write(raw_response)
                 arc_tmp = Path(arc_f.name)
             try:
-                wf_yaml_bytes = _wf_extract_workflow_yml(arc_tmp, cat_archive_fmt)
+                wf_yaml_bytes = _extract_workflow_yml(arc_tmp, cat_archive_fmt)
             finally:
                 arc_tmp.unlink(missing_ok=True)
             workflow_file.write_bytes(wf_yaml_bytes)
