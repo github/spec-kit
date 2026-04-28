@@ -686,6 +686,29 @@ class TestRedirectStripping:
         assert new_req.headers.get("Authorization") is None
         assert new_req.unredirected_hdrs.get("Authorization") is None
 
+    def test_multi_hop_redirect_within_hosts_preserves_auth(self):
+        """Auth survives a multi-hop redirect chain within allowed hosts."""
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+        hosts = ("github.com", "codeload.github.com", "objects-origin.githubusercontent.com")
+        handler = _StripAuthOnRedirect(hosts)
+
+        # First hop: github.com → codeload.github.com
+        req1 = Request("https://github.com/org/repo", headers={"Authorization": "Bearer tok"})
+        req2 = handler.redirect_request(req1, io.BytesIO(b""), 302, "Found", {},
+                                        "https://codeload.github.com/org/repo/zip")
+        assert req2 is not None
+        auth2 = req2.get_header("Authorization") or req2.unredirected_hdrs.get("Authorization")
+        assert auth2 == "Bearer tok"
+
+        # Second hop: codeload.github.com → objects-origin.githubusercontent.com
+        req3 = handler.redirect_request(req2, io.BytesIO(b""), 302, "Found", {},
+                                        "https://objects-origin.githubusercontent.com/asset")
+        assert req3 is not None
+        auth3 = req3.get_header("Authorization") or req3.unredirected_hdrs.get("Authorization")
+        assert auth3 == "Bearer tok"
+
 
 # ---------------------------------------------------------------------------
 # _fetch_latest_release_tag delegation

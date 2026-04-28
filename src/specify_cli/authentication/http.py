@@ -54,7 +54,10 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
         self._hosts = hosts
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        original_auth = req.get_header("Authorization")
+        original_auth = (
+            req.get_header("Authorization")
+            or req.unredirected_hdrs.get("Authorization")
+        )
         new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
         if new_req is not None:
             hostname = (urlparse(newurl).hostname or "").lower()
