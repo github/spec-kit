@@ -256,7 +256,9 @@ class IntegrationCatalog:
                     pass  # Cache cleanup is best-effort; ignore deletion failures.
 
         try:
-            with urllib.request.urlopen(entry.url, timeout=10) as resp:
+            from specify_cli.authentication.http import open_url
+
+            with open_url(entry.url, timeout=10) as resp:
                 # Validate final URL after redirects
                 final_url = resp.geturl()
                 if final_url != entry.url:

@@ -16,7 +16,6 @@ class AuthProvider(ABC):
 
     * ``get_token()``    — resolve credentials from env vars / config
     * ``auth_headers()`` — provider-specific auth headers
-    * ``api_base_url()`` — API endpoint root
     """
 
     key: str = ""
@@ -37,10 +36,6 @@ class AuthProvider(ABC):
 
         Returns an empty dict if no credentials are available.
         """
-
-    @abstractmethod
-    def api_base_url(self) -> str:
-        """Return the API endpoint root URL for this provider."""
 
     def is_configured(self) -> bool:
         """Return ``True`` if credentials are available for this provider."""

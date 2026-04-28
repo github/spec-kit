@@ -37,6 +37,11 @@ def get_provider(key: str) -> AuthProvider | None:
     return AUTH_REGISTRY.get(key)
 
 
+def configured_providers() -> list[AuthProvider]:
+    """Return all providers that currently have credentials configured."""
+    return [p for p in AUTH_REGISTRY.values() if p.is_configured()]
+
+
 # -- Register built-in providers -----------------------------------------
 
 

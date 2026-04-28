@@ -33,7 +33,3 @@ class GitHubAuth(AuthProvider):
         if token:
             return {"Authorization": f"Bearer {token}"}
         return {}
-
-    def api_base_url(self) -> str:
-        """Return the GitHub REST API base URL."""
-        return "https://api.github.com"

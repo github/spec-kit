@@ -44,7 +44,3 @@ class AzureDevOpsAuth(AuthProvider):
             encoded = base64.b64encode(f":{token}".encode("ascii")).decode("ascii")
             return {"Authorization": f"Basic {encoded}"}
         return {}
-
-    def api_base_url(self) -> str:
-        """Return the Azure DevOps REST API base URL."""
-        return "https://dev.azure.com"
