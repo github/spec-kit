@@ -4675,6 +4675,20 @@ workflow_catalog_app = typer.Typer(
 )
 workflow_app.add_typer(workflow_catalog_app, name="catalog")
 
+workflow_step_app = typer.Typer(
+    name="step",
+    help="Manage workflow step types",
+    add_completion=False,
+)
+workflow_app.add_typer(workflow_step_app, name="step")
+
+workflow_step_catalog_app = typer.Typer(
+    name="catalog",
+    help="Manage step catalogs",
+    add_completion=False,
+)
+workflow_step_app.add_typer(workflow_step_catalog_app, name="catalog")
+
 
 @workflow_app.command("run")
 def workflow_run(
@@ -5319,6 +5333,414 @@ def workflow_catalog_remove(
         raise typer.Exit(1)
 
     console.print(f"[green]✓[/green] Catalog source '{removed_name}' removed")
+
+
+# ===== Workflow Step Commands =====
+
+@workflow_step_app.command("list")
+def workflow_step_list():
+    """List installed step types (built-in and custom)."""
+    from .workflows import STEP_REGISTRY
+    from .workflows.catalog import StepRegistry
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+
+    # Load custom steps if in a spec-kit project
+    custom_keys: set[str] = set()
+    if specify_dir.exists():
+        from .workflows import load_custom_steps
+        loaded = load_custom_steps(project_root)
+        custom_keys.update(loaded)
+        # Also read registry for metadata
+        registry = StepRegistry(project_root)
+        installed = registry.list()
+        custom_keys.update(installed.keys())
+
+    console.print("\n[bold cyan]Installed Step Types:[/bold cyan]\n")
+
+    built_in: list[str] = []
+    custom: list[str] = []
+    for key in sorted(STEP_REGISTRY.keys()):
+        if key in custom_keys:
+            custom.append(key)
+        else:
+            built_in.append(key)
+
+    if built_in:
+        console.print("  [bold]Built-in:[/bold]")
+        for key in built_in:
+            console.print(f"    • {key}")
+        console.print()
+
+    if custom:
+        console.print("  [bold]Custom (installed):[/bold]")
+        if specify_dir.exists():
+            registry = StepRegistry(project_root)
+            for key in custom:
+                meta = registry.get(key) or {}
+                name = meta.get("name", key)
+                version = meta.get("version", "?")
+                console.print(f"    • [bold]{name}[/bold] ({key}) v{version}")
+        else:
+            for key in custom:
+                console.print(f"    • {key}")
+        console.print()
+
+    if not built_in and not custom:
+        console.print("[yellow]No step types found.[/yellow]")
+
+    if specify_dir.exists():
+        console.print(
+            "  Install a new step type with: [cyan]specify workflow step add <id>[/cyan]"
+        )
+
+
+@workflow_step_app.command("add")
+def workflow_step_add(
+    step_id: str = typer.Argument(..., help="Step type ID from catalog"),
+):
+    """Install a custom step type from the step catalog."""
+    from .workflows.catalog import StepCatalog, StepCatalogError, StepRegistry
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    catalog = StepCatalog(project_root)
+    try:
+        info = catalog.get_step_info(step_id)
+    except StepCatalogError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    if not info:
+        console.print(f"[red]Error:[/red] Step type '{step_id}' not found in catalog")
+        raise typer.Exit(1)
+
+    if not info.get("_install_allowed", True):
+        console.print(
+            f"[yellow]Warning:[/yellow] Step type '{step_id}' is from a discovery-only catalog"
+        )
+        console.print("Direct installation is not enabled for this catalog source.")
+        raise typer.Exit(1)
+
+    step_yml_url = info.get("step_yml_url") or info.get("url")
+    if not step_yml_url:
+        console.print(f"[red]Error:[/red] Catalog entry for '{step_id}' has no URL")
+        raise typer.Exit(1)
+
+    # Derive __init__.py URL: replace trailing step.yml with __init__.py
+    # or use explicit init_url if provided.
+    init_url = info.get("init_url")
+    if not init_url:
+        if step_yml_url.endswith("step.yml"):
+            init_url = step_yml_url[: -len("step.yml")] + "__init__.py"
+        else:
+            console.print(
+                f"[red]Error:[/red] Cannot derive __init__.py URL from '{step_yml_url}'. "
+                "Catalog entry should provide 'init_url' or a 'url' ending in 'step.yml'."
+            )
+            raise typer.Exit(1)
+
+    from urllib.parse import urlparse
+    from urllib.request import urlopen
+
+    def _safe_fetch(url: str) -> bytes:
+        parsed = urlparse(url)
+        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+            raise ValueError(f"Refusing to fetch from non-HTTPS URL: {url}")
+        with urlopen(url, timeout=30) as resp:  # noqa: S310
+            final_url = resp.geturl()
+            final_parsed = urlparse(final_url)
+            final_is_localhost = final_parsed.hostname in ("localhost", "127.0.0.1", "::1")
+            if final_parsed.scheme != "https" and not (
+                final_parsed.scheme == "http" and final_is_localhost
+            ):
+                raise ValueError(f"Redirect to non-HTTPS URL: {final_url}")
+            return resp.read()
+
+    step_dir = project_root / ".specify" / "workflows" / "steps" / step_id
+    step_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        step_yml_content = _safe_fetch(step_yml_url)
+        init_py_content = _safe_fetch(init_url)
+    except Exception as exc:
+        import shutil
+        shutil.rmtree(step_dir, ignore_errors=True)
+        console.print(f"[red]Error:[/red] Failed to download step files: {exc}")
+        raise typer.Exit(1)
+
+    # Validate step.yml
+    try:
+        import yaml as _yaml
+
+        meta = _yaml.safe_load(step_yml_content.decode("utf-8")) or {}
+    except Exception as exc:
+        import shutil
+        shutil.rmtree(step_dir, ignore_errors=True)
+        console.print(f"[red]Error:[/red] Invalid step.yml: {exc}")
+        raise typer.Exit(1)
+
+    step_meta = meta.get("step", {})
+    type_key = step_meta.get("type_key", "")
+    if not type_key:
+        import shutil
+        shutil.rmtree(step_dir, ignore_errors=True)
+        console.print("[red]Error:[/red] step.yml missing 'step.type_key' field")
+        raise typer.Exit(1)
+
+    if type_key != step_id:
+        import shutil
+        shutil.rmtree(step_dir, ignore_errors=True)
+        console.print(
+            f"[red]Error:[/red] step.yml type_key ({type_key!r}) does not match "
+            f"catalog ID ({step_id!r})"
+        )
+        raise typer.Exit(1)
+
+    # Write files
+    (step_dir / "step.yml").write_bytes(step_yml_content)
+    (step_dir / "__init__.py").write_bytes(init_py_content)
+
+    # Register in step registry
+    registry = StepRegistry(project_root)
+    registry.add(
+        step_id,
+        {
+            "name": info.get("name", step_id),
+            "version": info.get("version", step_meta.get("version", "0.0.0")),
+            "description": info.get("description", step_meta.get("description", "")),
+            "author": info.get("author", step_meta.get("author", "")),
+            "source": "catalog",
+            "catalog_name": info.get("_catalog_name", ""),
+            "type_key": type_key,
+        },
+    )
+
+    console.print(
+        f"[green]✓[/green] Step type '{info.get('name', step_id)}' ({step_id}) installed"
+    )
+    console.print(
+        "  Use [cyan]specify workflow step list[/cyan] to verify the installation."
+    )
+
+
+@workflow_step_app.command("remove")
+def workflow_step_remove(
+    step_id: str = typer.Argument(..., help="Step type ID to uninstall"),
+):
+    """Uninstall a custom step type."""
+    from .workflows.catalog import StepRegistry
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    registry = StepRegistry(project_root)
+    if not registry.is_installed(step_id):
+        console.print(f"[red]Error:[/red] Step type '{step_id}' is not installed")
+        raise typer.Exit(1)
+
+    step_dir = project_root / ".specify" / "workflows" / "steps" / step_id
+    if step_dir.exists():
+        import shutil
+        shutil.rmtree(step_dir)
+
+    registry.remove(step_id)
+    console.print(f"[green]✓[/green] Step type '{step_id}' uninstalled")
+
+
+@workflow_step_app.command("search")
+def workflow_step_search(
+    query: str | None = typer.Argument(None, help="Search query"),
+):
+    """Search the step type catalog."""
+    from .workflows.catalog import StepCatalog, StepCatalogError
+
+    project_root = Path.cwd()
+    if not (project_root / ".specify").exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    catalog = StepCatalog(project_root)
+
+    try:
+        results = catalog.search(query=query)
+    except StepCatalogError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    if not results:
+        if query:
+            console.print(f"[yellow]No step types found matching '{query}'.[/yellow]")
+        else:
+            console.print("[yellow]No step types found in catalog.[/yellow]")
+        return
+
+    console.print(f"\n[bold cyan]Step Types ({len(results)}):[/bold cyan]\n")
+    for step in results:
+        install_note = (
+            "" if step.get("_install_allowed", True) else " [dim](discovery only)[/dim]"
+        )
+        console.print(
+            f"  [bold]{step.get('name', step.get('id', '?'))}[/bold]"
+            f" ({step.get('id', '?')}) v{step.get('version', '?')}{install_note}"
+        )
+        desc = step.get("description", "")
+        if desc:
+            console.print(f"    {desc}")
+        console.print()
+
+
+@workflow_step_app.command("info")
+def workflow_step_info(
+    step_id: str = typer.Argument(..., help="Step type ID"),
+):
+    """Show details for a step type."""
+    from .workflows import STEP_REGISTRY
+    from .workflows.catalog import StepCatalog, StepCatalogError, StepRegistry
+
+    project_root = Path.cwd()
+    if not (project_root / ".specify").exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    # Load custom steps so registry is up to date
+    from .workflows import load_custom_steps
+    load_custom_steps(project_root)
+
+    registry = StepRegistry(project_root)
+    installed_meta = registry.get(step_id)
+
+    # Check if it's a built-in
+    builtin_step = STEP_REGISTRY.get(step_id)
+    is_builtin = builtin_step is not None and not installed_meta
+
+    if is_builtin:
+        console.print(f"\n[bold cyan]{step_id}[/bold cyan] [dim](built-in)[/dim]")
+        console.print(f"  Type key: {step_id}")
+        console.print("  [green]Built-in step type[/green]")
+        return
+
+    if installed_meta:
+        console.print(
+            f"\n[bold cyan]{installed_meta.get('name', step_id)}[/bold cyan] ({step_id})"
+        )
+        console.print(f"  Version:     {installed_meta.get('version', '?')}")
+        if installed_meta.get("author"):
+            console.print(f"  Author:      {installed_meta['author']}")
+        if installed_meta.get("description"):
+            console.print(f"  Description: {installed_meta['description']}")
+        console.print("  [green]Installed[/green]")
+        return
+
+    # Try catalog
+    catalog = StepCatalog(project_root)
+    try:
+        info = catalog.get_step_info(step_id)
+    except StepCatalogError:
+        info = None
+
+    if info:
+        console.print(
+            f"\n[bold cyan]{info.get('name', step_id)}[/bold cyan] ({step_id})"
+        )
+        console.print(f"  Version:     {info.get('version', '?')}")
+        if info.get("author"):
+            console.print(f"  Author:      {info['author']}")
+        if info.get("description"):
+            console.print(f"  Description: {info['description']}")
+        console.print("  [yellow]Not installed[/yellow]")
+        console.print(
+            f"\n  Install with: [cyan]specify workflow step add {step_id}[/cyan]"
+        )
+    else:
+        console.print(f"[red]Error:[/red] Step type '{step_id}' not found")
+        raise typer.Exit(1)
+
+
+@workflow_step_catalog_app.command("list")
+def workflow_step_catalog_list():
+    """List configured step catalog sources."""
+    from .workflows.catalog import StepCatalog, StepCatalogError
+
+    project_root = Path.cwd()
+    catalog = StepCatalog(project_root)
+
+    try:
+        configs = catalog.get_catalog_configs()
+    except StepCatalogError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print("\n[bold cyan]Step Catalog Sources:[/bold cyan]\n")
+    for i, cfg in enumerate(configs):
+        install_status = (
+            "[green]install allowed[/green]"
+            if cfg["install_allowed"]
+            else "[yellow]discovery only[/yellow]"
+        )
+        console.print(f"  [{i}] [bold]{cfg['name']}[/bold] — {install_status}")
+        console.print(f"      {cfg['url']}")
+        if cfg.get("description"):
+            console.print(f"      [dim]{cfg['description']}[/dim]")
+        console.print()
+
+
+@workflow_step_catalog_app.command("add")
+def workflow_step_catalog_add(
+    url: str = typer.Argument(..., help="Catalog URL to add"),
+    name: str = typer.Option(None, "--name", help="Catalog name"),
+):
+    """Add a step catalog source."""
+    from .workflows.catalog import StepCatalog, StepValidationError
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    catalog = StepCatalog(project_root)
+    try:
+        catalog.add_catalog(url, name)
+    except StepValidationError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓[/green] Step catalog source added: {url}")
+
+
+@workflow_step_catalog_app.command("remove")
+def workflow_step_catalog_remove(
+    index: int = typer.Argument(
+        ..., help="Catalog index to remove (from 'step catalog list')"
+    ),
+):
+    """Remove a step catalog source by index."""
+    from .workflows.catalog import StepCatalog, StepValidationError
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    catalog = StepCatalog(project_root)
+    try:
+        removed_name = catalog.remove_catalog(index)
+    except StepValidationError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓[/green] Step catalog source '{removed_name}' removed")
 
 
 def main():
