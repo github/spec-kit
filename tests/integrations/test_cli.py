@@ -628,3 +628,106 @@ class TestSharedInfraCommandRefs:
         assert "/speckit-plan" in content, "Copilot --skills should use /speckit-plan"
         assert "/speckit.plan" not in content, "dot-notation leaked into Copilot skills page template"
         assert "__SPECKIT_COMMAND_" not in content
+
+
+class TestExtensionFlag:
+    """Tests for the --extension flag on specify init."""
+
+    def _run_init(self, tmp_path, args, project_name="ext-test"):
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / project_name
+        project.mkdir(exist_ok=True)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            # Patch get_speckit_version to return a stable (non-dev) version so that
+            # the extension compatibility check (SpecifierSet(">=0.2.0")) passes.
+            with patch("specify_cli.get_speckit_version", return_value="0.8.2"):
+                result = runner.invoke(app, [
+                    "init", "--here",
+                    "--integration", "copilot",
+                    "--script", "sh",
+                    "--no-git",
+                    "--ignore-agent-tools",
+                ] + args, catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        return project, result
+
+    def test_bundled_extension_installed(self, tmp_path):
+        """--extension git installs the bundled git extension."""
+        project, result = self._run_init(tmp_path, ["--extension", "git"], project_name="ext-bundled")
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+
+        ext_dir = project / ".specify" / "extensions" / "git"
+        assert ext_dir.exists(), "git extension directory not found"
+        assert (ext_dir / "extension.yml").exists(), "extension.yml not found"
+
+        # Tracker should show extension step as done
+        normalized = _normalize_cli_output(result.output)
+        assert "Install extension: git" in normalized
+
+    def test_multiple_extensions_installed(self, tmp_path):
+        """--extension can be specified multiple times."""
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", "git", "--extension", "selftest"],
+            project_name="ext-multi",
+        )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+
+        ext_dir_git = project / ".specify" / "extensions" / "git"
+        ext_dir_selftest = project / ".specify" / "extensions" / "selftest"
+        assert ext_dir_git.exists(), "git extension not installed"
+        assert ext_dir_selftest.exists(), "selftest extension not installed"
+
+    def test_local_path_extension_installed(self, tmp_path):
+        """--extension /abs/path installs from a local absolute directory path."""
+        from specify_cli import _locate_bundled_extension
+
+        # Use the bundled git extension directory as our "local" extension source
+        bundled_git = _locate_bundled_extension("git")
+        assert bundled_git is not None, "bundled git extension not found; cannot run test"
+
+        # Pass the absolute path directly (starts with "/")
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", str(bundled_git)],
+            project_name="ext-local",
+        )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+
+        ext_dir = project / ".specify" / "extensions" / "git"
+        assert ext_dir.exists(), "extension from local path not installed"
+
+    def test_unknown_extension_shows_error_in_tracker(self, tmp_path):
+        """An unknown extension name records a tracker error but does not abort init."""
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", "nonexistent-xyz-ext"],
+            project_name="ext-unknown",
+        )
+
+        assert result.exit_code == 0, "init should not abort on unknown extension"
+        normalized = _normalize_cli_output(result.output)
+        assert "failed" in normalized.lower(), "expected 'failed' for unknown extension"
+
+    def test_extension_flag_works_with_preset(self, tmp_path):
+        """--extension and --preset can be combined."""
+        project, result = self._run_init(
+            tmp_path,
+            ["--extension", "git", "--preset", "lean"],
+            project_name="ext-preset",
+        )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+
+        ext_dir = project / ".specify" / "extensions" / "git"
+        assert ext_dir.exists(), "git extension not installed alongside preset"
