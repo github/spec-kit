@@ -4331,12 +4331,16 @@ def extension_update(
                             # First try root-level extension.yml
                             try:
                                 m = tf.getmember("extension.yml")
-                                manifest_data = yaml.safe_load(tf.extractfile(m).read()) or {}
+                                f = tf.extractfile(m)
+                                if f is not None:
+                                    manifest_data = yaml.safe_load(f.read()) or {}
                             except KeyError:
                                 # Look for extension.yml in a single top-level subdirectory
                                 members = [m for m in tf.getmembers() if m.name.endswith("/extension.yml") and m.name.count("/") == 1]
                                 if len(members) == 1:
-                                    manifest_data = yaml.safe_load(tf.extractfile(members[0]).read()) or {}
+                                    f = tf.extractfile(members[0])
+                                    if f is not None:
+                                        manifest_data = yaml.safe_load(f.read()) or {}
                     else:
                         with zipfile.ZipFile(zip_path, "r") as zf:
                             namelist = zf.namelist()
@@ -4928,7 +4932,9 @@ def _extract_workflow_yml(archive_path: Path, archive_fmt: str) -> bytes:
         with tarfile.open(archive_path, "r:gz") as tf:
             # Try root-level first.
             try:
-                return tf.extractfile(tf.getmember("workflow.yml")).read()
+                f = tf.extractfile(tf.getmember("workflow.yml"))
+                if f is not None:
+                    return f.read()
             except KeyError:
                 pass
             # Look in a single top-level subdirectory.
@@ -4937,7 +4943,9 @@ def _extract_workflow_yml(archive_path: Path, archive_fmt: str) -> bytes:
                 if m.name.endswith("/workflow.yml") and m.name.count("/") == 1
             ]
             if len(candidates) == 1:
-                return tf.extractfile(candidates[0]).read()
+                f = tf.extractfile(candidates[0])
+                if f is not None:
+                    return f.read()
     else:
         with zipfile.ZipFile(archive_path, "r") as zf:
             namelist = zf.namelist()

@@ -146,7 +146,7 @@ def _detect_archive_format(url: str, content_type: str = "") -> str:
 def _safe_extract_tarball(
     archive_path: Path,
     dest_dir: Path,
-    error_class: type = Exception,
+    error_class: "type[Exception]" = Exception,
 ) -> None:
     """Safely extract a ``.tar.gz`` or ``.tgz`` archive into *dest_dir*.
 
