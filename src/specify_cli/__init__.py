@@ -2178,8 +2178,10 @@ def integration_install(
                 unsafe_keys.append(installed_key)
         if unsafe_keys or not getattr(integration, "multi_install_safe", False):
             console.print(
-                f"[red]Error:[/red] Integration '{', '.join(installed_keys)}' is already installed."
+                f"[red]Error:[/red] Installed integrations: {', '.join(installed_keys)}."
             )
+            if default_key:
+                console.print(f"Default integration: [cyan]{default_key}[/cyan].")
             console.print(
                 "Installing multiple integrations is only automatic when all involved "
                 "integrations are declared multi-install safe."

@@ -10,7 +10,12 @@ from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest
 
 
-def load_speckit_manifest(project_path: Path, *, version: str) -> IntegrationManifest:
+def load_speckit_manifest(
+    project_path: Path,
+    *,
+    version: str,
+    console: Any | None = None,
+) -> IntegrationManifest:
     """Load the shared infrastructure manifest, preserving existing entries."""
     manifest_path = project_path / ".specify" / "integrations" / "speckit.manifest.json"
     if manifest_path.exists():
@@ -18,8 +23,16 @@ def load_speckit_manifest(project_path: Path, *, version: str) -> IntegrationMan
             manifest = IntegrationManifest.load("speckit", project_path)
             manifest.version = version
             return manifest
-        except (ValueError, FileNotFoundError):
-            pass
+        except (ValueError, FileNotFoundError) as exc:
+            if console is not None:
+                console.print(
+                    f"[yellow]Warning:[/yellow] Could not read shared infrastructure "
+                    f"manifest at {manifest_path}: {exc}"
+                )
+                console.print(
+                    "A new shared manifest will be created; previously tracked "
+                    "shared files may be treated as untracked."
+                )
     return IntegrationManifest("speckit", project_path, version=version)
 
 
@@ -60,7 +73,7 @@ def refresh_shared_templates(
     if not templates_src.is_dir():
         return
 
-    manifest = load_speckit_manifest(project_path, version=version)
+    manifest = load_speckit_manifest(project_path, version=version, console=console)
     tracked_files = manifest.files
     modified = set(manifest.check_modified())
     skipped_files: list[str] = []
@@ -105,7 +118,7 @@ def install_shared_infra(
     invoke_separator: str = ".",
 ) -> bool:
     """Install shared scripts and templates into *project_path*."""
-    manifest = load_speckit_manifest(project_path, version=version)
+    manifest = load_speckit_manifest(project_path, version=version, console=console)
     skipped_files: list[str] = []
 
     scripts_src = shared_scripts_source(core_pack=core_pack, repo_root=repo_root)

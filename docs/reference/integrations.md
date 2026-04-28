@@ -89,10 +89,10 @@ specify integration switch <key>
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
 | `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                        |
-| `--force`                | Force removal of modified files during uninstall                         |
+| `--force`                | Force removal of modified files during uninstall; when the target is already installed, overwrite managed shared templates while changing the default |
 | `--integration-options`  | Options for the target integration                                       |
 
-If the target integration is not already installed, equivalent to running `uninstall` followed by `install` in a single step. If the target integration is already installed, `switch` only changes the default integration, like `use`.
+If the target integration is not already installed, equivalent to running `uninstall` followed by `install` in a single step. In this mode, `--force` controls whether modified files from the removed integration are deleted. If the target integration is already installed, `switch` only changes the default integration, like `use`; in this mode, `--force` controls whether managed shared templates are overwritten while the default changes.
 
 ## Use an Installed Integration
 

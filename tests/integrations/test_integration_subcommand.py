@@ -141,7 +141,8 @@ class TestIntegrationInstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "already installed" in result.output
+        assert "Installed integrations: copilot" in result.output
+        assert "Default integration: copilot" in result.output
         assert "--force" in result.output
 
     def test_install_multi_safe_integration(self, tmp_path):
@@ -225,6 +226,7 @@ class TestIntegrationInstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
+        assert "Installed integrations: copilot" in result.output
         assert "multi-install safe" in result.output
         assert "--force" in result.output
 
