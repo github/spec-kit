@@ -43,14 +43,11 @@ class DevinIntegration(SkillsIntegration):
 
         Devin supports ``devin -p <prompt>`` for single-turn execution
         and ``--model`` for model selection, but its CLI has no flag
-        for structured JSON output. Return ``None`` when JSON output
-        is requested so the dispatcher cleanly raises
-        ``NotImplementedError`` instead of invoking Devin with an
-        unsupported ``--output-format`` flag. ``requires_cli=True``
-        is kept on the integration for tool detection.
+        for structured JSON output. When ``output_json`` is requested,
+        Devin is still dispatched normally and returns plain-text
+        stdout instead of structured JSON. ``requires_cli=True`` is
+        kept on the integration for tool detection.
         """
-        if output_json:
-            return None
         args = [self.key, "-p", prompt]
         if model:
             args.extend(["--model", model])
