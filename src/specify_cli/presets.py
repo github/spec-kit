@@ -1853,7 +1853,7 @@ class PresetCatalog:
         return build_request(url)
 
     def _open_url(self, url: str, timeout: int = 10):
-        """Open a URL with provider-based auth, stripping the header on foreign redirects.
+        """Open a URL with provider-based auth, trying each configured provider.
 
         Delegates to :func:`specify_cli.authentication.http.open_url`.
         """

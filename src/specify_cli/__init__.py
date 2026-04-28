@@ -1724,7 +1724,11 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     from .authentication.http import open_url
 
     try:
-        with open_url(GITHUB_API_LATEST, timeout=5) as resp:
+        with open_url(
+            GITHUB_API_LATEST,
+            timeout=5,
+            extra_headers={"Accept": "application/vnd.github+json"},
+        ) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
             tag = payload.get("tag_name")
             if not isinstance(tag, str) or not tag:
