@@ -54,6 +54,26 @@ from rich.table import Table
 from rich.tree import Tree
 from typer.core import TyperGroup
 
+from .integration_runtime import (
+    invoke_separator_for_integration as _invoke_separator_for_integration,
+    resolve_integration_options as _resolve_integration_options_impl,
+    with_integration_setting as _with_integration_setting,
+)
+from .integration_state import (
+    INTEGRATION_JSON,
+    dedupe_integration_keys as _dedupe_integration_keys,
+    default_integration_key as _default_integration_key,
+    installed_integration_keys as _installed_integration_keys,
+    integration_setting as _integration_setting,
+    integration_settings as _integration_settings,
+    normalize_integration_state as _normalize_integration_state,
+    write_integration_json as _write_integration_json_file,
+)
+from .shared_infra import (
+    install_shared_infra as _install_shared_infra_impl,
+    refresh_shared_templates as _refresh_shared_templates_impl,
+)
+
 # For cross-platform keyboard input
 import readchar
 
@@ -643,6 +663,11 @@ def _locate_core_pack() -> Path | None:
     return None
 
 
+def _repo_root() -> Path:
+    """Return the source checkout root used for editable installs."""
+    return Path(__file__).parent.parent.parent
+
+
 def _locate_bundled_extension(extension_id: str) -> Path | None:
     """Return the path to a bundled extension, or None.
 
@@ -660,8 +685,7 @@ def _locate_bundled_extension(extension_id: str) -> Path | None:
             return candidate
 
     # Source-checkout / editable install: look relative to repo root
-    repo_root = Path(__file__).parent.parent.parent
-    candidate = repo_root / "extensions" / extension_id
+    candidate = _repo_root() / "extensions" / extension_id
     if (candidate / "extension.yml").is_file():
         return candidate
 
@@ -685,8 +709,7 @@ def _locate_bundled_workflow(workflow_id: str) -> Path | None:
             return candidate
 
     # Source-checkout / editable install: look relative to repo root
-    repo_root = Path(__file__).parent.parent.parent
-    candidate = repo_root / "workflows" / workflow_id
+    candidate = _repo_root() / "workflows" / workflow_id
     if (candidate / "workflow.yml").is_file():
         return candidate
 
@@ -710,36 +733,11 @@ def _locate_bundled_preset(preset_id: str) -> Path | None:
             return candidate
 
     # Source-checkout / editable install: look relative to repo root
-    repo_root = Path(__file__).parent.parent.parent
-    candidate = repo_root / "presets" / preset_id
+    candidate = _repo_root() / "presets" / preset_id
     if (candidate / "preset.yml").is_file():
         return candidate
 
     return None
-
-
-def _load_speckit_manifest(project_path: Path) -> Any:
-    """Load the shared infrastructure manifest, preserving existing entries."""
-    from .integrations.manifest import IntegrationManifest
-
-    manifest_path = project_path / ".specify" / "integrations" / "speckit.manifest.json"
-    if manifest_path.exists():
-        try:
-            manifest = IntegrationManifest.load("speckit", project_path)
-            manifest.version = get_speckit_version()
-            return manifest
-        except (ValueError, FileNotFoundError):
-            pass
-    return IntegrationManifest("speckit", project_path, version=get_speckit_version())
-
-
-def _shared_templates_source() -> Path:
-    """Return the bundled/source shared templates directory."""
-    core = _locate_core_pack()
-    if core and (core / "templates").is_dir():
-        return core / "templates"
-    repo_root = Path(__file__).parent.parent.parent
-    return repo_root / "templates"
 
 
 def _refresh_shared_templates(
@@ -749,43 +747,15 @@ def _refresh_shared_templates(
     force: bool = False,
 ) -> None:
     """Refresh default-sensitive shared templates without touching scripts."""
-    from .integrations.base import IntegrationBase
-
-    templates_src = _shared_templates_source()
-    if not templates_src.is_dir():
-        return
-
-    manifest = _load_speckit_manifest(project_path)
-    tracked_files = manifest.files
-    modified = set(manifest.check_modified())
-    skipped_files: list[str] = []
-
-    dest_templates = project_path / ".specify" / "templates"
-    dest_templates.mkdir(parents=True, exist_ok=True)
-    for src in templates_src.iterdir():
-        if not src.is_file() or src.name == "vscode-settings.json" or src.name.startswith("."):
-            continue
-
-        dst = dest_templates / src.name
-        rel = dst.relative_to(project_path).as_posix()
-        if dst.exists() and not force:
-            if rel not in tracked_files or rel in modified:
-                skipped_files.append(rel)
-                continue
-
-        content = src.read_text(encoding="utf-8")
-        content = IntegrationBase.resolve_command_refs(content, invoke_separator)
-        dst.write_text(content, encoding="utf-8")
-        manifest.record_existing(rel)
-
-    manifest.save()
-
-    if skipped_files:
-        console.print(
-            f"[yellow]⚠[/yellow]  {len(skipped_files)} modified or untracked shared template file(s) were not updated:"
-        )
-        for rel in skipped_files:
-            console.print(f"    {rel}")
+    _refresh_shared_templates_impl(
+        project_path,
+        version=get_speckit_version(),
+        core_pack=_locate_core_pack(),
+        repo_root=_repo_root(),
+        console=console,
+        invoke_separator=invoke_separator,
+        force=force,
+    )
 
 
 def _install_shared_infra(
@@ -811,74 +781,16 @@ def _install_shared_infra(
 
     Returns ``True`` on success.
     """
-    from .integrations.base import IntegrationBase
-
-    core = _locate_core_pack()
-    manifest = _load_speckit_manifest(project_path)
-
-    # Scripts
-    if core and (core / "scripts").is_dir():
-        scripts_src = core / "scripts"
-    else:
-        repo_root = Path(__file__).parent.parent.parent
-        scripts_src = repo_root / "scripts"
-
-    skipped_files: list[str] = []
-
-    if scripts_src.is_dir():
-        dest_scripts = project_path / ".specify" / "scripts"
-        dest_scripts.mkdir(parents=True, exist_ok=True)
-        variant_dir = "bash" if script_type == "sh" else "powershell"
-        variant_src = scripts_src / variant_dir
-        if variant_src.is_dir():
-            dest_variant = dest_scripts / variant_dir
-            dest_variant.mkdir(parents=True, exist_ok=True)
-            for src_path in variant_src.rglob("*"):
-                if src_path.is_file():
-                    rel_path = src_path.relative_to(variant_src)
-                    dst_path = dest_variant / rel_path
-                    if dst_path.exists() and not force:
-                        skipped_files.append(str(dst_path.relative_to(project_path)))
-                    else:
-                        dst_path.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(src_path, dst_path)
-                        rel = dst_path.relative_to(project_path).as_posix()
-                        manifest.record_existing(rel)
-
-    # Page templates (not command templates, not vscode-settings.json)
-    templates_src = _shared_templates_source()
-
-    if templates_src.is_dir():
-        dest_templates = project_path / ".specify" / "templates"
-        dest_templates.mkdir(parents=True, exist_ok=True)
-        for f in templates_src.iterdir():
-            if f.is_file() and f.name != "vscode-settings.json" and not f.name.startswith("."):
-                dst = dest_templates / f.name
-                if dst.exists() and not force:
-                    skipped_files.append(str(dst.relative_to(project_path)))
-                else:
-                    content = f.read_text(encoding="utf-8")
-                    content = IntegrationBase.resolve_command_refs(
-                        content, invoke_separator
-                    )
-                    dst.write_text(content, encoding="utf-8")
-                    rel = dst.relative_to(project_path).as_posix()
-                    manifest.record_existing(rel)
-
-    if skipped_files:
-        console.print(
-            f"[yellow]⚠[/yellow]  {len(skipped_files)} shared infrastructure file(s) already exist and were not updated:"
-        )
-        for f in skipped_files:
-            console.print(f"    {f}")
-        console.print(
-            "To refresh shared infrastructure, run "
-            "[cyan]specify init --here --force[/cyan] or "
-            "[cyan]specify integration upgrade --force[/cyan]."
-        )
-
-    manifest.save()
-    return True
+    return _install_shared_infra_impl(
+        project_path,
+        script_type,
+        version=get_speckit_version(),
+        core_pack=_locate_core_pack(),
+        repo_root=_repo_root(),
+        console=console,
+        force=force,
+        invoke_separator=invoke_separator,
+    )
 
 
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
@@ -1941,7 +1853,7 @@ def get_speckit_version() -> str:
         # Fallback: try reading from pyproject.toml
         try:
             import tomllib
-            pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
+            pyproject_path = _repo_root() / "pyproject.toml"
             if pyproject_path.exists():
                 with open(pyproject_path, "rb") as f:
                     data = tomllib.load(f)
@@ -1968,18 +1880,6 @@ integration_catalog_app = typer.Typer(
     add_completion=False,
 )
 integration_app.add_typer(integration_catalog_app, name="catalog")
-
-
-from .integration_state import (  # noqa: E402
-    INTEGRATION_JSON,
-    dedupe_integration_keys as _dedupe_integration_keys,
-    default_integration_key as _default_integration_key,
-    installed_integration_keys as _installed_integration_keys,
-    integration_setting as _integration_setting,
-    integration_settings as _integration_settings,
-    normalize_integration_state as _normalize_integration_state,
-    write_integration_json as _write_integration_json_file,
-)
 
 
 def _read_integration_json(project_root: Path) -> dict[str, Any]:
@@ -2087,74 +1987,13 @@ def _resolve_integration_options(
     raw_options: str | None,
 ) -> tuple[str | None, dict[str, Any] | None]:
     """Resolve raw and parsed options for an integration operation."""
-    if raw_options is not None:
-        return raw_options, _parse_integration_options(integration, raw_options)
-
-    setting = _integration_setting(state, key)
-    stored_raw = setting.get("raw_options")
-    if not isinstance(stored_raw, str):
-        stored_raw = None
-
-    stored_parsed = setting.get("parsed_options")
-    if isinstance(stored_parsed, dict):
-        return stored_raw, stored_parsed or None
-
-    if stored_raw:
-        return stored_raw, _parse_integration_options(integration, stored_raw)
-
-    return None, None
-
-
-def _with_integration_setting(
-    state: dict[str, Any],
-    key: str,
-    integration: Any,
-    *,
-    script_type: str | None = None,
-    raw_options: str | None = None,
-    parsed_options: dict[str, Any] | None = None,
-) -> dict[str, dict[str, Any]]:
-    """Return integration settings with *key* updated."""
-    settings = _integration_settings(state)
-    current = dict(settings.get(key, {}))
-
-    if script_type:
-        current["script"] = script_type
-    if raw_options is not None:
-        current["raw_options"] = raw_options
-    elif "raw_options" in current and not current.get("raw_options"):
-        current.pop("raw_options", None)
-
-    if parsed_options is not None:
-        current["parsed_options"] = parsed_options
-    elif raw_options is not None:
-        current.pop("parsed_options", None)
-
-    current["invoke_separator"] = integration.effective_invoke_separator(parsed_options)
-    settings[key] = current
-    return settings
-
-
-def _invoke_separator_for_integration(
-    integration: Any,
-    state: dict[str, Any],
-    key: str,
-    parsed_options: dict[str, Any] | None = None,
-) -> str:
-    """Resolve the invocation separator for stored/default integration state."""
-    if parsed_options is not None:
-        return integration.effective_invoke_separator(parsed_options)
-
-    setting = _integration_setting(state, key)
-    stored_separator = setting.get("invoke_separator")
-    if isinstance(stored_separator, str) and stored_separator:
-        return stored_separator
-
-    stored_parsed = setting.get("parsed_options")
-    if isinstance(stored_parsed, dict):
-        return integration.effective_invoke_separator(stored_parsed)
-
-    return integration.effective_invoke_separator(None)
+    return _resolve_integration_options_impl(
+        integration,
+        state,
+        key,
+        raw_options,
+        parse_options=_parse_integration_options,
+    )
 
 
 def _set_default_integration(
