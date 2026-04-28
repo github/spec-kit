@@ -237,53 +237,54 @@ class TestMultiInstallSafeContracts:
         first,
         second,
     ):
-        project_root = tmp_path / "project"
-        project_root.mkdir()
-        runner = CliRunner()
+        for initial, additional in ((first, second), (second, first)):
+            project_root = tmp_path / f"project-{initial}-{additional}"
+            project_root.mkdir()
+            runner = CliRunner()
 
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(project_root)
-            init_result = runner.invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--integration",
-                    first,
-                    "--script",
-                    "sh",
-                    "--no-git",
-                    "--ignore-agent-tools",
-                ],
-                catch_exceptions=False,
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+                init_result = runner.invoke(
+                    app,
+                    [
+                        "init",
+                        "--here",
+                        "--integration",
+                        initial,
+                        "--script",
+                        "sh",
+                        "--no-git",
+                        "--ignore-agent-tools",
+                    ],
+                    catch_exceptions=False,
+                )
+                assert init_result.exit_code == 0, init_result.output
+
+                install_result = runner.invoke(
+                    app,
+                    ["integration", "install", additional, "--script", "sh"],
+                    catch_exceptions=False,
+                )
+                assert install_result.exit_code == 0, install_result.output
+            finally:
+                os.chdir(original_cwd)
+
+            initial_manifest = json.loads(
+                (
+                    project_root / ".specify" / "integrations" / f"{initial}.manifest.json"
+                ).read_text(encoding="utf-8")
             )
-            assert init_result.exit_code == 0, init_result.output
-
-            install_result = runner.invoke(
-                app,
-                ["integration", "install", second, "--script", "sh"],
-                catch_exceptions=False,
+            additional_manifest = json.loads(
+                (
+                    project_root / ".specify" / "integrations" / f"{additional}.manifest.json"
+                ).read_text(encoding="utf-8")
             )
-            assert install_result.exit_code == 0, install_result.output
-        finally:
-            os.chdir(original_cwd)
 
-        first_manifest = json.loads(
-            (
-                project_root / ".specify" / "integrations" / f"{first}.manifest.json"
-            ).read_text(encoding="utf-8")
-        )
-        second_manifest = json.loads(
-            (
-                project_root / ".specify" / "integrations" / f"{second}.manifest.json"
-            ).read_text(encoding="utf-8")
-        )
+            initial_files = set(initial_manifest.get("files", {}))
+            additional_files = set(additional_manifest.get("files", {}))
 
-        first_files = set(first_manifest.get("files", {}))
-        second_files = set(second_manifest.get("files", {}))
-
-        assert first_files.isdisjoint(second_files), (
-            f"{first} and {second} are declared multi-install safe but both manage "
-            f"these files: {sorted(first_files & second_files)}"
-        )
+            assert initial_files.isdisjoint(additional_files), (
+                f"{initial} and {additional} are declared multi-install safe but both manage "
+                f"these files: {sorted(initial_files & additional_files)}"
+            )

@@ -1940,6 +1940,9 @@ def _remove_integration_json(project_root: Path) -> None:
         path.unlink()
 
 
+_MANIFEST_READ_ERRORS = (ValueError, FileNotFoundError, OSError, UnicodeDecodeError)
+
+
 def _normalize_script_type(script_type: str, source: str) -> str:
     """Normalize and validate a script type from CLI/config sources."""
     normalized = script_type.strip().lower()
@@ -2443,7 +2446,7 @@ def integration_uninstall(
 
     try:
         manifest = IntegrationManifest.load(key, project_root)
-    except (ValueError, FileNotFoundError) as exc:
+    except _MANIFEST_READ_ERRORS as exc:
         console.print(f"[red]Error:[/red] Integration manifest for '{key}' is unreadable.")
         console.print(f"Manifest: {manifest_path}")
         console.print(
@@ -2591,7 +2594,7 @@ def integration_switch(
             console.print(f"Uninstalling current integration: [cyan]{installed_key}[/cyan]")
             try:
                 old_manifest = IntegrationManifest.load(installed_key, project_root)
-            except (ValueError, FileNotFoundError) as exc:
+            except _MANIFEST_READ_ERRORS as exc:
                 console.print(f"[red]Error:[/red] Could not read integration manifest for '{installed_key}': {manifest_path}")
                 console.print(f"[dim]{exc}[/dim]")
                 console.print(
@@ -2615,7 +2618,7 @@ def integration_switch(
                     console.print(f"  Removed {len(removed)} file(s)")
                 if skipped:
                     console.print(f"  [yellow]⚠[/yellow]  {len(skipped)} modified file(s) preserved")
-            except (ValueError, FileNotFoundError) as exc:
+            except _MANIFEST_READ_ERRORS as exc:
                 console.print(f"[yellow]Warning:[/yellow] Could not read manifest for '{installed_key}': {exc}")
         else:
             console.print(f"[red]Error:[/red] Integration '{installed_key}' is installed but has no manifest.")
@@ -2801,7 +2804,7 @@ def integration_upgrade(
 
     try:
         old_manifest = IntegrationManifest.load(key, project_root)
-    except (ValueError, FileNotFoundError) as exc:
+    except _MANIFEST_READ_ERRORS as exc:
         console.print(f"[red]Error:[/red] Integration manifest for '{key}' is unreadable: {exc}")
         raise typer.Exit(1)
 

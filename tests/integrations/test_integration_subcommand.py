@@ -41,6 +41,12 @@ def _run_in_project(project, args):
         os.chdir(old_cwd)
 
 
+def _write_invalid_manifest(project, key):
+    manifest = project / ".specify" / "integrations" / f"{key}.manifest.json"
+    manifest.write_bytes(b"\xff\xfe\x00")
+    return manifest
+
+
 # ── list ─────────────────────────────────────────────────────────────
 
 
@@ -384,6 +390,20 @@ class TestIntegrationUninstall:
         assert result.exit_code != 0
         assert "not installed" in result.output
 
+    def test_uninstall_invalid_manifest_reports_cli_error(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        _write_invalid_manifest(project, "claude")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["integration", "uninstall", "claude"])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code != 0
+        assert "manifest" in result.output
+        assert "unreadable" in result.output
+
     def test_uninstall_non_default_preserves_default(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         old_cwd = os.getcwd()
@@ -566,6 +586,22 @@ class TestIntegrationSwitch:
             os.chdir(old_cwd)
         assert result.exit_code != 0
         assert "Unknown integration" in result.output
+
+    def test_switch_invalid_current_manifest_reports_cli_error(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        _write_invalid_manifest(project, "claude")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "codex",
+                "--script", "sh",
+            ])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code != 0
+        assert "Could not read integration manifest" in result.output
 
     def test_switch_same_noop(self, tmp_path):
         project = _init_project(tmp_path, "copilot")
@@ -856,6 +892,20 @@ class TestIntegrationSwitch:
 
 
 class TestIntegrationUpgrade:
+    def test_upgrade_invalid_manifest_reports_cli_error(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        _write_invalid_manifest(project, "claude")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["integration", "upgrade", "claude"])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code != 0
+        assert "manifest" in result.output
+        assert "unreadable" in result.output
+
     def test_upgrade_non_default_keeps_default_template_invocations(self, tmp_path):
         project = _init_project(tmp_path, "gemini")
         template = project / ".specify" / "templates" / "plan-template.md"
