@@ -718,6 +718,76 @@ def _locate_bundled_preset(preset_id: str) -> Path | None:
     return None
 
 
+def _load_speckit_manifest(project_path: Path) -> Any:
+    """Load the shared infrastructure manifest, preserving existing entries."""
+    from .integrations.manifest import IntegrationManifest
+
+    manifest_path = project_path / ".specify" / "integrations" / "speckit.manifest.json"
+    if manifest_path.exists():
+        try:
+            manifest = IntegrationManifest.load("speckit", project_path)
+            manifest.version = get_speckit_version()
+            return manifest
+        except (ValueError, FileNotFoundError):
+            pass
+    return IntegrationManifest("speckit", project_path, version=get_speckit_version())
+
+
+def _shared_templates_source() -> Path:
+    """Return the bundled/source shared templates directory."""
+    core = _locate_core_pack()
+    if core and (core / "templates").is_dir():
+        return core / "templates"
+    repo_root = Path(__file__).parent.parent.parent
+    return repo_root / "templates"
+
+
+def _refresh_shared_templates(
+    project_path: Path,
+    *,
+    invoke_separator: str,
+    force: bool = False,
+) -> None:
+    """Refresh default-sensitive shared templates without touching scripts."""
+    from .integrations.base import IntegrationBase
+
+    templates_src = _shared_templates_source()
+    if not templates_src.is_dir():
+        return
+
+    manifest = _load_speckit_manifest(project_path)
+    tracked_files = manifest.files
+    modified = set(manifest.check_modified())
+    skipped_files: list[str] = []
+
+    dest_templates = project_path / ".specify" / "templates"
+    dest_templates.mkdir(parents=True, exist_ok=True)
+    for src in templates_src.iterdir():
+        if not src.is_file() or src.name == "vscode-settings.json" or src.name.startswith("."):
+            continue
+
+        dst = dest_templates / src.name
+        rel = dst.relative_to(project_path).as_posix()
+        if dst.exists() and not force:
+            if rel not in tracked_files or rel in modified:
+                skipped_files.append(rel)
+                continue
+
+        content = src.read_text(encoding="utf-8")
+        content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+        dst.write_text(content, encoding="utf-8")
+        manifest.record_existing(rel)
+
+    manifest.save()
+
+    if skipped_files:
+        console.print(
+            f"[yellow]⚠[/yellow]  {len(skipped_files)} modified or untracked shared template file(s) were not updated:"
+        )
+        for rel in skipped_files:
+            console.print(f"    {rel}")
+
+
 def _install_shared_infra(
     project_path: Path,
     script_type: str,
@@ -742,10 +812,9 @@ def _install_shared_infra(
     Returns ``True`` on success.
     """
     from .integrations.base import IntegrationBase
-    from .integrations.manifest import IntegrationManifest
 
     core = _locate_core_pack()
-    manifest = IntegrationManifest("speckit", project_path, version=get_speckit_version())
+    manifest = _load_speckit_manifest(project_path)
 
     # Scripts
     if core and (core / "scripts").is_dir():
@@ -777,11 +846,7 @@ def _install_shared_infra(
                         manifest.record_existing(rel)
 
     # Page templates (not command templates, not vscode-settings.json)
-    if core and (core / "templates").is_dir():
-        templates_src = core / "templates"
-    else:
-        repo_root = Path(__file__).parent.parent.parent
-        templates_src = repo_root / "templates"
+    templates_src = _shared_templates_source()
 
     if templates_src.is_dir():
         dest_templates = project_path / ".specify" / "templates"
@@ -1299,13 +1364,20 @@ def init(
             )
             manifest.save()
 
-            # Write .specify/integration.json
-            integration_json = project_path / ".specify" / "integration.json"
-            integration_json.parent.mkdir(parents=True, exist_ok=True)
-            integration_json.write_text(json.dumps({
-                "integration": resolved_integration.key,
-                "version": get_speckit_version(),
-            }, indent=2) + "\n", encoding="utf-8")
+            integration_settings = _with_integration_setting(
+                {},
+                resolved_integration.key,
+                resolved_integration,
+                script_type=selected_script,
+                raw_options=integration_options,
+                parsed_options=integration_parsed_options or None,
+            )
+            _write_integration_json(
+                project_path,
+                resolved_integration.key,
+                [resolved_integration.key],
+                integration_settings,
+            )
 
             tracker.complete("integration", resolved_integration.config.get("name", resolved_integration.key))
 
@@ -1898,7 +1970,16 @@ integration_catalog_app = typer.Typer(
 integration_app.add_typer(integration_catalog_app, name="catalog")
 
 
-INTEGRATION_JSON = ".specify/integration.json"
+from .integration_state import (  # noqa: E402
+    INTEGRATION_JSON,
+    dedupe_integration_keys as _dedupe_integration_keys,
+    default_integration_key as _default_integration_key,
+    installed_integration_keys as _installed_integration_keys,
+    integration_setting as _integration_setting,
+    integration_settings as _integration_settings,
+    normalize_integration_state as _normalize_integration_state,
+    write_integration_json as _write_integration_json_file,
+)
 
 
 def _read_integration_json(project_root: Path) -> dict[str, Any]:
@@ -1925,81 +2006,20 @@ def _read_integration_json(project_root: Path) -> dict[str, Any]:
     return _normalize_integration_state(data)
 
 
-def _dedupe_integration_keys(keys: list[Any]) -> list[str]:
-    """Return a de-duplicated list of non-empty integration keys."""
-    seen: set[str] = set()
-    deduped: list[str] = []
-    for key in keys:
-        if not isinstance(key, str) or not key.strip():
-            continue
-        clean = key.strip()
-        if clean in seen:
-            continue
-        seen.add(clean)
-        deduped.append(clean)
-    return deduped
-
-
-def _normalize_integration_state(data: dict[str, Any]) -> dict[str, Any]:
-    """Normalize legacy and multi-install integration metadata."""
-    legacy_key = data.get("integration")
-    default_key = data.get("default_integration")
-    if not isinstance(default_key, str) or not default_key.strip():
-        default_key = legacy_key if isinstance(legacy_key, str) else None
-
-    installed = data.get("installed_integrations")
-    installed_keys = _dedupe_integration_keys(installed if isinstance(installed, list) else [])
-    if not default_key and installed_keys:
-        default_key = installed_keys[0]
-    if default_key and default_key not in installed_keys:
-        installed_keys.insert(0, default_key)
-
-    normalized = dict(data)
-    if default_key:
-        normalized["integration"] = default_key
-        normalized["default_integration"] = default_key
-    else:
-        normalized.pop("integration", None)
-        normalized.pop("default_integration", None)
-    normalized["installed_integrations"] = installed_keys
-    return normalized
-
-
-def _default_integration_key(state: dict[str, Any]) -> str | None:
-    """Return the default integration key from normalized state."""
-    key = state.get("default_integration") or state.get("integration")
-    return key if isinstance(key, str) and key else None
-
-
-def _installed_integration_keys(state: dict[str, Any]) -> list[str]:
-    """Return installed integration keys from normalized state."""
-    return _dedupe_integration_keys(state.get("installed_integrations", []))
-
-
 def _write_integration_json(
     project_root: Path,
     integration_key: str | None,
     installed_integrations: list[str] | None = None,
+    integration_settings: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     """Write ``.specify/integration.json`` with legacy-compatible state."""
-    dest = project_root / INTEGRATION_JSON
-    dest.parent.mkdir(parents=True, exist_ok=True)
-
-    installed = _dedupe_integration_keys(installed_integrations or [])
-    if integration_key and integration_key not in installed:
-        installed.insert(0, integration_key)
-    if not integration_key and installed:
-        integration_key = installed[0]
-
-    data: dict[str, Any] = {
-        "version": get_speckit_version(),
-        "installed_integrations": installed,
-    }
-    if integration_key:
-        data["integration"] = integration_key
-        data["default_integration"] = integration_key
-
-    dest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _write_integration_json_file(
+        project_root,
+        version=get_speckit_version(),
+        integration_key=integration_key,
+        installed_integrations=installed_integrations,
+        settings=integration_settings,
+    )
 
 
 def _clear_init_options_for_integration(project_root: Path, integration_key: str) -> None:
@@ -2041,6 +2061,136 @@ def _resolve_script_type(project_root: Path, script_type: str | None) -> str:
     if isinstance(saved, str) and saved.strip():
         return _normalize_script_type(saved, ".specify/init-options.json")
     return "ps" if os.name == "nt" else "sh"
+
+
+def _resolve_integration_script_type(
+    project_root: Path,
+    state: dict[str, Any],
+    key: str,
+    script_type: str | None = None,
+) -> str:
+    """Resolve script type for an integration, preferring stored settings."""
+    if script_type:
+        return _normalize_script_type(script_type, "--script")
+
+    stored = _integration_setting(state, key).get("script")
+    if isinstance(stored, str) and stored.strip():
+        return _normalize_script_type(stored, f"{INTEGRATION_JSON} integration_settings.{key}.script")
+
+    return _resolve_script_type(project_root, None)
+
+
+def _resolve_integration_options(
+    integration: Any,
+    state: dict[str, Any],
+    key: str,
+    raw_options: str | None,
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Resolve raw and parsed options for an integration operation."""
+    if raw_options is not None:
+        return raw_options, _parse_integration_options(integration, raw_options)
+
+    setting = _integration_setting(state, key)
+    stored_raw = setting.get("raw_options")
+    if not isinstance(stored_raw, str):
+        stored_raw = None
+
+    stored_parsed = setting.get("parsed_options")
+    if isinstance(stored_parsed, dict):
+        return stored_raw, stored_parsed or None
+
+    if stored_raw:
+        return stored_raw, _parse_integration_options(integration, stored_raw)
+
+    return None, None
+
+
+def _with_integration_setting(
+    state: dict[str, Any],
+    key: str,
+    integration: Any,
+    *,
+    script_type: str | None = None,
+    raw_options: str | None = None,
+    parsed_options: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Return integration settings with *key* updated."""
+    settings = _integration_settings(state)
+    current = dict(settings.get(key, {}))
+
+    if script_type:
+        current["script"] = script_type
+    if raw_options is not None:
+        current["raw_options"] = raw_options
+    elif "raw_options" in current and not current.get("raw_options"):
+        current.pop("raw_options", None)
+
+    if parsed_options is not None:
+        current["parsed_options"] = parsed_options
+    elif raw_options is not None:
+        current.pop("parsed_options", None)
+
+    current["invoke_separator"] = integration.effective_invoke_separator(parsed_options)
+    settings[key] = current
+    return settings
+
+
+def _invoke_separator_for_integration(
+    integration: Any,
+    state: dict[str, Any],
+    key: str,
+    parsed_options: dict[str, Any] | None = None,
+) -> str:
+    """Resolve the invocation separator for stored/default integration state."""
+    if parsed_options is not None:
+        return integration.effective_invoke_separator(parsed_options)
+
+    setting = _integration_setting(state, key)
+    stored_separator = setting.get("invoke_separator")
+    if isinstance(stored_separator, str) and stored_separator:
+        return stored_separator
+
+    stored_parsed = setting.get("parsed_options")
+    if isinstance(stored_parsed, dict):
+        return integration.effective_invoke_separator(stored_parsed)
+
+    return integration.effective_invoke_separator(None)
+
+
+def _set_default_integration(
+    project_root: Path,
+    state: dict[str, Any],
+    key: str,
+    integration: Any,
+    installed_keys: list[str],
+    *,
+    script_type: str | None = None,
+    raw_options: str | None = None,
+    parsed_options: dict[str, Any] | None = None,
+    refresh_templates: bool = True,
+    refresh_templates_force: bool = False,
+) -> None:
+    """Persist *key* as default and align active runtime metadata."""
+    resolved_script = _resolve_integration_script_type(project_root, state, key, script_type)
+    settings = _with_integration_setting(
+        state,
+        key,
+        integration,
+        script_type=resolved_script,
+        raw_options=raw_options,
+        parsed_options=parsed_options,
+    )
+    _write_integration_json(project_root, key, installed_keys, settings)
+    _update_init_options_for_integration(project_root, integration, script_type=resolved_script)
+
+    if refresh_templates:
+        _refresh_shared_templates(
+            project_root,
+            invoke_separator=_invoke_separator_for_integration(
+                integration, {"integration_settings": settings}, key, parsed_options
+            ),
+            force=refresh_templates_force,
+        )
 
 
 def _require_specify_project() -> Path:
@@ -2085,6 +2235,7 @@ def integration_list(
         table.add_column("Version")
         table.add_column("Source")
         table.add_column("Status")
+        table.add_column("Multi-install Safe")
 
         for entry in sorted(entries, key=lambda e: e["id"]):
             eid = entry["id"]
@@ -2100,12 +2251,16 @@ def integration_list(
                 status = "discovery-only"
             else:
                 status = ""
+            safe = ""
+            if eid in INTEGRATION_REGISTRY:
+                safe = "yes" if getattr(INTEGRATION_REGISTRY[eid], "multi_install_safe", False) else "no"
             table.add_row(
                 eid,
                 entry.get("name", eid),
                 entry.get("version", ""),
                 cat_name,
                 status,
+                safe,
             )
 
         console.print(table)
@@ -2116,6 +2271,7 @@ def integration_list(
     table.add_column("Name")
     table.add_column("Status")
     table.add_column("CLI Required")
+    table.add_column("Multi-install Safe")
 
     for key in sorted(INTEGRATION_REGISTRY.keys()):
         integration = INTEGRATION_REGISTRY[key]
@@ -2131,7 +2287,8 @@ def integration_list(
             status = ""
 
         cli_req = "yes" if requires_cli else "no (IDE)"
-        table.add_row(key, name, status, cli_req)
+        safe = "yes" if getattr(integration, "multi_install_safe", False) else "no"
+        table.add_row(key, name, status, cli_req, safe)
 
     console.print(table)
 
@@ -2199,13 +2356,30 @@ def integration_install(
     # Build parsed options from --integration-options so the integration
     # can determine its effective invoke separator before shared infra
     # is installed.
-    parsed_options: dict[str, Any] | None = None
-    if integration_options:
-        parsed_options = _parse_integration_options(integration, integration_options)
+    raw_options, parsed_options = _resolve_integration_options(
+        integration, current, key, integration_options
+    )
 
     # Ensure shared infrastructure is present (safe to run unconditionally;
     # _install_shared_infra merges missing files without overwriting).
-    _install_shared_infra(project_root, selected_script, invoke_separator=integration.effective_invoke_separator(parsed_options))
+    infra_integration = integration
+    infra_key = key
+    infra_parsed = parsed_options
+    if default_key:
+        default_integration = get_integration(default_key)
+        if default_integration is not None:
+            infra_integration = default_integration
+            infra_key = default_key
+            _, infra_parsed = _resolve_integration_options(
+                default_integration, current, default_key, None
+            )
+    _install_shared_infra(
+        project_root,
+        selected_script,
+        invoke_separator=_invoke_separator_for_integration(
+            infra_integration, current, infra_key, infra_parsed
+        ),
+    )
     if os.name != "nt":
         ensure_executable_scripts(project_root)
 
@@ -2218,12 +2392,20 @@ def integration_install(
             project_root, manifest,
             parsed_options=parsed_options,
             script_type=selected_script,
-            raw_options=integration_options,
+            raw_options=raw_options,
         )
         manifest.save()
         new_installed = _dedupe_integration_keys([*installed_keys, integration.key])
         new_default = default_key or integration.key
-        _write_integration_json(project_root, new_default, new_installed)
+        settings = _with_integration_setting(
+            current,
+            integration.key,
+            integration,
+            script_type=selected_script,
+            raw_options=raw_options,
+            parsed_options=parsed_options,
+        )
+        _write_integration_json(project_root, new_default, new_installed, settings)
         if new_default == integration.key:
             _update_init_options_for_integration(project_root, integration, script_type=selected_script)
 
@@ -2235,7 +2417,9 @@ def integration_install(
             # Suppress so the original setup error remains the primary failure
             console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration changes: {rollback_err}")
         if installed_keys:
-            _write_integration_json(project_root, default_key, installed_keys)
+            _write_integration_json(
+                project_root, default_key, installed_keys, _integration_settings(current)
+            )
         else:
             _remove_integration_json(project_root)
         console.print(f"[red]Error:[/red] Failed to install integration: {e}")
@@ -2319,6 +2503,7 @@ def _update_init_options_for_integration(
 @integration_app.command("use")
 def integration_use(
     key: str = typer.Argument(help="Installed integration key to make the default"),
+    force: bool = typer.Option(False, "--force", help="Overwrite managed shared templates while changing the default"),
 ):
     """Set the default integration without uninstalling other integrations."""
     from .integrations import get_integration
@@ -2346,8 +2531,17 @@ def integration_use(
         console.print(f"[red]Error:[/red] Unknown integration '{key}'")
         raise typer.Exit(1)
 
-    _write_integration_json(project_root, key, installed_keys)
-    _update_init_options_for_integration(project_root, integration)
+    raw_options, parsed_options = _resolve_integration_options(integration, current, key, None)
+    _set_default_integration(
+        project_root,
+        current,
+        key,
+        integration,
+        installed_keys,
+        raw_options=raw_options,
+        parsed_options=parsed_options,
+        refresh_templates_force=force,
+    )
     console.print(f"[green]✓[/green] Default integration set to [bold]{key}[/bold].")
 
 
@@ -2383,13 +2577,27 @@ def integration_uninstall(
         remaining = [installed for installed in installed_keys if installed != key]
         new_default = default_key if default_key != key else (remaining[0] if remaining else None)
         if remaining:
-            _write_integration_json(project_root, new_default, remaining)
+            if default_key == key and new_default and (new_integration := get_integration(new_default)):
+                raw_options, parsed_options = _resolve_integration_options(
+                    new_integration, current, new_default, None
+                )
+                _set_default_integration(
+                    project_root,
+                    current,
+                    new_default,
+                    new_integration,
+                    remaining,
+                    raw_options=raw_options,
+                    parsed_options=parsed_options,
+                )
+            else:
+                _write_integration_json(
+                    project_root, new_default, remaining, _integration_settings(current)
+                )
         else:
             _remove_integration_json(project_root)
         if default_key == key:
             _clear_init_options_for_integration(project_root, key)
-            if new_default and (new_integration := get_integration(new_default)):
-                _update_init_options_for_integration(project_root, new_integration)
         raise typer.Exit(0)
 
     try:
@@ -2414,14 +2622,28 @@ def integration_uninstall(
     remaining = [installed for installed in installed_keys if installed != key]
     new_default = default_key if default_key != key else (remaining[0] if remaining else None)
     if remaining:
-        _write_integration_json(project_root, new_default, remaining)
+        if default_key == key and new_default and (new_integration := get_integration(new_default)):
+            raw_options, parsed_options = _resolve_integration_options(
+                new_integration, current, new_default, None
+            )
+            _set_default_integration(
+                project_root,
+                current,
+                new_default,
+                new_integration,
+                remaining,
+                raw_options=raw_options,
+                parsed_options=parsed_options,
+            )
+        else:
+            _write_integration_json(
+                project_root, new_default, remaining, _integration_settings(current)
+            )
     else:
         _remove_integration_json(project_root)
 
     if default_key == key:
         _clear_init_options_for_integration(project_root, key)
-        if new_default and (new_integration := get_integration(new_default)):
-            _update_init_options_for_integration(project_root, new_integration)
 
     name = (integration.config or {}).get("name", key) if integration else key
     console.print(f"\n[green]✓[/green] Integration '{name}' uninstalled")
@@ -2462,8 +2684,19 @@ def integration_switch(
         raise typer.Exit(0)
 
     if target in installed_keys:
-        _write_integration_json(project_root, target, installed_keys)
-        _update_init_options_for_integration(project_root, target_integration)
+        raw_options, parsed_options = _resolve_integration_options(
+            target_integration, current, target, None
+        )
+        _set_default_integration(
+            project_root,
+            current,
+            target,
+            target_integration,
+            installed_keys,
+            raw_options=raw_options,
+            parsed_options=parsed_options,
+            refresh_templates_force=force,
+        )
         console.print(f"\n[green]✓[/green] Default integration set to [bold]{target}[/bold].")
         raise typer.Exit(0)
 
@@ -2527,22 +2760,47 @@ def integration_switch(
 
         # Clear metadata so a failed Phase 2 doesn't leave stale references
         installed_keys = [installed for installed in installed_keys if installed != installed_key]
+        _clear_init_options_for_integration(project_root, installed_key)
         if installed_keys:
-            _write_integration_json(project_root, installed_keys[0], installed_keys)
+            fallback_key = installed_keys[0]
+            fallback_integration = get_integration(fallback_key)
+            if fallback_integration is not None:
+                raw_options, parsed_options = _resolve_integration_options(
+                    fallback_integration, current, fallback_key, None
+                )
+                _set_default_integration(
+                    project_root,
+                    current,
+                    fallback_key,
+                    fallback_integration,
+                    installed_keys,
+                    raw_options=raw_options,
+                    parsed_options=parsed_options,
+                )
+            else:
+                _write_integration_json(
+                    project_root, fallback_key, installed_keys, _integration_settings(current)
+                )
         else:
             _remove_integration_json(project_root)
-        _clear_init_options_for_integration(project_root, installed_key)
+        current = _read_integration_json(project_root)
 
     # Build parsed options from --integration-options so the integration
     # can determine its effective invoke separator before shared infra
     # is installed.
-    parsed_options: dict[str, Any] | None = None
-    if integration_options:
-        parsed_options = _parse_integration_options(target_integration, integration_options)
+    raw_options, parsed_options = _resolve_integration_options(
+        target_integration, current, target, integration_options
+    )
 
     # Ensure shared infrastructure is present (safe to run unconditionally;
     # _install_shared_infra merges missing files without overwriting).
-    _install_shared_infra(project_root, selected_script, invoke_separator=target_integration.effective_invoke_separator(parsed_options))
+    _install_shared_infra(
+        project_root,
+        selected_script,
+        invoke_separator=_invoke_separator_for_integration(
+            target_integration, current, target, parsed_options
+        ),
+    )
     if os.name != "nt":
         ensure_executable_scripts(project_root)
 
@@ -2557,11 +2815,19 @@ def integration_switch(
             project_root, manifest,
             parsed_options=parsed_options,
             script_type=selected_script,
-            raw_options=integration_options,
+            raw_options=raw_options,
         )
         manifest.save()
-        _write_integration_json(project_root, target_integration.key, [*installed_keys, target_integration.key])
-        _update_init_options_for_integration(project_root, target_integration, script_type=selected_script)
+        _set_default_integration(
+            project_root,
+            current,
+            target_integration.key,
+            target_integration,
+            _dedupe_integration_keys([*installed_keys, target_integration.key]),
+            script_type=selected_script,
+            raw_options=raw_options,
+            parsed_options=parsed_options,
+        )
 
         # Re-register extension commands for the new agent so that
         # previously-installed extensions are available in the new integration.
@@ -2584,7 +2850,25 @@ def integration_switch(
             # Suppress so the original setup error remains the primary failure
             console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration '{target}': {rollback_err}")
         if installed_keys:
-            _write_integration_json(project_root, installed_keys[0], installed_keys)
+            fallback_key = installed_keys[0]
+            fallback_integration = get_integration(fallback_key)
+            if fallback_integration is not None:
+                raw_options, parsed_options = _resolve_integration_options(
+                    fallback_integration, current, fallback_key, None
+                )
+                _set_default_integration(
+                    project_root,
+                    current,
+                    fallback_key,
+                    fallback_integration,
+                    installed_keys,
+                    raw_options=raw_options,
+                    parsed_options=parsed_options,
+                )
+            else:
+                _write_integration_json(
+                    project_root, fallback_key, installed_keys, _integration_settings(current)
+                )
         else:
             _remove_integration_json(project_root)
         console.print(f"[red]Error:[/red] Failed to install integration '{target}': {e}")
@@ -2650,17 +2934,35 @@ def integration_upgrade(
         console.print("\nUse [cyan]--force[/cyan] to overwrite modified files, or resolve manually.")
         raise typer.Exit(1)
 
-    selected_script = _resolve_script_type(project_root, script)
+    selected_script = _resolve_integration_script_type(project_root, current, key, script)
 
     # Build parsed options from --integration-options so the integration
     # can determine its effective invoke separator before shared infra
     # is installed.
-    parsed_options: dict[str, Any] | None = None
-    if integration_options:
-        parsed_options = _parse_integration_options(integration, integration_options)
+    raw_options, parsed_options = _resolve_integration_options(
+        integration, current, key, integration_options
+    )
 
     # Ensure shared infrastructure is up to date; --force overwrites existing files.
-    _install_shared_infra(project_root, selected_script, force=force, invoke_separator=integration.effective_invoke_separator(parsed_options))
+    infra_integration = integration
+    infra_key = key
+    infra_parsed = parsed_options
+    if installed_key and installed_key != key:
+        default_integration = get_integration(installed_key)
+        if default_integration is not None:
+            infra_integration = default_integration
+            infra_key = installed_key
+            _, infra_parsed = _resolve_integration_options(
+                default_integration, current, installed_key, None
+            )
+    _install_shared_infra(
+        project_root,
+        selected_script,
+        force=force,
+        invoke_separator=_invoke_separator_for_integration(
+            infra_integration, current, infra_key, infra_parsed
+        ),
+    )
     if os.name != "nt":
         ensure_executable_scripts(project_root)
 
@@ -2674,12 +2976,27 @@ def integration_upgrade(
             new_manifest,
             parsed_options=parsed_options,
             script_type=selected_script,
-            raw_options=integration_options,
+            raw_options=raw_options,
         )
         new_manifest.save()
-        _write_integration_json(project_root, installed_key, installed_keys)
+        settings = _with_integration_setting(
+            current,
+            key,
+            integration,
+            script_type=selected_script,
+            raw_options=raw_options,
+            parsed_options=parsed_options,
+        )
+        _write_integration_json(project_root, installed_key, installed_keys, settings)
         if installed_key == key:
             _update_init_options_for_integration(project_root, integration, script_type=selected_script)
+            _refresh_shared_templates(
+                project_root,
+                invoke_separator=_invoke_separator_for_integration(
+                    integration, {"integration_settings": settings}, key, parsed_options
+                ),
+                force=force,
+            )
     except Exception as exc:
         # Don't teardown — setup overwrites in-place, so teardown would
         # delete files that were working before the upgrade.  Just report.

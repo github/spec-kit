@@ -80,6 +80,20 @@ class TestIntegrationList:
         assert "claude" in result.output
         assert "gemini" in result.output
 
+    def test_list_shows_multi_install_safe_status(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["integration", "list"])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        assert "Multi-install" in result.output
+        assert "Safe" in result.output
+        assert "yes" in result.output
+        assert "no" in result.output
+
 
 # ── install ──────────────────────────────────────────────────────────
 
@@ -147,10 +161,33 @@ class TestIntegrationInstall:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "claude"
         assert data["default_integration"] == "claude"
+        assert data["integration_state_schema"] == 1
         assert data["installed_integrations"] == ["claude", "codex"]
+        assert data["integration_settings"]["claude"]["invoke_separator"] == "-"
+        assert data["integration_settings"]["codex"]["invoke_separator"] == "-"
 
         assert (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
         assert (project / ".agents" / "skills" / "speckit-plan" / "SKILL.md").exists()
+
+    def test_install_additional_preserves_shared_manifest(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        shared_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
+        before = set(json.loads(shared_manifest.read_text(encoding="utf-8"))["files"])
+        assert before
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "install", "codex",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, result.output
+
+        after = set(json.loads(shared_manifest.read_text(encoding="utf-8"))["files"])
+        assert before <= after
 
     def test_install_multi_safe_migrates_legacy_state(self, tmp_path):
         project = _init_project(tmp_path, "claude")
@@ -365,6 +402,29 @@ class TestIntegrationUninstall:
         assert data["integration"] == "claude"
         assert data["installed_integrations"] == ["claude"]
 
+    def test_uninstall_default_refreshes_templates_for_fallback(self, tmp_path):
+        project = _init_project(tmp_path, "gemini")
+        template = project / ".specify" / "templates" / "plan-template.md"
+        assert "/speckit.plan" in template.read_text(encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            install = runner.invoke(app, [
+                "integration", "install", "claude",
+                "--script", "sh",
+            ], catch_exceptions=False)
+            assert install.exit_code == 0, install.output
+
+            result = runner.invoke(app, ["integration", "uninstall", "gemini"], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "claude"
+        assert "/speckit-plan" in template.read_text(encoding="utf-8")
+
     def test_uninstall_preserves_shared_infra(self, tmp_path):
         """Shared scripts and templates are not removed by integration uninstall."""
         project = _init_project(tmp_path, "claude")
@@ -420,6 +480,60 @@ class TestIntegrationUse:
             os.chdir(old_cwd)
         assert result.exit_code != 0
         assert "not installed" in result.output
+
+    def test_use_refreshes_shared_templates_between_command_styles(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        template = project / ".specify" / "templates" / "plan-template.md"
+        assert "/speckit-plan" in template.read_text(encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            install = runner.invoke(app, [
+                "integration", "install", "gemini",
+                "--script", "sh",
+            ], catch_exceptions=False)
+            assert install.exit_code == 0, install.output
+
+            use_gemini = runner.invoke(app, ["integration", "use", "gemini"], catch_exceptions=False)
+            assert use_gemini.exit_code == 0, use_gemini.output
+            assert "/speckit.plan" in template.read_text(encoding="utf-8")
+
+            use_claude = runner.invoke(app, ["integration", "use", "claude"], catch_exceptions=False)
+            assert use_claude.exit_code == 0, use_claude.output
+            assert "/speckit-plan" in template.read_text(encoding="utf-8")
+        finally:
+            os.chdir(old_cwd)
+
+    def test_use_preserves_modified_templates_unless_forced(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        template = project / ".specify" / "templates" / "plan-template.md"
+        template.write_text("custom template with /speckit-plan\n", encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            install = runner.invoke(app, [
+                "integration", "install", "gemini",
+                "--script", "sh",
+            ], catch_exceptions=False)
+            assert install.exit_code == 0, install.output
+
+            use_gemini = runner.invoke(app, ["integration", "use", "gemini"], catch_exceptions=False)
+            assert use_gemini.exit_code == 0, use_gemini.output
+            assert template.read_text(encoding="utf-8") == "custom template with /speckit-plan\n"
+
+            force_use = runner.invoke(app, [
+                "integration", "use", "gemini",
+                "--force",
+            ], catch_exceptions=False)
+            assert force_use.exit_code == 0, force_use.output
+        finally:
+            os.chdir(old_cwd)
+
+        updated = template.read_text(encoding="utf-8")
+        assert "/speckit.plan" in updated
+        assert "custom template" not in updated
 
 
 # ── switch ───────────────────────────────────────────────────────────
@@ -662,6 +776,65 @@ class TestIntegrationSwitch:
 
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "claude"
+
+    def test_failed_switch_keeps_fallback_metadata_consistent(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            install = runner.invoke(app, [
+                "integration", "install", "codex",
+                "--script", "sh",
+            ], catch_exceptions=False)
+            assert install.exit_code == 0, install.output
+
+            result = runner.invoke(app, [
+                "integration", "switch", "generic",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code != 0
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "codex"
+        assert data["installed_integrations"] == ["codex"]
+
+        opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
+        assert opts["integration"] == "codex"
+        assert opts["ai"] == "codex"
+
+        template = project / ".specify" / "templates" / "plan-template.md"
+        assert "/speckit-plan" in template.read_text(encoding="utf-8")
+
+
+class TestIntegrationUpgrade:
+    def test_upgrade_non_default_keeps_default_template_invocations(self, tmp_path):
+        project = _init_project(tmp_path, "gemini")
+        template = project / ".specify" / "templates" / "plan-template.md"
+        assert "/speckit.plan" in template.read_text(encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            install = runner.invoke(app, [
+                "integration", "install", "claude",
+                "--script", "sh",
+            ], catch_exceptions=False)
+            assert install.exit_code == 0, install.output
+
+            result = runner.invoke(app, [
+                "integration", "upgrade", "claude",
+                "--script", "sh",
+                "--force",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "gemini"
+        assert "/speckit.plan" in template.read_text(encoding="utf-8")
 
 
 # ── Full lifecycle ───────────────────────────────────────────────────

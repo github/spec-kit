@@ -44,6 +44,7 @@ specify integration list
 
 Shows all available integrations, which one is currently installed, and whether each requires a CLI tool or is IDE-based.
 When multiple integrations are installed, the list marks the default integration separately from the other installed integrations.
+The list also shows whether each built-in integration is declared multi-install safe.
 
 ## Install an Integration
 
@@ -99,7 +100,11 @@ If the target integration is not already installed, equivalent to running `unins
 specify integration use <key>
 ```
 
-Sets the default integration without uninstalling any other installed integrations. This is useful for repositories that keep multiple safe integrations installed for team portability.
+| Option    | Description                                         |
+| --------- | --------------------------------------------------- |
+| `--force` | Overwrite managed shared templates while changing the default |
+
+Sets the default integration without uninstalling any other installed integrations. This also refreshes managed shared templates so command references match the new default integration's invocation style. Modified or untracked shared templates are preserved unless `--force` is used.
 
 ## Upgrade an Integration
 
@@ -113,7 +118,7 @@ specify integration upgrade [<key>]
 | `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                        |
 | `--integration-options`  | Options for the integration                                              |
 
-Reinstalls the current integration with updated templates and commands (e.g., after upgrading Spec Kit). Defaults to the currently installed integration; if a key is provided, it must match the installed one — otherwise the command fails and suggests using `switch` instead. Detects locally modified files and blocks the upgrade unless `--force` is used. Stale files from the previous install that are no longer needed are removed automatically.
+Reinstalls an installed integration with updated templates and commands (e.g., after upgrading Spec Kit). Defaults to the default integration; if a key is provided, it must be one of the installed integrations. Detects locally modified files and blocks the upgrade unless `--force` is used. Stale files from the previous install that are no longer needed are removed automatically. Shared templates stay aligned with the default integration even when upgrading a non-default integration.
 
 ## Integration-Specific Options
 
@@ -136,11 +141,11 @@ specify integration install generic --integration-options="--commands-dir .myage
 
 Yes, but it is intended for team portability rather than the default workflow. Multiple integrations are allowed automatically only when the installed integration and the new integration are declared multi-install safe by Spec Kit. For other combinations, pass `--force` to acknowledge that multiple agents may see unrelated agent-specific instructions or commands.
 
-Spec Kit tracks one default integration in `.specify/integration.json` with `default_integration` and all installed integrations with `installed_integrations`. The legacy `integration` field remains as an alias for the default integration.
+Spec Kit tracks one default integration in `.specify/integration.json` with `default_integration`, all installed integrations with `installed_integrations`, per-integration runtime settings with `integration_settings`, and a dedicated `integration_state_schema` for future state migrations. The legacy `integration` field remains as an alias for the default integration.
 
 ### Which integrations are multi-install safe?
 
-An integration is multi-install safe when it uses isolated agent directories, a dedicated context file, and a separate install manifest. For example, Claude Code and Codex CLI are declared safe because Claude uses `.claude/skills` and `CLAUDE.md`, while Codex uses `.agents/skills` and `AGENTS.md`.
+An integration is multi-install safe when it uses isolated agent directories, a dedicated context file that does not collide with another safe integration, stable command invocation settings, and a separate install manifest. Shared Spec Kit templates remain aligned to the single default integration.
 
 The currently declared multi-install safe integrations are:
 
@@ -164,7 +169,7 @@ The currently declared multi-install safe integrations are:
 | `trae` | `.trae/skills`, `.trae/rules/project_rules.md` |
 | `windsurf` | `.windsurf/workflows`, `.windsurf/rules/specify-rules.md` |
 
-Integrations that share a generic context file such as `AGENTS.md`, reuse another agent's command directory, require a dynamic `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
+Integrations that share a context file or command directory with another integration, require dynamic install paths such as `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
 
 ### What happens to my changes when I uninstall or switch?
 
@@ -180,4 +185,4 @@ CLI-based integrations (like Claude Code, Gemini CLI) require the tool to be ins
 
 ### When should I use `upgrade` vs `switch`?
 
-Use `upgrade` when you've upgraded Spec Kit and want to refresh the same integration's templates. Use `switch` when you want to change to a different AI coding agent.
+Use `upgrade` when you've upgraded Spec Kit and want to refresh an installed integration's managed files. Use `switch` when you want to replace the current default with another integration; if the target is already installed, `switch` behaves like `use`.
