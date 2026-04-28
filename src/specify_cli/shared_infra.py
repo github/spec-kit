@@ -58,6 +58,33 @@ def shared_scripts_source(
     return repo_root / "scripts"
 
 
+def _shared_destination_label(project_path: Path, dest: Path) -> str:
+    try:
+        return dest.relative_to(project_path).as_posix()
+    except ValueError:
+        return str(dest)
+
+
+def _ensure_safe_shared_destination(project_path: Path, dest: Path) -> None:
+    """Refuse shared infra writes that would escape or follow symlinks."""
+    root = project_path.resolve()
+    try:
+        dest.parent.resolve().relative_to(root)
+    except (OSError, ValueError):
+        label = _shared_destination_label(project_path, dest)
+        raise ValueError(f"Shared infrastructure destination escapes project root: {label}") from None
+
+    label = _shared_destination_label(project_path, dest)
+    if dest.is_symlink():
+        raise ValueError(f"Refusing to overwrite symlinked shared infrastructure path: {label}")
+
+    if dest.exists():
+        try:
+            dest.resolve().relative_to(root)
+        except (OSError, ValueError):
+            raise ValueError(f"Shared infrastructure destination escapes project root: {label}") from None
+
+
 def refresh_shared_templates(
     project_path: Path,
     *,
@@ -85,6 +112,7 @@ def refresh_shared_templates(
             continue
 
         dst = dest_templates / src.name
+        _ensure_safe_shared_destination(project_path, dst)
         rel = dst.relative_to(project_path).as_posix()
         if dst.exists() and not force:
             if rel not in tracked_files or rel in modified:
@@ -136,6 +164,7 @@ def install_shared_infra(
 
                 rel_path = src_path.relative_to(variant_src)
                 dst_path = dest_variant / rel_path
+                _ensure_safe_shared_destination(project_path, dst_path)
                 if dst_path.exists() and not force:
                     skipped_files.append(str(dst_path.relative_to(project_path)))
                     continue
@@ -154,6 +183,7 @@ def install_shared_infra(
                 continue
 
             dst = dest_templates / src.name
+            _ensure_safe_shared_destination(project_path, dst)
             if dst.exists() and not force:
                 skipped_files.append(str(dst.relative_to(project_path)))
                 continue

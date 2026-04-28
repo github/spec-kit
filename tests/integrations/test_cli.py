@@ -3,6 +3,7 @@
 import json
 import os
 
+import pytest
 import yaml
 
 from tests.conftest import strip_ansi
@@ -287,6 +288,66 @@ class TestInitIntegrationFlag:
         captured = capsys.readouterr()
         assert "Could not read shared infrastructure manifest" in captured.out
         assert "A new shared manifest will be created" in captured.out
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_infra_refuses_symlinked_script_destination(self, tmp_path):
+        """Shared script refreshes must not follow destination symlinks."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "symlink-script-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        outside = tmp_path / "outside-script.sh"
+        outside.write_text("# outside\n", encoding="utf-8")
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        os.symlink(outside, scripts_dir / "common.sh")
+
+        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
+            _install_shared_infra(project, "sh", force=True)
+
+        assert outside.read_text(encoding="utf-8") == "# outside\n"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_infra_refuses_symlinked_template_destination(self, tmp_path):
+        """Shared template installs must not follow destination symlinks."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "symlink-template-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        outside = tmp_path / "outside-template.md"
+        outside.write_text("# outside\n", encoding="utf-8")
+        templates_dir = project / ".specify" / "templates"
+        templates_dir.mkdir(parents=True)
+        os.symlink(outside, templates_dir / "plan-template.md")
+
+        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
+            _install_shared_infra(project, "sh", force=True)
+
+        assert outside.read_text(encoding="utf-8") == "# outside\n"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_template_refresh_refuses_symlinked_destination(self, tmp_path):
+        """Template-only refreshes must not follow destination symlinks."""
+        from specify_cli import _refresh_shared_templates
+
+        project = tmp_path / "symlink-refresh-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        outside = tmp_path / "outside-refresh.md"
+        outside.write_text("# outside\n", encoding="utf-8")
+        templates_dir = project / ".specify" / "templates"
+        templates_dir.mkdir(parents=True)
+        os.symlink(outside, templates_dir / "plan-template.md")
+
+        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
+            _refresh_shared_templates(project, invoke_separator=".", force=True)
+
+        assert outside.read_text(encoding="utf-8") == "# outside\n"
 
     def test_shared_infra_no_warning_when_forced(self, tmp_path, capsys):
         """No skip warning when force=True (all files overwritten)."""
