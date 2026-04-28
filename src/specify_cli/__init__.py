@@ -1721,20 +1721,14 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     On anything else — including a malformed response body — the exception
     propagates; there is no catch-all (research D-006).
     """
-    req = urllib.request.Request(
-        GITHUB_API_LATEST,
-        headers={"Accept": "application/vnd.github+json"},
-    )
-    token = None
-    for env_var in ("GH_TOKEN", "GITHUB_TOKEN"):
-        candidate = os.environ.get(env_var)
-        if candidate is not None:
-            candidate = candidate.strip()
-            if candidate:
-                token = candidate
-                break
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
+    from .authentication import get_provider
+
+    github_auth = get_provider("github")
+    headers: dict[str, str] = {"Accept": "application/vnd.github+json"}
+    if github_auth is not None:
+        headers.update(github_auth.auth_headers())
+
+    req = urllib.request.Request(GITHUB_API_LATEST, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
