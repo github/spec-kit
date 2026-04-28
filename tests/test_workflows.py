@@ -1875,7 +1875,8 @@ class TestStepRegistryCustom:
         from specify_cli.workflows.catalog import StepRegistry
 
         registry = StepRegistry(project_dir)
-        assert registry.remove("nonexistent") is False
+        removed = registry.remove("nonexistent")
+        assert removed is False
 
     def test_list(self, project_dir):
         from specify_cli.workflows.catalog import StepRegistry
