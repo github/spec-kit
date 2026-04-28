@@ -999,7 +999,7 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
         return f"{manifest.name} v{manifest.version} installed"
 
     # --- Local path ---
-    if ext_spec.startswith(("./", "../", "/", "~/", ".\\", "..\\")):
+    if ext_spec.startswith(("./", "../", "/", "~/", ".\\", "..\\")) or Path(ext_spec).is_absolute():
         source_path = Path(ext_spec).expanduser().resolve()
         if not source_path.exists():
             raise ValueError(f"Directory not found: {source_path}")
@@ -1116,7 +1116,7 @@ def init(
         specify init my-project --integration copilot --extension git  # With bundled extension
         specify init my-project --extension git --extension selftest  # Multiple extensions
         specify init my-project --extension ./my-extensions/custom-ext  # Local path extension
-        specify init my-project --extension https://example.com/extensions/my-ext.tar.gz  # URL extension
+        specify init my-project --extension https://example.com/extensions/my-ext.zip  # URL extension
     """
 
     show_banner()
