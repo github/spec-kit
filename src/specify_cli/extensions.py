@@ -140,11 +140,16 @@ class ExtensionManifest:
         """Load YAML file safely."""
         try:
             with open(path, 'r') as f:
-                return yaml.safe_load(f) or {}
+                data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise ValidationError(f"Invalid YAML in {path}: {e}")
         except FileNotFoundError:
             raise ValidationError(f"Manifest not found: {path}")
+        if not isinstance(data, dict):
+            raise ValidationError(
+                f"Manifest must be a YAML mapping, got {type(data).__name__}: {path}"
+            )
+        return data
 
     def _validate(self):
         """Validate manifest structure and required fields."""
@@ -1534,6 +1539,22 @@ class ExtensionCatalog:
         if not parsed.netloc:
             raise ValidationError("Catalog URL must be a valid URL with a host.")
 
+    def _make_request(self, url: str):
+        """Build a urllib Request, adding a GitHub auth header when available.
+
+        Delegates to :func:`specify_cli._github_http.build_github_request`.
+        """
+        from specify_cli._github_http import build_github_request
+        return build_github_request(url)
+
+    def _open_url(self, url: str, timeout: int = 10):
+        """Open a URL with GitHub auth, stripping the header on cross-host redirects.
+
+        Delegates to :func:`specify_cli._github_http.open_github_url`.
+        """
+        from specify_cli._github_http import open_github_url
+        return open_github_url(url, timeout)
+
     def _load_catalog_config(self, config_path: Path) -> Optional[List[CatalogEntry]]:
         """Load catalog stack configuration from a YAML file.
 
@@ -1690,7 +1711,6 @@ class ExtensionCatalog:
         Raises:
             ExtensionError: If catalog cannot be fetched or has invalid format
         """
-        import urllib.request
         import urllib.error
 
         # Determine cache file paths (backward compat for default catalog)
@@ -1724,7 +1744,7 @@ class ExtensionCatalog:
 
         # Fetch from network
         try:
-            with urllib.request.urlopen(entry.url, timeout=10) as response:
+            with self._open_url(entry.url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
             if "schema_version" not in catalog_data or "extensions" not in catalog_data:
@@ -1838,10 +1858,9 @@ class ExtensionCatalog:
         catalog_url = self.get_catalog_url()
 
         try:
-            import urllib.request
             import urllib.error
 
-            with urllib.request.urlopen(catalog_url, timeout=10) as response:
+            with self._open_url(catalog_url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
             # Validate catalog structure
@@ -1952,7 +1971,6 @@ class ExtensionCatalog:
         Raises:
             ExtensionError: If extension not found or download fails
         """
-        import urllib.request
         import urllib.error
 
         # Get extension info from catalog
@@ -1992,7 +2010,7 @@ class ExtensionCatalog:
 
         # Download the ZIP file
         try:
-            with urllib.request.urlopen(download_url, timeout=60) as response:
+            with self._open_url(download_url, timeout=60) as response:
                 zip_data = response.read()
 
             zip_path.write_bytes(zip_data)

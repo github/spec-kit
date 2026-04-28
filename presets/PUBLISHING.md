@@ -205,11 +205,21 @@ Edit `presets/catalog.community.json` and add your preset.
 }
 ```
 
-### 3. Submit Pull Request
+### 3. Update Community Presets Table
+
+Add your preset to the Community Presets table on the docs site at `docs/community/presets.md`:
+
+```markdown
+| Your Preset Name | Brief description of what your preset does | N templates, M commands[, P scripts] | — | [repo-name](https://github.com/your-org/spec-kit-preset-your-preset) |
+```
+
+Insert your row in alphabetical order by preset **name** (the first column of the table).
+
+### 4. Submit Pull Request
 
 ```bash
 git checkout -b add-your-preset
-git add presets/catalog.community.json
+git add presets/catalog.community.json docs/community/presets.md
 git commit -m "Add your-preset to community catalog
 
 - Preset ID: your-preset
@@ -240,6 +250,7 @@ git push origin add-your-preset
 - [ ] Commands register to agent directories (if applicable)
 - [ ] Commands match template sections (command + template are coherent)
 - [ ] Added to presets/catalog.community.json
+- [ ] Added row to docs/community/presets.md table
 ```
 
 ---
