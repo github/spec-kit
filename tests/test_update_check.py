@@ -244,9 +244,15 @@ class TestCheckForUpdates:
         assert fetched["called"] is True
 
     def test_ci_suppresses_even_when_opted_in(self, monkeypatch, tmp_path):
-        """Belt-and-suspenders: CI=1 wins over the opt-in flag."""
+        """Belt-and-suspenders: CI=1 wins over the opt-in flag.
+
+        Pin isatty()=True so this test fails if the CI guard is removed —
+        otherwise pytest's stdout capture makes isatty False and the TTY
+        guard alone would suppress the fetch, masking a regression.
+        """
         monkeypatch.setenv("SPECIFY_ENABLE_UPDATE_CHECK", "1")
         monkeypatch.setenv("CI", "1")
+        monkeypatch.setattr("sys.stdout.isatty", lambda: True)
 
         fetched = {"called": False}
 
