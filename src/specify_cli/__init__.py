@@ -4321,14 +4321,14 @@ def extension_update(
                 try:
                     # 6. Validate extension ID from archive BEFORE modifying installation
                     # Handle both root-level and nested extension.yml (GitHub auto-generated archives)
-                    from .extensions import _detect_archive_format as _det_fmt_upd
-                    import tarfile as _tarfile_upd
-                    archive_fmt_upd = _det_fmt_upd(str(zip_path))
+                    from .extensions import _detect_archive_format as _ext_det_fmt
+                    import tarfile as _tarfile
+                    archive_fmt = _ext_det_fmt(str(zip_path))
                     import yaml
                     manifest_data = None
 
-                    if archive_fmt_upd == "tar.gz":
-                        with _tarfile_upd.open(zip_path, "r:gz") as tf:
+                    if archive_fmt == "tar.gz":
+                        with _tarfile.open(zip_path, "r:gz") as tf:
                             # First try root-level extension.yml
                             try:
                                 m = tf.getmember("extension.yml")
@@ -5009,7 +5009,6 @@ def workflow_add(
         from urllib.parse import urlparse
         from urllib.request import urlopen  # noqa: S310
         from .extensions import _detect_archive_format as _wf_det_fmt
-        import tarfile as _wf_tarfile
 
         parsed_src = urlparse(source)
         src_host = parsed_src.hostname or ""

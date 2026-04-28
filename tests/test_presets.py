@@ -691,7 +691,8 @@ class TestPresetManager:
 
     def test_install_from_tar_gz_no_manifest(self, project_dir, temp_dir):
         """Test installing a preset from a .tar.gz without preset.yml raises error."""
-        import tarfile, io
+        import tarfile
+        import io
         archive = temp_dir / "bad.tar.gz"
         with tarfile.open(archive, "w:gz") as tf:
             data = b"no manifest here"
@@ -705,7 +706,8 @@ class TestPresetManager:
 
     def test_install_from_tar_gz_rejects_path_traversal(self, project_dir, temp_dir):
         """install_from_zip must reject tarballs with path traversal entries."""
-        import tarfile, io
+        import tarfile
+        import io
         archive = temp_dir / "evil.tar.gz"
         with tarfile.open(archive, "w:gz") as tf:
             info = tarfile.TarInfo(name="../../evil.txt")
