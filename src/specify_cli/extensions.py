@@ -139,12 +139,18 @@ class ExtensionManifest:
     def _load_yaml(self, path: Path) -> dict:
         """Load YAML file safely."""
         try:
-            with open(path, 'r') as f:
+            with open(path, 'r', encoding='utf-8') as f:
                 data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise ValidationError(f"Invalid YAML in {path}: {e}")
         except FileNotFoundError:
             raise ValidationError(f"Manifest not found: {path}")
+        except UnicodeDecodeError as e:
+            raise ValidationError(
+                f"Manifest is not valid UTF-8: {path} ({e.reason} at byte {e.start})"
+            )
+        except OSError as e:
+            raise ValidationError(f"Could not read manifest {path}: {e}")
         if not isinstance(data, dict):
             raise ValidationError(
                 f"Manifest must be a YAML mapping, got {type(data).__name__}: {path}"

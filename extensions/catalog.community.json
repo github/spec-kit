@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-26T23:04:09Z",
+  "updated_at": "2026-04-28T12:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -941,6 +941,44 @@
       "created_at": "2026-03-17T00:00:00Z",
       "updated_at": "2026-03-17T00:00:00Z"
     },
+    "m365": {
+      "name": "Microsoft 365 Integration",
+      "id": "m365",
+      "description": "Fetch Teams messages, meeting transcripts, and SharePoint/OneDrive files as local Markdown for spec generation.",
+      "author": "BenBtg",
+      "version": "1.0.0",
+      "download_url": "https://github.com/BenBtg/spec-kit-m365/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/BenBtg/spec-kit-m365",
+      "homepage": "https://github.com/BenBtg/spec-kit-m365",
+      "documentation": "https://github.com/BenBtg/spec-kit-m365/blob/main/README.md",
+      "changelog": "https://github.com/BenBtg/spec-kit-m365/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "m365",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 0
+      },
+      "tags": [
+        "microsoft-365",
+        "teams",
+        "transcripts",
+        "collaboration",
+        "summarization"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-28T00:00:00Z",
+      "updated_at": "2026-04-28T00:00:00Z"
+    },
     "maqa": {
       "name": "MAQA — Multi-Agent & Quality Assurance",
       "id": "maqa",
@@ -1166,6 +1204,45 @@
       "stars": 0,
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
+    },
+    "markitdown": {
+      "name": "MarkItDown Document Converter",
+      "id": "markitdown",
+      "description": "Convert documents (PDF, Word, PowerPoint, Excel, and more) to Markdown for use as spec reference material in Spec Kit workflows.",
+      "author": "BenBtg",
+      "version": "1.0.0",
+      "download_url": "https://github.com/BenBtg/spec-kit-markitdown/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/BenBtg/spec-kit-markitdown",
+      "homepage": "https://github.com/BenBtg/spec-kit-markitdown",
+      "documentation": "https://github.com/BenBtg/spec-kit-markitdown/blob/main/README.md",
+      "changelog": "https://github.com/BenBtg/spec-kit-markitdown/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "markitdown",
+            "version": ">=0.1.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "markdown",
+        "pdf",
+        "document-conversion",
+        "reference-material",
+        "extraction"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-28T00:00:00Z",
+      "updated_at": "2026-04-28T00:00:00Z"
     },
     "memory-loader": {
       "name": "Memory Loader",
@@ -2315,13 +2392,45 @@
       "created_at": "2026-04-10T00:00:00Z",
       "updated_at": "2026-04-10T00:00:00Z"
     },
+    "threatmodel": {
+      "name": "OWASP LLM Threat Model",
+      "id": "threatmodel",
+      "description": "OWASP Top 10 for LLM Applications 2025 threat analysis on agent artifacts",
+      "author": "NaviaSamal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/NaviaSamal/spec-kit-threatmodel/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/NaviaSamal/spec-kit-threatmodel",
+      "homepage": "https://github.com/NaviaSamal/spec-kit-threatmodel",
+      "documentation": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/README.md",
+      "changelog": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "security",
+        "owasp",
+        "threat-model",
+        "llm",
+        "analysis"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-25T00:00:00Z",
+      "updated_at": "2026-04-25T00:00:00Z"
+    },
     "v-model": {
       "name": "V-Model Extension Pack",
       "id": "v-model",
       "description": "Enforces V-Model paired generation of development specs and test specs with full traceability.",
       "author": "leocamello",
-      "version": "0.5.0",
-      "download_url": "https://github.com/leocamello/spec-kit-v-model/archive/refs/tags/v0.5.0.zip",
+      "version": "0.6.0",
+      "download_url": "https://github.com/leocamello/spec-kit-v-model/archive/refs/tags/v0.6.0.zip",
       "repository": "https://github.com/leocamello/spec-kit-v-model",
       "homepage": "https://github.com/leocamello/spec-kit-v-model",
       "documentation": "https://github.com/leocamello/spec-kit-v-model/blob/main/README.md",
@@ -2343,9 +2452,9 @@
       ],
       "verified": false,
       "downloads": 0,
-      "stars": 0,
+      "stars": 21,
       "created_at": "2026-02-20T00:00:00Z",
-      "updated_at": "2026-04-06T00:00:00Z"
+      "updated_at": "2026-04-25T00:00:00Z"
     },
     "verify": {
       "name": "Verify Extension",

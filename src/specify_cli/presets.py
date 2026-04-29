@@ -136,12 +136,25 @@ class PresetManifest:
     def _load_yaml(self, path: Path) -> dict:
         """Load YAML file safely."""
         try:
-            with open(path, 'r') as f:
-                return yaml.safe_load(f) or {}
+            with open(path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise PresetValidationError(f"Invalid YAML in {path}: {e}")
         except FileNotFoundError:
             raise PresetValidationError(f"Manifest not found: {path}")
+        except UnicodeDecodeError as e:
+            raise PresetValidationError(
+                f"Manifest is not valid UTF-8: {path} ({e.reason} at byte {e.start})"
+            )
+        except OSError as e:
+            raise PresetValidationError(f"Could not read manifest {path}: {e}")
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise PresetValidationError(
+                f"Manifest must be a YAML mapping, got {type(data).__name__}: {path}"
+            )
+        return data
 
     def _validate(self):
         """Validate manifest structure and required fields."""
