@@ -741,7 +741,7 @@ class WorkflowEngine:
         path = self.project_root / self._INTEGRATION_JSON
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return self._AUTO_FALLBACK
         if isinstance(data, dict):
             value = data.get("integration")

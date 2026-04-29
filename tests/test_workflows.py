@@ -1882,7 +1882,6 @@ steps:
         """'auto' default resolves to the integration in .specify/integration.json."""
         from unittest.mock import patch
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
-        from specify_cli.workflows.base import StepStatus
 
         # Write integration.json with opencode
         int_json = project_dir / ".specify" / "integration.json"
