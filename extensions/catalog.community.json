@@ -2575,7 +2575,7 @@
       "author": "github",
       "version": "1.0.0",
       "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/latest/download/extension.zip",
-      "repository": "https://github.com/Azure-Samples/Spec2Cloud/",
+      "repository": "https://github.com/Azure-Samples/Spec2Cloud",
       "homepage": "https://aka.ms/spec2cloud",
       "documentation": "https://github.com/Azure-Samples/Spec2Cloud/blob/main/spec-kit/README.md",
       "changelog": "https://github.com/Azure-Samples/Spec2Cloud/blob/main/spec-kit/CHANGELOG.md",
