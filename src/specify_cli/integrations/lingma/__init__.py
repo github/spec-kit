@@ -6,6 +6,7 @@ since v0.5.1; ``--skills`` defaults to ``True``.
 """
 
 from __future__ import annotations
+
 from ..base import IntegrationOption, SkillsIntegration
 
 
@@ -38,4 +39,3 @@ class LingmaIntegration(SkillsIntegration):
                 help="Install as agent skills",
             ),
         ]
-        
