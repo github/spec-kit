@@ -31,6 +31,16 @@ def _init_project(tmp_path, integration="copilot"):
     return project
 
 
+def _run_in_project(project, args):
+    """Run a CLI command from inside a generated project."""
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        return runner.invoke(app, args, catch_exceptions=False)
+    finally:
+        os.chdir(old_cwd)
+
+
 # ── list ─────────────────────────────────────────────────────────────
 
 
@@ -333,6 +343,142 @@ class TestIntegrationSwitch:
         # integration.json updated
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "copilot"
+
+    def test_switch_migrates_extension_commands(self, tmp_path):
+        """Switching should migrate extension commands to the new agent directory."""
+        project = _init_project(tmp_path, "kimi")
+
+        # Install the bundled git extension
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        # Verify git extension skills exist for kimi
+        kimi_git_feature = project / ".kimi" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert kimi_git_feature.exists(), "Git extension skill should exist for kimi"
+
+        result = _run_in_project(project, [
+            "integration", "switch", "opencode",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # Git extension commands should exist for opencode
+        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
+        assert opencode_git_feature.exists(), "Git extension command should exist for opencode"
+
+        # Old kimi extension skills should be removed
+        assert not kimi_git_feature.exists(), "Old kimi extension skill should be removed"
+
+        # Extension registry should be updated
+        registry = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )
+        registered_commands = registry["extensions"]["git"]["registered_commands"]
+        assert "opencode" in registered_commands
+        assert "kimi" not in registered_commands
+
+        # Switch to claude
+        result = _run_in_project(project, [
+            "integration", "switch", "claude",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # Git extension skills should exist for claude
+        claude_git_feature = project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert claude_git_feature.exists(), "Git extension skill should exist for claude"
+
+        # Old opencode extension commands should be removed
+        assert not opencode_git_feature.exists(), "Old opencode extension command should be removed"
+
+        # Extension registry should be updated
+        registry = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )
+        registered_commands = registry["extensions"]["git"]["registered_commands"]
+        assert "claude" in registered_commands
+        assert "opencode" not in registered_commands
+
+    def test_switch_migrates_copilot_skills_extension_commands(self, tmp_path):
+        """Copilot --skills should receive extension skills, not .agent.md files."""
+        project = _init_project(tmp_path, "opencode")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        result = _run_in_project(project, [
+            "integration", "switch", "copilot",
+            "--script", "sh",
+            "--integration-options", "--skills",
+        ])
+        assert result.exit_code == 0, result.output
+
+        copilot_git_feature = project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        copilot_agent_file = project / ".github" / "agents" / "speckit.git.feature.agent.md"
+        assert copilot_git_feature.exists(), "Git extension skill should exist for Copilot skills mode"
+        assert not copilot_agent_file.exists(), "Copilot skills mode should not create extension .agent.md files"
+
+        # Verify Copilot-specific frontmatter: mode field should map from
+        # skill name (speckit-git-feature) back to dot notation (speckit.git-feature)
+        skill_content = copilot_git_feature.read_text(encoding="utf-8")
+        assert "mode: speckit.git-feature" in skill_content, (
+            "Copilot skill frontmatter should contain mode mapped from skill name"
+        )
+
+        registry = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )
+        git_meta = registry["extensions"]["git"]
+        assert "speckit-git-feature" in git_meta["registered_skills"]
+        assert "copilot" not in git_meta["registered_commands"]
+
+        result = _run_in_project(project, [
+            "integration", "switch", "opencode",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
+        assert opencode_git_feature.exists(), "Git extension command should exist for opencode"
+        assert not copilot_git_feature.exists(), "Old Copilot extension skill should be removed"
+
+        registry = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )
+        git_meta = registry["extensions"]["git"]
+        assert git_meta["registered_skills"] == []
+        assert "opencode" in git_meta["registered_commands"]
+        assert "copilot" not in git_meta["registered_commands"]
+
+    def test_switch_does_not_register_disabled_extensions(self, tmp_path):
+        """Disabled extensions should stay disabled and should not migrate commands."""
+        project = _init_project(tmp_path, "opencode")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        result = _run_in_project(project, ["extension", "disable", "git"])
+        assert result.exit_code == 0, result.output
+
+        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
+        assert opencode_git_feature.exists(), "Disabled extension command remains until integration switch"
+
+        result = _run_in_project(project, [
+            "integration", "switch", "claude",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        claude_git_feature = project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert not claude_git_feature.exists(), "Disabled extension should not be registered for new agent"
+        assert not opencode_git_feature.exists(), "Old disabled extension command should be removed on switch"
+
+        registry = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )
+        git_meta = registry["extensions"]["git"]
+        assert git_meta["enabled"] is False
+        assert "claude" not in git_meta["registered_commands"]
+        assert "opencode" not in git_meta["registered_commands"]
 
     def test_switch_preserves_shared_infra(self, tmp_path):
         """Switching preserves shared scripts, templates, and memory."""

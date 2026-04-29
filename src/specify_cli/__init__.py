@@ -2365,6 +2365,19 @@ def integration_switch(
             )
             raise typer.Exit(1)
 
+        # Unregister extension commands for the old agent so they don't
+        # remain as orphans in the old agent's directory.
+        try:
+            from .extensions import ExtensionManager
+
+            ext_mgr = ExtensionManager(project_root)
+            ext_mgr.unregister_agent_artifacts(installed_key)
+        except Exception as ext_err:
+            console.print(
+                f"[yellow]Warning:[/yellow] Could not clean up extension artifacts "
+                f"(commands, skills, registry entries) for '{installed_key}': {ext_err}"
+            )
+
         # Clear metadata so a failed Phase 2 doesn't leave stale references
         _remove_integration_json(project_root)
         opts = load_init_options(project_root)
@@ -2403,6 +2416,19 @@ def integration_switch(
         manifest.save()
         _write_integration_json(project_root, target_integration.key)
         _update_init_options_for_integration(project_root, target_integration, script_type=selected_script)
+
+        # Re-register extension commands for the new agent so that
+        # previously-installed extensions are available in the new integration.
+        try:
+            from .extensions import ExtensionManager
+
+            ext_mgr = ExtensionManager(project_root)
+            ext_mgr.register_enabled_extensions_for_agent(target)
+        except Exception as ext_err:
+            console.print(
+                f"[yellow]Warning:[/yellow] Could not register extension commands, skills, "
+                f"or related artifacts for '{target}': {ext_err}"
+            )
 
     except Exception as e:
         # Attempt rollback of any files written by setup
