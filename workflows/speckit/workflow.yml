@@ -8,8 +8,8 @@ workflow:
 
 requires:
   speckit_version: ">=0.7.2"
-  integrations:
-    any: ["copilot", "claude", "gemini"]
+  # integrations.any removed — "auto" resolves dynamically from the
+  # project's integration.json; a static allowlist would be incomplete.
 
 inputs:
   spec:
@@ -19,7 +19,7 @@ inputs:
   integration:
     type: string
     default: "auto"
-    prompt: "Integration to use (e.g. claude, copilot, gemini, or 'auto' to detect from project config)"
+    prompt: "Integration to use (e.g. claude, copilot, gemini, opencode, or 'auto' to detect from project config)"
   scope:
     type: string
     default: "full"

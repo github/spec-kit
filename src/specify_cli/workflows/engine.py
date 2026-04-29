@@ -20,6 +20,7 @@ from typing import Any
 import yaml
 
 from .base import RunStatus, StepContext, StepResult, StepStatus
+from .constants import INTEGRATION_JSON
 
 
 # -- Workflow Definition --------------------------------------------------
@@ -82,15 +83,25 @@ class WorkflowDefinition:
 # ID format: lowercase alphanumeric with hyphens
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
 
+
 # Valid step types (matching STEP_REGISTRY keys)
 def _get_valid_step_types() -> set[str]:
     """Return valid step types from the registry, with a built-in fallback."""
     from . import STEP_REGISTRY
+
     if STEP_REGISTRY:
         return set(STEP_REGISTRY.keys())
     return {
-        "command", "shell", "prompt", "gate", "if",
-        "switch", "while", "do-while", "fan-out", "fan-in",
+        "command",
+        "shell",
+        "prompt",
+        "gate",
+        "if",
+        "switch",
+        "while",
+        "do-while",
+        "fan-out",
+        "fan-in",
     }
 
 
@@ -104,8 +115,7 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
     # -- Schema version ---------------------------------------------------
     if definition.schema_version not in ("1.0", "1"):
         errors.append(
-            f"Unsupported schema_version {definition.schema_version!r}. "
-            f"Expected '1.0'."
+            f"Unsupported schema_version {definition.schema_version!r}. Expected '1.0'."
         )
 
     # -- Top-level fields -------------------------------------------------
@@ -187,9 +197,7 @@ def _validate_steps(
         # Determine step type
         step_type = step_config.get("type", "command")
         if step_type not in _get_valid_step_types():
-            errors.append(
-                f"Step {step_id!r} has invalid type {step_type!r}."
-            )
+            errors.append(f"Step {step_id!r} has invalid type {step_type!r}.")
             continue
 
         # Delegate to step-specific validation
@@ -238,7 +246,7 @@ class RunState:
         project_root: Path | None = None,
     ) -> None:
         self.run_id = run_id or str(uuid.uuid4())[:8]
-        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]*$', self.run_id):
+        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", self.run_id):
             msg = f"Invalid run_id {self.run_id!r}: must be alphanumeric with hyphens/underscores only."
             raise ValueError(msg)
         self.workflow_id = workflow_id
@@ -361,11 +369,7 @@ class WorkflowEngine:
 
         # Try as an installed workflow ID
         installed_path = (
-            self.project_root
-            / ".specify"
-            / "workflows"
-            / str(source)
-            / "workflow.yml"
+            self.project_root / ".specify" / "workflows" / str(source) / "workflow.yml"
         )
         if installed_path.exists():
             return WorkflowDefinition.from_yaml(installed_path)
@@ -413,6 +417,7 @@ class WorkflowEngine:
         run_dir.mkdir(parents=True, exist_ok=True)
         workflow_copy = run_dir / "workflow.yml"
         import yaml
+
         with open(workflow_copy, "w", encoding="utf-8") as f:
             yaml.safe_dump(definition.data, f, sort_keys=False)
 
@@ -491,7 +496,10 @@ class WorkflowEngine:
 
         try:
             self._execute_steps(
-                remaining_steps, context, state, STEP_REGISTRY,
+                remaining_steps,
+                context,
+                state,
+                STEP_REGISTRY,
                 step_offset=step_offset,
             )
         except KeyboardInterrupt:
@@ -565,8 +573,7 @@ class WorkflowEngine:
                 or context.default_model,
                 "options": result.output.get("options")
                 or step_config.get("options", {}),
-                "input": result.output.get("input")
-                or step_config.get("input", {}),
+                "input": result.output.get("input") or step_config.get("input", {}),
                 "output": result.output,
                 "status": result.status.value,
             }
@@ -618,7 +625,10 @@ class WorkflowEngine:
             # enhancement.
             if result.next_steps:
                 self._execute_steps(
-                    result.next_steps, context, state, registry,
+                    result.next_steps,
+                    context,
+                    state,
+                    registry,
                     step_offset=-1,
                 )
                 if state.status in (
@@ -644,10 +654,15 @@ class WorkflowEngine:
                         for ns in result.next_steps:
                             ns_copy = dict(ns)
                             if "id" in ns_copy:
-                                ns_copy["id"] = f"{step_id}:{ns_copy['id']}:{_loop_iter + 1}"
+                                ns_copy["id"] = (
+                                    f"{step_id}:{ns_copy['id']}:{_loop_iter + 1}"
+                                )
                             iter_steps.append(ns_copy)
                         self._execute_steps(
-                            iter_steps, context, state, registry,
+                            iter_steps,
+                            context,
+                            state,
+                            registry,
                             step_offset=-1,
                         )
                         if state.status in (
@@ -670,7 +685,10 @@ class WorkflowEngine:
                         base_id = item_step.get("id", "item")
                         item_step["id"] = f"{step_id}:{base_id}:{item_idx}"
                         self._execute_steps(
-                            [item_step], context, state, registry,
+                            [item_step],
+                            context,
+                            state,
+                            registry,
                             step_offset=-1,
                         )
                         # Collect per-item result for fan-in
@@ -711,9 +729,7 @@ class WorkflowEngine:
             if not isinstance(input_def, dict):
                 continue
             if name in provided:
-                resolved[name] = self._coerce_input(
-                    name, provided[name], input_def
-                )
+                resolved[name] = self._coerce_input(name, provided[name], input_def)
             elif "default" in input_def:
                 resolved[name] = input_def["default"]
             elif input_def.get("required", False):
@@ -726,7 +742,6 @@ class WorkflowEngine:
 
         return resolved
 
-    _INTEGRATION_JSON = ".specify/integration.json"
     _AUTO_FALLBACK = "copilot"
 
     def _resolve_integration_auto(self) -> str:
@@ -738,7 +753,7 @@ class WorkflowEngine:
         (no ``typer.Exit`` / ``console.print``) so the engine remains
         independently testable.
         """
-        path = self.project_root / self._INTEGRATION_JSON
+        path = self.project_root / INTEGRATION_JSON
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -750,9 +765,7 @@ class WorkflowEngine:
         return self._AUTO_FALLBACK
 
     @staticmethod
-    def _coerce_input(
-        name: str, value: Any, input_def: dict[str, Any]
-    ) -> Any:
+    def _coerce_input(name: str, value: Any, input_def: dict[str, Any]) -> Any:
         """Coerce a provided input value to the declared type."""
         input_type = input_def.get("type", "string")
         enum_values = input_def.get("enum")
@@ -777,8 +790,7 @@ class WorkflowEngine:
 
         if enum_values is not None and value not in enum_values:
             msg = (
-                f"Input {name!r} value {value!r} not in allowed "
-                f"values: {enum_values}."
+                f"Input {name!r} value {value!r} not in allowed values: {enum_values}."
             )
             raise ValueError(msg)
 
