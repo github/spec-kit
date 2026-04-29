@@ -27,7 +27,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
-from .extensions import ExtensionRegistry, normalize_priority
+from .extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 
 
 def _substitute_core_template(
@@ -576,7 +576,7 @@ class PresetManager:
                 raise PresetCompatibilityError(
                     f"Preset requires spec-kit {required}, "
                     f"but {speckit_version} is installed.\n"
-                    f"Upgrade spec-kit with: uv tool install specify-cli --force"
+                    f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
                 )
         except InvalidSpecifier:
             raise PresetCompatibilityError(
