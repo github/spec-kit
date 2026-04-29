@@ -916,6 +916,22 @@ class TestCatalogSourceManagement:
         assert data["catalogs"][-1]["name"] == "b"
         assert data["catalogs"][-1]["priority"] == 6
 
+    def test_add_catalog_default_name_ignores_blank_url_entries(
+        self, tmp_path, monkeypatch
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump({"catalogs": [{"url": "   ", "name": "blank"}]}),
+            encoding="utf-8",
+        )
+
+        cat = IntegrationCatalog(tmp_path)
+        cat.add_catalog("https://example.com/catalog.json")
+
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert data["catalogs"][-1]["name"] == "catalog-1"
+
     def test_add_catalog_rejects_non_integer_priority(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
         cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
@@ -1239,6 +1255,34 @@ class TestCatalogSourceManagement:
         ) as exc_info:
             cat.get_active_catalogs()
         assert str(cfg_path) in str(exc_info.value)
+
+    @pytest.mark.parametrize("raw_name", [None, "   "])
+    def test_load_catalog_config_defaults_blank_names(
+        self, tmp_path, monkeypatch, raw_name
+    ):
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "url": "   ",
+                            "name": "skipped",
+                        },
+                        {
+                            "url": "https://example.com/catalog.json",
+                            "name": raw_name,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        cat = IntegrationCatalog(tmp_path)
+
+        assert [entry.name for entry in cat.get_active_catalogs()] == ["catalog-1"]
 
     @pytest.mark.parametrize(
         ("raw_name", "expected"),

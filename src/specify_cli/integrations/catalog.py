@@ -177,6 +177,8 @@ class IntegrationCatalog:
                 install_allowed = bool(raw_install)
             raw_name = item.get("name")
             name = str(raw_name).strip() if raw_name is not None else ""
+            if not name:
+                name = f"catalog-{len(entries) + 1}"
             entries.append(
                 IntegrationCatalogEntry(
                     url=url,
@@ -520,6 +522,7 @@ class IntegrationCatalog:
         # we don't silently preserve a corrupt sibling entry or derive a new
         # priority from a bogus value.
         existing_priorities: List[int] = []
+        valid_catalog_count = 0
         for idx, cat in enumerate(catalogs):
             if not isinstance(cat, dict):
                 raise IntegrationValidationError(
@@ -541,6 +544,7 @@ class IntegrationCatalog:
                 raise IntegrationValidationError(
                     f"Catalog URL already configured: {url}"
                 )
+            valid_catalog_count += 1
             if "priority" in cat:
                 raw_priority = cat.get("priority")
                 if isinstance(raw_priority, bool):
@@ -565,9 +569,10 @@ class IntegrationCatalog:
 
         max_priority = max(existing_priorities, default=0)
         normalized_name = str(name).strip() if name is not None else ""
+        generated_name = f"catalog-{valid_catalog_count + 1}"
         catalogs.append(
             {
-                "name": normalized_name or f"catalog-{len(catalogs) + 1}",
+                "name": normalized_name or generated_name,
                 "url": url,
                 "priority": max_priority + 1,
                 "install_allowed": True,
