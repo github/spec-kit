@@ -3,6 +3,7 @@
 import json
 import os
 
+import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
@@ -563,6 +564,43 @@ class TestIntegrationUse:
         updated = template.read_text(encoding="utf-8")
         assert "/speckit.plan" in updated
         assert "custom template" not in updated
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_use_does_not_persist_default_when_template_refresh_fails(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        int_json = project / ".specify" / "integration.json"
+        init_options = project / ".specify" / "init-options.json"
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            install = runner.invoke(app, [
+                "integration", "install", "codex",
+                "--script", "sh",
+            ], catch_exceptions=False)
+            assert install.exit_code == 0, install.output
+
+            before_state = json.loads(int_json.read_text(encoding="utf-8"))
+            before_options = json.loads(init_options.read_text(encoding="utf-8"))
+
+            outside = tmp_path / "outside-template.md"
+            outside.write_text("# outside\n", encoding="utf-8")
+            template = project / ".specify" / "templates" / "plan-template.md"
+            template.unlink()
+            os.symlink(outside, template)
+
+            result = runner.invoke(app, [
+                "integration", "use", "codex",
+                "--force",
+            ])
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code != 0
+        assert "Failed to refresh shared templates" in result.output
+        assert json.loads(int_json.read_text(encoding="utf-8")) == before_state
+        assert json.loads(init_options.read_text(encoding="utf-8")) == before_options
+        assert outside.read_text(encoding="utf-8") == "# outside\n"
 
 
 # ── switch ───────────────────────────────────────────────────────────

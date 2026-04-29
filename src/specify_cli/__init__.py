@@ -1943,6 +1943,10 @@ def _remove_integration_json(project_root: Path) -> None:
 _MANIFEST_READ_ERRORS = (ValueError, FileNotFoundError, OSError, UnicodeDecodeError)
 
 
+class _SharedTemplateRefreshError(RuntimeError):
+    """Raised when default integration metadata should not be persisted."""
+
+
 def _normalize_script_type(script_type: str, source: str) -> str:
     """Normalize and validate a script type from CLI/config sources."""
     normalized = script_type.strip().lower()
@@ -2022,17 +2026,23 @@ def _set_default_integration(
         raw_options=raw_options,
         parsed_options=parsed_options,
     )
-    _write_integration_json(project_root, key, installed_keys, settings)
-    _update_init_options_for_integration(project_root, integration, script_type=resolved_script)
 
     if refresh_templates:
-        _refresh_shared_templates(
-            project_root,
-            invoke_separator=_invoke_separator_for_integration(
-                integration, {"integration_settings": settings}, key, parsed_options
-            ),
-            force=refresh_templates_force,
-        )
+        try:
+            _refresh_shared_templates(
+                project_root,
+                invoke_separator=_invoke_separator_for_integration(
+                    integration, {"integration_settings": settings}, key, parsed_options
+                ),
+                force=refresh_templates_force,
+            )
+        except (ValueError, OSError) as exc:
+            raise _SharedTemplateRefreshError(
+                f"Failed to refresh shared templates for '{key}': {exc}"
+            ) from exc
+
+    _write_integration_json(project_root, key, installed_keys, settings)
+    _update_init_options_for_integration(project_root, integration, script_type=resolved_script)
 
 
 def _require_specify_project() -> Path:
@@ -2376,16 +2386,20 @@ def integration_use(
         raise typer.Exit(1)
 
     raw_options, parsed_options = _resolve_integration_options(integration, current, key, None)
-    _set_default_integration(
-        project_root,
-        current,
-        key,
-        integration,
-        installed_keys,
-        raw_options=raw_options,
-        parsed_options=parsed_options,
-        refresh_templates_force=force,
-    )
+    try:
+        _set_default_integration(
+            project_root,
+            current,
+            key,
+            integration,
+            installed_keys,
+            raw_options=raw_options,
+            parsed_options=parsed_options,
+            refresh_templates_force=force,
+        )
+    except _SharedTemplateRefreshError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
     console.print(f"[green]✓[/green] Default integration set to [bold]{key}[/bold].")
 
 
@@ -2538,16 +2552,20 @@ def integration_switch(
             raw_options, parsed_options = _resolve_integration_options(
                 target_integration, current, target, None
             )
-            _set_default_integration(
-                project_root,
-                current,
-                target,
-                target_integration,
-                installed_keys,
-                raw_options=raw_options,
-                parsed_options=parsed_options,
-                refresh_templates_force=True,
-            )
+            try:
+                _set_default_integration(
+                    project_root,
+                    current,
+                    target,
+                    target_integration,
+                    installed_keys,
+                    raw_options=raw_options,
+                    parsed_options=parsed_options,
+                    refresh_templates_force=True,
+                )
+            except _SharedTemplateRefreshError as exc:
+                console.print(f"[red]Error:[/red] {exc}")
+                raise typer.Exit(1)
             console.print(
                 f"\n[green]✓[/green] Default integration remains [bold]{target}[/bold]; "
                 "managed shared templates refreshed."
@@ -2570,16 +2588,20 @@ def integration_switch(
         raw_options, parsed_options = _resolve_integration_options(
             target_integration, current, target, None
         )
-        _set_default_integration(
-            project_root,
-            current,
-            target,
-            target_integration,
-            installed_keys,
-            raw_options=raw_options,
-            parsed_options=parsed_options,
-            refresh_templates_force=force,
-        )
+        try:
+            _set_default_integration(
+                project_root,
+                current,
+                target,
+                target_integration,
+                installed_keys,
+                raw_options=raw_options,
+                parsed_options=parsed_options,
+                refresh_templates_force=force,
+            )
+        except _SharedTemplateRefreshError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(1)
         console.print(f"\n[green]✓[/green] Default integration set to [bold]{target}[/bold].")
         raise typer.Exit(0)
 
