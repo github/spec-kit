@@ -38,6 +38,20 @@ def test_normalize_integration_state_strips_legacy_key_fallback():
     assert state["installed_integrations"] == ["codex"]
 
 
+def test_normalize_integration_state_preserves_newer_schema():
+    state = normalize_integration_state(
+        {
+            "integration_state_schema": 99,
+            "integration": "claude",
+            "installed_integrations": ["claude"],
+            "future_field": {"keep": True},
+        }
+    )
+
+    assert state["integration_state_schema"] == 99
+    assert state["future_field"] == {"keep": True}
+
+
 def test_default_integration_key_strips_raw_state_values():
     assert default_integration_key({"default_integration": " claude "}) == "claude"
     assert default_integration_key({"integration": " codex "}) == "codex"

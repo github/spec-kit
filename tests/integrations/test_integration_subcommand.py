@@ -106,6 +106,24 @@ class TestIntegrationList:
         assert _integration_list_row_cells(result.output, "claude")[-1] == "yes"
         assert _integration_list_row_cells(result.output, "copilot")[-1] == "no"
 
+    def test_list_rejects_newer_integration_state_schema(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        int_json = project / ".specify" / "integration.json"
+        data = json.loads(int_json.read_text(encoding="utf-8"))
+        data["integration_state_schema"] = 99
+        int_json.write_text(json.dumps(data), encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["integration", "list"])
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code != 0
+        assert "schema 99" in result.output
+        assert "only supports schema 1" in result.output
+
 
 # ── install ──────────────────────────────────────────────────────────
 

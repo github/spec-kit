@@ -66,15 +66,54 @@ def _shared_destination_label(project_path: Path, dest: Path) -> str:
         return str(dest)
 
 
+def _shared_relative_path(project_path: Path, dest: Path) -> Path:
+    try:
+        rel = dest.relative_to(project_path)
+    except ValueError:
+        label = _shared_destination_label(project_path, dest)
+        raise ValueError(f"Shared infrastructure path escapes project root: {label}") from None
+
+    if rel.is_absolute() or ".." in rel.parts:
+        label = _shared_destination_label(project_path, dest)
+        raise ValueError(f"Shared infrastructure path escapes project root: {label}")
+    return rel
+
+
+def _ensure_safe_shared_directory(project_path: Path, directory: Path, *, create: bool = True) -> None:
+    """Create a shared infra directory without following symlinked parents."""
+    root = project_path.resolve()
+    rel = _shared_relative_path(project_path, directory)
+    current = project_path
+
+    for part in rel.parts:
+        current = current / part
+        label = _shared_destination_label(project_path, current)
+        if current.is_symlink():
+            raise ValueError(f"Refusing to use symlinked shared infrastructure directory: {label}")
+        if current.exists():
+            if not current.is_dir():
+                raise ValueError(f"Shared infrastructure directory path is not a directory: {label}")
+            try:
+                current.resolve().relative_to(root)
+            except (OSError, ValueError):
+                raise ValueError(f"Shared infrastructure directory escapes project root: {label}") from None
+            continue
+        if not create:
+            raise ValueError(f"Shared infrastructure directory does not exist: {label}")
+        current.mkdir()
+        if current.is_symlink():
+            raise ValueError(f"Refusing to use symlinked shared infrastructure directory: {label}")
+        try:
+            current.resolve().relative_to(root)
+        except (OSError, ValueError):
+            raise ValueError(f"Shared infrastructure directory escapes project root: {label}") from None
+
+
 def _ensure_safe_shared_destination(project_path: Path, dest: Path) -> None:
     """Refuse shared infra writes that would escape or follow symlinks."""
     root = project_path.resolve()
-    try:
-        dest.parent.resolve().relative_to(root)
-    except (OSError, ValueError):
-        label = _shared_destination_label(project_path, dest)
-        raise ValueError(f"Shared infrastructure destination escapes project root: {label}") from None
-
+    _shared_relative_path(project_path, dest)
+    _ensure_safe_shared_directory(project_path, dest.parent, create=False)
     label = _shared_destination_label(project_path, dest)
     if dest.is_symlink():
         raise ValueError(f"Refusing to overwrite symlinked shared infrastructure path: {label}")
@@ -88,10 +127,6 @@ def _ensure_safe_shared_destination(project_path: Path, dest: Path) -> None:
 
 def _write_shared_text(project_path: Path, dest: Path, content: str) -> None:
     _write_shared_bytes(project_path, dest, content.encode("utf-8"))
-
-
-def _copy_shared_file(project_path: Path, src: Path, dest: Path) -> None:
-    _write_shared_bytes(project_path, dest, src.read_bytes(), mode=src.stat().st_mode & 0o777)
 
 
 def _write_shared_bytes(
@@ -134,9 +169,10 @@ def refresh_shared_templates(
     tracked_files = manifest.files
     modified = set(manifest.check_modified())
     skipped_files: list[str] = []
+    planned_updates: list[tuple[Path, str, str]] = []
 
     dest_templates = project_path / ".specify" / "templates"
-    dest_templates.mkdir(parents=True, exist_ok=True)
+    _ensure_safe_shared_directory(project_path, dest_templates)
     for src in templates_src.iterdir():
         if not src.is_file() or src.name == "vscode-settings.json" or src.name.startswith("."):
             continue
@@ -151,6 +187,9 @@ def refresh_shared_templates(
 
         content = src.read_text(encoding="utf-8")
         content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+        planned_updates.append((dst, rel, content))
+
+    for dst, rel, content in planned_updates:
         _write_shared_text(project_path, dst, content)
         manifest.record_existing(rel)
 
@@ -178,16 +217,18 @@ def install_shared_infra(
     """Install shared scripts and templates into *project_path*."""
     manifest = load_speckit_manifest(project_path, version=version, console=console)
     skipped_files: list[str] = []
+    planned_copies: list[tuple[Path, str, bytes, int]] = []
+    planned_templates: list[tuple[Path, str, str]] = []
 
     scripts_src = shared_scripts_source(core_pack=core_pack, repo_root=repo_root)
     if scripts_src.is_dir():
         dest_scripts = project_path / ".specify" / "scripts"
-        dest_scripts.mkdir(parents=True, exist_ok=True)
+        _ensure_safe_shared_directory(project_path, dest_scripts)
         variant_dir = "bash" if script_type == "sh" else "powershell"
         variant_src = scripts_src / variant_dir
         if variant_src.is_dir():
             dest_variant = dest_scripts / variant_dir
-            dest_variant.mkdir(parents=True, exist_ok=True)
+            _ensure_safe_shared_directory(project_path, dest_variant)
             for src_path in variant_src.rglob("*"):
                 if not src_path.is_file():
                     continue
@@ -199,15 +240,14 @@ def install_shared_infra(
                     skipped_files.append(str(dst_path.relative_to(project_path)))
                     continue
 
-                dst_path.parent.mkdir(parents=True, exist_ok=True)
-                _copy_shared_file(project_path, src_path, dst_path)
+                _ensure_safe_shared_directory(project_path, dst_path.parent)
                 rel = dst_path.relative_to(project_path).as_posix()
-                manifest.record_existing(rel)
+                planned_copies.append((dst_path, rel, src_path.read_bytes(), src_path.stat().st_mode & 0o777))
 
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
     if templates_src.is_dir():
         dest_templates = project_path / ".specify" / "templates"
-        dest_templates.mkdir(parents=True, exist_ok=True)
+        _ensure_safe_shared_directory(project_path, dest_templates)
         for src in templates_src.iterdir():
             if not src.is_file() or src.name == "vscode-settings.json" or src.name.startswith("."):
                 continue
@@ -220,9 +260,16 @@ def install_shared_infra(
 
             content = src.read_text(encoding="utf-8")
             content = IntegrationBase.resolve_command_refs(content, invoke_separator)
-            _write_shared_text(project_path, dst, content)
             rel = dst.relative_to(project_path).as_posix()
-            manifest.record_existing(rel)
+            planned_templates.append((dst, rel, content))
+
+    for dst_path, rel, content, mode in planned_copies:
+        _write_shared_bytes(project_path, dst_path, content, mode=mode)
+        manifest.record_existing(rel)
+
+    for dst, rel, content in planned_templates:
+        _write_shared_text(project_path, dst, content)
+        manifest.record_existing(rel)
 
     if skipped_files:
         console.print(

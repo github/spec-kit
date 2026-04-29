@@ -9,6 +9,11 @@ import yaml
 from tests.conftest import strip_ansi
 
 
+class _NoopConsole:
+    def print(self, *args, **kwargs):
+        pass
+
+
 def _normalize_cli_output(output: str) -> str:
     output = strip_ansi(output)
     output = " ".join(output.split())
@@ -347,6 +352,95 @@ class TestInitIntegrationFlag:
         with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
             _refresh_shared_templates(project, invoke_separator=".", force=True)
 
+        assert outside.read_text(encoding="utf-8") == "# outside\n"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_infra_refuses_symlinked_specify_directory_before_mkdir(self, tmp_path):
+        """Shared infra directory creation must not follow a symlinked .specify."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "symlink-dir-test"
+        project.mkdir()
+        outside = tmp_path / "outside-specify"
+        outside.mkdir()
+        os.symlink(outside, project / ".specify")
+
+        with pytest.raises(ValueError, match="symlinked shared infrastructure directory"):
+            _install_shared_infra(project, "sh", force=True)
+
+        assert not (outside / "scripts").exists()
+        assert not (outside / "templates").exists()
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_template_refresh_preflights_before_writing(self, tmp_path):
+        """Template refresh validates all destinations before writing any file."""
+        from specify_cli.shared_infra import refresh_shared_templates
+
+        project = tmp_path / "preflight-refresh-test"
+        project.mkdir()
+        templates_dir = project / ".specify" / "templates"
+        templates_dir.mkdir(parents=True)
+
+        core_pack = tmp_path / "core-pack"
+        templates_src = core_pack / "templates"
+        templates_src.mkdir(parents=True)
+        (templates_src / "a-template.md").write_text("# new a\n", encoding="utf-8")
+        (templates_src / "z-template.md").write_text("# new z\n", encoding="utf-8")
+
+        existing = templates_dir / "a-template.md"
+        existing.write_text("# old a\n", encoding="utf-8")
+        outside = tmp_path / "outside-z.md"
+        outside.write_text("# outside\n", encoding="utf-8")
+        os.symlink(outside, templates_dir / "z-template.md")
+
+        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
+            refresh_shared_templates(
+                project,
+                version="test",
+                core_pack=core_pack,
+                repo_root=tmp_path / "unused",
+                console=_NoopConsole(),
+                invoke_separator=".",
+                force=True,
+            )
+
+        assert existing.read_text(encoding="utf-8") == "# old a\n"
+        assert outside.read_text(encoding="utf-8") == "# outside\n"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_infra_install_preflights_before_writing(self, tmp_path):
+        """Full shared infra installs validate destinations before writing any file."""
+        from specify_cli.shared_infra import install_shared_infra
+
+        project = tmp_path / "preflight-install-test"
+        project.mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        core_pack = tmp_path / "core-pack"
+        scripts_src = core_pack / "scripts" / "bash"
+        scripts_src.mkdir(parents=True)
+        (scripts_src / "a.sh").write_text("# new a\n", encoding="utf-8")
+        (scripts_src / "z.sh").write_text("# new z\n", encoding="utf-8")
+
+        existing = scripts_dir / "a.sh"
+        existing.write_text("# old a\n", encoding="utf-8")
+        outside = tmp_path / "outside-z.sh"
+        outside.write_text("# outside\n", encoding="utf-8")
+        os.symlink(outside, scripts_dir / "z.sh")
+
+        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
+            install_shared_infra(
+                project,
+                "sh",
+                version="test",
+                core_pack=core_pack,
+                repo_root=tmp_path / "unused",
+                console=_NoopConsole(),
+                force=True,
+            )
+
+        assert existing.read_text(encoding="utf-8") == "# old a\n"
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
     def test_shared_infra_no_warning_when_forced(self, tmp_path, capsys):

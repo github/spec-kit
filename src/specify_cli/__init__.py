@@ -61,6 +61,7 @@ from .integration_runtime import (
 )
 from .integration_state import (
     INTEGRATION_JSON,
+    INTEGRATION_STATE_SCHEMA,
     dedupe_integration_keys as _dedupe_integration_keys,
     default_integration_key as _default_integration_key,
     installed_integration_keys as _installed_integration_keys,
@@ -1928,6 +1929,14 @@ def _read_integration_json(project_root: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         console.print(f"[red]Error:[/red] {path} must contain a JSON object, got {type(data).__name__}.")
         console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
+        raise typer.Exit(1)
+    schema = data.get("integration_state_schema")
+    if isinstance(schema, int) and not isinstance(schema, bool) and schema > INTEGRATION_STATE_SCHEMA:
+        console.print(
+            f"[red]Error:[/red] {path} uses integration state schema {schema}, "
+            f"but this CLI only supports schema {INTEGRATION_STATE_SCHEMA}."
+        )
+        console.print("Please upgrade Spec Kit before modifying integrations.")
         raise typer.Exit(1)
     return _normalize_integration_state(data)
 

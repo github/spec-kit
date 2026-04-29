@@ -66,6 +66,12 @@ def normalize_integration_settings(settings: Any) -> dict[str, dict[str, Any]]:
     return normalized
 
 
+def _normalized_integration_state_schema(value: Any) -> int:
+    if isinstance(value, int) and not isinstance(value, bool) and value > INTEGRATION_STATE_SCHEMA:
+        return value
+    return INTEGRATION_STATE_SCHEMA
+
+
 def normalize_integration_state(data: dict[str, Any]) -> dict[str, Any]:
     """Normalize legacy and multi-install integration metadata."""
     legacy_key = clean_integration_key(data.get("integration"))
@@ -81,7 +87,9 @@ def normalize_integration_state(data: dict[str, Any]) -> dict[str, Any]:
     settings = normalize_integration_settings(data.get("integration_settings"))
 
     normalized = dict(data)
-    normalized["integration_state_schema"] = INTEGRATION_STATE_SCHEMA
+    normalized["integration_state_schema"] = _normalized_integration_state_schema(
+        data.get("integration_state_schema")
+    )
     if default_key:
         normalized["integration"] = default_key
         normalized["default_integration"] = default_key
