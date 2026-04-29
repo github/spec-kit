@@ -2160,6 +2160,38 @@
       "created_at": "2026-04-10T16:00:00Z",
       "updated_at": "2026-04-10T16:00:00Z"
     },
+    "squad": {
+      "name": "Squad Bridge",
+      "id": "squad",
+      "description": "Bootstrap and synchronize a Squad agent team from your Speckit spec and tasks.",
+      "author": "jwill824",
+      "version": "1.1.0",
+      "download_url": "https://github.com/jwill824/spec-kit-squad/archive/refs/tags/v1.1.0.zip",
+      "repository": "https://github.com/jwill824/spec-kit-squad",
+      "homepage": "https://github.com/jwill824/spec-kit-squad",
+      "documentation": "https://github.com/jwill824/spec-kit-squad/blob/main/README.md",
+      "changelog": "https://github.com/jwill824/spec-kit-squad/blob/main/docs/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 2
+      },
+      "tags": [
+        "multi-agent",
+        "agents",
+        "orchestration",
+        "process",
+        "integration"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-29T00:00:00Z",
+      "updated_at": "2026-04-29T00:00:00Z"
+    },
     "staff-review": {
       "name": "Staff Review Extension",
       "id": "staff-review",
