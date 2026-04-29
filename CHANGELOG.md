@@ -2,6 +2,12 @@
 
 <!-- insert new changelog below this comment -->
 
+## [Unreleased]
+
+### Fixed
+
+- fix(workflows): auto-detect project integration instead of hardcoding copilot default (#2406)
+
 ## [0.8.2] - 2026-04-28
 
 ### Changed

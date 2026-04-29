@@ -719,7 +719,35 @@ class WorkflowEngine:
             elif input_def.get("required", False):
                 msg = f"Required input {name!r} not provided."
                 raise ValueError(msg)
+
+        # Auto-detect integration from project config when set to "auto"
+        if resolved.get("integration") == "auto":
+            resolved["integration"] = self._resolve_integration_auto()
+
         return resolved
+
+    _INTEGRATION_JSON = ".specify/integration.json"
+    _AUTO_FALLBACK = "copilot"
+
+    def _resolve_integration_auto(self) -> str:
+        """Read the project integration from ``.specify/integration.json``.
+
+        Returns the stored integration key, or ``"copilot"`` when the
+        file is missing, unreadable, or does not contain a valid key.
+        This method is intentionally decoupled from the CLI layer
+        (no ``typer.Exit`` / ``console.print``) so the engine remains
+        independently testable.
+        """
+        path = self.project_root / self._INTEGRATION_JSON
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return self._AUTO_FALLBACK
+        if isinstance(data, dict):
+            value = data.get("integration")
+            if isinstance(value, str) and value:
+                return value
+        return self._AUTO_FALLBACK
 
     @staticmethod
     def _coerce_input(

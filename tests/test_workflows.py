@@ -1843,3 +1843,107 @@ steps:
         assert state.status == RunStatus.COMPLETED
         assert "do-plan" in state.step_results
         assert "do-specify" not in state.step_results
+
+
+class TestIntegrationAutoDetect:
+    """Test auto-detection of project integration from .specify/integration.json.
+
+    When workflow inputs specify ``default: "auto"`` for the integration
+    input, the engine should resolve it by reading the project's
+    ``.specify/integration.json`` instead of hardcoding ``"copilot"``.
+
+    Regression tests for https://github.com/github/spec-kit/issues/2406.
+    """
+
+    @staticmethod
+    def _make_workflow_yaml(default_integration: str = "auto") -> str:
+        return f"""
+schema_version: "1.0"
+workflow:
+  id: "auto-test"
+  name: "Auto Test"
+  version: "1.0.0"
+inputs:
+  spec:
+    type: string
+    default: "build login"
+  integration:
+    type: string
+    default: "{default_integration}"
+steps:
+  - id: specify
+    command: speckit.specify
+    integration: "{{{{ inputs.integration }}}}"
+    input:
+      args: "{{{{ inputs.spec }}}}"
+"""
+
+    def test_resolve_inputs_auto_reads_integration_json(self, project_dir):
+        """'auto' default resolves to the integration in .specify/integration.json."""
+        from unittest.mock import patch
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import StepStatus
+
+        # Write integration.json with opencode
+        int_json = project_dir / ".specify" / "integration.json"
+        int_json.write_text(json.dumps({"integration": "opencode"}), encoding="utf-8")
+
+        definition = WorkflowDefinition.from_string(self._make_workflow_yaml())
+        engine = WorkflowEngine(project_dir)
+
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+            state = engine.execute(definition)
+
+        # The resolved integration should be "opencode", not "auto" or "copilot"
+        step_output = state.step_results["specify"]["output"]
+        assert step_output["integration"] == "opencode"
+
+    def test_resolve_inputs_auto_no_json_falls_back_to_copilot(self, project_dir):
+        """When no integration.json exists, 'auto' falls back to 'copilot'."""
+        from unittest.mock import patch
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        # No integration.json exists in the project_dir fixture
+        definition = WorkflowDefinition.from_string(self._make_workflow_yaml())
+        engine = WorkflowEngine(project_dir)
+
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+            state = engine.execute(definition)
+
+        step_output = state.step_results["specify"]["output"]
+        assert step_output["integration"] == "copilot"
+
+    def test_resolve_inputs_explicit_override_ignores_auto(self, project_dir):
+        """Explicit --input integration=gemini takes precedence over auto."""
+        from unittest.mock import patch
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        # Write integration.json with opencode (should be ignored)
+        int_json = project_dir / ".specify" / "integration.json"
+        int_json.write_text(json.dumps({"integration": "opencode"}), encoding="utf-8")
+
+        definition = WorkflowDefinition.from_string(self._make_workflow_yaml())
+        engine = WorkflowEngine(project_dir)
+
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+            state = engine.execute(definition, {"integration": "gemini"})
+
+        step_output = state.step_results["specify"]["output"]
+        assert step_output["integration"] == "gemini"
+
+    def test_resolve_inputs_auto_with_empty_json(self, project_dir):
+        """When integration.json has no 'integration' key, fall back to 'copilot'."""
+        from unittest.mock import patch
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        int_json = project_dir / ".specify" / "integration.json"
+        int_json.write_text(json.dumps({"version": "1.0"}), encoding="utf-8")
+
+        definition = WorkflowDefinition.from_string(self._make_workflow_yaml())
+        engine = WorkflowEngine(project_dir)
+
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+            state = engine.execute(definition)
+
+        step_output = state.step_results["specify"]["output"]
+        assert step_output["integration"] == "copilot"
