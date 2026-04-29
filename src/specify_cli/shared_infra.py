@@ -85,6 +85,16 @@ def _ensure_safe_shared_destination(project_path: Path, dest: Path) -> None:
             raise ValueError(f"Shared infrastructure destination escapes project root: {label}") from None
 
 
+def _write_shared_text(project_path: Path, dest: Path, content: str) -> None:
+    _ensure_safe_shared_destination(project_path, dest)
+    dest.write_text(content, encoding="utf-8")
+
+
+def _copy_shared_file(project_path: Path, src: Path, dest: Path) -> None:
+    _ensure_safe_shared_destination(project_path, dest)
+    shutil.copy2(src, dest)
+
+
 def refresh_shared_templates(
     project_path: Path,
     *,
@@ -121,7 +131,7 @@ def refresh_shared_templates(
 
         content = src.read_text(encoding="utf-8")
         content = IntegrationBase.resolve_command_refs(content, invoke_separator)
-        dst.write_text(content, encoding="utf-8")
+        _write_shared_text(project_path, dst, content)
         manifest.record_existing(rel)
 
     manifest.save()
@@ -170,7 +180,7 @@ def install_shared_infra(
                     continue
 
                 dst_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src_path, dst_path)
+                _copy_shared_file(project_path, src_path, dst_path)
                 rel = dst_path.relative_to(project_path).as_posix()
                 manifest.record_existing(rel)
 
@@ -190,7 +200,7 @@ def install_shared_infra(
 
             content = src.read_text(encoding="utf-8")
             content = IntegrationBase.resolve_command_refs(content, invoke_separator)
-            dst.write_text(content, encoding="utf-8")
+            _write_shared_text(project_path, dst, content)
             rel = dst.relative_to(project_path).as_posix()
             manifest.record_existing(rel)
 
