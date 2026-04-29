@@ -121,8 +121,9 @@ class TestIntegrationList:
             os.chdir(old_cwd)
 
         assert result.exit_code != 0
-        assert "schema 99" in result.output
-        assert "only supports schema 1" in result.output
+        normalized = " ".join(result.output.split())
+        assert "schema 99" in normalized
+        assert "only supports schema 1" in normalized
 
 
 # ── install ──────────────────────────────────────────────────────────
