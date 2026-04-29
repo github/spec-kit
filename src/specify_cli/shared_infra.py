@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import shutil
+import errno
+import os
 from pathlib import Path
 from typing import Any
 
@@ -86,13 +87,40 @@ def _ensure_safe_shared_destination(project_path: Path, dest: Path) -> None:
 
 
 def _write_shared_text(project_path: Path, dest: Path, content: str) -> None:
-    _ensure_safe_shared_destination(project_path, dest)
-    dest.write_text(content, encoding="utf-8")
+    _write_shared_bytes(project_path, dest, content.encode("utf-8"))
 
 
 def _copy_shared_file(project_path: Path, src: Path, dest: Path) -> None:
+    _write_shared_bytes(project_path, dest, src.read_bytes(), mode=src.stat().st_mode & 0o777)
+
+
+def _write_shared_bytes(
+    project_path: Path,
+    dest: Path,
+    content: bytes,
+    *,
+    mode: int = 0o666,
+) -> None:
     _ensure_safe_shared_destination(project_path, dest)
-    shutil.copy2(src, dest)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+
+    try:
+        fd = os.open(dest, flags, mode)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP or dest.is_symlink():
+            label = _shared_destination_label(project_path, dest)
+            raise ValueError(f"Refusing to overwrite symlinked shared infrastructure path: {label}") from None
+        raise
+
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(content)
+        if hasattr(os, "fchmod"):
+            try:
+                os.fchmod(fh.fileno(), mode)
+            except OSError:
+                pass
 
 
 def refresh_shared_templates(
