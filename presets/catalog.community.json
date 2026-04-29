@@ -259,6 +259,31 @@
       "created_at": "2026-04-23T08:00:00Z",
       "updated_at": "2026-04-23T08:00:00Z"
     },
+    "spec2cloud": {
+      "name": "Spec2Cloud",
+      "id": "spec2cloud",
+      "version": "1.0.0",
+      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
+      "author": "Azure Samples",
+      "repository": "https://github.com/Azure-Samples/Spec2Cloud",
+      "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/latest/download/preset.zip",
+      "homepage": "https://aka.ms/spec2cloud",
+      "documentation": "https://github.com/Azure-Samples/Spec2Cloud/blob/main/spec-kit/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "templates": 5,
+        "commands": 8
+      },
+      "tags": [
+        "azure",
+        "spec2cloud",
+        "workflow",
+        "deployment"
+      ]
+    },
     "toc-navigation": {
       "name": "Table of Contents Navigation",
       "id": "toc-navigation",
@@ -306,31 +331,6 @@
         "askquestions",
         "clarify",
         "interactive"
-      ]
-    },
-    "spec2cloud": {
-      "name": "Spec2Cloud",
-      "id": "spec2cloud",
-      "version": "1.0.0",
-      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
-      "author": "Azure Samples",
-      "repository": "https://github.com/Azure-Samples/Spec2Cloud",
-      "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/latest/download/preset.zip",
-      "homepage": "https://aka.ms/spec2cloud",
-      "documentation": "https://github.com/Azure-Samples/Spec2Cloud/blob/main/spec-kit/README.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "templates": 5,
-        "commands": 8
-      },
-      "tags": [
-        "azure",
-        "spec2cloud",
-        "workflow",
-        "deployment"
       ]
     }
   }
