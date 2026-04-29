@@ -1165,6 +1165,7 @@ def init(
             raise typer.Exit(1)
         selected_ai = ai_assistant
     elif not sys.stdin.isatty():
+        console.print("[dim]Non-interactive session detected: defaulting to 'copilot'. Use --integration to choose a different agent.[/dim]")
         selected_ai = "copilot"
     else:
         # Create options dict for selection (agent_key: display_name)
