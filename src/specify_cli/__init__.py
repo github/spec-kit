@@ -1164,6 +1164,8 @@ def init(
             console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
             raise typer.Exit(1)
         selected_ai = ai_assistant
+    elif not sys.stdin.isatty():
+        selected_ai = "copilot"
     else:
         # Create options dict for selection (agent_key: display_name)
         ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}

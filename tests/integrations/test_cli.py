@@ -73,6 +73,28 @@ class TestInitIntegrationFlag:
         shared_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
         assert shared_manifest.exists()
 
+    def test_noninteractive_init_defaults_to_copilot(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("non-interactive init should not open the integration picker")
+
+        monkeypatch.setattr(specify_cli, "select_with_arrows", fail_select)
+
+        runner = CliRunner()
+        project = tmp_path / "noninteractive"
+        result = runner.invoke(app, [
+            "init", str(project), "--script", "sh", "--no-git", "--ignore-agent-tools",
+        ], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "copilot"
+
     def test_ai_copilot_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
