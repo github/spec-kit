@@ -178,6 +178,47 @@ class TestNormalizePriority:
         assert normalize_priority("invalid", default=1) == 1
 
 
+# ===== _detect_archive_format Tests =====
+
+class TestDetectArchiveFormat:
+    """Test the _detect_archive_format helper."""
+
+    def _fmt(self, url, ct=""):
+        from specify_cli.extensions import _detect_archive_format
+        return _detect_archive_format(url, ct)
+
+    def test_zip_url_extension(self):
+        assert self._fmt("https://example.com/ext-1.0.0.zip") == "zip"
+
+    def test_tar_gz_url_extension(self):
+        assert self._fmt("https://example.com/ext-1.0.0.tar.gz") == "tar.gz"
+
+    def test_tgz_url_extension(self):
+        assert self._fmt("https://example.com/ext-1.0.0.tgz") == "tar.gz"
+
+    def test_zip_uppercase_url_extension(self):
+        assert self._fmt("https://example.com/ext.ZIP") == "zip"
+
+    def test_tar_gz_with_query_string(self):
+        assert self._fmt("https://example.com/ext.tar.gz?token=abc") == "tar.gz"
+
+    def test_zip_content_type_fallback(self):
+        assert self._fmt("https://example.com/download", "application/zip") == "zip"
+
+    def test_gzip_content_type_fallback(self):
+        assert self._fmt("https://example.com/download", "application/gzip") == "tar.gz"
+
+    def test_x_gzip_content_type_fallback(self):
+        assert self._fmt("https://example.com/download", "application/x-gzip") == "tar.gz"
+
+    def test_unknown_returns_empty_string(self):
+        assert self._fmt("https://example.com/workflow.yml") == ""
+
+    def test_url_extension_takes_precedence_over_content_type(self):
+        # URL says .zip — content-type claiming gzip should not override.
+        assert self._fmt("https://example.com/ext.zip", "application/gzip") == "zip"
+
+
 # ===== ExtensionManifest Tests =====
 
 class TestExtensionManifest:
@@ -1011,6 +1052,97 @@ class TestExtensionManager:
         backup_file = backup_dir / "test-ext-config.yml"
         assert backup_file.exists()
         assert backup_file.read_text() == "test: config"
+
+
+# ===== install_from_zip Tarball Tests =====
+
+class TestInstallFromTarball:
+    """Tests for install_from_zip accepting .tar.gz/.tgz archives."""
+
+    def _make_tarball(self, dest: Path, extension_dir: Path, nested: bool = False) -> None:
+        """Create a minimal .tar.gz archive from *extension_dir*."""
+        import tarfile
+        with tarfile.open(dest, "w:gz") as tf:
+            for file_path in extension_dir.rglob("*"):
+                if file_path.is_file():
+                    arcname = file_path.relative_to(extension_dir)
+                    if nested:
+                        arcname = Path("test-ext-v1.0.0") / arcname
+                    tf.add(file_path, arcname=str(arcname))
+
+    def test_install_from_tar_gz(self, extension_dir, project_dir, temp_dir):
+        """install_from_zip should accept a .tar.gz archive."""
+        archive = temp_dir / "test-ext-1.0.0.tar.gz"
+        self._make_tarball(archive, extension_dir)
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_zip(archive, "0.1.0")
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+
+    def test_install_from_tgz(self, extension_dir, project_dir, temp_dir):
+        """install_from_zip should accept a .tgz archive."""
+        archive = temp_dir / "test-ext-1.0.0.tgz"
+        self._make_tarball(archive, extension_dir)
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_zip(archive, "0.1.0")
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+
+    def test_install_from_tar_gz_nested(self, extension_dir, project_dir, temp_dir):
+        """install_from_zip should handle a single nested directory inside the tarball."""
+        archive = temp_dir / "test-ext-nested.tar.gz"
+        self._make_tarball(archive, extension_dir, nested=True)
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_zip(archive, "0.1.0")
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+
+    def test_install_from_tar_gz_no_manifest(self, project_dir, temp_dir):
+        """install_from_zip raises ValidationError when tarball has no extension.yml."""
+        import tarfile
+        import io
+        archive = temp_dir / "bad.tar.gz"
+        with tarfile.open(archive, "w:gz") as tf:
+            data = b"no manifest here"
+            info = tarfile.TarInfo(name="readme.txt")
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ValidationError, match="No extension.yml found"):
+            manager.install_from_zip(archive, "0.1.0")
+
+    def test_install_from_tar_gz_rejects_path_traversal(self, project_dir, temp_dir):
+        """install_from_zip must reject tarballs with path traversal entries."""
+        import tarfile
+        import io
+        archive = temp_dir / "evil.tar.gz"
+        with tarfile.open(archive, "w:gz") as tf:
+            info = tarfile.TarInfo(name="../../evil.txt")
+            data = b"evil"
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ValidationError, match="Unsafe path"):
+            manager.install_from_zip(archive, "0.1.0")
+
+    def test_install_from_tar_gz_rejects_symlinks(self, project_dir, temp_dir):
+        """install_from_zip must reject tarballs containing symlinks."""
+        import tarfile
+        archive = temp_dir / "symlink.tar.gz"
+        with tarfile.open(archive, "w:gz") as tf:
+            info = tarfile.TarInfo(name="link")
+            info.type = tarfile.SYMTYPE
+            info.linkname = "/etc/passwd"
+            tf.addfile(info)
+
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ValidationError, match="Symlinks"):
+            manager.install_from_zip(archive, "0.1.0")
 
 
 # ===== CommandRegistrar Tests =====
