@@ -2163,7 +2163,7 @@
     "squad": {
       "name": "Squad Bridge",
       "id": "squad",
-      "description": "Bootstrap and synchronize a Squad agent team from your Speckit spec and tasks.",
+      "description": "Bootstrap and synchronize a Squad agent team from your Spec Kit spec and tasks.",
       "author": "jwill824",
       "version": "1.1.0",
       "download_url": "https://github.com/jwill824/spec-kit-squad/archive/refs/tags/v1.1.0.zip",
