@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-03T12:35:01Z",
+  "updated_at": "2026-04-29T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1405,7 +1405,7 @@
       "description": "Integrate Microsoft 365 organizational knowledge into spec-driven development workflows",
       "author": "sakitA",
       "version": "1.0.0",
-      "download_url": "https://github.com/sakitA/spec-kit-workiq/archive/refs/tags/v1.0.0.tar.gz",
+      "download_url": "https://github.com/sakitA/spec-kit-workiq/archive/refs/tags/v1.0.0.zip",
       "repository": "https://github.com/sakitA/spec-kit-workiq",
       "homepage": "https://github.com/sakitA/spec-kit-workiq",
       "documentation": "https://github.com/sakitA/spec-kit-workiq/blob/main/README.md",
