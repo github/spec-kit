@@ -175,10 +175,12 @@ class IntegrationCatalog:
                 install_allowed = raw_install.strip().lower() in ("true", "yes", "1")
             else:
                 install_allowed = bool(raw_install)
+            raw_name = item.get("name")
+            name = str(raw_name).strip() if raw_name is not None else ""
             entries.append(
                 IntegrationCatalogEntry(
                     url=url,
-                    name=str(item.get("name", f"catalog-{idx + 1}")),
+                    name=name,
                     priority=priority,
                     install_allowed=install_allowed,
                     description=str(item.get("description", "")),
@@ -701,13 +703,19 @@ class IntegrationCatalog:
                     f"Failed to delete catalog config {config_path}: {exc}"
                 ) from exc
 
-        fallback_name = f"catalog-{target_yaml_idx + 1}"
+        fallback_name = f"catalog-{index + 1}"
         if isinstance(removed, dict):
             removed_name = removed.get("name")
             if removed_name is not None:
                 normalized_name = str(removed_name).strip()
                 if normalized_name:
                     return normalized_name
+
+            removed_url = removed.get("url")
+            if removed_url is not None:
+                normalized_url = str(removed_url).strip()
+                if normalized_url:
+                    return normalized_url
         return fallback_name
 
 

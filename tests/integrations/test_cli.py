@@ -972,6 +972,40 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert remove_result.exit_code == 0, remove_result.output
         assert "'mine' removed" in remove_result.output
 
+    def test_catalog_list_normalizes_blank_project_catalog_names(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        cfg_path = project / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "url": "https://null-name.example.com/catalog.json",
+                            "name": None,
+                        },
+                        {
+                            "url": "https://blank-name.example.com/catalog.json",
+                            "name": "   ",
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = self._invoke(["integration", "catalog", "list"], project)
+        normalized_output = _normalize_cli_output(result.output)
+
+        assert result.exit_code == 0, result.output
+        assert "[0] catalog-1" in normalized_output
+        assert "[1] catalog-2" in normalized_output
+        assert "None" not in normalized_output
+
     def test_catalog_list_env_override_supersedes_project_config(
         self, tmp_path, monkeypatch
     ):

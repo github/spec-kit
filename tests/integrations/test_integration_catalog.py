@@ -1243,8 +1243,8 @@ class TestCatalogSourceManagement:
     @pytest.mark.parametrize(
         ("raw_name", "expected"),
         [
-            (None, "catalog-1"),
-            ("   ", "catalog-1"),
+            (None, "https://one.example.com/c.json"),
+            ("   ", "https://one.example.com/c.json"),
             (123, "123"),
         ],
     )
@@ -1459,13 +1459,18 @@ class TestCatalogSourceManagement:
         cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
         # Defaults: a=1, b=2 (implicit). Explicit c=0 → display: c, a, b.
+        # The blank name should fall back to the removed URL, not raw YAML idx.
         cfg_path.write_text(
             yaml.dump(
                 {
                     "catalogs": [
                         {"url": "https://a.example.com/c.json", "name": "a"},
                         {"url": "https://b.example.com/c.json", "name": "b"},
-                        {"url": "https://c.example.com/c.json", "name": "c", "priority": 0},
+                        {
+                            "url": "https://c.example.com/c.json",
+                            "name": "   ",
+                            "priority": 0,
+                        },
                     ]
                 }
             ),
@@ -1474,7 +1479,7 @@ class TestCatalogSourceManagement:
         cat = IntegrationCatalog(tmp_path)
 
         removed = cat.remove_catalog(0)
-        assert removed == "c"
+        assert removed == "https://c.example.com/c.json"
 
         data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
         assert [c["name"] for c in data["catalogs"]] == ["a", "b"]
