@@ -47,6 +47,11 @@ def _write_invalid_manifest(project, key):
     return manifest
 
 
+def _integration_list_row_cells(output: str, key: str) -> list[str]:
+    row = next(line for line in output.splitlines() if line.startswith(f"│ {key}"))
+    return [cell.strip() for cell in row.split("│")[1:-1]]
+
+
 # ── list ─────────────────────────────────────────────────────────────
 
 
@@ -97,10 +102,8 @@ class TestIntegrationList:
         assert result.exit_code == 0
         assert "Multi-install" in result.output
         assert "Safe" in result.output
-        claude_row = next(line for line in result.output.splitlines() if line.startswith("│ claude"))
-        copilot_row = next(line for line in result.output.splitlines() if line.startswith("│ copilot"))
-        assert claude_row.rstrip().endswith("│ yes           │")
-        assert copilot_row.rstrip().endswith("│ no            │")
+        assert _integration_list_row_cells(result.output, "claude")[-1] == "yes"
+        assert _integration_list_row_cells(result.output, "copilot")[-1] == "no"
 
 
 # ── install ──────────────────────────────────────────────────────────

@@ -2,8 +2,8 @@
 
 import json
 
-from specify_cli.integration_state import INTEGRATION_JSON
 from specify_cli.integration_state import (
+    INTEGRATION_JSON,
     default_integration_key,
     integration_setting,
     normalize_integration_state,
