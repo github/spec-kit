@@ -2173,7 +2173,14 @@
       "changelog": "https://github.com/jwill824/spec-kit-squad/blob/main/docs/CHANGELOG.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "@bradygaster/squad-cli",
+            "version": ">=0.1.0",
+            "required": true
+          }
+        ]
       },
       "provides": {
         "commands": 4,
