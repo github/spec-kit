@@ -109,11 +109,40 @@ def _ensure_safe_shared_directory(project_path: Path, directory: Path, *, create
             raise ValueError(f"Shared infrastructure directory escapes project root: {label}") from None
 
 
-def _ensure_safe_shared_destination(project_path: Path, dest: Path) -> None:
+def _validate_safe_shared_directory(project_path: Path, directory: Path) -> None:
+    """Validate existing directory parents while allowing missing directories."""
+    root = project_path.resolve()
+    rel = _shared_relative_path(project_path, directory)
+    current = project_path
+
+    for part in rel.parts:
+        current = current / part
+        label = _shared_destination_label(project_path, current)
+        if current.is_symlink():
+            raise ValueError(f"Refusing to use symlinked shared infrastructure directory: {label}")
+        if not current.exists():
+            continue
+        if not current.is_dir():
+            raise ValueError(f"Shared infrastructure directory path is not a directory: {label}")
+        try:
+            current.resolve().relative_to(root)
+        except (OSError, ValueError):
+            raise ValueError(f"Shared infrastructure directory escapes project root: {label}") from None
+
+
+def _ensure_safe_shared_destination(
+    project_path: Path,
+    dest: Path,
+    *,
+    parent_must_exist: bool = True,
+) -> None:
     """Refuse shared infra writes that would escape or follow symlinks."""
     root = project_path.resolve()
     _shared_relative_path(project_path, dest)
-    _ensure_safe_shared_directory(project_path, dest.parent, create=False)
+    if parent_must_exist:
+        _ensure_safe_shared_directory(project_path, dest.parent, create=False)
+    else:
+        _validate_safe_shared_directory(project_path, dest.parent)
     label = _shared_destination_label(project_path, dest)
     if dest.is_symlink():
         raise ValueError(f"Refusing to overwrite symlinked shared infrastructure path: {label}")
@@ -235,7 +264,7 @@ def install_shared_infra(
 
                 rel_path = src_path.relative_to(variant_src)
                 dst_path = dest_variant / rel_path
-                _ensure_safe_shared_destination(project_path, dst_path)
+                _ensure_safe_shared_destination(project_path, dst_path, parent_must_exist=False)
                 if dst_path.exists() and not force:
                     skipped_files.append(str(dst_path.relative_to(project_path)))
                     continue
@@ -264,6 +293,7 @@ def install_shared_infra(
             planned_templates.append((dst, rel, content))
 
     for dst_path, rel, content, mode in planned_copies:
+        _ensure_safe_shared_directory(project_path, dst_path.parent)
         _write_shared_bytes(project_path, dst_path, content, mode=mode)
         manifest.record_existing(rel)
 

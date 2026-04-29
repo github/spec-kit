@@ -443,6 +443,31 @@ class TestInitIntegrationFlag:
         assert existing.read_text(encoding="utf-8") == "# old a\n"
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
+    def test_shared_infra_install_supports_nested_script_sources(self, tmp_path):
+        """Nested script source files create safe destination parents at write time."""
+        from specify_cli.shared_infra import install_shared_infra
+
+        project = tmp_path / "nested-script-install-test"
+        project.mkdir()
+
+        core_pack = tmp_path / "core-pack"
+        nested_src = core_pack / "scripts" / "bash" / "nested"
+        nested_src.mkdir(parents=True)
+        (nested_src / "deep.sh").write_text("# nested\n", encoding="utf-8")
+
+        install_shared_infra(
+            project,
+            "sh",
+            version="test",
+            core_pack=core_pack,
+            repo_root=tmp_path / "unused",
+            console=_NoopConsole(),
+            force=True,
+        )
+
+        nested_dest = project / ".specify" / "scripts" / "bash" / "nested" / "deep.sh"
+        assert nested_dest.read_text(encoding="utf-8") == "# nested\n"
+
     def test_shared_infra_no_warning_when_forced(self, tmp_path, capsys):
         """No skip warning when force=True (all files overwritten)."""
         from specify_cli import _install_shared_infra
