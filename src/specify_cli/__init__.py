@@ -793,6 +793,26 @@ def _install_shared_infra(
     )
 
 
+def _install_shared_infra_or_exit(
+    project_path: Path,
+    script_type: str,
+    tracker: StepTracker | None = None,
+    force: bool = False,
+    invoke_separator: str = ".",
+) -> bool:
+    try:
+        return _install_shared_infra(
+            project_path,
+            script_type,
+            tracker=tracker,
+            force=force,
+            invoke_separator=invoke_separator,
+        )
+    except (ValueError, OSError) as exc:
+        console.print(f"[red]Error:[/red] Failed to install shared infrastructure: {exc}")
+        raise typer.Exit(1)
+
+
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:
     """Ensure POSIX .sh scripts under .specify/scripts and .specify/extensions (recursively) have execute bits (no-op on Windows)."""
     if os.name == "nt":
@@ -1295,7 +1315,13 @@ def init(
 
             # Install shared infrastructure (scripts, templates)
             tracker.start("shared-infra")
-            _install_shared_infra(project_path, selected_script, tracker=tracker, force=force, invoke_separator=resolved_integration.effective_invoke_separator(integration_parsed_options))
+            _install_shared_infra_or_exit(
+                project_path,
+                selected_script,
+                tracker=tracker,
+                force=force,
+                invoke_separator=resolved_integration.effective_invoke_separator(integration_parsed_options),
+            )
             tracker.complete("shared-infra", f"scripts ({selected_script}) + templates")
 
             ensure_constitution_from_template(project_path, tracker=tracker)
@@ -2045,6 +2071,14 @@ def _set_default_integration(
     _update_init_options_for_integration(project_root, integration, script_type=resolved_script)
 
 
+def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:
+    try:
+        _set_default_integration(*args, **kwargs)
+    except _SharedTemplateRefreshError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+
 def _require_specify_project() -> Path:
     """Return the current project root if it is a spec-kit project, else exit."""
     project_root = Path.cwd()
@@ -2227,7 +2261,7 @@ def integration_install(
             _, infra_parsed = _resolve_integration_options(
                 default_integration, current, default_key, None
             )
-    _install_shared_infra(
+    _install_shared_infra_or_exit(
         project_root,
         selected_script,
         invoke_separator=_invoke_separator_for_integration(
@@ -2386,20 +2420,16 @@ def integration_use(
         raise typer.Exit(1)
 
     raw_options, parsed_options = _resolve_integration_options(integration, current, key, None)
-    try:
-        _set_default_integration(
-            project_root,
-            current,
-            key,
-            integration,
-            installed_keys,
-            raw_options=raw_options,
-            parsed_options=parsed_options,
-            refresh_templates_force=force,
-        )
-    except _SharedTemplateRefreshError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(1)
+    _set_default_integration_or_exit(
+        project_root,
+        current,
+        key,
+        integration,
+        installed_keys,
+        raw_options=raw_options,
+        parsed_options=parsed_options,
+        refresh_templates_force=force,
+    )
     console.print(f"[green]✓[/green] Default integration set to [bold]{key}[/bold].")
 
 
@@ -2439,7 +2469,7 @@ def integration_uninstall(
                 raw_options, parsed_options = _resolve_integration_options(
                     new_integration, current, new_default, None
                 )
-                _set_default_integration(
+                _set_default_integration_or_exit(
                     project_root,
                     current,
                     new_default,
@@ -2484,7 +2514,7 @@ def integration_uninstall(
             raw_options, parsed_options = _resolve_integration_options(
                 new_integration, current, new_default, None
             )
-            _set_default_integration(
+            _set_default_integration_or_exit(
                 project_root,
                 current,
                 new_default,
@@ -2552,20 +2582,16 @@ def integration_switch(
             raw_options, parsed_options = _resolve_integration_options(
                 target_integration, current, target, None
             )
-            try:
-                _set_default_integration(
-                    project_root,
-                    current,
-                    target,
-                    target_integration,
-                    installed_keys,
-                    raw_options=raw_options,
-                    parsed_options=parsed_options,
-                    refresh_templates_force=True,
-                )
-            except _SharedTemplateRefreshError as exc:
-                console.print(f"[red]Error:[/red] {exc}")
-                raise typer.Exit(1)
+            _set_default_integration_or_exit(
+                project_root,
+                current,
+                target,
+                target_integration,
+                installed_keys,
+                raw_options=raw_options,
+                parsed_options=parsed_options,
+                refresh_templates_force=True,
+            )
             console.print(
                 f"\n[green]✓[/green] Default integration remains [bold]{target}[/bold]; "
                 "managed shared templates refreshed."
@@ -2588,20 +2614,16 @@ def integration_switch(
         raw_options, parsed_options = _resolve_integration_options(
             target_integration, current, target, None
         )
-        try:
-            _set_default_integration(
-                project_root,
-                current,
-                target,
-                target_integration,
-                installed_keys,
-                raw_options=raw_options,
-                parsed_options=parsed_options,
-                refresh_templates_force=force,
-            )
-        except _SharedTemplateRefreshError as exc:
-            console.print(f"[red]Error:[/red] {exc}")
-            raise typer.Exit(1)
+        _set_default_integration_or_exit(
+            project_root,
+            current,
+            target,
+            target_integration,
+            installed_keys,
+            raw_options=raw_options,
+            parsed_options=parsed_options,
+            refresh_templates_force=force,
+        )
         console.print(f"\n[green]✓[/green] Default integration set to [bold]{target}[/bold].")
         raise typer.Exit(0)
 
@@ -2673,7 +2695,7 @@ def integration_switch(
                 raw_options, parsed_options = _resolve_integration_options(
                     fallback_integration, current, fallback_key, None
                 )
-                _set_default_integration(
+                _set_default_integration_or_exit(
                     project_root,
                     current,
                     fallback_key,
@@ -2699,7 +2721,7 @@ def integration_switch(
 
     # Ensure shared infrastructure is present (safe to run unconditionally;
     # _install_shared_infra merges missing files without overwriting).
-    _install_shared_infra(
+    _install_shared_infra_or_exit(
         project_root,
         selected_script,
         invoke_separator=_invoke_separator_for_integration(
@@ -2761,15 +2783,21 @@ def integration_switch(
                 raw_options, parsed_options = _resolve_integration_options(
                     fallback_integration, current, fallback_key, None
                 )
-                _set_default_integration(
-                    project_root,
-                    current,
-                    fallback_key,
-                    fallback_integration,
-                    installed_keys,
-                    raw_options=raw_options,
-                    parsed_options=parsed_options,
-                )
+                try:
+                    _set_default_integration(
+                        project_root,
+                        current,
+                        fallback_key,
+                        fallback_integration,
+                        installed_keys,
+                        raw_options=raw_options,
+                        parsed_options=parsed_options,
+                    )
+                except _SharedTemplateRefreshError as restore_err:
+                    console.print(
+                        f"[yellow]Warning:[/yellow] Failed to restore default "
+                        f"integration '{fallback_key}': {restore_err}"
+                    )
             else:
                 _write_integration_json(
                     project_root, fallback_key, installed_keys, _integration_settings(current)
@@ -2860,7 +2888,7 @@ def integration_upgrade(
             _, infra_parsed = _resolve_integration_options(
                 default_integration, current, installed_key, None
             )
-    _install_shared_infra(
+    _install_shared_infra_or_exit(
         project_root,
         selected_script,
         force=force,

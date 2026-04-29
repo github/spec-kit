@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import errno
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -102,25 +102,17 @@ def _write_shared_bytes(
     mode: int = 0o666,
 ) -> None:
     _ensure_safe_shared_destination(project_path, dest)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-
+    fd, temp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
+    temp_path = Path(temp_name)
     try:
-        fd = os.open(dest, flags, mode)
-    except OSError as exc:
-        if exc.errno == errno.ELOOP or dest.is_symlink():
-            label = _shared_destination_label(project_path, dest)
-            raise ValueError(f"Refusing to overwrite symlinked shared infrastructure path: {label}") from None
-        raise
-
-    with os.fdopen(fd, "wb") as fh:
-        fh.write(content)
-        if hasattr(os, "fchmod"):
-            try:
-                os.fchmod(fh.fileno(), mode)
-            except OSError:
-                pass
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(content)
+        temp_path.chmod(mode)
+        _ensure_safe_shared_destination(project_path, dest)
+        os.replace(temp_path, dest)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
 
 
 def refresh_shared_templates(
