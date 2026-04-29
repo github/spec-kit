@@ -2018,6 +2018,38 @@
       "created_at": "2026-04-20T00:00:00Z",
       "updated_at": "2026-04-21T00:00:00Z"
     },
+    "spec2cloud": {
+      "name": "Spec2Cloud",
+      "id": "spec2cloud",
+      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
+      "author": "Azure Samples",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/latest/download/extension.zip",
+      "repository": "https://github.com/Azure-Samples/Spec2Cloud",
+      "homepage": "https://aka.ms/spec2cloud",
+      "documentation": "https://github.com/Azure-Samples/Spec2Cloud/blob/main/spec-kit/README.md",
+      "changelog": "https://github.com/Azure-Samples/Spec2Cloud/blob/main/spec-kit/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "spec2cloud",
+        "azure",
+        "cloud",
+        "deploy",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-29T15:00:00Z",
+      "updated_at": "2026-04-29T15:00:00Z"      
+    },
     "speckit-utils": {
       "name": "SDD Utilities",
       "id": "speckit-utils",
@@ -2567,38 +2599,6 @@
       "stars": 0,
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z"      
-    },
-    "spec2cloud": {
-      "name": "Spec2Cloud",
-      "id": "spec2cloud",
-      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
-      "author": "github",
-      "version": "1.0.0",
-      "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/latest/download/extension.zip",
-      "repository": "https://github.com/Azure-Samples/Spec2Cloud",
-      "homepage": "https://aka.ms/spec2cloud",
-      "documentation": "https://github.com/Azure-Samples/Spec2Cloud/blob/main/spec-kit/README.md",
-      "changelog": "https://github.com/Azure-Samples/Spec2Cloud/blob/main/spec-kit/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.4.0"
-      },
-      "provides": {
-        "commands": 2,
-        "hooks": 0
-      },
-      "tags": [
-        "spec2cloud",
-        "azure",
-        "cloud",
-        "deploy",
-        "workflow"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-04-29T15:00:00Z",
-      "updated_at": "2026-04-29T15:00:00Z"      
     }
   }
 }
