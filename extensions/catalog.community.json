@@ -119,12 +119,7 @@
         "commands": 1,
         "hooks": 0
       },
-      "tags": [
-        "archive",
-        "memory",
-        "merge",
-        "changelog"
-      ],
+      "tags": ["archive", "memory", "merge", "changelog"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -221,13 +216,7 @@
         "commands": 3,
         "hooks": 1
       },
-      "tags": [
-        "branch",
-        "naming",
-        "convention",
-        "gitflow",
-        "workflow"
-      ],
+      "tags": ["branch", "naming", "convention", "gitflow", "workflow"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -352,13 +341,7 @@
         "commands": 4,
         "hooks": 0
       },
-      "tags": [
-        "ci",
-        "validation",
-        "catalog",
-        "quality",
-        "automation"
-      ],
+      "tags": ["ci", "validation", "catalog", "quality", "automation"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -417,10 +400,7 @@
         "commands": 1,
         "hooks": 0
       },
-      "tags": [
-        "checkpoint",
-        "commit"
-      ],
+      "tags": ["checkpoint", "commit"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -446,13 +426,7 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": [
-        "quality",
-        "tech-debt",
-        "review",
-        "cleanup",
-        "scout-rule"
-      ],
+      "tags": ["quality", "tech-debt", "review", "cleanup", "scout-rule"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -478,11 +452,7 @@
         "commands": 1,
         "hooks": 0
       },
-      "tags": [
-        "conduct",
-        "workflow",
-        "automation"
-      ],
+      "tags": ["conduct", "workflow", "automation"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -508,11 +478,7 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": [
-        "docs",
-        "review",
-        "planning"
-      ],
+      "tags": ["docs", "review", "planning"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -538,9 +504,7 @@
         "commands": 1,
         "hooks": 0
       },
-      "tags": [
-        "confluence"
-      ],
+      "tags": ["confluence"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -671,12 +635,7 @@
         "commands": 5,
         "hooks": 0
       },
-      "tags": [
-        "extensions",
-        "workflow",
-        "validation",
-        "experimental"
-      ],
+      "tags": ["extensions", "workflow", "validation", "experimental"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -702,13 +661,7 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": [
-        "code",
-        "analysis",
-        "quality",
-        "automation",
-        "findings"
-      ],
+      "tags": ["code", "analysis", "quality", "automation", "findings"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -734,12 +687,7 @@
         "commands": 1,
         "hooks": 0
       },
-      "tags": [
-        "debugging",
-        "fixit",
-        "spec-alignment",
-        "post-implementation"
-      ],
+      "tags": ["debugging", "fixit", "spec-alignment", "post-implementation"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -765,12 +713,7 @@
         "commands": 2,
         "hooks": 1
       },
-      "tags": [
-        "orchestration",
-        "workflow",
-        "human-in-the-loop",
-        "parallel"
-      ],
+      "tags": ["orchestration", "workflow", "human-in-the-loop", "parallel"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -836,13 +779,7 @@
         "commands": 3,
         "hooks": 0
       },
-      "tags": [
-        "issue",
-        "integration",
-        "github",
-        "issues",
-        "sync"
-      ],
+      "tags": ["issue", "integration", "github", "issues", "sync"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -868,11 +805,7 @@
         "commands": 2,
         "hooks": 0
       },
-      "tags": [
-        "iteration",
-        "change-management",
-        "spec-maintenance"
-      ],
+      "tags": ["iteration", "change-management", "spec-maintenance"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -898,12 +831,7 @@
         "commands": 3,
         "hooks": 1
       },
-      "tags": [
-        "issue-tracking",
-        "jira",
-        "atlassian",
-        "project-management"
-      ],
+      "tags": ["issue-tracking", "jira", "atlassian", "project-management"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -929,12 +857,7 @@
         "commands": 2,
         "hooks": 1
       },
-      "tags": [
-        "learning",
-        "education",
-        "mentoring",
-        "knowledge-transfer"
-      ],
+      "tags": ["learning", "education", "mentoring", "knowledge-transfer"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1128,13 +1051,7 @@
         "commands": 2,
         "hooks": 0
       },
-      "tags": [
-        "jira",
-        "project-management",
-        "multi-agent",
-        "maqa",
-        "kanban"
-      ],
+      "tags": ["jira", "project-management", "multi-agent", "maqa", "kanban"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1160,13 +1077,7 @@
         "commands": 2,
         "hooks": 0
       },
-      "tags": [
-        "linear",
-        "project-management",
-        "multi-agent",
-        "maqa",
-        "kanban"
-      ],
+      "tags": ["linear", "project-management", "multi-agent", "maqa", "kanban"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1192,13 +1103,7 @@
         "commands": 2,
         "hooks": 0
       },
-      "tags": [
-        "trello",
-        "project-management",
-        "multi-agent",
-        "maqa",
-        "kanban"
-      ],
+      "tags": ["trello", "project-management", "multi-agent", "maqa", "kanban"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1263,12 +1168,7 @@
         "commands": 1,
         "hooks": 7
       },
-      "tags": [
-        "context",
-        "memory",
-        "governance",
-        "hooks"
-      ],
+      "tags": ["context", "memory", "governance", "hooks"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1294,13 +1194,7 @@
         "commands": 5,
         "hooks": 0
       },
-      "tags": [
-        "memory",
-        "workflow",
-        "docs",
-        "copilot",
-        "markdown"
-      ],
+      "tags": ["memory", "workflow", "docs", "copilot", "markdown"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1326,13 +1220,7 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": [
-        "memory",
-        "governance",
-        "constitution",
-        "agents-md",
-        "process"
-      ],
+      "tags": ["memory", "governance", "constitution", "agents-md", "process"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1455,12 +1343,7 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": [
-        "review",
-        "quality",
-        "workflow",
-        "gate"
-      ],
+      "tags": ["review", "quality", "workflow", "gate"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1518,12 +1401,7 @@
         "commands": 4,
         "hooks": 0
       },
-      "tags": [
-        "presets",
-        "workflow",
-        "templates",
-        "experimental"
-      ],
+      "tags": ["presets", "workflow", "templates", "experimental"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1549,13 +1427,7 @@
         "commands": 29,
         "hooks": 0
       },
-      "tags": [
-        "process",
-        "lifecycle",
-        "monorepo",
-        "v-model",
-        "portfolio"
-      ],
+      "tags": ["process", "lifecycle", "monorepo", "v-model", "portfolio"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1581,11 +1453,7 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": [
-        "code",
-        "testing",
-        "qa"
-      ],
+      "tags": ["code", "testing", "qa"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1621,12 +1489,7 @@
         "commands": 2,
         "hooks": 1
       },
-      "tags": [
-        "implementation",
-        "automation",
-        "loop",
-        "copilot"
-      ],
+      "tags": ["implementation", "automation", "loop", "copilot"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1652,12 +1515,7 @@
         "commands": 1,
         "hooks": 0
       },
-      "tags": [
-        "reconcile",
-        "drift",
-        "tasks",
-        "remediation"
-      ],
+      "tags": ["reconcile", "drift", "tasks", "remediation"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1754,11 +1612,7 @@
         "commands": 3,
         "hooks": 0
       },
-      "tags": [
-        "utility",
-        "brownfield",
-        "analysis"
-      ],
+      "tags": ["utility", "brownfield", "analysis"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1784,11 +1638,7 @@
         "commands": 1,
         "hooks": 0
       },
-      "tags": [
-        "process",
-        "retrospective",
-        "metrics"
-      ],
+      "tags": ["process", "retrospective", "metrics"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1945,13 +1795,7 @@
         "commands": 6,
         "hooks": 0
       },
-      "tags": [
-        "security",
-        "devsecops",
-        "audit",
-        "owasp",
-        "compliance"
-      ],
+      "tags": ["security", "devsecops", "audit", "owasp", "compliance"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -1989,13 +1833,7 @@
         "commands": 18,
         "hooks": 2
       },
-      "tags": [
-        "salesforce",
-        "enterprise",
-        "sdlc",
-        "apex",
-        "devops"
-      ],
+      "tags": ["salesforce", "enterprise", "sdlc", "apex", "devops"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -2021,11 +1859,7 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": [
-        "process",
-        "release",
-        "automation"
-      ],
+      "tags": ["process", "release", "automation"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -2051,12 +1885,7 @@
         "commands": 1,
         "hooks": 6
       },
-      "tags": [
-        "context",
-        "references",
-        "docs",
-        "hooks"
-      ],
+      "tags": ["context", "references", "docs", "hooks"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -2082,13 +1911,7 @@
         "commands": 6,
         "hooks": 3
       },
-      "tags": [
-        "validation",
-        "review",
-        "quality",
-        "workflow",
-        "process"
-      ],
+      "tags": ["validation", "review", "quality", "workflow", "process"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -2114,13 +1937,7 @@
         "commands": 3,
         "hooks": 2
       },
-      "tags": [
-        "resume",
-        "doctor",
-        "validate",
-        "workflow",
-        "health-check"
-      ],
+      "tags": ["resume", "doctor", "validate", "workflow", "health-check"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -2179,11 +1996,7 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": [
-        "code",
-        "review",
-        "quality"
-      ],
+      "tags": ["code", "review", "quality"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -2241,11 +2054,7 @@
         "commands": 1,
         "hooks": 0
       },
-      "tags": [
-        "workflow",
-        "project-management",
-        "status"
-      ],
+      "tags": ["workflow", "project-management", "status"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -2347,13 +2156,7 @@
         "commands": 5,
         "hooks": 1
       },
-      "tags": [
-        "sync",
-        "drift",
-        "validation",
-        "bidirectional",
-        "backfill"
-      ],
+      "tags": ["sync", "drift", "validation", "bidirectional", "backfill"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -2411,13 +2214,7 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": [
-        "security",
-        "owasp",
-        "threat-model",
-        "llm",
-        "analysis"
-      ],
+      "tags": ["security", "owasp", "threat-model", "llm", "analysis"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -2507,12 +2304,7 @@
         "commands": 1,
         "hooks": 1
       },
-      "tags": [
-        "verification",
-        "quality",
-        "phantom-completion",
-        "tasks"
-      ],
+      "tags": ["verification", "quality", "phantom-completion", "tasks"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -2538,12 +2330,7 @@
         "commands": 3,
         "hooks": 4
       },
-      "tags": [
-        "versioning",
-        "npm",
-        "validation",
-        "hooks"
-      ],
+      "tags": ["versioning", "npm", "validation", "hooks"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -2567,11 +2354,7 @@
         "commands": 1,
         "hooks": 0
       },
-      "tags": [
-        "analysis",
-        "planning",
-        "simulation"
-      ],
+      "tags": ["analysis", "planning", "simulation"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -2632,13 +2415,7 @@
         "commands": 3,
         "hooks": 1
       },
-      "tags": [
-        "worktree",
-        "git",
-        "parallel",
-        "isolation",
-        "workflow"
-      ],
+      "tags": ["worktree", "git", "parallel", "isolation", "workflow"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
@@ -2664,13 +2441,7 @@
         "commands": 3,
         "hooks": 1
       },
-      "tags": [
-        "worktree",
-        "git",
-        "parallel",
-        "isolation",
-        "agents"
-      ],
+      "tags": ["worktree", "git", "parallel", "isolation", "agents"],
       "verified": false,
       "downloads": 0,
       "stars": 0,
