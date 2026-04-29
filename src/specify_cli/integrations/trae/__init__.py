@@ -1,21 +1,40 @@
-"""Trae IDE integration."""
+"""Trae IDE integration. — skills-based agent.
 
-from ..base import MarkdownIntegration
+Trae IDE uses ``.trae/skills/speckit-<name>/SKILL.md`` layout.
+In the Specify CLI Trae integration, explicit command support was deprecated
+since v0.5.1; ``--skills`` defaults to ``True``.
+"""
+
+from __future__ import annotations
+from ..base import IntegrationOption, SkillsIntegration
 
 
-class TraeIntegration(MarkdownIntegration):
+class TraeIntegration(SkillsIntegration):
+    """Integration for Trae IDE."""
+
     key = "trae"
     config = {
         "name": "Trae",
         "folder": ".trae/",
-        "commands_subdir": "rules",
+        "commands_subdir": "skills",
         "install_url": None,
         "requires_cli": False,
     }
     registrar_config = {
-        "dir": ".trae/rules",
+        "dir": ".trae/skills",
         "format": "markdown",
         "args": "$ARGUMENTS",
-        "extension": ".md",
+        "extension": "/SKILL.md",
     }
-    context_file = ".trae/rules/AGENTS.md"
+    context_file = ".trae/rules/project_rules.md"
+
+    @classmethod
+    def options(cls) -> list[IntegrationOption]:
+        return [
+            IntegrationOption(
+                "--skills",
+                is_flag=True,
+                default=True,
+                help="Install as agent skills (default for trae since v0.5.1)",
+            ),
+        ]

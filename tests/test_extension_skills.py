@@ -269,7 +269,7 @@ class TestExtensionSkillRegistration:
         assert isinstance(parsed, dict)
         assert parsed["name"] == "speckit-test-ext-hello"
         assert "description" in parsed
-        assert parsed["disable-model-invocation"] is True
+        assert parsed["disable-model-invocation"] is False
 
     def test_no_skills_when_ai_skills_disabled(self, no_skills_project, extension_dir):
         """No skills should be created when ai_skills is false."""
@@ -396,11 +396,8 @@ class TestExtensionSkillRegistration:
             "description: Scripted plan command\n"
             "scripts:\n"
             "  sh: ../../scripts/bash/setup-plan.sh --json \"{ARGS}\"\n"
-            "agent_scripts:\n"
-            "  sh: ../../scripts/bash/update-agent-context.sh __AGENT__\n"
             "---\n\n"
             "Run {SCRIPT}\n"
-            "Then {AGENT_SCRIPT}\n"
             "Review templates/checklist.md and memory/constitution.md for __AGENT__.\n"
         )
 
@@ -409,11 +406,9 @@ class TestExtensionSkillRegistration:
 
         content = (skills_dir / "speckit-scripted-ext-plan" / "SKILL.md").read_text()
         assert "{SCRIPT}" not in content
-        assert "{AGENT_SCRIPT}" not in content
         assert "{ARGS}" not in content
         assert "__AGENT__" not in content
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
-        assert ".specify/scripts/bash/update-agent-context.sh claude" in content
         assert ".specify/templates/checklist.md" in content
         assert ".specify/memory/constitution.md" in content
 

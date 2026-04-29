@@ -98,8 +98,25 @@ class MarkdownIntegrationTests:
             assert "{SCRIPT}" not in content, f"{f.name} has unprocessed {{SCRIPT}}"
             assert "__AGENT__" not in content, f"{f.name} has unprocessed __AGENT__"
             assert "{ARGS}" not in content, f"{f.name} has unprocessed {{ARGS}}"
+            assert "__SPECKIT_COMMAND_" not in content, f"{f.name} has unprocessed __SPECKIT_COMMAND_*__"
             assert "\nscripts:\n" not in content, f"{f.name} has unstripped scripts: block"
-            assert "\nagent_scripts:\n" not in content, f"{f.name} has unstripped agent_scripts: block"
+
+    def test_plan_references_correct_context_file(self, tmp_path):
+        """The generated plan command must reference this integration's context file."""
+        i = get_integration(self.KEY)
+        if not i.context_file:
+            return
+        m = IntegrationManifest(self.KEY, tmp_path)
+        i.setup(tmp_path, m)
+        plan_file = i.commands_dest(tmp_path) / i.command_filename("plan")
+        assert plan_file.exists(), f"Plan file {plan_file} not created"
+        content = plan_file.read_text(encoding="utf-8")
+        assert i.context_file in content, (
+            f"Plan command should reference {i.context_file!r} but it was not found in {plan_file.name}"
+        )
+        assert "__CONTEXT_FILE__" not in content, (
+            f"Plan command has unprocessed __CONTEXT_FILE__ placeholder in {plan_file.name}"
+        )
 
     def test_all_files_tracked_in_manifest(self, tmp_path):
         i = get_integration(self.KEY)
@@ -132,30 +149,35 @@ class MarkdownIntegrationTests:
         assert modified_file.exists()
         assert modified_file in skipped
 
-    # -- Scripts ----------------------------------------------------------
+    # -- Context section ---------------------------------------------------
 
-    def test_setup_installs_update_context_scripts(self, tmp_path):
-        i = get_integration(self.KEY)
-        m = IntegrationManifest(self.KEY, tmp_path)
-        created = i.setup(tmp_path, m)
-        scripts_dir = tmp_path / ".specify" / "integrations" / self.KEY / "scripts"
-        assert scripts_dir.is_dir(), f"Scripts directory not created for {self.KEY}"
-        assert (scripts_dir / "update-context.sh").exists()
-        assert (scripts_dir / "update-context.ps1").exists()
-
-    def test_scripts_tracked_in_manifest(self, tmp_path):
+    def test_setup_upserts_context_section(self, tmp_path):
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
-        script_rels = [k for k in m.files if "update-context" in k]
-        assert len(script_rels) >= 2
+        if i.context_file:
+            ctx_path = tmp_path / i.context_file
+            assert ctx_path.exists(), f"Context file {i.context_file} not created for {self.KEY}"
+            content = ctx_path.read_text(encoding="utf-8")
+            assert "<!-- SPECKIT START -->" in content
+            assert "<!-- SPECKIT END -->" in content
+            assert "read the current plan" in content
 
-    def test_sh_script_is_executable(self, tmp_path):
+    def test_teardown_removes_context_section(self, tmp_path):
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
-        sh = tmp_path / ".specify" / "integrations" / self.KEY / "scripts" / "update-context.sh"
-        assert os.access(sh, os.X_OK)
+        m.save()
+        if i.context_file:
+            ctx_path = tmp_path / i.context_file
+            # Add user content around the section
+            content = ctx_path.read_text(encoding="utf-8")
+            ctx_path.write_text("# My Rules\n\n" + content + "\n# Footer\n", encoding="utf-8")
+            i.teardown(tmp_path, m)
+            remaining = ctx_path.read_text(encoding="utf-8")
+            assert "<!-- SPECKIT START -->" not in remaining
+            assert "<!-- SPECKIT END -->" not in remaining
+            assert "# My Rules" in remaining
 
     # -- CLI auto-promote -------------------------------------------------
 
@@ -203,6 +225,30 @@ class MarkdownIntegrationTests:
         commands = sorted(cmd_dir.glob("speckit.*"))
         assert len(commands) > 0, f"No command files in {cmd_dir}"
 
+    def test_init_options_includes_context_file(self, tmp_path):
+        """init-options.json must include context_file for the active integration."""
+        import json
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / f"opts-{self.KEY}"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", self.KEY, "--script", "sh",
+                "--no-git", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        opts = json.loads((project / ".specify" / "init-options.json").read_text())
+        i = get_integration(self.KEY)
+        assert opts.get("context_file") == i.context_file, (
+            f"Expected context_file={i.context_file!r}, got {opts.get('context_file')!r}"
+        )
+
     # -- Complete file inventory ------------------------------------------
 
     COMMAND_STEMS = [
@@ -220,10 +266,6 @@ class MarkdownIntegrationTests:
         for stem in self.COMMAND_STEMS:
             files.append(f"{cmd_dir}/speckit.{stem}.md")
 
-        # Integration scripts
-        files.append(f".specify/integrations/{self.KEY}/scripts/update-context.ps1")
-        files.append(f".specify/integrations/{self.KEY}/scripts/update-context.sh")
-
         # Framework files
         files.append(f".specify/integration.json")
         files.append(f".specify/init-options.json")
@@ -232,19 +274,27 @@ class MarkdownIntegrationTests:
 
         if script_variant == "sh":
             for name in ["check-prerequisites.sh", "common.sh", "create-new-feature.sh",
-                         "setup-plan.sh", "update-agent-context.sh"]:
+                         "setup-plan.sh"]:
                 files.append(f".specify/scripts/bash/{name}")
         else:
             for name in ["check-prerequisites.ps1", "common.ps1", "create-new-feature.ps1",
-                         "setup-plan.ps1", "update-agent-context.ps1"]:
+                         "setup-plan.ps1"]:
                 files.append(f".specify/scripts/powershell/{name}")
 
-        for name in ["agent-file-template.md", "checklist-template.md",
+        for name in ["checklist-template.md",
                      "constitution-template.md", "plan-template.md",
                      "spec-template.md", "tasks-template.md"]:
             files.append(f".specify/templates/{name}")
 
         files.append(".specify/memory/constitution.md")
+        # Bundled workflow
+        files.append(".specify/workflows/speckit/workflow.yml")
+        files.append(".specify/workflows/workflow-registry.json")
+
+        # Agent context file (if set)
+        if i.context_file:
+            files.append(i.context_file)
+
         return sorted(files)
 
     def test_complete_file_inventory_sh(self, tmp_path):

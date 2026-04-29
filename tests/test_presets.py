@@ -160,6 +160,38 @@ class TestPresetManifest:
         with pytest.raises(PresetValidationError, match="Invalid YAML"):
             PresetManifest(bad_file)
 
+    def test_utf8_non_ascii_description_loads(self, temp_dir, valid_pack_data):
+        """Regression for #2325: non-ASCII (UTF-8) description loads on any platform.
+
+        On Windows, Python's default text-mode encoding is the locale codepage
+        (e.g. cp1252/GBK), which raises UnicodeDecodeError on UTF-8 bytes
+        outside the ASCII range. The loader must open with encoding='utf-8'.
+        """
+        valid_pack_data["preset"]["description"] = "中文测试 — émojis 🚀"
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_bytes(
+            yaml.safe_dump(valid_pack_data, allow_unicode=True).encode("utf-8")
+        )
+
+        manifest = PresetManifest(manifest_path)
+        assert manifest.description == "中文测试 — émojis 🚀"
+
+    def test_invalid_utf8_bytes_raises_validation_error(self, temp_dir):
+        """Negative case: file containing invalid UTF-8 bytes raises PresetValidationError, not raw UnicodeDecodeError."""
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_bytes(b"\xff\xfe not valid utf-8 \xff\n")
+
+        with pytest.raises(PresetValidationError, match="not valid UTF-8"):
+            PresetManifest(manifest_path)
+
+    def test_non_mapping_yaml_raises_validation_error(self, temp_dir):
+        """Manifest whose YAML root is a scalar or list raises PresetValidationError, not TypeError."""
+        manifest_path = temp_dir / "preset.yml"
+        for bad_content in ("42\n", "[1, 2]\n"):
+            manifest_path.write_text(bad_content, encoding="utf-8")
+            with pytest.raises(PresetValidationError, match="YAML mapping"):
+                PresetManifest(manifest_path)
+
     def test_missing_schema_version(self, temp_dir, valid_pack_data):
         """Test missing schema_version field."""
         del valid_pack_data["schema_version"]
@@ -999,6 +1031,94 @@ class TestPresetResolver:
         assert result is None
 
 
+class TestResolveCore:
+    """Test PresetResolver.resolve_core() skips the installed-presets tier."""
+
+    def test_resolve_core_does_not_return_preset_files(self, project_dir):
+        """resolve_core must not return files from .specify/presets/."""
+        preset_cmd_dir = project_dir / ".specify" / "presets" / "my-preset" / "commands"
+        preset_cmd_dir.mkdir(parents=True)
+        (preset_cmd_dir / "specify.md").write_text("---\ndescription: preset wrap\n---\n\nwrap body\n")
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve_core("specify", "command")
+        # The preset file must never be returned — but the bundled core may be.
+        if result is not None:
+            assert "presets" not in result.parts
+
+    def test_resolve_core_returns_core_template(self, project_dir):
+        """resolve_core falls through to core templates (tier 4)."""
+        core_cmd_dir = project_dir / ".specify" / "templates" / "commands"
+        core_cmd_dir.mkdir(parents=True, exist_ok=True)
+        (core_cmd_dir / "specify.md").write_text("---\ndescription: core\n---\n\ncore body\n")
+
+        # Also place a preset file — resolve_core must still return the core
+        preset_cmd_dir = project_dir / ".specify" / "presets" / "my-preset" / "commands"
+        preset_cmd_dir.mkdir(parents=True)
+        (preset_cmd_dir / "specify.md").write_text("---\ndescription: preset wrap\n---\n\nwrap body\n")
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve_core("specify", "command")
+        assert result is not None
+        assert "presets" not in result.parts
+        assert result.parts[-3:] == ("templates", "commands", "specify.md")
+
+    def test_resolve_core_returns_override(self, project_dir):
+        """resolve_core returns tier-1 override if present."""
+        override_dir = project_dir / ".specify" / "templates" / "overrides"
+        override_dir.mkdir(parents=True)
+        (override_dir / "specify.md").write_text("---\ndescription: override\n---\n\noverride body\n")
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve_core("specify", "command")
+        assert result is not None
+        assert result.parts[-2:] == ("overrides", "specify.md")
+
+    def test_resolve_core_returns_extension_template(self, project_dir):
+        """resolve_core returns extension templates (tier 3)."""
+        ext_cmd_dir = project_dir / ".specify" / "extensions" / "myext" / "commands"
+        ext_cmd_dir.mkdir(parents=True)
+        (ext_cmd_dir / "myext-cmd.md").write_text("---\ndescription: ext\n---\n\next body\n")
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve_core("myext-cmd", "command")
+        assert result is not None
+        assert result.parts[-4:-1] == ("extensions", "myext", "commands")
+
+    def test_resolve_core_returns_none_when_nothing_found(self, project_dir):
+        """resolve_core returns None when no file found in tiers 1/3/4."""
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve_core("nonexistent", "command")
+        assert result is None
+
+    def test_resolve_extension_command_via_manifest_skips_oserror_manifests(self, project_dir):
+        """resolve_extension_command_via_manifest skips extensions whose manifest raises OSError."""
+        import unittest.mock as mock
+
+        ext_dir = project_dir / ".specify" / "extensions" / "bad-ext"
+        cmd_dir = ext_dir / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "mycmd.md").write_text("---\ndescription: d\n---\n\nbody\n")
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: bad-ext\n  name: Bad\n  version: 1.0.0\n"
+            "  description: d\n  author: a\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n  commands:\n"
+            "    - name: speckit.bad-ext.mycmd\n"
+            "      file: commands/mycmd.md\n"
+            "      description: My command\n"
+        )
+
+        resolver = PresetResolver(project_dir)
+        # Simulate a permission error when opening the manifest file.
+        with mock.patch("builtins.open", side_effect=PermissionError("denied")):
+            result = resolver.resolve_extension_command_via_manifest("speckit.bad-ext.mycmd")
+
+        assert result is None, "OSError during manifest load must be silently skipped"
+
+
 class TestExtensionPriorityResolution:
     """Test extension priority resolution with registered and unregistered extensions."""
 
@@ -1175,8 +1295,7 @@ class TestPresetCatalog:
         """Test search with cached catalog data."""
         from unittest.mock import patch
 
-        # Only use the default catalog to prevent fetching the community catalog from the network
-        monkeypatch.setenv("SPECKIT_PRESET_CATALOG_URL", PresetCatalog.DEFAULT_CATALOG_URL)
+        monkeypatch.delenv("SPECKIT_PRESET_CATALOG_URL", raising=False)
         catalog = PresetCatalog(project_dir)
         catalog.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1275,6 +1394,166 @@ class TestPresetCatalog:
         monkeypatch.setenv("SPECKIT_PRESET_CATALOG_URL", "https://custom.example.com/catalog.json")
         catalog = PresetCatalog(project_dir)
         assert catalog.get_catalog_url() == "https://custom.example.com/catalog.json"
+
+    # --- _make_request / GitHub auth ---
+
+    def test_make_request_no_token_no_auth_header(self, project_dir, monkeypatch):
+        """Without a token, requests carry no Authorization header."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_whitespace_only_github_token_ignored(self, project_dir, monkeypatch):
+        """A whitespace-only GITHUB_TOKEN is treated as unset."""
+        monkeypatch.setenv("GITHUB_TOKEN", "   ")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_whitespace_github_token_falls_back_to_gh_token(self, project_dir, monkeypatch):
+        """When GITHUB_TOKEN is whitespace-only, GH_TOKEN is used as fallback."""
+        monkeypatch.setenv("GITHUB_TOKEN", "   ")
+        monkeypatch.setenv("GH_TOKEN", "ghp_fallback")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
+        assert req.get_header("Authorization") == "Bearer ghp_fallback"
+
+    def test_make_request_github_token_added_for_github_url(self, project_dir, monkeypatch):
+        """GITHUB_TOKEN is attached for raw.githubusercontent.com URLs."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
+        assert req.get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_make_request_gh_token_fallback(self, project_dir, monkeypatch):
+        """GH_TOKEN is used when GITHUB_TOKEN is absent."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.setenv("GH_TOKEN", "ghp_ghtoken")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://github.com/org/repo/releases/download/v1/pack.zip")
+        assert req.get_header("Authorization") == "Bearer ghp_ghtoken"
+
+    def test_make_request_github_token_takes_precedence(self, project_dir, monkeypatch):
+        """GITHUB_TOKEN takes precedence over GH_TOKEN when both are set."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_primary")
+        monkeypatch.setenv("GH_TOKEN", "ghp_secondary")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://api.github.com/repos/org/repo")
+        assert req.get_header("Authorization") == "Bearer ghp_primary"
+
+    def test_make_request_token_added_for_codeload_github_com(self, project_dir, monkeypatch):
+        """GITHUB_TOKEN is attached for codeload.github.com URLs (GitHub archive redirects)."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://codeload.github.com/org/repo/zip/refs/tags/v1.0.0")
+        assert req.get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_make_request_token_not_added_for_non_github_url(self, project_dir, monkeypatch):
+        """Auth header is never attached to non-GitHub URLs to prevent credential leakage."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://internal.example.com/catalog.json")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_token_not_added_for_github_lookalike_host(self, project_dir, monkeypatch):
+        """Auth header is not attached to hosts that include github.com as a suffix."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://github.com.evil.com/org/repo/releases/download/v1/pack.zip")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_token_not_added_for_github_in_path(self, project_dir, monkeypatch):
+        """Auth header is not attached when github.com appears only in the URL path."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://evil.example.com/github.com/org/repo/releases/download/v1/pack.zip")
+        assert "Authorization" not in req.headers
+
+    def test_make_request_token_not_added_for_github_in_query(self, project_dir, monkeypatch):
+        """Auth header is not attached when github.com appears only in the query string."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+        req = catalog._make_request("https://evil.example.com/download?source=https://github.com/org/repo/v1/pack.zip")
+        assert "Authorization" not in req.headers
+
+    def test_fetch_single_catalog_sends_auth_header(self, project_dir, monkeypatch):
+        """_fetch_single_catalog passes Authorization header via opener for GitHub URLs."""
+        from unittest.mock import patch, MagicMock
+
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+
+        catalog_data = {"schema_version": "1.0", "presets": {}}
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(catalog_data).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        captured = {}
+        mock_opener = MagicMock()
+
+        def fake_open(req, timeout=None):
+            captured["req"] = req
+            return mock_response
+
+        mock_opener.open.side_effect = fake_open
+
+        entry = PresetCatalogEntry(
+            url="https://raw.githubusercontent.com/org/repo/main/presets/catalog.json",
+            name="private",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch("urllib.request.build_opener", return_value=mock_opener):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+        assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_download_pack_sends_auth_header(self, project_dir, monkeypatch):
+        """download_pack passes Authorization header via opener for GitHub URLs."""
+        from unittest.mock import patch, MagicMock
+
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        catalog = PresetCatalog(project_dir)
+
+        import io
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
+        zip_bytes = zip_buf.getvalue()
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = zip_bytes
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        captured = {}
+        mock_opener = MagicMock()
+
+        def fake_open(req, timeout=None):
+            captured["req"] = req
+            return mock_response
+
+        mock_opener.open.side_effect = fake_open
+
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://github.com/org/repo/releases/download/v1/test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch("urllib.request.build_opener", return_value=mock_opener):
+            catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
 
 
 # ===== Integration Tests =====
@@ -1649,7 +1928,6 @@ CORE_TEMPLATE_NAMES = [
     "tasks-template",
     "checklist-template",
     "constitution-template",
-    "agent-file-template",
 ]
 
 
@@ -1667,7 +1945,7 @@ class TestSelfTestPreset:
         assert manifest.id == "self-test"
         assert manifest.name == "Self-Test Preset"
         assert manifest.version == "1.0.0"
-        assert len(manifest.templates) == 7  # 6 templates + 1 command
+        assert len(manifest.templates) == 8  # 6 templates + 2 commands
 
     def test_self_test_provides_all_core_templates(self):
         """Verify the self-test preset provides an override for every core template."""
@@ -1976,7 +2254,7 @@ class TestPresetSkills:
         assert skill_file.exists()
         content = skill_file.read_text()
         assert "preset:self-test" in content, "Skill should reference preset source"
-        assert "disable-model-invocation: true" in content
+        assert "disable-model-invocation: false" in content
 
         # Verify it was recorded in registry
         metadata = manager.registry.get("self-test")
@@ -2058,7 +2336,7 @@ class TestPresetSkills:
         content = skill_file.read_text()
         assert "preset:self-test" not in content, "Preset content should be gone"
         assert "templates/commands/specify.md" in content, "Should reference core template"
-        assert "disable-model-invocation: true" in content
+        assert "disable-model-invocation: false" in content
 
     def test_skill_restored_on_remove_resolves_script_placeholders(self, project_dir):
         """Core restore should resolve {SCRIPT}/{ARGS} placeholders like other skill paths."""
@@ -2449,7 +2727,7 @@ class TestPresetSkills:
     def test_agy_skill_restored_on_preset_remove(self, project_dir, temp_dir):
         """Agy preset removal should restore native skills instead of deleting them."""
         self._write_init_options(project_dir, ai="agy", ai_skills=True)
-        skills_dir = project_dir / ".agent" / "skills"
+        skills_dir = project_dir / ".agents" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="before override")
 
         core_command = project_dir / ".specify" / "templates" / "commands" / "specify.md"
@@ -2865,3 +3143,1451 @@ class TestPresetEnableDisable:
 
         assert result.exit_code == 1
         assert "corrupted state" in result.output.lower()
+
+
+# ===== Lean Preset Tests =====
+
+
+LEAN_PRESET_DIR = Path(__file__).parent.parent / "presets" / "lean"
+
+LEAN_COMMAND_NAMES = [
+    "speckit.specify",
+    "speckit.plan",
+    "speckit.tasks",
+    "speckit.implement",
+    "speckit.constitution",
+]
+
+
+class TestLeanPreset:
+    """Tests for the lean preset that ships with the repo."""
+
+    def test_lean_preset_exists(self):
+        """Verify the lean preset directory and manifest exist."""
+        assert LEAN_PRESET_DIR.exists()
+        assert (LEAN_PRESET_DIR / "preset.yml").exists()
+
+    def test_lean_manifest_valid(self):
+        """Verify the lean preset manifest is valid."""
+        manifest = PresetManifest(LEAN_PRESET_DIR / "preset.yml")
+        assert manifest.id == "lean"
+        assert manifest.name == "Lean Workflow"
+        assert manifest.version == "1.0.0"
+        assert len(manifest.templates) == 5  # 5 commands
+
+    def test_lean_provides_core_workflow_commands(self):
+        """Verify the lean preset provides overrides for core workflow commands."""
+        manifest = PresetManifest(LEAN_PRESET_DIR / "preset.yml")
+        provided_names = {t["name"] for t in manifest.templates}
+        for name in LEAN_COMMAND_NAMES:
+            assert name in provided_names, f"Lean preset missing command: {name}"
+
+    def test_lean_command_files_exist(self):
+        """Verify that all declared command files actually exist on disk."""
+        manifest = PresetManifest(LEAN_PRESET_DIR / "preset.yml")
+        for tmpl in manifest.templates:
+            tmpl_path = LEAN_PRESET_DIR / tmpl["file"]
+            assert tmpl_path.exists(), f"Missing command file: {tmpl['file']}"
+
+    def test_lean_commands_have_no_scripts(self):
+        """Verify lean commands have no scripts in frontmatter."""
+        from specify_cli.agents import CommandRegistrar
+
+        for name in LEAN_COMMAND_NAMES:
+            cmd_path = LEAN_PRESET_DIR / "commands" / f"speckit.{name.split('.')[-1]}.md"
+            content = cmd_path.read_text()
+            frontmatter, _ = CommandRegistrar.parse_frontmatter(content)
+            assert "scripts" not in frontmatter, f"{name} should not have scripts in frontmatter"
+
+    def test_lean_commands_have_no_hooks(self):
+        """Verify lean commands do not contain extension hook boilerplate."""
+        for name in LEAN_COMMAND_NAMES:
+            cmd_path = LEAN_PRESET_DIR / "commands" / f"speckit.{name.split('.')[-1]}.md"
+            content = cmd_path.read_text()
+            assert "hooks." not in content, f"{name} should not reference extension hooks"
+            assert "extensions.yml" not in content, f"{name} should not reference extensions.yml"
+
+    def test_install_lean_preset(self, project_dir):
+        """Test installing the lean preset from its directory."""
+        manager = PresetManager(project_dir)
+        manifest = manager.install_from_directory(LEAN_PRESET_DIR, "0.6.0")
+        assert manifest.id == "lean"
+        assert manager.registry.is_installed("lean")
+
+    def test_lean_overrides_commands(self, project_dir):
+        """Test that lean preset overrides are resolved correctly."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(LEAN_PRESET_DIR, "0.6.0")
+
+        resolver = PresetResolver(project_dir)
+        for name in LEAN_COMMAND_NAMES:
+            result = resolver.resolve(name, template_type="command")
+            assert result is not None, f"Lean override for {name} not resolved"
+
+
+# ===== Bundled Preset Locator Tests =====
+
+
+class TestBundledPresetLocator:
+    """Tests for _locate_bundled_preset discovery function."""
+
+    def test_locate_bundled_lean_preset(self):
+        """_locate_bundled_preset finds the lean preset."""
+        from specify_cli import _locate_bundled_preset
+
+        path = _locate_bundled_preset("lean")
+        assert path is not None
+        assert (path / "preset.yml").is_file()
+
+    def test_locate_bundled_preset_not_found(self):
+        """_locate_bundled_preset returns None for nonexistent preset."""
+        from specify_cli import _locate_bundled_preset
+
+        path = _locate_bundled_preset("nonexistent-preset")
+        assert path is None
+
+    def test_locate_bundled_preset_rejects_invalid_id(self):
+        """_locate_bundled_preset rejects IDs with invalid characters."""
+        from specify_cli import _locate_bundled_preset
+
+        assert _locate_bundled_preset("../escape") is None
+        assert _locate_bundled_preset("UPPERCASE") is None
+        assert _locate_bundled_preset("has spaces") is None
+
+    def test_bundled_preset_add_via_cli(self, project_dir):
+        """Test that 'specify preset add lean' installs the bundled preset."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="0.6.0"):
+            result = runner.invoke(app, ["preset", "add", "lean"])
+
+        assert result.exit_code == 0, result.output
+        assert "Lean Workflow" in result.output
+        assert "installed" in result.output.lower()
+
+    def test_bundled_preset_in_catalog(self):
+        """Verify the lean preset is listed in catalog.json with bundled marker."""
+        catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
+        catalog = json.loads(catalog_path.read_text())
+        assert "lean" in catalog["presets"]
+        assert catalog["presets"]["lean"]["bundled"] is True
+        assert "download_url" not in catalog["presets"]["lean"]
+
+    def test_bundled_preset_download_raises_error(self, project_dir):
+        """download_pack raises PresetError for bundled presets without download_url."""
+        catalog = PresetCatalog(project_dir)
+
+        catalog_data = {
+            "test-bundled": {
+                "name": "Test Bundled",
+                "version": "1.0.0",
+                "bundled": True,
+            }
+        }
+        from unittest.mock import patch
+        with patch.object(catalog, "_get_merged_packs", return_value=catalog_data):
+            with pytest.raises(PresetError, match="bundled with spec-kit"):
+                catalog.download_pack("test-bundled")
+
+    def test_bundled_preset_missing_locally_cli_error(self, project_dir):
+        """CLI shows clear error when bundled preset cannot be found locally."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        # Patch _locate_bundled_preset to return None (simulating missing files)
+        # and mock the catalog to return a bundled entry for "lean"
+        fake_pack_info = {
+            "id": "lean",
+            "name": "Lean Workflow",
+            "version": "1.0.0",
+            "bundled": True,
+            "_install_allowed": True,
+        }
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli._locate_bundled_preset", return_value=None), \
+             patch("specify_cli.presets.PresetCatalog") as MockCatalog:
+            MockCatalog.return_value.get_pack_info.return_value = fake_pack_info
+            result = runner.invoke(app, ["preset", "add", "lean"])
+
+        # Should fail with a helpful error explaining this is a bundled preset
+        # and suggesting how to recover.
+        assert result.exit_code == 1
+        output = strip_ansi(result.output).lower()
+        assert "bundled" in output, result.output
+        assert "reinstall" in output, result.output
+
+
+class TestWrapStrategy:
+    """Tests for strategy: wrap preset command substitution."""
+
+    def test_substitute_core_template_replaces_placeholder(self, project_dir):
+        """Core template body replaces {CORE_TEMPLATE} in preset command body."""
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        # Set up a core command template
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\n---\n\n# Core Specify\n\nDo the thing.\n"
+        )
+
+        registrar = CommandRegistrar()
+        body = "## Pre-Logic\n\nBefore stuff.\n\n{CORE_TEMPLATE}\n\n## Post-Logic\n\nAfter stuff.\n"
+        result, core_fm = _substitute_core_template(body, "specify", project_dir, registrar)
+
+        assert "{CORE_TEMPLATE}" not in result
+        assert "# Core Specify" in result
+        assert "## Pre-Logic" in result
+        assert "## Post-Logic" in result
+        assert core_fm.get("description") == "core"
+
+    def test_substitute_core_template_no_op_when_placeholder_absent(self, project_dir):
+        """Returns body unchanged when {CORE_TEMPLATE} is not present."""
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text("---\ndescription: core\n---\n\nCore body.\n")
+
+        registrar = CommandRegistrar()
+        body = "## No placeholder here.\n"
+        result, core_fm = _substitute_core_template(body, "specify", project_dir, registrar)
+        assert result == body
+        assert core_fm == {}
+
+    def test_substitute_core_template_no_op_when_core_missing(self, project_dir):
+        """Returns body unchanged when core template file does not exist."""
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        registrar = CommandRegistrar()
+        body = "Pre.\n\n{CORE_TEMPLATE}\n\nPost.\n"
+        result, core_fm = _substitute_core_template(body, "nonexistent", project_dir, registrar)
+        assert result == body
+        assert "{CORE_TEMPLATE}" in result
+        assert core_fm == {}
+
+    def test_register_commands_substitutes_core_template_for_wrap_strategy(self, project_dir):
+        """register_commands substitutes {CORE_TEMPLATE} when strategy: wrap."""
+        from specify_cli.agents import CommandRegistrar
+
+        # Set up core command template
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\n---\n\n# Core Specify\n\nCore body here.\n"
+        )
+
+        # Create a preset command dir with a wrap-strategy command
+        cmd_dir = project_dir / "preset" / "commands"
+        cmd_dir.mkdir(parents=True, exist_ok=True)
+        (cmd_dir / "speckit.specify.md").write_text(
+            "---\ndescription: wrap test\nstrategy: wrap\n---\n\n"
+            "## Pre\n\n{CORE_TEMPLATE}\n\n## Post\n"
+        )
+
+        commands = [{"name": "speckit.specify", "file": "commands/speckit.specify.md"}]
+        registrar = CommandRegistrar()
+
+        # Use a generic agent that writes markdown to commands/
+        agent_dir = project_dir / ".claude" / "commands"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+
+        # Patch AGENT_CONFIGS to use a simple markdown agent pointing at our dir
+        import copy
+        original = copy.deepcopy(registrar.AGENT_CONFIGS)
+        registrar.AGENT_CONFIGS["test-agent"] = {
+            "dir": str(agent_dir.relative_to(project_dir)),
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md",
+            "strip_frontmatter_keys": [],
+        }
+        try:
+            registrar.register_commands(
+                "test-agent", commands, "test-preset",
+                project_dir / "preset", project_dir
+            )
+        finally:
+            CommandRegistrar.AGENT_CONFIGS.clear()
+            CommandRegistrar.AGENT_CONFIGS.update(original)
+
+        written = (agent_dir / "speckit.specify.md").read_text()
+        assert "{CORE_TEMPLATE}" not in written
+        assert "# Core Specify" in written
+        assert "## Pre" in written
+        assert "## Post" in written
+
+    def test_end_to_end_wrap_via_self_test_preset(self, project_dir):
+        """Installing self-test preset with a wrap command substitutes {CORE_TEMPLATE}."""
+        from specify_cli.presets import PresetManager
+
+        # Install a core template that wrap-test will wrap around
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "wrap-test.md").write_text(
+            "---\ndescription: core wrap-test\n---\n\n# Core Wrap-Test Body\n"
+        )
+
+        # Set up skills dir (simulating --ai claude)
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        skill_subdir = skills_dir / "speckit-wrap-test"
+        skill_subdir.mkdir()
+        (skill_subdir / "SKILL.md").write_text("---\nname: speckit-wrap-test\n---\n\nold content\n")
+
+        # Write init-options so _register_skills finds the claude skills dir
+        import json
+        (project_dir / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "claude", "ai_skills": True})
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+
+        written = (skill_subdir / "SKILL.md").read_text()
+        assert "{CORE_TEMPLATE}" not in written
+        assert "# Core Wrap-Test Body" in written
+        assert "preset:self-test wrap-pre" in written
+        assert "preset:self-test wrap-post" in written
+
+    def test_substitute_core_template_returns_core_scripts(self, project_dir):
+        """core_frontmatter in the returned tuple includes scripts/agent_scripts."""
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\nscripts:\n  sh: run.sh\nagent_scripts:\n  sh: agent-run.sh\n---\n\n# Body\n"
+        )
+
+        registrar = CommandRegistrar()
+        body = "## Wrapper\n\n{CORE_TEMPLATE}\n"
+        result, core_fm = _substitute_core_template(body, "specify", project_dir, registrar)
+
+        assert "# Body" in result
+        assert core_fm.get("scripts") == {"sh": "run.sh"}
+        assert core_fm.get("agent_scripts") == {"sh": "agent-run.sh"}
+
+    def test_register_skills_inherits_scripts_from_core_when_preset_omits_them(self, project_dir):
+        """_register_skills merges scripts/agent_scripts from core when preset lacks them."""
+        from specify_cli.presets import PresetManager
+        import json
+
+        # Core template with scripts
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "wrap-test.md").write_text(
+            "---\ndescription: core\nscripts:\n  sh: .specify/scripts/run.sh\n---\n\n"
+            "Run: {SCRIPT}\n"
+        )
+
+        # Skills dir for claude
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        skill_subdir = skills_dir / "speckit-wrap-test"
+        skill_subdir.mkdir()
+        (skill_subdir / "SKILL.md").write_text("---\nname: speckit-wrap-test\n---\n\nold\n")
+
+        (project_dir / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "claude", "ai_skills": True})
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+
+        written = (skill_subdir / "SKILL.md").read_text()
+        # {SCRIPT} should have been resolved (not left as a literal placeholder)
+        assert "{SCRIPT}" not in written
+
+    def test_register_skills_preset_scripts_take_precedence_over_core(self, project_dir):
+        """preset-defined scripts/agent_scripts are not overwritten by core frontmatter."""
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\nscripts:\n  sh: core-run.sh\n---\n\nCore body.\n"
+        )
+
+        registrar = CommandRegistrar()
+        body = "{CORE_TEMPLATE}"
+        _, core_fm = _substitute_core_template(body, "specify", project_dir, registrar)
+
+        # Simulate preset frontmatter that already defines scripts
+        preset_fm = {"description": "preset", "strategy": "wrap", "scripts": {"sh": "preset-run.sh"}}
+        for key in ("scripts", "agent_scripts"):
+            if key not in preset_fm and key in core_fm:
+                preset_fm[key] = core_fm[key]
+
+        # Preset's scripts must not be overwritten by core
+        assert preset_fm["scripts"] == {"sh": "preset-run.sh"}
+
+    def test_register_commands_inherits_scripts_from_core(self, project_dir):
+        """register_commands merges scripts/agent_scripts from core and normalizes paths."""
+        from specify_cli.agents import CommandRegistrar
+        import copy
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\nscripts:\n  sh: .specify/scripts/run.sh {ARGS}\n---\n\n"
+            "Run: {SCRIPT}\n"
+        )
+
+        cmd_dir = project_dir / "preset" / "commands"
+        cmd_dir.mkdir(parents=True, exist_ok=True)
+        # Preset has strategy: wrap but no scripts of its own
+        (cmd_dir / "speckit.specify.md").write_text(
+            "---\ndescription: wrap no scripts\nstrategy: wrap\n---\n\n"
+            "## Pre\n\n{CORE_TEMPLATE}\n\n## Post\n"
+        )
+
+        agent_dir = project_dir / ".claude" / "commands"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+
+        registrar = CommandRegistrar()
+        original = copy.deepcopy(registrar.AGENT_CONFIGS)
+        registrar.AGENT_CONFIGS["test-agent"] = {
+            "dir": str(agent_dir.relative_to(project_dir)),
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md",
+            "strip_frontmatter_keys": [],
+        }
+        try:
+            registrar.register_commands(
+                "test-agent",
+                [{"name": "speckit.specify", "file": "commands/speckit.specify.md"}],
+                "test-preset",
+                project_dir / "preset",
+                project_dir,
+            )
+        finally:
+            CommandRegistrar.AGENT_CONFIGS.clear()
+            CommandRegistrar.AGENT_CONFIGS.update(original)
+
+        written = (agent_dir / "speckit.specify.md").read_text()
+        assert "{CORE_TEMPLATE}" not in written
+        assert "Run:" in written
+        assert "scripts:" in written
+        assert "run.sh" in written
+
+    def test_register_commands_toml_resolves_inherited_scripts(self, project_dir):
+        """TOML agents resolve {SCRIPT} from inherited core scripts when preset omits them."""
+        from specify_cli.agents import CommandRegistrar
+        import copy
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\nscripts:\n  sh: .specify/scripts/run.sh {ARGS}\n---\n\n"
+            "Run: {SCRIPT}\n"
+        )
+
+        cmd_dir = project_dir / "preset" / "commands"
+        cmd_dir.mkdir(parents=True, exist_ok=True)
+        (cmd_dir / "speckit.specify.md").write_text(
+            "---\ndescription: toml wrap\nstrategy: wrap\n---\n\n"
+            "## Pre\n\n{CORE_TEMPLATE}\n\n## Post\n"
+        )
+
+        toml_dir = project_dir / ".gemini" / "commands"
+        toml_dir.mkdir(parents=True, exist_ok=True)
+
+        registrar = CommandRegistrar()
+        original = copy.deepcopy(registrar.AGENT_CONFIGS)
+        registrar.AGENT_CONFIGS["test-toml-agent"] = {
+            "dir": str(toml_dir.relative_to(project_dir)),
+            "format": "toml",
+            "args": "{{args}}",
+            "extension": ".toml",
+            "strip_frontmatter_keys": [],
+        }
+        try:
+            registrar.register_commands(
+                "test-toml-agent",
+                [{"name": "speckit.specify", "file": "commands/speckit.specify.md"}],
+                "test-preset",
+                project_dir / "preset",
+                project_dir,
+            )
+        finally:
+            CommandRegistrar.AGENT_CONFIGS.clear()
+            CommandRegistrar.AGENT_CONFIGS.update(original)
+
+        written = (toml_dir / "speckit.specify.toml").read_text()
+        assert "{CORE_TEMPLATE}" not in written
+        assert "{SCRIPT}" not in written
+        assert "run.sh" in written
+        # args token must use TOML format, not the intermediate $ARGUMENTS
+        assert "$ARGUMENTS" not in written
+        assert "{{args}}" in written
+
+    def test_register_commands_markdown_resolves_inherited_scripts(self, project_dir):
+        """Markdown agents resolve {SCRIPT} from inherited core scripts when preset omits them."""
+        from specify_cli.agents import CommandRegistrar
+        import copy
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\nscripts:\n  sh: .specify/scripts/run.sh {ARGS}\n---\n\n"
+            "Run: {SCRIPT}\n"
+        )
+
+        cmd_dir = project_dir / "preset" / "commands"
+        cmd_dir.mkdir(parents=True, exist_ok=True)
+        (cmd_dir / "speckit.specify.md").write_text(
+            "---\ndescription: markdown wrap\nstrategy: wrap\n---\n\n"
+            "## Pre\n\n{CORE_TEMPLATE}\n\n## Post\n"
+        )
+
+        agent_dir = project_dir / ".claude" / "commands"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+
+        registrar = CommandRegistrar()
+        original = copy.deepcopy(registrar.AGENT_CONFIGS)
+        registrar.AGENT_CONFIGS["test-md-agent"] = {
+            "dir": str(agent_dir.relative_to(project_dir)),
+            "format": "markdown",
+            "args": "$ARGUMENTS",
+            "extension": ".md",
+            "strip_frontmatter_keys": [],
+        }
+        try:
+            registrar.register_commands(
+                "test-md-agent",
+                [{"name": "speckit.specify", "file": "commands/speckit.specify.md"}],
+                "test-preset",
+                project_dir / "preset",
+                project_dir,
+            )
+        finally:
+            CommandRegistrar.AGENT_CONFIGS.clear()
+            CommandRegistrar.AGENT_CONFIGS.update(original)
+
+        written = (agent_dir / "speckit.specify.md").read_text()
+        assert "{CORE_TEMPLATE}" not in written
+        assert "{SCRIPT}" not in written
+        assert "run.sh" in written
+        assert "strategy" not in written
+
+    def test_register_commands_markdown_converts_args_after_script_resolution(self, project_dir):
+        """Markdown agents re-run arg placeholder conversion after resolve_skill_placeholders.
+
+        resolve_skill_placeholders injects $ARGUMENTS (via {ARGS} expansion). A second
+        _convert_argument_placeholder call must convert those to the agent's native format.
+        """
+        from specify_cli.agents import CommandRegistrar
+        import copy
+
+        core_dir = project_dir / ".specify" / "templates" / "commands"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "specify.md").write_text(
+            "---\ndescription: core\nscripts:\n  sh: .specify/scripts/run.sh {ARGS}\n---\n\n"
+            "Run: {SCRIPT}\n"
+        )
+
+        cmd_dir = project_dir / "preset" / "commands"
+        cmd_dir.mkdir(parents=True, exist_ok=True)
+        (cmd_dir / "speckit.specify.md").write_text(
+            "---\ndescription: forge wrap\nstrategy: wrap\n---\n\n"
+            "## Pre\n\n{CORE_TEMPLATE}\n\n## Post\n"
+        )
+
+        agent_dir = project_dir / ".forge" / "commands"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+
+        registrar = CommandRegistrar()
+        original = copy.deepcopy(registrar.AGENT_CONFIGS)
+        registrar.AGENT_CONFIGS["test-forge-agent"] = {
+            "dir": str(agent_dir.relative_to(project_dir)),
+            "format": "markdown",
+            "args": "{{parameters}}",
+            "extension": ".md",
+            "strip_frontmatter_keys": [],
+        }
+        try:
+            registrar.register_commands(
+                "test-forge-agent",
+                [{"name": "speckit.specify", "file": "commands/speckit.specify.md"}],
+                "test-preset",
+                project_dir / "preset",
+                project_dir,
+            )
+        finally:
+            CommandRegistrar.AGENT_CONFIGS.clear()
+            CommandRegistrar.AGENT_CONFIGS.update(original)
+
+        written = (agent_dir / "speckit.specify.md").read_text()
+        assert "{SCRIPT}" not in written
+        assert "run.sh" in written
+        # $ARGUMENTS injected by resolve_skill_placeholders must be re-converted
+        assert "$ARGUMENTS" not in written
+        assert "{{parameters}}" in written
+
+    def test_extension_command_resolves_via_extension_directory(self, project_dir):
+        """Extension commands (e.g. speckit.git.feature) resolve from the extension directory.
+
+        Both _register_skills and register_commands pass the full cmd_name to
+        _substitute_core_template, which tries the full name first via PresetResolver
+        and finds speckit.git.feature.md in the extension commands directory.
+        """
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        # Place the template where a real extension would install it
+        ext_cmd_dir = project_dir / ".specify" / "extensions" / "git" / "commands"
+        ext_cmd_dir.mkdir(parents=True, exist_ok=True)
+        (ext_cmd_dir / "speckit.git.feature.md").write_text(
+            "---\ndescription: git feature core\n---\n\n# Git Feature Core\n"
+        )
+        # Ensure a hyphenated or dot-separated fallback does NOT exist
+        assert not (project_dir / ".specify" / "templates" / "commands" / "git.feature.md").exists()
+        assert not (project_dir / ".specify" / "templates" / "commands" / "git-feature.md").exists()
+
+        registrar = CommandRegistrar()
+        body = "## Wrapper\n\n{CORE_TEMPLATE}\n"
+
+        # Both call sites now pass the full cmd_name
+        result, _ = _substitute_core_template(body, "speckit.git.feature", project_dir, registrar)
+
+        assert "# Git Feature Core" in result
+        assert "{CORE_TEMPLATE}" not in result
+
+    def test_extension_command_resolves_via_manifest_when_filename_differs(self, project_dir):
+        """Extension commands whose filename differs from the command name resolve via extension.yml.
+
+        The selftest extension maps speckit.selftest.extension → commands/selftest.md.
+        Name-based lookup would look for commands/speckit.selftest.extension.md and fail;
+        manifest-based lookup must find the actual file declared in the manifest.
+        """
+        from specify_cli.presets import _substitute_core_template
+        from specify_cli.agents import CommandRegistrar
+
+        ext_dir = project_dir / ".specify" / "extensions" / "selftest"
+        cmd_dir = ext_dir / "commands"
+        cmd_dir.mkdir(parents=True, exist_ok=True)
+
+        # File is named selftest.md, NOT speckit.selftest.extension.md
+        (cmd_dir / "selftest.md").write_text(
+            "---\ndescription: selftest core\n---\n\n# Selftest Core\n"
+        )
+        # Manifest maps the command name to the actual file
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: selftest\n  name: Self-Test\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  commands:\n"
+            "    - name: speckit.selftest.extension\n"
+            "      file: commands/selftest.md\n"
+            "      description: Selftest command\n"
+        )
+
+        registrar = CommandRegistrar()
+        body = "## Wrapper\n\n{CORE_TEMPLATE}\n"
+        result, _ = _substitute_core_template(body, "speckit.selftest.extension", project_dir, registrar)
+
+        assert "# Selftest Core" in result
+        assert "{CORE_TEMPLATE}" not in result
+
+
+# ===== _replay_wraps_for_command Tests =====
+
+def _make_wrap_preset_dir(
+    base: Path,
+    preset_id: str,
+    cmd_name: str,
+    pre: str,
+    post: str,
+    aliases: list[str] | None = None,
+    file_rel: str | None = None,
+) -> Path:
+    """Create a minimal wrap-strategy preset directory for testing."""
+    preset_dir = base / preset_id
+    cmd_dir = preset_dir / "commands"
+    cmd_dir.mkdir(parents=True)
+    file_rel = file_rel or f"commands/{cmd_name}.md"
+    template = {
+        "type": "command",
+        "name": cmd_name,
+        "file": file_rel,
+        "description": f"{preset_id} wrap",
+    }
+    if aliases is not None:
+        template["aliases"] = aliases
+    manifest = {
+        "schema_version": "1.0",
+        "preset": {
+            "id": preset_id,
+            "name": preset_id,
+            "version": "1.0.0",
+            "description": f"Preset {preset_id}",
+            "author": "test",
+            "repository": "https://example.com",
+            "license": "MIT",
+        },
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {
+            "templates": [template]
+        },
+        "tags": [],
+    }
+    import yaml as _yaml
+    (preset_dir / "preset.yml").write_text(_yaml.dump(manifest))
+    command_path = preset_dir / file_rel
+    command_path.parent.mkdir(parents=True, exist_ok=True)
+    command_path.write_text(
+        f"---\ndescription: {preset_id} wrap\nstrategy: wrap\n---\n\n"
+        f"[{pre}]\n\n{{CORE_TEMPLATE}}\n\n[{post}]\n"
+    )
+    return preset_dir
+
+
+
+class TestCompositionStrategyValidation:
+    """Test strategy field validation in PresetManifest."""
+
+    def test_valid_replace_strategy(self, temp_dir, valid_pack_data):
+        """Test that replace strategy is accepted."""
+        valid_pack_data["provides"]["templates"][0]["strategy"] = "replace"
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        (temp_dir / "templates").mkdir(exist_ok=True)
+        (temp_dir / "templates" / "spec-template.md").write_text("test")
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "replace"
+
+    def test_valid_prepend_strategy(self, temp_dir, valid_pack_data):
+        """Test that prepend strategy is accepted for templates."""
+        valid_pack_data["provides"]["templates"][0]["strategy"] = "prepend"
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        (temp_dir / "templates").mkdir(exist_ok=True)
+        (temp_dir / "templates" / "spec-template.md").write_text("test")
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "prepend"
+
+    def test_valid_append_strategy(self, temp_dir, valid_pack_data):
+        """Test that append strategy is accepted for templates."""
+        valid_pack_data["provides"]["templates"][0]["strategy"] = "append"
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        (temp_dir / "templates").mkdir(exist_ok=True)
+        (temp_dir / "templates" / "spec-template.md").write_text("test")
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "append"
+
+    def test_valid_wrap_strategy(self, temp_dir, valid_pack_data):
+        """Test that wrap strategy is accepted for templates."""
+        valid_pack_data["provides"]["templates"][0]["strategy"] = "wrap"
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        (temp_dir / "templates").mkdir(exist_ok=True)
+        (temp_dir / "templates" / "spec-template.md").write_text("test")
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "wrap"
+
+    def test_default_strategy_is_replace(self, pack_dir):
+        """Test that omitting strategy defaults to replace (key is absent)."""
+        manifest = PresetManifest(pack_dir / "preset.yml")
+        # Strategy key should not be present in the manifest data
+        assert "strategy" not in manifest.templates[0]
+        # But consumers should treat missing strategy as "replace"
+        assert manifest.templates[0].get("strategy", "replace") == "replace"
+
+    def test_invalid_strategy_rejected(self, temp_dir, valid_pack_data):
+        """Test that invalid strategy values are rejected."""
+        valid_pack_data["provides"]["templates"][0]["strategy"] = "merge"
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        with pytest.raises(PresetValidationError, match="Invalid strategy"):
+            PresetManifest(manifest_path)
+
+    def test_prepend_rejected_for_scripts(self, temp_dir, valid_pack_data):
+        """Test that prepend strategy is rejected for scripts."""
+        valid_pack_data["provides"]["templates"] = [{
+            "type": "script",
+            "name": "create-new-feature",
+            "file": "scripts/create-new-feature.sh",
+            "strategy": "prepend",
+        }]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        with pytest.raises(PresetValidationError, match="Invalid strategy.*for script"):
+            PresetManifest(manifest_path)
+
+    def test_append_rejected_for_scripts(self, temp_dir, valid_pack_data):
+        """Test that append strategy is rejected for scripts."""
+        valid_pack_data["provides"]["templates"] = [{
+            "type": "script",
+            "name": "create-new-feature",
+            "file": "scripts/create-new-feature.sh",
+            "strategy": "append",
+        }]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        with pytest.raises(PresetValidationError, match="Invalid strategy.*for script"):
+            PresetManifest(manifest_path)
+
+    def test_wrap_accepted_for_scripts(self, temp_dir, valid_pack_data):
+        """Test that wrap strategy is accepted for scripts."""
+        valid_pack_data["provides"]["templates"] = [{
+            "type": "script",
+            "name": "create-new-feature",
+            "file": "scripts/create-new-feature.sh",
+            "strategy": "wrap",
+        }]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "wrap"
+
+    def test_replace_accepted_for_scripts(self, temp_dir, valid_pack_data):
+        """Test that replace strategy is accepted for scripts."""
+        valid_pack_data["provides"]["templates"] = [{
+            "type": "script",
+            "name": "create-new-feature",
+            "file": "scripts/create-new-feature.sh",
+            "strategy": "replace",
+        }]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "replace"
+
+    def test_prepend_accepted_for_commands(self, temp_dir, valid_pack_data):
+        """Test that prepend strategy is accepted for commands."""
+        valid_pack_data["provides"]["templates"] = [{
+            "type": "command",
+            "name": "speckit.specify",
+            "file": "commands/speckit.specify.md",
+            "strategy": "prepend",
+        }]
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_pack_data, f)
+        manifest = PresetManifest(manifest_path)
+        assert manifest.templates[0]["strategy"] == "prepend"
+
+
+class TestResolveContent:
+    """Test PresetResolver.resolve_content() composition."""
+
+    def test_resolve_content_core_template(self, project_dir):
+        """Test resolve_content returns core template when no composition."""
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        assert "Core Spec Template" in content
+
+    def test_resolve_content_nonexistent(self, project_dir):
+        """Test resolve_content returns None for nonexistent template."""
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("nonexistent")
+        assert content is None
+
+    def test_resolve_content_replace_strategy(self, project_dir, temp_dir, valid_pack_data):
+        """Test resolve_content with default replace strategy."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(
+            _create_pack(temp_dir, valid_pack_data, "replace-pack",
+                         "# Replaced Content\n"),
+            "0.1.5"
+        )
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        assert "Replaced Content" in content
+        assert "Core Spec Template" not in content
+
+    def test_resolve_content_append_strategy(self, project_dir, temp_dir, valid_pack_data):
+        """Test resolve_content with append strategy."""
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "append-pack", "name": "Append"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "append-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Appended Section\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        assert "Core Spec Template" in content
+        assert "Appended Section" in content
+        # Core should come first, appended after
+        assert content.index("Core Spec Template") < content.index("Appended Section")
+
+    def test_resolve_content_prepend_strategy(self, project_dir, temp_dir, valid_pack_data):
+        """Test resolve_content with prepend strategy."""
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "prepend-pack", "name": "Prepend"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "prepend",
+            }]
+        }
+        pack_dir = temp_dir / "prepend-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Security Header\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        assert "Security Header" in content
+        assert "Core Spec Template" in content
+        # Prepended content should come first
+        assert content.index("Security Header") < content.index("Core Spec Template")
+
+    def test_resolve_content_wrap_strategy(self, project_dir, temp_dir, valid_pack_data):
+        """Test resolve_content with wrap strategy for templates."""
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "wrap-pack", "name": "Wrap"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "wrap",
+            }]
+        }
+        pack_dir = temp_dir / "wrap-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text(
+            "# Wrapper Start\n\n{CORE_TEMPLATE}\n\n# Wrapper End\n"
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        assert "Wrapper Start" in content
+        assert "Core Spec Template" in content
+        assert "Wrapper End" in content
+        # Wrapper should surround core
+        assert content.index("Wrapper Start") < content.index("Core Spec Template")
+        assert content.index("Core Spec Template") < content.index("Wrapper End")
+
+    def test_resolve_content_wrap_strategy_script(self, project_dir, temp_dir, valid_pack_data):
+        """Test resolve_content with wrap strategy for scripts uses $CORE_SCRIPT."""
+        # Create core script
+        scripts_dir = project_dir / ".specify" / "templates" / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "test-script.sh").write_text("echo 'core script'\n")
+
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "script-wrap", "name": "Script Wrap"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "script",
+                "name": "test-script",
+                "file": "scripts/test-script.sh",
+                "strategy": "wrap",
+            }]
+        }
+        pack_dir = temp_dir / "script-wrap"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "scripts").mkdir()
+        (pack_dir / "scripts" / "test-script.sh").write_text(
+            "#!/bin/bash\necho 'before'\n$CORE_SCRIPT\necho 'after'\n"
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("test-script", "script")
+        assert content is not None
+        assert "echo 'before'" in content
+        assert "echo 'core script'" in content
+        assert "echo 'after'" in content
+
+    def test_resolve_content_multi_preset_chain(self, project_dir, temp_dir, valid_pack_data):
+        """Test multi-preset composition chain: prepend + append stacking."""
+        # Create preset A (priority 1): prepend security header
+        pack_a_data = {**valid_pack_data}
+        pack_a_data["preset"] = {**valid_pack_data["preset"], "id": "preset-a", "name": "A"}
+        pack_a_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "prepend",
+            }]
+        }
+        pack_a_dir = temp_dir / "preset-a"
+        pack_a_dir.mkdir()
+        with open(pack_a_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_a_data, f)
+        (pack_a_dir / "templates").mkdir()
+        (pack_a_dir / "templates" / "spec-template.md").write_text("## Security Header\n")
+
+        # Create preset B (priority 2): append compliance footer
+        pack_b_data = {**valid_pack_data}
+        pack_b_data["preset"] = {**valid_pack_data["preset"], "id": "preset-b", "name": "B"}
+        pack_b_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_b_dir = temp_dir / "preset-b"
+        pack_b_dir.mkdir()
+        with open(pack_b_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_b_data, f)
+        (pack_b_dir / "templates").mkdir()
+        (pack_b_dir / "templates" / "spec-template.md").write_text("## Compliance Footer\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_a_dir, "0.1.5", priority=1)
+        manager.install_from_directory(pack_b_dir, "0.1.5", priority=2)
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        # Result: <security header> + <core> + <compliance footer>
+        assert "Security Header" in content
+        assert "Core Spec Template" in content
+        assert "Compliance Footer" in content
+        assert content.index("Security Header") < content.index("Core Spec Template")
+        assert content.index("Core Spec Template") < content.index("Compliance Footer")
+
+    def test_resolve_content_override_trumps_composition(self, project_dir, temp_dir, valid_pack_data):
+        """Test that project overrides trump composition (replace at top priority)."""
+        # Install a composing preset
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "append-pack", "name": "Append"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "append-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Appended\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        # Create project override (replaces everything)
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "spec-template.md").write_text("# Override Only\n")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content is not None
+        assert "Override Only" in content
+        # Override replaces, so appended content should not be visible
+        assert "Core Spec Template" not in content
+
+    def test_resolve_content_command_type(self, project_dir, temp_dir, valid_pack_data):
+        """Test resolve_content with command template type."""
+        # Create core command using stem naming (matches real layout: plan.md, not speckit.plan.md)
+        commands_dir = project_dir / ".specify" / "templates" / "commands"
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        (commands_dir / "plan.md").write_text("# Core Plan Command\n")
+
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "cmd-append", "name": "CmdAppend"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "command",
+                "name": "speckit.plan",
+                "file": "commands/speckit.plan.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "cmd-append"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "commands").mkdir()
+        (pack_dir / "commands" / "speckit.plan.md").write_text("## Additional Instructions\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("speckit.plan", "command")
+        assert content is not None
+        assert "Core Plan Command" in content
+        assert "Additional Instructions" in content
+
+    def test_resolve_content_command_frontmatter_stripping(self, project_dir, temp_dir, valid_pack_data):
+        """Test that command composition strips frontmatter from lower layers
+        and reattaches only the highest-priority frontmatter."""
+        # Create core command with frontmatter
+        commands_dir = project_dir / ".specify" / "templates" / "commands"
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        (commands_dir / "check.md").write_text(
+            "---\ndescription: Core check command\n---\nCore body content\n"
+        )
+
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "fm-test", "name": "FmTest"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "command",
+                "name": "speckit.check",
+                "file": "commands/speckit.check.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "fm-test"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "commands").mkdir()
+        (pack_dir / "commands" / "speckit.check.md").write_text(
+            "---\ndescription: Preset check override\n---\nPreset body content\n"
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("speckit.check", "command")
+        assert content is not None
+        # Should have the preset (highest-priority) frontmatter
+        assert "Preset check override" in content
+        # Should have both bodies
+        assert "Core body content" in content
+        assert "Preset body content" in content
+        # Core frontmatter should NOT appear in the body
+        assert content.count("---") == 2  # only one frontmatter block (opening + closing)
+
+    def test_resolve_content_blank_line_separator(self, project_dir, temp_dir, valid_pack_data):
+        """Test that prepend/append use blank line separator."""
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "sep-test", "name": "SepTest"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "sep-test"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("appended")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        # Should have blank line separator
+        assert "\n\n" in content
+
+    def test_resolve_content_replace_over_wrap(self, project_dir, temp_dir, valid_pack_data):
+        """Top-priority replace layer should win even if a lower layer uses wrap."""
+        # Install a low-priority wrap preset (with no placeholder — would fail if evaluated)
+        wrap_data = {**valid_pack_data}
+        wrap_data["preset"] = {**valid_pack_data["preset"], "id": "wrap-lo", "name": "WrapLo"}
+        wrap_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "wrap",
+            }]
+        }
+        wrap_dir = temp_dir / "wrap-lo"
+        wrap_dir.mkdir()
+        with open(wrap_dir / "preset.yml", "w") as f:
+            yaml.dump(wrap_data, f)
+        (wrap_dir / "templates").mkdir()
+        # Intentionally missing {CORE_TEMPLATE} — would error if composition ran
+        (wrap_dir / "templates" / "spec-template.md").write_text("wrapper without placeholder")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(wrap_dir, "0.1.5", priority=10)
+
+        # Install a high-priority replace preset
+        rep_data = {**valid_pack_data}
+        rep_data["preset"] = {**valid_pack_data["preset"], "id": "rep-hi", "name": "RepHi"}
+        rep_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+            }]
+        }
+        rep_dir = temp_dir / "rep-hi"
+        rep_dir.mkdir()
+        with open(rep_dir / "preset.yml", "w") as f:
+            yaml.dump(rep_data, f)
+        (rep_dir / "templates").mkdir()
+        (rep_dir / "templates" / "spec-template.md").write_text("# Replaced content\n")
+
+        manager.install_from_directory(rep_dir, "0.1.5", priority=1)
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("spec-template")
+        assert content == "# Replaced content\n"
+
+
+class TestCollectAllLayers:
+    """Test PresetResolver.collect_all_layers() method."""
+
+    def test_single_core_layer(self, project_dir):
+        """Test collecting layers with only core template."""
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("spec-template")
+        assert len(layers) == 1
+        assert layers[0]["source"] == "core"
+        assert layers[0]["strategy"] == "replace"
+
+    def test_layers_include_presets(self, project_dir, temp_dir, valid_pack_data):
+        """Test that layers include installed preset."""
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(temp_dir, valid_pack_data, "test-pack",
+                                "# From Pack\n")
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("spec-template")
+        assert len(layers) == 2
+        # Highest priority first
+        assert "test-pack" in layers[0]["source"]
+        assert layers[1]["source"] == "core"
+
+    def test_layers_order_matches_priority(self, project_dir, temp_dir, valid_pack_data):
+        """Test that layers are ordered by priority (highest first)."""
+        manager = PresetManager(project_dir)
+        for pid, prio in [("pack-lo", 10), ("pack-hi", 1)]:
+            d = {**valid_pack_data}
+            d["preset"] = {**valid_pack_data["preset"], "id": pid, "name": pid}
+            p = temp_dir / pid
+            p.mkdir()
+            with open(p / "preset.yml", 'w') as f:
+                yaml.dump(d, f)
+            (p / "templates").mkdir()
+            (p / "templates" / "spec-template.md").write_text(f"# {pid}\n")
+            manager.install_from_directory(p, "0.1.5", priority=prio)
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("spec-template")
+        assert len(layers) == 3  # pack-hi, pack-lo, core
+        assert "pack-hi" in layers[0]["source"]
+        assert "pack-lo" in layers[1]["source"]
+        assert layers[2]["source"] == "core"
+
+    def test_layers_read_strategy_from_manifest(self, project_dir, temp_dir, valid_pack_data):
+        """Test that layers read strategy from preset manifest."""
+        pack_data = {**valid_pack_data}
+        pack_data["preset"] = {**valid_pack_data["preset"], "id": "strat-pack", "name": "Strat"}
+        pack_data["provides"] = {
+            "templates": [{
+                "type": "template",
+                "name": "spec-template",
+                "file": "templates/spec-template.md",
+                "strategy": "append",
+            }]
+        }
+        pack_dir = temp_dir / "strat-pack"
+        pack_dir.mkdir()
+        with open(pack_dir / "preset.yml", 'w') as f:
+            yaml.dump(pack_data, f)
+        (pack_dir / "templates").mkdir()
+        (pack_dir / "templates" / "spec-template.md").write_text("## Footer\n")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("spec-template")
+        # Preset layer should have strategy=append
+        assert layers[0]["strategy"] == "append"
+        # Core layer should be replace
+        assert layers[1]["strategy"] == "replace"
+
+
+class TestRemoveReconciliation:
+    """Test that removing a preset re-registers the next layer's command."""
+
+    def test_remove_restores_lower_priority_command(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """After removing the top-priority preset, the next preset's command
+        should be re-registered in agent directories."""
+        manager = PresetManager(project_dir)
+
+        # Create a gemini commands dir so reconciliation writes there
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        # Install a low-priority preset with a command
+        lo_data = {**valid_pack_data}
+        lo_data["preset"] = {
+            **valid_pack_data["preset"],
+            "id": "lo-preset",
+            "name": "Lo",
+        }
+        lo_data["provides"] = {
+            "templates": [{
+                "type": "command",
+                "name": "speckit.specify",
+                "file": "commands/speckit.specify.md",
+            }]
+        }
+        lo_dir = temp_dir / "lo-preset"
+        lo_dir.mkdir()
+        with open(lo_dir / "preset.yml", "w") as f:
+            yaml.dump(lo_data, f)
+        (lo_dir / "commands").mkdir()
+        (lo_dir / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: lo\n---\nLo content\n"
+        )
+        manager.install_from_directory(lo_dir, "0.1.5", priority=10)
+
+        # Install a high-priority preset overriding the same command
+        hi_data = {**valid_pack_data}
+        hi_data["preset"] = {
+            **valid_pack_data["preset"],
+            "id": "hi-preset",
+            "name": "Hi",
+        }
+        hi_data["provides"] = {
+            "templates": [{
+                "type": "command",
+                "name": "speckit.specify",
+                "file": "commands/speckit.specify.md",
+            }]
+        }
+        hi_dir = temp_dir / "hi-preset"
+        hi_dir.mkdir()
+        with open(hi_dir / "preset.yml", "w") as f:
+            yaml.dump(hi_data, f)
+        (hi_dir / "commands").mkdir()
+        (hi_dir / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: hi\n---\nHi content\n"
+        )
+        manager.install_from_directory(hi_dir, "0.1.5", priority=1)
+
+        # Verify the hi-preset's content is active in agent dir
+        cmd_files = list(gemini_dir.glob("*specify*"))
+        assert cmd_files, "Command file should exist in gemini dir"
+        assert "Hi content" in cmd_files[0].read_text()
+
+        # Remove the high-priority preset
+        manager.remove("hi-preset")
+
+        # The low-priority preset's command should now be in the resolution stack
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("speckit.specify", "command")
+        assert len(layers) >= 1
+        assert "lo-preset" in layers[0]["source"]
+
+        # Verify on-disk agent command file switched to lo-preset content
+        cmd_files = list(gemini_dir.glob("*specify*"))
+        assert cmd_files, "Command file should still exist after removal"
+        assert "Lo content" in cmd_files[0].read_text()
+
+
+def _create_pack(temp_dir, valid_pack_data, pack_id, content,
+                 strategy="replace", template_type="template",
+                 template_name="spec-template"):
+    """Helper to create a preset pack directory."""
+    pack_data = {**valid_pack_data}
+    pack_data["preset"] = {**valid_pack_data["preset"], "id": pack_id, "name": pack_id}
+
+    tmpl_entry = {
+        "type": template_type,
+        "name": template_name,
+    }
+    if template_type == "script":
+        tmpl_entry["file"] = f"scripts/{template_name}.sh"
+    elif template_type == "command":
+        tmpl_entry["file"] = f"commands/{template_name}.md"
+    else:
+        tmpl_entry["file"] = f"templates/{template_name}.md"
+    if strategy != "replace":
+        tmpl_entry["strategy"] = strategy
+    pack_data["provides"] = {"templates": [tmpl_entry]}
+
+    pack_dir = temp_dir / pack_id
+    pack_dir.mkdir(exist_ok=True)
+    with open(pack_dir / "preset.yml", 'w') as f:
+        yaml.dump(pack_data, f)
+
+    if template_type == "script":
+        subdir = pack_dir / "scripts"
+        subdir.mkdir(exist_ok=True)
+        (subdir / f"{template_name}.sh").write_text(content)
+    elif template_type == "command":
+        subdir = pack_dir / "commands"
+        subdir.mkdir(exist_ok=True)
+        (subdir / f"{template_name}.md").write_text(content)
+    else:
+        subdir = pack_dir / "templates"
+        subdir.mkdir(exist_ok=True)
+        (subdir / f"{template_name}.md").write_text(content)
+
+    return pack_dir

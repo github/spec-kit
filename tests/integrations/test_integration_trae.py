@@ -1,11 +1,11 @@
 """Tests for TraeIntegration."""
 
-from .test_integration_base_markdown import MarkdownIntegrationTests
+from .test_integration_base_skills import SkillsIntegrationTests
 
 
-class TestTraeIntegration(MarkdownIntegrationTests):
+class TestTraeIntegration(SkillsIntegrationTests):
     KEY = "trae"
     FOLDER = ".trae/"
-    COMMANDS_SUBDIR = "rules"
-    REGISTRAR_DIR = ".trae/rules"
-    CONTEXT_FILE = ".trae/rules/AGENTS.md"
+    COMMANDS_SUBDIR = "skills"
+    REGISTRAR_DIR = ".trae/skills"
+    CONTEXT_FILE = ".trae/rules/project_rules.md"

@@ -22,6 +22,17 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 uvx --from git+https://github.com/github/spec-kit.git specify init .
 ```
 
+> [!NOTE]
+> You can also install the CLI persistently with `pipx`:
+> ```bash
+> pipx install git+https://github.com/github/spec-kit.git
+> ```
+> After installing with `pipx`, run `specify` directly instead of `uvx --from ... specify`, for example:
+> ```bash
+> specify init <PROJECT_NAME>
+> specify init .
+> ```
+
 Pick script type explicitly (optional):
 
 ```bash
@@ -31,7 +42,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 
 ### Step 2: Define Your Constitution
 
-**In your AI Agent's chat interface**, use the `/speckit.constitution` slash command to establish the core rules and principles for your project. You should provide your project's specific principles as arguments.
+**In your coding agent's chat interface**, use the `/speckit.constitution` slash command to establish the core rules and principles for your project. You should provide your project's specific principles as arguments.
 
 ```markdown
 /speckit.constitution This project follows a "Library-First" approach. All features must be implemented as standalone libraries first. We use TDD strictly. We prefer functional programming patterns.
@@ -148,7 +159,7 @@ Generate an actionable task list using the `/speckit.tasks` command:
 
 ### Step 7: Validate and Implement
 
-Have your AI agent audit the implementation plan using `/speckit.analyze`:
+Have your coding agent audit the implementation plan using `/speckit.analyze`:
 
 ```bash
 /speckit.analyze
@@ -169,7 +180,7 @@ Finally, implement the solution:
 - **Don't focus on tech stack** during specification phase
 - **Iterate and refine** your specifications before implementation
 - **Validate** the plan before coding begins
-- **Let the AI agent handle** the implementation details
+- **Let the coding agent handle** the implementation details
 
 ## Next Steps
 

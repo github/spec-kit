@@ -293,25 +293,37 @@ $specFile = Join-Path $featureDir 'spec.md'
 if (-not $DryRun) {
     if ($hasGit) {
         $branchCreated = $false
+        $branchCreateError = ''
         try {
-            git checkout -q -b $branchName 2>$null | Out-Null
+            $branchCreateError = git checkout -q -b $branchName 2>&1 | Out-String
             if ($LASTEXITCODE -eq 0) {
                 $branchCreated = $true
             }
         } catch {
-            # Exception during git command
+            $branchCreateError = $_.Exception.Message
         }
 
         if (-not $branchCreated) {
+            $currentBranch = ''
+            try { $currentBranch = (git rev-parse --abbrev-ref HEAD 2>$null).Trim() } catch {}
             # Check if branch already exists
             $existingBranch = git branch --list $branchName 2>$null
             if ($existingBranch) {
                 if ($AllowExistingBranch) {
-                    # Switch to the existing branch instead of failing
-                    git checkout -q $branchName 2>$null | Out-Null
-                    if ($LASTEXITCODE -ne 0) {
-                        Write-Error "Error: Branch '$branchName' exists but could not be checked out. Resolve any uncommitted changes or conflicts and try again."
-                        exit 1
+                    # If we're already on the branch, continue without another checkout.
+                    if ($currentBranch -eq $branchName) {
+                        # Already on the target branch — nothing to do
+                    } else {
+                        # Otherwise switch to the existing branch instead of failing.
+                        $switchBranchError = git checkout -q $branchName 2>&1 | Out-String
+                        if ($LASTEXITCODE -ne 0) {
+                            if ($switchBranchError) {
+                                Write-Error "Error: Branch '$branchName' exists but could not be checked out.`n$($switchBranchError.Trim())"
+                            } else {
+                                Write-Error "Error: Branch '$branchName' exists but could not be checked out. Resolve any uncommitted changes or conflicts and try again."
+                            }
+                            exit 1
+                        }
                     }
                 } elseif ($Timestamp) {
                     Write-Error "Error: Branch '$branchName' already exists. Rerun to get a new timestamp or use a different -ShortName."
@@ -321,7 +333,11 @@ if (-not $DryRun) {
                     exit 1
                 }
             } else {
-                Write-Error "Error: Failed to create git branch '$branchName'. Please check your git configuration and try again."
+                if ($branchCreateError) {
+                    Write-Error "Error: Failed to create git branch '$branchName'.`n$($branchCreateError.Trim())"
+                } else {
+                    Write-Error "Error: Failed to create git branch '$branchName'. Please check your git configuration and try again."
+                }
                 exit 1
             }
         }

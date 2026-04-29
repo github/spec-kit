@@ -26,6 +26,7 @@ concurrency:
 jobs:
   # Build job
   build:
+    if: github.repository == 'github/spec-kit'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -50,12 +51,13 @@ jobs:
         uses: actions/configure-pages@v6
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: 'docs/_site'
 
   # Deploy job
   deploy:
+    if: github.repository == 'github/spec-kit'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

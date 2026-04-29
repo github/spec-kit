@@ -153,7 +153,7 @@ This will:
 2. Validate the manifest
 3. Check compatibility with your spec-kit version
 4. Install to `.specify/extensions/jira/`
-5. Register commands with your AI agent
+5. Register commands with your coding agent
 6. Create config template
 
 ### Install from URL
@@ -189,7 +189,7 @@ Provided commands:
 
 ### Automatic Agent Skill Registration
 
-If your project was initialized with `--ai-skills`, extension commands are **automatically registered as agent skills** during installation. This ensures that extensions are discoverable by agents that use the [agentskills.io](https://agentskills.io) skill specification.
+If your project uses a skills-based integration (e.g., `--integration claude`, `--integration codex`) or was initialized with `--integration-options="--skills"`, extension commands are **automatically registered as agent skills** during installation. This ensures that extensions are discoverable by agents that use the [agentskills.io](https://agentskills.io) skill specification.
 
 ```text
 ✓ Extension installed successfully!
@@ -208,7 +208,7 @@ When an extension is removed, its corresponding skills are also cleaned up autom
 
 ### Using Extension Commands
 
-Extensions add commands that appear in your AI agent (Claude Code):
+Extensions add commands that appear in your coding agent (Claude Code):
 
 ```text
 # In Claude Code
@@ -403,8 +403,10 @@ settings:
 
 # Hook configuration
 # Available events: before_specify, after_specify, before_plan, after_plan,
-#                   before_tasks, after_tasks, before_implement, after_implement
-# Planned (not yet wired into core templates): before_commit, after_commit
+#                   before_tasks, after_tasks, before_implement, after_implement,
+#                   before_analyze, after_analyze, before_checklist, after_checklist,
+#                   before_clarify, after_clarify, before_constitution, after_constitution,
+#                   before_taskstoissues, after_taskstoissues
 hooks:
   after_tasks:
     - extension: jira
@@ -421,7 +423,7 @@ In addition to extension-specific environment variables (`SPECKIT_{EXT_ID}_*`), 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SPECKIT_CATALOG_URL`       | Override the full catalog stack with a single URL (backward compat) | Built-in default stack |
-| `GH_TOKEN` / `GITHUB_TOKEN` | GitHub API token for downloads     | None                  |
+| `GH_TOKEN` / `GITHUB_TOKEN` | GitHub token for authenticated requests to GitHub-hosted URLs (`raw.githubusercontent.com`, `github.com`, `api.github.com`, `codeload.github.com`). Required when your catalog JSON or extension ZIPs are hosted in a private GitHub repository. | None |
 
 #### Example: Using a custom catalog for testing
 
@@ -432,6 +434,21 @@ export SPECKIT_CATALOG_URL="http://localhost:8000/catalog.json"
 # Or use a staging catalog
 export SPECKIT_CATALOG_URL="https://example.com/staging/catalog.json"
 ```
+
+#### Example: Using a private GitHub-hosted catalog
+
+```bash
+# Authenticate with a token (gh CLI, PAT, or GITHUB_TOKEN in CI)
+export GITHUB_TOKEN=$(gh auth token)
+
+# Search a private catalog added via `specify extension catalog add`
+specify extension search jira
+
+# Install from a private catalog
+specify extension add jira-sync
+```
+
+The token is attached automatically to requests targeting GitHub domains. Non-GitHub catalog URLs are always fetched without credentials.
 
 ---
 
@@ -778,12 +795,12 @@ specify extension add --dev /path/to/extension
 
 ### Command Not Available
 
-**Issue**: Extension command not appearing in AI agent
+**Issue**: Extension command not appearing in coding agent
 
 **Solutions**:
 
 1. Check extension is enabled: `specify extension list`
-2. Restart AI agent (Claude Code)
+2. Restart coding agent (Claude Code)
 3. Check command file exists:
 
    ```bash
@@ -817,8 +834,8 @@ specify extension add --dev /path/to/extension
 **Solutions**:
 
 1. Check MCP server is installed
-2. Check AI agent MCP configuration
-3. Restart AI agent
+2. Check coding agent MCP configuration
+3. Restart coding agent
 4. Check extension requirements: `specify extension info jira`
 
 ### Permission Denied

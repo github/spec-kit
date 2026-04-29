@@ -16,7 +16,10 @@ import zipfile
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict, List, Any
+from typing import TYPE_CHECKING, Optional, Dict, List, Any
+
+if TYPE_CHECKING:
+    from .agents import CommandRegistrar
 from datetime import datetime, timezone
 import re
 
@@ -24,7 +27,60 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
-from .extensions import ExtensionRegistry, normalize_priority
+from .extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
+
+
+def _substitute_core_template(
+    body: str,
+    cmd_name: str,
+    project_root: "Path",
+    registrar: "CommandRegistrar",
+) -> "tuple[str, dict]":
+    """Substitute {CORE_TEMPLATE} with the body of the installed core command template.
+
+    Args:
+        body: Preset command body (may contain {CORE_TEMPLATE} placeholder).
+        cmd_name: Full command name (e.g. "speckit.git.feature" or "speckit.specify").
+        project_root: Project root path.
+        registrar: CommandRegistrar instance for parse_frontmatter.
+
+    Returns:
+        A tuple of (body, core_frontmatter) where body has {CORE_TEMPLATE} replaced
+        by the core template body and core_frontmatter holds the core template's parsed
+        frontmatter (so callers can inherit scripts/agent_scripts from it).  Both are
+        unchanged / empty when the placeholder is absent or the core template file does
+        not exist.
+    """
+    if "{CORE_TEMPLATE}" not in body:
+        return body, {}
+
+    # Derive the short name (strip "speckit." prefix) used by core command templates.
+    short_name = cmd_name
+    if short_name.startswith("speckit."):
+        short_name = short_name[len("speckit."):]
+
+    resolver = PresetResolver(project_root)
+    # Resolution order for the core template:
+    # 1. resolve_core(cmd_name) — covers tier-1 project overrides and tier-3/4
+    #    name-based lookup (file named <cmd_name>.md).  Checked first so that a
+    #    local override always wins, even for extension commands.
+    # 2. resolve_extension_command_via_manifest(cmd_name) — manifest-based tier-3
+    #    fallback for extension commands whose file is named differently from the
+    #    command name (e.g. speckit.selftest.extension → commands/selftest.md).
+    # 3. resolve_core(short_name) — core template fallback using the unprefixed
+    #    name (e.g. specify → templates/commands/specify.md).
+    # resolve_core() skips installed presets (tier 2) to prevent accidental nesting
+    # where another preset's wrap output is mistaken for the real core.
+    core_file = (
+        resolver.resolve_core(cmd_name, "command")
+        or resolver.resolve_extension_command_via_manifest(cmd_name)
+        or resolver.resolve_core(short_name, "command")
+    )
+    if core_file is None:
+        return body, {}
+
+    core_frontmatter, core_body = registrar.parse_frontmatter(core_file.read_text(encoding="utf-8"))
+    return body.replace("{CORE_TEMPLATE}", core_body), core_frontmatter
 
 
 @dataclass
@@ -53,6 +109,9 @@ class PresetCompatibilityError(PresetError):
 
 
 VALID_PRESET_TEMPLATE_TYPES = {"template", "command", "script"}
+VALID_PRESET_STRATEGIES = {"replace", "prepend", "append", "wrap"}
+# Scripts only support replace and wrap (prepend/append don't make semantic sense for executable code)
+VALID_SCRIPT_STRATEGIES = {"replace", "wrap"}
 
 
 class PresetManifest:
@@ -77,12 +136,25 @@ class PresetManifest:
     def _load_yaml(self, path: Path) -> dict:
         """Load YAML file safely."""
         try:
-            with open(path, 'r') as f:
-                return yaml.safe_load(f) or {}
+            with open(path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise PresetValidationError(f"Invalid YAML in {path}: {e}")
         except FileNotFoundError:
             raise PresetValidationError(f"Manifest not found: {path}")
+        except UnicodeDecodeError as e:
+            raise PresetValidationError(
+                f"Manifest is not valid UTF-8: {path} ({e.reason} at byte {e.start})"
+            )
+        except OSError as e:
+            raise PresetValidationError(f"Could not read manifest {path}: {e}")
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise PresetValidationError(
+                f"Manifest must be a YAML mapping, got {type(data).__name__}: {path}"
+            )
+        return data
 
     def _validate(self):
         """Validate manifest structure and required fields."""
@@ -149,6 +221,28 @@ class PresetManifest:
                 raise PresetValidationError(
                     f"Invalid template file path '{file_path}': "
                     "must be a relative path within the preset directory"
+                )
+
+            # Validate strategy field (optional, defaults to "replace")
+            strategy = tmpl.get("strategy", "replace")
+            if not isinstance(strategy, str):
+                raise PresetValidationError(
+                    f"Invalid strategy value: must be a string, "
+                    f"got {type(strategy).__name__}"
+                )
+            strategy = strategy.lower()
+            # Persist normalized value so downstream code sees lowercase
+            if "strategy" in tmpl:
+                tmpl["strategy"] = strategy
+            if strategy not in VALID_PRESET_STRATEGIES:
+                raise PresetValidationError(
+                    f"Invalid strategy '{strategy}': "
+                    f"must be one of {sorted(VALID_PRESET_STRATEGIES)}"
+                )
+            if tmpl["type"] == "script" and strategy not in VALID_SCRIPT_STRATEGIES:
+                raise PresetValidationError(
+                    f"Invalid strategy '{strategy}' for script: "
+                    f"scripts only support {sorted(VALID_SCRIPT_STRATEGIES)}"
                 )
 
             # Validate template name format
@@ -482,7 +576,7 @@ class PresetManager:
                 raise PresetCompatibilityError(
                     f"Preset requires spec-kit {required}, "
                     f"but {speckit_version} is installed.\n"
-                    f"Upgrade spec-kit with: uv tool install specify-cli --force"
+                    f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
                 )
         except InvalidSpecifier:
             raise PresetCompatibilityError(
@@ -501,6 +595,10 @@ class PresetManager:
         Scans the preset's templates for type "command", reads each command
         file, and writes it to every detected agent directory using the
         CommandRegistrar from the agents module.
+
+        When a command uses a composition strategy (prepend, append, wrap),
+        the content is composed with the lower-priority command before
+        registration.
 
         Args:
             manifest: Preset manifest
@@ -531,6 +629,50 @@ class PresetManager:
         if not filtered:
             return {}
 
+        # Handle composition strategies: resolve composed content for non-replace commands
+        resolver = PresetResolver(self.project_root)
+        composed_dir = None
+        commands_to_register = []
+        for cmd in filtered:
+            strategy = cmd.get("strategy", "replace")
+            if strategy != "replace":
+                # Only pre-compose if this preset is the top composing layer.
+                # If a higher-priority replace already wins, skip composition
+                # here — reconciliation will write the correct content.
+                layers = resolver.collect_all_layers(cmd["name"], "command")
+                top_layer_is_ours = (
+                    layers and layers[0]["path"].is_relative_to(preset_dir)
+                )
+                if top_layer_is_ours:
+                    composed = resolver.resolve_content(cmd["name"], "command")
+                    if composed is not None:
+                        if composed_dir is None:
+                            composed_dir = preset_dir / ".composed"
+                            composed_dir.mkdir(parents=True, exist_ok=True)
+                        composed_file = composed_dir / f"{cmd['name']}.md"
+                        composed_file.write_text(composed, encoding="utf-8")
+                        commands_to_register.append({
+                            **cmd,
+                            "file": f".composed/{cmd['name']}.md",
+                        })
+                    else:
+                        raise PresetValidationError(
+                            f"Command '{cmd['name']}' uses '{strategy}' strategy "
+                            f"but no base command layer exists to compose onto. "
+                            f"Ensure a lower-priority preset, extension, or core "
+                            f"command provides this command before using "
+                            f"composition strategies."
+                        )
+                else:
+                    # Not the top layer — register raw file; reconciliation
+                    # will overwrite with the correct composed/winning content.
+                    # Note: CommandRegistrar may process frontmatter strategy: wrap
+                    # from the raw file (legacy compat), but reconciliation runs
+                    # immediately after install and corrects the final output.
+                    commands_to_register.append(cmd)
+            else:
+                commands_to_register.append(cmd)
+
         try:
             from .agents import CommandRegistrar
         except ImportError:
@@ -538,7 +680,7 @@ class PresetManager:
 
         registrar = CommandRegistrar()
         return registrar.register_commands_for_all_agents(
-            filtered, manifest.id, preset_dir, self.project_root
+            commands_to_register, manifest.id, preset_dir, self.project_root
         )
 
     def _unregister_commands(self, registered_commands: Dict[str, List[str]]) -> None:
@@ -554,6 +696,403 @@ class PresetManager:
 
         registrar = CommandRegistrar()
         registrar.unregister_commands(registered_commands, self.project_root)
+
+    def _reconcile_composed_commands(self, command_names: List[str]) -> None:
+        """Re-resolve and re-register composed commands from the full stack.
+
+        After install or remove, recompute the effective content for each
+        command name that participates in composition, and write the winning
+        content to the agent directories. This ensures command files always
+        reflect the current priority stack rather than depending on
+        install/remove order.
+
+        Args:
+            command_names: List of command names to reconcile
+        """
+        if not command_names:
+            return
+
+        try:
+            from .agents import CommandRegistrar
+        except ImportError:
+            return
+
+        resolver = PresetResolver(self.project_root)
+        registrar = CommandRegistrar()
+
+        # Cache registry and manifests outside the loop to avoid
+        # repeated filesystem reads for each command name.
+        presets_by_priority = list(self.registry.list_by_priority())
+
+        for cmd_name in command_names:
+            layers = resolver.collect_all_layers(cmd_name, "command")
+            if not layers:
+                continue
+
+            # If the top layer is replace, it wins entirely — lower layers
+            # are irrelevant regardless of their strategies.
+            top_is_replace = layers[0]["strategy"] == "replace"
+            has_composition = not top_is_replace and any(
+                layer["strategy"] != "replace" for layer in layers
+            )
+            if not has_composition:
+                # Pure replace — the top layer wins.
+                top_layer = layers[0]
+                top_path = top_layer["path"]
+                # Try to find which preset owns this layer
+                registered = False
+                for pack_id, _meta in presets_by_priority:
+                    pack_dir = self.presets_dir / pack_id
+                    if top_path.is_relative_to(pack_dir):
+                        manifest = resolver._get_manifest(pack_dir)
+                        if manifest:
+                            for tmpl in manifest.templates:
+                                if tmpl.get("name") == cmd_name and tmpl.get("type") == "command":
+                                    self._register_for_non_skill_agents(
+                                        registrar, [tmpl], manifest.id, pack_dir
+                                    )
+                                    registered = True
+                                    break
+                        break
+                if not registered:
+                    # Top layer is a non-preset source (extension, core, or
+                    # project override). Register directly from the layer path.
+                    source = layers[0]["source"]
+                    if source.startswith("extension:"):
+                        # Use extension's own registration to preserve context formatting
+                        ext_id = source.split(":", 1)[1].split(" ", 1)[0]
+                        ext_dir = self.project_root / ".specify" / "extensions" / ext_id
+                        ext_manifest_path = ext_dir / "extension.yml"
+                        if ext_manifest_path.exists():
+                            try:
+                                from .extensions import ExtensionManifest
+                                ext_manifest = ExtensionManifest(ext_manifest_path)
+                                # Filter to only the command being reconciled
+                                matching_cmds = [
+                                    c for c in ext_manifest.commands
+                                    if c.get("name") == cmd_name
+                                ]
+                                if matching_cmds:
+                                    registrar.register_commands_for_non_skill_agents(
+                                        matching_cmds, ext_id, ext_dir,
+                                        self.project_root,
+                                        context_note=f"\n<!-- Extension: {ext_id} -->\n<!-- Config: .specify/extensions/{ext_id}/ -->\n",
+                                    )
+                                    registered = True
+                            except Exception:
+                                # Extension registration failed; fall back to
+                                # generic path-based registration below.
+                                pass
+                    if not registered:
+                        source_id = source.split(":", 1)[1].split(" ", 1)[0] if source.startswith("extension:") else source
+                        self._register_command_from_path(
+                            registrar, cmd_name, top_path,
+                            source_id=source_id,
+                        )
+            else:
+                # Composed command — resolve from full stack
+                composed = resolver.resolve_content(cmd_name, "command")
+                if composed is None:
+                    # Composition no longer possible (e.g. base layer removed).
+                    # Unregister any stale command file from non-skill agents.
+                    import warnings
+                    warnings.warn(
+                        f"Cannot compose command '{cmd_name}': no base layer. "
+                        f"Stale command files may remain.",
+                        stacklevel=2,
+                    )
+                    registrar._ensure_configs()
+                    # Include aliases from the top layer's manifest
+                    cmd_names_to_unregister = [cmd_name]
+                    for _pid, _meta in presets_by_priority:
+                        _pd = self.presets_dir / _pid
+                        _m = resolver._get_manifest(_pd)
+                        if _m:
+                            for _t in _m.templates:
+                                if _t.get("name") == cmd_name and _t.get("type") == "command":
+                                    for alias in _t.get("aliases", []):
+                                        if isinstance(alias, str):
+                                            cmd_names_to_unregister.append(alias)
+                                    break
+                    registrar.unregister_commands(
+                        {agent: cmd_names_to_unregister for agent in registrar.AGENT_CONFIGS
+                         if registrar.AGENT_CONFIGS[agent].get("extension") != "/SKILL.md"},
+                        self.project_root,
+                    )
+                    continue
+
+                # Write to the highest-priority preset's .composed dir
+                registered = False
+                for pack_id, _meta in presets_by_priority:
+                    pack_dir = self.presets_dir / pack_id
+                    manifest = resolver._get_manifest(pack_dir)
+                    if not manifest:
+                        continue
+                    for tmpl in manifest.templates:
+                        if tmpl.get("name") == cmd_name and tmpl.get("type") == "command":
+                            composed_dir = pack_dir / ".composed"
+                            composed_dir.mkdir(parents=True, exist_ok=True)
+                            composed_file = composed_dir / f"{cmd_name}.md"
+                            composed_file.write_text(composed, encoding="utf-8")
+                            self._register_for_non_skill_agents(
+                                registrar,
+                                [{**tmpl, "file": f".composed/{cmd_name}.md"}],
+                                manifest.id, pack_dir,
+                            )
+                            registered = True
+                            break
+                    else:
+                        continue
+                    break
+                if not registered:
+                    # No preset owns this composed command — write to a
+                    # shared .composed dir and register from the top layer.
+                    shared_composed = self.presets_dir / ".composed"
+                    shared_composed.mkdir(parents=True, exist_ok=True)
+                    composed_file = shared_composed / f"{cmd_name}.md"
+                    composed_file.write_text(composed, encoding="utf-8")
+                    source = layers[0]["source"]
+                    if source.startswith("extension:"):
+                        source_id = source.split(":", 1)[1].split(" ", 1)[0]
+                    else:
+                        source_id = source
+                    self._register_command_from_path(
+                        registrar, cmd_name, composed_file,
+                        source_id=source_id,
+                    )
+
+    def _register_command_from_path(
+        self,
+        registrar: Any,
+        cmd_name: str,
+        cmd_path: Path,
+        source_id: str = "reconciled",
+    ) -> None:
+        """Register a single command from a file path (non-preset source).
+
+        Used by reconciliation when the winning layer is an extension,
+        core template, or project override rather than a preset.
+
+        Args:
+            registrar: CommandRegistrar instance
+            cmd_name: Command name
+            cmd_path: Path to the command file
+            source_id: Source attribution for rendered output
+        """
+        if not cmd_path.exists():
+            return
+        cmd_tmpl: Dict[str, Any] = {
+            "name": cmd_name,
+            "type": "command",
+            "file": cmd_path.name,
+        }
+        # Load aliases from extension manifest when the winning layer is an extension
+        if source_id and not source_id.startswith("preset:"):
+            try:
+                from .extensions import ExtensionManifest
+                for ext_dir in (self.project_root / ".specify" / "extensions").iterdir():
+                    if not ext_dir.is_dir():
+                        continue
+                    if cmd_path.is_relative_to(ext_dir):
+                        manifest_path = ext_dir / "extension.yml"
+                        if manifest_path.exists():
+                            ext_manifest = ExtensionManifest(manifest_path)
+                            for cmd in ext_manifest.commands:
+                                if cmd.get("name") == cmd_name:
+                                    aliases = cmd.get("aliases", [])
+                                    if isinstance(aliases, list) and aliases:
+                                        cmd_tmpl["aliases"] = aliases
+                                    break
+                        break
+            except Exception:
+                pass  # best-effort alias loading
+        self._register_for_non_skill_agents(
+            registrar, [cmd_tmpl], source_id, cmd_path.parent
+        )
+
+    def _register_for_non_skill_agents(
+        self,
+        registrar: Any,
+        commands: List[Dict[str, Any]],
+        source_id: str,
+        source_dir: Path,
+    ) -> None:
+        """Register commands for non-skill agents during reconciliation.
+
+        Skill-based agents (``/SKILL.md`` layout) are handled separately:
+        - On removal: ``_unregister_skills()`` restores from core/extension,
+          then ``_reconcile_skills()`` re-runs ``_register_skills()`` for the
+          next winning preset so SKILL.md files get proper frontmatter and
+          descriptions.
+        - On install: ``_register_skills()`` writes formatted SKILL.md, then
+          ``_reconcile_skills()`` ensures the actual priority winner is used.
+
+        Writing raw command content to skill agents would produce invalid
+        SKILL.md files (missing skill frontmatter, descriptions, etc.).
+        """
+        registrar.register_commands_for_non_skill_agents(
+            commands, source_id, source_dir, self.project_root
+        )
+
+    class _FilteredManifest:
+        """Wrapper that exposes only selected command templates from a manifest.
+
+        Used by _reconcile_skills to avoid overwriting skills for commands
+        that aren't being reconciled.
+        """
+
+        def __init__(self, manifest: "PresetManifest", cmd_names: set):
+            self._manifest = manifest
+            self._cmd_names = cmd_names
+
+        def __getattr__(self, name: str):
+            return getattr(self._manifest, name)
+
+        @property
+        def templates(self) -> List[Dict[str, Any]]:
+            return [
+                t for t in self._manifest.templates
+                if t.get("name") in self._cmd_names
+            ]
+
+    def _reconcile_skills(self, command_names: List[str]) -> None:
+        """Re-register skills for commands whose winning layer changed.
+
+        After a preset is removed, finds the next preset in the priority
+        stack that provides each command and re-runs skill registration
+        for that preset so SKILL.md files reflect the current winner.
+
+        Args:
+            command_names: List of command names to reconcile skills for
+        """
+        if not command_names:
+            return
+
+        resolver = PresetResolver(self.project_root)
+        skills_dir = self._get_skills_dir()
+
+        # Cache registry once to avoid repeated filesystem reads
+        presets_by_priority = list(self.registry.list_by_priority())
+
+        # Group command names by winning preset to batch _register_skills calls
+        # while only registering skills for the specific commands being reconciled.
+        preset_cmds: Dict[str, List[str]] = {}
+        non_preset_skills: List[tuple] = []
+
+        for cmd_name in command_names:
+            layers = resolver.collect_all_layers(cmd_name, "command")
+            if not layers:
+                continue
+
+            # Re-create the skill directory only if it was previously managed
+            # (i.e., listed in some preset's registered_skills). This avoids
+            # creating new skill dirs that _register_skills would normally skip.
+            if skills_dir:
+                skill_name, _ = self._skill_names_for_command(cmd_name)
+                skill_subdir = skills_dir / skill_name
+                if not skill_subdir.exists():
+                    # Check if any preset previously registered this skill
+                    was_managed = False
+                    for _pid, meta in presets_by_priority:
+                        if not isinstance(meta, dict):
+                            continue
+                        if skill_name in meta.get("registered_skills", []):
+                            was_managed = True
+                            break
+                    if was_managed:
+                        skill_subdir.mkdir(parents=True, exist_ok=True)
+
+            top_path = layers[0]["path"]
+            # Find the preset that owns the winning layer
+            found_preset = False
+            for pack_id, _meta in presets_by_priority:
+                pack_dir = self.presets_dir / pack_id
+                if top_path.is_relative_to(pack_dir):
+                    preset_cmds.setdefault(pack_id, []).append(cmd_name)
+                    found_preset = True
+                    break
+            if not found_preset:
+                # Winner is a non-preset source (core/extension/override).
+                # Track the winning layer path for skill restoration.
+                skill_name, _ = self._skill_names_for_command(cmd_name)
+                non_preset_skills.append((skill_name, cmd_name, layers[0]))
+
+        # Restore skills for commands whose winner is non-preset.
+        if non_preset_skills and skills_dir:
+            # Separate override-backed skills from core/extension-backed ones.
+            # _unregister_skills can rmtree the skill dir, so overrides must
+            # be handled directly (create dir + write) without that call.
+            core_ext_skills = []
+            override_skills = []
+            for item in non_preset_skills:
+                if item[2]["source"] == "project override":
+                    override_skills.append(item)
+                else:
+                    core_ext_skills.append(item)
+
+            if core_ext_skills:
+                self._unregister_skills(
+                    [s[0] for s in core_ext_skills], self.presets_dir
+                )
+
+            for skill_name, cmd_name, top_layer in override_skills:
+                skill_subdir = skills_dir / skill_name
+                skill_subdir.mkdir(parents=True, exist_ok=True)
+                skill_file = skill_subdir / "SKILL.md"
+                try:
+                    from .agents import CommandRegistrar
+                    from . import SKILL_DESCRIPTIONS, load_init_options
+                    registrar = CommandRegistrar()
+                    content = top_layer["path"].read_text(encoding="utf-8")
+                    fm, body = registrar.parse_frontmatter(content)
+                    short_name = cmd_name
+                    if short_name.startswith("speckit."):
+                        short_name = short_name[len("speckit."):]
+                    desc = SKILL_DESCRIPTIONS.get(
+                        short_name.replace(".", "-"),
+                        fm.get("description", f"Command: {short_name}"),
+                    )
+                    init_opts = load_init_options(self.project_root)
+                    selected_ai = init_opts.get("ai") if isinstance(init_opts, dict) else ""
+                    if isinstance(selected_ai, str):
+                        body = registrar.resolve_skill_placeholders(
+                            selected_ai, fm, body, self.project_root
+                        )
+                    fm_data = registrar.build_skill_frontmatter(
+                        selected_ai if isinstance(selected_ai, str) else "",
+                        skill_name, desc,
+                        f"override:{cmd_name}",
+                    )
+                    fm_text = yaml.safe_dump(fm_data, sort_keys=False).strip()
+                    skill_title = self._skill_title_from_command(cmd_name)
+                    skill_content = (
+                        f"---\n{fm_text}\n---\n\n"
+                        f"# Speckit {skill_title} Skill\n\n{body}\n"
+                    )
+                    # Apply integration post-processing (e.g. Claude flags)
+                    from .integrations import get_integration
+                    integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
+                    if integration is not None and hasattr(integration, "post_process_skill_content"):
+                        skill_content = integration.post_process_skill_content(skill_content)
+                    skill_file.write_text(skill_content, encoding="utf-8")
+                except Exception:
+                    pass  # best-effort override skill restoration
+
+        # Register skills only for the specific commands being reconciled,
+        # not all commands in each winning preset's manifest.
+        for pack_id, cmds in preset_cmds.items():
+            pack_dir = self.presets_dir / pack_id
+            manifest_path = pack_dir / "preset.yml"
+            if not manifest_path.exists():
+                continue
+            try:
+                manifest = PresetManifest(manifest_path)
+            except PresetValidationError:
+                continue
+            # Filter manifest to only the commands being reconciled
+            cmds_set = set(cmds)
+            filtered_manifest = self._FilteredManifest(manifest, cmds_set)
+            self._register_skills(filtered_manifest, pack_dir)
 
     def _get_skills_dir(self) -> Optional[Path]:
         """Return the active skills directory for preset skill overrides.
@@ -624,7 +1163,7 @@ class PresetManager:
 
             try:
                 manifest = ExtensionManifest(manifest_path)
-            except ValidationError:
+            except (ValidationError, TypeError, AttributeError):
                 continue
 
             ext_root = ext_dir.resolve()
@@ -707,6 +1246,7 @@ class PresetManager:
 
         from . import SKILL_DESCRIPTIONS, load_init_options
         from .agents import CommandRegistrar
+        from .integrations import get_integration
 
         init_opts = load_init_options(self.project_root)
         if not isinstance(init_opts, dict):
@@ -716,8 +1256,9 @@ class PresetManager:
             return []
         ai_skills_enabled = bool(init_opts.get("ai_skills"))
         registrar = CommandRegistrar()
+        integration = get_integration(selected_ai)
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
-        # Native skill agents (e.g. codex/kimi/agy) materialize brand-new
+        # Native skill agents (e.g. codex/kimi/agy/trae) materialize brand-new
         # preset skills in _register_commands() because their detected agent
         # directory is already the skills directory. This flag is only for
         # command-backed agents that also mirror commands into skills.
@@ -731,6 +1272,12 @@ class PresetManager:
             source_file = preset_dir / cmd_file_rel
             if not source_file.exists():
                 continue
+
+            # Use composed content if available (written by _register_commands
+            # for commands with non-replace strategies), otherwise the original.
+            composed_file = preset_dir / ".composed" / f"{cmd_name}.md"
+            if composed_file.exists():
+                source_file = composed_file
 
             # Derive the short command name (e.g. "specify" from "speckit.specify")
             raw_short_name = cmd_name
@@ -758,6 +1305,13 @@ class PresetManager:
             # Parse the command file
             content = source_file.read_text(encoding="utf-8")
             frontmatter, body = registrar.parse_frontmatter(content)
+
+            if frontmatter.get("strategy") == "wrap":
+                body, core_frontmatter = _substitute_core_template(body, cmd_name, self.project_root, registrar)
+                frontmatter = dict(frontmatter)
+                for key in ("scripts", "agent_scripts"):
+                    if key not in frontmatter and key in core_frontmatter:
+                        frontmatter[key] = core_frontmatter[key]
 
             original_desc = frontmatter.get("description", "")
             enhanced_desc = SKILL_DESCRIPTIONS.get(
@@ -789,6 +1343,10 @@ class PresetManager:
                     f"# Speckit {skill_title} Skill\n\n"
                     f"{body}\n"
                 )
+                if integration is not None and hasattr(integration, "post_process_skill_content"):
+                    skill_content = integration.post_process_skill_content(
+                        skill_content
+                    )
 
                 skill_file = skill_subdir / "SKILL.md"
                 skill_file.write_text(skill_content, encoding="utf-8")
@@ -816,6 +1374,7 @@ class PresetManager:
 
         from . import SKILL_DESCRIPTIONS, load_init_options
         from .agents import CommandRegistrar
+        from .integrations import get_integration
 
         # Locate core command templates from the project's installed templates
         core_templates_dir = self.project_root / ".specify" / "templates" / "commands"
@@ -824,6 +1383,7 @@ class PresetManager:
             init_opts = {}
         selected_ai = init_opts.get("ai")
         registrar = CommandRegistrar()
+        integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
         extension_restore_index = self._build_extension_skill_restore_index()
 
         for skill_name in skill_names:
@@ -877,6 +1437,10 @@ class PresetManager:
                     f"# Speckit {skill_title} Skill\n\n"
                     f"{body}\n"
                 )
+                if integration is not None and hasattr(integration, "post_process_skill_content"):
+                    skill_content = integration.post_process_skill_content(
+                        skill_content
+                    )
                 skill_file.write_text(skill_content, encoding="utf-8")
                 continue
 
@@ -906,6 +1470,10 @@ class PresetManager:
                     f"# {title_name} Skill\n\n"
                     f"{body}\n"
                 )
+                if integration is not None and hasattr(integration, "post_process_skill_content"):
+                    skill_content = integration.post_process_skill_content(
+                        skill_content
+                    )
                 skill_file.write_text(skill_content, encoding="utf-8")
             else:
                 # No core or extension template — remove the skill entirely
@@ -952,21 +1520,81 @@ class PresetManager:
 
         shutil.copytree(source_dir, dest_dir)
 
-        # Register command overrides with AI agents
-        registered_commands = self._register_commands(manifest, dest_dir)
-
-        # Update corresponding skills when --ai-skills was previously used
-        registered_skills = self._register_skills(manifest, dest_dir)
-
+        # Pre-register the preset so that composition resolution can see it
+        # in the priority stack when resolving composed command content.
         self.registry.add(manifest.id, {
             "version": manifest.version,
             "source": "local",
             "manifest_hash": manifest.get_hash(),
             "enabled": True,
             "priority": priority,
-            "registered_commands": registered_commands,
-            "registered_skills": registered_skills,
+            "registered_commands": {},
+            "registered_skills": [],
         })
+
+        registered_commands: Dict[str, List[str]] = {}
+        registered_skills: List[str] = []
+        try:
+            # Register command overrides with AI agents and persist the result
+            # immediately so cleanup can recover even if installation stops
+            # before later phases complete.
+            registered_commands = self._register_commands(manifest, dest_dir)
+            self.registry.update(manifest.id, {
+                "registered_commands": registered_commands,
+            })
+
+            # Update corresponding skills when --ai-skills was previously used
+            # and persist that result as well.
+            registered_skills = self._register_skills(manifest, dest_dir)
+            self.registry.update(manifest.id, {
+                "registered_skills": registered_skills,
+            })
+        except Exception:
+            # Roll back all side effects. Note: if _register_commands or
+            # _register_skills raised mid-way (e.g. I/O error after writing
+            # some files), registered_commands/registered_skills may be empty
+            # and some agent command files could be orphaned. Removing dest_dir
+            # (which contains .composed/) and the registry entry ensures the
+            # preset system is consistent even if orphaned files remain.
+            if registered_commands:
+                self._unregister_commands(registered_commands)
+            if registered_skills:
+                self._unregister_skills(registered_skills, dest_dir)
+            try:
+                if dest_dir.exists():
+                    shutil.rmtree(dest_dir)
+            except OSError:
+                pass  # best-effort cleanup; don't mask the original error
+            self.registry.remove(manifest.id)
+            raise
+
+        # Reconcile all affected commands from the full priority stack so that
+        # install order doesn't determine the winning command file.
+        # Apply the same extension-installed filter as _register_commands to
+        # avoid reconciling extension commands when the extension isn't installed.
+        extensions_dir = self.project_root / ".specify" / "extensions"
+        cmd_names = []
+        for t in manifest.templates:
+            if t.get("type") != "command":
+                continue
+            name = t["name"]
+            parts = name.split(".")
+            if len(parts) >= 3 and parts[0] == "speckit":
+                ext_id = parts[1]
+                if not (extensions_dir / ext_id).is_dir():
+                    continue
+            cmd_names.append(name)
+        if cmd_names:
+            try:
+                self._reconcile_composed_commands(cmd_names)
+                self._reconcile_skills(cmd_names)
+            except Exception as exc:
+                import warnings
+                warnings.warn(
+                    f"Post-install reconciliation failed for {manifest.id}: {exc}. "
+                    f"Agent command files may not reflect the current priority stack.",
+                    stacklevel=2,
+                )
 
         return manifest
 
@@ -1043,6 +1671,28 @@ class PresetManager:
         registered_skills = metadata.get("registered_skills", []) if metadata else []
         registered_commands = metadata.get("registered_commands", {}) if metadata else {}
         pack_dir = self.presets_dir / pack_id
+
+        # Collect ALL command names before filtering for reconciliation,
+        # so commands registered only for skill-based agents are also reconciled.
+        # Also include aliases from the manifest as a safety net for registries
+        # populated by older versions that may not track aliases.
+        removed_cmd_names = set()
+        for cmd_names in registered_commands.values():
+            removed_cmd_names.update(cmd_names)
+        manifest_path = pack_dir / "preset.yml"
+        if manifest_path.exists():
+            try:
+                manifest = PresetManifest(manifest_path)
+                for tmpl in manifest.templates:
+                    if tmpl.get("type") == "command":
+                        for alias in tmpl.get("aliases", []):
+                            if isinstance(alias, str):
+                                removed_cmd_names.add(alias)
+            except PresetValidationError:
+                # Invalid manifest — skip alias extraction; primary command
+                # names from registered_commands are still unregistered.
+                pass
+
         if registered_skills:
             self._unregister_skills(registered_skills, pack_dir)
             try:
@@ -1064,6 +1714,22 @@ class PresetManager:
             shutil.rmtree(pack_dir)
 
         self.registry.remove(pack_id)
+
+        # Reconcile: if other presets still provide these commands,
+        # re-resolve from the remaining stack so the next layer takes effect.
+        if removed_cmd_names:
+            try:
+                self._reconcile_composed_commands(list(removed_cmd_names))
+                self._reconcile_skills(list(removed_cmd_names))
+            except Exception as exc:
+                import warnings
+                warnings.warn(
+                    f"Post-removal reconciliation failed for {pack_id}: {exc}. "
+                    f"Agent command files may be stale; reinstall affected presets "
+                    f"or run 'specify preset add' to refresh.",
+                    stacklevel=2,
+                )
+
         return True
 
     def list_installed(self) -> List[Dict[str, Any]]:
@@ -1177,6 +1843,22 @@ class PresetCatalog:
             raise PresetValidationError(
                 "Catalog URL must be a valid URL with a host."
             )
+
+    def _make_request(self, url: str):
+        """Build a urllib Request, adding a GitHub auth header when available.
+
+        Delegates to :func:`specify_cli._github_http.build_github_request`.
+        """
+        from specify_cli._github_http import build_github_request
+        return build_github_request(url)
+
+    def _open_url(self, url: str, timeout: int = 10):
+        """Open a URL with GitHub auth, stripping the header on cross-host redirects.
+
+        Delegates to :func:`specify_cli._github_http.open_github_url`.
+        """
+        from specify_cli._github_http import open_github_url
+        return open_github_url(url, timeout)
 
     def _load_catalog_config(self, config_path: Path) -> Optional[List[PresetCatalogEntry]]:
         """Load catalog stack configuration from a YAML file.
@@ -1360,10 +2042,7 @@ class PresetCatalog:
                 pass
 
         try:
-            import urllib.request
-            import urllib.error
-
-            with urllib.request.urlopen(entry.url, timeout=10) as response:
+            with self._open_url(entry.url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
             if (
@@ -1456,10 +2135,7 @@ class PresetCatalog:
                 pass
 
         try:
-            import urllib.request
-            import urllib.error
-
-            with urllib.request.urlopen(catalog_url, timeout=10) as response:
+            with self._open_url(catalog_url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
             if (
@@ -1578,13 +2254,22 @@ class PresetCatalog:
         Raises:
             PresetError: If pack not found or download fails
         """
-        import urllib.request
         import urllib.error
 
         pack_info = self.get_pack_info(pack_id)
         if not pack_info:
             raise PresetError(
                 f"Preset '{pack_id}' not found in catalog"
+            )
+
+        # Bundled presets without a download URL must be installed locally
+        if pack_info.get("bundled") and not pack_info.get("download_url"):
+            from .extensions import REINSTALL_COMMAND
+            raise PresetError(
+                f"Preset '{pack_id}' is bundled with spec-kit and has no download URL. "
+                f"It should be installed from the local package. "
+                f"Use 'specify preset add {pack_id}' to install from the bundled package, "
+                f"or reinstall spec-kit if the bundled files are missing: {REINSTALL_COMMAND}"
             )
 
         if not pack_info.get("_install_allowed", True):
@@ -1620,7 +2305,7 @@ class PresetCatalog:
         zip_path = target_dir / zip_filename
 
         try:
-            with urllib.request.urlopen(download_url, timeout=60) as response:
+            with self._open_url(download_url, timeout=60) as response:
                 zip_data = response.read()
 
             zip_path.write_bytes(zip_data)
@@ -1662,6 +2347,21 @@ class PresetResolver:
         self.presets_dir = project_root / ".specify" / "presets"
         self.overrides_dir = self.templates_dir / "overrides"
         self.extensions_dir = project_root / ".specify" / "extensions"
+        self._manifest_cache: Dict[str, Optional["PresetManifest"]] = {}
+
+    def _get_manifest(self, pack_dir: Path) -> Optional["PresetManifest"]:
+        """Get a cached preset manifest, parsing it on first access."""
+        key = str(pack_dir)
+        if key not in self._manifest_cache:
+            manifest_path = pack_dir / "preset.yml"
+            if manifest_path.exists():
+                try:
+                    self._manifest_cache[key] = PresetManifest(manifest_path)
+                except PresetValidationError:
+                    self._manifest_cache[key] = None
+            else:
+                self._manifest_cache[key] = None
+        return self._manifest_cache[key]
 
     def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
         """Build unified list of registered and unregistered extensions sorted by priority.
@@ -1705,10 +2405,24 @@ class PresetResolver:
         all_extensions.sort(key=lambda x: (x[0], x[1]))
         return all_extensions
 
+    @staticmethod
+    def _core_stem(template_name: str) -> Optional[str]:
+        """Extract the stem for core command lookup.
+
+        Commands use dot notation (e.g. ``speckit.specify``), but core
+        command files are named by stem (e.g. ``specify.md``).  Returns
+        the stem if *template_name* follows the ``speckit.<stem>`` pattern,
+        or ``None`` otherwise.
+        """
+        if template_name.startswith("speckit."):
+            return template_name[len("speckit."):]
+        return None
+
     def resolve(
         self,
         template_name: str,
         template_type: str = "template",
+        skip_presets: bool = False,
     ) -> Optional[Path]:
         """Resolve a template name to its file path.
 
@@ -1717,6 +2431,8 @@ class PresetResolver:
         Args:
             template_name: Template name (e.g., "spec-template")
             template_type: Template type ("template", "command", or "script")
+            skip_presets: When True, skip tier 2 (installed presets). Use
+                resolve_core() as the preferred caller-facing API for this.
 
         Returns:
             Path to the resolved template file, or None if not found
@@ -1745,7 +2461,7 @@ class PresetResolver:
             return override
 
         # Priority 2: Installed presets (sorted by priority — lower number wins)
-        if self.presets_dir.exists():
+        if not skip_presets and self.presets_dir.exists():
             registry = PresetRegistry(self.presets_dir)
             for pack_id, _metadata in registry.list_by_priority():
                 pack_dir = self.presets_dir / pack_id
@@ -1779,11 +2495,118 @@ class PresetResolver:
             core = self.templates_dir / "commands" / f"{template_name}.md"
             if core.exists():
                 return core
+            # Fallback: speckit.<stem> → <stem>.md
+            stem = self._core_stem(template_name)
+            if stem:
+                core = self.templates_dir / "commands" / f"{stem}.md"
+                if core.exists():
+                    return core
         elif template_type == "script":
             core = self.templates_dir / "scripts" / f"{template_name}{ext}"
             if core.exists():
                 return core
 
+        # Priority 5: Bundled core_pack (wheel install) or repo-root templates
+        # (source-checkout / editable install).  This is the canonical home for
+        # speckit's built-in command/template files and must always be checked
+        # so that strategy:wrap presets can locate {CORE_TEMPLATE}.
+        from specify_cli import _locate_core_pack  # local import to avoid cycles
+        _core_pack = _locate_core_pack()
+        if _core_pack is not None:
+            # Wheel install path
+            if template_type == "template":
+                candidate = _core_pack / "templates" / f"{template_name}.md"
+            elif template_type == "command":
+                candidate = _core_pack / "commands" / f"{template_name}.md"
+                if not candidate.exists():
+                    stem = self._core_stem(template_name)
+                    if stem:
+                        candidate = _core_pack / "commands" / f"{stem}.md"
+            elif template_type == "script":
+                candidate = _core_pack / "scripts" / f"{template_name}{ext}"
+            else:
+                candidate = _core_pack / f"{template_name}.md"
+            if candidate.exists():
+                return candidate
+        else:
+            # Source-checkout / editable install: templates live at repo root
+            repo_root = Path(__file__).parent.parent.parent
+            if template_type == "template":
+                candidate = repo_root / "templates" / f"{template_name}.md"
+            elif template_type == "command":
+                candidate = repo_root / "templates" / "commands" / f"{template_name}.md"
+                if not candidate.exists():
+                    stem = self._core_stem(template_name)
+                    if stem:
+                        candidate = repo_root / "templates" / "commands" / f"{stem}.md"
+            elif template_type == "script":
+                candidate = repo_root / "scripts" / f"{template_name}{ext}"
+            else:
+                candidate = repo_root / f"{template_name}.md"
+            if candidate.exists():
+                return candidate
+
+        return None
+
+    def resolve_core(
+        self,
+        template_name: str,
+        template_type: str = "template",
+    ) -> Optional[Path]:
+        """Resolve while skipping installed presets (tier 2).
+
+        Searches tiers 1, 3, 4, and 5 (bundled core_pack / repo-root fallback).
+        Use when resolving {CORE_TEMPLATE} to guarantee the result is actual
+        base content, never another preset's wrap output.
+        """
+        return self.resolve(template_name, template_type, skip_presets=True)
+
+    def resolve_extension_command_via_manifest(self, cmd_name: str) -> Optional[Path]:
+        """Resolve an extension command by consulting installed extension manifests.
+
+        Walks installed extension directories in priority order, loads each
+        extension.yml via ExtensionManifest, and looks up the command by its
+        declared name to find the actual file path.  This is necessary because
+        the manifest's ``provides.commands[].file`` field is authoritative and
+        may differ from the command name
+        (e.g. ``speckit.selftest.extension`` → ``commands/selftest.md``).
+
+        Returns None if no manifest maps the given command name, so the caller
+        can fall back to the name-based lookup.
+        """
+        if not self.extensions_dir.exists():
+            return None
+
+        from .extensions import ExtensionManifest, ValidationError
+
+        for _priority, ext_id, _metadata in self._get_all_extensions_by_priority():
+            ext_dir = self.extensions_dir / ext_id
+            manifest_path = ext_dir / "extension.yml"
+            if not manifest_path.is_file():
+                continue
+            try:
+                manifest = ExtensionManifest(manifest_path)
+            except (ValidationError, OSError, TypeError, AttributeError):
+                continue
+            for cmd_info in manifest.commands:
+                if cmd_info.get("name") != cmd_name:
+                    continue
+                file_rel = cmd_info.get("file")
+                if not file_rel:
+                    continue
+                # Mirror the containment check in ExtensionManager to guard against
+                # path traversal via a malformed manifest (e.g. file: ../../AGENTS.md).
+                cmd_path = Path(file_rel)
+                if cmd_path.is_absolute():
+                    continue
+                try:
+                    ext_root = ext_dir.resolve()
+                    candidate = (ext_root / cmd_path).resolve()
+                    candidate.relative_to(ext_root)  # raises ValueError if outside
+                except (OSError, ValueError):
+                    continue
+                if candidate.is_file():
+                    return candidate
         return None
 
     def resolve_with_source(
@@ -1847,3 +2670,428 @@ class PresetResolver:
                 continue
 
         return {"path": resolved_str, "source": "core"}
+
+    def collect_all_layers(
+        self,
+        template_name: str,
+        template_type: str = "template",
+    ) -> List[Dict[str, Any]]:
+        """Collect all layers in the priority stack for a template.
+
+        Returns layers from highest priority (checked first) to lowest priority.
+        Each layer is a dict with 'path', 'source', and 'strategy' keys.
+
+        Args:
+            template_name: Template name (e.g., "spec-template")
+            template_type: Template type ("template", "command", or "script")
+
+        Returns:
+            List of layer dicts ordered highest-to-lowest priority.
+        """
+        if template_type == "template":
+            subdirs = ["templates", ""]
+        elif template_type == "command":
+            subdirs = ["commands"]
+        elif template_type == "script":
+            subdirs = ["scripts"]
+        else:
+            subdirs = [""]
+
+        ext = ".md"
+        if template_type == "script":
+            ext = ".sh"
+
+        layers: List[Dict[str, Any]] = []
+
+        def _find_in_subdirs(base_dir: Path) -> Optional[Path]:
+            for subdir in subdirs:
+                if subdir:
+                    candidate = base_dir / subdir / f"{template_name}{ext}"
+                else:
+                    candidate = base_dir / f"{template_name}{ext}"
+                if candidate.exists():
+                    return candidate
+            return None
+
+        # Priority 1: Project-local overrides (always "replace" strategy)
+        if template_type == "script":
+            override = self.overrides_dir / "scripts" / f"{template_name}{ext}"
+        else:
+            override = self.overrides_dir / f"{template_name}{ext}"
+        if override.exists():
+            layers.append({
+                "path": override,
+                "source": "project override",
+                "strategy": "replace",
+            })
+
+        # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
+        if self.presets_dir.exists():
+            registry = PresetRegistry(self.presets_dir)
+            for pack_id, metadata in registry.list_by_priority():
+                pack_dir = self.presets_dir / pack_id
+                # Read strategy and manifest file path from preset manifest
+                strategy = "replace"
+                manifest_file_path = None
+                manifest_has_strategy = False
+                manifest_found_entry = False
+                manifest = self._get_manifest(pack_dir)
+                if manifest:
+                    for tmpl in manifest.templates:
+                        if (tmpl.get("name") == template_name
+                                and tmpl.get("type") == template_type):
+                            strategy = tmpl.get("strategy", "replace")
+                            manifest_has_strategy = "strategy" in tmpl
+                            manifest_file_path = tmpl.get("file")
+                            manifest_found_entry = True
+                            break
+                # Use manifest file path if specified, otherwise convention-based
+                # lookup — but only when the manifest doesn't exist or doesn't
+                # list this template, so preset.yml stays authoritative.
+                candidate = None
+                if manifest_file_path:
+                    manifest_candidate = pack_dir / manifest_file_path
+                    if manifest_candidate.exists():
+                        candidate = manifest_candidate
+                    # Explicit file path that doesn't exist: skip convention
+                    # fallback to avoid masking typos or picking up unintended files.
+                elif not manifest_found_entry:
+                    # Manifest doesn't list this template — check convention paths
+                    candidate = _find_in_subdirs(pack_dir)
+                if candidate:
+                    # Legacy fallback: if manifest doesn't explicitly declare a
+                    # strategy, check the command file's frontmatter for any valid
+                    # strategy. Skip when the manifest entry includes strategy key
+                    # (even if it's "replace") to avoid overriding explicit declarations.
+                    if not manifest_has_strategy and strategy == "replace" and template_type == "command":
+                        try:
+                            cmd_content = candidate.read_text(encoding="utf-8")
+                            lines = cmd_content.splitlines(keepends=True)
+                            if lines and lines[0].rstrip("\r\n") == "---":
+                                fence_end = -1
+                                for fi, fline in enumerate(lines[1:], start=1):
+                                    if fline.rstrip("\r\n") == "---":
+                                        fence_end = fi
+                                        break
+                                if fence_end > 0:
+                                    fm_text = "".join(lines[1:fence_end])
+                                    fm_data = yaml.safe_load(fm_text)
+                                    if isinstance(fm_data, dict):
+                                        fm_strategy = fm_data.get("strategy")
+                                        if isinstance(fm_strategy, str) and fm_strategy.lower() in VALID_PRESET_STRATEGIES:
+                                            strategy = fm_strategy.lower()
+                        except (yaml.YAMLError, OSError):
+                            # Best-effort legacy frontmatter parsing: keep default
+                            # strategy ("replace") when content is unreadable/invalid.
+                            pass
+                    version = metadata.get("version", "?") if metadata else "?"
+                    layers.append({
+                        "path": candidate,
+                        "source": f"{pack_id} v{version}",
+                        "strategy": strategy,
+                    })
+
+        # Priority 3: Extension-provided templates (always "replace")
+        for _priority, ext_id, ext_meta in self._get_all_extensions_by_priority():
+            ext_dir = self.extensions_dir / ext_id
+            if not ext_dir.is_dir():
+                continue
+            # Try convention-based lookup first
+            candidate = _find_in_subdirs(ext_dir)
+            # If not found and this is a command, check extension manifest
+            if candidate is None and template_type == "command":
+                ext_manifest_path = ext_dir / "extension.yml"
+                if ext_manifest_path.exists():
+                    try:
+                        from .extensions import ExtensionManifest, ValidationError as ExtValidationError
+                        ext_manifest = ExtensionManifest(ext_manifest_path)
+                        for cmd in ext_manifest.commands:
+                            if cmd.get("name") == template_name:
+                                cmd_file = cmd.get("file")
+                                if cmd_file:
+                                    c = ext_dir / cmd_file
+                                    if c.exists():
+                                        candidate = c
+                                break
+                    except (ExtValidationError, yaml.YAMLError):
+                        # Invalid extension manifest — fall back to
+                        # convention-based lookup (already attempted above).
+                        pass
+            if candidate:
+                if ext_meta:
+                    version = ext_meta.get("version", "?")
+                    source = f"extension:{ext_id} v{version}"
+                else:
+                    source = f"extension:{ext_id} (unregistered)"
+                layers.append({
+                    "path": candidate,
+                    "source": source,
+                    "strategy": "replace",
+                })
+
+        # Priority 4: Core templates (always "replace")
+        core = None
+        if template_type == "template":
+            c = self.templates_dir / f"{template_name}.md"
+            if c.exists():
+                core = c
+        elif template_type == "command":
+            c = self.templates_dir / "commands" / f"{template_name}.md"
+            if c.exists():
+                core = c
+            else:
+                # Fallback: speckit.<stem> → <stem>.md
+                stem = self._core_stem(template_name)
+                if stem:
+                    c = self.templates_dir / "commands" / f"{stem}.md"
+                    if c.exists():
+                        core = c
+        elif template_type == "script":
+            c = self.templates_dir / "scripts" / f"{template_name}{ext}"
+            if c.exists():
+                core = c
+        if core:
+            layers.append({
+                "path": core,
+                "source": "core",
+                "strategy": "replace",
+            })
+        else:
+            # Priority 5: Bundled core_pack (wheel install) or repo-root
+            # templates (source-checkout), matching resolve()'s tier-5 fallback.
+            bundled = self._find_bundled_core(template_name, template_type, ext)
+            if bundled:
+                layers.append({
+                    "path": bundled,
+                    "source": "core (bundled)",
+                    "strategy": "replace",
+                })
+
+        return layers
+
+    def _find_bundled_core(
+        self,
+        template_name: str,
+        template_type: str,
+        ext: str,
+    ) -> Optional[Path]:
+        """Find a core template from the bundled pack or source checkout.
+
+        Mirrors the tier-5 fallback logic in ``resolve()`` so that
+        ``collect_all_layers()`` can locate base layers even when
+        ``.specify/templates/`` doesn't contain the core file.
+        """
+        try:
+            from specify_cli import _locate_core_pack
+        except ImportError:
+            return None
+
+        stem = self._core_stem(template_name)
+        names = [template_name]
+        if stem and stem != template_name:
+            names.append(stem)
+
+        core_pack = _locate_core_pack()
+        if core_pack is not None:
+            for name in names:
+                if template_type == "template":
+                    c = core_pack / "templates" / f"{name}.md"
+                elif template_type == "command":
+                    c = core_pack / "commands" / f"{name}.md"
+                elif template_type == "script":
+                    c = core_pack / "scripts" / f"{name}{ext}"
+                else:
+                    c = core_pack / f"{name}.md"
+                if c.exists():
+                    return c
+        else:
+            repo_root = Path(__file__).parent.parent.parent
+            for name in names:
+                if template_type == "template":
+                    c = repo_root / "templates" / f"{name}.md"
+                elif template_type == "command":
+                    c = repo_root / "templates" / "commands" / f"{name}.md"
+                elif template_type == "script":
+                    c = repo_root / "scripts" / f"{name}{ext}"
+                else:
+                    c = repo_root / f"{name}.md"
+                if c.exists():
+                    return c
+        return None
+
+    def resolve_content(
+        self,
+        template_name: str,
+        template_type: str = "template",
+    ) -> Optional[str]:
+        """Resolve a template name and return composed content.
+
+        Walks the priority stack and composes content using strategies:
+        - replace (default): highest-priority content wins entirely
+        - prepend: content is placed before lower-priority content
+        - append: content is placed after lower-priority content
+        - wrap: content contains {CORE_TEMPLATE} placeholder replaced
+                with lower-priority content (or $CORE_SCRIPT for scripts)
+
+        Composition is recursive — multiple composing presets chain.
+
+        Args:
+            template_name: Template name (e.g., "spec-template")
+            template_type: Template type ("template", "command", or "script")
+
+        Returns:
+            Composed content string, or None if not found
+        """
+        layers = self.collect_all_layers(template_name, template_type)
+        if not layers:
+            return None
+
+        # If the top (highest-priority) layer is replace, it wins entirely —
+        # lower layers are irrelevant regardless of their strategies.
+        if layers[0]["strategy"] == "replace":
+            return layers[0]["path"].read_text(encoding="utf-8")
+
+        # Composition: build content bottom-up from the effective base.
+        # The base is the nearest replace layer scanning from highest priority
+        # downward. Only layers above the base contribute to composition.
+        #
+        # layers is ordered highest-priority first. We process in reverse.
+        reversed_layers = list(reversed(layers))
+
+        # Find the effective base: scan from highest priority (layers[0]) downward
+        # to find the nearest replace layer. Only compose layers above that base.
+        # layers is highest-priority first; reversed_layers is lowest first.
+        base_layer_idx = None  # index in layers[] (highest-priority first)
+        for idx, layer in enumerate(layers):
+            if layer["strategy"] == "replace":
+                base_layer_idx = idx
+                break
+
+        if base_layer_idx is None:
+            return None  # no replace base found
+
+        # Convert to reversed_layers index
+        base_reversed_idx = len(layers) - 1 - base_layer_idx
+        content = layers[base_layer_idx]["path"].read_text(encoding="utf-8")
+        # Compose only the layers above the base (higher priority = lower index in layers,
+        # higher index in reversed_layers). Process bottom-up from base+1.
+        start_idx = base_reversed_idx + 1
+
+        # For command composition, strip frontmatter from each layer to avoid
+        # leaking YAML metadata into the composed body. The highest-priority
+        # layer's frontmatter will be reattached at the end.
+        is_command = template_type == "command"
+        top_frontmatter_text = None
+        base_frontmatter_text = None
+
+        def _split_frontmatter(text: str) -> tuple:
+            """Return (frontmatter_block_with_fences, body) or (None, text).
+
+            Uses line-based fence detection (fence must be ``---`` on its
+            own line) to avoid false matches on ``---`` inside YAML values.
+            """
+            lines = text.splitlines(keepends=True)
+            if not lines or lines[0].rstrip("\r\n") != "---":
+                return None, text
+
+            fence_end = -1
+            for i, line in enumerate(lines[1:], start=1):
+                if line.rstrip("\r\n") == "---":
+                    fence_end = i
+                    break
+
+            if fence_end == -1:
+                return None, text
+
+            fm_block = "".join(lines[:fence_end + 1]).rstrip("\r\n")
+            body = "".join(lines[fence_end + 1:])
+            return fm_block, body
+
+        if is_command:
+            fm, body = _split_frontmatter(content)
+            if fm:
+                top_frontmatter_text = fm
+                base_frontmatter_text = fm
+                content = body
+
+        # Apply composition layers from bottom to top
+        for layer in reversed_layers[start_idx:]:
+            layer_content = layer["path"].read_text(encoding="utf-8")
+            strategy = layer["strategy"]
+
+            if is_command:
+                fm, layer_body = _split_frontmatter(layer_content)
+                layer_content = layer_body
+                # Track the highest-priority frontmatter seen;
+                # replace layers reset both top and base frontmatter since
+                # they replace the entire command including metadata.
+                if strategy == "replace":
+                    top_frontmatter_text = fm
+                    base_frontmatter_text = fm
+                elif fm:
+                    top_frontmatter_text = fm
+
+            if strategy == "replace":
+                content = layer_content
+            elif strategy == "prepend":
+                content = layer_content + "\n\n" + content
+            elif strategy == "append":
+                content = content + "\n\n" + layer_content
+            elif strategy == "wrap":
+                if template_type == "script":
+                    placeholder = "$CORE_SCRIPT"
+                else:
+                    placeholder = "{CORE_TEMPLATE}"
+                if placeholder not in layer_content:
+                    raise PresetValidationError(
+                        f"Wrap strategy in '{layer['source']}' is missing "
+                        f"the {placeholder} placeholder. The wrapper must "
+                        f"contain {placeholder} to indicate where the "
+                        f"lower-priority content should be inserted."
+                    )
+                content = layer_content.replace(placeholder, content)
+
+        # Reattach the highest-priority frontmatter for commands,
+        # inheriting scripts/agent_scripts from the base if missing
+        # and stripping the strategy key (internal-only, not for agent output).
+        if is_command and top_frontmatter_text:
+            def _parse_fm_yaml(fm_block: str) -> dict:
+                """Parse YAML from a frontmatter block (with --- fences)."""
+                lines = fm_block.splitlines()
+                # Parse only interior lines (between --- fences)
+                if len(lines) >= 2:
+                    yaml_lines = lines[1:-1]
+                else:
+                    yaml_lines = []
+                try:
+                    return yaml.safe_load("\n".join(yaml_lines)) or {}
+                except yaml.YAMLError:
+                    return {}
+
+            top_fm = _parse_fm_yaml(top_frontmatter_text)
+
+            # Inherit scripts/agent_scripts from base frontmatter if missing
+            if base_frontmatter_text and base_frontmatter_text != top_frontmatter_text:
+                base_fm = _parse_fm_yaml(base_frontmatter_text)
+                for key in ("scripts", "agent_scripts"):
+                    if key not in top_fm and key in base_fm:
+                        top_fm[key] = base_fm[key]
+
+            # Strip strategy key — it's an internal composition directive,
+            # not meant for rendered agent command files
+            top_fm.pop("strategy", None)
+
+            if top_fm:
+                top_frontmatter_text = (
+                    "---\n"
+                    + yaml.safe_dump(top_fm, sort_keys=False).strip()
+                    + "\n---"
+                )
+            else:
+                # Empty frontmatter — omit rather than emitting {}
+                top_frontmatter_text = None
+
+            if top_frontmatter_text:
+                content = top_frontmatter_text + "\n\n" + content
+
+        return content

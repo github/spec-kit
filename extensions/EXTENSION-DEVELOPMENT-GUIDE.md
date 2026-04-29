@@ -177,9 +177,9 @@ Compatibility requirements.
 
 What the extension provides.
 
-**Required sub-fields**:
+**Optional sub-fields**:
 
-- `commands`: Array of command objects (must have at least one)
+- `commands`: Array of command objects (at least one command or hook is required)
 
 **Command object**:
 
@@ -196,12 +196,19 @@ Integration hooks for automatic execution.
 
 Available hook points:
 
-- `after_tasks`: After `/speckit.tasks` completes
-- `after_implement`: After `/speckit.implement` completes (future)
+- `before_specify` / `after_specify`: Before/after specification generation
+- `before_plan` / `after_plan`: Before/after implementation planning
+- `before_tasks` / `after_tasks`: Before/after task generation
+- `before_implement` / `after_implement`: Before/after implementation
+- `before_analyze` / `after_analyze`: Before/after cross-artifact analysis
+- `before_checklist` / `after_checklist`: Before/after checklist generation
+- `before_clarify` / `after_clarify`: Before/after spec clarification
+- `before_constitution` / `after_constitution`: Before/after constitution update
+- `before_taskstoissues` / `after_taskstoissues`: Before/after tasks-to-issues conversion
 
 Hook object:
 
-- `command`: Command to execute (must be in `provides.commands`)
+- `command`: Command to execute (typically from `provides.commands`, but can reference any registered command)
 - `optional`: If true, prompt user before executing
 - `prompt`: Prompt text for optional hooks
 - `description`: Hook description
@@ -662,7 +669,7 @@ hooks:
 
 **Error**: `Extension requires spec-kit >=0.2.0`
 
-- **Fix**: Update spec-kit with `uv tool install specify-cli --force`
+- **Fix**: Update spec-kit with `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git`. The bare `specify-cli` package on PyPI is a different, unrelated project — installing it without `--from git+...` will give you a stub CLI that does not include `extension`, `preset`, or other spec-kit commands.
 
 **Error**: `Command file not found`
 
