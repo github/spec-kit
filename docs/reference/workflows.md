@@ -8,16 +8,19 @@ Workflows automate multi-step Spec-Driven Development processes — chaining com
 specify workflow run <source>
 ```
 
-| Option              | Description                                              |
-| ------------------- | -------------------------------------------------------- |
-| `-i` / `--input`    | Pass input values as `key=value` (repeatable)            |
+| Option              | Description                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| `-i` / `--input`    | Pass workflow inputs/parameters as `key=value` (repeatable); use `key=@path` to read text files  |
+| `--input-file`      | Load workflow inputs/parameters from a JSON object file; repeatable `--input` values override file values |
 
-Runs a workflow from a catalog ID, URL, or local file path. Inputs declared by the workflow can be provided via `--input` or will be prompted interactively.
+Runs a workflow from a catalog ID, URL, or local file path. Inputs/parameters declared by the workflow can be provided via `--input` or will be prompted interactively.
 
 Example:
 
 ```bash
-specify workflow run speckit -i spec="Build a kanban board with drag-and-drop task management" -i scope=full
+specify workflow run ./workflow.yml -i prompt="Build a workflow" -i scope=full
+specify workflow run ./workflow.yml --input prompt=@docs/prompt.md
+specify workflow run ./workflow.yml --input-file payload.json -i scope=full
 ```
 
 > **Note:** All workflow commands require a project already initialized with `specify init`.

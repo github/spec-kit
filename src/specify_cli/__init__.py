@@ -5257,11 +5257,100 @@ workflow_catalog_app = typer.Typer(
 workflow_app.add_typer(workflow_catalog_app, name="catalog")
 
 
+def _resolve_workflow_cli_path(raw_path: str) -> Path:
+    """Resolve workflow CLI file paths from the current working directory."""
+    path = Path(raw_path).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return path
+
+
+def _read_workflow_cli_file(raw_path: str, description: str) -> tuple[Path, str]:
+    """Read a text file referenced by a workflow CLI input option."""
+    cleaned_path = raw_path.strip()
+    if not cleaned_path:
+        raise ValueError(f"Missing file path for {description}.")
+
+    path = _resolve_workflow_cli_path(cleaned_path)
+    if not path.exists():
+        raise ValueError(f"File for {description} not found: {path}")
+    if not path.is_file():
+        raise ValueError(f"Path for {description} is not a file: {path}")
+
+    try:
+        return path, path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"Unable to read file for {description} as UTF-8 text: {path}"
+        ) from exc
+    except OSError as exc:
+        raise ValueError(
+            f"Unable to read file for {description}: {path} ({exc})"
+        ) from exc
+
+
+def _load_workflow_input_file(input_file: str) -> dict[str, Any]:
+    """Load workflow inputs from a JSON object file."""
+    path, raw_json = _read_workflow_cli_file(input_file, "--input-file")
+    try:
+        data = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Invalid JSON in --input-file {path}: "
+            f"{exc.msg} at line {exc.lineno}, column {exc.colno}"
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"--input-file must contain a JSON object, got {type(data).__name__}."
+        )
+    return data
+
+
+def _parse_workflow_inputs(
+    input_values: list[str] | None,
+    input_file: str | None,
+) -> dict[str, Any]:
+    """Normalize workflow CLI input options into the engine input dict."""
+    inputs: dict[str, Any] = {}
+
+    if input_file is not None:
+        inputs.update(_load_workflow_input_file(input_file))
+
+    if input_values:
+        for kv in input_values:
+            if "=" not in kv:
+                raise ValueError(
+                    f"Invalid input format: {kv!r} (expected key=value)"
+                )
+            key, _, raw_value = kv.partition("=")
+            key = key.strip()
+            if not key:
+                raise ValueError(
+                    f"Invalid input format: {kv!r} (key cannot be empty)"
+                )
+
+            value = raw_value.strip()
+            if value.startswith("@"):
+                file_ref = value[1:].strip()
+                if file_ref and _resolve_workflow_cli_path(file_ref).exists():
+                    _, value = _read_workflow_cli_file(file_ref, f"input {key!r}")
+            inputs[key] = value
+
+    return inputs
+
+
 @workflow_app.command("run")
 def workflow_run(
     source: str = typer.Argument(..., help="Workflow ID or YAML file path"),
     input_values: list[str] | None = typer.Option(
-        None, "--input", "-i", help="Input values as key=value pairs"
+        None,
+        "--input",
+        "-i",
+        help="Input values as key=value pairs; use key=@path to read a text file",
+    ),
+    input_file: str | None = typer.Option(
+        None, "--input-file", help="Load input values from a JSON object file"
     ),
 ):
     """Run a workflow from an installed ID or local YAML path."""
@@ -5288,15 +5377,11 @@ def workflow_run(
             console.print(f"  • {err}")
         raise typer.Exit(1)
 
-    # Parse inputs
-    inputs: dict[str, Any] = {}
-    if input_values:
-        for kv in input_values:
-            if "=" not in kv:
-                console.print(f"[red]Error:[/red] Invalid input format: {kv!r} (expected key=value)")
-                raise typer.Exit(1)
-            key, _, value = kv.partition("=")
-            inputs[key.strip()] = value.strip()
+    try:
+        inputs = _parse_workflow_inputs(input_values, input_file)
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
 
     console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
     console.print(f"[dim]Version: {definition.version}[/dim]\n")
