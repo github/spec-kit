@@ -2,6 +2,36 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.3] - 2026-04-29
+
+### Changed
+
+- Add Work IQ extension to community catalog (#2415)
+- feat(integrations): add Devin for Terminal skills-based integration (#2364)
+- fix: include --from git+... in upgrade hint to avoid PyPI squat package (#2411)
+- fix: dispatch opencode commands via run (#2410)
+- feat: add catalog discovery CLI commands (#2360)
+- update security review extension catalog to v1.3.0 (#2374)
+- chore(catalog): bump v-model extension to v0.6.0 (#2399)
+- feat: add threatmodel extension to community catalog (#2369)
+- Add isaqb-architecture-governance to community catalog (#2385)
+- chore: release 0.8.2, begin 0.8.3.dev0 development (#2397)
+
+## [0.8.2] - 2026-04-28
+
+### Changed
+
+- Add MarkItDown Document Converter extension to community catalog (#2390)
+- feat: Speckit preset fiction book v1.7 - Support for RAG (Chroma DB) offline semantic search (#2367)
+- fix(extensions): use explicit UTF-8 encoding when reading manifest YAML (#2370)
+- catalog: add m365 community extension
+- docs: replace deprecated --ai flag with --integration in all documentation (#2359)
+- feat(extensions,presets): authenticate GitHub-hosted catalog and download requests with GITHUB_TOKEN/GH_TOKEN (#2331)
+- Update extensify to v1.1.0 in community catalog (#2337)
+- feat(init): deprecate --no-git flag, gate deprecations at v0.10.0 (#2357)
+- Add Spec Orchestrator extension to community catalog (#2350)
+- chore: release 0.8.1, begin 0.8.2.dev0 development (#2356)
+
 ## [0.8.1] - 2026-04-24
 
 ### Changed

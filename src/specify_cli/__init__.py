@@ -1528,7 +1528,7 @@ def init(
         step_num = 2
 
     # Determine skill display mode for the next-steps panel.
-    # Skills integrations (codex, kimi, agy, trae, cursor-agent) should show skill invocation syntax.
+    # Skills integrations (codex, claude, kimi, agy, trae, cursor-agent, copilot, devin) should show skill invocation syntax.
     from .integrations.base import SkillsIntegration as _SkillsInt
     _is_skills_integration = isinstance(resolved_integration, _SkillsInt) or getattr(resolved_integration, "_skills_mode", False)
 
@@ -1539,7 +1539,8 @@ def init(
     trae_skill_mode = selected_ai == "trae"
     cursor_agent_skill_mode = selected_ai == "cursor-agent" and (ai_skills or _is_skills_integration)
     copilot_skill_mode = selected_ai == "copilot" and _is_skills_integration
-    native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode or trae_skill_mode or cursor_agent_skill_mode or copilot_skill_mode
+    devin_skill_mode = selected_ai == "devin"
+    native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode or trae_skill_mode or cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode
 
     if codex_skill_mode and not ai_skills:
         # Integration path installed skills; show the helpful notice
@@ -1551,6 +1552,9 @@ def init(
     if cursor_agent_skill_mode and not ai_skills:
         steps_lines.append(f"{step_num}. Start Cursor Agent in this project directory; spec-kit skills were installed to [cyan].cursor/skills[/cyan]")
         step_num += 1
+    if devin_skill_mode:
+        steps_lines.append(f"{step_num}. Start Devin in this project directory; spec-kit skills were installed to [cyan].devin/skills[/cyan]")
+        step_num += 1
     usage_label = "skills" if native_skill_mode else "slash commands"
 
     def _display_cmd(name: str) -> str:
@@ -1560,7 +1564,7 @@ def init(
             return f"/speckit-{name}"
         if kimi_skill_mode:
             return f"/skill:speckit-{name}"
-        if cursor_agent_skill_mode or copilot_skill_mode:
+        if cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode:
             return f"/speckit-{name}"
         return f"/speckit.{name}"
 
@@ -1885,6 +1889,13 @@ integration_app = typer.Typer(
     add_completion=False,
 )
 app.add_typer(integration_app, name="integration")
+
+integration_catalog_app = typer.Typer(
+    name="catalog",
+    help="Manage integration catalog sources",
+    add_completion=False,
+)
+integration_app.add_typer(integration_catalog_app, name="catalog")
 
 
 INTEGRATION_JSON = ".specify/integration.json"
@@ -2533,6 +2544,314 @@ def integration_upgrade(
 
     name = (integration.config or {}).get("name", key)
     console.print(f"\n[green]✓[/green] Integration '{name}' upgraded successfully")
+
+
+# ===== Integration catalog discovery commands =====
+#
+# These commands mirror the workflow catalog CLI shape:
+#   - `search` / `info` for discovery over the active catalog stack
+#   - `catalog list/add/remove` for managing catalog sources
+#
+# They deliberately do NOT add `integration add/remove/enable/disable/
+# set-priority`: integrations are single-active (install / uninstall / switch),
+# not additive like extensions and presets.
+
+
+def _require_specify_project() -> Path:
+    """Return the current project root if it is a spec-kit project, else exit."""
+    project_root = Path.cwd()
+    if not (project_root / ".specify").exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
+    return project_root
+
+
+@integration_app.command("search")
+def integration_search(
+    query: Optional[str] = typer.Argument(None, help="Search query (optional)"),
+    tag: Optional[str] = typer.Option(None, "--tag", help="Filter by tag"),
+    author: Optional[str] = typer.Option(None, "--author", help="Filter by author"),
+):
+    """Search for integrations in the active catalog stack."""
+    from .integrations import INTEGRATION_REGISTRY
+    from .integrations.catalog import (
+        IntegrationCatalog,
+        IntegrationCatalogError,
+        IntegrationValidationError,
+    )
+
+    project_root = _require_specify_project()
+    integration_config = _read_integration_json(project_root)
+    installed_key = integration_config.get("integration")
+    catalog = IntegrationCatalog(project_root)
+
+    try:
+        results = catalog.search(query=query, tag=tag, author=author)
+    except IntegrationValidationError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        console.print(
+            "\nTip: Check the configuration file path shown above for invalid catalog configuration "
+            "(for example, .specify/integration-catalogs.yml or ~/.specify/integration-catalogs.yml)."
+        )
+        raise typer.Exit(1)
+    except IntegrationCatalogError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        if os.environ.get("SPECKIT_INTEGRATION_CATALOG_URL", "").strip():
+            console.print(
+                "\nTip: Check the SPECKIT_INTEGRATION_CATALOG_URL environment variable for an invalid "
+                "catalog URL, or unset it to use the configured catalog files "
+                "(.specify/integration-catalogs.yml or ~/.specify/integration-catalogs.yml)."
+            )
+        else:
+            console.print("\nTip: The catalog may be temporarily unavailable. Try again later.")
+        raise typer.Exit(1)
+
+    if not results:
+        console.print("\n[yellow]No integrations found matching criteria[/yellow]")
+        if query or tag or author:
+            console.print("\nTry:")
+            console.print("  • Broader search terms")
+            console.print("  • Remove filters")
+            console.print("  • specify integration search (show all)")
+        return
+
+    console.print(f"\n[green]Found {len(results)} integration(s):[/green]\n")
+    for integ in sorted(results, key=lambda e: e.get("id", "")):
+        iid = integ.get("id", "?")
+        name = integ.get("name", iid)
+        version = integ.get("version", "?")
+        console.print(f"[bold]{name}[/bold] ({iid}) v{version}")
+        desc = integ.get("description", "")
+        if desc:
+            console.print(f"  {desc}")
+
+        console.print(f"\n  [dim]Author:[/dim] {integ.get('author', 'Unknown')}")
+        tags = integ.get("tags", [])
+        if isinstance(tags, list) and tags:
+            console.print(f"  [dim]Tags:[/dim] {', '.join(str(t) for t in tags)}")
+
+        cat_name = integ.get("_catalog_name", "")
+        install_allowed = integ.get("_install_allowed", True)
+        if cat_name:
+            if install_allowed:
+                console.print(f"  [dim]Catalog:[/dim] {cat_name}")
+            else:
+                console.print(
+                    f"  [dim]Catalog:[/dim] {cat_name} "
+                    "[yellow](discovery only — not installable)[/yellow]"
+                )
+
+        if iid == installed_key:
+            console.print("\n  [green]✓ Installed[/green] (currently active)")
+        elif iid in INTEGRATION_REGISTRY:
+            console.print(f"\n  [cyan]Install:[/cyan] specify integration install {iid}")
+        elif install_allowed:
+            console.print(
+                "\n  [yellow]Found in catalog.[/yellow] Only built-in integration IDs "
+                "can be installed with 'specify integration install'."
+            )
+        else:
+            console.print(
+                f"\n  [yellow]⚠[/yellow]  Not directly installable from '{cat_name}'."
+            )
+        console.print()
+
+
+@integration_app.command("info")
+def integration_info(
+    integration_id: str = typer.Argument(..., help="Integration ID"),
+):
+    """Show catalog details for a single integration."""
+    from .integrations import INTEGRATION_REGISTRY
+    from .integrations.catalog import (
+        IntegrationCatalog,
+        IntegrationCatalogError,
+        IntegrationValidationError,
+    )
+
+    project_root = _require_specify_project()
+    catalog = IntegrationCatalog(project_root)
+    installed_key = _read_integration_json(project_root).get("integration")
+
+    try:
+        info = catalog.get_integration_info(integration_id)
+    except IntegrationCatalogError as exc:
+        info = None
+        # Keep the live exception so the fallback branch below can give
+        # different guidance for local-config vs. network failures.
+        catalog_error: Optional[IntegrationCatalogError] = exc
+    else:
+        catalog_error = None
+
+    if info:
+        name = info.get("name", integration_id)
+        version = info.get("version", "?")
+        console.print(f"\n[bold cyan]{name}[/bold cyan] ({integration_id}) v{version}")
+        if info.get("description"):
+            console.print(f"  {info['description']}")
+        console.print()
+
+        console.print(f"  [dim]Author:[/dim] {info.get('author', 'Unknown')}")
+        if info.get("license"):
+            console.print(f"  [dim]License:[/dim] {info['license']}")
+
+        tags = info.get("tags", [])
+        if isinstance(tags, list) and tags:
+            console.print(f"  [dim]Tags:[/dim] {', '.join(str(t) for t in tags)}")
+
+        cat_name = info.get("_catalog_name", "")
+        install_allowed = info.get("_install_allowed", True)
+        if cat_name:
+            install_note = "" if install_allowed else " [yellow](discovery only)[/yellow]"
+            console.print(f"  [dim]Source catalog:[/dim] {cat_name}{install_note}")
+
+        if info.get("repository"):
+            console.print(f"  [dim]Repository:[/dim] {info['repository']}")
+
+        if integration_id == installed_key:
+            console.print("\n  [green]✓ Installed[/green] (currently active)")
+        elif integration_id in INTEGRATION_REGISTRY:
+            console.print("\n  [dim]Built-in integration (not currently active)[/dim]")
+        return
+
+    if integration_id in INTEGRATION_REGISTRY:
+        integration = INTEGRATION_REGISTRY[integration_id]
+        cfg = integration.config or {}
+        name = cfg.get("name", integration_id)
+        console.print(f"\n[bold cyan]{name}[/bold cyan] ({integration_id})")
+        console.print("  [dim]Built-in integration (not listed in catalog)[/dim]")
+        if integration_id == installed_key:
+            console.print("\n  [green]✓ Installed[/green] (currently active)")
+        if catalog_error:
+            console.print(f"\n[yellow]Catalog unavailable:[/yellow] {catalog_error}")
+        return
+
+    if catalog_error:
+        console.print(f"[red]Error:[/red] Could not query integration catalog: {catalog_error}")
+        if isinstance(catalog_error, IntegrationValidationError):
+            console.print(
+                "\nCheck the configuration file path shown above "
+                "(.specify/integration-catalogs.yml or ~/.specify/integration-catalogs.yml), "
+                "or use a built-in integration ID directly."
+            )
+        elif os.environ.get("SPECKIT_INTEGRATION_CATALOG_URL", "").strip():
+            console.print(
+                "\nCheck whether SPECKIT_INTEGRATION_CATALOG_URL is set correctly and reachable, "
+                "or unset it to use the configured catalog files, or use a built-in integration ID directly."
+            )
+        else:
+            console.print("\nTry again when online, or use a built-in integration ID directly.")
+    else:
+        console.print(f"[red]Error:[/red] Integration '{integration_id}' not found")
+        console.print("\nTry: specify integration search")
+    raise typer.Exit(1)
+
+
+@integration_catalog_app.command("list")
+def integration_catalog_list():
+    """List configured integration catalog sources."""
+    from .integrations.catalog import IntegrationCatalog, IntegrationCatalogError
+
+    project_root = _require_specify_project()
+    catalog = IntegrationCatalog(project_root)
+    env_override = os.environ.get("SPECKIT_INTEGRATION_CATALOG_URL", "").strip()
+
+    try:
+        if env_override:
+            project_configs = None
+            configs = catalog.get_catalog_configs()
+        else:
+            project_configs = catalog.get_project_catalog_configs()
+            configs = project_configs if project_configs is not None else catalog.get_catalog_configs()
+    except IntegrationCatalogError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print("\n[bold cyan]Integration Catalog Sources:[/bold cyan]\n")
+    if env_override:
+        console.print(
+            "  SPECKIT_INTEGRATION_CATALOG_URL is set; it supersedes configured catalog files."
+        )
+        console.print(
+            "  Project/user catalog sources are not active while the env override is set.\n"
+        )
+        console.print("[bold]Active catalog source from environment (non-removable here):[/bold]\n")
+    elif project_configs is None:
+        console.print("  No project-level catalog sources configured.\n")
+        console.print("[bold]Active catalog sources (non-removable here):[/bold]\n")
+    else:
+        console.print("[bold]Project catalog sources (removable):[/bold]\n")
+
+    for i, cfg in enumerate(configs):
+        install_status = (
+            "[green]install allowed[/green]"
+            if cfg.get("install_allowed")
+            else "[yellow]discovery only[/yellow]"
+        )
+        raw_name = cfg.get("name")
+        display_name = str(raw_name).strip() if raw_name is not None else ""
+        if not display_name:
+            display_name = f"catalog-{i + 1}"
+        if env_override or project_configs is None:
+            console.print(f"  - [bold]{display_name}[/bold] — {install_status}")
+        else:
+            console.print(f"  [{i}] [bold]{display_name}[/bold] — {install_status}")
+        console.print(f"      {cfg.get('url', '')}")
+        if cfg.get("description"):
+            console.print(f"      [dim]{cfg['description']}[/dim]")
+        console.print()
+
+
+@integration_catalog_app.command("add")
+def integration_catalog_add(
+    url: str = typer.Argument(
+        ...,
+        help=(
+            "Catalog URL to add (HTTPS required, except http://localhost, "
+            "http://127.0.0.1, or http://[::1] for local testing)"
+        ),
+    ),
+    name: Optional[str] = typer.Option(None, "--name", help="Catalog name"),
+):
+    """Add an integration catalog source to the project config."""
+    from .integrations.catalog import IntegrationCatalog, IntegrationCatalogError
+
+    project_root = _require_specify_project()
+    catalog = IntegrationCatalog(project_root)
+
+    # Normalize once here so the success message reflects what was actually
+    # stored. ``IntegrationCatalog.add_catalog`` strips again defensively.
+    normalized_url = url.strip()
+
+    try:
+        catalog.add_catalog(normalized_url, name)
+    except IntegrationCatalogError as exc:
+        # Covers both URL validation (base class) and config-file validation
+        # (IntegrationValidationError subclass).
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓[/green] Catalog source added: {normalized_url}")
+
+
+@integration_catalog_app.command("remove")
+def integration_catalog_remove(
+    index: int = typer.Argument(..., help="Catalog index to remove (from 'catalog list')"),
+):
+    """Remove an integration catalog source by 0-based index."""
+    from .integrations.catalog import IntegrationCatalog, IntegrationCatalogError
+
+    project_root = _require_specify_project()
+    catalog = IntegrationCatalog(project_root)
+
+    try:
+        removed_name = catalog.remove_catalog(index)
+    except IntegrationCatalogError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓[/green] Catalog source '{removed_name}' removed")
 
 
 # ===== Preset Commands =====
