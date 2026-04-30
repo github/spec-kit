@@ -134,9 +134,9 @@ class TestInitializeIacConfigTerraform:
         assert "module" in content
 
     def test_creates_tracks_md(self, project_dir):
-        """initialize_iac_config must create .infrakit/tracks.md."""
+        """initialize_iac_config must create .infrakit_tracks/tracks.md."""
         initialize_iac_config(project_dir, "terraform", "claude")
-        assert (project_dir / ".infrakit" / "tracks.md").is_file()
+        assert (project_dir / ".infrakit_tracks" / "tracks.md").is_file()
 
     def test_creates_tagging_standard_md(self, project_dir):
         """initialize_iac_config must create .infrakit/tagging-standard.md."""
@@ -154,9 +154,9 @@ class TestInitializeIacConfigTerraform:
         assert (project_dir / ".infrakit" / "memory").is_dir()
 
     def test_creates_tracks_directory(self, project_dir):
-        """initialize_iac_config must create .infrakit/tracks/ directory."""
+        """initialize_iac_config must create .infrakit_tracks/tracks/ directory."""
         initialize_iac_config(project_dir, "terraform", "claude")
-        assert (project_dir / ".infrakit" / "tracks").is_dir()
+        assert (project_dir / ".infrakit_tracks" / "tracks").is_dir()
 
     def test_config_yaml_not_overwritten_if_exists(self, project_dir):
         """config.yaml must not be overwritten on a second call."""
@@ -273,8 +273,8 @@ class TestTerraformIacConfigValues:
         assert "terraform" in IAC_CONFIG["terraform"]["requires_tools"]
 
     def test_terraform_iac_commands_count(self):
-        """Terraform must have exactly 5 IaC-native commands (implement is IaC-specific)."""
-        assert len(IAC_CONFIG["terraform"]["iac_commands"]) == 5
+        """Terraform must have exactly 6 IaC-native commands."""
+        assert len(IAC_CONFIG["terraform"]["iac_commands"]) == 6
 
     def test_all_iac_tools_distinct_output_formats(self):
         """Crossplane (yaml) and Terraform (hcl) have distinct output formats."""

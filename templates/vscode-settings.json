@@ -3,7 +3,6 @@
         "infrakit:project_context": true,
         "infrakit:specify_composition": true,
         "infrakit:plan_composition": true,
-        "infrakit:tasks": true,
         "infrakit:implement_composition": true
     },
     "chat.tools.terminal.autoApprove": {

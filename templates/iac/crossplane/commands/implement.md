@@ -54,12 +54,12 @@ Verify the track has all required artifacts:
 
 | File | Path | Required |
 |------|------|----------|
-| Spec | `.infrakit/tracks/<track-name>/spec.md` | ✅ Yes |
-| Plan | `.infrakit/tracks/<track-name>/plan.md` | ✅ Yes |
-| Tasks | `.infrakit/tracks/<track-name>/tasks.md` | ✅ Yes |
+| Spec | `.infrakit_tracks/tracks/<track-name>/spec.md` | ✅ Yes |
+| Plan | `.infrakit_tracks/tracks/<track-name>/plan.md` | ✅ Yes |
+| Tasks | `.infrakit_tracks/tracks/<track-name>/tasks.md` | ✅ Yes |
 
 **If spec.md is missing:**
-> "❌ `spec.md` not found. Run `/infrakit:new_composition <track-name>` first."
+> "❌ `spec.md` not found. Run `/infrakit:new_composition` or `/infrakit:update_composition` first."
 **HALT**
 
 **If plan.md is missing:**
@@ -67,7 +67,7 @@ Verify the track has all required artifacts:
 **HALT**
 
 **If tasks.md is missing:**
-> "❌ `tasks.md` not found. Run `/infrakit:tasks <track-name>` first."
+> "❌ `tasks.md` not found. `tasks.md` is generated automatically by `/infrakit:plan`. Run `/infrakit:plan <track-name>` to regenerate it."
 **HALT**
 
 ---
@@ -89,15 +89,15 @@ Read these files before writing any code:
 Read all track files:
 
 1. `.infrakit/context.md` — API group, naming conventions, cloud provider defaults
-2. `.infrakit/tracks/<track-name>/spec.md` — What to build (XR Kind, parameters, outputs, security)
-3. `.infrakit/tracks/<track-name>/plan.md` — XRD schema, patch mappings, file structure
-4. `.infrakit/tracks/<track-name>/tasks.md` — Ordered task list
+2. `.infrakit_tracks/tracks/<track-name>/spec.md` — What to build (XR Kind, parameters, outputs, security)
+3. `.infrakit_tracks/tracks/<track-name>/plan.md` — XRD schema, patch mappings, file structure
+4. `.infrakit_tracks/tracks/<track-name>/tasks.md` — Ordered task list
 
 ---
 
 ## Step 5: Present Task Summary and Set Status
 
-Update `.infrakit/tracks.md` — change the track's Status to `⚙️ in-progress`.
+Update `.infrakit_tracks/tracks.md` — change the track's Status to `⚙️ in-progress`.
 
 Before starting, display the task summary:
 
@@ -163,7 +163,7 @@ After all tasks are marked `[x]`:
 
 ---
 
-## Step 9: Generate .infrakit_context.md
+## Step 9a: Update .infrakit_context.md
 
 After the review is approved, generate or update `.infrakit_context.md` in the resource directory:
 
@@ -209,16 +209,68 @@ After the review is approved, generate or update `.infrakit_context.md` in the r
 
 ---
 
+## Step 9b: Update .infrakit_changelog.md
+
+Append a new entry to `<resource_directory>/.infrakit_changelog.md`.
+
+If the file does not exist, create it with a header first:
+
+```markdown
+# InfraKit Changelog: <resource-name>
+
+<!-- Appended automatically by /infrakit:implement after each successful implementation. -->
+```
+
+Then append:
+
+```markdown
+## <track-name> — <YYYY-MM-DD>
+
+**Change Type**: <Additive/Behavioral/Breaking/Mixed — from spec.md Change Overview>
+**Summary**: <one-line summary from spec.md>
+
+### Changes Implemented
+- ADD: <from spec ADD table, or "none">
+- MODIFY: <from spec MODIFY table, or "none">
+- REMOVE: <from spec REMOVE table, or "none">
+
+**Spec**: `.infrakit_tracks/tracks/<track-name>/spec.md`
+```
+
+---
+
+## Step 9c: Update infrakit_composition_contract.md
+
+Re-read the freshly-written YAML files (`definition.yaml`, `composition.yaml`) and regenerate `infrakit_composition_contract.md` in the resource directory to reflect the actual implemented state.
+
+Use the same template structure as `update_composition.md` Phase 3.3 for the contract file, but source all values from the implemented YAML files rather than the spec.
+
+Present the regenerated contract to the user:
+
+> "I've updated `infrakit_composition_contract.md` to reflect the implementation. Please review:
+>
+> <summary of key interface changes>
+>
+> A) **Accept** — Contract looks correct
+> B) **Edit manually** — Say 'done' when you've finished editing"
+
+**WAIT** for response before proceeding to Step 10.
+
+---
+
 ## Step 10: Update Track Registry
 
-Update `.infrakit/tracks.md` — change the track's status to `done`:
-
-Find the row for `<track-name>` and update Status to `✅ done`.
+Update `.infrakit_tracks/tracks.md` — change the track's status to `✅ done`.
 
 > "✅ **Implementation complete!**
 >
 > **Track**: `<track-name>`
 > **Status**: done
+>
+> **Resource files updated:**
+> - `<resource_directory>/.infrakit_context.md`
+> - `<resource_directory>/.infrakit_changelog.md`
+> - `<resource_directory>/infrakit_composition_contract.md`
 >
 > Run `/infrakit:status` to see all track statuses."
 
@@ -229,8 +281,9 @@ Find the row for `<track-name>` and update Status to `✅ done`.
 | Error | Action |
 |-------|--------|
 | Setup files missing | Halt, direct to `/infrakit:setup` |
-| spec.md missing | Halt, direct to `/infrakit:new_composition <track-name>` |
-| tasks.md missing | Halt, direct to `/infrakit:tasks <track-name>` |
+| spec.md missing | Halt, direct to `/infrakit:new_composition` or `/infrakit:update_composition` |
+| plan.md missing | Halt, direct to `/infrakit:plan <track-name>` |
+| tasks.md missing | Halt, direct to `/infrakit:plan <track-name>` (plan auto-generates tasks.md) |
 | Task execution fails | Report error, halt, ask user how to proceed |
 | Coding style conflict | Flag before writing, wait for user |
 | Resources mode detected | Refuse — Pipeline mode is mandatory in Crossplane |

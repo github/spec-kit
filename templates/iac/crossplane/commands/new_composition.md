@@ -35,7 +35,7 @@ You are guiding the user through creating a new Crossplane resource composition.
 | Project Context | `.infrakit/context.md` | ✅ Yes |
 | Coding Style | `.infrakit/coding-style.md` | ✅ Yes |
 | Tagging | `.infrakit/tagging-standard.md` | ✅ Yes |
-| Track Registry | `.infrakit/tracks.md` | ✅ Yes |
+| Track Registry | `.infrakit_tracks/tracks.md` | ✅ Yes |
 
 **If any file is missing:**
 > "❌ Project not fully initialized. Run `/infrakit:setup` to initialize."
@@ -101,13 +101,13 @@ Example: `database-20260101-120000`
 
 Create the track directory:
 ```bash
-mkdir -p .infrakit/tracks/<track-name>
+mkdir -p .infrakit_tracks/tracks/<track-name>
 ```
 
-Register in `.infrakit/tracks.md` — add a row with Status `🔵 initializing`.
+Register in `.infrakit_tracks/tracks.md` — add a row with Status `🔵 initializing`.
 
 > "✅ Track created: `<track-name>`
-> Location: `.infrakit/tracks/<track-name>/`"
+> Location: `.infrakit_tracks/tracks/<track-name>/`"
 
 ---
 
@@ -186,7 +186,7 @@ Generate output options relevant to the resource type. These are the status fiel
 
 ### 3.4 Generate spec.md
 
-Write to `.infrakit/tracks/<track-name>/spec.md`:
+Write to `.infrakit_tracks/tracks/<track-name>/spec.md`:
 
 ```markdown
 # Specification: <Resource Name>
@@ -246,7 +246,7 @@ Greenfield (Create new)
 
 > "I've generated the specification.
 >
-> **File**: `.infrakit/tracks/<track-name>/spec.md`
+> **File**: `.infrakit_tracks/tracks/<track-name>/spec.md`
 >
 > What would you like to do?
 >
@@ -269,7 +269,7 @@ Read `.infrakit/agent_personas/cloud_architect.md` for detailed behavior.
 
 Run the architecture review inline:
 
-1. Read `.infrakit/tracks/<track-name>/spec.md`
+1. Read `.infrakit_tracks/tracks/<track-name>/spec.md`
 2. Check: structural security flags, cost, reliability, architecture correctness, completeness
 3. Present findings as a structured report (see `/infrakit:architect-review` for report format)
 
@@ -331,7 +331,7 @@ Present a combined summary of both reviews:
 > **Waived**: <list>
 >
 > Please review the final spec:
-> **File**: `.infrakit/tracks/<track-name>/spec.md`
+> **File**: `.infrakit_tracks/tracks/<track-name>/spec.md`
 >
 > What would you like to do?
 >
@@ -345,13 +345,13 @@ Present a combined summary of both reviews:
 
 ## Phase 7: Register Track as Spec-Generated
 
-Update `.infrakit/tracks.md` — change the track's Status to `📝 spec-generated`.
+Update `.infrakit_tracks/tracks.md` — change the track's Status to `📝 spec-generated`.
 
 > "✅ **Spec finalized for `<resource-name>`!**
 >
 > **Track**: `<track-name>`
 > **Files created:**
-> - `.infrakit/tracks/<track-name>/spec.md` — Specification
+> - `.infrakit_tracks/tracks/<track-name>/spec.md` — Specification
 >
 > **Next step**: Run `/infrakit:plan <track-name>` to generate the implementation plan."
 

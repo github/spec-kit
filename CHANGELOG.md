@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Auto-generated Task Lists**: `/infrakit:plan` now automatically generates `tasks.md` after the user accepts the plan. Tasks are checkbox items (`- [ ]`) that `/infrakit:implement` marks off as it executes. No separate `/infrakit:tasks` command needed.
+
+- **Post-Implementation Artifacts**: `/infrakit:implement` now writes three artifacts after all tasks complete:
+  - `.infrakit_context.md` — records the resource interface (variables, outputs, resources provisioned)
+  - `.infrakit_changelog.md` — appends a structured entry (change type, summary, ADD/MODIFY/REMOVE breakdown, state impact)
+  - `infrakit_composition_contract.md` / `.infrakit_terraform_contract.md` — regenerated from the freshly-written code and presented for review
+
+- **Contract File Bootstrapping**: `/infrakit:update_composition` and `/infrakit:update_terraform_code` now check for `.infrakit_context.md`, `.infrakit_changelog.md`, and the resource contract file at the start. If any are missing but the implementation code exists, they are generated from the code and presented for user review before the spec update begins.
+
+- **Iterative Requirements Clarification**: The Cloud Solutions Engineer in update commands now asks clarifying questions iteratively until requirements are fully understood before writing `spec.md`. A completion gate ("Are these requirements fully clear?") must pass before handing off to the Cloud Architect.
+
+- **Multi-Option Architecture Review**: The Cloud Architect now presents 2–3 named design options with trade-off tables (complexity, cost, flexibility, risk) for the user to choose from, rather than a single recommendation.
+
+- **Track Path Migration**: All track directories now live under `.infrakit_tracks/tracks/<track-name>/` and the registry is at `.infrakit_tracks/tracks.md`. Previously these were under `.infrakit/tracks/`. Projects initialized with an older version should move these directories manually.
+
+### Removed
+
+- **`/infrakit:tasks` command**: Removed as a standalone command. Task generation is now integrated into `/infrakit:plan` — after the user accepts the plan, `tasks.md` is auto-generated with no extra step required. The workflow is now `plan → implement` instead of `plan → tasks → implement`.
+
+### Changed
+
+- **Changelog timing**: The changelog (`infrakit_changelog.md`) is now written by `/infrakit:implement` after successful implementation, not by the update commands during spec registration. This ensures the changelog only records what was actually built.
+
+- **Implement prereq checks**: `/infrakit:implement` now requires all three track artifacts — `spec.md`, `plan.md`, and `tasks.md`. If any are missing, it halts with a clear error directing to the right command to generate the missing file.
+
+- **`/infrakit:security-review` verdict messages**: Updated to direct users to `/infrakit:plan` instead of the removed `/infrakit:tasks` command.
+
+- **`/infrakit:status` output**: Planned tracks now show `→ Run /infrakit:implement <track-name>` (tasks.md note added inline).
+
 ### Fixed
 
 - **Terraform Release Artifacts**: Fixed Terraform zip packages not being uploaded to GitHub Releases

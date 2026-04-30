@@ -93,15 +93,6 @@ Once a specification exists, this command creates a Crossplane architecture plan
 4. **Composition Architecture**: Plans the Pipeline mode Composition with steps, patches, and transforms
 5. **Claim Design**: Specifies the developer-facing Claim manifest with required fields
 
-### The `/infrakit:tasks` Command
-
-After a plan is approved, this command breaks the implementation into an executable task list:
-
-1. **Inputs**: Reads the plan and any existing provider schema notes
-2. **Task Derivation**: Converts XRD fields, patches, and transforms into specific implementation steps
-3. **Parallelization**: Marks independent tasks `[P]` and outlines safe parallel groups
-4. **Output**: Writes `tasks.md` in the track directory, ready for the Crossplane Engineer agent
-
 ### Example: Building a PostgreSQL Database Composition
 
 Here's how these commands transform traditional IaC authoring:
@@ -124,15 +115,13 @@ Total: ~13 hours of YAML authoring
 /infrakit:specify_composition I need a managed PostgreSQL database with dev and prod sizing, encryption at rest, and connection details exposed as a Kubernetes secret.
 
 # Step 2: Architecture review + plan (5 minutes)
+# tasks.md is auto-generated at the end of this step
 /infrakit:plan_composition
 
-# Step 3: Generate executable tasks (2 minutes)
-/infrakit:tasks
-
-# Step 4: Generate Crossplane YAML
+# Step 3: Generate Crossplane YAML
 /infrakit:implement_composition
 
-# Step 5: Review and validate
+# Step 4: Review and validate
 /infrakit:review_composition
 /infrakit:validate_composition
 ```

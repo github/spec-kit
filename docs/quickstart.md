@@ -14,10 +14,12 @@ This guide walks you through creating a production-ready Crossplane composition 
 ## The Workflow
 
 ```
-setup → new_composition → plan → tasks → checklist (opt) → implement → review
+setup → new_composition → plan → checklist (opt) → implement → review
 ```
 
-Each step builds on the last, and every artifact lives in `.infrakit/tracks/<track-name>/`.
+`/infrakit:plan` automatically generates `tasks.md` after you accept the plan. The implement command works through those tasks in order.
+
+Each step builds on the last, and every artifact lives in `.infrakit_tracks/tracks/<track-name>/`.
 
 ---
 
@@ -62,11 +64,11 @@ Next, the **Cloud Architect** reviews the spec for architecture correctness, rel
 
 You review the combined findings and decide which recommendations to apply before confirming the final spec.
 
-The track is registered in `.infrakit/tracks.md` with status `spec-generated`.
+The track is registered in `.infrakit_tracks/tracks.md` with status `spec-generated`.
 
 ---
 
-## Step 3: Generate the Implementation Plan
+## Step 3: Generate the Implementation Plan and Task List
 
 ```
 /infrakit:plan <track-name>
@@ -80,26 +82,18 @@ The **Crossplane Engineer** generates a detailed plan covering:
 - Patch mappings: input parameters → `spec.forProvider`, status outputs → `status.atProvider`
 - Required tag patches (per your `tagging.md`)
 
-Run `/infrakit:analyze <track-name>` after planning to verify spec/plan consistency.
-
----
-
-## Step 4: Generate the Task List
-
-```
-/infrakit:tasks <track-name>
-```
-
-This breaks the plan into ordered, executable tasks across 5 phases:
+After you accept the plan, `tasks.md` is automatically generated with ordered, executable tasks across 5 phases:
 1. XRD definition (`definition.yaml`)
 2. Composition with all patches and tags (`composition.yaml`)
 3. Example claim (`claim.yaml`)
 4. Documentation (`README.md`)
 5. Validation (`crossplane render`)
 
+Run `/infrakit:analyze <track-name>` after planning to verify spec/plan consistency.
+
 ---
 
-## Step 5: (Optional) Generate a Verification Checklist
+## Step 4: (Optional) Generate a Verification Checklist
 
 ```
 /infrakit:checklist <track-name>
@@ -109,19 +103,22 @@ The **Crossplane Engineer** generates a comprehensive checklist to verify the im
 
 ---
 
-## Step 6: Implement
+## Step 5: Implement
 
 ```
 /infrakit:implement <track-name>
 ```
 
-The Crossplane Engineer works through each task in order, marking `- [ ]` → `- [x]` as it goes. All generated YAML follows your `coding-style.md` and `tagging.md` exactly.
+The Crossplane Engineer works through each task in `tasks.md` in order, marking `- [ ]` → `- [x]` as it goes. All generated YAML follows your `coding-style.md` and `tagging.md` exactly.
 
-After all tasks complete, it hands off automatically to the code review step.
+After all tasks complete, it:
+1. Updates `.infrakit_context.md` with the final resource interface
+2. Appends an entry to `.infrakit_changelog.md`
+3. Regenerates `infrakit_composition_contract.md` from the implemented YAML
 
 ---
 
-## Step 7: Review
+## Step 6: Review
 
 ```
 /infrakit:review <resource-directory>
@@ -154,19 +151,16 @@ The review report shows findings by severity (CRITICAL / HIGH / MEDIUM / LOW) an
 > Directory: ./resources/postgres
 > Description: A managed PostgreSQL database with encryption at rest and connection secret
 
-# Step 3: Plan
+# Step 3: Plan (tasks.md auto-generated after you accept)
 /infrakit:plan postgres-database-20260401-120000
 
-# Step 4: Tasks
-/infrakit:tasks postgres-database-20260401-120000
-
-# Step 5: (Optional) Checklist
+# Step 4: (Optional) Checklist
 /infrakit:checklist postgres-database-20260401-120000
 
-# Step 6: Implement
+# Step 5: Implement
 /infrakit:implement postgres-database-20260401-120000
 
-# Step 7: Review
+# Step 6: Review
 /infrakit:review ./resources/postgres
 ```
 
@@ -184,7 +178,7 @@ Check the status of all tracks at any time:
 |--------|---------|
 | 🔵 `initializing` | Track created, spec in progress |
 | 📝 `spec-generated` | Spec confirmed, ready for plan |
-| 📋 `planned` | Plan generated, ready for implementation |
+| 📋 `planned` | Plan and task list generated, ready for implementation |
 | ⚙️ `in-progress` | Implementation underway |
 | ✅ `done` | Implementation complete and reviewed |
 | ❌ `blocked` | Blocked, needs attention |

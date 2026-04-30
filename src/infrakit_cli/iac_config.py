@@ -19,7 +19,6 @@ IAC_CONFIG = {
             "analyze",
             "architect-review",
             "security-review",
-            "tasks",
         ],
         "iac_commands": [
             "setup-coding-style",
@@ -43,7 +42,6 @@ IAC_CONFIG = {
             "analyze",
             "architect-review",
             "security-review",
-            "tasks",
         ],
         "iac_commands": [
             "setup-coding-style",

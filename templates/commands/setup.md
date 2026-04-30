@@ -43,7 +43,7 @@ Check whether each configuration file exists:
 |------|------|--------|
 | Project Context | `.infrakit/context.md` | Check |
 | Tagging Standard | `.infrakit/tagging-standard.md` | Check |
-| Resource Registry | `.infrakit/tracks.md` | Check |
+| Resource Registry | `.infrakit_tracks/tracks.md` | Check |
 
 ### 1.2 Report Current State
 
@@ -55,7 +55,7 @@ Present findings to the user:
 > |------|--------|
 > | `.infrakit/context.md` | ✅ Exists / ❌ Missing |
 > | `.infrakit/tagging-standard.md` | ✅ Exists / ❌ Missing |
-> | `.infrakit/tracks.md` | ✅ Exists / ❌ Missing |
+> | `.infrakit_tracks/tracks.md` | ✅ Exists / ❌ Missing |
 >
 > What would you like to do?
 >
@@ -349,7 +349,7 @@ Replace the `[REQUIRED_TAGS]` placeholder with the project-specific tags the use
 
 ## Phase 5: Initialize tracks.md
 
-If `.infrakit/tracks.md` does not exist, create it:
+If `.infrakit_tracks/tracks.md` does not exist, create it:
 
 ```markdown
 # Infrastructure Resource Registry
@@ -385,7 +385,7 @@ Track all infrastructure compositions and their current status.
 > **Files configured:**
 > - `.infrakit/context.md` — Project context ✅
 > - `.infrakit/tagging-standard.md` — Tagging standards ✅
-> - `.infrakit/tracks.md` — Resource registry ✅
+> - `.infrakit_tracks/tracks.md` — Resource registry ✅
 >
 > **Required Next Step — Configure Coding Style:**
 >

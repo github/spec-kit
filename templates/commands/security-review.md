@@ -2,8 +2,6 @@
 description: "Review a track's spec for security compliance against selected frameworks (SOC2, HIPAA, ISO 27001, etc.)."
 argument-hint: "<track-name>"
 handoffs:
-  - label: "Generate Tasks"
-    agent: "infrakit:tasks"
   - label: "Generate Plan"
     agent: "infrakit:plan"
 ---
@@ -40,8 +38,8 @@ Verify required files exist:
 | File | Path | Required |
 |------|------|----------|
 | Project Context | `.infrakit/context.md` | ✅ Yes |
-| Spec | `.infrakit/tracks/<track-name>/spec.md` | ✅ Yes |
-| Plan | `.infrakit/tracks/<track-name>/plan.md` | ⚠️ Optional |
+| Spec | `.infrakit_tracks/tracks/<track-name>/spec.md` | ✅ Yes |
+| Plan | `.infrakit_tracks/tracks/<track-name>/plan.md` | ⚠️ Optional |
 
 **If context.md is missing:**
 > "❌ Project context not found. Run `/infrakit:setup` first."
@@ -58,8 +56,8 @@ Verify required files exist:
 Read the following files:
 
 1. `.infrakit/context.md` — Project standards, cloud provider, security requirements
-2. `.infrakit/tracks/<track-name>/spec.md` — Resource specification to audit
-3. `.infrakit/tracks/<track-name>/plan.md` — Implementation plan (if present)
+2. `.infrakit_tracks/tracks/<track-name>/spec.md` — Resource specification to audit
+3. `.infrakit_tracks/tracks/<track-name>/plan.md` — Implementation plan (if present)
 
 ---
 
@@ -182,7 +180,7 @@ After any fixes are applied, re-run the compliance audit (Steps 4–5) to confir
 
 Based on final verdict:
 
-- **COMPLIANT**: "Security review passed. Run `/infrakit:tasks <track-name>` to generate the task list."
+- **COMPLIANT**: "Security review passed. Run `/infrakit:plan <track-name>` to generate the implementation plan and task list."
 - **COMPLIANT WITH NOTES**: "Proceed with implementation. Address LOW/MEDIUM findings at your discretion."
-- **NON-COMPLIANT (waived)**: "Waivers documented. Proceeding with `/infrakit:tasks <track-name>`."
+- **NON-COMPLIANT (waived)**: "Waivers documented. Proceeding with `/infrakit:plan <track-name>`."
 - **NON-COMPLIANT**: "Resolve HIGH findings before proceeding. This track is blocked until compliance is achieved."

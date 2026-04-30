@@ -20,7 +20,7 @@ Parse `$ARGUMENTS` for the module directory. If not provided, ask.
 
 ## System Directive
 
-You are guiding the user through updating an existing Terraform module. This command scans the existing `.tf` files to understand the current state, then runs the same solutioning and review workflow as `create_terraform_code` but framed as an update.
+You are guiding the user through updating an existing Terraform module. This command scans the existing `.tf` files to understand the current state, ensures all module contract files are present and reviewed, then runs a structured solutioning and review workflow.
 
 **CRITICAL**: Ask only one question at a time. Wait for a response before asking the next.
 
@@ -35,7 +35,7 @@ You are guiding the user through updating an existing Terraform module. This com
 | Project Context | `.infrakit/context.md` | ✅ Yes |
 | Coding Style | `.infrakit/coding-style.md` | ✅ Yes |
 | Tagging | `.infrakit/tagging-standard.md` | ✅ Yes |
-| Track Registry | `.infrakit/tracks.md` | ✅ Yes |
+| Track Registry | `.infrakit_tracks/tracks.md` | ✅ Yes |
 
 **If any file is missing:**
 > "❌ Project not fully initialized. Run `/infrakit:setup` to initialize."
@@ -89,31 +89,50 @@ Check for required Terraform files:
 
 ---
 
-## Phase 3: Understand Existing Module
+## Phase 3: Validate and Generate Module Contract Files
 
-### 3.1 Check for .infrakit_context.md
+### 3.1 Check for Required Module Files
 
-Check if `.infrakit_context.md` exists in `<module_directory>`.
+Check for all three module artifact files in `<module_directory>`:
 
-**If `.infrakit_context.md` exists**: Read it — this contains the original spec, variables, and design decisions from when the module was first created.
+| File | Purpose |
+|------|---------|
+| `.infrakit_context.md` | Original spec, variables, and design decisions |
+| `.infrakit_changelog.md` | History of all changes applied to this module |
+| `.infrakit_terraform_contract.md` | Stable module interface and guarantees for callers |
 
-**If `.infrakit_context.md` does NOT exist**: Scan the existing `.tf` files to reconstruct the module context:
+**If ALL three exist**: Read them all and proceed to Phase 4.
 
-1. Read all `*.tf` files in `<module_directory>`
-2. Extract from `variables.tf`:
-   - All variable names, types, defaults, and descriptions
-   - Which variables are required (no default)
-3. Extract from `outputs.tf`:
-   - All output names, values, and descriptions
-4. Extract from `main.tf` and any sub-files:
-   - Provider(s) used (e.g., `aws`, `azurerm`, `google`)
-   - All resources provisioned (type and name)
-   - Data sources referenced
-   - Local values defined
-5. Extract from `versions.tf`:
-   - Required Terraform version constraint
-   - Provider version constraints
-6. Summarize findings and generate `.infrakit_context.md`:
+**If ANY are missing**: Scan the existing `.tf` files to generate the missing ones (Phases 3.2–3.4).
+
+### 3.2 Scan Existing Module Files
+
+Read all `*.tf` files in `<module_directory>`. Extract:
+
+**From `variables.tf`:**
+- All variable names, types, defaults, and descriptions
+- Which variables are required (no default defined)
+
+**From `outputs.tf`:**
+- All output names, values (source expression), and descriptions
+
+**From `main.tf` and any sub-files:**
+- Provider(s) used (e.g., `aws`, `azurerm`, `google`)
+- All resources provisioned (type and logical name)
+- Data sources referenced
+- Local values defined
+
+**From `versions.tf`:**
+- Required Terraform version constraint
+- Provider version constraints
+
+### 3.3 Generate Missing Files
+
+For each file that does not exist, generate it now:
+
+---
+
+**`.infrakit_context.md`** (if missing):
 
 ```markdown
 # InfraKit Context: <module-name>
@@ -160,14 +179,115 @@ Check if `.infrakit_context.md` exists in `<module_directory>`.
 <!-- Reconstructed by `/infrakit:update_terraform_code` from code analysis. -->
 ```
 
-Present to user:
-> "I've analyzed the existing module:
->
-> <summary table>
->
-> Does this look correct? (yes/no)"
+---
 
-**WAIT** for response. If no, ask what is incorrect and revise.
+**`.infrakit_changelog.md`** (if missing):
+
+```markdown
+# InfraKit Changelog: <module-name>
+
+<!-- Change history for this module. Each update track appends an entry here. -->
+
+## (reconstructed) — <YYYY-MM-DD of last modification>
+
+**Change Type**: (original creation — reconstructed)
+**Summary**: Initial module, reconstructed from code analysis.
+
+### Resources Managed
+<list of resource types from main.tf>
+
+<!-- Reconstructed by `/infrakit:update_terraform_code` from code analysis. -->
+```
+
+---
+
+**`.infrakit_terraform_contract.md`** (if missing):
+
+```markdown
+# Module Contract: <module-name>
+
+<!-- This contract defines the stable interface and guarantees for callers of this module. -->
+
+## Interface
+
+| Aspect | Value |
+|--------|-------|
+| Provider | `<provider>` |
+| Terraform Version | `>= <version>` |
+| Provider Version | `~> <version>` |
+| Stability | <Stable/Beta/Alpha — inferred from module maturity> |
+
+## Required Variables
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| <required vars — no default> | | |
+
+## Optional Variables (with defaults)
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| <optional vars> | | | |
+
+## Outputs
+
+| Output | Type | Description |
+|--------|------|-------------|
+| <output name> | `<type>` | <desc> |
+
+## Resources Managed
+
+| Resource Type | Count | Notes |
+|---------------|-------|-------|
+| `<resource_type>` | <N> | <purpose or note> |
+
+## State Considerations
+- <Notes about Terraform state that callers should be aware of>
+- <Any resources that require careful state handling on changes>
+
+## Stability Guarantees
+- Required variables will not be removed without a documented breaking change notice
+- Output names and types will not change without a documented breaking change notice
+- Resources will not be renamed (causing destroy/recreate) without a migration guide
+
+## Breaking Change Policy
+- Breaking changes are documented in `.infrakit_changelog.md` with a migration guide
+- Callers must review the migration guide before re-applying after a breaking update
+
+<!-- Reconstructed by `/infrakit:update_terraform_code` from code analysis. -->
+```
+
+### 3.4 Present Generated Files for Review
+
+Present only the files that were newly generated:
+
+> "I've generated the following module files from code analysis:
+>
+> **Generated:**
+> - <list only newly generated files>
+>
+> **Module Summary:**
+>
+> | Aspect | Value |
+> |--------|-------|
+> | Provider | `<provider>` |
+> | Terraform Version | `>= <version>` |
+> | Required Variables | <N> |
+> | Optional Variables | <N> |
+> | Outputs | <N> |
+> | Resources Managed | <comma-separated list> |
+>
+> Please review the generated files. What would you like to do?
+>
+> A) **Accept** — Files look correct, proceed with the update
+> B) **I've updated them manually** — Edit the files now, say 'done' when ready
+> C) **Regenerate** — Tell me what to correct"
+
+**WAIT** for response.
+
+- If **A**: Proceed to Phase 4.
+- If **B**: Wait for 'done', re-read all three files, then proceed to Phase 4.
+- If **C**: Ask what to correct, regenerate the relevant files, loop back to 3.4.
 
 ---
 
@@ -179,21 +299,21 @@ Example: `database-update-20260101-120000`
 
 Create the track directory:
 ```bash
-mkdir -p .infrakit/tracks/<track-name>
+mkdir -p .infrakit_tracks/tracks/<track-name>
 ```
 
-Register in `.infrakit/tracks.md` — add a row with Status `🔵 initializing` and Type `update`.
+Register in `.infrakit_tracks/tracks.md` — add a row with Status `🔵 initializing` and Type `update`.
 
 ---
 
-## Phase 5: Cloud Solutions Engineer — Update Spec
+## Phase 5: Cloud Solutions Engineer — Requirements Clarification and Spec
 
 **Adopt the Cloud Solutions Engineer persona.**
 
 Read `.infrakit/agent_personas/cloud_solutions_engineer.md` for detailed behavior.
 
 > "I'll now guide you through defining the changes for this module.
-> Acting as the **Cloud Solutions Engineer**, I'll ask clarifying questions."
+> Acting as the **Cloud Solutions Engineer**, I'll ask clarifying questions until I fully understand your requirements before writing the spec."
 
 ### 5.1 Change Description
 
@@ -226,16 +346,51 @@ Analyze the user's description and classify:
 
 **WAIT** for response.
 
-### 5.3 Requirements Questions
+### 5.3 Requirements Clarification Loop
 
-Ask clarifying questions based on the change type (one at a time, WAIT after each):
-- New input variables to add?
-- Security requirements for the changes?
-- Outputs to add or modify?
+Ask clarifying questions based on the change type, **one at a time**. **WAIT** after each question before asking the next.
+
+Cover these areas (only ask what is not yet answered):
+
+**For new variables:**
+- What type should the variable be? (string, number, bool, list, map, object)
+- Is it required or optional? If optional, what is the default?
+- What validation constraints apply? (condition + error message)
+- Which resource(s) does it configure and how?
+
+**For behavioral changes:**
+- What is the old default and what should the new default be?
+- Which existing deployments will be affected when re-applied?
+- Will the change be in-place or cause a resource to be destroyed and recreated?
+
+**For new outputs:**
+- What is the source expression? (which resource type, name, and attribute)
+- Is the value sensitive and should it be marked `sensitive = true`?
+
+**For resource changes:**
+- Will any resource be renamed? (causes destroy/recreate — requires `moved` block or `terraform state mv`)
+- Are any new resources being added alongside existing ones?
+
+**For security requirements:**
+- Encryption at rest or in transit?
+- IAM policy or role constraints?
+- Network ACL or security group implications?
+
+After each answer, assess: **Are all requirements for this change fully clear?**
+
+When requirements are complete, summarize and confirm:
+
+> "I've gathered all the requirements. Here's my understanding:
+>
+> <bulleted summary of every change and the reasoning behind it>
+>
+> Is this correct and complete? (yes / add more)"
+
+**WAIT** for response. If the user adds more, continue the clarification loop. Repeat until the user confirms the summary is complete.
 
 ### 5.4 Generate spec.md
 
-Write to `.infrakit/tracks/<track-name>/spec.md`:
+Write to `.infrakit_tracks/tracks/<track-name>/spec.md`:
 
 ```markdown
 # Update Specification: <Module Name>
@@ -261,9 +416,9 @@ Write to `.infrakit/tracks/<track-name>/spec.md`:
 
 ### ADD: New Elements
 
-| Element | Type | Description |
-|---------|------|-------------|
-| `<var>` | `<type>` | ... |
+| Element | Type | Required | Default | Description |
+|---------|------|----------|---------|-------------|
+| `<var>` | `<type>` | <yes/no> | <default> | ... |
 
 ### MODIFY: Changed Elements
 
@@ -289,7 +444,7 @@ Write to `.infrakit/tracks/<track-name>/spec.md`:
 
 ### 5.5 Generate migration.md (If Breaking Changes)
 
-If changes are classified as Breaking or Mixed, also write `.infrakit/tracks/<track-name>/migration.md`:
+If changes are classified as Breaking or Mixed, also write `.infrakit_tracks/tracks/<track-name>/migration.md`:
 
 ```markdown
 # Migration Guide: <Module Name>
@@ -327,87 +482,177 @@ If changes are classified as Breaking or Mixed, also write `.infrakit/tracks/<tr
 2. <Rollback step 2>
 ```
 
-### 5.6 Spec Feedback Loop
+### 5.6 Spec Options Loop
 
 > "I've generated the update specification.
 >
 > **Files:**
-> - `.infrakit/tracks/<track-name>/spec.md`
-> <if breaking> - `.infrakit/tracks/<track-name>/migration.md`
+> - `.infrakit_tracks/tracks/<track-name>/spec.md`
+> <if breaking> - `.infrakit_tracks/tracks/<track-name>/migration.md`
 >
 > What would you like to do?
 >
 > A) **Regenerate** — Tell me what to change
 > B) **Manual Changes** — Edit the file, say 'done' when ready
-> C) **Proceed** — Move to architect review"
+> C) **Proceed** — Hand off to Cloud Architect for design options"
 
 **WAIT** for response. Loop until user chooses C.
 
 ---
 
-## Phase 6: Cloud Architect Review
+## Phase 6: Cloud Architect — Design Options
 
 **Announce:**
-> "Handing off to architecture review..."
-> "Reviewing the update specification as the **Cloud Architect**."
+> "Handing off to the Cloud Architect..."
+> "As the **Cloud Architect**, I'll review the spec and present distinct architecture options for implementing these changes. You choose the direction."
 
 Read `.infrakit/agent_personas/cloud_architect.md` for detailed behavior.
 
-Run inline architecture review of the update spec. Focus additionally on:
-- Backward compatibility implications
-- State migration correctness (destroy/recreate vs. in-place)
-- Migration plan soundness (if breaking)
+### 6.1 Architecture Analysis
 
-Present findings. **DO NOT modify spec.md automatically.**
+Review the spec alongside `.infrakit_context.md` and `.infrakit_terraform_contract.md`. Identify:
+- Backward compatibility constraints from the current contract
+- State impact of each possible approach (in-place vs. destroy/recreate)
+- Whether `moved` blocks are needed for resource renames
+- Cost, reliability, and complexity trade-offs of each approach
 
-> "**Architecture Review Complete**
+### 6.2 Present Architecture Options
+
+Present **2–3 distinct, named architecture options**. Each must include a trade-off table so the user can make an informed choice.
+
+> "I've analysed the spec and identified the following design options:
 >
-> A) **Apply recommendations** — Update spec.md
-> B) **Skip** — Proceed without changes
-> C) **Discuss** — Explain a finding"
+> ---
+>
+> ### Option A: <Short Name> (e.g., Minimal / In-place)
+>
+> **Approach**: <1–2 sentence description of the design>
+>
+> | Aspect | Assessment |
+> |--------|-----------|
+> | Backward Compatibility | <Full / Partial / Breaking> |
+> | State Impact | <None / In-place / Destroy-recreate> |
+> | `moved` Blocks Required | <Yes / No> |
+> | Implementation Complexity | <Low / Medium / High> |
+> | Migration Required | <Yes / No> |
+>
+> **Trade-offs:**
+> - ✅ <primary advantage>
+> - ⚠️ <key limitation or risk>
+>
+> ---
+>
+> ### Option B: <Short Name> (e.g., Recommended)
+>
+> **Approach**: <1–2 sentence description>
+>
+> | Aspect | Assessment |
+> |--------|-----------|
+> | Backward Compatibility | <Full / Partial / Breaking> |
+> | State Impact | <None / In-place / Destroy-recreate> |
+> | `moved` Blocks Required | <Yes / No> |
+> | Implementation Complexity | <Low / Medium / High> |
+> | Migration Required | <Yes / No> |
+>
+> **Trade-offs:**
+> - ✅ <primary advantage>
+> - ⚠️ <key limitation or risk>
+>
+> ---
+>
+> ### Option C: <Short Name> (e.g., Forward-Looking)
+>
+> **Approach**: <1–2 sentence description>
+>
+> | Aspect | Assessment |
+> |--------|-----------|
+> | Backward Compatibility | <Full / Partial / Breaking> |
+> | State Impact | <None / In-place / Destroy-recreate> |
+> | `moved` Blocks Required | <Yes / No> |
+> | Implementation Complexity | <Low / Medium / High> |
+> | Migration Required | <Yes / No> |
+>
+> **Trade-offs:**
+> - ✅ <primary advantage>
+> - ⚠️ <key limitation or risk>
+>
+> ---
+>
+> Which option would you like to proceed with? (A / B / C / Discuss an option)"
 
-**WAIT** for response.
+**WAIT** for response. If user wants to discuss an option, explain it further and loop. Continue until the user makes a final selection.
+
+### 6.3 Apply Selected Option
+
+Update `.infrakit_tracks/tracks/<track-name>/spec.md` — append an **Architecture Decision** section:
+
+```markdown
+## Architecture Decision
+
+**Selected Option**: <Option A/B/C> — <Short Name>
+**Rationale**: <why this option was selected>
+
+### Implementation Approach
+<detailed description of the chosen design>
+
+### State Impact Details
+- State operation: <in-place / destroy-recreate / no change>
+- `moved` blocks required: <Yes / No — list affected resources>
+- Caller configuration changes: <what callers need to update>
+
+### Backward Compatibility Notes
+<what existing callers will experience during and after the update>
+```
+
+> "✅ Architecture option recorded in spec.
+>
+> Handing off to security review..."
 
 ---
 
 ## Phase 7: Cloud Security Engineer Review
 
 **Announce:**
-> "Handing off to security review..."
 > "Reviewing the update specification as the **Cloud Security Engineer**."
 
 Read `.infrakit/agent_personas/cloud_security_engineer.md` for detailed behavior.
 
 Ask which compliance frameworks apply. **WAIT** for response.
 
-Run inline compliance audit. Present findings. **DO NOT modify spec.md automatically.**
+Run inline compliance audit against the chosen architecture option. Present findings. **DO NOT modify spec.md automatically.**
 
 > "**Security Review Complete**
 >
-> A) **Apply fixes** — Update spec.md
-> B) **Waive a finding** — Document with justification
-> C) **Skip** — Proceed without changes"
+> | Framework | Status | Findings |
+> |-----------|--------|----------|
+> | <framework> | <COMPLIANT / GAPS FOUND> | <N> findings |
+>
+> A) **Apply all fixes** — Update spec.md with all remediations
+> B) **Apply selected fixes** — Tell me which findings to address
+> C) **Waive a finding** — Document with justification
+> D) **Discuss** — Explain a finding in detail
+> E) **Accept as-is** — Proceed without changes"
 
-**WAIT** for response.
+**WAIT** for response. Loop until user is satisfied and makes a final choice.
 
 ---
 
 ## Phase 8: Final Spec Confirmation
 
-Present combined summary of both reviews:
+Present a combined summary of both reviews:
 
 > "**Update Review Summary**
 >
-> | Review | Verdict | Issues |
-> |--------|---------|--------|
-> | Architecture | <verdict> | <N> findings |
-> | Security | <verdict> | <N> findings |
+> | Review | Verdict | Outcome |
+> |--------|---------|---------|
+> | Architecture | <Selected Option Name> | Applied to spec |
+> | Security | <COMPLIANT / COMPLIANT_WITH_WAIVERS / ACCEPTED> | <N> findings resolved |
 >
-> **File**: `.infrakit/tracks/<track-name>/spec.md`
+> **Final Spec**: `.infrakit_tracks/tracks/<track-name>/spec.md`
 >
-> A) **Confirm** — Spec is finalized
-> B) **Make changes** — Edit spec, say 'done' when ready
-> C) **Re-run a review**"
+> A) **Confirm** — Spec is finalized, register the track
+> B) **Make changes** — Edit spec now, say 'done' when ready
+> C) **Re-run a review** — Return to architect or security review"
 
 **WAIT** for response. Loop until user confirms.
 
@@ -415,15 +660,17 @@ Present combined summary of both reviews:
 
 ## Phase 9: Register Track
 
-Update `.infrakit/tracks.md` — change the track's Status to `📝 spec-generated`.
+Update `.infrakit_tracks/tracks.md` — change the track's Status to `📝 spec-generated`.
 
 > "✅ **Update spec finalized for `<module-name>`!**
 >
 > **Track**: `<track-name>`
 > **Change Type**: `<Additive/Behavioral/Breaking>`
+> **Architecture**: `<Selected Option Name>`
+>
 > **Files created:**
-> - `.infrakit/tracks/<track-name>/spec.md`
-> <if breaking> - `.infrakit/tracks/<track-name>/migration.md`
+> - `.infrakit_tracks/tracks/<track-name>/spec.md`
+> <if breaking> - `.infrakit_tracks/tracks/<track-name>/migration.md`
 >
 > **Next step**: Run `/infrakit:plan <track-name>` to generate the implementation plan."
 
@@ -438,3 +685,4 @@ Update `.infrakit/tracks.md` — change the track's Status to `📝 spec-generat
 | main.tf missing | Warn, offer options |
 | HCL parse errors | Report file and error, halt |
 | Breaking change without migration | Generate migration.md automatically |
+| Contract files unreadable | Report error, regenerate from HCL |
