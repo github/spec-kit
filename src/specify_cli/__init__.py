@@ -5012,6 +5012,15 @@ def workflow_run(
     engine = WorkflowEngine(project_root)
     engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
+    # Check if workflow is disabled in registry before loading
+    from .workflows.catalog import WorkflowRegistry
+    wf_registry = WorkflowRegistry(project_root)
+    wf_meta = wf_registry.get(source)
+    if isinstance(wf_meta, dict) and not wf_meta.get("enabled", True):
+        console.print(f"[red]Error:[/red] Workflow '{source}' is disabled")
+        console.print(f"\nTo re-enable: specify workflow enable {source}")
+        raise typer.Exit(1)
+
     try:
         definition = engine.load_workflow(source)
     except FileNotFoundError:
@@ -5020,6 +5029,14 @@ def workflow_run(
     except ValueError as exc:
         console.print(f"[red]Error:[/red] Invalid workflow: {exc}")
         raise typer.Exit(1)
+
+    # Also check by loaded definition ID (covers file-path invocations)
+    if definition.id and definition.id != source:
+        wf_meta_by_id = wf_registry.get(definition.id)
+        if isinstance(wf_meta_by_id, dict) and not wf_meta_by_id.get("enabled", True):
+            console.print(f"[red]Error:[/red] Workflow '{definition.id}' is disabled")
+            console.print(f"\nTo re-enable: specify workflow enable {definition.id}")
+            raise typer.Exit(1)
 
     # Validate
     errors = engine.validate(definition)
@@ -5187,20 +5204,108 @@ def workflow_list():
 
     console.print("\n[bold cyan]Installed Workflows:[/bold cyan]\n")
     for wf_id, wf_data in installed.items():
-        console.print(f"  [bold]{wf_data.get('name', wf_id)}[/bold] ({wf_id}) v{wf_data.get('version', '?')}")
+        if not isinstance(wf_data, dict):
+            console.print(
+                f"  [yellow]Warning:[/yellow] Skipping malformed workflow metadata for '{wf_id}' "
+                f"(expected object, got {type(wf_data).__name__})"
+            )
+            continue
+        enabled = wf_data.get("enabled", True)
+        status = "" if enabled else " [yellow](disabled)[/yellow]"
+        console.print(f"  [bold]{wf_data.get('name', wf_id)}[/bold] ({wf_id}) v{wf_data.get('version', '?')}{status}")
         desc = wf_data.get("description", "")
         if desc:
             console.print(f"    {desc}")
         console.print()
 
 
+def _is_loopback_host(hostname: str) -> bool:
+    """Check if a hostname is a loopback address."""
+    from ipaddress import ip_address
+
+    if hostname == "localhost":
+        return True
+    try:
+        return ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_url_scheme(url: str, *, allow_http_loopback: bool = True) -> None:
+    """Raise ValueError if URL is not HTTPS, optionally allowing HTTP loopback URLs."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if not parsed.hostname:
+        raise ValueError(f"URL has no hostname: {url}")
+    host = parsed.hostname
+    if parsed.scheme == "https":
+        return
+    if allow_http_loopback and parsed.scheme == "http" and _is_loopback_host(host):
+        return
+    raise ValueError(f"Non-HTTPS URL not allowed: {url}")
+
+
+def _download_validated(source_url: str, destination: Path) -> None:
+    """Download a URL to *destination*, rejecting insecure redirects before following them."""
+    import shutil as _shutil
+    from urllib.parse import urlparse
+    from urllib.request import build_opener, HTTPRedirectHandler  # noqa: S310
+
+    _validate_url_scheme(source_url)
+
+    # Only allow HTTP loopback redirects if the source was already HTTP loopback
+    source_parsed = urlparse(source_url)
+    source_allows_http_loopback = (
+        source_parsed.scheme == "http"
+        and source_parsed.hostname is not None
+        and _is_loopback_host(source_parsed.hostname)
+    )
+
+    class _SafeRedirectHandler(HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            redirect_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+            if redirect_req is None:
+                return None
+            redirect_url = redirect_req.full_url
+            try:
+                _validate_url_scheme(
+                    redirect_url,
+                    allow_http_loopback=source_allows_http_loopback,
+                )
+            except ValueError:
+                raise ValueError(f"Redirected to non-HTTPS: {redirect_url}")
+            return redirect_req
+
+    opener = build_opener(_SafeRedirectHandler)
+    with opener.open(source_url, timeout=30) as resp:
+        with destination.open("wb") as dest_file:
+            _shutil.copyfileobj(resp, dest_file)
+
+
 @workflow_app.command("add")
 def workflow_add(
-    source: str = typer.Argument(..., help="Workflow ID, URL, or local path"),
+    source: Optional[str] = typer.Argument(None, help="Workflow ID, URL, or local path"),
+    dev: bool = typer.Option(False, "--dev", help="Install from local directory"),
+    from_url: Optional[str] = typer.Option(None, "--from", help="Install from custom URL"),
 ):
     """Install a workflow from catalog, URL, or local path."""
     from .workflows.catalog import WorkflowCatalog, WorkflowRegistry, WorkflowCatalogError
     from .workflows.engine import WorkflowDefinition
+
+    # Validate source selection and disallow incompatible options
+    if dev and from_url:
+        console.print("[red]Error:[/red] --dev cannot be combined with --from")
+        raise typer.Exit(1)
+    if source and from_url:
+        console.print("[red]Error:[/red] Cannot combine a positional source with --from")
+        raise typer.Exit(1)
+    if dev and not source:
+        console.print("[red]Error:[/red] --dev requires a local workflow path")
+        raise typer.Exit(1)
+    if not source and not from_url:
+        console.print("[red]Error:[/red] Provide a workflow ID/URL/path, or use --from <url>")
+        raise typer.Exit(1)
 
     project_root = Path.cwd()
     specify_dir = project_root / ".specify"
@@ -5242,53 +5347,78 @@ def workflow_add(
         })
         console.print(f"[green]✓[/green] Workflow '{definition.name}' ({definition.id}) installed")
 
-    # Try as URL (http/https)
-    if source.startswith("http://") or source.startswith("https://"):
-        from ipaddress import ip_address
-        from urllib.parse import urlparse
-        from urllib.request import urlopen  # noqa: S310
-
-        parsed_src = urlparse(source)
-        src_host = parsed_src.hostname or ""
-        src_loopback = src_host == "localhost"
-        if not src_loopback:
-            try:
-                src_loopback = ip_address(src_host).is_loopback
-            except ValueError:
-                # Host is not an IP literal (e.g., a DNS name); keep default non-loopback.
-                pass
-        if parsed_src.scheme != "https" and not (parsed_src.scheme == "http" and src_loopback):
-            console.print("[red]Error:[/red] Only HTTPS URLs are allowed, except HTTP for localhost.")
+    # --dev: install from local directory
+    if dev:
+        source_path = Path(source).expanduser().resolve()
+        if not source_path.exists():
+            console.print(f"[red]Error:[/red] Path not found: {source_path}")
             raise typer.Exit(1)
 
-        import tempfile
+        if source_path.is_file() and source_path.suffix in (".yml", ".yaml"):
+            _validate_and_install_local(source_path, str(source_path))
+        elif source_path.is_dir():
+            wf_file = source_path / "workflow.yml"
+            if not wf_file.exists():
+                console.print(f"[red]Error:[/red] No workflow.yml found in {source_path}")
+                raise typer.Exit(1)
+            _validate_and_install_local(wf_file, str(source_path))
+        else:
+            console.print(f"[red]Error:[/red] Path is not a YAML file or directory: {source_path}")
+            raise typer.Exit(1)
+        return
+
+    # --from: install from custom URL
+    if from_url:
         try:
-            with urlopen(source, timeout=30) as resp:  # noqa: S310
-                final_url = resp.geturl()
-                final_parsed = urlparse(final_url)
-                final_host = final_parsed.hostname or ""
-                final_lb = final_host == "localhost"
-                if not final_lb:
-                    try:
-                        final_lb = ip_address(final_host).is_loopback
-                    except ValueError:
-                        # Redirect host is not an IP literal; keep loopback as determined above.
-                        pass
-                if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
-                    console.print(f"[red]Error:[/red] URL redirected to non-HTTPS: {final_url}")
-                    raise typer.Exit(1)
-                with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
-                    tmp.write(resp.read())
-                    tmp_path = Path(tmp.name)
+            _validate_url_scheme(from_url)
+        except ValueError as exc:
+            console.print(f"[red]Error:[/red] Invalid URL: {exc}")
+            console.print("URL must use HTTPS for security. HTTP is only allowed for localhost/loopback URLs.")
+            raise typer.Exit(1)
+
+        console.print("[yellow]Warning:[/yellow] Installing from external URL.")
+        console.print("Only install workflows from sources you trust.\n")
+
+        import tempfile
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
+                tmp_path = Path(tmp.name)
+            _download_validated(from_url, tmp_path)
+            _validate_and_install_local(tmp_path, from_url)
         except typer.Exit:
             raise
         except Exception as exc:
             console.print(f"[red]Error:[/red] Failed to download workflow: {exc}")
             raise typer.Exit(1)
-        try:
-            _validate_and_install_local(tmp_path, source)
         finally:
-            tmp_path.unlink(missing_ok=True)
+            if tmp_path:
+                tmp_path.unlink(missing_ok=True)
+        return
+
+    # Try as URL (http/https)
+    if source.startswith("http://") or source.startswith("https://"):
+        try:
+            _validate_url_scheme(source)
+        except ValueError:
+            console.print("[red]Error:[/red] Only HTTPS URLs are allowed, except HTTP for localhost/loopback.")
+            raise typer.Exit(1)
+
+        import tempfile
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
+                tmp_path = Path(tmp.name)
+            _download_validated(source, tmp_path)
+            _validate_and_install_local(tmp_path, source)
+        except typer.Exit:
+            raise
+        except Exception as exc:
+            console.print(f"[red]Error:[/red] Failed to download workflow: {exc}")
+            raise typer.Exit(1)
+        finally:
+            if tmp_path:
+                tmp_path.unlink(missing_ok=True)
         return
 
     # Try as a local file/directory
@@ -5328,21 +5458,9 @@ def workflow_add(
         raise typer.Exit(1)
 
     # Validate URL scheme (HTTPS required, HTTP allowed for localhost only)
-    from ipaddress import ip_address
-    from urllib.parse import urlparse
-
-    parsed_url = urlparse(workflow_url)
-    url_host = parsed_url.hostname or ""
-    is_loopback = False
-    if url_host == "localhost":
-        is_loopback = True
-    else:
-        try:
-            is_loopback = ip_address(url_host).is_loopback
-        except ValueError:
-            # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
-            pass
-    if parsed_url.scheme != "https" and not (parsed_url.scheme == "http" and is_loopback):
+    try:
+        _validate_url_scheme(workflow_url)
+    except ValueError:
         console.print(
             f"[red]Error:[/red] Workflow '{source}' has an invalid install URL. "
             "Only HTTPS URLs are allowed, except HTTP for localhost/loopback."
@@ -5350,7 +5468,11 @@ def workflow_add(
         raise typer.Exit(1)
 
     workflow_dir = workflows_dir / source
-    # Validate that source is a safe directory name (no path traversal)
+    # Validate workflow ID format and path safety
+    from .workflows.engine import is_valid_workflow_id
+    if not is_valid_workflow_id(source):
+        console.print(f"[red]Error:[/red] Invalid workflow ID: {source!r}")
+        raise typer.Exit(1)
     try:
         workflow_dir.resolve().relative_to(workflows_dir.resolve())
     except ValueError:
@@ -5359,30 +5481,8 @@ def workflow_add(
     workflow_file = workflow_dir / "workflow.yml"
 
     try:
-        from urllib.request import urlopen  # noqa: S310 — URL comes from catalog
-
         workflow_dir.mkdir(parents=True, exist_ok=True)
-        with urlopen(workflow_url, timeout=30) as response:  # noqa: S310
-            # Validate final URL after redirects
-            final_url = response.geturl()
-            final_parsed = urlparse(final_url)
-            final_host = final_parsed.hostname or ""
-            final_loopback = final_host == "localhost"
-            if not final_loopback:
-                try:
-                    final_loopback = ip_address(final_host).is_loopback
-                except ValueError:
-                    # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
-                    pass
-            if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_loopback):
-                if workflow_dir.exists():
-                    import shutil
-                    shutil.rmtree(workflow_dir, ignore_errors=True)
-                console.print(
-                    f"[red]Error:[/red] Workflow '{source}' redirected to non-HTTPS URL: {final_url}"
-                )
-                raise typer.Exit(1)
-            workflow_file.write_bytes(response.read())
+        _download_validated(workflow_url, workflow_file)
     except Exception as exc:
         if workflow_dir.exists():
             import shutil
@@ -5464,6 +5564,7 @@ def workflow_remove(
 def workflow_search(
     query: str | None = typer.Argument(None, help="Search query"),
     tag: str | None = typer.Option(None, "--tag", help="Filter by tag"),
+    author: str | None = typer.Option(None, "--author", help="Filter by author"),
 ):
     """Search workflow catalogs."""
     from .workflows.catalog import WorkflowCatalog, WorkflowCatalogError
@@ -5475,7 +5576,7 @@ def workflow_search(
     catalog = WorkflowCatalog(project_root)
 
     try:
-        results = catalog.search(query=query, tag=tag)
+        results = catalog.search(query=query, tag=tag, author=author)
     except WorkflowCatalogError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
@@ -5567,6 +5668,328 @@ def workflow_info(
     else:
         console.print(f"[red]Error:[/red] Workflow '{workflow_id}' not found")
         raise typer.Exit(1)
+
+
+@workflow_app.command("update")
+def workflow_update(
+    workflow_id: Optional[str] = typer.Argument(None, help="Workflow ID to update (or all)"),
+):
+    """Update workflow(s) to latest version."""
+    from .workflows.catalog import WorkflowCatalog, WorkflowRegistry, WorkflowCatalogError
+    from .workflows.engine import WorkflowDefinition, validate_workflow
+    from packaging import version as pkg_version
+    import shutil
+    import tempfile
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    registry = WorkflowRegistry(project_root)
+    catalog = WorkflowCatalog(project_root)
+    workflows_dir = project_root / ".specify" / "workflows"
+
+    installed = registry.list()
+    if workflow_id:
+        if not registry.is_installed(workflow_id):
+            console.print(f"[red]Error:[/red] Workflow '{workflow_id}' is not installed")
+            raise typer.Exit(1)
+        workflows_to_update = [workflow_id]
+    else:
+        workflows_to_update = list(installed.keys())
+
+    if not workflows_to_update:
+        console.print("[yellow]No workflows installed[/yellow]")
+        raise typer.Exit(0)
+
+    console.print("🔄 Checking for updates...\n")
+
+    updates_available = []
+    catalog_errors = 0
+    skipped = 0
+    for wf_id in workflows_to_update:
+        metadata = installed.get(wf_id, {})
+        if not isinstance(metadata, dict):
+            console.print(f"⚠  {wf_id}: Malformed workflow registry entry (skipping)")
+            skipped += 1
+            continue
+        installed_ver_str = str(metadata.get("version", "0.0.0"))
+        try:
+            installed_version = pkg_version.Version(installed_ver_str)
+        except (pkg_version.InvalidVersion, TypeError):
+            console.print(f"⚠  {wf_id}: Invalid installed version '{installed_ver_str}' (skipping)")
+            skipped += 1
+            continue
+
+        try:
+            cat_info = catalog.get_workflow_info(wf_id)
+        except WorkflowCatalogError as exc:
+            console.print(f"⚠  {wf_id}: Catalog error: {exc}")
+            catalog_errors += 1
+            cat_info = None
+
+        if not cat_info:
+            console.print(f"⚠  {wf_id}: Not found in catalog (skipping)")
+            skipped += 1
+            continue
+
+        if not cat_info.get("_install_allowed", True):
+            console.print(f"⚠  {wf_id}: Updates not allowed from '{cat_info.get('_catalog_name', 'catalog')}' (skipping)")
+            skipped += 1
+            continue
+
+        cat_ver_str = str(cat_info.get("version", "0.0.0"))
+        try:
+            catalog_version = pkg_version.Version(cat_ver_str)
+        except (pkg_version.InvalidVersion, TypeError):
+            console.print(f"⚠  {wf_id}: Invalid catalog version '{cat_ver_str}' (skipping)")
+            skipped += 1
+            continue
+
+        if catalog_version > installed_version:
+            updates_available.append({
+                "id": wf_id,
+                "name": cat_info.get("name", wf_id),
+                "installed": str(installed_version),
+                "available": str(catalog_version),
+                "url": cat_info.get("url"),
+                "catalog_name": cat_info.get("_catalog_name", ""),
+                "description": cat_info.get("description", ""),
+            })
+        else:
+            console.print(f"✓ {wf_id}: Up to date (v{installed_version})")
+
+    if not updates_available:
+        if catalog_errors:
+            console.print(f"\n[yellow]Could not check {catalog_errors} workflow(s) due to catalog errors[/yellow]")
+            raise typer.Exit(1)
+        if skipped:
+            console.print(f"\n[green]No updates found[/green] ({skipped} workflow(s) skipped)")
+        else:
+            console.print("\n[green]All workflows are up to date![/green]")
+        raise typer.Exit(0)
+
+    console.print("\n[bold]Updates available:[/bold]\n")
+    for update in updates_available:
+        console.print(f"  • {update['id']}: {update['installed']} → {update['available']}")
+
+    console.print()
+    confirm = typer.confirm("Update these workflows?")
+    if not confirm:
+        console.print("Cancelled")
+        raise typer.Exit(0)
+
+    console.print()
+    had_failures = False
+    for update in updates_available:
+        wf_id = update["id"]
+        wf_url = update.get("url")
+        if not wf_url:
+            console.print(f"⚠  {wf_id}: No download URL in catalog (skipping)")
+            continue
+
+        console.print(f"📦 Updating {update['name']}...")
+
+        try:
+            _validate_url_scheme(wf_url)
+        except ValueError:
+            console.print(f"⚠  {wf_id}: Invalid URL scheme (skipping)")
+            continue
+
+        wf_dir = workflows_dir / wf_id
+        # Validate workflow ID format and path safety
+        from .workflows.engine import is_valid_workflow_id
+        if not is_valid_workflow_id(wf_id):
+            console.print(f"⚠  {wf_id}: Invalid workflow ID format (skipping)")
+            continue
+        try:
+            wf_dir.resolve().relative_to(workflows_dir.resolve())
+        except ValueError:
+            console.print(f"⚠  {wf_id}: Invalid workflow ID (skipping)")
+            continue
+        try:
+            # Ensure workflows directory exists before creating temp dir
+            workflows_dir.mkdir(parents=True, exist_ok=True)
+            # Download and validate in a temporary directory so failures do not
+            # leave a partially-created workflow directory behind.
+            with tempfile.TemporaryDirectory(prefix="wf-update-", dir=workflows_dir) as tmp_dir:
+                staged_dir = Path(tmp_dir) / wf_id
+                staged_dir.mkdir(parents=True, exist_ok=True)
+                wf_file = staged_dir / "workflow.yml"
+                _download_validated(wf_url, wf_file)
+
+                # Validate staged contents before replacing the live workflow
+                definition = WorkflowDefinition.from_yaml(wf_file)
+                if definition.id != wf_id:
+                    raise ValueError(
+                        f"Workflow ID mismatch: expected '{wf_id}', got '{definition.id}'"
+                    )
+                errors = validate_workflow(definition)
+                if errors:
+                    raise ValueError(f"Validation failed: {'; '.join(errors)}")
+
+                # Atomic swap: move old to hidden backup, move staged in
+                backup_dir = None
+                if wf_dir.exists():
+                    backup_parent = workflows_dir / ".backup"
+                    # Guard against symlink attacks
+                    if backup_parent.exists() and backup_parent.is_symlink():
+                        raise ValueError(".backup is a symlink; refusing to use it")
+                    backup_parent.mkdir(parents=True, exist_ok=True)
+                    backup_dir = backup_parent / wf_id
+                    try:
+                        backup_dir.resolve().relative_to(workflows_dir.resolve())
+                    except ValueError:
+                        raise ValueError(f"Backup path escapes workflows directory: {backup_dir}")
+                    if backup_dir.exists():
+                        shutil.rmtree(backup_dir)
+                    wf_dir.rename(backup_dir)
+                try:
+                    shutil.move(str(staged_dir), str(wf_dir))
+                except BaseException:
+                    # Restore from backup if swap fails (including KeyboardInterrupt)
+                    if backup_dir and backup_dir.exists():
+                        if wf_dir.exists():
+                            shutil.rmtree(wf_dir)
+                        backup_dir.rename(wf_dir)
+                    raise
+
+            # Snapshot registry file, then update; restore both on failure
+            import os
+            registry_file = registry.registry_path
+            registry_snapshot = None
+            try:
+                if registry_file.exists():
+                    fd, snap = tempfile.mkstemp(
+                        prefix="registry-", suffix=".json", dir=workflows_dir
+                    )
+                    os.close(fd)
+                    registry_snapshot = Path(snap)
+                    shutil.copy2(registry_file, registry_snapshot)
+
+                existing_entry = installed.get(wf_id, {})
+                description = (
+                    definition.description
+                    or update.get("description")
+                    or (existing_entry.get("description", "") if isinstance(existing_entry, dict) else "")
+                )
+
+                registry.update(wf_id, {
+                    "version": update["available"],
+                    "name": definition.name or update["name"],
+                    "description": description,
+                })
+            except BaseException:
+                # Restore registry snapshot
+                if registry_snapshot and registry_snapshot.exists():
+                    try:
+                        os.replace(registry_snapshot, registry_file)
+                    except OSError:
+                        pass
+                    registry_snapshot = None
+                    # Reload in-memory state from restored file
+                    registry.data = registry._load()
+                # Restore workflow from backup, or remove new dir if no backup existed
+                if backup_dir and backup_dir.exists():
+                    if wf_dir.exists():
+                        shutil.rmtree(wf_dir)
+                    backup_dir.rename(wf_dir)
+                elif wf_dir.exists() and not backup_dir:
+                    # No prior directory existed; remove the newly placed one
+                    shutil.rmtree(wf_dir, ignore_errors=True)
+                raise
+            finally:
+                if registry_snapshot and registry_snapshot.exists():
+                    try:
+                        registry_snapshot.unlink()
+                    except OSError:
+                        pass
+            # Clean up backup after fully successful update
+            if backup_dir and backup_dir.exists():
+                try:
+                    shutil.rmtree(backup_dir)
+                except OSError as cleanup_exc:
+                    console.print(f"  [yellow]⚠[/yellow] {wf_id}: Updated successfully, but failed to remove backup: {cleanup_exc}")
+            # Clean up empty .backup directory
+            backup_parent = workflows_dir / ".backup"
+            if backup_parent.exists():
+                try:
+                    backup_parent.rmdir()  # only succeeds if empty
+                except OSError:
+                    pass
+            console.print(f"  [green]✓[/green] {wf_id}: {update['installed']} → {update['available']}")
+
+        except Exception as exc:
+            console.print(f"  [red]✗[/red] {wf_id}: {exc}")
+            had_failures = True
+
+    if had_failures:
+        raise typer.Exit(1)
+
+
+@workflow_app.command("enable")
+def workflow_enable(
+    workflow_id: str = typer.Argument(..., help="Workflow ID to enable"),
+):
+    """Enable a disabled workflow."""
+    from .workflows.catalog import WorkflowRegistry
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    registry = WorkflowRegistry(project_root)
+
+    if not registry.is_installed(workflow_id):
+        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' is not installed")
+        raise typer.Exit(1)
+
+    metadata = registry.get(workflow_id)
+    if not isinstance(metadata, dict):
+        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' has corrupted registry metadata")
+        raise typer.Exit(1)
+    if metadata.get("enabled", True):
+        console.print(f"[yellow]Workflow '{workflow_id}' is already enabled[/yellow]")
+        raise typer.Exit(0)
+
+    registry.update(workflow_id, {"enabled": True})
+    console.print(f"[green]✓[/green] Workflow '{workflow_id}' enabled")
+
+
+@workflow_app.command("disable")
+def workflow_disable(
+    workflow_id: str = typer.Argument(..., help="Workflow ID to disable"),
+):
+    """Disable a workflow without removing it."""
+    from .workflows.catalog import WorkflowRegistry
+
+    project_root = Path.cwd()
+    specify_dir = project_root / ".specify"
+    if not specify_dir.exists():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        raise typer.Exit(1)
+
+    registry = WorkflowRegistry(project_root)
+
+    if not registry.is_installed(workflow_id):
+        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' is not installed")
+        raise typer.Exit(1)
+
+    metadata = registry.get(workflow_id)
+    if not isinstance(metadata, dict):
+        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' has corrupted registry metadata")
+        raise typer.Exit(1)
+    if not metadata.get("enabled", True):
+        console.print(f"[yellow]Workflow '{workflow_id}' is already disabled[/yellow]")
+        raise typer.Exit(0)
+
+    registry.update(workflow_id, {"enabled": False})
+    console.print(f"[green]✓[/green] Workflow '{workflow_id}' disabled")
+    console.print(f"\nTo re-enable: specify workflow enable {workflow_id}")
 
 
 @workflow_catalog_app.command("list")
