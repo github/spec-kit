@@ -1531,7 +1531,7 @@ def init(
             manifest.save()
 
             # Write .specify/integration.json
-            integration_json = project_path / ".specify" / "integration.json"
+            integration_json = project_path / INTEGRATION_JSON
             integration_json.parent.mkdir(parents=True, exist_ok=True)
             integration_json.write_text(
                 json.dumps(
