@@ -468,6 +468,32 @@ class TestInitIntegrationFlag:
         nested_dest = project / ".specify" / "scripts" / "bash" / "nested" / "deep.sh"
         assert nested_dest.read_text(encoding="utf-8") == "# nested\n"
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits are not stable on Windows")
+    def test_shared_template_writes_are_not_world_writable(self, tmp_path):
+        """Shared template writes use a safe default mode instead of chmod 666."""
+        from specify_cli.shared_infra import install_shared_infra
+
+        project = tmp_path / "template-mode-test"
+        project.mkdir()
+
+        core_pack = tmp_path / "core-pack"
+        templates_src = core_pack / "templates"
+        templates_src.mkdir(parents=True)
+        (templates_src / "plan-template.md").write_text("# plan\n", encoding="utf-8")
+
+        install_shared_infra(
+            project,
+            "sh",
+            version="test",
+            core_pack=core_pack,
+            repo_root=tmp_path / "unused",
+            console=_NoopConsole(),
+            force=True,
+        )
+
+        written = project / ".specify" / "templates" / "plan-template.md"
+        assert written.stat().st_mode & 0o777 == 0o644
+
     def test_shared_infra_no_warning_when_forced(self, tmp_path, capsys):
         """No skip warning when force=True (all files overwritten)."""
         from specify_cli import _install_shared_infra

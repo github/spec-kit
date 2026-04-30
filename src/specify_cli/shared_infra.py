@@ -163,7 +163,7 @@ def _write_shared_bytes(
     dest: Path,
     content: bytes,
     *,
-    mode: int = 0o666,
+    mode: int = 0o644,
 ) -> None:
     _ensure_safe_shared_destination(project_path, dest)
     fd, temp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
