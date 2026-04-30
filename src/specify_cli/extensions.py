@@ -1422,11 +1422,18 @@ class ExtensionManager:
                 self.registry.update(ext_id, updates)
 
     def register_enabled_extensions_for_agent(self, agent_name: str) -> None:
-        """Register installed, enabled extensions for the active agent.
+        """Register installed, enabled extensions for ``agent_name``.
 
-        This is used after integration switches. It mirrors extension install
-        behavior while avoiding stale default-mode command directories when an
-        agent is currently running in skills mode (notably Copilot ``--skills``).
+        This is intended to be called after switching integrations. Command
+        registration is scoped to the explicit ``agent_name`` argument, but some
+        behavior still depends on the current init-options state (for example,
+        skills-mode handling uses the active ``ai`` / ``ai_skills`` settings).
+
+        Callers should therefore pass the agent that has just been made active
+        in init-options; in normal use, ``agent_name`` is expected to match the
+        current ``ai`` value. This mirrors extension install behavior while
+        avoiding stale default-mode command directories when that active agent
+        is running in skills mode (notably Copilot ``--skills``).
         """
         if not agent_name:
             return
