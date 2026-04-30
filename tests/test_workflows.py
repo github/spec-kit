@@ -130,6 +130,18 @@ class TestWorkflowCliInputs:
 
         assert inputs == {"assignee": literal}
 
+    def test_existing_at_directory_stays_literal(self, project_dir, monkeypatch):
+        from specify_cli import _parse_workflow_inputs
+
+        (project_dir / "some_existing_directory").mkdir()
+        monkeypatch.chdir(project_dir)
+
+        assert _parse_workflow_inputs(["x=@."], None) == {"x": "@."}
+        assert _parse_workflow_inputs(
+            ["x=@some_existing_directory"],
+            None,
+        ) == {"x": "@some_existing_directory"}
+
     def test_missing_input_file_fails_cleanly(self, project_dir, monkeypatch):
         from specify_cli import _parse_workflow_inputs
 
@@ -137,6 +149,15 @@ class TestWorkflowCliInputs:
 
         with pytest.raises(ValueError, match="not found"):
             _parse_workflow_inputs(None, "missing.json")
+
+    def test_input_file_directory_fails_cleanly(self, project_dir, monkeypatch):
+        from specify_cli import _parse_workflow_inputs
+
+        (project_dir / "payload.json").mkdir()
+        monkeypatch.chdir(project_dir)
+
+        with pytest.raises(ValueError, match="not a file"):
+            _parse_workflow_inputs(None, "payload.json")
 
     def test_input_file_loads_json_object(self, project_dir, monkeypatch):
         from specify_cli import _parse_workflow_inputs

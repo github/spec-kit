@@ -5333,8 +5333,12 @@ def _parse_workflow_inputs(
             value = raw_value.strip()
             if value.startswith("@"):
                 file_ref = value[1:].strip()
-                if file_ref and _resolve_workflow_cli_path(file_ref).exists():
-                    _, value = _read_workflow_cli_file(file_ref, f"input {key!r}")
+                if file_ref:
+                    candidate_path = _resolve_workflow_cli_path(file_ref)
+                    if candidate_path.exists() and candidate_path.is_file():
+                        _, value = _read_workflow_cli_file(
+                            file_ref, f"input {key!r}"
+                        )
             inputs[key] = value
 
     return inputs
