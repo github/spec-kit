@@ -115,10 +115,10 @@ class ClaudeIntegration(SkillsIntegration):
         frontmatter_text = yaml.safe_dump(skill_frontmatter, sort_keys=False).strip()
         return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
 
-    def _build_skill_fm(self, name: str, description: str, source: str) -> dict:
+    def _build_skill_fm(self, name: str, description: str, source: str, source_frontmatter: dict | None = None) -> dict:
         from specify_cli.agents import CommandRegistrar
         return CommandRegistrar.build_skill_frontmatter(
-            self.key, name, description, source
+            self.key, name, description, source, source_frontmatter=source_frontmatter
         )
 
     @staticmethod
