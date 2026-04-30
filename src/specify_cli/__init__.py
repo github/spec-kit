@@ -1819,7 +1819,7 @@ def init(
         step_num = 2
 
     # Determine skill display mode for the next-steps panel.
-    # Skills integrations (codex, kimi, agy, trae, cursor-agent) should show skill invocation syntax.
+    # Skills integrations (codex, claude, kimi, agy, trae, cursor-agent, copilot, devin) should show skill invocation syntax.
     from .integrations.base import SkillsIntegration as _SkillsInt
 
     _is_skills_integration = isinstance(resolved_integration, _SkillsInt) or getattr(
@@ -1837,6 +1837,7 @@ def init(
         ai_skills or _is_skills_integration
     )
     copilot_skill_mode = selected_ai == "copilot" and _is_skills_integration
+    devin_skill_mode = selected_ai == "devin"
     native_skill_mode = (
         codex_skill_mode
         or claude_skill_mode
@@ -1845,6 +1846,7 @@ def init(
         or trae_skill_mode
         or cursor_agent_skill_mode
         or copilot_skill_mode
+        or devin_skill_mode
     )
 
     if codex_skill_mode and not ai_skills:
@@ -1863,6 +1865,9 @@ def init(
             f"{step_num}. Start Cursor Agent in this project directory; spec-kit skills were installed to [cyan].cursor/skills[/cyan]"
         )
         step_num += 1
+    if devin_skill_mode:
+        steps_lines.append(f"{step_num}. Start Devin in this project directory; spec-kit skills were installed to [cyan].devin/skills[/cyan]")
+        step_num += 1
     usage_label = "skills" if native_skill_mode else "slash commands"
 
     def _display_cmd(name: str) -> str:
@@ -1872,7 +1877,7 @@ def init(
             return f"/speckit-{name}"
         if kimi_skill_mode:
             return f"/skill:speckit-{name}"
-        if cursor_agent_skill_mode or copilot_skill_mode:
+        if cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode:
             return f"/speckit-{name}"
         return f"/speckit.{name}"
 

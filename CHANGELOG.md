@@ -2,11 +2,20 @@
 
 <!-- insert new changelog below this comment -->
 
-## [Unreleased]
+## [0.8.3] - 2026-04-29
 
-### Fixed
+### Changed
 
-- fix(workflows): auto-detect project integration instead of hardcoding copilot default (Fixes #2406)
+- Add Work IQ extension to community catalog (#2415)
+- feat(integrations): add Devin for Terminal skills-based integration (#2364)
+- fix: include --from git+... in upgrade hint to avoid PyPI squat package (#2411)
+- fix: dispatch opencode commands via run (#2410)
+- feat: add catalog discovery CLI commands (#2360)
+- update security review extension catalog to v1.3.0 (#2374)
+- chore(catalog): bump v-model extension to v0.6.0 (#2399)
+- feat: add threatmodel extension to community catalog (#2369)
+- Add isaqb-architecture-governance to community catalog (#2385)
+- chore: release 0.8.2, begin 0.8.3.dev0 development (#2397)
 
 ## [0.8.2] - 2026-04-28
 
