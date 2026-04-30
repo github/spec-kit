@@ -8,7 +8,7 @@
 
 InfraKit applies **Constraint-Driven Development** to Infrastructure as Code. Instead of writing YAML by hand, you describe what infrastructure you need — InfraKit's AI agent workflow produces production-ready manifests through a structured **spec → plan → implement → review** pipeline.
 
-Each infrastructure resource gets its own **track** under `.infrakit_tracks/tracks/`, containing the spec, plan, and tasks. Multiple tracks can run in parallel, and every step is transparent and user-controlled.
+Each infrastructure resource gets its own **track** under `.infrakit_tracks/tracks/`, containing the spec, plan, and auto-generated task list. Multiple tracks can run in parallel, and every step is transparent and user-controlled.
 
 InfraKit supports **Crossplane** (Kubernetes-native IaC) and **Terraform** (HashiCorp IaC). Support for Pulumi, CloudFormation, and OpenTofu is on the roadmap.
 

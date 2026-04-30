@@ -56,7 +56,7 @@ These files are **never touched** during an upgrade:
 - ✅ `.infrakit/context.md` — your project context
 - ✅ `.infrakit/coding-style.md` — your coding standards
 - ✅ `.infrakit/tagging.md` — your tagging requirements
-- ✅ `.infrakit_tracks/tracks/` — all track directories with spec, plan, and tasks
+- ✅ `.infrakit_tracks/tracks/` — all track directories with spec, plan, and task list
 - ✅ `.infrakit_tracks/tracks.md` — track registry
 - ✅ Your infrastructure YAML source files
 - ✅ Your git history
