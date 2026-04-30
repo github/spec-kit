@@ -20,7 +20,7 @@ from typing import Any
 import yaml
 
 from .base import RunStatus, StepContext, StepResult, StepStatus
-from .constants import INTEGRATION_JSON
+from specify_cli.constants import INTEGRATION_JSON
 
 
 # -- Workflow Definition --------------------------------------------------
