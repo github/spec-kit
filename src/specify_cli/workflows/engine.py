@@ -721,6 +721,9 @@ class WorkflowEngine:
             elif input_def.get("required", False):
                 msg = f"Required input {name!r} not provided."
                 raise ValueError(msg)
+
+        if resolved.get("integration") == "auto":
+            resolved["integration"] = self._load_project_integration()
         return resolved
 
     def _resolve_default(self, name: str, default: Any) -> Any:
@@ -731,12 +734,10 @@ class WorkflowEngine:
         AI the project was actually initialized with.
         """
         if name == "integration" and default == "auto":
-            resolved = self._load_project_integration()
-            if resolved is not None:
-                return resolved
+            return self._load_project_integration()
         return default
 
-    def _load_project_integration(self) -> str | None:
+    def _load_project_integration(self) -> str:
         """Read the active integration key from ``.specify/integration.json``.
 
         Returns the stored integration string, or ``"copilot"`` when the file is

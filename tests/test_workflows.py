@@ -1936,6 +1936,25 @@ steps:
         step_output = state.step_results["specify"]["output"]
         assert step_output["integration"] == "gemini"
 
+    def test_integration_explicit_auto_uses_project_integration(self, project_dir):
+        """Explicit --input integration=auto resolves from integration.json."""
+        from unittest.mock import patch
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        int_json = project_dir / ".specify" / "integration.json"
+        int_json.write_text(json.dumps({"integration": "opencode"}), encoding="utf-8")
+
+        definition = WorkflowDefinition.from_string(self._make_workflow_yaml())
+        engine = WorkflowEngine(project_dir)
+
+        with patch(
+            "specify_cli.workflows.steps.command.shutil.which", return_value=None
+        ):
+            state = engine.execute(definition, {"integration": "auto"})
+
+        step_output = state.step_results["specify"]["output"]
+        assert step_output["integration"] == "opencode"
+
     def test_integration_auto_ignores_malformed_integration_json(self, project_dir):
         """When integration.json contains invalid JSON, 'auto' falls back to 'copilot'."""
         from unittest.mock import patch
