@@ -5351,7 +5351,10 @@ def workflow_run(
         None,
         "--input",
         "-i",
-        help="Input values as key=value pairs; use key=@path to read a text file",
+        help=(
+            "Input values as key=value pairs; key=@path reads an existing text "
+            "file, otherwise @ values stay literal"
+        ),
     ),
     input_file: str | None = typer.Option(
         None, "--input-file", help="Load input values from a JSON object file"
