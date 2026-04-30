@@ -10,10 +10,10 @@ specify workflow run <source>
 
 | Option              | Description                                                                                      |
 | ------------------- | ------------------------------------------------------------------------------------------------ |
-| `-i` / `--input`    | Pass workflow inputs/parameters as `key=value` (repeatable); use `key=@path` to read text files  |
+| `-i` / `--input`    | Pass workflow inputs/parameters as `key=value` (repeatable); `key=@path` reads an existing text file, otherwise `@` values stay literal |
 | `--input-file`      | Load workflow inputs/parameters from a JSON object file; repeatable `--input` values override file values |
 
-Runs a workflow from an installed workflow ID or a local `.yml`/`.yaml` file path. Inputs/parameters declared by the workflow can be provided via `--input` or will be prompted interactively.
+Runs a workflow from an installed workflow ID or a local `.yml`/`.yaml` file path. Inputs/parameters declared by the workflow can be provided via `--input` or `--input-file`, or will be prompted interactively.
 
 Example:
 
