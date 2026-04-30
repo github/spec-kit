@@ -427,6 +427,24 @@ class TestBuildExecArgs:
         args = impl.build_exec_args("do stuff", output_json=False)
         assert "--output-format" not in args
 
+    def test_devin_no_json_args(self):
+        from specify_cli.integrations.devin import DevinIntegration
+        impl = DevinIntegration()
+        args = impl.build_exec_args("do stuff", model="gpt-4o", output_json=True)
+        assert args == ["devin", "-p", "do stuff", "--model", "gpt-4o"]
+
+    def test_goose_returns_none(self):
+        from specify_cli.integrations.goose import GooseIntegration
+        impl = GooseIntegration()
+        assert impl.build_exec_args("do stuff") is None
+
+    def test_amp_inherits_defaults(self):
+        from specify_cli.integrations.amp import AmpIntegration
+        impl = AmpIntegration()
+        args = impl.build_exec_args("do stuff", model="fast")
+        assert args == ["amp", "-p", "do stuff", "--model", "fast",
+                        "--output-format", "json"]
+
 
 # ===== Step Type Tests =====
 
