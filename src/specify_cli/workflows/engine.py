@@ -760,8 +760,10 @@ class WorkflowEngine:
             return self._AUTO_FALLBACK
         if isinstance(data, dict):
             value = data.get("integration")
-            if isinstance(value, str) and value:
-                return value
+            if isinstance(value, str):
+                normalized_value = value.strip()
+                if normalized_value:
+                    return normalized_value
         return self._AUTO_FALLBACK
 
     @staticmethod

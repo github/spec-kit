@@ -57,7 +57,9 @@ from typer.core import TyperGroup
 # For cross-platform keyboard input
 import readchar
 
-from .workflows.constants import INTEGRATION_JSON
+# Keep this local so importing specify_cli does not import the workflows package
+# (whose package initialization registers steps and imports all workflow modules).
+INTEGRATION_JSON = ".specify/integration.json"
 
 GITHUB_API_LATEST = "https://api.github.com/repos/github/spec-kit/releases/latest"
 

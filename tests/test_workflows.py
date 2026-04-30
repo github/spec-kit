@@ -2076,3 +2076,22 @@ steps:
 
         step_output = state.step_results["specify"]["output"]
         assert step_output["integration"] == "copilot"
+
+    def test_resolve_inputs_auto_whitespace_only_falls_back_to_copilot(self, project_dir):
+        """When integration.json has a whitespace-only value, 'auto' falls back to 'copilot'."""
+        from unittest.mock import patch
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        int_json = project_dir / ".specify" / "integration.json"
+        int_json.write_text(json.dumps({"integration": "   "}), encoding="utf-8")
+
+        definition = WorkflowDefinition.from_string(self._make_workflow_yaml())
+        engine = WorkflowEngine(project_dir)
+
+        with patch(
+            "specify_cli.workflows.steps.command.shutil.which", return_value=None
+        ):
+            state = engine.execute(definition)
+
+        step_output = state.step_results["specify"]["output"]
+        assert step_output["integration"] == "copilot"
