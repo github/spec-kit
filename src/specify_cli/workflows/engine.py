@@ -753,9 +753,11 @@ class WorkflowEngine:
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return "copilot"
         if isinstance(data, dict):
-            value = data.get("integration", "").strip()
-            if value:
-                return value
+            value = data.get("integration")
+            if isinstance(value, str):
+                value = value.strip()
+                if value and value != "auto":
+                    return value
         return "copilot"
 
     @staticmethod
