@@ -1,11 +1,9 @@
 ---
-description: "Generate a Crossplane implementation plan (plan.md) for a track from its spec."
+description: "Generate a Crossplane implementation plan (plan.md) and task list (tasks.md) for a track from its spec."
 argument-hint: "<track-name>"
 handoffs:
   - label: "Analyze Consistency"
     agent: "infrakit:analyze"
-  - label: "Generate Tasks"
-    agent: "infrakit:tasks"
 ---
 
 ## User Input
@@ -42,7 +40,7 @@ Verify required files exist:
 | Project Context | `.infrakit/context.md` | ✅ Yes |
 | Coding Style | `.infrakit/coding-style.md` | ✅ Yes |
 | Tagging | `.infrakit/tagging-standard.md` | ✅ Yes |
-| Spec | `.infrakit/tracks/<track-name>/spec.md` | ✅ Yes |
+| Spec | `.infrakit_tracks/tracks/<track-name>/spec.md` | ✅ Yes |
 
 **If context.md, coding-style.md, or tagging-standard.md is missing:**
 > "❌ Project not fully initialized. Run `/infrakit:setup` first."
@@ -61,7 +59,7 @@ Read the following files:
 1. `.infrakit/context.md` — API group, naming conventions, cloud provider defaults
 2. `.infrakit/coding-style.md` — Mandatory coding standards (Pipeline mode, tagging, secrets)
 3. `.infrakit/tagging-standard.md` — Required tags for all managed resources
-4. `.infrakit/tracks/<track-name>/spec.md` — Requirements, parameters, outputs, security
+4. `.infrakit_tracks/tracks/<track-name>/spec.md` — Requirements, parameters, outputs, security
 
 ---
 
@@ -124,7 +122,7 @@ For required tags (per tagging-standard.md):
 
 ## Step 6: Write plan.md
 
-Write to `.infrakit/tracks/<track-name>/plan.md`:
+Write to `.infrakit_tracks/tracks/<track-name>/plan.md`:
 
 ```markdown
 # Implementation Plan: <Resource Name>
@@ -250,27 +248,77 @@ After writing plan.md:
 
 > "I've generated the implementation plan.
 >
-> **File**: `.infrakit/tracks/<track-name>/plan.md`
+> **File**: `.infrakit_tracks/tracks/<track-name>/plan.md`
 >
 > What would you like to do?
 >
 > A) **Regenerate** — Tell me what to change and I'll revise
 > B) **Manual Changes** — Edit the file, say 'done' when ready
-> C) **Proceed** — Plan looks good"
+> C) **Proceed** — Generate task list and mark track ready"
 
 **WAIT** for response. Loop until user chooses C.
 
 ---
 
-## Step 8: Update Track Status and Next Actions
+## Step 8: Auto-Generate tasks.md
 
-Update `.infrakit/tracks.md` — change the track's Status to `📋 planned`.
+After the user accepts the plan, expand the Implementation Phases from plan.md into granular checkbox tasks.
 
-> "✅ Plan complete for `<track-name>`.
+Write to `.infrakit_tracks/tracks/<track-name>/tasks.md`:
+
+```markdown
+# Implementation Tasks: <Resource Name>
+
+**Track**: `<track-name>`
+**Generated**: <YYYY-MM-DD>
+**Source Plan**: `.infrakit_tracks/tracks/<track-name>/plan.md`
+
+## Phase 1: definition.yaml — XRD
+- [ ] T1.1: Create `definition.yaml` scaffold with `apiVersion: apiextensions.crossplane.io/v1`
+- [ ] T1.2: Define XR Kind `<XKind>` and Claim Kind `<Kind>` in the spec
+- [ ] T1.3: Write full OpenAPI v3 schema for `spec.parameters` — one entry per parameter in the plan
+- [ ] T1.4: Write `status` schema with all output fields from the plan
+- [ ] T1.5: Define connection secret keys in `connectionSecretKeys` (if any)
+
+## Phase 2: composition.yaml — Pipeline Composition
+- [ ] T2.1: Create `composition.yaml` scaffold in Pipeline mode with `compositeTypeRef` referencing `<XKind>`
+- [ ] T2.2: Add managed resource `<resource-1-name>` (`<Kind>`) as a Pipeline step
+<one T2.N line per managed resource from the Managed Resources table in plan.md>
+- [ ] T2.N: Add all input patch mappings (`FromCompositeFieldPath`) from the plan
+- [ ] T2.N+1: Add all output patch mappings (`ToCompositeFieldPath`) from the plan
+- [ ] T2.N+2: Add required tag patches to every managed resource (`crossplane.io/claim-name`, `crossplane.io/claim-namespace`, `managed-by`)
+- [ ] T2.N+3: Add `providerConfigRef` to every managed resource
+
+## Phase 3: claim.yaml — Example Claim
+- [ ] T3.1: Create `claim.yaml` with all spec parameters populated with representative example values
+
+## Phase 4: README.md — Usage Documentation
+- [ ] T4.1: Document all parameters in a table (name, type, required, default, description)
+- [ ] T4.2: Document all connection secret keys and their contents
+- [ ] T4.3: Add a usage example showing a complete claim YAML
+
+## Phase 5: Validate
+- [ ] T5.1: Run `crossplane render` against the composition and claim to verify correctness
+- [ ] T5.2: Verify no YAML syntax errors in any generated file
+```
+
+**Expand dynamically**: use the actual parameter names, managed resource names, and output names from plan.md — do not use placeholders where real values are known.
+
+> "✅ tasks.md generated."
+
+---
+
+## Step 9: Update Track Status
+
+Update `.infrakit_tracks/tracks.md` — change the track's Status to `📋 planned`.
+
+> "✅ **Plan and task list ready for `<track-name>`!**
 >
-> **Next steps:**
-> - Run `/infrakit:analyze <track-name>` to verify spec-plan consistency
-> - Run `/infrakit:tasks <track-name>` to generate the implementation task list"
+> **Files:**
+> - `.infrakit_tracks/tracks/<track-name>/plan.md`
+> - `.infrakit_tracks/tracks/<track-name>/tasks.md`
+>
+> **Next step**: Run `/infrakit:implement <track-name>` to start implementation."
 
 ---
 

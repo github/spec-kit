@@ -4,8 +4,6 @@ argument-hint: "<track-name>"
 handoffs:
   - label: "Security Review"
     agent: "infrakit:security-review"
-  - label: "Generate Tasks"
-    agent: "infrakit:tasks"
 ---
 
 ## User Input
@@ -40,8 +38,8 @@ Verify required files exist:
 | File | Path | Required |
 |------|------|----------|
 | Project Context | `.infrakit/context.md` | ✅ Yes |
-| Spec | `.infrakit/tracks/<track-name>/spec.md` | ✅ Yes |
-| Plan | `.infrakit/tracks/<track-name>/plan.md` | ⚠️ Optional |
+| Spec | `.infrakit_tracks/tracks/<track-name>/spec.md` | ✅ Yes |
+| Plan | `.infrakit_tracks/tracks/<track-name>/plan.md` | ⚠️ Optional |
 
 **If context.md is missing:**
 > "❌ Project context not found. Run `/infrakit:setup` first."
@@ -61,8 +59,8 @@ Verify required files exist:
 Read the following files:
 
 1. `.infrakit/context.md` — Project standards and cloud provider defaults
-2. `.infrakit/tracks/<track-name>/spec.md` — What the resource should do
-3. `.infrakit/tracks/<track-name>/plan.md` — How it will be implemented (if present)
+2. `.infrakit_tracks/tracks/<track-name>/spec.md` — What the resource should do
+3. `.infrakit_tracks/tracks/<track-name>/plan.md` — How it will be implemented (if present)
 
 ---
 

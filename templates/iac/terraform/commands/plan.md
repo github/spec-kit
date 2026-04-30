@@ -1,11 +1,9 @@
 ---
-description: "Generate a Terraform implementation plan (plan.md) for a track from its spec."
+description: "Generate a Terraform implementation plan (plan.md) and task list (tasks.md) for a track from its spec."
 argument-hint: "<track-name>"
 handoffs:
   - label: "Analyze Consistency"
     agent: "infrakit:analyze"
-  - label: "Generate Tasks"
-    agent: "infrakit:tasks"
 ---
 
 ## User Input
@@ -42,7 +40,7 @@ Verify required files exist:
 | Project Context | `.infrakit/context.md` | ✅ Yes |
 | Coding Style | `.infrakit/coding-style.md` | ✅ Yes |
 | Tagging | `.infrakit/tagging-standard.md` | ✅ Yes |
-| Spec | `.infrakit/tracks/<track-name>/spec.md` | ✅ Yes |
+| Spec | `.infrakit_tracks/tracks/<track-name>/spec.md` | ✅ Yes |
 
 **If context.md, coding-style.md, or tagging-standard.md is missing:**
 > "❌ Project not fully initialized. Run `/infrakit:setup` first."
@@ -61,7 +59,7 @@ Read the following files:
 1. `.infrakit/context.md` — cloud provider defaults, naming conventions, workspace strategy
 2. `.infrakit/coding-style.md` — Mandatory coding standards (naming, tagging, backend, security defaults)
 3. `.infrakit/tagging-standard.md` — Required tags for all resources
-4. `.infrakit/tracks/<track-name>/spec.md` — Requirements, input variables, outputs, security
+4. `.infrakit_tracks/tracks/<track-name>/spec.md` — Requirements, input variables, outputs, security
 
 ---
 
@@ -127,7 +125,7 @@ Based on the cloud provider and `.infrakit/tagging-standard.md`, define the tagg
 
 ## Step 7: Write plan.md
 
-Write to `.infrakit/tracks/<track-name>/plan.md`:
+Write to `.infrakit_tracks/tracks/<track-name>/plan.md`:
 
 ```markdown
 # Implementation Plan: <Module Name>
@@ -216,27 +214,74 @@ After writing plan.md:
 
 > "I've generated the implementation plan.
 >
-> **File**: `.infrakit/tracks/<track-name>/plan.md`
+> **File**: `.infrakit_tracks/tracks/<track-name>/plan.md`
 >
 > What would you like to do?
 >
 > A) **Regenerate** — Tell me what to change and I'll revise
 > B) **Manual Changes** — Edit the file, say 'done' when ready
-> C) **Proceed** — Plan looks good"
+> C) **Proceed** — Generate task list and mark track ready"
 
 **WAIT** for response. Loop until user chooses C.
 
 ---
 
-## Step 9: Update Track Status and Next Actions
+## Step 9: Auto-Generate tasks.md
 
-Update `.infrakit/tracks.md` — change the track's Status to `📋 planned`.
+After the user accepts the plan, expand the Implementation Phases from plan.md into granular checkbox tasks.
 
-> "✅ Plan complete for `<track-name>`.
+Write to `.infrakit_tracks/tracks/<track-name>/tasks.md`:
+
+```markdown
+# Implementation Tasks: <Module Name>
+
+**Track**: `<track-name>`
+**Generated**: <YYYY-MM-DD>
+**Source Plan**: `.infrakit_tracks/tracks/<track-name>/plan.md`
+
+## Phase 1: versions.tf
+- [ ] T1.1: Write `terraform {}` block with version constraint from plan.md
+- [ ] T1.2: Write `required_providers {}` block with provider source and version constraint from plan.md
+
+## Phase 2: variables.tf
+<one task per variable from the Input Variables Design table in plan.md:>
+- [ ] T2.1: Declare variable `<var_name>` (type: `<type>`, required: <yes/no>, default: `<default>`)
+- [ ] T2.N: ...
+
+## Phase 3: main.tf
+- [ ] T3.1: Write provider block with `default_tags` / labels (per plan.md Tagging Strategy)
+<one task per resource from the Resources to Provision table in plan.md:>
+- [ ] T3.2: Write `<resource_type>` `<name>` resource block
+- [ ] T3.N: ...
+
+## Phase 4: outputs.tf
+<one task per output from the Output Values Design table in plan.md:>
+- [ ] T4.1: Declare output `<output_name>` sourced from `<resource_type>.<name>.<attribute>`
+- [ ] T4.N: ...
+
+## Phase 5: README.md
+- [ ] T5.1: Document all input variables in a table (name, type, required, default, description)
+- [ ] T5.2: Document all output values in a table (name, description)
+- [ ] T5.3: Add a usage example showing the module call with all required variables
+```
+
+**Expand dynamically**: use the actual variable names, resource types, resource names, and output names from plan.md — do not use placeholders where real values are known.
+
+> "✅ tasks.md generated."
+
+---
+
+## Step 10: Update Track Status
+
+Update `.infrakit_tracks/tracks.md` — change the track's Status to `📋 planned`.
+
+> "✅ **Plan and task list ready for `<track-name>`!**
 >
-> **Next steps:**
-> - Run `/infrakit:analyze <track-name>` to verify spec-plan consistency
-> - Run `/infrakit:tasks <track-name>` to generate the implementation task list"
+> **Files:**
+> - `.infrakit_tracks/tracks/<track-name>/plan.md`
+> - `.infrakit_tracks/tracks/<track-name>/tasks.md`
+>
+> **Next step**: Run `/infrakit:implement <track-name>` to start implementation."
 
 ---
 

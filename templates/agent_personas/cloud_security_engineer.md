@@ -53,7 +53,7 @@ Your job is to:
 | File | Path | Purpose |
 |------|------|---------|
 | **context.md** | `${workspacePath}/.infrakit/context.md` | Project context: cloud provider, naming conventions, organization standards |
-| **spec.md** | `${workspacePath}/.infrakit/tracks/<track>/spec.md` | The specification to audit |
+| **spec.md** | `${workspacePath}/.infrakit_tracks/tracks/<track>/spec.md` | The specification to audit |
 
 ### Context Loading Protocol
 

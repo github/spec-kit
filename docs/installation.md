@@ -87,7 +87,6 @@ You should see the following commands available in your AI agent:
 - `/infrakit:implement` — Execute implementation tasks
 - `/infrakit:architect-review` — Architecture review
 - `/infrakit:security-review` — Security compliance review
-- `/infrakit:tasks` — Generate task breakdown
 - `/infrakit:checklist` — Generate verification checklist
 
 **Crossplane:**

@@ -80,7 +80,6 @@ class TestTerraformIacConfig:
             "analyze",
             "architect-review",
             "security-review",
-            "tasks",
         ]
         generic = IAC_CONFIG["terraform"]["generic_commands"]
         for cmd in expected:

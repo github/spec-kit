@@ -2,8 +2,6 @@
 description: "Analyze a track's spec and plan for consistency, gaps, and alignment. Uses the Cloud Solutions Engineer persona."
 argument-hint: "<track-name>"
 handoffs:
-  - label: "Generate Tasks"
-    agent: "infrakit:tasks"
   - label: "Implement Track"
     agent: "infrakit:implement"
 ---
@@ -40,16 +38,16 @@ Verify required files exist:
 | File | Path | Required |
 |------|------|----------|
 | Project Context | `.infrakit/context.md` | ✅ Yes |
-| Spec | `.infrakit/tracks/<track-name>/spec.md` | ✅ Yes |
-| Plan | `.infrakit/tracks/<track-name>/plan.md` | ✅ Yes |
-| Tasks | `.infrakit/tracks/<track-name>/tasks.md` | ⚠️ Optional |
+| Spec | `.infrakit_tracks/tracks/<track-name>/spec.md` | ✅ Yes |
+| Plan | `.infrakit_tracks/tracks/<track-name>/plan.md` | ✅ Yes |
+| Tasks | `.infrakit_tracks/tracks/<track-name>/tasks.md` | ⚠️ Optional |
 
 **If context.md is missing:**
 > "❌ Project context not found. Run `/infrakit:setup` first."
 **HALT**
 
 **If spec.md is missing:**
-> "❌ `spec.md` not found in `.infrakit/tracks/<track-name>/`.
+> "❌ `spec.md` not found in `.infrakit_tracks/tracks/<track-name>/`.
 >
 > Run the spec generation command for your IaC tool:
 > - Crossplane: `/infrakit:new_composition <track-name>`
@@ -57,7 +55,7 @@ Verify required files exist:
 **HALT**
 
 **If plan.md is missing:**
-> "❌ `plan.md` not found in `.infrakit/tracks/<track-name>/`. Run `/infrakit:plan <track-name>` to generate the plan."
+> "❌ `plan.md` not found in `.infrakit_tracks/tracks/<track-name>/`. Run `/infrakit:plan <track-name>` to generate the plan."
 **HALT**
 
 ---
@@ -67,9 +65,9 @@ Verify required files exist:
 Read the following files:
 
 1. `.infrakit/context.md` — Project standards (naming, API groups, security requirements)
-2. `.infrakit/tracks/<track-name>/spec.md` — What the resource should do
-3. `.infrakit/tracks/<track-name>/plan.md` — How it will be implemented
-4. `.infrakit/tracks/<track-name>/tasks.md` — Task list (if present)
+2. `.infrakit_tracks/tracks/<track-name>/spec.md` — What the resource should do
+3. `.infrakit_tracks/tracks/<track-name>/plan.md` — How it will be implemented
+4. `.infrakit_tracks/tracks/<track-name>/tasks.md` — Task list (if present)
 
 ---
 
@@ -154,8 +152,8 @@ For every status field in spec.md:
 # Track Analysis Report: <track-name>
 
 **Date**: <YYYY-MM-DD>
-**Spec**: .infrakit/tracks/<track-name>/spec.md
-**Plan**: .infrakit/tracks/<track-name>/plan.md
+**Spec**: .infrakit_tracks/tracks/<track-name>/spec.md
+**Plan**: .infrakit_tracks/tracks/<track-name>/plan.md
 
 ---
 
@@ -235,6 +233,6 @@ After presenting the report:
 
 Provide clear next steps based on verdict:
 
-- **ALIGNED**: "Run `/infrakit:tasks <track-name>` to generate the task list"
-- **MINOR GAPS**: "Consider fixing HIGH/MEDIUM issues, then run `/infrakit:tasks <track-name>`"
+- **ALIGNED**: "Run `/infrakit:plan <track-name>` to generate the implementation plan and task list"
+- **MINOR GAPS**: "Consider fixing HIGH/MEDIUM issues, then run `/infrakit:plan <track-name>`"
 - **NOT ALIGNED**: "Resolve CRITICAL issues before proceeding. Update spec or plan, then re-run `/infrakit:analyze <track-name>`"

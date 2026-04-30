@@ -1167,7 +1167,6 @@ SKILL_DESCRIPTIONS = {
     "implement_composition": "Generate XRD, Composition, and example Claim YAML from an approved plan. Use after planning to produce production-ready Crossplane manifests.",
     "review_composition": "Review generated Crossplane YAML against best practices and project coding standards. Checks Pipeline mode usage, patch paths, providerConfigRef patterns, and tagging requirements.",
     "validate_composition": "Run crossplane render validation against generated Composition and Claim manifests. Use to verify the output is syntactically and structurally correct.",
-    "tasks": "Break down infrastructure resource plans into actionable task lists. Generates tasks.md with ordered, dependency-aware implementation steps.",
     "analyze": "Perform cross-artifact consistency analysis across spec, plan, and implementation artifacts. Use to identify gaps or inconsistencies before or after implementation.",
     "clarify": "Structured clarification workflow for underspecified infrastructure requirements. Use before planning to resolve ambiguities through targeted questioning.",
     "project_context": "Create or update project context and standards. Use at project start to establish encryption policies, tagging requirements, network topology standards, and compliance rules.",
@@ -1387,9 +1386,9 @@ def initialize_iac_config(
     - .infrakit/config.yaml — selected IaC tool and AI agent
     - .infrakit/context.md — project context template
     - .infrakit/coding-style.md — default coding standards
-    - .infrakit/tracks.md — master resource registry
+    - .infrakit_tracks/tracks.md — master resource registry
     - .infrakit/agent_personas/ — IaC-specific agent definitions
-    - .infrakit/tracks/ — track directories
+    - .infrakit_tracks/tracks/ — track directories
     - IaC-native commands in the agent's commands directory
     """
     iac_cfg = IAC_CONFIG.get(iac_tool, {})
@@ -1420,6 +1419,9 @@ def initialize_iac_config(
     infrakit_dir = project_path / ".infrakit"
     infrakit_dir.mkdir(parents=True, exist_ok=True)
 
+    infrakit_tracks_dir = project_path / ".infrakit_tracks"
+    infrakit_tracks_dir.mkdir(parents=True, exist_ok=True)
+
     # config.yaml
     config_data = {
         "iac_tool": iac_tool,
@@ -1447,7 +1449,7 @@ def initialize_iac_config(
                     shutil.copy2(asset_file, dest)
 
     # tracks.md — master resource registry
-    tracks_md = infrakit_dir / "tracks.md"
+    tracks_md = infrakit_tracks_dir / "tracks.md"
     if not tracks_md.exists():
         tracks_md.write_text(
             "# Infrastructure Resource Registry\n\n"
@@ -1498,8 +1500,8 @@ def initialize_iac_config(
     # memory directory (for project context)
     (infrakit_dir / "memory").mkdir(parents=True, exist_ok=True)
 
-    # .infrakit/tracks/ — track working directories
-    tracks_dir = infrakit_dir / "tracks"
+    # .infrakit_tracks/tracks/ — track working directories
+    tracks_dir = infrakit_tracks_dir / "tracks"
     tracks_dir.mkdir(parents=True, exist_ok=True)
 
     # Copy IaC-specific agents
