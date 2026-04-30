@@ -13,7 +13,7 @@ specify workflow run <source>
 | `-i` / `--input`    | Pass workflow inputs/parameters as `key=value` (repeatable); use `key=@path` to read text files  |
 | `--input-file`      | Load workflow inputs/parameters from a JSON object file; repeatable `--input` values override file values |
 
-Runs a workflow from a catalog ID, URL, or local file path. Inputs/parameters declared by the workflow can be provided via `--input` or will be prompted interactively.
+Runs a workflow from an installed workflow ID or a local `.yml`/`.yaml` file path. Inputs/parameters declared by the workflow can be provided via `--input` or will be prompted interactively.
 
 Example:
 
