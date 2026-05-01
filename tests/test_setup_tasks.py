@@ -277,21 +277,34 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
     high_priority_dir = (
         tasks_repo / ".specify" / "presets" / "aaa-preset" / "templates"
     )
+    # resolve_template reads .specify/presets/.registry as a JSON object with a
+    # "presets" map where each entry has a numeric "priority" (lower = higher
+    # precedence). Create two presets; priority-1-preset wins over priority-2-preset.
+    high_priority_dir = (
+        tasks_repo / ".specify" / "presets" / "priority-1-preset" / "templates"
+    )
     high_priority_dir.mkdir(parents=True, exist_ok=True)
     high_priority_file = high_priority_dir / "tasks-template.md"
     high_priority_file.write_text("# high priority preset tasks template\n", encoding="utf-8")
- 
+
     low_priority_dir = (
-        tasks_repo / ".specify" / "presets" / "test-preset" / "templates"
+        tasks_repo / ".specify" / "presets" / "priority-2-preset" / "templates"
     )
     low_priority_dir.mkdir(parents=True, exist_ok=True)
     low_priority_file = low_priority_dir / "tasks-template.md"
     low_priority_file.write_text("# low priority preset tasks template\n", encoding="utf-8")
- 
-    # Write .registry JSON to declare preset order: aaa-preset first
+
+    # Write .registry JSON using the correct schema: object with "presets" map,
+    # each preset has a numeric "priority" (lower number = higher precedence).
     registry_json = tasks_repo / ".specify" / "presets" / ".registry"
     registry_json.write_text(
-        json.dumps(["aaa-preset", "test-preset"]), encoding="utf-8"
+        json.dumps({
+            "presets": {
+                "priority-1-preset": {"priority": 1, "enabled": True},
+                "priority-2-preset": {"priority": 2, "enabled": True},
+            }
+        }),
+        encoding="utf-8",
     )
  
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
