@@ -1071,6 +1071,33 @@ class TestIntegrationCatalogDiscoveryCLI:
             assert result.exit_code == 1, failure_context
             assert "Not a spec-kit project" in result.output, failure_context
 
+    def test_catalog_config_output_uses_posix_paths(self, tmp_path):
+        project = self._make_project(tmp_path)
+
+        preset_add = self._invoke([
+            "preset", "catalog", "add",
+            "https://example.com/preset-catalog.yml",
+            "--name", "demo-presets",
+        ], project)
+        assert preset_add.exit_code == 0, preset_add.output
+        assert "Config saved to .specify/preset-catalogs.yml" in preset_add.output
+
+        preset_list = self._invoke(["preset", "catalog", "list"], project)
+        assert preset_list.exit_code == 0, preset_list.output
+        assert "Config: .specify/preset-catalogs.yml" in preset_list.output
+
+        extension_add = self._invoke([
+            "extension", "catalog", "add",
+            "https://example.com/extension-catalog.yml",
+            "--name", "demo-extensions",
+        ], project)
+        assert extension_add.exit_code == 0, extension_add.output
+        assert "Config saved to .specify/extension-catalogs.yml" in extension_add.output
+
+        extension_list = self._invoke(["extension", "catalog", "list"], project)
+        assert extension_list.exit_code == 0, extension_list.output
+        assert "Config: .specify/extension-catalogs.yml" in extension_list.output
+
     # -- search ------------------------------------------------------------
 
     def test_search_lists_all(self, tmp_path, monkeypatch):

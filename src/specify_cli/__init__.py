@@ -853,7 +853,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                 os.chmod(script, new_mode)
                 updated += 1
             except Exception as e:
-                failures.append(f"{script.relative_to(project_path)}: {e}")
+                failures.append(f"{_display_project_path(project_path, script)}: {e}")
     if tracker:
         detail = f"{updated} updated" + (f", {len(failures)} failed" if failures else "")
         tracker.add("chmod", "Set script permissions recursively")
@@ -2088,6 +2088,19 @@ def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:
         raise typer.Exit(1)
 
 
+def _display_project_path(project_root: Path, path: str | Path) -> str:
+    """Return a stable POSIX-style display path for paths under a project."""
+    path_obj = Path(path)
+    try:
+        rel_path = path_obj.relative_to(project_root) if path_obj.is_absolute() else path_obj
+    except ValueError:
+        try:
+            rel_path = path_obj.resolve().relative_to(project_root.resolve())
+        except (OSError, ValueError):
+            return path_obj.as_posix()
+    return rel_path.as_posix()
+
+
 def _require_specify_project() -> Path:
     """Return the current project root if it is a spec-kit project, else exit."""
     project_root = Path.cwd()
@@ -2542,7 +2555,7 @@ def integration_uninstall(
     if skipped:
         console.print(f"\n[yellow]⚠[/yellow]  {len(skipped)} modified file(s) were preserved:")
         for path in skipped:
-            rel = path.relative_to(project_root) if path.is_absolute() else path
+            rel = _display_project_path(project_root, path)
             console.print(f"    {rel}")
 
 
@@ -3741,7 +3754,7 @@ def preset_catalog_list():
         except PresetValidationError:
             proj_loaded = False
         if proj_loaded:
-            console.print(f"[dim]Config: {config_path.relative_to(project_root)}[/dim]")
+            console.print(f"[dim]Config: {_display_project_path(project_root, config_path)}[/dim]")
         else:
             try:
                 user_loaded = user_config_path.exists() and catalog._load_catalog_config(user_config_path) is not None
@@ -3788,7 +3801,8 @@ def preset_catalog_add(
         try:
             config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         except Exception as e:
-            console.print(f"[red]Error:[/red] Failed to read {config_path}: {e}")
+            config_label = _display_project_path(project_root, config_path)
+            console.print(f"[red]Error:[/red] Failed to read {config_label}: {e}")
             raise typer.Exit(1)
     else:
         config = {}
@@ -3820,7 +3834,7 @@ def preset_catalog_add(
     console.print(f"\n[green]✓[/green] Added catalog '[bold]{name}[/bold]' ({install_label})")
     console.print(f"  URL: {url}")
     console.print(f"  Priority: {priority}")
-    console.print(f"\nConfig saved to {config_path.relative_to(project_root)}")
+    console.print(f"\nConfig saved to {_display_project_path(project_root, config_path)}")
 
 
 @preset_catalog_app.command("remove")
@@ -4058,7 +4072,7 @@ def catalog_list():
         except ValidationError:
             proj_loaded = False
         if proj_loaded:
-            console.print(f"[dim]Config: {config_path.relative_to(project_root)}[/dim]")
+            console.print(f"[dim]Config: {_display_project_path(project_root, config_path)}[/dim]")
         else:
             try:
                 user_loaded = user_config_path.exists() and catalog._load_catalog_config(user_config_path) is not None
@@ -4105,7 +4119,8 @@ def catalog_add(
         try:
             config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         except Exception as e:
-            console.print(f"[red]Error:[/red] Failed to read {config_path}: {e}")
+            config_label = _display_project_path(project_root, config_path)
+            console.print(f"[red]Error:[/red] Failed to read {config_label}: {e}")
             raise typer.Exit(1)
     else:
         config = {}
@@ -4137,7 +4152,7 @@ def catalog_add(
     console.print(f"\n[green]✓[/green] Added catalog '[bold]{name}[/bold]' ({install_label})")
     console.print(f"  URL: {url}")
     console.print(f"  Priority: {priority}")
-    console.print(f"\nConfig saved to {config_path.relative_to(project_root)}")
+    console.print(f"\nConfig saved to {_display_project_path(project_root, config_path)}")
 
 
 @catalog_app.command("remove")

@@ -397,6 +397,7 @@ class TestIntegrationUninstall:
             os.chdir(old_cwd)
         assert result.exit_code == 0
         assert "preserved" in result.output
+        assert ".claude/skills/speckit-plan/SKILL.md" in result.output
 
         # Modified file kept
         assert plan_file.exists()
