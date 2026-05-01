@@ -1968,6 +1968,16 @@ def _resolve_script_type(project_root: Path, script_type: str | None) -> str:
     return "ps" if os.name == "nt" else "sh"
 
 
+def _require_specify_project() -> Path:
+    """Return the current project root if it is a spec-kit project, else exit."""
+    project_root = Path.cwd()
+    if (project_root / ".specify").is_dir():
+        return project_root
+    console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+    console.print("Run this command from a spec-kit project root")
+    raise typer.Exit(1)
+
+
 @integration_app.command("list")
 def integration_list(
     catalog: bool = typer.Option(False, "--catalog", help="Browse full catalog (built-in + community)"),
@@ -1975,14 +1985,7 @@ def integration_list(
     """List available integrations and installed status."""
     from .integrations import INTEGRATION_REGISTRY
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     current = _read_integration_json(project_root)
     installed_key = current.get("integration")
 
@@ -2069,14 +2072,7 @@ def integration_install(
     from .integrations import INTEGRATION_REGISTRY, get_integration
     from .integrations.manifest import IntegrationManifest
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     integration = get_integration(key)
     if integration is None:
         console.print(f"[red]Error:[/red] Unknown integration '{key}'")
@@ -2220,14 +2216,7 @@ def integration_uninstall(
     from .integrations import get_integration
     from .integrations.manifest import IntegrationManifest
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     current = _read_integration_json(project_root)
     installed_key = current.get("integration")
 
@@ -2309,14 +2298,7 @@ def integration_switch(
     from .integrations import INTEGRATION_REGISTRY, get_integration
     from .integrations.manifest import IntegrationManifest
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     target_integration = get_integration(target)
     if target_integration is None:
         console.print(f"[red]Error:[/red] Unknown integration '{target}'")
@@ -2445,14 +2427,7 @@ def integration_upgrade(
     from .integrations import get_integration
     from .integrations.manifest import IntegrationManifest
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     current = _read_integration_json(project_root)
     installed_key = current.get("integration")
 
@@ -2555,16 +2530,6 @@ def integration_upgrade(
 # They deliberately do NOT add `integration add/remove/enable/disable/
 # set-priority`: integrations are single-active (install / uninstall / switch),
 # not additive like extensions and presets.
-
-
-def _require_specify_project() -> Path:
-    """Return the current project root if it is a spec-kit project, else exit."""
-    project_root = Path.cwd()
-    if not (project_root / ".specify").exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-    return project_root
 
 
 @integration_app.command("search")

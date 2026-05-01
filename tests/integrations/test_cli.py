@@ -706,6 +706,35 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert result.exit_code == 1
         assert "Not a spec-kit project" in result.output
 
+    def test_primary_integration_commands_require_specify_project(self, tmp_path):
+        project = tmp_path / "bare"
+        project.mkdir()
+        commands = [
+            ["integration", "list"],
+            ["integration", "install", "codex"],
+            ["integration", "uninstall"],
+            ["integration", "switch", "codex"],
+            ["integration", "upgrade"],
+        ]
+
+        for command in commands:
+            result = self._invoke(command, project)
+            failure_context = (
+                f"command={command!r}, exit_code={result.exit_code}, output={result.output!r}"
+            )
+            assert result.exit_code == 1, failure_context
+            assert "Not a spec-kit project" in result.output, failure_context
+
+    def test_integration_commands_require_specify_directory(self, tmp_path):
+        project = tmp_path / "bad"
+        project.mkdir()
+        (project / ".specify").write_text("not a directory")
+
+        result = self._invoke(["integration", "list"], project)
+
+        assert result.exit_code == 1, result.output
+        assert "Not a spec-kit project" in result.output
+
     # -- search ------------------------------------------------------------
 
     def test_search_lists_all(self, tmp_path, monkeypatch):
