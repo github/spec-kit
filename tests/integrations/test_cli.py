@@ -1,10 +1,12 @@
 """Tests for --integration flag on specify init (CLI-level)."""
 
+import io
 import json
 import os
 
 import pytest
 import yaml
+from rich.console import Console
 
 from tests.conftest import strip_ansi
 
@@ -467,6 +469,44 @@ class TestInitIntegrationFlag:
 
         nested_dest = project / ".specify" / "scripts" / "bash" / "nested" / "deep.sh"
         assert nested_dest.read_text(encoding="utf-8") == "# nested\n"
+
+    def test_shared_infra_skip_warning_uses_posix_paths(self, tmp_path):
+        """Skipped shared infra paths are reported consistently across platforms."""
+        from specify_cli.shared_infra import install_shared_infra
+
+        project = tmp_path / "posix-skip-warning-test"
+        project.mkdir()
+        nested_dest = project / ".specify" / "scripts" / "bash" / "nested"
+        nested_dest.mkdir(parents=True)
+        (nested_dest / "deep.sh").write_text("# existing script\n", encoding="utf-8")
+
+        templates_dest = project / ".specify" / "templates"
+        templates_dest.mkdir(parents=True)
+        (templates_dest / "plan-template.md").write_text("# existing template\n", encoding="utf-8")
+
+        core_pack = tmp_path / "core-pack"
+        nested_src = core_pack / "scripts" / "bash" / "nested"
+        nested_src.mkdir(parents=True)
+        (nested_src / "deep.sh").write_text("# bundled script\n", encoding="utf-8")
+
+        templates_src = core_pack / "templates"
+        templates_src.mkdir(parents=True)
+        (templates_src / "plan-template.md").write_text("# bundled template\n", encoding="utf-8")
+
+        buffer = io.StringIO()
+        install_shared_infra(
+            project,
+            "sh",
+            version="test",
+            core_pack=core_pack,
+            repo_root=tmp_path / "unused",
+            console=Console(file=buffer, force_terminal=False, width=120),
+            force=False,
+        )
+
+        output = buffer.getvalue()
+        assert ".specify/scripts/bash/nested/deep.sh" in output
+        assert ".specify/templates/plan-template.md" in output
 
     @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits are not stable on Windows")
     def test_shared_template_writes_are_not_world_writable(self, tmp_path):

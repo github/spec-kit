@@ -266,7 +266,7 @@ def install_shared_infra(
                 dst_path = dest_variant / rel_path
                 _ensure_safe_shared_destination(project_path, dst_path, parent_must_exist=False)
                 if dst_path.exists() and not force:
-                    skipped_files.append(str(dst_path.relative_to(project_path)))
+                    skipped_files.append(dst_path.relative_to(project_path).as_posix())
                     continue
 
                 _ensure_safe_shared_directory(project_path, dst_path.parent)
@@ -284,7 +284,7 @@ def install_shared_infra(
             dst = dest_templates / src.name
             _ensure_safe_shared_destination(project_path, dst)
             if dst.exists() and not force:
-                skipped_files.append(str(dst.relative_to(project_path)))
+                skipped_files.append(dst.relative_to(project_path).as_posix())
                 continue
 
             content = src.read_text(encoding="utf-8")
