@@ -1471,6 +1471,289 @@ Agent __AGENT__
         assert "{ARGS}" not in content, f"{{ARGS}} not resolved for {agent_name}"
         assert '.specify/scripts/bash/setup-plan.sh' in content
 
+    def test_skill_registration_rewrites_extension_relative_paths(self, project_dir, temp_dir):
+        """Extension subdirectory paths in command bodies should be rewritten to
+        .specify/extensions/<id>/... in generated SKILL.md files."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-multidir"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "agents").mkdir()
+        (ext_dir / "templates").mkdir()
+        (ext_dir / "scripts").mkdir()
+        (ext_dir / "knowledge-base").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-multidir",
+                "name": "Multi-Dir Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.ext-multidir.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Read agents/control/commander.md for instructions.\n"
+            "Use templates/report.md as output format.\n"
+            "Run scripts/bash/gate.sh to validate.\n"
+            "Load knowledge-base/scores.yaml for calibration.\n"
+            "Also check memory/constitution.md for project rules.\n"
+        )
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        content = (skills_dir / "speckit-ext-multidir-run" / "SKILL.md").read_text()
+        # Extension-owned directories → extension-local paths
+        assert ".specify/extensions/ext-multidir/agents/control/commander.md" in content
+        assert ".specify/extensions/ext-multidir/templates/report.md" in content
+        assert ".specify/extensions/ext-multidir/scripts/bash/gate.sh" in content
+        assert ".specify/extensions/ext-multidir/knowledge-base/scores.yaml" in content
+        # memory/ is not an extension directory, so stays project-level
+        assert "memory/constitution.md" in content
+        # No bare extension-relative path references remain
+        assert "Read agents/" not in content
+        assert "Load knowledge-base/" not in content
+
+    def test_skill_registration_rewrites_extension_relative_paths_for_kimi(self, project_dir, temp_dir):
+        """Path rewriting should also apply to kimi, which uses the /SKILL.md extension."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-kimi-paths"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "agents").mkdir()
+        (ext_dir / "knowledge-base").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-kimi-paths",
+                "name": "Kimi Paths Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.ext-kimi-paths.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Read agents/control/commander.md for instructions.\n"
+            "Load knowledge-base/scores.yaml for calibration.\n"
+        )
+
+        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("kimi", manifest, ext_dir, project_dir)
+
+        content = (skills_dir / "speckit-ext-kimi-paths-run" / "SKILL.md").read_text()
+        assert ".specify/extensions/ext-kimi-paths/agents/control/commander.md" in content
+        assert ".specify/extensions/ext-kimi-paths/knowledge-base/scores.yaml" in content
+        assert "Read agents/" not in content
+
+    def test_skill_registration_rewrites_paths_in_aliases(self, project_dir, temp_dir):
+        """Alias SKILL.md files should also have extension-relative paths rewritten."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-alias-paths"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "agents").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-alias-paths",
+                "name": "Alias Paths Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.ext-alias-paths.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                        "aliases": ["speckit.ext-alias-paths.go"],
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Read agents/control/commander.md for instructions.\n"
+        )
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        alias_content = (skills_dir / "speckit-ext-alias-paths-go" / "SKILL.md").read_text()
+        assert ".specify/extensions/ext-alias-paths/agents/control/commander.md" in alias_content
+        assert "Read agents/" not in alias_content
+
+    def test_rewrite_extension_paths_specs_not_rewritten(self, project_dir, temp_dir):
+        """Extension-internal specs/ dir must not cause user project specs/ paths to be rewritten.
+
+        echelon has a specs/ subdirectory for its own internal design documents.
+        References to specs/ in command bodies should NOT be rewritten to
+        .specify/extensions/echelon/specs/ — they point to the user's project specs.
+        """
+        import yaml
+
+        ext_dir = temp_dir / "echelon"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "agents").mkdir()
+        # Simulate echelon having its own internal specs/ subdir
+        (ext_dir / "specs").mkdir()
+        (ext_dir / "specs" / "001-internal").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {"id": "echelon", "name": "Echelon", "version": "1.0.0", "description": "Test"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": [{"name": "speckit.echelon.run", "file": "commands/run.md", "description": "Run"}]},
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\ndescription: Run\n---\n\n"
+            "Artifacts go to specs/{NNN}-{feature}/.\n"
+            "Read agents/control/commander.md.\n"
+        )
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        from specify_cli.extensions import ExtensionManifest
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        CommandRegistrar().register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        content = (skills_dir / "speckit-echelon-run" / "SKILL.md").read_text()
+        # specs/ must NOT be rewritten to extension-internal path
+        assert ".specify/extensions/echelon/specs/" not in content
+        assert "specs/{NNN}-{feature}/" in content
+        # agents/ should still be rewritten (it is extension-internal)
+        assert ".specify/extensions/echelon/agents/control/commander.md" in content
+
+    def test_rewrite_extension_paths_no_subdirs(self, project_dir, temp_dir):
+        """Extension with no subdirectories should leave command body text unchanged."""
+        import yaml
+
+        ext_dir = temp_dir / "bare-ext"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {"id": "bare-ext", "name": "Bare", "version": "1.0.0", "description": "Test"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": [{"name": "speckit.bare-ext.run", "file": "commands/run.md", "description": "Run"}]},
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\ndescription: Run\n---\n\nRead agents/control/commander.md and templates/report.md.\n"
+        )
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        CommandRegistrar().register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        content = (skills_dir / "speckit-bare-ext-run" / "SKILL.md").read_text()
+        # No subdirs to match — text unchanged
+        assert "agents/control/commander.md" in content
+        assert "templates/report.md" in content
+
+    def test_preset_skill_registration_does_not_rewrite_paths(self, project_dir, temp_dir):
+        """Preset source dirs (no extension.yml) must not have paths rewritten to .specify/extensions/..."""
+        import yaml
+
+        preset_dir = temp_dir / "my-preset"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        # Preset dirs may have a templates/ subdir — must not be rewritten.
+        (preset_dir / "templates").mkdir()
+        # No extension.yml — this is a preset, not an extension.
+        (preset_dir / "preset.yml").write_text("id: my-preset\n")
+
+        commands = [
+            {
+                "name": "speckit.my-preset.run",
+                "file": "commands/run.md",
+                "description": "Run",
+            }
+        ]
+        (preset_dir / "commands" / "run.md").write_text(
+            "---\ndescription: Run\n---\n\nSee templates/report.md for output format.\n"
+        )
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        AgentCommandRegistrar().register_commands_for_all_agents(
+            commands, "my-preset", preset_dir, project_dir
+        )
+
+        content = (skills_dir / "speckit-my-preset-run" / "SKILL.md").read_text()
+        # Paths must NOT be rewritten to extension-style locations.
+        assert ".specify/extensions/" not in content
+        # Original reference must remain intact.
+        assert "templates/report.md" in content
+
     def test_codex_skill_alias_frontmatter_matches_alias_name(self, project_dir, temp_dir):
         """Codex alias skills should render their own matching `name:` frontmatter."""
         import yaml

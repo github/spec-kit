@@ -1460,6 +1460,45 @@ class SkillsIntegration(IntegrationBase):
                 escaped = v.replace("\\", "\\\\").replace('"', '\\"')
                 return f'"{escaped}"'
 
+            # Translate behavior block to agent-specific frontmatter fields.
+            # This lets templates declare e.g. `behavior: invocation: automatic`
+            # to produce `disable-model-invocation: false` in the skill.
+            # Fields are emitted here so downstream post-processors (e.g.
+            # ClaudeIntegration.setup) see them already set and skip injection.
+            behavior = frontmatter.get("behavior")
+            behavior_dict = behavior if isinstance(behavior, dict) else {}
+            agents_overrides = frontmatter.get("agents") or {}
+            has_agent_override = (
+                isinstance(agents_overrides, dict)
+                and isinstance(agents_overrides.get(self.key), dict)
+            )
+            behavior_fm_lines = ""
+            if behavior_dict or has_agent_override:
+                try:
+                    from specify_cli.behavior import translate_behavior
+
+                    behavior_fields = translate_behavior(
+                        self.key, behavior_dict,
+                        agents_overrides if isinstance(agents_overrides, dict) else {}
+                    )
+                    for bk, bv in behavior_fields.items():
+                        if isinstance(bv, bool):
+                            behavior_fm_lines += f"{bk}: {'true' if bv else 'false'}\n"
+                        elif isinstance(bv, str):
+                            behavior_fm_lines += f"{bk}: {_quote(bv)}\n"
+                        elif isinstance(bv, (list, dict)):
+                            dumped = yaml.safe_dump(
+                                {bk: bv},
+                                sort_keys=False,
+                                allow_unicode=True,
+                                default_flow_style=False,
+                            ).rstrip()
+                            behavior_fm_lines += dumped + "\n"
+                        else:
+                            behavior_fm_lines += f"{bk}: {bv}\n"
+                except ImportError:
+                    pass
+
             skill_content = (
                 f"---\n"
                 f"name: {_quote(skill_name)}\n"
@@ -1468,6 +1507,7 @@ class SkillsIntegration(IntegrationBase):
                 f"metadata:\n"
                 f"  author: {_quote('github-spec-kit')}\n"
                 f"  source: {_quote('templates/commands/' + src_file.name)}\n"
+                f"{behavior_fm_lines}"
                 f"---\n"
                 f"{processed_body}"
             )

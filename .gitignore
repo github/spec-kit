@@ -33,6 +33,10 @@ env/
 *.swo
 .DS_Store
 *.tmp
+.venv312
+.specify
+.gitignore
+.claude
 
 # Project specific
 *.log
@@ -45,6 +49,8 @@ env/
 *.zip
 sdd-*/
 docs/dev
+specs
+
 
 # Extension system
 .specify/extensions/.cache/

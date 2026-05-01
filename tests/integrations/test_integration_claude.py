@@ -3,6 +3,7 @@
 import codecs
 import json
 import os
+from textwrap import dedent
 from unittest.mock import patch
 
 import yaml

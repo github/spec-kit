@@ -4598,12 +4598,13 @@ def extension_update(
                         shutil.rmtree(backup_ext_dir)
                     shutil.copytree(extension_dir, backup_ext_dir)
 
-                    # Backup config files separately so they can be restored
-                    # after a successful install (install_from_directory clears dest dir).
-                    config_files = list(extension_dir.glob("*-config.yml")) + list(
-                        extension_dir.glob("*-config.local.yml")
-                    )
-                    for cfg_file in config_files:
+                    # Backup all top-level .yml files (except extension.yml) so they
+                    # can be restored after install. Covers user configs (*-config.yml,
+                    # *-config.local.yml) and any runtime-generated state files that
+                    # extensions write to their own directory.
+                    for cfg_file in extension_dir.glob("*.yml"):
+                        if cfg_file.name == "extension.yml":
+                            continue
                         backup_config_dir.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(cfg_file, backup_config_dir / cfg_file.name)
 
@@ -4682,12 +4683,24 @@ def extension_update(
                     # 8. Install new version
                     _ = manager.install_from_zip(zip_path, speckit_version)
 
-                    # Restore user config files from backup after successful install.
+                    # Restore backed-up files after successful install.
+                    # User config files (*-config.yml, *-config.local.yml) always
+                    # overwrite the new extension defaults — user settings win.
+                    # All other .yml files (runtime-generated state) are restored
+                    # only when the new extension version didn't ship that file,
+                    # so updated source files are never rolled back.
                     new_extension_dir = manager.extensions_dir / extension_id
                     if backup_config_dir.exists() and new_extension_dir.exists():
                         for cfg_file in backup_config_dir.iterdir():
-                            if cfg_file.is_file():
-                                shutil.copy2(cfg_file, new_extension_dir / cfg_file.name)
+                            if not cfg_file.is_file():
+                                continue
+                            dest = new_extension_dir / cfg_file.name
+                            is_user_config = (
+                                cfg_file.name.endswith("-config.yml")
+                                or cfg_file.name.endswith("-config.local.yml")
+                            )
+                            if is_user_config or not dest.exists():
+                                shutil.copy2(cfg_file, dest)
 
                     # 9. Restore metadata from backup (installed_at, enabled state)
                     if backup_registry_entry and isinstance(backup_registry_entry, dict):

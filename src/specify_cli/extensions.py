@@ -22,6 +22,11 @@ import re
 import pathspec
 
 import yaml
+from specify_cli.behavior import (
+    get_deployment_type as _get_deployment_type,
+    strip_behavior_keys,
+    translate_behavior,
+)
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
@@ -907,23 +912,43 @@ class ExtensionManager:
                 # Do not overwrite user-customized skills
                 continue
 
-            # Create skill directory; track whether we created it so we can clean
-            # up safely if reading the source file subsequently fails.
-            created_now = not skill_subdir.exists()
-            skill_subdir.mkdir(parents=True, exist_ok=True)
-
-            # Parse the command file — guard against IsADirectoryError / decode errors
+            # Read the source file once; reuse for both the deployment-type check
+            # below and the subsequent skill rendering.
             try:
                 content = source_file.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
-                if created_now:
-                    try:
-                        skill_subdir.rmdir()  # undo the mkdir; dir is empty at this point
-                    except OSError:
-                        pass  # best-effort cleanup
                 continue
+
+            # Skip commands that behavior-routing deploys as agent definitions
+            # (to .claude/agents/) rather than as skill files.
+            _source_fm, _ = registrar.parse_frontmatter(content)
+            # Merge manifest-level behavior when source file has none or has an
+            # invalid (non-dict / empty) value.  A non-dict value (string, list,
+            # null) cannot carry execution:agent, so the manifest entry must win
+            # for the agent-deployment skip to work correctly.
+            _source_behavior = _source_fm.get("behavior")
+            if (not isinstance(_source_behavior, dict) or not _source_behavior) and "behavior" in cmd_info:
+                _source_fm["behavior"] = cmd_info["behavior"]
+            if _get_deployment_type(_source_fm) == "agent":
+                continue
+
+            skill_subdir.mkdir(parents=True, exist_ok=True)
             frontmatter, body = registrar.parse_frontmatter(content)
+
+            for key in ("agents",):
+                if key in cmd_info and key not in frontmatter:
+                    frontmatter[key] = cmd_info[key]
+            if "behavior" in cmd_info:
+                manifest_behavior = cmd_info["behavior"]
+                if isinstance(manifest_behavior, dict):
+                    source_behavior = frontmatter.get("behavior")
+                    if isinstance(source_behavior, dict):
+                        frontmatter["behavior"] = {**manifest_behavior, **source_behavior}
+                    else:
+                        frontmatter["behavior"] = manifest_behavior
+
             frontmatter = registrar._adjust_script_paths(frontmatter)
+            body = registrar.rewrite_extension_paths(body, manifest.id, extension_dir)
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root
             )
@@ -931,12 +956,27 @@ class ExtensionManager:
             original_desc = frontmatter.get("description", "")
             description = original_desc or f"Extension command: {cmd_name}"
 
+            clean_frontmatter = strip_behavior_keys(frontmatter)
             frontmatter_data = registrar.build_skill_frontmatter(
                 selected_ai,
                 skill_name,
                 description,
                 f"extension:{manifest.id}",
+                source_frontmatter=clean_frontmatter,
             )
+
+            behavior = frontmatter.get("behavior") if isinstance(frontmatter.get("behavior"), dict) else {}
+            agents_overrides = frontmatter.get("agents") or {}
+            behavior_fields = translate_behavior(
+                selected_ai,
+                behavior,
+                agents_overrides if isinstance(agents_overrides, dict) else {},
+            )
+            overridable_defaults = {"disable-model-invocation", "user-invocable"}
+            for key, value in behavior_fields.items():
+                if key not in frontmatter_data or key in overridable_defaults:
+                    frontmatter_data[key] = value
+
             frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
 
             # Derive a human-friendly title from the command name
@@ -1322,11 +1362,12 @@ class ExtensionManager:
                 backup_dir = self.extensions_dir / ".backup" / extension_id
                 backup_dir.mkdir(parents=True, exist_ok=True)
 
-                # Backup both primary and local override config files
-                config_files = list(extension_dir.glob("*-config.yml")) + list(
-                    extension_dir.glob("*-config.local.yml")
-                )
-                for config_file in config_files:
+                # Backup all top-level .yml files except extension.yml (the manifest).
+                # This preserves user configs (*-config.yml) and any runtime-generated
+                # state files that extensions write to their own directory.
+                for config_file in extension_dir.glob("*.yml"):
+                    if config_file.name == "extension.yml":
+                        continue
                     backup_path = backup_dir / config_file.name
                     shutil.copy2(config_file, backup_path)
 
