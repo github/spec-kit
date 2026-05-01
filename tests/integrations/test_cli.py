@@ -1021,6 +1021,56 @@ class TestIntegrationCatalogDiscoveryCLI:
             assert result.exit_code == 1, result.output
             assert "Not a spec-kit project" in result.output
 
+    def test_project_scoped_commands_require_specify_directory(self, tmp_path):
+        project = tmp_path / "bad-feature-commands"
+        project.mkdir()
+        (project / ".specify").write_text("not a directory")
+
+        commands = [
+            ["preset", "list"],
+            ["preset", "add", "demo"],
+            ["preset", "remove", "demo"],
+            ["preset", "search"],
+            ["preset", "resolve", "spec-template"],
+            ["preset", "info", "demo"],
+            ["preset", "set-priority", "demo", "5"],
+            ["preset", "enable", "demo"],
+            ["preset", "disable", "demo"],
+            ["preset", "catalog", "list"],
+            ["preset", "catalog", "add", "https://example.com/catalog.yml", "--name", "demo"],
+            ["preset", "catalog", "remove", "demo"],
+            ["extension", "list"],
+            ["extension", "add", "demo"],
+            ["extension", "remove", "demo"],
+            ["extension", "search"],
+            ["extension", "info", "demo"],
+            ["extension", "update", "demo"],
+            ["extension", "enable", "demo"],
+            ["extension", "disable", "demo"],
+            ["extension", "set-priority", "demo", "5"],
+            ["extension", "catalog", "list"],
+            ["extension", "catalog", "add", "https://example.com/catalog.yml", "--name", "demo"],
+            ["extension", "catalog", "remove", "demo"],
+            ["workflow", "run", "demo"],
+            ["workflow", "resume", "demo"],
+            ["workflow", "status"],
+            ["workflow", "list"],
+            ["workflow", "add", "demo"],
+            ["workflow", "remove", "demo"],
+            ["workflow", "search"],
+            ["workflow", "info", "demo"],
+            ["workflow", "catalog", "add", "https://example.com/catalog.yml"],
+            ["workflow", "catalog", "remove", "0"],
+        ]
+
+        for command in commands:
+            result = self._invoke(command, project)
+            failure_context = (
+                f"command={command!r}, exit_code={result.exit_code}, output={result.output!r}"
+            )
+            assert result.exit_code == 1, failure_context
+            assert "Not a spec-kit project" in result.output, failure_context
+
     # -- search ------------------------------------------------------------
 
     def test_search_lists_all(self, tmp_path, monkeypatch):

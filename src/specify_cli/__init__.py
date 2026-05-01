@@ -3260,14 +3260,7 @@ def preset_list():
     """List installed presets."""
     from .presets import PresetManager
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     manager = PresetManager(project_root)
     installed = manager.list_installed()
 
@@ -3306,14 +3299,7 @@ def preset_add(
         PresetCompatibilityError,
     )
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     # Validate priority
     if priority < 1:
         console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
@@ -3427,14 +3413,7 @@ def preset_remove(
     """Remove an installed preset."""
     from .presets import PresetManager
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     manager = PresetManager(project_root)
 
     if not manager.registry.is_installed(preset_id):
@@ -3457,14 +3436,7 @@ def preset_search(
     """Search for presets in the catalog."""
     from .presets import PresetCatalog, PresetError
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     catalog = PresetCatalog(project_root)
 
     try:
@@ -3494,14 +3466,7 @@ def preset_resolve(
     """Show which template will be resolved for a given name."""
     from .presets import PresetResolver
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     resolver = PresetResolver(project_root)
     layers = resolver.collect_all_layers(template_name)
 
@@ -3565,14 +3530,7 @@ def preset_info(
     from .extensions import normalize_priority
     from .presets import PresetCatalog, PresetManager, PresetError
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     # Check if installed locally first
     manager = PresetManager(project_root)
     local_pack = manager.get_pack(preset_id)
@@ -3639,15 +3597,7 @@ def preset_set_priority(
     """Set the resolution priority of an installed preset."""
     from .presets import PresetManager
 
-    project_root = Path.cwd()
-
-    # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     # Validate priority
     if priority < 1:
         console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
@@ -3690,15 +3640,7 @@ def preset_enable(
     """Enable a disabled preset."""
     from .presets import PresetManager
 
-    project_root = Path.cwd()
-
-    # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     manager = PresetManager(project_root)
 
     # Check if preset is installed
@@ -3731,15 +3673,7 @@ def preset_disable(
     """Disable a preset without removing it."""
     from .presets import PresetManager
 
-    project_root = Path.cwd()
-
-    # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     manager = PresetManager(project_root)
 
     # Check if preset is installed
@@ -3774,14 +3708,7 @@ def preset_catalog_list():
     """List all active preset catalogs."""
     from .presets import PresetCatalog, PresetValidationError
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     catalog = PresetCatalog(project_root)
 
     try:
@@ -3843,13 +3770,8 @@ def preset_catalog_add(
     """Add a catalog to .specify/preset-catalogs.yml."""
     from .presets import PresetCatalog, PresetValidationError
 
-    project_root = Path.cwd()
-
+    project_root = _require_specify_project()
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
 
     # Validate URL
     tmp_catalog = PresetCatalog(project_root)
@@ -3906,13 +3828,8 @@ def preset_catalog_remove(
     name: str = typer.Argument(help="Catalog name to remove"),
 ):
     """Remove a catalog from .specify/preset-catalogs.yml."""
-    project_root = Path.cwd()
-
+    project_root = _require_specify_project()
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
 
     config_path = specify_dir / "preset-catalogs.yml"
     if not config_path.exists():
@@ -4075,15 +3992,7 @@ def extension_list(
     """List installed extensions."""
     from .extensions import ExtensionManager
 
-    project_root = Path.cwd()
-
-    # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     manager = ExtensionManager(project_root)
     installed = manager.list_installed()
 
@@ -4116,14 +4025,7 @@ def catalog_list():
     """List all active extension catalogs."""
     from .extensions import ExtensionCatalog, ValidationError
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     catalog = ExtensionCatalog(project_root)
 
     try:
@@ -4185,13 +4087,8 @@ def catalog_add(
     """Add a catalog to .specify/extension-catalogs.yml."""
     from .extensions import ExtensionCatalog, ValidationError
 
-    project_root = Path.cwd()
-
+    project_root = _require_specify_project()
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
 
     # Validate URL
     tmp_catalog = ExtensionCatalog(project_root)
@@ -4248,13 +4145,8 @@ def catalog_remove(
     name: str = typer.Argument(help="Catalog name to remove"),
 ):
     """Remove a catalog from .specify/extension-catalogs.yml."""
-    project_root = Path.cwd()
-
+    project_root = _require_specify_project()
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
 
     config_path = specify_dir / "extension-catalogs.yml"
     if not config_path.exists():
@@ -4296,15 +4188,7 @@ def extension_add(
     """Install an extension."""
     from .extensions import ExtensionManager, ExtensionCatalog, ExtensionError, ValidationError, CompatibilityError, REINSTALL_COMMAND
 
-    project_root = Path.cwd()
-
-    # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     # Validate priority
     if priority < 1:
         console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
@@ -4478,15 +4362,7 @@ def extension_remove(
     """Uninstall an extension."""
     from .extensions import ExtensionManager
 
-    project_root = Path.cwd()
-
-    # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     manager = ExtensionManager(project_root)
 
     # Resolve extension ID from argument (handles ambiguous names)
@@ -4554,15 +4430,7 @@ def extension_search(
     """Search for available extensions in catalog."""
     from .extensions import ExtensionCatalog, ExtensionError
 
-    project_root = Path.cwd()
-
-    # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     catalog = ExtensionCatalog(project_root)
 
     try:
@@ -4638,15 +4506,7 @@ def extension_info(
     """Show detailed information about an extension."""
     from .extensions import ExtensionCatalog, ExtensionManager, normalize_priority
 
-    project_root = Path.cwd()
-
-    # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     catalog = ExtensionCatalog(project_root)
     manager = ExtensionManager(project_root)
     installed = manager.list_installed()
@@ -4840,15 +4700,7 @@ def extension_update(
     from packaging import version as pkg_version
     import shutil
 
-    project_root = Path.cwd()
-
-    # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     manager = ExtensionManager(project_root)
     catalog = ExtensionCatalog(project_root)
     speckit_version = get_speckit_version()
@@ -5236,15 +5088,7 @@ def extension_enable(
     """Enable a disabled extension."""
     from .extensions import ExtensionManager, HookExecutor
 
-    project_root = Path.cwd()
-
-    # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     manager = ExtensionManager(project_root)
     hook_executor = HookExecutor(project_root)
 
@@ -5283,15 +5127,7 @@ def extension_disable(
     """Disable an extension without removing it."""
     from .extensions import ExtensionManager, HookExecutor
 
-    project_root = Path.cwd()
-
-    # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     manager = ExtensionManager(project_root)
     hook_executor = HookExecutor(project_root)
 
@@ -5333,15 +5169,7 @@ def extension_set_priority(
     """Set the resolution priority of an installed extension."""
     from .extensions import ExtensionManager
 
-    project_root = Path.cwd()
-
-    # Check if we're in a spec-kit project
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     # Validate priority
     if priority < 1:
         console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
@@ -5403,10 +5231,7 @@ def workflow_run(
     """Run a workflow from an installed ID or local YAML path."""
     from .workflows.engine import WorkflowEngine
 
-    project_root = Path.cwd()
-    if not (project_root / ".specify").exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
+    project_root = _require_specify_project()
     engine = WorkflowEngine(project_root)
     engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
@@ -5470,10 +5295,7 @@ def workflow_resume(
     """Resume a paused or failed workflow run."""
     from .workflows.engine import WorkflowEngine
 
-    project_root = Path.cwd()
-    if not (project_root / ".specify").exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
+    project_root = _require_specify_project()
     engine = WorkflowEngine(project_root)
     engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
@@ -5506,10 +5328,7 @@ def workflow_status(
     """Show workflow run status."""
     from .workflows.engine import WorkflowEngine
 
-    project_root = Path.cwd()
-    if not (project_root / ".specify").exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
+    project_root = _require_specify_project()
     engine = WorkflowEngine(project_root)
 
     if run_id:
@@ -5568,12 +5387,7 @@ def workflow_list():
     """List installed workflows."""
     from .workflows.catalog import WorkflowRegistry
 
-    project_root = Path.cwd()
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     registry = WorkflowRegistry(project_root)
     installed = registry.list()
 
@@ -5600,12 +5414,7 @@ def workflow_add(
     from .workflows.catalog import WorkflowCatalog, WorkflowRegistry, WorkflowCatalogError
     from .workflows.engine import WorkflowDefinition
 
-    project_root = Path.cwd()
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     registry = WorkflowRegistry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
 
@@ -5836,12 +5645,7 @@ def workflow_remove(
     """Uninstall a workflow."""
     from .workflows.catalog import WorkflowRegistry
 
-    project_root = Path.cwd()
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     registry = WorkflowRegistry(project_root)
 
     if not registry.is_installed(workflow_id):
@@ -5866,10 +5670,7 @@ def workflow_search(
     """Search workflow catalogs."""
     from .workflows.catalog import WorkflowCatalog, WorkflowCatalogError
 
-    project_root = Path.cwd()
-    if not (project_root / ".specify").exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
+    project_root = _require_specify_project()
     catalog = WorkflowCatalog(project_root)
 
     try:
@@ -5902,10 +5703,7 @@ def workflow_info(
     from .workflows.catalog import WorkflowCatalog, WorkflowRegistry, WorkflowCatalogError
     from .workflows.engine import WorkflowEngine
 
-    project_root = Path.cwd()
-    if not (project_root / ".specify").exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
+    project_root = _require_specify_project()
 
     # Check installed first
     registry = WorkflowRegistry(project_root)
@@ -5999,12 +5797,7 @@ def workflow_catalog_add(
     """Add a workflow catalog source."""
     from .workflows.catalog import WorkflowCatalog, WorkflowValidationError
 
-    project_root = Path.cwd()
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     catalog = WorkflowCatalog(project_root)
     try:
         catalog.add_catalog(url, name)
@@ -6022,12 +5815,7 @@ def workflow_catalog_remove(
     """Remove a workflow catalog source by index."""
     from .workflows.catalog import WorkflowCatalog, WorkflowValidationError
 
-    project_root = Path.cwd()
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     catalog = WorkflowCatalog(project_root)
     try:
         removed_name = catalog.remove_catalog(index)
