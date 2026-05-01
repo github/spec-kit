@@ -2926,7 +2926,6 @@ def integration_upgrade(
             script_type=selected_script,
             raw_options=raw_options,
         )
-        new_manifest.save()
         settings = _with_integration_setting(
             current,
             key,
@@ -2935,16 +2934,23 @@ def integration_upgrade(
             raw_options=raw_options,
             parsed_options=parsed_options,
         )
+        if installed_key == key:
+            try:
+                _refresh_shared_templates(
+                    project_root,
+                    invoke_separator=_invoke_separator_for_integration(
+                        integration, {"integration_settings": settings}, key, parsed_options
+                    ),
+                    force=force,
+                )
+            except (ValueError, OSError) as exc:
+                raise _SharedTemplateRefreshError(
+                    f"Failed to refresh shared templates for '{key}': {exc}"
+                ) from exc
+        new_manifest.save()
         _write_integration_json(project_root, installed_key, installed_keys, settings)
         if installed_key == key:
             _update_init_options_for_integration(project_root, integration, script_type=selected_script)
-            _refresh_shared_templates(
-                project_root,
-                invoke_separator=_invoke_separator_for_integration(
-                    integration, {"integration_settings": settings}, key, parsed_options
-                ),
-                force=force,
-            )
     except Exception as exc:
         # Don't teardown — setup overwrites in-place, so teardown would
         # delete files that were working before the upgrade.  Just report.

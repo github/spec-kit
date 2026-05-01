@@ -967,6 +967,34 @@ class TestIntegrationUpgrade:
         assert "manifest" in result.output
         assert "unreadable" in result.output
 
+    def test_upgrade_does_not_persist_state_when_template_refresh_fails(self, tmp_path, monkeypatch):
+        project = _init_project(tmp_path, "claude")
+        int_json = project / ".specify" / "integration.json"
+        init_options = project / ".specify" / "init-options.json"
+        manifest_path = project / ".specify" / "integrations" / "claude.manifest.json"
+
+        before_state = json.loads(int_json.read_text(encoding="utf-8"))
+        before_options = json.loads(init_options.read_text(encoding="utf-8"))
+        before_manifest = manifest_path.read_text(encoding="utf-8")
+
+        import specify_cli
+
+        def fail_refresh(*args, **kwargs):
+            raise ValueError("refuse refresh")
+
+        monkeypatch.setattr(specify_cli, "_refresh_shared_templates", fail_refresh)
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "claude",
+            "--force",
+        ])
+
+        assert result.exit_code != 0
+        assert "Failed to refresh shared templates" in result.output
+        assert json.loads(int_json.read_text(encoding="utf-8")) == before_state
+        assert json.loads(init_options.read_text(encoding="utf-8")) == before_options
+        assert manifest_path.read_text(encoding="utf-8") == before_manifest
+
     def test_upgrade_non_default_keeps_default_template_invocations(self, tmp_path):
         project = _init_project(tmp_path, "gemini")
         template = project / ".specify" / "templates" / "plan-template.md"

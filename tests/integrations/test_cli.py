@@ -374,6 +374,38 @@ class TestInitIntegrationFlag:
         assert not (outside / "templates").exists()
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_infra_refuses_symlinked_shared_manifest(self, tmp_path):
+        """Shared infra manifest saves must not follow destination symlinks."""
+        from specify_cli.shared_infra import install_shared_infra
+
+        project = tmp_path / "symlink-shared-manifest-test"
+        project.mkdir()
+        integrations_dir = project / ".specify" / "integrations"
+        integrations_dir.mkdir(parents=True)
+
+        outside = tmp_path / "outside-manifest.json"
+        outside.write_text("# outside\n", encoding="utf-8")
+        os.symlink(outside, integrations_dir / "speckit.manifest.json")
+
+        core_pack = tmp_path / "core-pack"
+        templates_src = core_pack / "templates"
+        templates_src.mkdir(parents=True)
+        (templates_src / "plan-template.md").write_text("# plan\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="symlinked integration manifest"):
+            install_shared_infra(
+                project,
+                "sh",
+                version="test",
+                core_pack=core_pack,
+                repo_root=tmp_path / "unused",
+                console=_NoopConsole(),
+                force=True,
+            )
+
+        assert outside.read_text(encoding="utf-8") == "# outside\n"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_shared_template_refresh_preflights_before_writing(self, tmp_path):
         """Template refresh validates all destinations before writing any file."""
         from specify_cli.shared_infra import refresh_shared_templates
