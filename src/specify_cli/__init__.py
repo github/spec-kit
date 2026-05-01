@@ -807,9 +807,8 @@ def _install_shared_infra(
         for f in skipped_files:
             console.print(f"    {f}")
         console.print(
-            "To refresh shared infrastructure, run "
-            "[cyan]specify init --here --force[/cyan] or "
-            "[cyan]specify integration upgrade --force[/cyan]."
+            "To refresh shared infrastructure, run specify init --here --force "
+            "or specify integration upgrade --force."
         )
 
     manifest.save()

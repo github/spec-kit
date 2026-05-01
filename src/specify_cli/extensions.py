@@ -921,7 +921,7 @@ class ExtensionManager:
 
             # Skip commands that behavior-routing deploys as agent definitions
             # (to .claude/agents/) rather than as skill files.
-            _source_fm, _ = registrar.parse_frontmatter(content)
+            _source_fm, body = registrar.parse_frontmatter(content)
             # Merge manifest-level behavior when source file has none or has an
             # invalid (non-dict / empty) value.  A non-dict value (string, list,
             # null) cannot carry execution:agent, so the manifest entry must win
@@ -933,7 +933,7 @@ class ExtensionManager:
                 continue
 
             skill_subdir.mkdir(parents=True, exist_ok=True)
-            frontmatter, body = registrar.parse_frontmatter(content)
+            frontmatter = _source_fm
 
             for key in ("agents",):
                 if key in cmd_info and key not in frontmatter:

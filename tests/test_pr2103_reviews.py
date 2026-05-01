@@ -1,11 +1,12 @@
 """Tests for issues raised in PR #2103 code review.
 
-Covers five bugs found by Copilot inline review:
+Covers six bugs found by Copilot inline review:
   Issue 1 — Copilot execution:isolated never gets mode:agent injected; behavior/agents keys leak
   Issue 2 — Non-dict behavior in source file bypasses manifest-level agent-deployment skip
   Issue 3 — SkillsIntegration.setup() ignores agents: escape-hatch overrides
   Issue 4 — _behavior_overridable clobbers explicit source frontmatter (model, context, etc.)
   Issue 5 — extensions.py _register_extension_skills reads source file twice per iteration
+    Issue 6 — Extension skill rendering drops merged behavior/source frontmatter in output
 """
 
 import json
