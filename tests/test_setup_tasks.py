@@ -182,6 +182,127 @@ def test_setup_tasks_bash_override_wins(tasks_repo: Path) -> None:
 
 
 @requires_bash
+def test_setup_tasks_bash_extension_wins_over_core(tasks_repo: Path) -> None:
+    """
+    When an extension template exists, setup-tasks.sh --json must resolve
+    tasks-template.md from the extension before falling back to the core path.
+    """
+    feat = _minimal_feature(tasks_repo)
+
+    extension_dir = (
+        tasks_repo / ".specify" / "templates" / "extensions" / "test-extension"
+    )
+    extension_dir.mkdir(parents=True, exist_ok=True)
+    extension_file = extension_dir / "tasks-template.md"
+    extension_file.write_text("# extension tasks template\n", encoding="utf-8")
+
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
+
+    result = subprocess.run(
+        ["bash", str(script), "--json"],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+
+    data = json.loads(result.stdout)
+    tasks_tmpl = Path(data["TASKS_TEMPLATE"])
+    assert tasks_tmpl.is_absolute(), "TASKS_TEMPLATE must be an absolute path"
+    assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
+    assert tasks_tmpl == extension_file.resolve(), (
+        f"Expected extension path but got: {tasks_tmpl}"
+    )
+
+
+@requires_bash
+def test_setup_tasks_bash_preset_wins_over_extension(tasks_repo: Path) -> None:
+    """
+    When both preset and extension templates exist, setup-tasks.sh --json must
+    resolve the preset path because presets outrank extensions.
+    """
+    feat = _minimal_feature(tasks_repo)
+
+    extension_dir = (
+        tasks_repo / ".specify" / "templates" / "extensions" / "test-extension"
+    )
+    extension_dir.mkdir(parents=True, exist_ok=True)
+    extension_file = extension_dir / "tasks-template.md"
+    extension_file.write_text("# extension tasks template\n", encoding="utf-8")
+
+    preset_dir = tasks_repo / ".specify" / "templates" / "presets" / "test-preset"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    preset_file = preset_dir / "tasks-template.md"
+    preset_file.write_text("# preset tasks template\n", encoding="utf-8")
+
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
+
+    result = subprocess.run(
+        ["bash", str(script), "--json"],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+
+    data = json.loads(result.stdout)
+    tasks_tmpl = Path(data["TASKS_TEMPLATE"])
+    assert tasks_tmpl.is_absolute(), "TASKS_TEMPLATE must be an absolute path"
+    assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
+    assert tasks_tmpl == preset_file.resolve(), (
+        f"Expected preset path but got: {tasks_tmpl}"
+    )
+
+
+@requires_bash
+def test_setup_tasks_bash_preset_registry_wins_over_preset(tasks_repo: Path) -> None:
+    """
+    When both a preset template and its .specify/presets/.../.registry copy
+    exist, setup-tasks.sh --json must resolve the registry path first.
+    """
+    feat = _minimal_feature(tasks_repo)
+
+    preset_dir = tasks_repo / ".specify" / "templates" / "presets" / "test-preset"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    preset_file = preset_dir / "tasks-template.md"
+    preset_file.write_text("# preset tasks template\n", encoding="utf-8")
+
+    registry_dir = (
+        tasks_repo / ".specify" / "presets" / "test-preset" / ".registry"
+    )
+    registry_dir.mkdir(parents=True, exist_ok=True)
+    registry_file = registry_dir / "tasks-template.md"
+    registry_file.write_text("# preset registry tasks template\n", encoding="utf-8")
+
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
+
+    result = subprocess.run(
+        ["bash", str(script), "--json"],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+
+    data = json.loads(result.stdout)
+    tasks_tmpl = Path(data["TASKS_TEMPLATE"])
+    assert tasks_tmpl.is_absolute(), "TASKS_TEMPLATE must be an absolute path"
+    assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
+    assert tasks_tmpl == registry_file.resolve(), (
+        f"Expected preset registry path but got: {tasks_tmpl}"
+    )
+
+
+@requires_bash
 def test_setup_tasks_bash_missing_template_errors(tasks_repo: Path) -> None:
     """
     When tasks-template.md is absent from all locations, setup-tasks.sh must
