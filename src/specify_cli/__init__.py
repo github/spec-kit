@@ -2405,14 +2405,7 @@ def integration_use(
     """Set the default integration without uninstalling other integrations."""
     from .integrations import get_integration
 
-    project_root = Path.cwd()
-
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        console.print("Run this command from a spec-kit project root")
-        raise typer.Exit(1)
-
+    project_root = _require_specify_project()
     current = _read_integration_json(project_root)
     installed_keys = _installed_integration_keys(current)
     if key not in installed_keys:

@@ -992,6 +992,7 @@ class TestIntegrationCatalogDiscoveryCLI:
         commands = [
             ["integration", "list"],
             ["integration", "install", "codex"],
+            ["integration", "use", "codex"],
             ["integration", "uninstall"],
             ["integration", "switch", "codex"],
             ["integration", "upgrade"],
@@ -1010,10 +1011,15 @@ class TestIntegrationCatalogDiscoveryCLI:
         project.mkdir()
         (project / ".specify").write_text("not a directory")
 
-        result = self._invoke(["integration", "list"], project)
+        commands = [
+            ["integration", "list"],
+            ["integration", "use", "codex"],
+        ]
 
-        assert result.exit_code == 1, result.output
-        assert "Not a spec-kit project" in result.output
+        for command in commands:
+            result = self._invoke(command, project)
+            assert result.exit_code == 1, result.output
+            assert "Not a spec-kit project" in result.output
 
     # -- search ------------------------------------------------------------
 
