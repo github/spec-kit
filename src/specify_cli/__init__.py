@@ -1266,6 +1266,8 @@ def init(
     ]:
         tracker.add(key, label)
 
+    git_default_notice = False
+
     with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
         try:
@@ -1349,6 +1351,7 @@ def init(
                             manager.install_from_directory(
                                 bundled_path, get_speckit_version()
                             )
+                            git_default_notice = True
                             git_messages.append("extension installed")
                     else:
                         git_has_error = True
@@ -1518,6 +1521,18 @@ def init(
         )
         console.print()
         console.print(deprecation_notice)
+
+    if git_default_notice:
+        default_change_notice = Panel(
+            "The git extension is currently enabled by default during [bold]specify init[/bold].\n"
+            "Starting in [bold]v0.10.0[/bold], this will require explicit opt-in.\n"
+            "Use [bold]specify extension add git[/bold] after init when needed.",
+            title="[yellow]Notice: Git Default Changing[/yellow]",
+            border_style="yellow",
+            padding=(1, 2),
+        )
+        console.print()
+        console.print(default_change_notice)
 
     steps_lines = []
     if not here:

@@ -473,6 +473,32 @@ class TestGitExtensionAutoInstall:
         assert "will be removed" in normalized_output
         assert "git extension will no longer be enabled by default" in normalized_output
 
+    def test_default_git_auto_enable_emits_notice(self, tmp_path):
+        """Default git auto-enable emits notice about the v0.10.0 opt-in change."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "git-default-notice"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here", "--ai", "claude", "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 0, result.output
+        # Check for key message components (notice may have box-drawing chars)
+        assert "git extension is currently enabled by default" in normalized_output
+        assert "v0.10.0" in normalized_output
+        assert "explicit opt-in" in normalized_output
+        assert "specify extension add git" in normalized_output
+
     def test_git_extension_commands_registered(self, tmp_path):
         """Git extension commands are registered with the agent during init."""
         from typer.testing import CliRunner
