@@ -277,12 +277,7 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
     high_priority_dir = (
         tasks_repo / ".specify" / "presets" / "aaa-preset" / "templates"
     )
-    # resolve_template reads .specify/presets/.registry as a JSON object with a
-    # "presets" map where each entry has a numeric "priority" (lower = higher
-    # precedence). Create two presets; priority-1-preset wins over priority-2-preset.
-    high_priority_dir = (
-        tasks_repo / ".specify" / "presets" / "priority-1-preset" / "templates"
-    )
+    
     high_priority_dir.mkdir(parents=True, exist_ok=True)
     high_priority_file = high_priority_dir / "tasks-template.md"
     high_priority_file.write_text("# high priority preset tasks template\n", encoding="utf-8")
