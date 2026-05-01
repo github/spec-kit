@@ -2495,6 +2495,37 @@
       "created_at": "2026-04-25T00:00:00Z",
       "updated_at": "2026-04-25T00:00:00Z"
     },
+    "token-analyzer": {
+      "name": "Token Consumption Analyzer",
+      "id": "token-analyzer",
+      "description": "Captures, analyzes, and compares token consumption across SDD workflows",
+      "author": "Chris Roberts | coderandhiker",
+      "version": "0.1.0",
+      "download_url": "https://github.com/coderandhiker/spec-kit-token-analyzer/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/coderandhiker/spec-kit-token-analyzer",
+      "homepage": "https://github.com/coderandhiker/spec-kit-token-analyzer",
+      "documentation": "https://github.com/coderandhiker/spec-kit-token-analyzer/blob/main/README.md",
+      "changelog": "https://github.com/coderandhiker/spec-kit-token-analyzer/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 4
+      },
+      "tags": [
+        "tokens",
+        "measurement",
+        "optimization",
+        "analysis"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-01T00:00:00Z",
+      "updated_at": "2026-05-01T00:00:00Z"
+    },
     "v-model": {
       "name": "V-Model Extension Pack",
       "id": "v-model",
