@@ -32,26 +32,8 @@ class DevinIntegration(SkillsIntegration):
     }
     context_file = "AGENTS.md"
 
-    def build_exec_args(
-        self,
-        prompt: str,
-        *,
-        model: str | None = None,
-        output_json: bool = True,
-    ) -> list[str] | None:
-        """Build non-interactive CLI args for Devin for Terminal.
-
-        Devin supports ``devin -p <prompt>`` for single-turn execution
-        and ``--model`` for model selection, but its CLI has no flag
-        for structured JSON output. When ``output_json`` is requested,
-        Devin is still dispatched normally and returns plain-text
-        stdout instead of structured JSON. ``requires_cli=True`` is
-        kept on the integration for tool detection.
-        """
-        args = [self.key, "-p", prompt]
-        if model:
-            args.extend(["--model", model])
-        return args
+    # Devin has no structured JSON output flag.
+    exec_json_args = ()
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:

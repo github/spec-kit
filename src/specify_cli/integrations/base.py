@@ -87,6 +87,26 @@ class IntegrationBase(ABC):
     invoke_separator: str = "."
     """Separator used in slash-command invocations (``"."`` → ``/speckit.plan``)."""
 
+    # -- Declarative batch-mode attributes --------------------------------
+
+    exec_mode: str = "flag"
+    """How the CLI accepts a prompt: ``"flag"`` (``-p "prompt"``),
+    ``"subcommand"`` (``<subcmd> "prompt"``), or ``"none"`` (no CLI dispatch)."""
+
+    exec_prompt_flag: str = "-p"
+    """Flag used to pass the prompt when ``exec_mode == "flag"``."""
+
+    exec_subcommand: str = ""
+    """Subcommand inserted before the prompt when ``exec_mode == "subcommand"``."""
+
+    exec_model_flag: str = "--model"
+    """Flag for model selection (e.g. ``"--model"``, ``"-m"``).
+    Set to ``""`` to omit model passing entirely."""
+
+    exec_json_args: tuple[str, ...] = ("--output-format", "json")
+    """Arguments appended when JSON output is requested.
+    Set to ``()`` if the CLI has no structured-output flag."""
+
     # -- Markers for managed context section ------------------------------
 
     CONTEXT_MARKER_START = "<!-- SPECKIT START -->"
@@ -124,9 +144,31 @@ class IntegrationBase(ABC):
         non-interactively using this integration's CLI tool, or ``None``
         if the integration does not support CLI dispatch.
 
-        Subclasses for CLI-based integrations should override this.
+        The default implementation uses the declarative ``exec_*`` class
+        attributes.  Integrations with complex dispatch logic (e.g.
+        dynamic flags) can still override this method directly.
         """
-        return None
+        if not self.config or not self.config.get("requires_cli"):
+            return None
+        if self.exec_mode == "none":
+            return None
+
+        args = [self.key]
+
+        if self.exec_mode == "subcommand" and self.exec_subcommand:
+            args.append(self.exec_subcommand)
+
+        if self.exec_mode == "flag":
+            args.extend([self.exec_prompt_flag, prompt])
+        elif self.exec_mode == "subcommand":
+            args.append(prompt)
+
+        if model and self.exec_model_flag:
+            args.extend([self.exec_model_flag, model])
+        if output_json and self.exec_json_args:
+            args.extend(self.exec_json_args)
+
+        return args
 
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
         """Build the native slash-command invocation for a Spec Kit command.
@@ -830,22 +872,6 @@ class MarkdownIntegration(IntegrationBase):
     managed context section into the agent context file.
     """
 
-    def build_exec_args(
-        self,
-        prompt: str,
-        *,
-        model: str | None = None,
-        output_json: bool = True,
-    ) -> list[str] | None:
-        if not self.config or not self.config.get("requires_cli"):
-            return None
-        args = [self.key, "-p", prompt]
-        if model:
-            args.extend(["--model", model])
-        if output_json:
-            args.extend(["--output-format", "json"])
-        return args
-
     def setup(
         self,
         project_root: Path,
@@ -917,21 +943,7 @@ class TomlIntegration(IntegrationBase):
     TOML format (``description`` key + ``prompt`` multiline string).
     """
 
-    def build_exec_args(
-        self,
-        prompt: str,
-        *,
-        model: str | None = None,
-        output_json: bool = True,
-    ) -> list[str] | None:
-        if not self.config or not self.config.get("requires_cli"):
-            return None
-        args = [self.key, "-p", prompt]
-        if model:
-            args.extend(["-m", model])
-        if output_json:
-            args.extend(["--output-format", "json"])
-        return args
+    exec_model_flag = "-m"
 
     def command_filename(self, template_name: str) -> str:
         """TOML commands use ``.toml`` extension."""
@@ -1314,22 +1326,6 @@ class SkillsIntegration(IntegrationBase):
     """
 
     invoke_separator = "-"
-
-    def build_exec_args(
-        self,
-        prompt: str,
-        *,
-        model: str | None = None,
-        output_json: bool = True,
-    ) -> list[str] | None:
-        if not self.config or not self.config.get("requires_cli"):
-            return None
-        args = [self.key, "-p", prompt]
-        if model:
-            args.extend(["--model", model])
-        if output_json:
-            args.extend(["--output-format", "json"])
-        return args
 
     def skills_dest(self, project_root: Path) -> Path:
         """Return the absolute path to the skills output directory.

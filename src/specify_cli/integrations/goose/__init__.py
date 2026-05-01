@@ -19,3 +19,6 @@ class GooseIntegration(YamlIntegration):
         "extension": ".yaml",
     }
     context_file = "AGENTS.md"
+
+    # Goose CLI dispatch is not supported (recipe-based workflow).
+    exec_mode = "none"
