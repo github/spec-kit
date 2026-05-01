@@ -8,8 +8,6 @@ workflow:
 
 requires:
   speckit_version: ">=0.7.2"
-  integrations:
-    any: ["copilot", "claude", "gemini"]
 
 inputs:
   spec:
@@ -18,8 +16,8 @@ inputs:
     prompt: "Describe what you want to build"
   integration:
     type: string
-    default: "copilot"
-    prompt: "Integration to use (e.g. claude, copilot, gemini)"
+    default: "auto"
+    prompt: "Integration to use (e.g. claude, copilot, gemini, opencode, or 'auto' to detect from project config)"
   scope:
     type: string
     default: "full"

@@ -904,7 +904,7 @@ def ensure_constitution_from_template(project_path: Path, tracker: StepTracker |
             console.print(f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]")
 
 
-INIT_OPTIONS_FILE = ".specify/init-options.json"
+from specify_cli.paths import INIT_OPTIONS_FILE
 
 
 def save_init_options(project_path: Path, options: dict[str, Any]) -> None:
@@ -1898,7 +1898,7 @@ integration_catalog_app = typer.Typer(
 integration_app.add_typer(integration_catalog_app, name="catalog")
 
 
-INTEGRATION_JSON = ".specify/integration.json"
+from specify_cli.paths import INTEGRATION_JSON
 
 
 def _read_integration_json(project_root: Path) -> dict[str, Any]:

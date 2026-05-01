@@ -1843,3 +1843,182 @@ steps:
         assert state.status == RunStatus.COMPLETED
         assert "do-plan" in state.step_results
         assert "do-specify" not in state.step_results
+
+
+# ===== Integration Auto-Detect Tests =====
+
+
+class TestIntegrationAutoDetect:
+    """Tests for _resolve_default / _load_project_integration auto-detection."""
+
+    def test_integration_auto_default_uses_project_integration(self, project_dir):
+        """'auto' default resolves to the value in .specify/integration.json."""
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "auto-test"
+  name: "Auto Test"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+steps:
+  - id: echo
+    type: shell
+    run: "echo {{ inputs.integration }}"
+"""
+        from specify_cli.workflows.engine import WorkflowDefinition
+        definition = WorkflowDefinition.from_string(yaml_str)
+        resolved = engine._resolve_inputs(definition, {})
+        assert resolved["integration"] == "opencode"
+
+    def test_integration_auto_default_falls_back_to_copilot_when_no_json(self, project_dir):
+        """'auto' falls back to 'copilot' when integration.json is absent."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "fallback-test"
+  name: "Fallback Test"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+steps:
+  - id: echo
+    type: shell
+    run: "echo {{ inputs.integration }}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        resolved = engine._resolve_inputs(definition, {})
+        assert resolved["integration"] == "copilot"
+
+    def test_integration_explicit_input_overrides_auto(self, project_dir):
+        """Explicitly provided --input integration=X overrides 'auto' detection."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "explicit-test"
+  name: "Explicit Test"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+steps:
+  - id: echo
+    type: shell
+    run: "echo {{ inputs.integration }}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        resolved = engine._resolve_inputs(definition, {"integration": "claude"})
+        assert resolved["integration"] == "claude"
+
+    def test_integration_explicit_auto_input_also_resolves(self, project_dir):
+        """Explicitly passing --input integration=auto also triggers auto-detection."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "gemini"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "explicit-auto-test"
+  name: "Explicit Auto Test"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+steps:
+  - id: echo
+    type: shell
+    run: "echo {{ inputs.integration }}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        resolved = engine._resolve_inputs(definition, {"integration": "auto"})
+        assert resolved["integration"] == "gemini"
+
+    def test_integration_auto_ignores_malformed_integration_json(self, project_dir):
+        """Malformed integration.json falls back to 'copilot'."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            "not valid json", encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        assert engine._load_project_integration() == "copilot"
+
+    def test_integration_auto_falls_back_on_oserror(self, project_dir):
+        """OSError reading integration.json falls back to 'copilot'."""
+        from unittest.mock import patch
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        engine = WorkflowEngine(project_dir)
+        with patch("pathlib.Path.read_text", side_effect=OSError("permission denied")):
+            # Create a file so is_file() returns True
+            (project_dir / ".specify" / "integration.json").write_text(
+                '{"integration": "claude"}', encoding="utf-8"
+            )
+            assert engine._load_project_integration() == "copilot"
+
+    def test_integration_auto_ignores_whitespace_only_value(self, project_dir):
+        """Whitespace-only integration value falls back to 'copilot'."""
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "   "}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        assert engine._load_project_integration() == "copilot"
+
+    def test_integration_auto_falls_back_to_init_options_json(self, project_dir):
+        """Falls back to init-options.json when integration.json is absent."""
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "init-options.json").write_text(
+            '{"integration": "claude"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        assert engine._load_project_integration() == "claude"
+
+    def test_integration_auto_init_options_ai_key_fallback(self, project_dir):
+        """Uses 'ai' key from init-options.json when 'integration' key absent."""
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "init-options.json").write_text(
+            '{"ai": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        assert engine._load_project_integration() == "opencode"
+
+    def test_integration_auto_integration_json_takes_priority(self, project_dir):
+        """integration.json takes priority over init-options.json."""
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "gemini"}', encoding="utf-8"
+        )
+        (project_dir / ".specify" / "init-options.json").write_text(
+            '{"integration": "claude"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        assert engine._load_project_integration() == "gemini"
