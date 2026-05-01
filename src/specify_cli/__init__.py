@@ -43,6 +43,7 @@ from pathlib import Path
 
 from packaging.version import InvalidVersion, Version
 from typing import Any, Optional
+from specify_cli.paths import INIT_OPTIONS_FILE, INTEGRATION_JSON
 
 import typer
 from rich.console import Console
@@ -903,10 +904,6 @@ def ensure_constitution_from_template(project_path: Path, tracker: StepTracker |
         else:
             console.print(f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]")
 
-
-from specify_cli.paths import INIT_OPTIONS_FILE
-
-
 def save_init_options(project_path: Path, options: dict[str, Any]) -> None:
     """Persist the CLI options used during ``specify init``.
 
@@ -1300,7 +1297,7 @@ def init(
             manifest.save()
 
             # Write .specify/integration.json
-            integration_json = project_path / ".specify" / "integration.json"
+            integration_json = project_path / INTEGRATION_JSON
             integration_json.parent.mkdir(parents=True, exist_ok=True)
             integration_json.write_text(json.dumps({
                 "integration": resolved_integration.key,
@@ -1896,10 +1893,6 @@ integration_catalog_app = typer.Typer(
     add_completion=False,
 )
 integration_app.add_typer(integration_catalog_app, name="catalog")
-
-
-from specify_cli.paths import INTEGRATION_JSON
-
 
 def _read_integration_json(project_root: Path) -> dict[str, Any]:
     """Load ``.specify/integration.json``.  Returns ``{}`` when missing."""
