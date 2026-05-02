@@ -242,12 +242,50 @@ def install_shared_infra(
     console: Any,
     force: bool = False,
     invoke_separator: str = ".",
+    refresh_managed: bool = False,
+    refresh_hint: str | None = None,
 ) -> bool:
-    """Install shared scripts and templates into *project_path*."""
+    """Install shared scripts and templates into *project_path*.
+
+    When ``refresh_managed`` is True, files whose on-disk hash still matches
+    the previously recorded manifest hash are overwritten with the bundled
+    version. Files whose hash diverges are treated as user customizations and
+    preserved with a warning. ``force=True`` overwrites everything regardless.
+    ``refresh_hint`` is shown after the customization warning to tell the user
+    which flag would overwrite their customizations.
+    """
+    from .integrations.manifest import _sha256
+
     manifest = load_speckit_manifest(project_path, version=version, console=console)
+    prior_hashes = dict(manifest.files)
+
+    def _is_managed(rel: str, dst: Path) -> bool:
+        expected = prior_hashes.get(rel)
+        if not expected or not dst.is_file() or dst.is_symlink():
+            return False
+        try:
+            return _sha256(dst) == expected
+        except OSError:
+            return False
+
     skipped_files: list[str] = []
+    preserved_user_files: list[str] = []
     planned_copies: list[tuple[Path, str, bytes, int]] = []
     planned_templates: list[tuple[Path, str, str]] = []
+
+    def _decide_overwrite(rel: str, dst: Path) -> tuple[bool, str | None]:
+        """Return (write, bucket) where bucket is 'skip', 'preserved', or None."""
+        if not dst.exists():
+            return True, None
+        if force:
+            return True, None
+        if refresh_managed:
+            if _is_managed(rel, dst):
+                return True, None
+            if rel in prior_hashes:
+                return False, "preserved"
+            return False, "skip"
+        return False, "skip"
 
     scripts_src = shared_scripts_source(core_pack=core_pack, repo_root=repo_root)
     if scripts_src.is_dir():
@@ -265,12 +303,16 @@ def install_shared_infra(
                 rel_path = src_path.relative_to(variant_src)
                 dst_path = dest_variant / rel_path
                 _ensure_safe_shared_destination(project_path, dst_path, parent_must_exist=False)
-                if dst_path.exists() and not force:
-                    skipped_files.append(dst_path.relative_to(project_path).as_posix())
+                rel = dst_path.relative_to(project_path).as_posix()
+                write, bucket = _decide_overwrite(rel, dst_path)
+                if not write:
+                    if bucket == "preserved":
+                        preserved_user_files.append(rel)
+                    else:
+                        skipped_files.append(rel)
                     continue
 
                 _ensure_safe_shared_directory(project_path, dst_path.parent)
-                rel = dst_path.relative_to(project_path).as_posix()
                 planned_copies.append((dst_path, rel, src_path.read_bytes(), src_path.stat().st_mode & 0o777))
 
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
@@ -283,13 +325,17 @@ def install_shared_infra(
 
             dst = dest_templates / src.name
             _ensure_safe_shared_destination(project_path, dst)
-            if dst.exists() and not force:
-                skipped_files.append(dst.relative_to(project_path).as_posix())
+            rel = dst.relative_to(project_path).as_posix()
+            write, bucket = _decide_overwrite(rel, dst)
+            if not write:
+                if bucket == "preserved":
+                    preserved_user_files.append(rel)
+                else:
+                    skipped_files.append(rel)
                 continue
 
             content = src.read_text(encoding="utf-8")
             content = IntegrationBase.resolve_command_refs(content, invoke_separator)
-            rel = dst.relative_to(project_path).as_posix()
             planned_templates.append((dst, rel, content))
 
     for dst_path, rel, content, mode in planned_copies:
@@ -307,11 +353,24 @@ def install_shared_infra(
         )
         for path in skipped_files:
             console.print(f"    {path}")
+        if refresh_hint:
+            console.print(refresh_hint)
+        else:
+            console.print(
+                "To refresh shared infrastructure, run "
+                "[cyan]specify init --here --force[/cyan] or "
+                "[cyan]specify integration upgrade --force[/cyan]."
+            )
+
+    if preserved_user_files:
         console.print(
-            "To refresh shared infrastructure, run "
-            "[cyan]specify init --here --force[/cyan] or "
-            "[cyan]specify integration upgrade --force[/cyan]."
+            f"[yellow]⚠[/yellow]  Preserved {len(preserved_user_files)} customized shared "
+            "infrastructure file(s) (hash differs from previous install):"
         )
+        for path in preserved_user_files:
+            console.print(f"    {path}")
+        if refresh_hint:
+            console.print(refresh_hint)
 
     manifest.save()
     return True
