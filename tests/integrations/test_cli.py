@@ -1117,6 +1117,7 @@ class TestIntegrationCatalogDiscoveryCLI:
             ["workflow", "remove", "demo"],
             ["workflow", "search"],
             ["workflow", "info", "demo"],
+            ["workflow", "catalog", "list"],
             ["workflow", "catalog", "add", "https://example.com/catalog.yml"],
             ["workflow", "catalog", "remove", "0"],
         ]
