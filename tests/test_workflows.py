@@ -1495,6 +1495,241 @@ steps:
         with pytest.raises(ValueError, match="Required input"):
             engine.execute(definition, {})
 
+    def test_integration_auto_default_uses_project_integration(self, project_dir):
+        """`integration: auto` should resolve to .specify/integration.json's integration."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir(parents=True, exist_ok=True)
+        (specify_dir / "integration.json").write_text(
+            json.dumps({"integration": "opencode", "version": "0.7.4"}),
+            encoding="utf-8",
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "auto-default"
+  name: "Auto Default"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+""")
+        engine = WorkflowEngine(project_dir)
+        resolved = engine._resolve_inputs(definition, {})
+        assert resolved["integration"] == "opencode"
+
+    def test_integration_auto_default_falls_back_when_no_integration_json(self, project_dir):
+        """`integration: auto` should keep the literal "auto" when project state is missing.
+
+        The engine itself must not invent an integration when
+        ``.specify/integration.json`` is absent; any later validation or
+        command resolution will handle an unresolved ``"auto"`` value.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "auto-fallback"
+  name: "Auto Fallback"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+""")
+        engine = WorkflowEngine(project_dir)
+        resolved = engine._resolve_inputs(definition, {})
+        assert resolved["integration"] == "auto"
+
+    def test_integration_explicit_input_overrides_auto(self, project_dir):
+        """An explicit --input integration=X must win over `auto` even when integration.json exists."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir(parents=True, exist_ok=True)
+        (specify_dir / "integration.json").write_text(
+            json.dumps({"integration": "opencode"}),
+            encoding="utf-8",
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "explicit-wins"
+  name: "Explicit Wins"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+""")
+        engine = WorkflowEngine(project_dir)
+        resolved = engine._resolve_inputs(definition, {"integration": "claude"})
+        assert resolved["integration"] == "claude"
+
+    def test_integration_auto_ignores_malformed_integration_json(self, project_dir):
+        """A malformed integration.json must not crash — fall back to the literal default."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir(parents=True, exist_ok=True)
+        (specify_dir / "integration.json").write_text("{not json", encoding="utf-8")
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "auto-malformed"
+  name: "Auto Malformed"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+""")
+        engine = WorkflowEngine(project_dir)
+        resolved = engine._resolve_inputs(definition, {})
+        assert resolved["integration"] == "auto"
+
+    def test_integration_auto_ignores_non_utf8_integration_json(self, project_dir):
+        """A non-UTF8 integration.json must not crash — fall back to the literal default."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir(parents=True, exist_ok=True)
+        # 0xFF is invalid as the leading byte of a UTF-8 sequence, so
+        # ``Path.read_text(encoding="utf-8")`` raises UnicodeDecodeError.
+        (specify_dir / "integration.json").write_bytes(b"\xff\xfe\x00\x00")
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "auto-non-utf8"
+  name: "Auto Non UTF-8"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+""")
+        engine = WorkflowEngine(project_dir)
+        resolved = engine._resolve_inputs(definition, {})
+        assert resolved["integration"] == "auto"
+
+    def test_default_value_is_validated_against_enum(self, project_dir):
+        """Defaults must run through the same coercion/enum check as provided inputs."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "default-enum"
+  name: "Default Enum"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    default: "not-in-enum"
+    enum: ["full", "backend-only", "frontend-only"]
+""")
+        engine = WorkflowEngine(project_dir)
+        with pytest.raises(ValueError, match="not in allowed values"):
+            engine._resolve_inputs(definition, {})
+
+    def test_default_value_is_coerced_to_declared_type(self, project_dir):
+        """A numeric default declared as a string should still be coerced like a provided input."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "default-coerce"
+  name: "Default Coerce"
+  version: "1.0.0"
+inputs:
+  retries:
+    type: number
+    default: "3"
+""")
+        engine = WorkflowEngine(project_dir)
+        resolved = engine._resolve_inputs(definition, {})
+        assert resolved["retries"] == 3
+        assert isinstance(resolved["retries"], int)
+
+    def test_validate_workflow_rejects_invalid_default(self):
+        """Authoring-time validation should reject defaults that violate enum."""
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "bad-default"
+  name: "Bad Default"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    default: "not-in-enum"
+    enum: ["full", "backend-only", "frontend-only"]
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        assert any("invalid default" in e for e in errors), errors
+
+    def test_validate_workflow_exempts_integration_auto_sentinel(self):
+        """``integration: auto`` is a runtime-resolved sentinel and must not fail validation."""
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "auto-ok"
+  name: "Auto OK"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+    enum: ["copilot", "claude", "gemini"]
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        assert not any("invalid default" in e for e in errors), errors
+
+    def test_validate_workflow_still_checks_type_for_auto_sentinel(self):
+        """The ``auto`` exemption only skips enum-membership; declared type is still enforced."""
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "auto-bad-type"
+  name: "Auto Bad Type"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: number
+    default: "auto"
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        assert any("invalid default" in e for e in errors), errors
+
 
 # ===== State Persistence Tests =====
 

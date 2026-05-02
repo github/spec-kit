@@ -1936,6 +1936,11 @@ def _read_integration_json(project_root: Path) -> dict[str, Any]:
         console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
         console.print(f"[dim]Details:[/dim] {exc}")
         raise typer.Exit(1)
+    except UnicodeDecodeError as exc:
+        console.print(f"[red]Error:[/red] {path} is not valid UTF-8.")
+        console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
+        console.print(f"[dim]Details:[/dim] {exc}")
+        raise typer.Exit(1)
     except OSError as exc:
         console.print(f"[red]Error:[/red] Could not read {path}.")
         console.print(f"Please fix file permissions or delete {INTEGRATION_JSON} and retry.")

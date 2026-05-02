@@ -19,6 +19,7 @@ from typing import Any
 
 import yaml
 
+from ..integration_state import INTEGRATION_JSON
 from .base import RunStatus, StepContext, StepResult, StepStatus
 
 
@@ -142,6 +143,35 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
                     f"Input {input_name!r} has invalid type {input_type!r}. "
                     f"Must be 'string', 'number', or 'boolean'."
                 )
+
+            # Validate the default eagerly so authoring mistakes (e.g. a
+            # default not in the declared enum, or a non-numeric default for
+            # a number input) surface at install/validation time instead of
+            # at workflow-execution time. ``"auto"`` for the integration
+            # input is a runtime-resolved sentinel, so only the
+            # enum-membership check is exempted for that exact case — the
+            # declared type is still enforced (e.g. ``type: number`` paired
+            # with ``default: "auto"`` is still rejected).
+            if "default" in input_def:
+                default_value = input_def["default"]
+                is_auto_integration = (
+                    input_name == "integration" and default_value == "auto"
+                )
+                validation_input_def: dict[str, Any] = input_def
+                if is_auto_integration and "enum" in input_def:
+                    validation_input_def = {
+                        key: value
+                        for key, value in input_def.items()
+                        if key != "enum"
+                    }
+                try:
+                    WorkflowEngine._coerce_input(
+                        input_name, default_value, validation_input_def
+                    )
+                except ValueError as exc:
+                    errors.append(
+                        f"Input {input_name!r} has invalid default: {exc}"
+                    )
 
     # -- Steps ------------------------------------------------------------
     if not isinstance(definition.steps, list):
@@ -715,11 +745,64 @@ class WorkflowEngine:
                     name, provided[name], input_def
                 )
             elif "default" in input_def:
-                resolved[name] = input_def["default"]
+                default_value = self._resolve_default(name, input_def["default"])
+                # If the integration default could not be resolved against
+                # project state and falls back to the literal ``"auto"``
+                # sentinel, exempt it from enum-membership coercion so a
+                # workflow that lists specific integrations in ``enum`` does
+                # not crash at runtime — declared type is still enforced.
+                coerce_input_def = input_def
+                if (
+                    name == "integration"
+                    and default_value == "auto"
+                    and "enum" in input_def
+                ):
+                    coerce_input_def = {
+                        key: value
+                        for key, value in input_def.items()
+                        if key != "enum"
+                    }
+                resolved[name] = self._coerce_input(
+                    name, default_value, coerce_input_def
+                )
             elif input_def.get("required", False):
                 msg = f"Required input {name!r} not provided."
                 raise ValueError(msg)
         return resolved
+
+    def _resolve_default(self, name: str, default: Any) -> Any:
+        """Resolve special default sentinels against project state.
+
+        For the ``integration`` input, ``"auto"`` resolves to the integration
+        recorded in ``.specify/integration.json`` so workflows dispatch to the
+        AI the project was actually initialized with, instead of a hardcoded
+        value baked into the workflow YAML.
+        """
+        if name == "integration" and default == "auto":
+            resolved = self._load_project_integration()
+            if resolved is not None:
+                return resolved
+        return default
+
+    def _load_project_integration(self) -> str | None:
+        """Read the active integration key from ``.specify/integration.json``.
+
+        Returns None when the file is missing or malformed; callers are
+        expected to fall back to a literal default.
+        """
+        path = self.project_root / INTEGRATION_JSON
+        if not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        value = data.get("integration")
+        if isinstance(value, str) and value:
+            return value
+        return None
 
     @staticmethod
     def _coerce_input(
