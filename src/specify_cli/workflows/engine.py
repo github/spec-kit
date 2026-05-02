@@ -47,8 +47,8 @@ class WorkflowDefinition:
         if not isinstance(self.default_options, dict):
             self.default_options = {}
 
-        # Requirements (declared but not yet enforced at runtime;
-        # enforcement is a planned enhancement)
+        # Requirements declared by the workflow. Some permissions are enforced
+        # during validation and execution.
         self.requires: dict[str, Any] = data.get("requires", {})
 
         # Inputs
@@ -128,6 +128,10 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             f"semantic versioning (expected X.Y.Z)."
         )
 
+    # -- Requirements -----------------------------------------------------
+    if not isinstance(definition.requires, dict):
+        errors.append("'requires' must be a mapping (or omitted).")
+
     # -- Inputs -----------------------------------------------------------
     if not isinstance(definition.inputs, dict):
         errors.append("'inputs' must be a mapping (or omitted).")
@@ -150,10 +154,66 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
     if not definition.steps:
         errors.append("Workflow has no steps defined.")
 
+    errors.extend(_validate_shell_permissions(definition))
+
     seen_ids: set[str] = set()
     _validate_steps(definition.steps, seen_ids, errors)
 
     return errors
+
+
+def _validate_shell_permissions(definition: WorkflowDefinition) -> list[str]:
+    """Validate explicit opt-in for workflows that run shell commands."""
+    if not _workflow_uses_shell(definition.steps):
+        return []
+    if _allows_shell_steps(definition.requires):
+        return []
+    return [
+        "Workflow uses shell steps but must declare "
+        "'requires.permissions.shell: true' before shell commands can run."
+    ]
+
+
+def _allows_shell_steps(requires: Any) -> bool:
+    """Return whether the workflow explicitly opts into shell execution."""
+    if not isinstance(requires, dict):
+        return False
+    permissions = requires.get("permissions")
+    if not isinstance(permissions, dict):
+        return False
+    return permissions.get("shell") is True
+
+
+def _workflow_uses_shell(steps: Any) -> bool:
+    """Return True when any top-level or nested step has type 'shell'."""
+    if not isinstance(steps, list):
+        return False
+
+    for step_config in steps:
+        if not isinstance(step_config, dict):
+            continue
+
+        if step_config.get("type", "command") == "shell":
+            return True
+
+        for nested_key in ("then", "else", "steps"):
+            if _workflow_uses_shell(step_config.get(nested_key)):
+                return True
+
+        cases = step_config.get("cases")
+        if isinstance(cases, dict):
+            for case_steps in cases.values():
+                if _workflow_uses_shell(case_steps):
+                    return True
+
+        if _workflow_uses_shell(step_config.get("default")):
+            return True
+
+        fan_step = step_config.get("step")
+        if isinstance(fan_step, dict) and _workflow_uses_shell([fan_step]):
+            return True
+
+    return False
 
 
 def _validate_steps(
@@ -399,6 +459,10 @@ class WorkflowEngine:
         The final ``RunState`` after execution completes (or pauses).
         """
         from . import STEP_REGISTRY
+
+        shell_permission_errors = _validate_shell_permissions(definition)
+        if shell_permission_errors:
+            raise ValueError(shell_permission_errors[0])
 
         state = RunState(
             run_id=run_id,
