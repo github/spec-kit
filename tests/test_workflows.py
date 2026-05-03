@@ -1959,7 +1959,7 @@ steps:
 
     def test_integration_auto_ignores_malformed_integration_json(self, project_dir):
         """Malformed integration.json falls back to 'copilot'."""
-        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.engine import WorkflowEngine
 
         (project_dir / ".specify" / "integration.json").write_text(
             "not valid json", encoding="utf-8"

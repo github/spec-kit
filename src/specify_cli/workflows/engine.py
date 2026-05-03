@@ -20,7 +20,7 @@ from typing import Any
 import yaml
 
 from .base import RunStatus, StepContext, StepResult, StepStatus
-from specify_cli.paths import INTEGRATION_JSON as _INTEGRATION_JSON
+from specify_cli.integration_state import INTEGRATION_JSON as _INTEGRATION_JSON
 from specify_cli.paths import INIT_OPTIONS_FILE as _INIT_OPTIONS_FILE
 
 
