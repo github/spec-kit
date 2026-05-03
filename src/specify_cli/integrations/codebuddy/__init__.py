@@ -19,3 +19,4 @@ class CodebuddyIntegration(MarkdownIntegration):
         "extension": ".md",
     }
     context_file = "CODEBUDDY.md"
+    multi_install_safe = True
