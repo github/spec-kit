@@ -17,7 +17,7 @@ inputs:
   integration:
     type: string
     default: "auto"
-    prompt: "Integration to use (e.g. claude, copilot, gemini, opencode, or 'auto' to detect from project config)"
+    prompt: "Integration to use, or 'auto' to detect from project config"
   scope:
     type: string
     default: "full"
