@@ -1,8 +1,8 @@
 """Lingma IDE integration. — skills-based agent.
 
 Lingma IDE uses ``.lingma/skills/speckit-<name>/SKILL.md`` layout.
-In the Specify CLI Lingma integration, explicit command support was deprecated
-since v0.5.1; ``--skills`` defaults to ``True``.
+In Specify CLI, the Lingma integration is skills-only, and ``--skills``
+defaults to ``True``.
 """
 
 from __future__ import annotations
