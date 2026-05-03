@@ -43,7 +43,7 @@ from pathlib import Path
 
 from packaging.version import InvalidVersion, Version
 from typing import Any, Optional
-from specify_cli.paths import INIT_OPTIONS_FILE, INTEGRATION_JSON
+from specify_cli.paths import INIT_OPTIONS_FILE
 
 import typer
 from rich.console import Console
