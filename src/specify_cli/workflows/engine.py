@@ -20,6 +20,8 @@ from typing import Any
 import yaml
 
 from .base import RunStatus, StepContext, StepResult, StepStatus
+from specify_cli.paths import INTEGRATION_JSON as _INTEGRATION_JSON
+from specify_cli.paths import INIT_OPTIONS_FILE as _INIT_OPTIONS_FILE
 
 
 # -- Workflow Definition --------------------------------------------------
@@ -81,8 +83,6 @@ class WorkflowDefinition:
 
 # ID format: lowercase alphanumeric with hyphens
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
-
-_INTEGRATION_JSON = ".specify/integration.json"
 
 # Valid step types (matching STEP_REGISTRY keys)
 def _get_valid_step_types() -> set[str]:
@@ -721,43 +721,63 @@ class WorkflowEngine:
             elif input_def.get("required", False):
                 msg = f"Required input {name!r} not provided."
                 raise ValueError(msg)
-
+        # Also resolve "auto" sentinel when explicitly supplied by the caller
         if resolved.get("integration") == "auto":
-            resolved["integration"] = self._load_project_integration()
+            resolved["integration"] = self._resolve_default("integration", "auto")
         return resolved
 
     def _resolve_default(self, name: str, default: Any) -> Any:
         """Resolve special default sentinels against project state.
 
         For the ``integration`` input, ``"auto"`` resolves to the integration
-        recorded in ``.specify/integration.json`` so workflows dispatch to the
-        AI the project was actually initialized with.
+        recorded in project metadata so workflows dispatch to the AI the
+        project was actually initialized with.
         """
         if name == "integration" and default == "auto":
             return self._load_project_integration()
         return default
 
     def _load_project_integration(self) -> str:
-        """Read the active integration key from ``.specify/integration.json``.
+        """Read the active integration key from project metadata.
 
-        Returns the stored integration string, or ``"copilot"`` when the file is
-        missing, unreadable, or does not contain a valid non-empty key.
-        The ``"copilot"`` fallback preserves backwards compatibility for projects
-        that predate the introduction of ``.specify/integration.json``.
+        The primary source is ``.specify/integration.json``. If that file is
+        missing or invalid, fall back to ``.specify/init-options.json`` for
+        older projects or partially migrated state, checking ``integration``
+        first and then ``ai``. Returns ``"copilot"`` only when neither source
+        contains a valid non-empty integration key.
         """
-        path = self.project_root / _INTEGRATION_JSON
-        if not path.is_file():
-            return "copilot"
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            return "copilot"
-        if isinstance(data, dict):
-            value = data.get("integration")
-            if isinstance(value, str):
-                value = value.strip()
-                if value and value != "auto":
-                    return value
+
+        def _read_integration(path: Path, *keys: str) -> str | None:
+            if not path.is_file():
+                return None
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                return None
+            if not isinstance(data, dict):
+                return None
+            for key in keys:
+                value = data.get(key)
+                if isinstance(value, str):
+                    value = value.strip()
+                    if value and value != "auto":  # skip "auto" to avoid circular resolution
+                        return value
+            return None
+
+        integration = _read_integration(
+            self.project_root / _INTEGRATION_JSON, "integration"
+        )
+        if integration is not None:
+            return integration
+
+        integration = _read_integration(
+            self.project_root / _INIT_OPTIONS_FILE,
+            "integration",
+            "ai",
+        )
+        if integration is not None:
+            return integration
+
         return "copilot"
 
     @staticmethod

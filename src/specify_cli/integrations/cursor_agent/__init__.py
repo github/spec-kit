@@ -26,6 +26,7 @@ class CursorAgentIntegration(SkillsIntegration):
     }
 
     context_file = ".cursor/rules/specify-rules.mdc"
+    multi_install_safe = True
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
