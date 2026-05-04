@@ -2,6 +2,7 @@
 
 import os
 from unittest.mock import patch
+
 import pytest
 
 from specify_cli._github_http import (
@@ -71,7 +72,7 @@ class TestBuildGithubRequest:
         with patch.dict(os.environ, {}, clear=True):
             req = build_github_request("https://github.com/github/spec-kit")
         assert req.get_header("Authorization") is None
-        
+
     def test_missing_hostname_raises_value_error(self):
         """build_github_request() must reject URLs with valid scheme but no hostname."""
         with pytest.raises(ValueError, match="url must include a hostname"):
