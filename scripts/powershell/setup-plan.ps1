@@ -37,8 +37,6 @@ New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 $template = Resolve-Template -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
 if ($template -and (Test-Path $template)) { 
     # Read the template content and write it to the implementation plan file with UTF-8 encoding without BOM
-   # Read the template content as UTF-8 and write it to the implementation plan file with UTF-8 encoding without BOM
-    # Read the template content and write it to the implementation plan file with UTF-8 encoding without BOM
     $content = [System.IO.File]::ReadAllText($template)
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
