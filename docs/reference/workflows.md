@@ -11,7 +11,7 @@ specify workflow run <source>
 | Option              | Description                                                                                      |
 | ------------------- | ------------------------------------------------------------------------------------------------ |
 | `-i` / `--input`    | Pass workflow inputs/parameters as `key=value` (repeatable); `key=@path` reads an existing text file, otherwise `@` values stay literal |
-| `--input-file`      | Load workflow inputs/parameters from a JSON object file; repeatable `--input` values override file values |
+| `--input-file`      | Load workflow inputs/parameters from a JSON object file with string, number, or boolean values; repeatable `--input` values override file values |
 
 Runs a workflow from an installed workflow ID or a local `.yml`/`.yaml` file path. Inputs/parameters declared by the workflow can be provided via `--input` or `--input-file`, or will be prompted interactively.
 
@@ -22,6 +22,8 @@ specify workflow run ./workflow.yml -i prompt="Build a workflow" -i scope=full
 specify workflow run ./workflow.yml --input prompt=@docs/prompt.md
 specify workflow run ./workflow.yml --input-file payload.json -i scope=full
 ```
+
+For boolean, number, and enum-constrained inputs, surrounding whitespace from file-backed string values is trimmed before normal workflow input coercion. Free-form string inputs preserve file contents.
 
 > **Note:** All workflow commands require a project already initialized with `specify init`.
 

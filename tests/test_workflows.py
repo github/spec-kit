@@ -120,6 +120,34 @@ class TestWorkflowCliInputs:
 
         assert inputs == {"description": desc_text}
 
+    def test_at_file_input_normalizes_typed_scalars(
+        self,
+        project_dir,
+        monkeypatch,
+    ):
+        from specify_cli import _parse_workflow_inputs
+
+        (project_dir / "enabled.txt").write_text("true\n", encoding="utf-8")
+        (project_dir / "scope.txt").write_text("full\n", encoding="utf-8")
+        (project_dir / "notes.md").write_text("line one\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        inputs = _parse_workflow_inputs(
+            ["enabled=@enabled.txt", "scope=@scope.txt", "notes=@notes.md"],
+            None,
+            {
+                "enabled": {"type": "boolean"},
+                "scope": {"type": "string", "enum": ["full", "minimal"]},
+                "notes": {"type": "string"},
+            },
+        )
+
+        assert inputs == {
+            "enabled": "true",
+            "scope": "full",
+            "notes": "line one\n",
+        }
+
     @pytest.mark.parametrize("literal", ["@alice", "@"])
     def test_missing_at_file_stays_literal(self, literal, project_dir, monkeypatch):
         from specify_cli import _parse_workflow_inputs
@@ -176,6 +204,40 @@ class TestWorkflowCliInputs:
             "scope": "full",
         }
 
+    def test_input_file_normalizes_typed_string_scalars(
+        self,
+        project_dir,
+        monkeypatch,
+    ):
+        from specify_cli import _parse_workflow_inputs
+
+        payload_file = project_dir / "payload.json"
+        payload_file.write_text(
+            json.dumps({
+                "enabled": "true\n",
+                "scope": "full\n",
+                "prompt": "Keep trailing newline\n",
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(project_dir)
+
+        inputs = _parse_workflow_inputs(
+            None,
+            "payload.json",
+            {
+                "enabled": {"type": "boolean"},
+                "scope": {"type": "string", "enum": ["full", "minimal"]},
+                "prompt": {"type": "string"},
+            },
+        )
+
+        assert inputs == {
+            "enabled": "true",
+            "scope": "full",
+            "prompt": "Keep trailing newline\n",
+        }
+
     def test_direct_input_overrides_input_file(self, project_dir, monkeypatch):
         from specify_cli import _parse_workflow_inputs
 
@@ -219,6 +281,48 @@ class TestWorkflowCliInputs:
         with pytest.raises(ValueError, match="JSON object"):
             _parse_workflow_inputs(None, "payload.json")
 
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"spec": {"text": "Build a workflow"}},
+            {"spec": ["Build a workflow"]},
+            {"spec": None},
+        ],
+    )
+    def test_non_scalar_json_input_file_values_fail_cleanly(
+        self,
+        payload,
+        project_dir,
+        monkeypatch,
+    ):
+        from specify_cli import _parse_workflow_inputs
+
+        payload_file = project_dir / "payload.json"
+        payload_file.write_text(json.dumps(payload), encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        with pytest.raises(ValueError, match="string, number, or boolean"):
+            _parse_workflow_inputs(None, "payload.json")
+
+    @pytest.mark.parametrize(
+        "payload",
+        ['{"spec": NaN}', '{"spec": Infinity}', '{"spec": 1e999}'],
+    )
+    def test_non_finite_json_input_file_numbers_fail_cleanly(
+        self,
+        payload,
+        project_dir,
+        monkeypatch,
+    ):
+        from specify_cli import _parse_workflow_inputs
+
+        payload_file = project_dir / "payload.json"
+        payload_file.write_text(payload, encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        with pytest.raises(ValueError, match="finite number"):
+            _parse_workflow_inputs(None, "payload.json")
+
     def test_malformed_inline_input_fails_cleanly(self):
         from specify_cli import _parse_workflow_inputs
 
@@ -245,6 +349,7 @@ class TestWorkflowCliInputs:
             id = "speckit"
             name = "Spec Kit"
             version = "1.0.0"
+            inputs = {}
 
         class FakeStatus:
             value = "completed"
