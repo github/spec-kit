@@ -71,3 +71,8 @@ class TestBuildGithubRequest:
         with patch.dict(os.environ, {}, clear=True):
             req = build_github_request("https://github.com/github/spec-kit")
         assert req.get_header("Authorization") is None
+        
+    def test_missing_hostname_raises_value_error(self):
+        """build_github_request() must reject URLs with valid scheme but no hostname."""
+        with pytest.raises(ValueError, match="url must include a hostname"):
+            build_github_request("http://")
