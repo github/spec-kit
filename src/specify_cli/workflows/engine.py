@@ -20,7 +20,10 @@ from typing import Any
 import yaml
 
 from .base import RunStatus, StepContext, StepResult, StepStatus
-from specify_cli.integration_state import INTEGRATION_JSON as _INTEGRATION_JSON
+from specify_cli.integration_state import (
+    INTEGRATION_JSON as _INTEGRATION_JSON,
+    default_integration_key as _default_integration_key,
+)
 from specify_cli.paths import INIT_OPTIONS_FILE as _INIT_OPTIONS_FILE
 
 
@@ -426,7 +429,9 @@ class WorkflowEngine:
 
         context = StepContext(
             inputs=resolved_inputs,
-            default_integration=definition.default_integration,
+            default_integration=self._resolve_workflow_integration(
+                definition.default_integration
+            ),
             default_model=definition.default_model,
             default_options=definition.default_options,
             project_root=str(self.project_root),
@@ -474,7 +479,9 @@ class WorkflowEngine:
         context = StepContext(
             inputs=state.inputs,
             steps=state.step_results,
-            default_integration=definition.default_integration,
+            default_integration=self._resolve_workflow_integration(
+                definition.default_integration
+            ),
             default_model=definition.default_model,
             default_options=definition.default_options,
             project_root=str(self.project_root),
@@ -713,17 +720,18 @@ class WorkflowEngine:
             if not isinstance(input_def, dict):
                 continue
             if name in provided:
-                resolved[name] = self._coerce_input(
-                    name, provided[name], input_def
-                )
+                value = provided[name]
+                # Resolve "auto" sentinel before enum validation so workflows
+                # with a constrained enum (e.g. enum: [claude, copilot]) don't
+                # reject the sentinel before it can be expanded.
+                if name == "integration" and value == "auto":
+                    value = self._resolve_default(name, value)
+                resolved[name] = self._coerce_input(name, value, input_def)
             elif "default" in input_def:
                 resolved[name] = self._resolve_default(name, input_def["default"])
             elif input_def.get("required", False):
                 msg = f"Required input {name!r} not provided."
                 raise ValueError(msg)
-        # Also resolve "auto" sentinel when explicitly supplied by the caller
-        if resolved.get("integration") == "auto":
-            resolved["integration"] = self._resolve_default("integration", "auto")
         return resolved
 
     def _resolve_default(self, name: str, default: Any) -> Any:
@@ -737,6 +745,18 @@ class WorkflowEngine:
             return self._load_project_integration()
         return default
 
+    def _resolve_workflow_integration(self, integration: str | None) -> str | None:
+        """Resolve the workflow-level integration sentinel.
+
+        If the workflow YAML sets ``workflow.integration: auto``, the string
+        ``"auto"`` is stored in ``WorkflowDefinition.default_integration``.
+        This helper expands that sentinel to the project integration so it
+        never leaks into ``StepContext`` or step dispatch.
+        """
+        if integration == "auto":
+            return self._resolve_default("integration", "auto")
+        return integration
+
     def _load_project_integration(self) -> str:
         """Read the active integration key from project metadata.
 
@@ -747,7 +767,8 @@ class WorkflowEngine:
         contains a valid non-empty integration key.
         """
 
-        def _read_integration(path: Path, *keys: str) -> str | None:
+        def _read_init_options(path: Path, *keys: str) -> str | None:
+            """Read a key from a legacy init-options JSON file."""
             if not path.is_file():
                 return None
             try:
@@ -760,17 +781,26 @@ class WorkflowEngine:
                 value = data.get(key)
                 if isinstance(value, str):
                     value = value.strip()
-                    if value and value != "auto":  # skip "auto" to avoid circular resolution
+                    if value and value != "auto":
                         return value
             return None
 
-        integration = _read_integration(
-            self.project_root / _INTEGRATION_JSON, "integration"
-        )
-        if integration is not None:
-            return integration
+        # Primary source: .specify/integration.json — use the shared normalized
+        # reader so both "integration" and "default_integration" fields are
+        # handled and future schema versions are respected.
+        json_path = self.project_root / _INTEGRATION_JSON
+        if json_path.is_file():
+            try:
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                data = None
+            if isinstance(data, dict):
+                key = _default_integration_key(data)
+                if key and key != "auto":
+                    return key
 
-        integration = _read_integration(
+        # Secondary source: .specify/init-options.json for older projects.
+        integration = _read_init_options(
             self.project_root / _INIT_OPTIONS_FILE,
             "integration",
             "ai",

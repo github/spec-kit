@@ -2022,3 +2022,67 @@ steps:
         )
         engine = WorkflowEngine(project_dir)
         assert engine._load_project_integration() == "gemini"
+
+    def test_integration_explicit_auto_with_enum_constraint(self, project_dir):
+        """Explicit --input integration=auto works even when enum excludes 'auto'.
+
+        Issue: enum validation in _coerce_input() ran before the auto-sentinel
+        was resolved, so enum: [claude, copilot] rejected the 'auto' value.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "claude"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "enum-auto-test"
+  name: "Enum Auto Test"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    enum: ["claude", "copilot"]
+    default: "auto"
+steps:
+  - id: echo
+    type: shell
+    run: "echo {{ inputs.integration }}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        # Explicit "auto" must resolve to "claude" without raising on the enum
+        resolved = engine._resolve_inputs(definition, {"integration": "auto"})
+        assert resolved["integration"] == "claude"
+
+    def test_workflow_level_integration_auto_resolves_in_context(self, project_dir):
+        """workflow.integration: auto is resolved before reaching StepContext.
+
+        Issue: definition.default_integration was passed raw as 'auto' into
+        StepContext, causing step dispatch to look for an 'auto' CLI.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        resolved = engine._resolve_workflow_integration("auto")
+        assert resolved == "opencode"
+
+    def test_integration_auto_reads_default_integration_field(self, project_dir):
+        """integration.json with 'default_integration' key is resolved correctly.
+
+        Issue: _load_project_integration() only queried the legacy 'integration'
+        field; state files written with the newer 'default_integration' field
+        (as produced by default_integration_key()) were silently ignored.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"default_integration": "gemini", "integration_state_schema": 1}',
+            encoding="utf-8",
+        )
+        engine = WorkflowEngine(project_dir)
+        assert engine._load_project_integration() == "gemini"
