@@ -34,12 +34,16 @@ def build_github_request(url: str) -> urllib.request.Request:
     headers: Dict[str, str] = {}
     if not url or not url.strip():
         raise ValueError("url must not be empty")
-    if not url.startswith(("http://", "https://")):
+    url = url.strip()
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
         raise ValueError(f"url must start with http:// or https://, got: {url!r}")
+    if not parsed.hostname:
+        raise ValueError(f"url must include a hostname, got: {url!r}")
     github_token = (os.environ.get("GITHUB_TOKEN") or "").strip()
     gh_token = (os.environ.get("GH_TOKEN") or "").strip()
     token = github_token or gh_token or None
-    hostname = (urlparse(url).hostname or "").lower()
+    hostname = parsed.hostname.lower()
     if token and hostname in GITHUB_HOSTS:
         headers["Authorization"] = f"Bearer {token}"
     return urllib.request.Request(url, headers=headers)
