@@ -32,6 +32,10 @@ def build_github_request(url: str) -> urllib.request.Request:
     requests so credentials are never leaked to third-party hosts.
     """
     headers: Dict[str, str] = {}
+    if not url or not url.strip():
+        raise ValueError("url must not be empty")
+    if not url.startswith(("http://", "https://")):
+        raise ValueError(f"url must start with http:// or https://, got: {url!r}")
     github_token = (os.environ.get("GITHUB_TOKEN") or "").strip()
     gh_token = (os.environ.get("GH_TOKEN") or "").strip()
     token = github_token or gh_token or None
