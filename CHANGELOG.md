@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.5] - 2026-05-04
+
+### Changed
+
+- feat(presets): add Spec2Cloud preset for Azure deployment workflow (#2413)
+- update security-review and memory-md extensions to latest versions (#2445)
+- fix: honor template overrides for tasks-template (#2278) (#2292)
+- Add token-analyzer to community catalog (#2433)
+- docs: add April 2026 newsletter (#2434)
+- feat: emit init-time notice for git extension default change (#2165) (#2432)
+- Update DyanGalih(Memory Hub and Security Review) community extensions (#2429)
+- Support controlled multi-install for safe AI agent integrations (#2389)
+- chore(integrations): clean up docs and project guard (#2428)
+- chore: release 0.8.4, begin 0.8.5.dev0 development (#2431)
+
 ## [0.8.4] - 2026-05-01
 
 ### Changed
