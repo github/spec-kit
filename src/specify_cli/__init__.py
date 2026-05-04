@@ -34,6 +34,7 @@ import tempfile
 import shutil
 import json
 import json5
+import math
 import stat
 import shlex
 import urllib.error
@@ -5289,6 +5290,36 @@ def _read_workflow_cli_file(raw_path: str, description: str) -> tuple[Path, str]
         ) from exc
 
 
+def _json_type_name(value: Any) -> str:
+    """Return a user-facing JSON type name for validation errors."""
+    if value is None:
+        return "null"
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    return type(value).__name__
+
+
+def _validate_workflow_input_file_value(key: str, value: Any) -> None:
+    """Ensure --input-file values match the supported workflow input scalars."""
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(
+            f"--input-file value for {key!r} must be a finite number."
+        )
+    if not isinstance(value, (str, int, float, bool)):
+        raise ValueError(
+            f"--input-file value for {key!r} must be a string, number, "
+            f"or boolean, got {_json_type_name(value)}."
+        )
+
+
 def _load_workflow_input_file(input_file: str) -> dict[str, Any]:
     """Load workflow inputs from a JSON object file."""
     path, raw_json = _read_workflow_cli_file(input_file, "--input-file")
@@ -5304,18 +5335,40 @@ def _load_workflow_input_file(input_file: str) -> dict[str, Any]:
         raise ValueError(
             f"--input-file must contain a JSON object, got {type(data).__name__}."
         )
+    for key, value in data.items():
+        _validate_workflow_input_file_value(str(key), value)
     return data
+
+
+def _normalize_workflow_cli_scalar(
+    value: Any,
+    input_def: dict[str, Any] | None,
+) -> Any:
+    """Normalize file-backed scalars when workflow coercion expects scalars."""
+    if not isinstance(value, str) or not isinstance(input_def, dict):
+        return value
+
+    input_type = input_def.get("type", "string")
+    if input_type in ("number", "boolean") or input_def.get("enum") is not None:
+        return value.strip()
+    return value
 
 
 def _parse_workflow_inputs(
     input_values: list[str] | None,
     input_file: str | None,
+    input_definitions: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Normalize workflow CLI input options into the engine input dict."""
     inputs: dict[str, Any] = {}
+    input_definitions = input_definitions or {}
 
     if input_file is not None:
-        inputs.update(_load_workflow_input_file(input_file))
+        for key, value in _load_workflow_input_file(input_file).items():
+            inputs[key] = _normalize_workflow_cli_scalar(
+                value,
+                input_definitions.get(key),
+            )
 
     if input_values:
         for kv in input_values:
@@ -5338,6 +5391,10 @@ def _parse_workflow_inputs(
                     if candidate_path.exists() and candidate_path.is_file():
                         _, value = _read_workflow_cli_file(
                             file_ref, f"input {key!r}"
+                        )
+                        value = _normalize_workflow_cli_scalar(
+                            value,
+                            input_definitions.get(key),
                         )
             inputs[key] = value
 
@@ -5385,7 +5442,7 @@ def workflow_run(
         raise typer.Exit(1)
 
     try:
-        inputs = _parse_workflow_inputs(input_values, input_file)
+        inputs = _parse_workflow_inputs(input_values, input_file, definition.inputs)
     except ValueError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
