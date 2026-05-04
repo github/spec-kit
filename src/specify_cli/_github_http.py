@@ -43,7 +43,6 @@ def build_github_request(url: str) -> urllib.request.Request:
     github_token = (os.environ.get("GITHUB_TOKEN") or "").strip()
     gh_token = (os.environ.get("GH_TOKEN") or "").strip()
     token = github_token or gh_token or None
-    hostname = (urlparse(url).hostname or "").lower()
     hostname = parsed.hostname.lower()
     if token and hostname in GITHUB_HOSTS:
         headers["Authorization"] = f"Bearer {token}"
