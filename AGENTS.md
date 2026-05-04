@@ -20,23 +20,17 @@ src/specify_cli/integrations/
 ├── base.py                # IntegrationBase, MarkdownIntegration, TomlIntegration, YamlIntegration, SkillsIntegration
 ├── manifest.py            # IntegrationManifest (file tracking)
 ├── claude/                # Example: SkillsIntegration subclass
-│   ├── __init__.py        #   ClaudeIntegration class
-│   └── scripts/           #   Thin wrapper scripts
-│       ├── update-context.sh
-│       └── update-context.ps1
+│   └── __init__.py        #   ClaudeIntegration class
 ├── gemini/                # Example: TomlIntegration subclass
-│   ├── __init__.py
-│   └── scripts/
+│   └── __init__.py
 ├── windsurf/              # Example: MarkdownIntegration subclass
-│   ├── __init__.py
-│   └── scripts/
+│   └── __init__.py
 ├── copilot/               # Example: IntegrationBase subclass (custom setup)
-│   ├── __init__.py
-│   └── scripts/
+│   └── __init__.py
 └── ...                    # One subpackage per supported agent
 ```
 
-The registry is the **single source of truth for Python integration metadata**. Supported agents, their directories, formats, and capabilities are derived from the integration classes for the Python integration layer. However, context-update behavior still requires explicit cases in the shared dispatcher scripts (`scripts/bash/update-agent-context.sh` and `scripts/powershell/update-agent-context.ps1`), which currently maintain their own supported-agent lists and agent-key→context-file mappings until they are migrated to registry-based dispatch.
+The registry is the **single source of truth for Python integration metadata**. Supported agents, their directories, formats, capabilities, and context files are derived from the integration classes for the Python integration layer.
 
 ---
 
@@ -179,63 +173,11 @@ def _register_builtins() -> None:
     # ...
 ```
 
-### 4. Add scripts
+### 4. Context file behavior
 
-Create two thin wrapper scripts in `src/specify_cli/integrations/<package_dir>/scripts/` that delegate to the shared context-update scripts. Each is ~25 lines of boilerplate.
+Set `context_file` on the integration class. The base integration setup creates or updates the managed Spec Kit section in that file, and uninstall removes the managed section when appropriate.
 
-> **Note on `<package_dir>` vs `<key>`:** `<package_dir>` is the Python-safe directory name for your integration — it matches `<key>` exactly when the key contains no hyphens (e.g., key `"gemini"` → `gemini/`), but uses underscores when it does (e.g., key `"kiro-cli"` → `kiro_cli/`). The `IntegrationBase.key` class attribute always retains the original hyphenated value (e.g., `key = "kiro-cli"`), since that is what the CLI and registry use.
-
-**`update-context.sh`:**
-
-```bash
-#!/usr/bin/env bash
-# update-context.sh — <Agent Name> integration: create/update <context_file>
-set -euo pipefail
-
-_script_dir="$(cd "$(dirname "$0")" && pwd)"
-_root="$_script_dir"
-while [ "$_root" != "/" ] && [ ! -d "$_root/.specify" ]; do _root="$(dirname "$_root")"; done
-if [ -z "${REPO_ROOT:-}" ]; then
-  if [ -d "$_root/.specify" ]; then
-    REPO_ROOT="$_root"
-  else
-    git_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-    if [ -n "$git_root" ] && [ -d "$git_root/.specify" ]; then
-      REPO_ROOT="$git_root"
-    else
-      REPO_ROOT="$_root"
-    fi
-  fi
-fi
-
-exec "$REPO_ROOT/.specify/scripts/bash/update-agent-context.sh" <key>
-```
-
-**`update-context.ps1`:**
-
-```powershell
-# update-context.ps1 — <Agent Name> integration: create/update <context_file>
-$ErrorActionPreference = 'Stop'
-
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$repoRoot = try { git rev-parse --show-toplevel 2>$null } catch { $null }
-if (-not $repoRoot -or -not (Test-Path (Join-Path $repoRoot '.specify'))) {
-    $repoRoot = $scriptDir
-    $fsRoot = [System.IO.Path]::GetPathRoot($repoRoot)
-    while ($repoRoot -and $repoRoot -ne $fsRoot -and -not (Test-Path (Join-Path $repoRoot '.specify'))) {
-        $repoRoot = Split-Path -Parent $repoRoot
-    }
-}
-
-& "$repoRoot/.specify/scripts/powershell/update-agent-context.ps1" -AgentType <key>
-```
-
-Replace `<key>` with your integration key and `<Agent Name>` / `<context_file>` with the appropriate values.
-
-You must also add the agent to the shared context-update scripts so the shared dispatcher recognises the new key:
-
-- **`scripts/bash/update-agent-context.sh`** — add a file-path variable and a case in `update_specific_agent()`.
-- **`scripts/powershell/update-agent-context.ps1`** — add a file-path variable, add the new key to the `AgentType` parameter's `[ValidateSet(...)]`, add a switch case in `Update-SpecificAgent`, and add an entry in `Update-AllExistingAgents`.
+Only add custom setup logic when the agent needs non-standard behavior. Most integrations do not need wrapper scripts or separate context-update dispatch code.
 
 ### 5. Test it
 
@@ -422,7 +364,6 @@ Implementation: Extends `MarkdownIntegration` with custom `setup()` method that:
 3. Applies Forge-specific transformations via `_apply_forge_transformations()`
 4. Strips `handoffs` frontmatter key
 5. Injects missing `name` fields
-6. Ensures the shared `update-agent-context.*` scripts include a `forge` case that maps context updates to `AGENTS.md` and lists `forge` in their usage/help text
 
 ### Goose Integration
 
@@ -436,7 +377,7 @@ Implementation: Extends `YamlIntegration` (parallel to `TomlIntegration`):
 2. Extracts title and description from frontmatter
 3. Renders output as Goose recipe YAML (version, title, description, author, extensions, activities, prompt)
 4. Uses `yaml.safe_dump()` for header fields to ensure proper escaping
-5. Context updates map to `AGENTS.md` (shared with opencode/codex/pi/forge)
+5. Sets `context_file = "AGENTS.md"` so the base setup manages the Spec Kit context section there
 
 ## Common Pitfalls
 
