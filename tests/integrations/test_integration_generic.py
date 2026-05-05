@@ -185,6 +185,16 @@ class TestGenericIntegration:
         )
         assert "__CONTEXT_FILE__" not in content
 
+    def test_implement_loads_constitution_context(self, tmp_path):
+        """The generated implement command should load constitution governance context."""
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        i.setup(tmp_path, m, parsed_options={"commands_dir": ".custom/cmds"})
+        implement_file = tmp_path / ".custom" / "cmds" / "speckit.implement.md"
+        assert implement_file.exists()
+        content = implement_file.read_text(encoding="utf-8")
+        assert "/memory/constitution.md" in content
+
     # -- CLI --------------------------------------------------------------
 
     def test_cli_generic_without_commands_dir_fails(self, tmp_path):
