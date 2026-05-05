@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-04T00:00:00Z",
+  "updated_at": "2026-05-04T17:02:08Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1372,6 +1372,56 @@
       "created_at": "2026-04-09T00:00:00Z",
       "updated_at": "2026-04-16T13:10:26Z"
     },
+    "multi-model-review": {
+      "name": "Multi-Model Review",
+      "id": "multi-model-review",
+      "description": "Cross-model Spec Kit handoffs for spec authoring, implementation routing, and review.",
+      "author": "formin",
+      "version": "0.1.0",
+      "download_url": "https://github.com/formin/multi-model-review/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/formin/multi-model-review",
+      "homepage": "https://github.com/formin/multi-model-review",
+      "documentation": "https://github.com/formin/multi-model-review/blob/main/README.md",
+      "changelog": "https://github.com/formin/multi-model-review/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "codex",
+            "required": false
+          },
+          {
+            "name": "gemini",
+            "required": false
+          },
+          {
+            "name": "claude",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "review",
+        "workflow",
+        "multi-model",
+        "spec-driven-development",
+        "code"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-04T02:51:52Z",
+      "updated_at": "2026-05-04T02:51:52Z"
+    },
     "onboard": {
       "name": "Onboard",
       "id": "onboard",
@@ -1630,12 +1680,12 @@
       "id": "ralph",
       "description": "Autonomous implementation loop using AI agent CLI.",
       "author": "Rubiss",
-      "version": "1.0.1",
-      "download_url": "https://github.com/Rubiss/spec-kit-ralph/archive/refs/tags/v1.0.1.zip",
-      "repository": "https://github.com/Rubiss/spec-kit-ralph",
-      "homepage": "https://github.com/Rubiss/spec-kit-ralph",
-      "documentation": "https://github.com/Rubiss/spec-kit-ralph/blob/main/README.md",
-      "changelog": "https://github.com/Rubiss/spec-kit-ralph/blob/main/CHANGELOG.md",
+      "version": "1.0.2",
+      "download_url": "https://github.com/Rubiss-Projects/spec-kit-ralph/archive/refs/tags/v1.0.2.zip",
+      "repository": "https://github.com/Rubiss-Projects/spec-kit-ralph",
+      "homepage": "https://github.com/Rubiss-Projects/spec-kit-ralph",
+      "documentation": "https://github.com/Rubiss-Projects/spec-kit-ralph/blob/main/README.md",
+      "changelog": "https://github.com/Rubiss-Projects/spec-kit-ralph/blob/main/CHANGELOG.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.1.0",
@@ -1664,7 +1714,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-09T00:00:00Z",
-      "updated_at": "2026-04-12T19:00:00Z"
+      "updated_at": "2026-05-04T17:02:08Z"
     },
     "reconcile": {
       "name": "Reconcile Extension",

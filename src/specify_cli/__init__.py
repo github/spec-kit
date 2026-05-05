@@ -5806,7 +5806,7 @@ def workflow_catalog_list():
     """List configured workflow catalog sources."""
     from .workflows.catalog import WorkflowCatalog, WorkflowCatalogError
 
-    project_root = Path.cwd()
+    project_root = _require_specify_project()
     catalog = WorkflowCatalog(project_root)
 
     try:
