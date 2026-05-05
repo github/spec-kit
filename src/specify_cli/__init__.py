@@ -400,10 +400,18 @@ def run_command(cmd: list[str], check_return: bool = True, capture: bool = False
     """Run a shell command and optionally capture output."""
     try:
         if capture:
-            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True, shell=shell)
+            # shell=True is only available to callers that opt in explicitly.
+            result = subprocess.run(  # nosec B602
+                cmd,
+                check=check_return,
+                capture_output=True,
+                text=True,
+                shell=shell,
+            )
             return result.stdout.strip()
         else:
-            subprocess.run(cmd, check=check_return, shell=shell)
+            # shell=True is only available to callers that opt in explicitly.
+            subprocess.run(cmd, check=check_return, shell=shell)  # nosec B602
             return None
     except subprocess.CalledProcessError as e:
         if check_return:
