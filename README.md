@@ -187,6 +187,7 @@ The following community-contributed extensions are available in [`catalog.commun
 - `process` — orchestrates workflow across phases
 - `integration` — syncs with external platforms
 - `visibility` — reports on project health or progress
+- `governance` — enforces architectural or policy compliance
 
 **Effect:**
 
