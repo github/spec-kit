@@ -11,6 +11,15 @@ from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest
 
 
+class SymlinkedSharedPathError(ValueError):
+    """Raised when a shared infrastructure path or ancestor is a symlink.
+
+    Distinct from other unsafe-path errors so callers can preserve symlinked
+    destinations as customizations while still letting genuine safety errors
+    (e.g. path escape, not-a-directory) propagate and abort the operation.
+    """
+
+
 def load_speckit_manifest(
     project_path: Path,
     *,
@@ -89,7 +98,7 @@ def _ensure_safe_shared_directory(project_path: Path, directory: Path, *, create
         current = current / part
         label = _shared_destination_label(project_path, current)
         if current.is_symlink():
-            raise ValueError(f"Refusing to use symlinked shared infrastructure directory: {label}")
+            raise SymlinkedSharedPathError(f"Refusing to use symlinked shared infrastructure directory: {label}")
         if current.exists():
             if not current.is_dir():
                 raise ValueError(f"Shared infrastructure directory path is not a directory: {label}")
@@ -102,7 +111,7 @@ def _ensure_safe_shared_directory(project_path: Path, directory: Path, *, create
             raise ValueError(f"Shared infrastructure directory does not exist: {label}")
         current.mkdir()
         if current.is_symlink():
-            raise ValueError(f"Refusing to use symlinked shared infrastructure directory: {label}")
+            raise SymlinkedSharedPathError(f"Refusing to use symlinked shared infrastructure directory: {label}")
         try:
             current.resolve().relative_to(root)
         except (OSError, ValueError):
@@ -119,7 +128,7 @@ def _validate_safe_shared_directory(project_path: Path, directory: Path) -> None
         current = current / part
         label = _shared_destination_label(project_path, current)
         if current.is_symlink():
-            raise ValueError(f"Refusing to use symlinked shared infrastructure directory: {label}")
+            raise SymlinkedSharedPathError(f"Refusing to use symlinked shared infrastructure directory: {label}")
         if not current.exists():
             continue
         if not current.is_dir():
@@ -145,7 +154,7 @@ def _ensure_safe_shared_destination(
         _validate_safe_shared_directory(project_path, dest.parent)
     label = _shared_destination_label(project_path, dest)
     if dest.is_symlink():
-        raise ValueError(f"Refusing to overwrite symlinked shared infrastructure path: {label}")
+        raise SymlinkedSharedPathError(f"Refusing to overwrite symlinked shared infrastructure path: {label}")
 
     if dest.exists():
         try:
@@ -299,33 +308,76 @@ def install_shared_infra(
         destination or any of its ancestors is a symlink — those paths can't
         be written to safely, but they shouldn't abort the whole switch
         either. They're surfaced as a separate "symlinked" warning bucket.
+
+        Other unsafe-path errors (e.g. path escape, parent-not-a-directory)
+        are NOT caught here: they re-raise so the operation aborts, since
+        treating them as "symlinked" would mask security-relevant failures.
         """
         try:
             _ensure_safe_shared_destination(project_path, dst, parent_must_exist=parent_must_exist)
-        except ValueError:
+        except SymlinkedSharedPathError:
             symlinked_files.append(rel)
+            return False
+        return True
+
+    def _ensure_or_bucket_dir(directory: Path) -> bool:
+        """Create *directory* unless an ancestor is symlinked.
+
+        Returns True when the directory is safe to use. Returns False (and
+        records the path under ``symlinked_files``) when a symlink ancestor
+        forces us to skip the whole subtree. Other unsafe-path errors
+        (escape, not-a-directory) re-raise so the operation aborts.
+        """
+        try:
+            _ensure_safe_shared_directory(project_path, directory)
+        except SymlinkedSharedPathError:
+            symlinked_files.append(directory.relative_to(project_path).as_posix())
             return False
         return True
 
     scripts_src = shared_scripts_source(core_pack=core_pack, repo_root=repo_root)
     if scripts_src.is_dir():
         dest_scripts = project_path / ".specify" / "scripts"
-        _ensure_safe_shared_directory(project_path, dest_scripts)
-        variant_dir = "bash" if script_type == "sh" else "powershell"
-        variant_src = scripts_src / variant_dir
-        if variant_src.is_dir():
-            dest_variant = dest_scripts / variant_dir
-            _ensure_safe_shared_directory(project_path, dest_variant)
-            for src_path in variant_src.rglob("*"):
-                if not src_path.is_file():
+        if _ensure_or_bucket_dir(dest_scripts):
+            variant_dir = "bash" if script_type == "sh" else "powershell"
+            variant_src = scripts_src / variant_dir
+            if variant_src.is_dir():
+                dest_variant = dest_scripts / variant_dir
+                if _ensure_or_bucket_dir(dest_variant):
+                    for src_path in variant_src.rglob("*"):
+                        if not src_path.is_file():
+                            continue
+
+                        rel_path = src_path.relative_to(variant_src)
+                        dst_path = dest_variant / rel_path
+                        rel = dst_path.relative_to(project_path).as_posix()
+                        if not _safe_dest_or_bucket(dst_path, rel, parent_must_exist=False):
+                            continue
+                        write, bucket = _decide_overwrite(rel, dst_path)
+                        if not write:
+                            if bucket == "preserved":
+                                preserved_user_files.append(rel)
+                            else:
+                                skipped_files.append(rel)
+                            continue
+
+                        if not _ensure_or_bucket_dir(dst_path.parent):
+                            continue
+                        planned_copies.append((dst_path, rel, src_path.read_bytes(), src_path.stat().st_mode & 0o777))
+
+    templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
+    if templates_src.is_dir():
+        dest_templates = project_path / ".specify" / "templates"
+        if _ensure_or_bucket_dir(dest_templates):
+            for src in templates_src.iterdir():
+                if not src.is_file() or src.name == "vscode-settings.json" or src.name.startswith("."):
                     continue
 
-                rel_path = src_path.relative_to(variant_src)
-                dst_path = dest_variant / rel_path
-                rel = dst_path.relative_to(project_path).as_posix()
-                if not _safe_dest_or_bucket(dst_path, rel, parent_must_exist=False):
+                dst = dest_templates / src.name
+                rel = dst.relative_to(project_path).as_posix()
+                if not _safe_dest_or_bucket(dst, rel):
                     continue
-                write, bucket = _decide_overwrite(rel, dst_path)
+                write, bucket = _decide_overwrite(rel, dst)
                 if not write:
                     if bucket == "preserved":
                         preserved_user_files.append(rel)
@@ -333,35 +385,13 @@ def install_shared_infra(
                         skipped_files.append(rel)
                     continue
 
-                _ensure_safe_shared_directory(project_path, dst_path.parent)
-                planned_copies.append((dst_path, rel, src_path.read_bytes(), src_path.stat().st_mode & 0o777))
-
-    templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
-    if templates_src.is_dir():
-        dest_templates = project_path / ".specify" / "templates"
-        _ensure_safe_shared_directory(project_path, dest_templates)
-        for src in templates_src.iterdir():
-            if not src.is_file() or src.name == "vscode-settings.json" or src.name.startswith("."):
-                continue
-
-            dst = dest_templates / src.name
-            rel = dst.relative_to(project_path).as_posix()
-            if not _safe_dest_or_bucket(dst, rel):
-                continue
-            write, bucket = _decide_overwrite(rel, dst)
-            if not write:
-                if bucket == "preserved":
-                    preserved_user_files.append(rel)
-                else:
-                    skipped_files.append(rel)
-                continue
-
-            content = src.read_text(encoding="utf-8")
-            content = IntegrationBase.resolve_command_refs(content, invoke_separator)
-            planned_templates.append((dst, rel, content))
+                content = src.read_text(encoding="utf-8")
+                content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+                planned_templates.append((dst, rel, content))
 
     for dst_path, rel, content, mode in planned_copies:
-        _ensure_safe_shared_directory(project_path, dst_path.parent)
+        if not _ensure_or_bucket_dir(dst_path.parent):
+            continue
         _write_shared_bytes(project_path, dst_path, content, mode=mode)
         manifest.record_existing(rel)
 
