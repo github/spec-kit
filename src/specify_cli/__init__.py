@@ -396,14 +396,8 @@ def callback(
         console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
         console.print()
 
-def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> Optional[str]:
+def run_command(cmd: list[str], check_return: bool = True, capture: bool = False) -> Optional[str]:
     """Run a command without invoking a shell and optionally capture output."""
-    if shell:
-        raise ValueError(
-            "run_command does not support shell=True; use a reviewed "
-            "subprocess.run call for shell-specific behavior."
-        )
-
     try:
         if capture:
             result = subprocess.run(
