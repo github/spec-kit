@@ -528,11 +528,9 @@ specify extension add <extension-name> --from https://github.com/.../spec-kit-my
 
 Submit to the community catalog for public discovery:
 
-1. **Fork** spec-kit repository
-2. **Add entry** to `extensions/catalog.community.json`
-3. **Update** the Community Extensions table in `README.md` with your extension
-4. **Create PR** following the [Extension Publishing Guide](EXTENSION-PUBLISHING-GUIDE.md)
-5. **After merge**, your extension becomes available:
+1. **Create a GitHub release** for your extension
+2. **File an issue** using the [Extension Submission](https://github.com/github/spec-kit/issues/new?template=extension_submission.yml) template
+3. **After review**, a maintainer updates the catalog and your extension becomes available:
    - Users can browse `catalog.community.json` to discover your extension
    - Users copy the entry to their own `catalog.json`
    - Users install with: `specify extension add my-ext` (from their catalog)
