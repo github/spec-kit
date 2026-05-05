@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-05T00:00:00Z",
+  "updated_at": "2026-05-05T07:26:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -99,6 +99,39 @@
       "stars": 0,
       "created_at": "2026-04-14T00:00:00Z",
       "updated_at": "2026-04-14T00:00:00Z"
+    },
+    "architecture-guard": {
+      "name": "Architecture Guard",
+      "id": "architecture-guard",
+      "description": "Continuous architecture governance for AI-assisted development. Reviews specs, plans, and code for architecture drift, producing structured refactor tasks and evolution proposals.",
+      "author": "DyanGalih",
+      "version": "1.4.0",
+      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.4.0.zip",
+      "repository": "https://github.com/DyanGalih/spec-kit-architecture-guard",
+      "homepage": "https://github.com/DyanGalih/spec-kit-architecture-guard",
+      "documentation": "https://github.com/DyanGalih/spec-kit-architecture-guard/blob/main/README.md",
+      "changelog": "https://github.com/DyanGalih/spec-kit-architecture-guard/releases",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 0
+      },
+      "tags": [
+        "architecture",
+        "governance",
+        "drift-detection",
+        "refactor",
+        "monolithic",
+        "microservices"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-05T07:26:00Z",
+      "updated_at": "2026-05-05T07:26:00Z"
     },
     "archive": {
       "name": "Archive Extension",
