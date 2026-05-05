@@ -7,6 +7,7 @@ third-party hosts on redirects.
 """
 
 import os
+import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 from typing import Dict
@@ -41,6 +42,12 @@ def build_github_request(url: str) -> urllib.request.Request:
     return urllib.request.Request(url, headers=headers)
 
 
+def _is_https_or_localhost_http(url: str) -> bool:
+    parsed = urlparse(url)
+    is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+    return parsed.scheme == "https" or (parsed.scheme == "http" and is_localhost)
+
+
 class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
     """Redirect handler that drops the Authorization header when leaving GitHub.
 
@@ -50,6 +57,11 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
     """
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _is_https_or_localhost_http(newurl):
+            raise urllib.error.URLError(
+                f"Refusing unsafe redirect to non-HTTPS URL: {newurl}"
+            )
+
         original_auth = req.get_header("Authorization")
         new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
         if new_req is not None:
@@ -63,17 +75,19 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
         return new_req
 
 
-def open_github_url(url: str, timeout: int = 10):
+def open_github_url(url: str, timeout: int = 10, *, strict_redirects: bool = False):
     """Open a URL with GitHub auth, stripping the header on cross-host redirects.
 
     When the request carries an Authorization header, a custom redirect
     handler drops that header if the redirect target is not a GitHub-owned
     domain, preventing token leakage to CDNs or other third-party hosts
     that GitHub may redirect to (e.g. S3 for release asset downloads).
+    When strict_redirects is true, the same redirect handler is used even
+    without auth so HTTPS downloads cannot silently downgrade to HTTP.
     """
     req = build_github_request(url)
 
-    if not req.get_header("Authorization"):
+    if not req.get_header("Authorization") and not strict_redirects:
         return urllib.request.urlopen(req, timeout=timeout)
 
     opener = urllib.request.build_opener(_StripAuthOnRedirect)

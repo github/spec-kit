@@ -19,6 +19,9 @@ from typing import Any
 
 import yaml
 
+from specify_cli._download_security import read_response_limited
+from specify_cli._github_http import open_github_url
+
 
 # ---------------------------------------------------------------------------
 # Errors
@@ -322,7 +325,6 @@ class WorkflowCatalog:
 
         # Fetch from URL — validate scheme before opening and after redirects
         from urllib.parse import urlparse
-        from urllib.request import urlopen
 
         def _validate_catalog_url(url: str) -> None:
             parsed = urlparse(url)
@@ -337,9 +339,19 @@ class WorkflowCatalog:
         _validate_catalog_url(entry.url)
 
         try:
-            with urlopen(entry.url, timeout=30) as resp:  # noqa: S310
+            with open_github_url(
+                entry.url,
+                timeout=30,
+                strict_redirects=True,
+            ) as resp:
                 _validate_catalog_url(resp.geturl())
-                data = json.loads(resp.read().decode("utf-8"))
+                data = json.loads(
+                    read_response_limited(
+                        resp,
+                        error_type=WorkflowCatalogError,
+                        label="workflow catalog",
+                    ).decode("utf-8")
+                )
         except Exception as exc:
             # Fall back to cache if available
             if cache_file.exists():

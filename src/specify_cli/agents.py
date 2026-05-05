@@ -461,8 +461,20 @@ class CommandRegistrar:
         for cmd_info in commands:
             cmd_name = cmd_info["name"]
             cmd_file = cmd_info["file"]
+            if not isinstance(cmd_file, str) or not cmd_file.strip():
+                raise ValueError(
+                    f"Command source file for {cmd_name!r} must be a non-empty string"
+                )
 
-            source_file = source_dir / cmd_file
+            try:
+                source_root = source_dir.resolve()
+                source_file = (source_root / cmd_file).resolve()
+                source_file.relative_to(source_root)
+            except (OSError, ValueError):
+                raise ValueError(
+                    f"Command source file {cmd_file!r} escapes directory "
+                    f"{source_dir!r}"
+                ) from None
             if not source_file.exists():
                 continue
 

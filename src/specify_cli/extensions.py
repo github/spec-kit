@@ -10,11 +10,10 @@ import json
 import hashlib
 import os
 import tempfile
-import zipfile
 import shutil
 import copy
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Optional, Dict, List, Any, Callable, Set
 from datetime import datetime, timezone
 import re
@@ -24,6 +23,12 @@ import pathspec
 import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
+
+from ._download_security import (
+    read_response_limited,
+    safe_extract_zip,
+    verify_sha256,
+)
 
 _FALLBACK_CORE_COMMAND_NAMES = frozenset({
     "analyze",
@@ -238,6 +243,24 @@ class ExtensionManifest:
                 )
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
+            if not isinstance(cmd["file"], str) or not cmd["file"].strip():
+                raise ValidationError(
+                    f"Command '{cmd['name']}' file must be a non-empty string"
+                )
+
+            normalized_file = cmd["file"].replace("\\", "/")
+            file_path = PurePosixPath(normalized_file)
+            has_windows_drive = re.match(r"^[A-Za-z]:/", normalized_file) is not None
+            if (
+                file_path.is_absolute()
+                or has_windows_drive
+                or any(part == ".." for part in file_path.parts)
+            ):
+                raise ValidationError(
+                    f"Invalid command file path '{cmd['file']}': "
+                    "must be a relative path within the extension directory"
+                )
+            cmd["file"] = normalized_file
 
             # Validate command name format
             if not EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]):
@@ -1234,21 +1257,7 @@ class ExtensionManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            # Extract ZIP safely (prevent Zip Slip attack)
-            with zipfile.ZipFile(zip_path, 'r') as zf:
-                # Validate all paths first before extracting anything
-                temp_path_resolved = temp_path.resolve()
-                for member in zf.namelist():
-                    member_path = (temp_path / member).resolve()
-                    # Use is_relative_to for safe path containment check
-                    try:
-                        member_path.relative_to(temp_path_resolved)
-                    except ValueError:
-                        raise ValidationError(
-                            f"Unsafe path in ZIP archive: {member} (potential path traversal)"
-                        )
-                # Only extract after all paths are validated
-                zf.extractall(temp_path)
+            safe_extract_zip(zip_path, temp_path, error_type=ValidationError)
 
             # Find extension directory (may be nested)
             extension_dir = temp_path
@@ -1720,7 +1729,7 @@ class ExtensionCatalog:
         Delegates to :func:`specify_cli._github_http.open_github_url`.
         """
         from specify_cli._github_http import open_github_url
-        return open_github_url(url, timeout)
+        return open_github_url(url, timeout, strict_redirects=True)
 
     def _load_catalog_config(self, config_path: Path) -> Optional[List[CatalogEntry]]:
         """Load catalog stack configuration from a YAML file.
@@ -2178,8 +2187,18 @@ class ExtensionCatalog:
         # Download the ZIP file
         try:
             with self._open_url(download_url, timeout=60) as response:
-                zip_data = response.read()
+                zip_data = read_response_limited(
+                    response,
+                    error_type=ExtensionError,
+                    label=f"extension '{extension_id}' download",
+                )
 
+            verify_sha256(
+                zip_data,
+                ext_info.get("sha256"),
+                error_type=ExtensionError,
+                label=f"extension '{extension_id}' download",
+            )
             zip_path.write_bytes(zip_data)
             return zip_path
 

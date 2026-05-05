@@ -12,10 +12,9 @@ import json
 import hashlib
 import os
 import tempfile
-import zipfile
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Optional, Dict, List, Any
 
 if TYPE_CHECKING:
@@ -27,6 +26,11 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
+from ._download_security import (
+    read_response_limited,
+    safe_extract_zip,
+    verify_sha256,
+)
 from .extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 
 
@@ -216,12 +220,21 @@ class PresetManifest:
 
             # Validate file path safety: must be relative, no parent traversal
             file_path = tmpl["file"]
-            normalized = os.path.normpath(file_path)
-            if os.path.isabs(normalized) or normalized.startswith(".."):
+            if not isinstance(file_path, str) or not file_path.strip():
+                raise PresetValidationError(
+                    "Invalid template file path: must be a non-empty string"
+                )
+            normalized = file_path.replace("\\", "/")
+            normalized_path = PurePosixPath(normalized)
+            has_windows_drive = re.match(r"^[A-Za-z]:/", normalized) is not None
+            if normalized_path.is_absolute() or any(
+                part == ".." for part in normalized_path.parts
+            ) or has_windows_drive:
                 raise PresetValidationError(
                     f"Invalid template file path '{file_path}': "
                     "must be a relative path within the preset directory"
                 )
+            tmpl["file"] = normalized
 
             # Validate strategy field (optional, defaults to "replace")
             strategy = tmpl.get("strategy", "replace")
@@ -1625,18 +1638,7 @@ class PresetManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            with zipfile.ZipFile(zip_path, 'r') as zf:
-                temp_path_resolved = temp_path.resolve()
-                for member in zf.namelist():
-                    member_path = (temp_path / member).resolve()
-                    try:
-                        member_path.relative_to(temp_path_resolved)
-                    except ValueError:
-                        raise PresetValidationError(
-                            f"Unsafe path in ZIP archive: {member} "
-                            "(potential path traversal)"
-                        )
-                zf.extractall(temp_path)
+            safe_extract_zip(zip_path, temp_path, error_type=PresetValidationError)
 
             pack_dir = temp_path
             manifest_path = pack_dir / "preset.yml"
@@ -1858,7 +1860,7 @@ class PresetCatalog:
         Delegates to :func:`specify_cli._github_http.open_github_url`.
         """
         from specify_cli._github_http import open_github_url
-        return open_github_url(url, timeout)
+        return open_github_url(url, timeout, strict_redirects=True)
 
     def _load_catalog_config(self, config_path: Path) -> Optional[List[PresetCatalogEntry]]:
         """Load catalog stack configuration from a YAML file.
@@ -2306,8 +2308,18 @@ class PresetCatalog:
 
         try:
             with self._open_url(download_url, timeout=60) as response:
-                zip_data = response.read()
+                zip_data = read_response_limited(
+                    response,
+                    error_type=PresetError,
+                    label=f"preset '{pack_id}' download",
+                )
 
+            verify_sha256(
+                zip_data,
+                pack_info.get("sha256"),
+                error_type=PresetError,
+                label=f"preset '{pack_id}' download",
+            )
             zip_path.write_bytes(zip_data)
             return zip_path
 

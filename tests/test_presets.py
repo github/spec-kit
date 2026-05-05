@@ -12,6 +12,7 @@ Tests cover:
 
 import pytest
 import json
+import hashlib
 import tempfile
 import shutil
 import warnings
@@ -288,6 +289,38 @@ class TestPresetManifest:
             yaml.dump(valid_pack_data, f)
         with pytest.raises(PresetValidationError, match="Invalid template name"):
             PresetManifest(manifest_path)
+
+    @pytest.mark.parametrize(
+        "bad_file",
+        [
+            "../outside.md",
+            "/tmp/outside.md",
+            "templates/../../outside.md",
+            "C:\\Windows\\outside.md",
+        ],
+    )
+    def test_invalid_template_file_path(self, temp_dir, valid_pack_data, bad_file):
+        """Template files must stay inside the preset package."""
+        valid_pack_data["provides"]["templates"][0]["file"] = bad_file
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_pack_data, f)
+
+        with pytest.raises(PresetValidationError, match="Invalid template file path"):
+            PresetManifest(manifest_path)
+
+    def test_windows_template_file_path_is_normalized(self, temp_dir, valid_pack_data):
+        """Windows-authored manifests keep compatibility without traversal."""
+        valid_pack_data["provides"]["templates"][0]["file"] = (
+            "templates\\spec-template.md"
+        )
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_pack_data, f)
+
+        manifest = PresetManifest(manifest_path)
+
+        assert manifest.templates[0]["file"] == "templates/spec-template.md"
 
     def test_get_hash(self, pack_dir):
         """Test manifest hash calculation."""
@@ -1555,6 +1588,54 @@ class TestPresetCatalog:
             catalog.download_pack("test-pack", target_dir=project_dir)
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_download_pack_verifies_sha256(self, project_dir):
+        """Catalog-provided checksums are enforced when present."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes = b"fake zip data"
+        mock_response = MagicMock()
+        mock_response.read.return_value = zip_bytes
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": hashlib.sha256(zip_bytes).hexdigest(),
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert result.read_bytes() == zip_bytes
+
+    def test_download_pack_rejects_sha256_mismatch(self, project_dir):
+        """A mismatched catalog checksum stops the downloaded ZIP being used."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"fake zip data"
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": "0" * 64,
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(PresetError, match="checksum mismatch"):
+                catalog.download_pack("test-pack", target_dir=project_dir)
 
 
 # ===== Integration Tests =====
