@@ -250,9 +250,12 @@ def install_shared_infra(
     When ``refresh_managed`` is True, files whose on-disk hash still matches
     the previously recorded manifest hash are overwritten with the bundled
     version. Files whose hash diverges are treated as user customizations and
-    preserved with a warning. ``force=True`` overwrites everything regardless.
-    ``refresh_hint`` is shown after the customization warning to tell the user
-    which flag would overwrite their customizations.
+    preserved with a warning. ``force=True`` overwrites every regular file
+    (symlinks and symlinked-parent destinations are always preserved with a
+    warning — the safe-destination check refuses to follow them so writes
+    cannot escape the project root). ``refresh_hint`` is shown after the
+    customization warning to tell the user which flag would overwrite their
+    customizations.
     """
     from .integrations.manifest import _sha256
 
@@ -270,6 +273,7 @@ def install_shared_infra(
 
     skipped_files: list[str] = []
     preserved_user_files: list[str] = []
+    symlinked_files: list[str] = []
     planned_copies: list[tuple[Path, str, bytes, int]] = []
     planned_templates: list[tuple[Path, str, str]] = []
 
@@ -287,6 +291,22 @@ def install_shared_infra(
             return False, "skip"
         return False, "skip"
 
+    def _safe_dest_or_bucket(dst: Path, rel: str, *, parent_must_exist: bool = True) -> bool:
+        """Run the safe-destination check and bucket symlinked paths.
+
+        Returns True when the destination is safe to consider (write or skip).
+        Returns False (and records *rel* under ``symlinked_files``) when the
+        destination or any of its ancestors is a symlink — those paths can't
+        be written to safely, but they shouldn't abort the whole switch
+        either. They're surfaced as a separate "symlinked" warning bucket.
+        """
+        try:
+            _ensure_safe_shared_destination(project_path, dst, parent_must_exist=parent_must_exist)
+        except ValueError:
+            symlinked_files.append(rel)
+            return False
+        return True
+
     scripts_src = shared_scripts_source(core_pack=core_pack, repo_root=repo_root)
     if scripts_src.is_dir():
         dest_scripts = project_path / ".specify" / "scripts"
@@ -302,8 +322,9 @@ def install_shared_infra(
 
                 rel_path = src_path.relative_to(variant_src)
                 dst_path = dest_variant / rel_path
-                _ensure_safe_shared_destination(project_path, dst_path, parent_must_exist=False)
                 rel = dst_path.relative_to(project_path).as_posix()
+                if not _safe_dest_or_bucket(dst_path, rel, parent_must_exist=False):
+                    continue
                 write, bucket = _decide_overwrite(rel, dst_path)
                 if not write:
                     if bucket == "preserved":
@@ -324,8 +345,9 @@ def install_shared_infra(
                 continue
 
             dst = dest_templates / src.name
-            _ensure_safe_shared_destination(project_path, dst)
             rel = dst.relative_to(project_path).as_posix()
+            if not _safe_dest_or_bucket(dst, rel):
+                continue
             write, bucket = _decide_overwrite(rel, dst)
             if not write:
                 if bucket == "preserved":
@@ -353,14 +375,24 @@ def install_shared_infra(
         )
         for path in skipped_files:
             console.print(f"    {path}")
-        if refresh_hint:
-            console.print(refresh_hint)
-        else:
-            console.print(
-                "To refresh shared infrastructure, run "
-                "[cyan]specify init --here --force[/cyan] or "
-                "[cyan]specify integration upgrade --force[/cyan]."
-            )
+        console.print(
+            "To refresh shared infrastructure, run "
+            "[cyan]specify init --here --force[/cyan] or "
+            "[cyan]specify integration upgrade --force[/cyan]."
+        )
+
+    if symlinked_files:
+        console.print(
+            f"[yellow]⚠[/yellow]  Skipped {len(symlinked_files)} symlinked shared "
+            "infrastructure file(s) — symlinks are never overwritten because they "
+            "may resolve outside the project root:"
+        )
+        for path in symlinked_files:
+            console.print(f"    {path}")
+        console.print(
+            "To restore the bundled version, remove or replace the symlink manually, "
+            "then re-run the command."
+        )
 
     if preserved_user_files:
         console.print(
