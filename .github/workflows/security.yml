@@ -32,10 +32,18 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Run pip-audit
+      - name: Compile scheduled audit requirements
+        if: ${{ github.event_name == 'schedule' }}
         run: |
           uv pip compile pyproject.toml --extra test --python-version "${{ matrix.python-version }}" --generate-hashes --quiet --output-file "${{ runner.temp }}/spec-kit-audit-requirements.txt"
-          uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r "${{ runner.temp }}/spec-kit-audit-requirements.txt" --progress-spinner off
+
+      - name: Run pip-audit (scheduled live resolution)
+        if: ${{ github.event_name == 'schedule' }}
+        run: uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r "${{ runner.temp }}/spec-kit-audit-requirements.txt" --progress-spinner off
+
+      - name: Run pip-audit (committed requirements)
+        if: ${{ github.event_name != 'schedule' }}
+        run: uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r .github/security-audit-requirements.txt --progress-spinner off
 
   static-analysis:
     name: Static analysis
