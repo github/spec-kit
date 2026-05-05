@@ -98,6 +98,7 @@ class MarkdownIntegrationTests:
             assert "{SCRIPT}" not in content, f"{f.name} has unprocessed {{SCRIPT}}"
             assert "__AGENT__" not in content, f"{f.name} has unprocessed __AGENT__"
             assert "{ARGS}" not in content, f"{f.name} has unprocessed {{ARGS}}"
+            assert "__SPECKIT_COMMAND_" not in content, f"{f.name} has unprocessed __SPECKIT_COMMAND_*__"
             assert "\nscripts:\n" not in content, f"{f.name} has unstripped scripts: block"
 
     def test_plan_references_correct_context_file(self, tmp_path):
@@ -273,11 +274,11 @@ class MarkdownIntegrationTests:
 
         if script_variant == "sh":
             for name in ["check-prerequisites.sh", "common.sh", "create-new-feature.sh",
-                         "setup-plan.sh"]:
+                         "setup-plan.sh", "setup-tasks.sh"]:
                 files.append(f".specify/scripts/bash/{name}")
         else:
             for name in ["check-prerequisites.ps1", "common.ps1", "create-new-feature.ps1",
-                         "setup-plan.ps1"]:
+                         "setup-plan.ps1", "setup-tasks.ps1"]:
                 files.append(f".specify/scripts/powershell/{name}")
 
         for name in ["checklist-template.md",

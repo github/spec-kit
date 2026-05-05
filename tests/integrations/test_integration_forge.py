@@ -152,6 +152,7 @@ class TestForgeIntegration:
             assert "{SCRIPT}" not in content, f"{cmd_file.name} has unprocessed {{SCRIPT}}"
             assert "__AGENT__" not in content, f"{cmd_file.name} has unprocessed __AGENT__"
             assert "{ARGS}" not in content, f"{cmd_file.name} has unprocessed {{ARGS}}"
+            assert "__SPECKIT_COMMAND_" not in content, f"{cmd_file.name} has unprocessed __SPECKIT_COMMAND_*__"
             # Check Forge-specific: $ARGUMENTS should be replaced with {{parameters}}
             assert "$ARGUMENTS" not in content, f"{cmd_file.name} has unprocessed $ARGUMENTS"
             # Frontmatter sections should be stripped

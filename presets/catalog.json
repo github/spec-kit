@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-10T00:00:00Z",
+  "updated_at": "2026-04-24T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.json",
   "presets": {
     "lean": {
@@ -10,7 +10,15 @@
       "description": "Minimal core workflow commands - just the prompt, just the artifact",
       "author": "github",
       "repository": "https://github.com/github/spec-kit",
+      "license": "MIT",
       "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 5,
+        "templates": 0
+      },
       "tags": [
         "lean",
         "minimal",

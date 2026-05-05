@@ -101,6 +101,7 @@ class TestGenericIntegration:
             assert "{SCRIPT}" not in content, f"{f.name} has unprocessed {{SCRIPT}}"
             assert "__AGENT__" not in content, f"{f.name} has unprocessed __AGENT__"
             assert "{ARGS}" not in content, f"{f.name} has unprocessed {{ARGS}}"
+            assert "__SPECKIT_COMMAND_" not in content, f"{f.name} has unprocessed __SPECKIT_COMMAND_*__"
 
     def test_all_files_tracked_in_manifest(self, tmp_path):
         i = get_integration("generic")
@@ -263,6 +264,7 @@ class TestGenericIntegration:
             ".specify/scripts/bash/common.sh",
             ".specify/scripts/bash/create-new-feature.sh",
             ".specify/scripts/bash/setup-plan.sh",
+            ".specify/scripts/bash/setup-tasks.sh",
             ".specify/templates/checklist-template.md",
             ".specify/templates/constitution-template.md",
             ".specify/templates/plan-template.md",
@@ -318,6 +320,7 @@ class TestGenericIntegration:
             ".specify/scripts/powershell/common.ps1",
             ".specify/scripts/powershell/create-new-feature.ps1",
             ".specify/scripts/powershell/setup-plan.ps1",
+            ".specify/scripts/powershell/setup-tasks.ps1",
             ".specify/templates/checklist-template.md",
             ".specify/templates/constitution-template.md",
             ".specify/templates/plan-template.md",

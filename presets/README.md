@@ -61,7 +61,37 @@ specify preset add healthcare-compliance --priority 5  # overrides enterprise-sa
 specify preset add pm-workflow --priority 1            # overrides everything
 ```
 
-Presets **override**, they don't merge. If two presets both provide `spec-template`, the one with the lowest priority number wins entirely.
+Presets **override by default**, they don't merge. If two presets both provide `spec-template` with the default `replace` strategy, the one with the lowest priority number wins entirely. However, presets can use **composition strategies** to augment rather than replace content.
+
+### Composition Strategies
+
+Presets can declare a `strategy` per template to control how content is combined. The `name` field identifies which template to compose with in the priority stack, while `file` points to the actual content file (which can differ from the convention path `templates/<name>.md`):
+
+```yaml
+provides:
+  templates:
+    - type: "template"
+      name: "spec-template"
+      file: "templates/spec-addendum.md"
+      strategy: "append"        # adds content after the core template
+```
+
+| Strategy | Description |
+|----------|-------------|
+| `replace` (default) | Fully replaces the lower-priority template |
+| `prepend` | Places content **before** the resolved lower-priority template, separated by a blank line |
+| `append` | Places content **after** the resolved lower-priority template, separated by a blank line |
+| `wrap` | Content contains `{CORE_TEMPLATE}` placeholder (or `$CORE_SCRIPT` for scripts) replaced with the lower-priority content |
+
+**Supported combinations:**
+
+| Type | `replace` | `prepend` | `append` | `wrap` |
+|------|-----------|-----------|----------|--------|
+| **template** | ✓ (default) | ✓ | ✓ | ✓ |
+| **command** | ✓ (default) | ✓ | ✓ | ✓ |
+| **script** | ✓ (default) | — | — | ✓ |
+
+Multiple composing presets chain recursively. For example, a security preset with `prepend` and a compliance preset with `append` will produce: security header + core content + compliance footer.
 
 ## Catalog Management
 
@@ -93,9 +123,25 @@ See [scaffold/](scaffold/) for a scaffold you can copy to create your own preset
 
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `SPECKIT_PRESET_CATALOG_URL` | Override the catalog URL (replaces all defaults) |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SPECKIT_PRESET_CATALOG_URL` | Override the full catalog stack with a single URL (replaces all defaults) | Built-in default stack |
+| `GH_TOKEN` / `GITHUB_TOKEN` | GitHub token for authenticated requests to GitHub-hosted URLs (`raw.githubusercontent.com`, `github.com`, `api.github.com`, `codeload.github.com`). Required when your catalog JSON or preset ZIPs are hosted in a private GitHub repository. | None |
+
+#### Example: Using a private GitHub-hosted catalog
+
+```bash
+# Authenticate with a token (gh CLI, PAT, or GITHUB_TOKEN in CI)
+export GITHUB_TOKEN=$(gh auth token)
+
+# Search a private catalog added via `specify preset catalog add`
+specify preset search my-template
+
+# Install from a private catalog
+specify preset add my-template
+```
+
+The token is attached automatically to requests targeting GitHub domains. Non-GitHub catalog URLs are always fetched without credentials.
 
 ## Configuration Files
 
@@ -108,13 +154,5 @@ See [scaffold/](scaffold/) for a scaffold you can copy to create your own preset
 
 The following enhancements are under consideration for future releases:
 
-- **Composition strategies** — Allow presets to declare a `strategy` per template instead of the default `replace`:
-
-  | Type | `replace` | `prepend` | `append` | `wrap` |
-  |------|-----------|-----------|----------|--------|
-  | **template** | ✓ (default) | ✓ | ✓ | ✓ |
-  | **command** | ✓ (default) | ✓ | ✓ | ✓ |
-  | **script** | ✓ (default) | — | — | ✓ |
-
-  For artifacts and commands (which are LLM directives), `wrap` injects preset content before and after the core template using a `{CORE_TEMPLATE}` placeholder (implemented). For scripts, `wrap` would run custom logic before/after the core script via a `$CORE_SCRIPT` variable (not yet implemented).
-- **Script overrides** — Enable presets to provide alternative versions of core scripts (e.g. `create-new-feature.sh`) for workflow customization. A `strategy: "wrap"` option could allow presets to run custom logic before/after the core script without fully replacing it.
+- **Structural merge strategies** — Parsing Markdown sections for per-section granularity (e.g., "replace only ## Security").
+- **Conflict detection** — `specify preset lint` / `specify preset doctor` for detecting composition conflicts.

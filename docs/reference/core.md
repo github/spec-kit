@@ -22,6 +22,10 @@ specify init [<project_name>]
 
 Creates a new Spec Kit project with the necessary directory structure, templates, scripts, and AI coding agent integration files.
 
+> [!NOTE]
+> The git extension is currently enabled by default during `specify init`.
+> Starting in `v0.10.0`, it will require explicit opt-in. To add it after init, run `specify extension add git`.
+
 Use `<project_name>` to create a new directory, or `--here` (or `.`) to initialize in the current directory. If the directory already has files, use `--force` to merge without confirmation.
 
 ### Examples

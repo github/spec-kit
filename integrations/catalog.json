@@ -66,6 +66,15 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "skills"]
     },
+    "devin": {
+      "id": "devin",
+      "name": "Devin for Terminal",
+      "version": "1.0.0",
+      "description": "Devin for Terminal CLI skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills"]
+    },
     "qwen": {
       "id": "qwen",
       "name": "Qwen Code",

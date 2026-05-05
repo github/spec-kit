@@ -159,6 +159,22 @@ class SkillsIntegrationTests:
             assert "{SCRIPT}" not in content, f"{f.name} has unprocessed {{SCRIPT}}"
             assert "__AGENT__" not in content, f"{f.name} has unprocessed __AGENT__"
             assert "{ARGS}" not in content, f"{f.name} has unprocessed {{ARGS}}"
+            assert "__SPECKIT_COMMAND_" not in content, f"{f.name} has unprocessed __SPECKIT_COMMAND_*__"
+
+    def test_command_refs_use_hyphen_separator(self, tmp_path):
+        """Skills agents must resolve command refs with hyphen separator."""
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        skill_files = [f for f in created if "scripts" not in f.parts]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            # Skills agents must use /speckit-<name>, not /speckit.<name>
+            assert "/speckit." not in content, (
+                f"{f.name} contains dot-notation /speckit. reference; "
+                f"skills agents must use /speckit-<name>"
+            )
 
     def test_skill_body_has_content(self, tmp_path):
         """Each SKILL.md body should contain template content after the frontmatter."""
@@ -371,6 +387,7 @@ class SkillsIntegrationTests:
                 ".specify/scripts/bash/common.sh",
                 ".specify/scripts/bash/create-new-feature.sh",
                 ".specify/scripts/bash/setup-plan.sh",
+                ".specify/scripts/bash/setup-tasks.sh",
             ]
         else:
             files += [
@@ -378,6 +395,7 @@ class SkillsIntegrationTests:
                 ".specify/scripts/powershell/common.ps1",
                 ".specify/scripts/powershell/create-new-feature.ps1",
                 ".specify/scripts/powershell/setup-plan.ps1",
+                ".specify/scripts/powershell/setup-tasks.ps1",
             ]
         # Templates
         files += [

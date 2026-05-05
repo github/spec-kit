@@ -103,6 +103,16 @@ class CopilotIntegration(IntegrationBase):
     # Mutable flag set by setup() — indicates the active scaffolding mode.
     _skills_mode: bool = False
 
+    def effective_invoke_separator(
+        self, parsed_options: dict[str, Any] | None = None
+    ) -> str:
+        """Return ``"-"`` when skills mode is requested, ``"."`` otherwise."""
+        if parsed_options and parsed_options.get("skills"):
+            return "-"
+        if self._skills_mode:
+            return "-"
+        return self.invoke_separator
+
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         return [
@@ -145,9 +155,9 @@ class CopilotIntegration(IntegrationBase):
         """
         if self._skills_mode:
             stem = command_name
-            if "." in stem:
-                stem = stem.rsplit(".", 1)[-1]
-            invocation = f"/speckit-{stem}"
+            if stem.startswith("speckit."):
+                stem = stem[len("speckit."):]
+            invocation = "/speckit-" + stem.replace(".", "-")
             if args:
                 invocation = f"{invocation} {args}"
             return invocation
@@ -175,8 +185,8 @@ class CopilotIntegration(IntegrationBase):
         import subprocess
 
         stem = command_name
-        if "." in stem:
-            stem = stem.rsplit(".", 1)[-1]
+        if stem.startswith("speckit."):
+            stem = stem[len("speckit."):]
 
         # Detect skills mode from project layout when not set via setup()
         skills_mode = self._skills_mode
@@ -189,7 +199,7 @@ class CopilotIntegration(IntegrationBase):
                 )
 
         if skills_mode:
-            prompt = f"/speckit-{stem}"
+            prompt = "/speckit-" + stem.replace(".", "-")
             if args:
                 prompt = f"{prompt} {args}"
         else:

@@ -39,16 +39,16 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init .
 uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here
 ```
 
-### Specify AI Agent
+### Specify Integration
 
-You can proactively specify your AI agent during initialization:
+You can proactively specify your coding agent integration during initialization:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai claude
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai gemini
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai copilot
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai codebuddy
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai pi
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration claude
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration gemini
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration copilot
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration codebuddy
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration pi
 ```
 
 ### Specify Script Type (Shell vs PowerShell)
@@ -73,7 +73,7 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <proje
 If you prefer to get the templates without checking for the right tools:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai claude --ignore-agent-tools
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration claude --ignore-agent-tools
 ```
 
 ## Verification
@@ -86,7 +86,7 @@ specify version
 
 This helps verify you are running the official Spec Kit build from GitHub, not an unrelated package with the same name.
 
-After initialization, you should see the following commands available in your AI agent:
+After initialization, you should see the following commands available in your coding agent:
 
 - `/speckit.specify` - Create specifications
 - `/speckit.plan` - Generate implementation plans  
@@ -131,12 +131,10 @@ pip install --no-index --find-links=./dist specify-cli
 
 ```bash
 # Initialize a project — no GitHub access needed
-specify init my-project --ai claude --offline
+specify init my-project --integration claude
 ```
 
-The `--offline` flag tells the CLI to use the templates, commands, and scripts bundled inside the wheel instead of downloading from GitHub.
-
-> **Deprecation notice:** Starting with v0.6.0, `specify init` will use bundled assets by default and the `--offline` flag will be removed. The GitHub download path will be retired because bundled assets eliminate the need for network access, avoid proxy/firewall issues, and guarantee that templates always match the installed CLI version. No action will be needed — `specify init` will simply work without network access out of the box.
+Bundled assets are used by default — no network access is required.
 
 > **Note:** Python 3.11+ is required.
 
