@@ -10,7 +10,7 @@ from specify_cli._github_http import (
 )
 
 
-class TestBuildGithubRequest:
+class TestBuildGitHubRequest:
     """Tests for build_github_request() URL validation and auth handling."""
 
     # --- URL Validation Tests ---

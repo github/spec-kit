@@ -8,8 +8,8 @@ third-party hosts on redirects.
 
 import os
 import urllib.request
-from urllib.parse import urlparse
 from typing import Dict
+from urllib.parse import urlparse
 
 # GitHub-owned hostnames that should receive the Authorization header.
 # Includes codeload.github.com because GitHub archive URL downloads
@@ -37,9 +37,9 @@ def build_github_request(url: str) -> urllib.request.Request:
         ValueError: If ``url`` does not include a hostname.
     """
     headers: Dict[str, str] = {}
-    if not url or not url.strip():
-        raise ValueError("url must not be empty")
     url = url.strip()
+    if not url:
+        raise ValueError("url must not be empty")
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         raise ValueError(f"url must start with http:// or https://, got: {url!r}")
