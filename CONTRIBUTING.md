@@ -84,12 +84,12 @@ Run this when you change agent metadata, context update scripts, or integration 
 #### Security checks
 
 ```bash
-uv pip compile pyproject.toml --extra test --quiet --output-file /tmp/spec-kit-audit-requirements.txt
-uvx --from pip-audit==2.10.0 pip-audit -r /tmp/spec-kit-audit-requirements.txt --progress-spinner off
+uv pip compile pyproject.toml --extra test --generate-hashes --quiet --output-file spec-kit-audit-requirements.txt
+uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r spec-kit-audit-requirements.txt --progress-spinner off
 uvx --from bandit==1.9.4 bandit -r src -lll --baseline .github/bandit-baseline.json
 ```
 
-Run these before changing dependency metadata, workflow execution code, subprocess usage, or security-sensitive paths. The dependency audit resolves the runtime and `test` extra dependency set used by CI and contributors.
+Run these before changing dependency metadata, workflow execution code, subprocess usage, or security-sensitive paths. The dependency audit resolves the runtime and `test` extra dependency set used by CI and contributors. CI runs the dependency audit across the supported Python and OS matrix; locally, run these commands from the environment you want to reproduce.
 
 ### Manual testing
 
