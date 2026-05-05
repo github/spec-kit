@@ -762,7 +762,7 @@ class TestIntegrationSwitch:
         assert result.exit_code == 0, result.output
 
         # Git extension commands should exist for opencode
-        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
+        opencode_git_feature = project / ".opencode" / "commands" / "speckit.git.feature.md"
         assert opencode_git_feature.exists(), "Git extension command should exist for opencode"
 
         # Old kimi extension skills should be removed
@@ -837,7 +837,7 @@ class TestIntegrationSwitch:
         ])
         assert result.exit_code == 0, result.output
 
-        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
+        opencode_git_feature = project / ".opencode" / "commands" / "speckit.git.feature.md"
         assert opencode_git_feature.exists(), "Git extension command should exist for opencode"
         assert not copilot_git_feature.exists(), "Old Copilot extension skill should be removed"
 
@@ -858,7 +858,7 @@ class TestIntegrationSwitch:
         result = _run_in_project(project, ["extension", "disable", "git"])
         assert result.exit_code == 0, result.output
 
-        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
+        opencode_git_feature = project / ".opencode" / "commands" / "speckit.git.feature.md"
         assert opencode_git_feature.exists(), "Disabled extension command remains until integration switch"
 
         result = _run_in_project(project, [

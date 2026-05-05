@@ -8,8 +8,8 @@ from .test_integration_base_markdown import MarkdownIntegrationTests
 class TestOpencodeIntegration(MarkdownIntegrationTests):
     KEY = "opencode"
     FOLDER = ".opencode/"
-    COMMANDS_SUBDIR = "command"
-    REGISTRAR_DIR = ".opencode/command"
+    COMMANDS_SUBDIR = "commands"
+    REGISTRAR_DIR = ".opencode/commands"
     CONTEXT_FILE = "AGENTS.md"
 
     def test_build_exec_args_uses_run_command_dispatch(self):
