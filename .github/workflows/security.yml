@@ -13,8 +13,13 @@ on:
 
 jobs:
   dependency-audit:
-    name: Dependency audit
-    runs-on: ubuntu-latest
+    name: Dependency audit (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -22,15 +27,15 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
 
       - name: Run pip-audit
         run: |
-          uv pip compile pyproject.toml --extra test --quiet --output-file /tmp/spec-kit-audit-requirements.txt
-          uvx --from pip-audit==2.10.0 pip-audit -r /tmp/spec-kit-audit-requirements.txt --progress-spinner off
+          uv pip compile pyproject.toml --extra test --python-version "${{ matrix.python-version }}" --generate-hashes --quiet --output-file "${{ runner.temp }}/spec-kit-audit-requirements.txt"
+          uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r "${{ runner.temp }}/spec-kit-audit-requirements.txt" --progress-spinner off
 
   static-analysis:
     name: Static analysis
