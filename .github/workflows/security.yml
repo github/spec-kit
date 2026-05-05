@@ -29,7 +29,7 @@ jobs:
 
       - name: Run pip-audit
         run: |
-          uv export --quiet --extra test --format requirements.txt --no-emit-project --output-file /tmp/spec-kit-audit-requirements.txt
+          uv pip compile pyproject.toml --extra test --quiet --output-file /tmp/spec-kit-audit-requirements.txt
           uvx --from pip-audit==2.10.0 pip-audit -r /tmp/spec-kit-audit-requirements.txt --progress-spinner off
 
   static-analysis:
