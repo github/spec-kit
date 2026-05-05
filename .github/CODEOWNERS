@@ -1,3 +1,8 @@
 # Global code owner
 * @mnriem
 
+# Community catalog files — explicit ownership for when global ownership expands
+/extensions/catalog.community.json @mnriem
+/integrations/catalog.community.json @mnriem
+/presets/catalog.community.json @mnriem
+
