@@ -20,6 +20,12 @@ from typing import Any
 
 import yaml
 
+from specify_cli._download_security import (
+    MAX_JSON_CATALOG_BYTES,
+    is_https_or_localhost_http,
+    read_response_limited,
+)
+
 
 # ---------------------------------------------------------------------------
 # Errors
@@ -155,20 +161,17 @@ class WorkflowCatalog:
 
     def _validate_catalog_url(self, url: str) -> None:
         """Validate that a catalog URL uses HTTPS (localhost HTTP allowed)."""
-        from urllib.parse import urlparse
+        if not is_https_or_localhost_http(url):
+            from urllib.parse import urlparse
 
-        parsed = urlparse(url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (
-            parsed.scheme == "http" and is_localhost
-        ):
+            parsed = urlparse(url)
+            if not parsed.hostname:
+                raise WorkflowValidationError(
+                    "Catalog URL must be a valid URL with a host."
+                )
             raise WorkflowValidationError(
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
-                "HTTP is only allowed for localhost."
-            )
-        if not parsed.hostname:
-            raise WorkflowValidationError(
-                "Catalog URL must be a valid URL with a host."
+                "HTTP is only allowed for localhost, 127.0.0.1, and ::1."
             )
 
     def _load_catalog_config(
@@ -328,29 +331,27 @@ class WorkflowCatalog:
                 pass
 
         # Fetch from URL — validate scheme before opening and after redirects
-        from urllib.parse import urlparse
         from specify_cli.authentication.http import open_url as _open_url
 
-        def _validate_catalog_url(url: str) -> None:
-            parsed = urlparse(url)
-            is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-            if parsed.scheme != "https" and not (
-                parsed.scheme == "http" and is_localhost
-            ):
-                raise WorkflowCatalogError(
-                    f"Refusing to fetch catalog from non-HTTPS URL: {url}"
-                )
-            if not parsed.hostname:
-                raise WorkflowCatalogError(
-                    f"Refusing to fetch catalog from URL with no hostname: {url}"
-                )
-
-        _validate_catalog_url(entry.url)
+        try:
+            self._validate_catalog_url(entry.url)
+        except WorkflowValidationError as exc:
+            raise WorkflowCatalogError(str(exc)) from exc
 
         try:
-            with _open_url(entry.url, timeout=30) as resp:
-                _validate_catalog_url(resp.geturl())
-                data = json.loads(resp.read().decode("utf-8"))
+            with _open_url(entry.url, timeout=30, strict_redirects=True) as resp:
+                try:
+                    self._validate_catalog_url(resp.geturl())
+                except WorkflowValidationError as exc:
+                    raise WorkflowCatalogError(str(exc)) from exc
+                data = json.loads(
+                    read_response_limited(
+                        resp,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=WorkflowCatalogError,
+                        label="workflow catalog",
+                    ).decode("utf-8")
+                )
         except Exception as exc:
             # Fall back to cache if available
             if cache_file.exists():
@@ -772,20 +773,17 @@ class StepCatalog:
 
     def _validate_catalog_url(self, url: str) -> None:
         """Validate that a catalog URL uses HTTPS (localhost HTTP allowed)."""
-        from urllib.parse import urlparse
+        if not is_https_or_localhost_http(url):
+            from urllib.parse import urlparse
 
-        parsed = urlparse(url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (
-            parsed.scheme == "http" and is_localhost
-        ):
+            parsed = urlparse(url)
+            if not parsed.hostname:
+                raise StepValidationError(
+                    "Catalog URL must be a valid URL with a host."
+                )
             raise StepValidationError(
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
-                "HTTP is only allowed for localhost."
-            )
-        if not parsed.hostname:
-            raise StepValidationError(
-                "Catalog URL must be a valid URL with a host."
+                "HTTP is only allowed for localhost, 127.0.0.1, and ::1."
             )
 
     def _load_catalog_config(
@@ -945,29 +943,27 @@ class StepCatalog:
                 # Ignore invalid/unreadable cache and fall back to fetching from source.
                 pass
 
-        from urllib.parse import urlparse
         from specify_cli.authentication.http import open_url as _open_url
 
-        def _validate_url(url: str) -> None:
-            parsed = urlparse(url)
-            is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-            if parsed.scheme != "https" and not (
-                parsed.scheme == "http" and is_localhost
-            ):
-                raise StepCatalogError(
-                    f"Refusing to fetch catalog from non-HTTPS URL: {url}"
-                )
-            if not parsed.hostname:
-                raise StepCatalogError(
-                    f"Refusing to fetch catalog from URL with no hostname: {url}"
-                )
-
-        _validate_url(entry.url)
+        try:
+            self._validate_catalog_url(entry.url)
+        except StepValidationError as exc:
+            raise StepCatalogError(str(exc)) from exc
 
         try:
-            with _open_url(entry.url, timeout=30) as resp:
-                _validate_url(resp.geturl())
-                data = json.loads(resp.read().decode("utf-8"))
+            with _open_url(entry.url, timeout=30, strict_redirects=True) as resp:
+                try:
+                    self._validate_catalog_url(resp.geturl())
+                except StepValidationError as exc:
+                    raise StepCatalogError(str(exc)) from exc
+                data = json.loads(
+                    read_response_limited(
+                        resp,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=StepCatalogError,
+                        label="step catalog",
+                    ).decode("utf-8")
+                )
         except Exception as exc:
             if cache_safe and cache_file.exists():
                 try:

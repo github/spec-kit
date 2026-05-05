@@ -10,7 +10,9 @@ Tests cover:
 """
 
 import pytest
+import io
 import json
+import hashlib
 import os
 import platform
 import tempfile
@@ -376,6 +378,42 @@ class TestExtensionManifest:
 
         with pytest.raises(ValidationError, match="Invalid command name"):
             ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize(
+        "bad_file",
+        [
+            "../outside.md",
+            "/tmp/outside.md",
+            "commands/../../outside.md",
+            "C:\\Windows\\outside.md",
+        ],
+    )
+    def test_invalid_command_file_path(self, temp_dir, valid_manifest_data, bad_file):
+        """Command files must stay inside the extension package."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["file"] = bad_file
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid command file path"):
+            ExtensionManifest(manifest_path)
+
+    def test_windows_command_file_path_is_normalized(self, temp_dir, valid_manifest_data):
+        """Windows-authored manifests keep compatibility without traversal."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["file"] = "commands\\hello.md"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["file"] == "commands/hello.md"
 
     def test_command_name_autocorrect_speckit_prefix(self, temp_dir, valid_manifest_data):
         """Test that 'speckit.command' is auto-corrected to 'speckit.{ext_id}.command'."""
@@ -2470,7 +2508,8 @@ Run {SCRIPT}
         registrar = CommandRegistrar()
         from specify_cli.extensions import ExtensionManifest
         manifest = ExtensionManifest(ext_dir / "extension.yml")
-        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+        registered = registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+        assert registered == ["speckit.cleanup-ext.run"]
 
         skill_subdir = skills_dir / "speckit-cleanup-ext-run"
         assert skill_subdir.exists(), "Skill subdirectory should exist after registration"
@@ -3227,7 +3266,6 @@ class TestExtensionCatalog:
         extension catalog must stay consistent.
         """
         from unittest.mock import patch, MagicMock
-
         catalog = self._make_catalog(temp_dir)
 
         mock_response = MagicMock()
@@ -3726,6 +3764,52 @@ class TestExtensionCatalog:
         assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
         assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
         assert captured[0].get_header("Accept") == "application/octet-stream"
+
+    def test_download_extension_verifies_sha256(self, temp_dir):
+        """Catalog-provided checksums are enforced when present."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        zip_bytes = b"fake zip data"
+        mock_response = MagicMock()
+        mock_response.read.return_value = zip_bytes
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-ext.zip",
+            "sha256": hashlib.sha256(zip_bytes).hexdigest(),
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog.download_extension("test-ext", target_dir=temp_dir)
+
+        assert result.read_bytes() == zip_bytes
+
+    def test_download_extension_rejects_sha256_mismatch(self, temp_dir):
+        """A mismatched catalog checksum stops the downloaded ZIP being used."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"fake zip data"
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-ext.zip",
+            "sha256": "0" * 64,
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(ExtensionError, match="checksum mismatch"):
+                catalog.download_extension("test-ext", target_dir=temp_dir)
 
 
 
@@ -4900,7 +4984,6 @@ class TestDownloadExtensionBundled:
     def test_download_extension_allows_bundled_with_url(self, temp_dir):
         """download_extension should allow bundled extensions that have a download_url (newer version)."""
         from unittest.mock import patch, MagicMock
-        import urllib.request
 
         project_dir = temp_dir / "project"
         project_dir.mkdir()
@@ -4923,7 +5006,7 @@ class TestDownloadExtensionBundled:
         mock_response.__exit__ = MagicMock(return_value=False)
 
         with patch.object(catalog, "get_extension_info", return_value=bundled_with_url), \
-             patch.object(urllib.request, "urlopen", return_value=mock_response):
+             patch.object(catalog, "_open_url", return_value=mock_response):
             result = catalog.download_extension("git")
             assert result.name == "git-2.0.0.zip"
 
