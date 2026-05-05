@@ -2086,3 +2086,91 @@ steps:
         )
         engine = WorkflowEngine(project_dir)
         assert engine._load_project_integration() == "gemini"
+
+    def test_resolved_integration_persisted_in_run_state(self, project_dir):
+        """execute() persists the resolved integration in RunState (not the raw sentinel).
+
+        Issue: resume() re-resolved 'auto' from the current project state; the
+        fix stores the resolved value in state.resolved_integration so resume
+        can reload it from disk without re-reading project metadata.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.engine import RunState
+        from specify_cli.workflows.base import RunStatus
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "persist-test"
+  name: "Persist Test"
+  version: "1.0.0"
+  integration: auto
+steps:
+  - id: gate
+    type: gate
+    message: "Proceed?"
+    options: [proceed]
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.PAUSED
+        # Sentinel must be resolved to the real integration key, never "auto" or None.
+        assert state.resolved_integration == "opencode"
+
+        # Reload from disk to confirm the value was actually persisted.
+        reloaded = RunState.load(state.run_id, project_dir)
+        assert reloaded.resolved_integration == "opencode"
+
+    def test_resume_uses_persisted_integration_not_current_project_state(
+        self, project_dir
+    ):
+        """resume() uses the integration resolved at execute() time, not the current state.
+
+        If the project's default integration is changed while a run is paused at
+        a gate, remaining steps must still use the original integration — not the
+        newly configured one.
+        """
+        from unittest.mock import MagicMock
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "resume-test"
+  name: "Resume Test"
+  version: "1.0.0"
+  integration: auto
+steps:
+  - id: gate
+    type: gate
+    message: "Proceed?"
+    options: [proceed]
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        state = engine.execute(definition)
+        assert state.status == RunStatus.PAUSED
+        assert state.resolved_integration == "opencode"
+
+        # Simulate a project integration change while the run is paused.
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "claude"}', encoding="utf-8"
+        )
+
+        # Spy on _resolve_workflow_integration — it must NOT be called during
+        # resume because the persisted value takes precedence.
+        spy = MagicMock(wraps=engine._resolve_workflow_integration)
+        engine._resolve_workflow_integration = spy
+
+        engine.resume(state.run_id)
+
+        spy.assert_not_called()

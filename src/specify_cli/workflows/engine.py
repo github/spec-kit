@@ -256,6 +256,7 @@ class RunState:
         self.created_at = datetime.now(timezone.utc).isoformat()
         self.updated_at = self.created_at
         self.log_entries: list[dict[str, Any]] = []
+        self.resolved_integration: str | None = None
 
     @property
     def runs_dir(self) -> Path:
@@ -276,6 +277,7 @@ class RunState:
             "step_results": self.step_results,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "resolved_integration": self.resolved_integration,
         }
         with open(runs_dir / "state.json", "w", encoding="utf-8") as f:
             json.dump(state_data, f, indent=2)
@@ -307,6 +309,7 @@ class RunState:
         state.step_results = state_data.get("step_results", {})
         state.created_at = state_data.get("created_at", "")
         state.updated_at = state_data.get("updated_at", "")
+        state.resolved_integration = state_data.get("resolved_integration")
 
         inputs_path = runs_dir / "inputs.json"
         if inputs_path.exists():
@@ -424,14 +427,17 @@ class WorkflowEngine:
         # Resolve inputs
         resolved_inputs = self._resolve_inputs(definition, inputs or {})
         state.inputs = resolved_inputs
+        # Resolve the workflow-level default integration once and persist it so
+        # resume() can use the same value even if the project state changes later.
+        state.resolved_integration = self._resolve_workflow_integration(
+            definition.default_integration
+        )
         state.status = RunStatus.RUNNING
         state.save()
 
         context = StepContext(
             inputs=resolved_inputs,
-            default_integration=self._resolve_workflow_integration(
-                definition.default_integration
-            ),
+            default_integration=state.resolved_integration,
             default_model=definition.default_model,
             default_options=definition.default_options,
             project_root=str(self.project_root),
@@ -475,13 +481,20 @@ class WorkflowEngine:
         else:
             definition = self.load_workflow(state.workflow_id)
 
-        # Restore context
+        # Restore context — use the integration that was resolved when the run
+        # started (persisted in state.resolved_integration) so a project
+        # integration change between pause and resume doesn't redirect remaining
+        # steps to a different CLI.  Fall back to re-resolving for older run
+        # states that pre-date this field.
+        resolved_integration = (
+            state.resolved_integration
+            if state.resolved_integration is not None
+            else self._resolve_workflow_integration(definition.default_integration)
+        )
         context = StepContext(
             inputs=state.inputs,
             steps=state.step_results,
-            default_integration=self._resolve_workflow_integration(
-                definition.default_integration
-            ),
+            default_integration=resolved_integration,
             default_model=definition.default_model,
             default_options=definition.default_options,
             project_root=str(self.project_root),
