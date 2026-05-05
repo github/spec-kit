@@ -32,7 +32,7 @@ class ShellStep(StepBase):
         try:
             proc = subprocess.run(
                 run_cmd,
-                shell=True,  # nosec B602
+                shell=True,
                 capture_output=True,
                 text=True,
                 cwd=cwd,

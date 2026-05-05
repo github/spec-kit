@@ -397,21 +397,24 @@ def callback(
         console.print()
 
 def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> Optional[str]:
-    """Run a shell command and optionally capture output."""
+    """Run a command without invoking a shell and optionally capture output."""
+    if shell:
+        raise ValueError(
+            "run_command does not support shell=True; use a reviewed "
+            "subprocess.run call for shell-specific behavior."
+        )
+
     try:
         if capture:
-            # shell=True is only available to callers that opt in explicitly.
-            result = subprocess.run(  # nosec B602
+            result = subprocess.run(
                 cmd,
                 check=check_return,
                 capture_output=True,
                 text=True,
-                shell=shell,
             )
             return result.stdout.strip()
         else:
-            # shell=True is only available to callers that opt in explicitly.
-            subprocess.run(cmd, check=check_return, shell=shell)  # nosec B602
+            subprocess.run(cmd, check=check_return)
             return None
     except subprocess.CalledProcessError as e:
         if check_return:
