@@ -19,3 +19,4 @@ class IflowIntegration(MarkdownIntegration):
         "extension": ".md",
     }
     context_file = "IFLOW.md"
+    multi_install_safe = True
