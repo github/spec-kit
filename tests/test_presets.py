@@ -2243,18 +2243,12 @@ class TestInitOptions:
         assert load_init_options(project_dir) == {}
 
 
-@pytest.mark.filterwarnings(
-    r"ignore:Cannot compose command 'speckit\.wrap-test':UserWarning"
-)
-@pytest.mark.filterwarnings(
-    r"ignore:Post-install reconciliation failed for self-test:UserWarning"
-)
 class TestPresetSkills:
     """Tests for preset skill registration and unregistration.
 
-    Several tests in this class install the self-test preset, which contains
-    a wrap-strategy command without a base layer. Reconciliation emits an
-    expected UserWarning that the filters above acknowledge.
+    Tests that install the self-test preset use ``install_self_test_preset``
+    which scopes a narrow filter to the expected wrap-strategy warning.
+    Reconciliation failures remain audible so real regressions surface.
     """
 
     def _write_init_options(self, project_dir, ai="claude", ai_skills=True, script="sh"):
