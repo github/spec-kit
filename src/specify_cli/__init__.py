@@ -1931,13 +1931,8 @@ def _read_integration_json(project_root: Path) -> dict[str, Any]:
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        console.print(f"[red]Error:[/red] {path} contains invalid JSON.")
-        console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
-        console.print(f"[dim]Details:[/dim] {exc}")
-        raise typer.Exit(1)
-    except UnicodeDecodeError as exc:
-        console.print(f"[red]Error:[/red] {path} is not valid UTF-8.")
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        console.print(f"[red]Error:[/red] {path} contains invalid JSON or is not valid UTF-8.")
         console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
         console.print(f"[dim]Details:[/dim] {exc}")
         raise typer.Exit(1)
