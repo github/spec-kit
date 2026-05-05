@@ -1202,7 +1202,13 @@ class YamlIntegration(IntegrationBase):
         return text.replace(".", " ").replace("-", " ").replace("_", " ").title()
 
     @staticmethod
-    def _render_yaml(title: str, description: str, body: str, source_id: str) -> str:
+    def _render_yaml(
+        title: str,
+        description: str,
+        body: str,
+        source_id: str,
+        parameters: list[dict[str, Any]] | None = None,
+    ) -> str:
         """Render a YAML recipe file from title, description, and body.
 
         Produces a Goose-compatible recipe with a literal block scalar
@@ -1219,6 +1225,9 @@ class YamlIntegration(IntegrationBase):
             "extensions": [{"type": "builtin", "name": "developer"}],
             "activities": ["Spec-Driven Development"],
         }
+
+        if parameters:
+            header["parameters"] = parameters
 
         header_yaml = yaml.safe_dump(
             header,
@@ -1286,8 +1295,21 @@ class YamlIntegration(IntegrationBase):
                 context_file=self.context_file or "",
             )
             _, body = self._split_frontmatter(processed)
+            # Build parameter definitions for template variables used in the body
+            params = None
+            if "{{args}}" in body:
+                params = [
+                    {
+                        "key": "args",
+                        "input_type": "string",
+                        "requirement": "user_prompt",
+                        "description": "Arguments to pass to the command",
+                    }
+                ]
+
             yaml_content = self._render_yaml(
-                title, description, body, f"templates/commands/{src_file.name}"
+                title, description, body, f"templates/commands/{src_file.name}",
+                parameters=params,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
