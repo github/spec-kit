@@ -84,7 +84,7 @@ Run this when you change agent metadata, context update scripts, or integration 
 #### Security checks
 
 ```bash
-uv export --quiet --extra test --format requirements.txt --no-emit-project --output-file /tmp/spec-kit-audit-requirements.txt
+uv pip compile pyproject.toml --extra test --quiet --output-file /tmp/spec-kit-audit-requirements.txt
 uvx --from pip-audit==2.10.0 pip-audit -r /tmp/spec-kit-audit-requirements.txt --progress-spinner off
 uvx --from bandit==1.9.4 bandit -r src -lll --baseline .github/bandit-baseline.json
 ```

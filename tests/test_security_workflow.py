@@ -16,9 +16,9 @@ CONTRIBUTING = REPO_ROOT / "CONTRIBUTING.md"
 BANDIT_BASELINE = REPO_ROOT / ".github" / "bandit-baseline.json"
 
 AUDIT_REQUIREMENTS = "/tmp/spec-kit-audit-requirements.txt"
-EXPORT_TEST_EXTRA_DEPS = (
-    "uv export --quiet --extra test --format requirements.txt "
-    f"--no-emit-project --output-file {AUDIT_REQUIREMENTS}"
+COMPILE_TEST_EXTRA_DEPS = (
+    "uv pip compile pyproject.toml --extra test --quiet "
+    f"--output-file {AUDIT_REQUIREMENTS}"
 )
 PIP_AUDIT = (
     "uvx --from pip-audit==2.10.0 pip-audit "
@@ -45,13 +45,15 @@ def _step_run(job_name: str, step_name: str) -> str:
 class TestSecurityWorkflow:
     """Guard the security workflow against review-feedback regressions."""
 
-    def test_dependency_audit_uses_test_extra_export_without_lockfile_flags(self):
+    def test_dependency_audit_compiles_test_extra_requirements_without_lockfile(self):
         run = _step_run("dependency-audit", "Run pip-audit")
 
-        assert EXPORT_TEST_EXTRA_DEPS in run
+        assert COMPILE_TEST_EXTRA_DEPS in run
         assert PIP_AUDIT in run
+        assert "uv export" not in run
         assert "--frozen" not in run
         assert "--locked" not in run
+        assert "uv.lock" not in run
         assert "uvx pip-audit ." not in run
 
     def test_security_tools_are_pinned(self):
@@ -99,8 +101,9 @@ class TestSecurityWorkflow:
     def test_contributing_documents_security_commands(self):
         contributing_text = CONTRIBUTING.read_text(encoding="utf-8")
 
-        assert EXPORT_TEST_EXTRA_DEPS in contributing_text
+        assert COMPILE_TEST_EXTRA_DEPS in contributing_text
         assert PIP_AUDIT in contributing_text
         assert BANDIT in contributing_text
+        assert "uv export" not in contributing_text
         assert "--frozen" not in contributing_text
         assert "--locked" not in contributing_text
