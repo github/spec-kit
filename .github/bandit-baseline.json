@@ -1,0 +1,31 @@
+{
+  "results": [
+    {
+      "code": "34                 run_cmd,\n35                 shell=True,\n36                 capture_output=True,\n37                 text=True,\n38                 cwd=cwd,\n39                 timeout=300,\n40             )\n41             output = {\n42                 \"exit_code\": proc.returncode,\n43                 \"stdout\": proc.stdout,\n",
+      "col_offset": 19,
+      "end_col_offset": 13,
+      "filename": "src/specify_cli/workflows/steps/shell/__init__.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 78,
+        "link": "https://cwe.mitre.org/data/definitions/78.html"
+      },
+      "issue_severity": "HIGH",
+      "issue_text": "subprocess call with shell=True identified, security issue.",
+      "line_number": 35,
+      "line_range": [
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b602_subprocess_popen_with_shell_equals_true.html",
+      "test_id": "B602",
+      "test_name": "subprocess_popen_with_shell_equals_true"
+    }
+  ]
+}
