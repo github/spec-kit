@@ -715,7 +715,7 @@ class TestLoadConfigCaching:
     def test_cache_bypassed_by_override(self, monkeypatch):
         """When _config_override is set, the cache is ignored entirely."""
         from specify_cli.authentication import http as _mod
-        sentinel: list = [object()]  # type: ignore[list-item]
+        sentinel = [_github_entry()]
         monkeypatch.setattr(_mod, "_config_override", sentinel)
         monkeypatch.setattr(_mod, "_config_cache", None)
 

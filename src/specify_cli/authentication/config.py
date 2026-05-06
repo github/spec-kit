@@ -44,7 +44,9 @@ def _is_valid_host_pattern(pattern: str) -> bool:
     forms are accepted:
 
     * ``example.com``         — exact hostname
-    * ``*.example.com``       — single leading wildcard for one sub-domain level
+    * ``*.example.com``       — leading ``*.`` wildcard (matches any sub-domain
+      depth under the suffix, e.g. ``myorg.visualstudio.com`` or
+      ``sub.myorg.visualstudio.com``)
     """
     if "*" not in pattern:
         return True  # exact hostname — already validated as non-empty
