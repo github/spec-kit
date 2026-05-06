@@ -90,10 +90,11 @@ class TestInitIntegrationFlag:
         ], catch_exceptions=False)
 
         assert result.exit_code == 0, result.output
+        assert f"defaulting to '{specify_cli.DEFAULT_INIT_INTEGRATION}'" in result.output
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
 
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
-        assert data["integration"] == "copilot"
+        assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
 
     def test_ai_copilot_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner

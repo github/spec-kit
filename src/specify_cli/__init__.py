@@ -69,6 +69,7 @@ def _build_agent_config() -> dict[str, dict[str, Any]]:
     return config
 
 AGENT_CONFIG = _build_agent_config()
+DEFAULT_INIT_INTEGRATION = "copilot"
 
 AI_ASSISTANT_ALIASES = {
     "kiro": "kiro-cli",
@@ -997,7 +998,8 @@ def init(
 
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your coding agent integration
+    2. Let you choose your coding agent integration, or default to Copilot
+       in non-interactive sessions
     3. Download template from GitHub (or use bundled assets with --offline)
     4. Initialize a fresh git repository (if not --no-git and no existing repo)
     5. Optionally set up coding agent integration commands
@@ -1165,15 +1167,18 @@ def init(
             raise typer.Exit(1)
         selected_ai = ai_assistant
     elif not sys.stdin.isatty():
-        console.print("[dim]Non-interactive session detected: defaulting to 'copilot'. Use --integration to choose a different agent.[/dim]")
-        selected_ai = "copilot"
+        console.print(
+            f"[dim]Non-interactive session detected: defaulting to '{DEFAULT_INIT_INTEGRATION}'. "
+            "Use --integration to choose a different agent.[/dim]"
+        )
+        selected_ai = DEFAULT_INIT_INTEGRATION
     else:
         # Create options dict for selection (agent_key: display_name)
         ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
         selected_ai = select_with_arrows(
             ai_choices,
             "Choose your coding agent integration:",
-            "copilot"
+            DEFAULT_INIT_INTEGRATION,
         )
 
     # Auto-promote interactively selected agents to the integration path
