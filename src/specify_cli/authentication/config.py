@@ -30,14 +30,6 @@ class AuthConfigEntry:
     client_secret_env: str | None = None
 
 
-_VALID_AUTH_SCHEMES = frozenset({
-    "bearer",
-    "basic-pat",
-    "azure-cli",
-    "azure-ad",
-})
-
-
 def _default_config_path() -> Path:
     """Return ``~/.specify/auth.json``."""
     return Path.home() / ".specify" / "auth.json"
@@ -106,11 +98,6 @@ def load_auth_config(
         auth = entry_raw.get("auth", "")
         if not isinstance(auth, str) or not auth:
             raise ValueError(f"providers[{i}]: 'auth' must be a non-empty string")
-        if auth not in _VALID_AUTH_SCHEMES:
-            raise ValueError(
-                f"providers[{i}]: unsupported auth scheme {auth!r}; "
-                f"valid: {sorted(_VALID_AUTH_SCHEMES)}"
-            )
 
         token = entry_raw.get("token")
         token_env = entry_raw.get("token_env")

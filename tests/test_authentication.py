@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 
 import pytest
 
@@ -198,7 +199,7 @@ class TestLoadAuthConfig:
         cfg.write_text(json.dumps({
             "providers": [{"hosts": ["github.com"], "provider": "github", "auth": "ntlm", "token_env": "X"}]
         }))
-        with pytest.raises(ValueError, match="unsupported"):
+        with pytest.raises(ValueError, match="does not support"):
             load_auth_config(cfg)
 
     def test_bearer_without_token_raises(self, tmp_path):
@@ -243,6 +244,7 @@ class TestLoadAuthConfig:
         with pytest.raises(ValueError, match="does not support"):
             load_auth_config(cfg)
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits not supported on Windows")
     def test_world_readable_warns(self, tmp_path):
         import stat
 

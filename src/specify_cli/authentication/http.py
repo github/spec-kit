@@ -131,6 +131,7 @@ def open_url(url: str, timeout: int = 10, extra_headers: dict[str, str] | None =
             return opener.open(req, timeout=timeout)
         except urllib.error.HTTPError as exc:
             if exc.code in (401, 403):
+                exc.close()
                 continue  # try next entry
             raise
 

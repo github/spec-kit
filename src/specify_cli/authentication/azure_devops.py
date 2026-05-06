@@ -76,7 +76,7 @@ class AzureDevOpsAuth(AuthProvider):
             payload = _json.loads(result.stdout)
             token = payload.get("accessToken", "").strip()
             return token or None
-        except (OSError, _json.JSONDecodeError, KeyError):
+        except (OSError, subprocess.TimeoutExpired, _json.JSONDecodeError, KeyError):
             return None
 
     @staticmethod
