@@ -2,7 +2,6 @@
 import json
 import os
 import sys
-import yaml
 from pathlib import Path
 from typing import Any
 
@@ -336,7 +335,7 @@ def integration_install(
         if not (all_existing_safe and new_is_safe):
             if not force:
                 installed_str = ", ".join(installed_keys)
-                console.print(f"[red]Error:[/red] Integration cannot be installed alongside existing ones.")
+                console.print("[red]Error:[/red] Integration cannot be installed alongside existing ones.")
                 console.print(f"Installed integrations: {installed_str}")
                 console.print(f"Default integration: {default_key}")
                 console.print(
@@ -417,7 +416,7 @@ def integration_uninstall(
     force: bool = typer.Option(False, "--force", help="Remove files even if modified"),
 ):
     """Uninstall an integration, safely preserving modified files."""
-    from ..integrations import INTEGRATION_REGISTRY, get_integration
+    from ..integrations import get_integration
     from ..integrations.manifest import IntegrationManifest
 
     project_root = Path.cwd()
@@ -542,7 +541,6 @@ def integration_use(
 
     state = _read_integration_state(project_root)
     installed_keys: list[str] = list(state.get("installed_integrations", []))
-    default_key: str = state.get("default_integration") or state.get("integration") or ""
     settings: dict[str, Any] = dict(state.get("integration_settings", {}))
 
     if target not in installed_keys:
@@ -607,14 +605,14 @@ def integration_switch(
         except Exception as exc:
             console.print(f"[red]Error:[/red] Failed to refresh shared templates: {exc}")
             raise typer.Exit(1)
-        console.print(f"[green]✓[/green] managed shared templates refreshed")
+        console.print("[green]✓[/green] managed shared templates refreshed")
         raise typer.Exit(0)
 
     # Case 2: Target is already installed (but not default)
     if target in installed_keys:
         if integration_options:
             console.print(
-                f"[red]Error:[/red] --integration-options cannot be used when switching to an already-installed integration."
+                "[red]Error:[/red] --integration-options cannot be used when switching to an already-installed integration."
             )
             raise typer.Exit(1)
         # Act like "use" command
@@ -942,8 +940,8 @@ def integration_info(
     key: str = typer.Argument(..., help="Integration key to get info about"),
 ):
     """Show detailed information about an integration."""
-    from ..integrations import INTEGRATION_REGISTRY, get_integration
-    from ..integrations.catalog import IntegrationCatalog, IntegrationCatalogError
+    from ..integrations import get_integration
+    from ..integrations.catalog import IntegrationCatalog
 
     project_root = Path.cwd()
 
@@ -1008,7 +1006,7 @@ def integration_search(
     author: str = typer.Option(None, "--author", help="Filter by author"),
 ):
     """Search for integrations in the catalog."""
-    from ..integrations.catalog import IntegrationCatalog, IntegrationCatalogError
+    from ..integrations.catalog import IntegrationCatalog
 
     project_root = Path.cwd()
 
@@ -1154,7 +1152,7 @@ def integration_catalog_add(
         raise typer.Exit(1)
 
     console.print(f"Catalog source added: {url}")
-    console.print(f"Config saved to .specify/integration-catalogs.yml")
+    console.print("Config saved to .specify/integration-catalogs.yml")
 
 
 @integration_catalog_app.command("remove")

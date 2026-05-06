@@ -28,8 +28,7 @@ Or install globally:
 
 import sys
 import urllib
-import urllib.request
-import urllib.error
+import urllib.request  # noqa: F401
 from pathlib import Path
 
 from typing import Optional
@@ -112,11 +111,13 @@ def _refresh_shared_templates(
         invoke_separator=invoke_separator,
         force=force,
     )
-from .commands import init as _init_cmd
-from .commands.extension import extension_app
-from .commands.integration import integration_app
-from .commands.preset import preset_app
-from .commands.workflow import workflow_app
+
+
+from .commands import init as _init_cmd  # noqa: E402
+from .commands.extension import extension_app  # noqa: E402
+from .commands.integration import integration_app  # noqa: E402
+from .commands.preset import preset_app  # noqa: E402
+from .commands.workflow import workflow_app  # noqa: E402
 
 app = typer.Typer(
     name="specify",
