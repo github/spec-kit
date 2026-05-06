@@ -2151,6 +2151,11 @@ class ExtensionCatalog:
             raise ExtensionError(f"Failed to save extension archive: {e}")
 
         # Choose file extension based on detected format.
+        if not archive_fmt:
+            raise ExtensionError(
+                f"Could not determine archive format for {download_url}. "
+                "Ensure the URL points to a .zip or .tar.gz file."
+            )
         if archive_fmt == "tar.gz":
             archive_filename = f"{extension_id}-{version}.tar.gz"
         else:

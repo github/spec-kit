@@ -2643,6 +2643,11 @@ def preset_add(
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
                     raise typer.Exit(1)
 
+                if not archive_fmt:
+                    console.print("[red]Error:[/red] Could not determine archive format from URL or Content-Type.")
+                    console.print("Ensure the URL points to a .zip or .tar.gz file.")
+                    raise typer.Exit(1)
+
                 suffix = ".tar.gz" if archive_fmt == "tar.gz" else ".zip"
                 archive_path = Path(tmpdir) / f"preset{suffix}"
                 archive_path.write_bytes(archive_data)
@@ -3651,6 +3656,11 @@ def extension_add(
                             content_type = response.headers.get("Content-Type", "")
                             archive_fmt = _detect_archive_format(from_url, content_type)
                         archive_data = response.read()
+
+                    if not archive_fmt:
+                        console.print("[red]Error:[/red] Could not determine archive format from URL or Content-Type.")
+                        console.print("Ensure the URL points to a .zip or .tar.gz file.")
+                        raise typer.Exit(1)
 
                     suffix = ".tar.gz" if archive_fmt == "tar.gz" else ".zip"
                     archive_path = download_dir / f"{extension}-url-download{suffix}"
@@ -4936,7 +4946,7 @@ def _extract_workflow_yml(archive_path: Path, archive_fmt: str) -> bytes:
                 if f is not None:
                     return f.read()
             except KeyError:
-                pass
+                pass  # Root-level workflow.yml not found; fall through to subdirectory search below.
             # Look in a single top-level subdirectory.
             candidates = [
                 m for m in tf.getmembers()
@@ -5099,7 +5109,7 @@ def workflow_add(
             _validate_and_install_local(source_path, str(source_path))
             return
         elif source_path.is_file() and (
-            source.endswith(".tar.gz") or source.endswith(".tgz") or source.endswith(".zip")
+            source.lower().endswith(".tar.gz") or source.lower().endswith(".tgz") or source.lower().endswith(".zip")
         ):
             # Local archive file containing workflow.yml
             from .extensions import _detect_archive_format

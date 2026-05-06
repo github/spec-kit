@@ -2331,6 +2331,11 @@ class PresetCatalog:
             raise PresetError(f"Failed to save preset archive: {e}")
 
         # Choose file extension based on detected format.
+        if not archive_fmt:
+            raise PresetError(
+                f"Could not determine archive format for {download_url}. "
+                "Ensure the URL points to a .zip or .tar.gz file."
+            )
         if archive_fmt == "tar.gz":
             archive_filename = f"{pack_id}-{version}.tar.gz"
         else:
