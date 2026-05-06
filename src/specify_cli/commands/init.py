@@ -5,7 +5,7 @@ import shlex
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import typer
 from rich.panel import Panel
@@ -17,7 +17,6 @@ from .._fs import save_init_options
 from .._git import _git_service as _git_svc
 from .._assets import _asset_service as _svc
 from .._helpers import (
-    run_command,
     check_tool,
     _install_shared_infra,
     ensure_constitution_from_template,

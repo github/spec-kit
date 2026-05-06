@@ -371,7 +371,7 @@ class TestCreateFeaturePowerShell:
         )
         assert result.returncode == 0, result.stderr
         # pwsh may prefix warnings to stdout; find the JSON line
-        json_line = [l for l in result.stdout.splitlines() if l.strip().startswith("{")]
+        json_line = [line for line in result.stdout.splitlines() if line.strip().startswith("{")]
         assert json_line, f"No JSON in output: {result.stdout}"
         data = json.loads(json_line[-1])
         assert "BRANCH_NAME" in data

@@ -1,4 +1,4 @@
-from specify_cli._ui import StepTracker, BannerGroup, show_banner, select_with_arrows
+from specify_cli._ui import StepTracker, BannerGroup
 
 def test_step_tracker_add_and_complete():
     t = StepTracker("test")

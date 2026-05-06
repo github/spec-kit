@@ -500,7 +500,7 @@ class TestClaudeHookCommandNote:
         """Skills that have hook sections should get the normalization note."""
         i = get_integration("claude")
         m = IntegrationManifest("claude", tmp_path)
-        created = i.setup(tmp_path, m, script_type="sh")
+        i.setup(tmp_path, m, script_type="sh")
         specify_skill = tmp_path / ".claude/skills/speckit-specify/SKILL.md"
         assert specify_skill.exists()
         content = specify_skill.read_text(encoding="utf-8")
@@ -539,7 +539,7 @@ class TestClaudeHookCommandNote:
         )
         result = ClaudeIntegration._inject_hook_command_note(content)
         lines = result.splitlines()
-        note_line = [l for l in lines if "replace dots" in l][0]
+        note_line = [line for line in lines if "replace dots" in line][0]
         assert note_line.startswith("   "), "Note should preserve indentation"
 
     def test_post_process_injects_all_claude_flags(self):

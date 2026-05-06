@@ -1,6 +1,4 @@
 import shutil
-from pathlib import Path
-from unittest.mock import patch
 from specify_cli._helpers import check_tool, run_command
 
 def test_check_tool_git_found():

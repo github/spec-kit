@@ -10,7 +10,6 @@ from rich.table import Table
 from .._console import console
 from .._fs import save_init_options, load_init_options
 from .._helpers import (
-    run_command, check_tool,
     _install_shared_infra, ensure_executable_scripts,
     get_speckit_version, _parse_integration_options,
     SCRIPT_TYPE_CHOICES,

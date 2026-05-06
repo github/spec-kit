@@ -853,7 +853,7 @@ class TestDryRun:
         assert re.match(r"^\d{8}-\d{6}-ts-feat$", branch), f"unexpected: {branch}"
         # Verify no side effects
         branches = subprocess.run(
-            ["git", "branch", "--list", f"*ts-feat*"],
+            ["git", "branch", "--list", "*ts-feat*"],
             cwd=git_repo,
             capture_output=True,
             text=True,

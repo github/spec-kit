@@ -27,8 +27,6 @@ Or install globally:
 """
 
 import sys
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 from typing import Optional
@@ -39,8 +37,7 @@ from rich.align import Align
 from rich.table import Table
 
 from ._console import console
-from ._ui import StepTracker, BannerGroup, show_banner, select_with_arrows
-from ._fs import handle_vscode_settings, merge_json_files, save_init_options, load_init_options
+from ._ui import StepTracker, BannerGroup, show_banner
 from ._assets import _asset_service as _svc
 from ._git import _git_service as _git_svc
 from ._version import _version_service as _ver_svc
@@ -48,32 +45,12 @@ from ._helpers import (
     check_tool,
     get_speckit_version,
     AGENT_CONFIG,
-    AI_ASSISTANT_ALIASES,
-    AI_ASSISTANT_HELP,
-    _install_shared_infra,
-    _parse_integration_options,
-    _get_skills_dir,
 )
-from .integration_runtime import (
-    invoke_separator_for_integration as _invoke_separator_for_integration,
-    resolve_integration_options as _resolve_integration_options_impl,
-    with_integration_setting as _with_integration_setting,
-)
-from .integration_state import (
-    INTEGRATION_JSON,
-    INTEGRATION_STATE_SCHEMA,
-    dedupe_integration_keys as _dedupe_integration_keys,
-    default_integration_key as _default_integration_key,
-    installed_integration_keys as _installed_integration_keys,
-    integration_setting as _integration_setting,
-    integration_settings as _integration_settings,
-    normalize_integration_state as _normalize_integration_state,
-    write_integration_json as _write_integration_json_file,
-)
-from .shared_infra import (
-    install_shared_infra as _install_shared_infra_impl,
-    refresh_shared_templates as _refresh_shared_templates_impl,
-)
+from .commands import init as _init_cmd
+from .commands.extension import extension_app
+from .commands.integration import integration_app
+from .commands.preset import preset_app
+from .commands.workflow import workflow_app
 
 app = typer.Typer(
     name="specify",
@@ -150,7 +127,6 @@ SKILL_DESCRIPTIONS = {
 }
 
 
-from .commands import init as _init_cmd
 _init_cmd.register(app)
 
 @app.command()
@@ -316,24 +292,20 @@ def self_upgrade() -> None:
 
 # ===== Extension Commands =====
 
-from .commands.extension import extension_app
 app.add_typer(extension_app, name="extension")
 
 # ===== Integration Commands =====
 
-from .commands.integration import integration_app
 app.add_typer(integration_app, name="integration")
 
 
 # ===== Preset Commands =====
 
-from .commands.preset import preset_app
 app.add_typer(preset_app, name="preset")
 
 
 # ===== Workflow Commands =====
 
-from .commands.workflow import workflow_app
 app.add_typer(workflow_app, name="workflow")
 
 
