@@ -492,6 +492,16 @@ class CommandRegistrar:
                 body, "$ARGUMENTS", agent_config["args"]
             )
 
+            # Resolve __SPECKIT_COMMAND_*__ tokens using the agent's invoke separator.
+            # Defaults to "." (dot notation) for agents that don't override it; Forge
+            # sets "invoke_separator": "-" in its registrar_config to get hyphen notation.
+            _sep = agent_config.get("invoke_separator", ".")
+            body = re.sub(
+                r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__",
+                lambda m: "/speckit" + _sep + m.group(1).lower().replace("_", _sep),
+                body,
+            )
+
             output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
 
             if agent_config["extension"] == "/SKILL.md":
