@@ -13,6 +13,8 @@ from typing import TypeVar
 ErrorT = TypeVar("ErrorT", bound=Exception)
 
 MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
+MAX_JSON_CATALOG_BYTES = 5 * 1024 * 1024
+MAX_JSON_METADATA_BYTES = 1 * 1024 * 1024
 MAX_ZIP_ENTRIES = 512
 MAX_ZIP_MEMBER_BYTES = 10 * 1024 * 1024
 MAX_ZIP_TOTAL_BYTES = 50 * 1024 * 1024
@@ -80,7 +82,7 @@ def _safe_zip_name(name: str, *, error_type: type[ErrorT]) -> str:
 
     normalized = name.replace("\\", "/")
     path = PurePosixPath(normalized)
-    has_windows_drive = re.match(r"^[A-Za-z]:/", normalized) is not None
+    has_windows_drive = re.match(r"^[A-Za-z]:", normalized) is not None
     if (
         not path.parts
         or path.is_absolute()

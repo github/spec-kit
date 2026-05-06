@@ -1030,15 +1030,19 @@ def extension_add(
                 zip_path = download_dir / f"{extension}-url-download.zip"
 
                 try:
+                    from specify_cli._download_security import read_response_limited as _read_response_limited
                     from specify_cli.authentication.http import open_url as _open_url
 
                     with _open_url(from_url, timeout=60) as response:
-                        zip_data = response.read()
+                        zip_data = _read_response_limited(
+                            response,
+                            label=f"extension {safe_url}",
+                        )
                     zip_path.write_bytes(zip_data)
 
                     # Install from downloaded ZIP
                     manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority, force=force)
-                except urllib.error.URLError as e:
+                except (urllib.error.URLError, ValueError) as e:
                     console.print(f"[red]Error:[/red] Failed to download from {safe_url}: {e}")
                     raise typer.Exit(1)
                 finally:
@@ -2471,6 +2475,7 @@ def workflow_add(
     if source.startswith("http://") or source.startswith("https://"):
         from ipaddress import ip_address
         from urllib.parse import urlparse
+        from specify_cli._download_security import read_response_limited as _read_response_limited
         from specify_cli.authentication.http import open_url as _open_url
 
         parsed_src = urlparse(source)
@@ -2511,7 +2516,12 @@ def workflow_add(
                     console.print(f"[red]Error:[/red] URL redirected to non-HTTPS: {final_url}")
                     raise typer.Exit(1)
                 with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
-                    tmp.write(resp.read())
+                    tmp.write(
+                        _read_response_limited(
+                            resp,
+                            label=f"workflow {source}",
+                        )
+                    )
                     tmp_path = Path(tmp.name)
         except typer.Exit:
             raise
@@ -2594,6 +2604,7 @@ def workflow_add(
     try:
         from specify_cli.authentication.http import open_url as _open_url
         from specify_cli._github_http import resolve_github_release_asset_api_url as _resolve_gh_asset
+        from specify_cli._download_security import read_response_limited as _read_response_limited
 
         _wf_cat_extra_headers = None
         _resolved_workflow_url = _resolve_gh_asset(workflow_url, _open_url, timeout=30)
@@ -2622,7 +2633,12 @@ def workflow_add(
                     f"[red]Error:[/red] Workflow '{source}' redirected to non-HTTPS URL: {final_url}"
                 )
                 raise typer.Exit(1)
-            workflow_file.write_bytes(response.read())
+            workflow_file.write_bytes(
+                _read_response_limited(
+                    response,
+                    label=f"workflow '{source}' download",
+                )
+            )
     except Exception as exc:
         if workflow_dir.exists():
             import shutil
@@ -3046,6 +3062,7 @@ def workflow_step_add(
             raise typer.Exit(1)
 
     from urllib.parse import urlparse
+    from specify_cli._download_security import read_response_limited as _read_response_limited
     from specify_cli.authentication.http import open_url as _open_url
 
     def _safe_fetch(url: str) -> bytes:
@@ -3065,7 +3082,7 @@ def workflow_step_add(
                 raise ValueError(f"Redirect to non-HTTPS URL: {final_url}")
             if not final_parsed.hostname:
                 raise ValueError(f"Redirect to URL with no hostname: {final_url}")
-            return resp.read()
+            return _read_response_limited(resp, label=f"workflow step {url}")
 
     _validate_step_id_or_exit(step_id)
 

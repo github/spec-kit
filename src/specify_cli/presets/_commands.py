@@ -138,11 +138,11 @@ def preset_add(
             console.print(f"Installing preset from [cyan]{from_url}[/cyan]...")
             import urllib.error
             import tempfile
-            import shutil
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 zip_path = Path(tmpdir) / "preset.zip"
                 try:
+                    from specify_cli._download_security import read_response_limited
                     from specify_cli.authentication.http import open_url as _open_url
                     from specify_cli._github_http import resolve_github_release_asset_api_url
 
@@ -166,12 +166,13 @@ def preset_add(
                                 "or HTTP for localhost/loopback."
                             )
                             raise typer.Exit(1)
-                        with zip_path.open("wb") as output:
-                            try:
-                                shutil.copyfileobj(response, output)
-                            except TypeError:
-                                output.write(response.read())
-                except urllib.error.URLError as e:
+                        zip_path.write_bytes(
+                            read_response_limited(
+                                response,
+                                label=f"preset {from_url}",
+                            )
+                        )
+                except (urllib.error.URLError, ValueError) as e:
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
                     raise typer.Exit(1)
 

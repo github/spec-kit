@@ -17,7 +17,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, List, Optional, Set
 
 import pathspec
@@ -294,6 +294,24 @@ class ExtensionManifest:
                 )
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
+            if not isinstance(cmd["file"], str) or not cmd["file"].strip():
+                raise ValidationError(
+                    f"Command '{cmd['name']}' file must be a non-empty string"
+                )
+
+            normalized_file = cmd["file"].replace("\\", "/")
+            file_path = PurePosixPath(normalized_file)
+            has_windows_drive = re.match(r"^[A-Za-z]:", normalized_file) is not None
+            if (
+                file_path.is_absolute()
+                or has_windows_drive
+                or any(part == ".." for part in file_path.parts)
+            ):
+                raise ValidationError(
+                    f"Invalid command file path '{cmd['file']}': "
+                    "must be a relative path within the extension directory"
+                )
+            cmd["file"] = normalized_file
 
             # Validate command name format
             if not EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]):

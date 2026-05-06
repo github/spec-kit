@@ -8,6 +8,7 @@ import os
 import subprocess
 from typing import TYPE_CHECKING
 
+from .._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 from .base import AuthProvider
 
 if TYPE_CHECKING:
@@ -110,7 +111,13 @@ class AzureDevOpsAuth(AuthProvider):
         )
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
-                payload = _json.loads(resp.read().decode("utf-8"))
+                payload = _json.loads(
+                    read_response_limited(
+                        resp,
+                        max_bytes=MAX_JSON_METADATA_BYTES,
+                        label="Azure DevOps OAuth token response",
+                    ).decode("utf-8")
+                )
                 token = payload.get("access_token", "").strip()
                 return token or None
         except (urllib.error.URLError, OSError, _json.JSONDecodeError, KeyError):

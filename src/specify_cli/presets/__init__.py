@@ -14,7 +14,7 @@ import os
 import tempfile
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Optional, Dict, List, Any
 
 if TYPE_CHECKING:
@@ -224,8 +224,16 @@ class PresetManifest:
 
             # Validate file path safety: must be relative, no parent traversal
             file_path = tmpl["file"]
-            normalized = os.path.normpath(file_path)
-            if os.path.isabs(normalized) or normalized.startswith(".."):
+            if not isinstance(file_path, str) or not file_path.strip():
+                raise PresetValidationError(
+                    "Invalid template file path: must be a non-empty string"
+                )
+            normalized = file_path.replace("\\", "/")
+            normalized_path = PurePosixPath(normalized)
+            has_windows_drive = re.match(r"^[A-Za-z]:", normalized) is not None
+            if normalized_path.is_absolute() or any(
+                part == ".." for part in normalized_path.parts
+            ) or has_windows_drive:
                 raise PresetValidationError(
                     f"Invalid template file path '{file_path}': "
                     "must be a relative path within the preset directory"
