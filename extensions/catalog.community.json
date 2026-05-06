@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-06T00:00:00Z",
+  "updated_at": "2026-05-06T15:45:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -105,8 +105,8 @@
       "id": "architecture-guard",
       "description": "Continuous architecture governance for AI-assisted development. Reviews specs, plans, and code for architecture drift, producing structured refactor tasks and evolution proposals.",
       "author": "DyanGalih",
-      "version": "1.4.0",
-      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.4.0.zip",
+      "version": "1.6.7",
+      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.6.7.zip",
       "repository": "https://github.com/DyanGalih/spec-kit-architecture-guard",
       "homepage": "https://github.com/DyanGalih/spec-kit-architecture-guard",
       "documentation": "https://github.com/DyanGalih/spec-kit-architecture-guard/blob/main/README.md",
@@ -131,7 +131,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-05T07:26:00Z",
-      "updated_at": "2026-05-05T07:26:00Z"
+      "updated_at": "2026-05-06T15:45:00Z"
     },
     "archive": {
       "name": "Archive Extension",
@@ -1383,8 +1383,8 @@
       "id": "memory-md",
       "description": "Spec Kit extension for repository-native Markdown memory that captures durable decisions, bugs, and project context",
       "author": "DyanGalih",
-      "version": "0.7.5",
-      "download_url": "https://github.com/DyanGalih/spec-kit-memory-hub/archive/refs/tags/v0.7.5.zip",
+      "version": "0.7.9",
+      "download_url": "https://github.com/DyanGalih/spec-kit-memory-hub/archive/refs/tags/v0.7.9.zip",
       "repository": "https://github.com/DyanGalih/spec-kit-memory-hub",
       "homepage": "https://github.com/DyanGalih/spec-kit-memory-hub",
       "documentation": "https://github.com/DyanGalih/spec-kit-memory-hub/blob/main/README.md",
@@ -1409,7 +1409,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-23T00:00:00Z",
-      "updated_at": "2026-05-03T00:00:00Z"
+      "updated_at": "2026-05-06T15:45:00Z"
     },
     "memorylint": {
       "name": "MemoryLint",
@@ -2085,8 +2085,8 @@
       "id": "security-review",
       "description": "Full-project secure-by-design security audits plus staged, branch/PR, plan, task, follow-up, and apply reviews",
       "author": "DyanGalih",
-      "version": "1.4.2",
-      "download_url": "https://github.com/DyanGalih/spec-kit-security-review/archive/refs/tags/v1.4.2.zip",
+      "version": "1.4.5",
+      "download_url": "https://github.com/DyanGalih/spec-kit-security-review/archive/refs/tags/v1.4.5.zip",
       "repository": "https://github.com/DyanGalih/spec-kit-security-review",
       "homepage": "https://github.com/DyanGalih/spec-kit-security-review",
       "documentation": "https://github.com/DyanGalih/spec-kit-security-review/blob/main/README.md",
@@ -2110,7 +2110,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-03T03:24:03Z",
-      "updated_at": "2026-05-03T00:00:00Z"
+      "updated_at": "2026-05-06T15:45:00Z"
     },
     "sf": {
       "name": "SFSpeckit — Salesforce Spec-Driven Development",
