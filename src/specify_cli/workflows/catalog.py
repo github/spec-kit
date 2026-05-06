@@ -593,20 +593,20 @@ class StepRegistry:
 
     def _load(self) -> dict[str, Any]:
         """Load registry from disk or create default."""
-        _default: dict[str, Any] = {"schema_version": self.SCHEMA_VERSION, "steps": {}}
+        default_registry: dict[str, Any] = {"schema_version": self.SCHEMA_VERSION, "steps": {}}
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, encoding="utf-8") as f:
                     data = json.load(f)
                 # Validate shape: must be a dict with a dict "steps" field
                 if not isinstance(data, dict):
-                    return _default
+                    return default_registry
                 if not isinstance(data.get("steps"), dict):
                     data["steps"] = {}
                 return data
             except (json.JSONDecodeError, ValueError, OSError, UnicodeError):
-                return _default
-        return _default
+                return default_registry
+        return default_registry
 
     def save(self) -> None:
         """Persist registry to disk."""

@@ -1957,6 +1957,10 @@ class TestStepRegistryCustom:
         finally:
             registry.registry_path.chmod(0o644)
 
+        # After restoring permissions the registry is fully functional
+        registry2.add("deploy", {"name": "Deploy", "type_key": "deploy"})
+        assert registry2.is_installed("deploy")
+
 
 # ===== Step Catalog Tests =====
 
