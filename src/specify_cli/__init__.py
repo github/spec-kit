@@ -41,10 +41,13 @@ from ._ui import StepTracker, BannerGroup, show_banner
 from ._assets import _asset_service as _svc
 from ._git import _git_service as _git_svc
 from ._version import _version_service as _ver_svc
+from ._fs import save_init_options, merge_json_files, handle_vscode_settings
 from ._helpers import (
     check_tool,
     get_speckit_version,
     AGENT_CONFIG,
+    AI_ASSISTANT_ALIASES,
+    AI_ASSISTANT_HELP,
 )
 from .commands import init as _init_cmd
 from .commands.extension import extension_app
