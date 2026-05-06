@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.6] - 2026-05-06
+
+### Changed
+
+- Load constitution context in `/speckit.implement` to enforce governance during implementation (#2460)
+- feat: improve catalog submission templates and CODEOWNERS (#2401)
+- fix: validate URL scheme in build_github_request (#2449)
+- Add Architecture Guard to community catalog (#2430)
+- Add multi-model-review extension to community catalog (#2446)
+- Update Ralph Loop to v1.0.2 (#2435)
+- Pin GitHub Actions by SHA (#2441)
+- fix(workflows): require project for catalog list (#2436)
+- Add agent-parity-governance to community catalog (#2382)
+- chore: release 0.8.5, begin 0.8.6.dev0 development (#2447)
+
 ## [0.8.5] - 2026-05-04
 
 ### Changed
