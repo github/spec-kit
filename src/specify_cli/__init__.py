@@ -5079,16 +5079,18 @@ def workflow_add(
             if archive_fmt in ("tar.gz", "zip"):
                 # Extract workflow.yml from the archive.
                 suffix = ".tar.gz" if archive_fmt == "tar.gz" else ".zip"
+                arc_tmp_path = None
                 with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as arc_tmp:
-                    arc_tmp.write(raw_data)
                     arc_tmp_path = Path(arc_tmp.name)
+                    arc_tmp.write(raw_data)
                 try:
                     wf_yaml = _extract_workflow_yml(arc_tmp_path, archive_fmt)
                     with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
-                        tmp.write(wf_yaml)
                         tmp_path = Path(tmp.name)
+                        tmp.write(wf_yaml)
                 finally:
-                    arc_tmp_path.unlink(missing_ok=True)
+                    if arc_tmp_path is not None:
+                        arc_tmp_path.unlink(missing_ok=True)
             else:
                 # Treat as a plain YAML file (existing behaviour).
                 with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
@@ -5125,9 +5127,10 @@ def workflow_add(
                 console.print(f"[red]Error:[/red] Failed to extract workflow from archive: {exc}")
                 raise typer.Exit(1)
             import tempfile
+            tmp_local = None
             with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
-                tmp.write(wf_yaml)
                 tmp_local = Path(tmp.name)
+                tmp.write(wf_yaml)
             try:
                 _validate_and_install_local(tmp_local, str(source_path))
             finally:
@@ -5231,13 +5234,15 @@ def workflow_add(
         if cat_archive_fmt in ("tar.gz", "zip"):
             # Download URL points to an archive — extract workflow.yml from it.
             suffix = ".tar.gz" if cat_archive_fmt == "tar.gz" else ".zip"
+            arc_tmp = None
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as arc_f:
-                arc_f.write(raw_response)
                 arc_tmp = Path(arc_f.name)
+                arc_f.write(raw_response)
             try:
                 wf_yaml_bytes = _extract_workflow_yml(arc_tmp, cat_archive_fmt)
             finally:
-                arc_tmp.unlink(missing_ok=True)
+                if arc_tmp is not None:
+                    arc_tmp.unlink(missing_ok=True)
             workflow_file.write_bytes(wf_yaml_bytes)
         else:
             workflow_file.write_bytes(raw_response)

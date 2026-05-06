@@ -719,6 +719,20 @@ class TestPresetManager:
         with pytest.raises(PresetValidationError, match="Unsafe path"):
             manager.install_from_zip(archive, "0.1.5")
 
+    def test_install_from_tar_gz_rejects_symlinks(self, project_dir, temp_dir):
+        """install_from_zip must reject tarballs containing symlinks."""
+        import tarfile
+        archive = temp_dir / "symlink.tar.gz"
+        with tarfile.open(archive, "w:gz") as tf:
+            info = tarfile.TarInfo(name="link")
+            info.type = tarfile.SYMTYPE
+            info.linkname = "/etc/passwd"
+            tf.addfile(info)
+
+        manager = PresetManager(project_dir)
+        with pytest.raises(PresetValidationError, match="Symlinks"):
+            manager.install_from_zip(archive, "0.1.5")
+
     def test_remove(self, project_dir, pack_dir):
         """Test removing a preset."""
         manager = PresetManager(project_dir)
