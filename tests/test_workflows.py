@@ -89,6 +89,34 @@ def sample_workflow_file(project_dir, sample_workflow_yaml):
 class TestWorkflowCliInputs:
     """Test workflow run input normalization at the CLI boundary."""
 
+    @staticmethod
+    def _install_parse_only_workflow_engine(monkeypatch, inputs=None):
+        from specify_cli.workflows import engine as engine_module
+
+        input_definitions = inputs or {}
+
+        class FakeDefinition:
+            id = "speckit"
+            name = "Spec Kit"
+            version = "1.0.0"
+            inputs = input_definitions
+
+        class FakeWorkflowEngine:
+            def __init__(self, project_root):
+                self.project_root = project_root
+                self.on_step_start = None
+
+            def load_workflow(self, source):
+                return FakeDefinition()
+
+            def validate(self, definition):
+                return []
+
+            def execute(self, definition, parsed_inputs):
+                raise AssertionError("workflow should not execute after input errors")
+
+        monkeypatch.setattr(engine_module, "WorkflowEngine", FakeWorkflowEngine)
+
     def test_inline_input_still_works(self, project_dir, monkeypatch):
         from specify_cli import _parse_workflow_inputs
 
@@ -158,6 +186,19 @@ class TestWorkflowCliInputs:
 
         assert inputs == {"assignee": literal}
 
+    def test_escaped_at_file_stays_literal(self, project_dir, monkeypatch):
+        from specify_cli import _parse_workflow_inputs
+
+        (project_dir / "alice").write_text("file contents", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        assert _parse_workflow_inputs(["assignee=@@alice"], None) == {
+            "assignee": "@alice",
+        }
+        assert _parse_workflow_inputs(["assignee=@@"], None) == {
+            "assignee": "@",
+        }
+
     def test_existing_at_directory_stays_literal(self, project_dir, monkeypatch):
         from specify_cli import _parse_workflow_inputs
 
@@ -202,6 +243,42 @@ class TestWorkflowCliInputs:
         assert inputs == {
             "prompt": "Build a workflow",
             "scope": "full",
+        }
+
+    def test_input_file_stringifies_json_scalars(self, project_dir, monkeypatch):
+        from specify_cli import _parse_workflow_inputs
+
+        payload_file = project_dir / "payload.json"
+        payload_file.write_text(
+            json.dumps({
+                "enabled": True,
+                "disabled": False,
+                "count": 3,
+                "ratio": 1.5,
+                "prompt": "Build a workflow",
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(project_dir)
+
+        inputs = _parse_workflow_inputs(
+            None,
+            "payload.json",
+            {
+                "enabled": {"type": "string"},
+                "disabled": {"type": "string"},
+                "count": {"type": "string"},
+                "ratio": {"type": "string"},
+                "prompt": {"type": "string"},
+            },
+        )
+
+        assert inputs == {
+            "enabled": "true",
+            "disabled": "false",
+            "count": "3",
+            "ratio": "1.5",
+            "prompt": "Build a workflow",
         }
 
     def test_input_file_normalizes_typed_string_scalars(
@@ -396,6 +473,42 @@ class TestWorkflowCliInputs:
             "spec": "Build a kanban board",
             "scope": "full",
         }
+
+    @pytest.mark.parametrize(
+        ("args", "payload", "expected"),
+        [
+            (["--input-file", "missing.json"], None, "not found"),
+            (["--input-file", "payload.json"], "{invalid json", "Invalid JSON"),
+            (["--input-file", "payload.json"], "[]", "JSON object"),
+            (
+                ["--input-file", "payload.json"],
+                json.dumps({"spec": {"text": "Build a workflow"}}),
+                "string, number, or boolean",
+            ),
+            (["--input-file", "payload.json"], '{"spec": NaN}', "finite number"),
+            (["--input", "spec"], None, "expected key=value"),
+        ],
+    )
+    def test_workflow_run_input_errors_exit_cleanly(
+        self,
+        args,
+        payload,
+        expected,
+        project_dir,
+        monkeypatch,
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        if payload is not None:
+            (project_dir / "payload.json").write_text(payload, encoding="utf-8")
+        self._install_parse_only_workflow_engine(monkeypatch)
+        monkeypatch.chdir(project_dir)
+
+        result = CliRunner().invoke(app, ["workflow", "run", "speckit", *args])
+
+        assert result.exit_code == 1, result.output
+        assert expected in result.output
 
 
 # ===== Step Registry Tests =====

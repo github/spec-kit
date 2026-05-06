@@ -5320,6 +5320,13 @@ def _validate_workflow_input_file_value(key: str, value: Any) -> None:
         )
 
 
+def _workflow_cli_scalar_to_string(value: Any) -> str:
+    """Render JSON scalars the same way repeated --input key=value does."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
 def _load_workflow_input_file(input_file: str) -> dict[str, Any]:
     """Load workflow inputs from a JSON object file."""
     path, raw_json = _read_workflow_cli_file(input_file, "--input-file")
@@ -5333,7 +5340,7 @@ def _load_workflow_input_file(input_file: str) -> dict[str, Any]:
 
     if not isinstance(data, dict):
         raise ValueError(
-            f"--input-file must contain a JSON object, got {type(data).__name__}."
+            f"--input-file must contain a JSON object, got {_json_type_name(data)}."
         )
     for key, value in data.items():
         _validate_workflow_input_file_value(str(key), value)
@@ -5366,7 +5373,7 @@ def _parse_workflow_inputs(
     if input_file is not None:
         for key, value in _load_workflow_input_file(input_file).items():
             inputs[key] = _normalize_workflow_cli_scalar(
-                value,
+                _workflow_cli_scalar_to_string(value),
                 input_definitions.get(key),
             )
 
@@ -5384,7 +5391,9 @@ def _parse_workflow_inputs(
                 )
 
             value = raw_value.strip()
-            if value.startswith("@"):
+            if value.startswith("@@"):
+                value = value[1:]
+            elif value.startswith("@"):
                 file_ref = value[1:].strip()
                 if file_ref:
                     candidate_path = _resolve_workflow_cli_path(file_ref)
@@ -5410,7 +5419,7 @@ def workflow_run(
         "-i",
         help=(
             "Input values as key=value pairs; key=@path reads an existing text "
-            "file, otherwise @ values stay literal"
+            "file, key=@@value passes a literal @value"
         ),
     ),
     input_file: str | None = typer.Option(
