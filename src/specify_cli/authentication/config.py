@@ -8,6 +8,7 @@ an explicit opt-in via this file.
 from __future__ import annotations
 
 import json
+import os
 import stat
 from dataclasses import dataclass
 from fnmatch import fnmatch
@@ -53,21 +54,22 @@ def load_auth_config(
     if not config_path.is_file():
         return []
 
-    # Warn (but don't fail) if the file is world-readable.
-    try:
-        mode = config_path.stat().st_mode
-        if mode & (stat.S_IRGRP | stat.S_IROTH):
-            import warnings
+    # Warn (but don't fail) if the file is world-readable (POSIX only).
+    if os.name != "nt":
+        try:
+            mode = config_path.stat().st_mode
+            if mode & (stat.S_IRGRP | stat.S_IROTH):
+                import warnings
 
-            warnings.warn(
-                f"{config_path} is readable by group/others. "
-                "Consider restricting with: chmod 600 "
-                f"{config_path}",
-                UserWarning,
-                stacklevel=2,
-            )
-    except OSError:
-        pass  # stat failed — skip permission check
+                warnings.warn(
+                    f"{config_path} is readable by group/others. "
+                    "Consider restricting with: chmod 600 "
+                    f"{config_path}",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        except OSError:
+            pass  # stat failed — skip permission check
 
     raw = json.loads(config_path.read_text(encoding="utf-8"))
 

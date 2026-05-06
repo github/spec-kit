@@ -23,8 +23,6 @@ from specify_cli import (
     _normalize_tag,
     app,
 )
-from specify_cli.authentication.config import _default_config_path
-
 from tests.conftest import strip_ansi
 
 runner = CliRunner()
@@ -33,7 +31,7 @@ SENTINEL_GH_TOKEN = "SENTINEL-GH-TOKEN-VALUE"
 SENTINEL_GITHUB_TOKEN = "SENTINEL-GITHUB-TOKEN-VALUE"
 
 _RATE_LIMITED_REASON = (
-    f"rate limited (configure {_default_config_path()} with a GitHub token)"
+    "rate limited (configure ~/.specify/auth.json with a GitHub token)"
 )
 
 
@@ -279,7 +277,7 @@ class TestUserStory2:
         assert "Installed: 0.7.4" in output
         if expected_reason == _RATE_LIMITED_REASON:
             assert "Could not check latest release: rate limited" in output
-            assert str(_default_config_path()) in output
+            assert "~/.specify/auth.json" in output
         else:
             assert f"Could not check latest release: {expected_reason}" in output
 
