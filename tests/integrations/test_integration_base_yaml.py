@@ -142,6 +142,28 @@ class YamlIntegrationTests:
             "YAML recipe still contains $ARGUMENTS instead of {{args}}"
         )
 
+
+    def test_yaml_has_parameters_when_args_placeholder(self, tmp_path):
+        """YAML recipes with {{args}} must include a parameters definition."""
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        cmd_files = [f for f in created if "scripts" not in f.parts]
+        assert len(cmd_files) > 0
+        for f in cmd_files:
+            content = f.read_text(encoding="utf-8")
+            if "{{args}}" in content:
+                lines = content.split("\n")
+                yaml_lines = [l for l in lines if not l.startswith("# Source:")]
+                parsed = yaml.safe_load("\n".join(yaml_lines))
+                assert "parameters" in parsed, (
+                    f"{f.name} uses {{{{args}}}} but has no parameters definition"
+                )
+                params = parsed["parameters"]
+                assert any(p.get("key") == "args" for p in params), (
+                    f"{f.name} parameters missing 'args' key"
+                )
+
     def test_yaml_is_valid(self, tmp_path):
         """Every generated YAML file must parse without errors."""
         i = get_integration(self.KEY)

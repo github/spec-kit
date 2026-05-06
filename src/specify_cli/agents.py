@@ -255,7 +255,17 @@ class CommandRegistrar:
         description = frontmatter.get("description", "")
         if not isinstance(description, str):
             description = str(description) if description is not None else ""
-        return YamlIntegration._render_yaml(title, description, body, source_id)
+        params = None
+        if "{{args}}" in body:
+            params = [
+                {
+                    "key": "args",
+                    "input_type": "string",
+                    "requirement": "user_prompt",
+                    "description": "Arguments to pass to the command",
+                }
+            ]
+        return YamlIntegration._render_yaml(title, description, body, source_id, parameters=params)
 
     def render_skill_command(
         self,
