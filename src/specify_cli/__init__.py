@@ -3663,7 +3663,8 @@ def extension_add(
                         raise typer.Exit(1)
 
                     suffix = ".tar.gz" if archive_fmt == "tar.gz" else ".zip"
-                    archive_path = download_dir / f"{extension}-url-download{suffix}"
+                    safe_name = Path(extension).name or "extension"
+                    archive_path = download_dir / f"{safe_name}-url-download{suffix}"
                     archive_path.write_bytes(archive_data)
 
                     # Install from downloaded archive
@@ -5120,7 +5121,7 @@ def workflow_add(
             local_fmt = _detect_archive_format(source)
             try:
                 wf_yaml = _extract_workflow_yml(source_path, local_fmt)
-            except (ValueError, Exception) as exc:
+            except Exception as exc:
                 console.print(f"[red]Error:[/red] Failed to extract workflow from archive: {exc}")
                 raise typer.Exit(1)
             import tempfile
