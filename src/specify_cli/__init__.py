@@ -2629,7 +2629,7 @@ def preset_add(
             import urllib.request
             import urllib.error
             import tempfile
-            from .extensions import _detect_archive_format as _det_fmt
+            from .extensions import detect_archive_format as _det_fmt
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 archive_fmt = _det_fmt(from_url)
@@ -3628,7 +3628,7 @@ def extension_add(
                 import urllib.request
                 import urllib.error
                 from urllib.parse import urlparse
-                from .extensions import _detect_archive_format
+                from .extensions import detect_archive_format
 
                 # Validate URL
                 parsed = urlparse(from_url)
@@ -3647,14 +3647,14 @@ def extension_add(
                 # Download archive to temp location; detect format from URL or Content-Type.
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
                 download_dir.mkdir(parents=True, exist_ok=True)
-                archive_fmt = _detect_archive_format(from_url)
+                archive_fmt = detect_archive_format(from_url)
                 archive_path = None
 
                 try:
                     with urllib.request.urlopen(from_url, timeout=60) as response:
                         if not archive_fmt:
                             content_type = response.headers.get("Content-Type", "")
-                            archive_fmt = _detect_archive_format(from_url, content_type)
+                            archive_fmt = detect_archive_format(from_url, content_type)
                         archive_data = response.read()
 
                     if not archive_fmt:
@@ -4331,9 +4331,9 @@ def extension_update(
                 try:
                     # 6. Validate extension ID from archive BEFORE modifying installation
                     # Handle both root-level and nested extension.yml (GitHub auto-generated archives)
-                    from .extensions import _detect_archive_format
+                    from .extensions import detect_archive_format
                     import tarfile
-                    archive_fmt = _detect_archive_format(str(archive_path))
+                    archive_fmt = detect_archive_format(str(archive_path))
                     import yaml
                     manifest_data = None
 
@@ -5029,7 +5029,7 @@ def workflow_add(
         from ipaddress import ip_address
         from urllib.parse import urlparse
         from urllib.request import urlopen  # noqa: S310
-        from .extensions import _detect_archive_format
+        from .extensions import detect_archive_format
 
         parsed_src = urlparse(source)
         src_host = parsed_src.hostname or ""
@@ -5062,10 +5062,10 @@ def workflow_add(
                     raise typer.Exit(1)
 
                 # Detect archive format from the final URL or Content-Type header.
-                archive_fmt = _detect_archive_format(final_url)
+                archive_fmt = detect_archive_format(final_url)
                 if not archive_fmt:
                     content_type = resp.headers.get("Content-Type", "")
-                    archive_fmt = _detect_archive_format(final_url, content_type)
+                    archive_fmt = detect_archive_format(final_url, content_type)
 
                 raw_data = resp.read()
         except typer.Exit:
@@ -5119,8 +5119,8 @@ def workflow_add(
             source.lower().endswith(".tar.gz") or source.lower().endswith(".tgz") or source.lower().endswith(".zip")
         ):
             # Local archive file containing workflow.yml
-            from .extensions import _detect_archive_format
-            local_fmt = _detect_archive_format(source)
+            from .extensions import detect_archive_format
+            local_fmt = detect_archive_format(source)
             try:
                 wf_yaml = _extract_workflow_yml(source_path, local_fmt)
             except Exception as exc:
@@ -5199,7 +5199,7 @@ def workflow_add(
 
     try:
         from urllib.request import urlopen  # noqa: S310 — URL comes from catalog
-        from .extensions import _detect_archive_format
+        from .extensions import detect_archive_format
 
         workflow_dir.mkdir(parents=True, exist_ok=True)
         with urlopen(workflow_url, timeout=30) as response:  # noqa: S310
@@ -5224,10 +5224,10 @@ def workflow_add(
                 raise typer.Exit(1)
 
             # Detect archive format from the final URL or Content-Type header.
-            cat_archive_fmt = _detect_archive_format(final_url)
+            cat_archive_fmt = detect_archive_format(final_url)
             if not cat_archive_fmt:
                 cat_ct = response.headers.get("Content-Type", "")
-                cat_archive_fmt = _detect_archive_format(final_url, cat_ct)
+                cat_archive_fmt = detect_archive_format(final_url, cat_ct)
 
             raw_response = response.read()
 

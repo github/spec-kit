@@ -108,7 +108,7 @@ def normalize_priority(value: Any, default: int = 10) -> int:
     return priority if priority >= 1 else default
 
 
-def _detect_archive_format(url: str, content_type: str = "") -> str:
+def detect_archive_format(url: str, content_type: str = "") -> str:
     """Detect archive format from URL path extension or Content-Type header.
 
     Args:
@@ -143,7 +143,7 @@ def _detect_archive_format(url: str, content_type: str = "") -> str:
     return ""
 
 
-def _safe_extract_tarball(
+def safe_extract_tarball(
     archive_path: Path,
     dest_dir: Path,
     error_class: "type[Exception]" = Exception,
@@ -1340,11 +1340,11 @@ class ExtensionManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            archive_fmt = _detect_archive_format(str(zip_path))
+            archive_fmt = detect_archive_format(str(zip_path))
 
             if archive_fmt == "tar.gz":
                 # Extract tarball safely (prevent tar slip attack)
-                _safe_extract_tarball(zip_path, temp_path, ValidationError)
+                safe_extract_tarball(zip_path, temp_path, ValidationError)
             else:
                 # Extract ZIP safely (prevent Zip Slip attack)
                 with zipfile.ZipFile(zip_path, 'r') as zf:
@@ -2140,14 +2140,14 @@ class ExtensionCatalog:
         version = ext_info.get("version", "unknown")
 
         # Detect archive format from URL; resolve via Content-Type when needed.
-        archive_fmt = _detect_archive_format(download_url)
+        archive_fmt = detect_archive_format(download_url)
 
         # Download the archive
         try:
             with self._open_url(download_url, timeout=60) as response:
                 if not archive_fmt:
                     content_type = response.headers.get("Content-Type", "")
-                    archive_fmt = _detect_archive_format(download_url, content_type)
+                    archive_fmt = detect_archive_format(download_url, content_type)
                 archive_data = response.read()
 
         except urllib.error.URLError as e:

@@ -27,7 +27,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
-from .extensions import ExtensionRegistry, normalize_priority, _detect_archive_format, _safe_extract_tarball
+from .extensions import ExtensionRegistry, normalize_priority, detect_archive_format, safe_extract_tarball
 
 
 def _substitute_core_template(
@@ -1626,11 +1626,11 @@ class PresetManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            archive_fmt = _detect_archive_format(str(zip_path))
+            archive_fmt = detect_archive_format(str(zip_path))
 
             if archive_fmt == "tar.gz":
                 # Extract tarball safely (prevent tar slip attack)
-                _safe_extract_tarball(zip_path, temp_path, PresetValidationError)
+                safe_extract_tarball(zip_path, temp_path, PresetValidationError)
             else:
                 with zipfile.ZipFile(zip_path, 'r') as zf:
                     temp_path_resolved = temp_path.resolve()
@@ -2314,13 +2314,13 @@ class PresetCatalog:
         version = pack_info.get("version", "unknown")
 
         # Detect archive format from URL; resolve via Content-Type when needed.
-        archive_fmt = _detect_archive_format(download_url)
+        archive_fmt = detect_archive_format(download_url)
 
         try:
             with self._open_url(download_url, timeout=60) as response:
                 if not archive_fmt:
                     content_type = response.headers.get("Content-Type", "")
-                    archive_fmt = _detect_archive_format(download_url, content_type)
+                    archive_fmt = detect_archive_format(download_url, content_type)
                 archive_data = response.read()
 
         except urllib.error.URLError as e:

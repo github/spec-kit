@@ -1843,3 +1843,241 @@ steps:
         assert state.status == RunStatus.COMPLETED
         assert "do-plan" in state.step_results
         assert "do-specify" not in state.step_results
+
+
+# ===== workflow add archive CLI tests =====
+
+MINIMAL_WORKFLOW_YAML = """\
+schema_version: "1.0"
+workflow:
+  id: "arc-workflow"
+  name: "Archive Workflow"
+  version: "1.0.0"
+  description: "Installed from archive"
+steps:
+  - id: step-one
+    type: shell
+    run: "echo hello"
+"""
+
+
+class TestWorkflowAddArchive:
+    """CLI-level tests for `workflow add` with local archive files."""
+
+    @pytest.fixture
+    def project_dir(self, tmp_path):
+        """Create a minimal spec-kit project."""
+        specify = tmp_path / ".specify"
+        specify.mkdir()
+        (specify / "workflows").mkdir()
+        return tmp_path
+
+    def _runner_and_app(self):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        return CliRunner(), app
+
+    # -- Local ZIP archive --------------------------------------------------
+
+    def test_workflow_add_local_zip_flat(self, project_dir):
+        """workflow add installs from a local ZIP with workflow.yml at root."""
+        import zipfile
+        runner, app = self._runner_and_app()
+
+        archive = project_dir / "workflow.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("workflow.yml", MINIMAL_WORKFLOW_YAML)
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
+            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
+        ):
+            result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert "arc-workflow" in result.output
+        installed = project_dir / ".specify" / "workflows" / "arc-workflow" / "workflow.yml"
+        assert installed.exists()
+
+    def test_workflow_add_local_zip_nested(self, project_dir):
+        """workflow add installs from a local ZIP with workflow.yml in a subdirectory."""
+        import zipfile
+        runner, app = self._runner_and_app()
+
+        archive = project_dir / "workflow.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("repo-1.0/workflow.yml", MINIMAL_WORKFLOW_YAML)
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
+            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
+        ):
+            result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert "arc-workflow" in result.output
+
+    def test_workflow_add_local_zip_missing_workflow_yml(self, project_dir):
+        """workflow add exits with an error when the ZIP has no workflow.yml."""
+        import zipfile
+        runner, app = self._runner_and_app()
+
+        archive = project_dir / "empty.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("README.md", "nothing here")
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
+            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
+        ):
+            result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=True)
+
+        assert result.exit_code != 0
+        assert "extract" in result.output.lower() or "workflow" in result.output.lower()
+
+    # -- Local tar.gz archive -----------------------------------------------
+
+    def test_workflow_add_local_tar_gz_flat(self, project_dir):
+        """workflow add installs from a local .tar.gz with workflow.yml at root."""
+        import tarfile, io
+        runner, app = self._runner_and_app()
+
+        archive = project_dir / "workflow.tar.gz"
+        with tarfile.open(archive, "w:gz") as tf:
+            data = MINIMAL_WORKFLOW_YAML.encode()
+            info = tarfile.TarInfo(name="workflow.yml")
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
+            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
+        ):
+            result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert "arc-workflow" in result.output
+        installed = project_dir / ".specify" / "workflows" / "arc-workflow" / "workflow.yml"
+        assert installed.exists()
+
+    def test_workflow_add_local_tar_gz_nested(self, project_dir):
+        """workflow add installs from a local .tar.gz with workflow.yml in a subdirectory."""
+        import tarfile, io
+        runner, app = self._runner_and_app()
+
+        archive = project_dir / "workflow.tar.gz"
+        with tarfile.open(archive, "w:gz") as tf:
+            data = MINIMAL_WORKFLOW_YAML.encode()
+            info = tarfile.TarInfo(name="repo-1.0/workflow.yml")
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
+            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
+        ):
+            result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert "arc-workflow" in result.output
+
+    def test_workflow_add_local_tgz_flat(self, project_dir):
+        """workflow add recognises the .tgz extension as a gzipped tarball."""
+        import tarfile, io
+        runner, app = self._runner_and_app()
+
+        archive = project_dir / "workflow.tgz"
+        with tarfile.open(archive, "w:gz") as tf:
+            data = MINIMAL_WORKFLOW_YAML.encode()
+            info = tarfile.TarInfo(name="workflow.yml")
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
+            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
+        ):
+            result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert "arc-workflow" in result.output
+
+    def test_workflow_add_local_tar_gz_missing_workflow_yml(self, project_dir):
+        """workflow add exits with an error when the .tar.gz has no workflow.yml."""
+        import tarfile, io
+        runner, app = self._runner_and_app()
+
+        archive = project_dir / "empty.tar.gz"
+        with tarfile.open(archive, "w:gz") as tf:
+            data = b"nothing"
+            info = tarfile.TarInfo(name="README.md")
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
+            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
+        ):
+            result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=True)
+
+        assert result.exit_code != 0
+        assert "extract" in result.output.lower() or "workflow" in result.output.lower()
+
+    # -- URL archive download -----------------------------------------------
+
+    def test_workflow_add_url_tar_gz(self, project_dir):
+        """workflow add downloads a .tar.gz from a URL and installs the workflow."""
+        import tarfile, io
+        from unittest.mock import patch, MagicMock
+        runner, app = self._runner_and_app()
+
+        # Build an in-memory tar.gz archive containing workflow.yml.
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+            data = MINIMAL_WORKFLOW_YAML.encode()
+            info = tarfile.TarInfo(name="workflow.yml")
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+        raw_bytes = buf.getvalue()
+
+        mock_resp = MagicMock()
+        mock_resp.geturl.return_value = "https://example.com/workflow.tar.gz"
+        mock_resp.headers.get.return_value = "application/gzip"
+        mock_resp.read.return_value = raw_bytes
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_resp), \
+             patch.object(
+                 __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
+             ):
+            result = runner.invoke(
+                app, ["workflow", "add", "https://example.com/workflow.tar.gz"],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "arc-workflow" in result.output
+
+    def test_workflow_add_url_zip(self, project_dir):
+        """workflow add downloads a .zip from a URL and installs the workflow."""
+        import zipfile, io
+        from unittest.mock import patch, MagicMock
+        runner, app = self._runner_and_app()
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("workflow.yml", MINIMAL_WORKFLOW_YAML)
+        raw_bytes = buf.getvalue()
+
+        mock_resp = MagicMock()
+        mock_resp.geturl.return_value = "https://example.com/workflow.zip"
+        mock_resp.headers.get.return_value = "application/zip"
+        mock_resp.read.return_value = raw_bytes
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_resp), \
+             patch.object(
+                 __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
+             ):
+            result = runner.invoke(
+                app, ["workflow", "add", "https://example.com/workflow.zip"],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "arc-workflow" in result.output

@@ -178,14 +178,14 @@ class TestNormalizePriority:
         assert normalize_priority("invalid", default=1) == 1
 
 
-# ===== _detect_archive_format Tests =====
+# ===== detect_archive_format Tests =====
 
 class TestDetectArchiveFormat:
-    """Test the _detect_archive_format helper."""
+    """Test the detect_archive_format helper."""
 
     def _fmt(self, url, ct=""):
-        from specify_cli.extensions import _detect_archive_format
-        return _detect_archive_format(url, ct)
+        from specify_cli.extensions import detect_archive_format
+        return detect_archive_format(url, ct)
 
     def test_zip_url_extension(self):
         assert self._fmt("https://example.com/ext-1.0.0.zip") == "zip"
