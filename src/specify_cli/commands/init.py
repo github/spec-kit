@@ -349,6 +349,13 @@ def register(app: typer.Typer) -> None:
         console.print(f"[cyan]Selected coding agent integration:[/cyan] {selected_ai}")
         console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
 
+        if not no_git:
+            console.print(
+                "\n[dim]Note: The git extension is currently enabled by default during `specify init`.\n"
+                "Starting with v0.10.0, this will require an explicit opt-in via\n"
+                "[bold]specify extension add git[/bold].[/dim]"
+            )
+
         tracker = StepTracker("Initialize Specify Project")
 
         sys._specify_tracker_active = True
@@ -405,11 +412,19 @@ def register(app: typer.Typer) -> None:
                 )
                 manifest.save()
 
-                # Write .specify/integration.json
+                # Write .specify/integration.json (v1 schema)
                 integration_json = project_path / ".specify" / "integration.json"
                 integration_json.parent.mkdir(parents=True, exist_ok=True)
+                _int_key = resolved_integration.key
+                _int_sep = resolved_integration.effective_invoke_separator(integration_parsed_options)
                 integration_json.write_text(json.dumps({
-                    "integration": resolved_integration.key,
+                    "integration_state_schema": 1,
+                    "integration": _int_key,
+                    "default_integration": _int_key,
+                    "installed_integrations": [_int_key],
+                    "integration_settings": {
+                        _int_key: {"invoke_separator": _int_sep},
+                    },
                     "version": get_speckit_version(),
                 }, indent=2) + "\n", encoding="utf-8")
 

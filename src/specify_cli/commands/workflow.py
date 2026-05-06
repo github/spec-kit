@@ -41,8 +41,9 @@ def workflow_run(
     from ..workflows.engine import WorkflowEngine
 
     project_root = Path.cwd()
-    if not (project_root / _SPECIFY_DIR).exists():
+    if not (project_root / _SPECIFY_DIR).is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
     engine = WorkflowEngine(project_root)
     engine.on_step_start = lambda sid, label: console.print(f"  ▸ [{sid}] {label} …")
@@ -108,8 +109,9 @@ def workflow_resume(
     from ..workflows.engine import WorkflowEngine
 
     project_root = Path.cwd()
-    if not (project_root / _SPECIFY_DIR).exists():
+    if not (project_root / _SPECIFY_DIR).is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
     engine = WorkflowEngine(project_root)
     engine.on_step_start = lambda sid, label: console.print(f"  ▸ [{sid}] {label} …")
@@ -144,8 +146,9 @@ def workflow_status(
     from ..workflows.engine import WorkflowEngine
 
     project_root = Path.cwd()
-    if not (project_root / _SPECIFY_DIR).exists():
+    if not (project_root / _SPECIFY_DIR).is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
     engine = WorkflowEngine(project_root)
 
@@ -207,8 +210,9 @@ def workflow_list() -> None:
 
     project_root = Path.cwd()
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
 
     registry = WorkflowRegistry(project_root)
@@ -239,8 +243,9 @@ def workflow_add(
 
     project_root = Path.cwd()
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
 
     registry = WorkflowRegistry(project_root)
@@ -469,8 +474,9 @@ def workflow_remove(
 
     project_root = Path.cwd()
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
 
     registry = WorkflowRegistry(project_root)
@@ -497,8 +503,9 @@ def workflow_search(
     from ..workflows.catalog import WorkflowCatalog, WorkflowCatalogError
 
     project_root = Path.cwd()
-    if not (project_root / _SPECIFY_DIR).exists():
+    if not (project_root / _SPECIFY_DIR).is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
     catalog = WorkflowCatalog(project_root)
 
@@ -533,8 +540,9 @@ def workflow_info(
     from ..workflows.engine import WorkflowEngine
 
     project_root = Path.cwd()
-    if not (project_root / _SPECIFY_DIR).exists():
+    if not (project_root / _SPECIFY_DIR).is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
 
     # Check installed first
@@ -606,6 +614,10 @@ def workflow_catalog_list() -> None:
     from ..workflows.catalog import WorkflowCatalog, WorkflowCatalogError
 
     project_root = Path.cwd()
+    if not (project_root / _SPECIFY_DIR).is_dir():
+        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
+        raise typer.Exit(1)
     catalog = WorkflowCatalog(project_root)
 
     try:
@@ -634,8 +646,9 @@ def workflow_catalog_add(
 
     project_root = Path.cwd()
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
 
     catalog = WorkflowCatalog(project_root)
@@ -657,8 +670,9 @@ def workflow_catalog_remove(
 
     project_root = Path.cwd()
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
+        console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
 
     catalog = WorkflowCatalog(project_root)

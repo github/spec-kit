@@ -35,7 +35,7 @@ def preset_list() -> None:
     project_root = Path.cwd()
 
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -81,7 +81,7 @@ def preset_add(
     project_root = Path.cwd()
 
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -202,7 +202,7 @@ def preset_remove(
     project_root = Path.cwd()
 
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -232,7 +232,7 @@ def preset_search(
     project_root = Path.cwd()
 
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -269,7 +269,7 @@ def preset_resolve(
     project_root = Path.cwd()
 
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -340,7 +340,7 @@ def preset_info(
     project_root = Path.cwd()
 
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -415,7 +415,7 @@ def preset_set_priority(
 
     # Check if we're in a spec-kit project
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -466,7 +466,7 @@ def preset_enable(
 
     # Check if we're in a spec-kit project
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -507,7 +507,7 @@ def preset_disable(
 
     # Check if we're in a spec-kit project
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -549,7 +549,7 @@ def preset_catalog_list() -> None:
     project_root = Path.cwd()
 
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -618,7 +618,7 @@ def preset_catalog_add(
     project_root = Path.cwd()
 
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -681,7 +681,7 @@ def preset_catalog_remove(
     project_root = Path.cwd()
 
     specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)

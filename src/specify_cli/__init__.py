@@ -27,6 +27,9 @@ Or install globally:
 """
 
 import sys
+import urllib
+import urllib.request
+import urllib.error
 from pathlib import Path
 
 from typing import Optional
@@ -41,14 +44,74 @@ from ._ui import StepTracker, BannerGroup, show_banner
 from ._assets import _asset_service as _svc
 from ._git import _git_service as _git_svc
 from ._version import _version_service as _ver_svc
-from ._fs import save_init_options, merge_json_files, handle_vscode_settings
+from ._fs import save_init_options as save_init_options, load_init_options as load_init_options, merge_json_files as merge_json_files, handle_vscode_settings as handle_vscode_settings
 from ._helpers import (
     check_tool,
     get_speckit_version,
     AGENT_CONFIG,
-    AI_ASSISTANT_ALIASES,
-    AI_ASSISTANT_HELP,
+    AI_ASSISTANT_ALIASES as AI_ASSISTANT_ALIASES,
+    AI_ASSISTANT_HELP as AI_ASSISTANT_HELP,
+    _get_skills_dir as _get_skills_dir,
+    _parse_integration_options as _parse_integration_options,
 )
+from ._ui import select_with_arrows as select_with_arrows
+
+
+def _install_shared_infra(
+    project_path: Path,
+    script_type: str,
+    tracker=None,
+    force: bool = False,
+    invoke_separator: str = ".",
+) -> bool:
+    """Install shared infrastructure files into *project_path*."""
+    from .shared_infra import install_shared_infra
+    from ._assets import _asset_service as _svc
+
+    def _get_version() -> str:
+        import importlib.metadata
+        try:
+            return importlib.metadata.version("specify-cli")
+        except Exception:
+            return "unknown"
+
+    return install_shared_infra(
+        project_path,
+        script_type,
+        version=_get_version(),
+        core_pack=_svc.locate_core_pack(),
+        repo_root=Path(__file__).parent.parent.parent,
+        console=console,
+        force=force,
+        invoke_separator=invoke_separator,
+    )
+
+
+def _refresh_shared_templates(
+    project_path: Path,
+    invoke_separator: str,
+    force: bool = False,
+) -> None:
+    """Refresh default-sensitive shared templates without touching scripts."""
+    from .shared_infra import refresh_shared_templates
+    from ._assets import _asset_service as _svc
+
+    def _get_version() -> str:
+        import importlib.metadata
+        try:
+            return importlib.metadata.version("specify-cli")
+        except Exception:
+            return "unknown"
+
+    refresh_shared_templates(
+        project_path,
+        version=_get_version(),
+        core_pack=_svc.locate_core_pack(),
+        repo_root=Path(__file__).parent.parent.parent,
+        console=console,
+        invoke_separator=invoke_separator,
+        force=force,
+    )
 from .commands import init as _init_cmd
 from .commands.extension import extension_app
 from .commands.integration import integration_app

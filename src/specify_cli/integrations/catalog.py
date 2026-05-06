@@ -591,16 +591,15 @@ class IntegrationCatalog:
                 allow_unicode=True,
             )
 
-    def remove_catalog(self, index: int) -> str:
-        """Remove a catalog source by 0-based index.
+    def remove_catalog(self, target: str | int) -> str:
+        """Remove a catalog source by name or 0-based index.
 
-        ``index`` is interpreted in the same display order shown by
-        ``integration catalog list`` (i.e. sorted ascending by priority,
-        with missing priority defaulting to ``yaml_index + 1``, matching
-        ``_load_catalog_config()``). This way, the index a user sees in
-        ``catalog list`` is the index they pass to ``catalog remove``,
-        even if the underlying YAML lists entries in a different order
-        from how they sort by priority.
+        If ``target`` is an integer or can be parsed as one, it is interpreted
+        as a 0-based index in the same display order shown by
+        ``integration catalog list``.
+
+        If ``target`` is a string, it is matched against the ``name`` field of
+        entries in the project config.
 
         Returns the removed catalog's name.
         """
@@ -618,32 +617,18 @@ class IntegrationCatalog:
             data = {}
         if not isinstance(data, dict):
             raise IntegrationValidationError(
-                f"Catalog config file {config_path} is corrupted "
-                "(expected a mapping)."
+                f"Catalog config file {config_path} is corrupted (expected a mapping)."
             )
 
         catalogs = data.get("catalogs", [])
         if not isinstance(catalogs, list):
             raise IntegrationValidationError(
-                f"Catalog config {config_path} has invalid 'catalogs' value: "
-                "must be a list."
+                f"Catalog config {config_path} has invalid 'catalogs' value: must be a list."
             )
 
         if not catalogs:
-            # An empty list is the kind of state that only happens if the
-            # user hand-edited the file; our own `remove_catalog` deletes
-            # the file when the last entry is popped. Surface a clear
-            # message instead of `out of range (0--1)`.
-            raise IntegrationValidationError(
-                "Catalog config contains no catalog entries."
-            )
+            raise IntegrationValidationError("Catalog config contains no catalog entries.")
 
-        # Map displayed index -> raw YAML index using the same priority
-        # defaulting as ``_load_catalog_config``. We deliberately stay
-        # tolerant here (no new validation errors) because the goal is
-        # only to mirror the order shown by ``catalog list``; entries
-        # that ``_load_catalog_config`` would have rejected outright
-        # would have failed ``catalog list`` already.
         def _is_removable_catalog_entry(item: Any) -> bool:
             if not isinstance(item, dict):
                 return False
@@ -652,55 +637,61 @@ class IntegrationCatalog:
                 return False
             return bool(str(raw_url).strip())
 
-        priority_pairs: List[Tuple[int, int]] = []
-        for yaml_idx, item in enumerate(catalogs):
-            if not _is_removable_catalog_entry(item):
-                continue
+        # Resolve index
+        index: Optional[int] = None
+        try:
+            index = int(target)
+        except (ValueError, TypeError):
+            pass
 
-            raw_priority = item.get("priority", yaml_idx + 1)
-            if isinstance(raw_priority, bool):
-                priority = yaml_idx + 1
-            else:
-                try:
-                    priority = int(raw_priority)
-                except (TypeError, ValueError):
+        if index is not None:
+            # Map displayed index -> raw YAML index
+            priority_pairs: List[Tuple[int, int]] = []
+            for yaml_idx, item in enumerate(catalogs):
+                if not _is_removable_catalog_entry(item):
+                    continue
+                raw_priority = item.get("priority", yaml_idx + 1)
+                if isinstance(raw_priority, bool):
                     priority = yaml_idx + 1
-            priority_pairs.append((priority, yaml_idx))
-        if not priority_pairs:
-            raise IntegrationValidationError(
-                "Catalog config contains no removable catalog entries."
-            )
-        # Stable sort: ties keep their YAML order, matching list-view ordering.
-        priority_pairs.sort(key=lambda p: p[0])
-        display_order: List[int] = [yaml_idx for _, yaml_idx in priority_pairs]
+                else:
+                    try:
+                        priority = int(raw_priority)
+                    except (TypeError, ValueError):
+                        priority = yaml_idx + 1
+                priority_pairs.append((priority, yaml_idx))
 
-        if index < 0 or index >= len(display_order):
-            raise IntegrationValidationError(
-                f"Catalog index {index} out of range (0-{len(display_order) - 1})."
-            )
+            if not priority_pairs:
+                raise IntegrationValidationError("Catalog config contains no removable catalog entries.")
 
-        target_yaml_idx = display_order[index]
+            priority_pairs.sort(key=lambda p: p[0])
+            display_order: List[int] = [yaml_idx for _, yaml_idx in priority_pairs]
+
+            if index < 0 or index >= len(display_order):
+                raise IntegrationValidationError(
+                    f"Catalog index {index} out of range (0-{len(display_order) - 1})."
+                )
+            target_yaml_idx = display_order[index]
+        else:
+            # Match by name
+            target_yaml_idx = None
+            for yaml_idx, item in enumerate(catalogs):
+                if not _is_removable_catalog_entry(item):
+                    continue
+                if item.get("name") == target:
+                    target_yaml_idx = yaml_idx
+                    break
+            
+            if target_yaml_idx is None:
+                raise IntegrationValidationError(f"Catalog source '{target}' not found in configuration.")
+
         removed = catalogs.pop(target_yaml_idx)
+        removed_name = removed.get("name", str(target))
 
         if any(_is_removable_catalog_entry(item) for item in catalogs):
             data["catalogs"] = catalogs
             with open(config_path, "w", encoding="utf-8") as f:
-                yaml.dump(
-                    data,
-                    f,
-                    default_flow_style=False,
-                    sort_keys=False,
-                    allow_unicode=True,
-                )
+                yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
         else:
-            # Removing the final entry: delete the config file rather than
-            # leaving behind an empty `catalogs:` list. `_load_catalog_config`
-            # treats an empty list as an error, so leaving the file would
-            # break every subsequent `integration` command until the user
-            # manually deletes `.specify/integration-catalogs.yml`.
-            # Deleting the file lets the project fall back to built-in
-            # defaults, which matches the behavior before any
-            # `catalog add` was ever run.
             try:
                 config_path.unlink(missing_ok=True)
             except OSError as exc:
@@ -708,7 +699,7 @@ class IntegrationCatalog:
                     f"Failed to delete catalog config {config_path}: {exc}"
                 ) from exc
 
-        fallback_name = f"catalog-{index + 1}"
+        fallback_name = f"catalog-{target_yaml_idx + 1}"
         if isinstance(removed, dict):
             removed_name = removed.get("name")
             if removed_name is not None:

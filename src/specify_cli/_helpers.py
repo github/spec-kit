@@ -202,27 +202,20 @@ def check_tool(tool: str, tracker: StepTracker = None) -> bool:
 def _install_shared_infra(
     project_path: Path,
     script_type: str,
-    tracker: StepTracker | None = None,
+    tracker=None,
     force: bool = False,
     invoke_separator: str = ".",
 ) -> bool:
     """Install shared infrastructure files into *project_path*.
 
-    Copies ``.specify/scripts/`` and ``.specify/templates/`` from the
-    bundled core_pack or source checkout.  Tracks all installed files
-    in ``speckit.manifest.json``.
-
-    Page templates are processed to resolve ``__SPECKIT_COMMAND_<NAME>__``
-    placeholders using *invoke_separator* (``"."`` for markdown agents,
-    ``"-"`` for skills agents).
-
-    When *force* is ``True``, existing files are overwritten with the
-    latest bundled versions.  When ``False`` (default), only missing
-    files are added and existing ones are skipped.
+    Delegates to ``shared_infra.install_shared_infra`` which provides
+    symlink-safe writes and atomic template updates.
 
     Returns ``True`` on success.
     """
     import importlib.metadata
+    from .shared_infra import install_shared_infra
+    from ._assets import _asset_service as _svc
 
     def _get_version() -> str:
         try:
@@ -230,80 +223,16 @@ def _install_shared_infra(
         except Exception:
             return "unknown"
 
-    from .integrations.base import IntegrationBase
-    from .integrations.manifest import IntegrationManifest
-    from ._assets import _asset_service as _svc
-
-    core = _svc.locate_core_pack()
-    manifest = IntegrationManifest("speckit", project_path, version=_get_version())
-
-    # Scripts
-    if core and (core / "scripts").is_dir():
-        scripts_src = core / "scripts"
-    else:
-        repo_root = Path(__file__).parent.parent.parent
-        scripts_src = repo_root / "scripts"
-
-    skipped_files: list[str] = []
-
-    if scripts_src.is_dir():
-        dest_scripts = project_path / ".specify" / "scripts"
-        dest_scripts.mkdir(parents=True, exist_ok=True)
-        variant_dir = "bash" if script_type == "sh" else "powershell"
-        variant_src = scripts_src / variant_dir
-        if variant_src.is_dir():
-            dest_variant = dest_scripts / variant_dir
-            dest_variant.mkdir(parents=True, exist_ok=True)
-            for src_path in variant_src.rglob("*"):
-                if src_path.is_file():
-                    rel_path = src_path.relative_to(variant_src)
-                    dst_path = dest_variant / rel_path
-                    if dst_path.exists() and not force:
-                        skipped_files.append(str(dst_path.relative_to(project_path)))
-                    else:
-                        dst_path.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(src_path, dst_path)
-                        rel = dst_path.relative_to(project_path).as_posix()
-                        manifest.record_existing(rel)
-
-    # Page templates (not command templates, not vscode-settings.json)
-    if core and (core / "templates").is_dir():
-        templates_src = core / "templates"
-    else:
-        repo_root = Path(__file__).parent.parent.parent
-        templates_src = repo_root / "templates"
-
-    if templates_src.is_dir():
-        dest_templates = project_path / ".specify" / "templates"
-        dest_templates.mkdir(parents=True, exist_ok=True)
-        for f in templates_src.iterdir():
-            if f.is_file() and f.name != "vscode-settings.json" and not f.name.startswith("."):
-                dst = dest_templates / f.name
-                if dst.exists() and not force:
-                    skipped_files.append(str(dst.relative_to(project_path)))
-                else:
-                    content = f.read_text(encoding="utf-8")
-                    content = IntegrationBase.resolve_command_refs(
-                        content, invoke_separator
-                    )
-                    dst.write_text(content, encoding="utf-8")
-                    rel = dst.relative_to(project_path).as_posix()
-                    manifest.record_existing(rel)
-
-    if skipped_files:
-        console.print(
-            f"[yellow]⚠[/yellow]  {len(skipped_files)} shared infrastructure file(s) already exist and were not updated:"
-        )
-        for f in skipped_files:
-            console.print(f"    {f}")
-        console.print(
-            "To refresh shared infrastructure, run "
-            "[cyan]specify init --here --force[/cyan] or "
-            "[cyan]specify integration upgrade --force[/cyan]."
-        )
-
-    manifest.save()
-    return True
+    return install_shared_infra(
+        project_path,
+        script_type,
+        version=_get_version(),
+        core_pack=_svc.locate_core_pack(),
+        repo_root=Path(__file__).parent.parent.parent,
+        console=console,
+        force=force,
+        invoke_separator=invoke_separator,
+    )
 
 
 def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = None) -> None:

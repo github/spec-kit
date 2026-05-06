@@ -260,7 +260,7 @@ def extension_list(
 
     # Check if we're in a spec-kit project
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -300,7 +300,7 @@ def catalog_list() -> None:
     project_root = Path.cwd()
 
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -369,7 +369,7 @@ def catalog_add(
     project_root = Path.cwd()
 
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -432,7 +432,7 @@ def catalog_remove(
     project_root = Path.cwd()
 
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -481,7 +481,7 @@ def extension_add(
 
     # Check if we're in a spec-kit project
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -663,7 +663,7 @@ def extension_remove(
 
     # Check if we're in a spec-kit project
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -739,7 +739,7 @@ def extension_search(
 
     # Check if we're in a spec-kit project
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -823,7 +823,7 @@ def extension_info(
 
     # Check if we're in a spec-kit project
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -925,7 +925,7 @@ def extension_update(
 
     # Check if we're in a spec-kit project
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -1321,7 +1321,7 @@ def extension_enable(
 
     # Check if we're in a spec-kit project
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -1368,7 +1368,7 @@ def extension_disable(
 
     # Check if we're in a spec-kit project
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
@@ -1418,7 +1418,7 @@ def extension_set_priority(
 
     # Check if we're in a spec-kit project
     specify_dir = project_root / _SPECIFY_DIR
-    if not specify_dir.exists():
+    if not specify_dir.is_dir():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         console.print("Run this command from a spec-kit project root")
         raise typer.Exit(1)
