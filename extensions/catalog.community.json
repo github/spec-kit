@@ -842,6 +842,45 @@
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-03-31T00:00:00Z"
     },
+    "fx-to-dotnet": {
+      "name": ".NET Framework to Modern .NET Migration",
+      "id": "fx-to-dotnet",
+      "description": "Orchestrate end-to-end .NET Framework to modern .NET migration across 7 phases, with SDD lifecycle integration.",
+      "author": "RogerBestMsft",
+      "version": "0.8.0",
+      "download_url": "https://github.com/RogerBestMsft/spec-kit-FxToNet/releases/download/v0.8.0/fx-to-dotnet.zip",
+      "repository": "https://github.com/RogerBestMsft/spec-kit-FxToNet",
+      "homepage": "https://github.com/RogerBestMsft/spec-kit-FxToNet",
+      "documentation": "https://github.com/RogerBestMsft/spec-kit-FxToNet/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "Microsoft.GitHubCopilot.Modernization.Mcp",
+            "version": ">=0.0.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 12,
+        "hooks": 5
+      },
+      "tags": [
+        "dotnet",
+        "migration",
+        "modernization",
+        "framework",
+        "aspnet",
+        "shared-artifact"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-06T00:00:00Z",
+      "updated_at": "2026-05-06T00:00:00Z"
+    },
     "github-issues": {
       "name": "GitHub Issues Integration 1",
       "id": "github-issues",
