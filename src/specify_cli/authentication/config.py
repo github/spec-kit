@@ -43,10 +43,9 @@ def _is_valid_host_pattern(pattern: str) -> bool:
     ``github.com.evil.com``) or multi-wildcard forms.  Only these two
     forms are accepted:
 
-    * ``example.com``         — exact hostname
-    * ``*.example.com``       — leading ``*.`` wildcard (matches any sub-domain
-      depth under the suffix, e.g. ``myorg.visualstudio.com`` or
-      ``sub.myorg.visualstudio.com``)
+    * ``example.com``           — exact hostname
+    * ``*.example.com``         — leading ``*.`` wildcard; matches subdomains
+      such as ``myorg.example.com`` but not ``example.com`` itself
     """
     if "*" not in pattern:
         return True  # exact hostname — already validated as non-empty

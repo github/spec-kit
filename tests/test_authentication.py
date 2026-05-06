@@ -732,19 +732,26 @@ class TestLoadConfigCaching:
         monkeypatch.setattr(_mod, "_config_override", None)
         monkeypatch.setattr(_mod, "_config_cache", None)
 
+        call_count = 0
+
         def fail_load(path=None):
+            nonlocal call_count
+            call_count += 1
             raise ValueError("bad config")
 
         with patch.object(_mod, "load_auth_config", side_effect=fail_load):
             with _warnings.catch_warnings(record=True) as w:
                 _warnings.simplefilter("always")
-                _mod._load_config()
-                _mod._load_config()
-                _mod._load_config()
+                result1 = _mod._load_config()
+                result2 = _mod._load_config()
+                result3 = _mod._load_config()
 
         user_warnings = [x for x in w if issubclass(x.category, UserWarning)]
         assert len(user_warnings) == 1, "Expected exactly one warning"
-        assert _mod._config_cache == []
+        # Loader called only once — subsequent calls used cache
+        assert call_count == 1
+        # All calls returned the cached empty list
+        assert result1 == result2 == result3 == []
 
 
 # ---------------------------------------------------------------------------
