@@ -132,6 +132,9 @@ def _build_ai_deprecation_warning(
         f"Use [bold]{replacement}[/bold] instead."
     )
 
+def _stdin_is_interactive() -> bool:
+    return sys.stdin.isatty()
+
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
@@ -1166,7 +1169,7 @@ def init(
             console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
             raise typer.Exit(1)
         selected_ai = ai_assistant
-    elif not sys.stdin.isatty():
+    elif not _stdin_is_interactive():
         console.print(
             f"[dim]Non-interactive session detected: defaulting to '{DEFAULT_INIT_INTEGRATION}'. "
             "Use --integration to choose a different agent.[/dim]"
@@ -1243,7 +1246,7 @@ def init(
     else:
         default_script = "ps" if os.name == "nt" else "sh"
 
-        if sys.stdin.isatty():
+        if _stdin_is_interactive():
             selected_script = select_with_arrows(SCRIPT_TYPE_CHOICES, "Choose script type (or press Enter)", default_script)
         else:
             selected_script = default_script
