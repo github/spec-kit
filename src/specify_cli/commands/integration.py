@@ -517,8 +517,8 @@ def integration_uninstall(
     if skipped:
         console.print(f"\n[yellow]⚠[/yellow]  {len(skipped)} modified file(s) were preserved:")
         for path in skipped:
-            rel = path.relative_to(project_root) if path.is_absolute() else path
-            console.print(f"    {rel.as_posix()}")
+            rel_str = os.path.relpath(str(path), str(project_root)).replace(os.sep, "/")
+            console.print(f"    {rel_str}")
 
 
 @integration_app.command("use")
@@ -1111,7 +1111,7 @@ def integration_catalog_list():
     if env_url:
         pass
     elif has_config:
-        console.print(f"[dim]Config: {config_path.relative_to(project_root).as_posix()}[/dim]")
+        console.print("[dim]Config: .specify/integration-catalogs.yml[/dim]")
     else:
         console.print("[dim]No project-level catalog sources configured. Using built-in defaults. (non-removable)[/dim]")
 

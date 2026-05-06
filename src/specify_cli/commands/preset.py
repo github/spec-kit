@@ -586,7 +586,7 @@ def preset_catalog_list() -> None:
         except PresetValidationError:
             proj_loaded = False
         if proj_loaded:
-            console.print(f"[dim]Config: {config_path.relative_to(project_root).as_posix()}[/dim]")
+            console.print("[dim]Config: .specify/preset-catalogs.yml[/dim]")
         else:
             try:
                 user_loaded = user_config_path.exists() and catalog._load_catalog_config(user_config_path) is not None
@@ -670,7 +670,7 @@ def preset_catalog_add(
     console.print(f"\n[green]✓[/green] Added catalog '[bold]{name}[/bold]' ({install_label})")
     console.print(f"  URL: {url}")
     console.print(f"  Priority: {priority}")
-    console.print(f"\nConfig saved to {config_path.relative_to(project_root).as_posix()}")
+    console.print("\nConfig saved to .specify/preset-catalogs.yml")
 
 
 @preset_catalog_app.command("remove")
