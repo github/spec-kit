@@ -1954,8 +1954,11 @@ class TestSelfTestPreset:
 
     The self-test preset ships a wrap-strategy command (``speckit.wrap-test``)
     without a corresponding core base layer; reconciliation deliberately
-    surfaces a UserWarning in that case. The filters above acknowledge those
-    expected warnings so the suite stays quiet without masking unrelated ones.
+    surfaces a UserWarning in that case. Tests install via
+    ``install_self_test_preset`` (defined above), which scopes a narrow
+    ``warnings.filterwarnings`` block to that specific message and
+    ``UserWarning`` category — so the expected warning stays quiet without
+    masking unrelated warnings or real reconciliation failures.
     """
 
     def test_self_test_preset_exists(self):
