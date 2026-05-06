@@ -4326,18 +4326,18 @@ def extension_update(
                             backup_hooks[hook_name] = ext_hooks
 
                 # 5. Download new version
-                zip_path = catalog.download_extension(extension_id)
+                archive_path = catalog.download_extension(extension_id)
                 try:
                     # 6. Validate extension ID from archive BEFORE modifying installation
                     # Handle both root-level and nested extension.yml (GitHub auto-generated archives)
                     from .extensions import _detect_archive_format
                     import tarfile
-                    archive_fmt = _detect_archive_format(str(zip_path))
+                    archive_fmt = _detect_archive_format(str(archive_path))
                     import yaml
                     manifest_data = None
 
                     if archive_fmt == "tar.gz":
-                        with tarfile.open(zip_path, "r:gz") as tf:
+                        with tarfile.open(archive_path, "r:gz") as tf:
                             # First try root-level extension.yml
                             try:
                                 m = tf.getmember("extension.yml")
@@ -4354,7 +4354,7 @@ def extension_update(
                                         with f:
                                             manifest_data = yaml.safe_load(f.read()) or {}
                     else:
-                        with zipfile.ZipFile(zip_path, "r") as zf:
+                        with zipfile.ZipFile(archive_path, "r") as zf:
                             namelist = zf.namelist()
 
                             # First try root-level extension.yml
@@ -4382,7 +4382,7 @@ def extension_update(
                     manager.remove(extension_id, keep_config=True)
 
                     # 8. Install new version
-                    _ = manager.install_from_zip(zip_path, speckit_version)
+                    _ = manager.install_from_zip(archive_path, speckit_version)
 
                     # Restore user config files from backup after successful install.
                     new_extension_dir = manager.extensions_dir / extension_id
@@ -4428,9 +4428,9 @@ def extension_update(
                                             hook["enabled"] = False
                                 hook_executor.save_project_config(config)
                 finally:
-                    # Clean up downloaded ZIP
-                    if zip_path.exists():
-                        zip_path.unlink()
+                    # Clean up downloaded archive
+                    if archive_path.exists():
+                        archive_path.unlink()
 
                 # 10. Clean up backup on success
                 if backup_base.exists():

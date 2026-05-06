@@ -171,50 +171,55 @@ def _safe_extract_tarball(
     """
     dest_resolved = dest_dir.resolve()
 
-    with tarfile.open(archive_path, "r:gz") as tf:
-        members = tf.getmembers()
-        safe_members = []
+    try:
+        with tarfile.open(archive_path, "r:gz") as tf:
+            members = tf.getmembers()
+            safe_members = []
 
-        # Validate every member before extracting anything.
-        for member in members:
-            # Reject absolute paths and any path component that is "..".
-            if os.path.isabs(member.name) or any(
-                part == ".." for part in member.name.replace("\\", "/").split("/")
-            ):
-                raise error_class(
-                    f"Unsafe path in tar archive: {member.name} (potential path traversal)"
-                )
+            # Validate every member before extracting anything.
+            for member in members:
+                # Reject absolute paths and any path component that is "..".
+                if os.path.isabs(member.name) or any(
+                    part == ".." for part in member.name.replace("\\", "/").split("/")
+                ):
+                    raise error_class(
+                        f"Unsafe path in tar archive: {member.name} (potential path traversal)"
+                    )
 
-            # Confirm the resolved path stays inside dest_dir.
-            member_path = (dest_dir / member.name).resolve()
-            try:
-                member_path.relative_to(dest_resolved)
-            except ValueError:
-                raise error_class(
-                    f"Unsafe path in tar archive: {member.name} (potential path traversal)"
-                )
+                # Confirm the resolved path stays inside dest_dir.
+                member_path = (dest_dir / member.name).resolve()
+                try:
+                    member_path.relative_to(dest_resolved)
+                except ValueError:
+                    raise error_class(
+                        f"Unsafe path in tar archive: {member.name} (potential path traversal)"
+                    )
 
-            # Reject symlinks and hard links.
-            if member.issym() or member.islnk():
-                raise error_class(
-                    f"Symlinks are not allowed in archive: {member.name}"
-                )
+                # Reject symlinks and hard links.
+                if member.issym() or member.islnk():
+                    raise error_class(
+                        f"Symlinks are not allowed in archive: {member.name}"
+                    )
 
-            # Only allow regular files and directories.
-            if not (member.isreg() or member.isdir()):
-                raise error_class(
-                    f"Non-regular file in archive: {member.name}"
-                )
+                # Only allow regular files and directories.
+                if not (member.isreg() or member.isdir()):
+                    raise error_class(
+                        f"Non-regular file in archive: {member.name}"
+                    )
 
-            safe_members.append(member)
+                safe_members.append(member)
 
-        # Extract — use the "data" filter on Python 3.12+ for extra hardening.
-        # On older versions pass only the pre-validated members so that no
-        # unvetted entry (added concurrently or via a race) slips through.
-        if sys.version_info >= (3, 12):
-            tf.extractall(dest_dir, filter="data")  # type: ignore[call-arg]
-        else:
-            tf.extractall(dest_dir, members=safe_members)  # noqa: S202 — validated above
+            # Extract — use the "data" filter on Python 3.12+ for extra hardening.
+            # On older versions pass only the pre-validated members so that no
+            # unvetted entry (added concurrently or via a race) slips through.
+            if sys.version_info >= (3, 12):
+                tf.extractall(dest_dir, filter="data")  # type: ignore[call-arg]
+            else:
+                tf.extractall(dest_dir, members=safe_members)  # noqa: S202 — validated above
+    except error_class:
+        raise
+    except (tarfile.TarError, OSError) as e:
+        raise error_class(f"Failed to read archive {archive_path}: {e}") from e
 
 
 @dataclass
