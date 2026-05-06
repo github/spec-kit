@@ -858,7 +858,6 @@
         "tools": [
           {
             "name": "Microsoft.GitHubCopilot.Modernization.Mcp",
-            "version": ">=0.0.0",
             "required": true
           }
         ]
