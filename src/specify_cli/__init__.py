@@ -5346,65 +5346,31 @@ def workflow_step_list():
     project_root = Path.cwd()
     specify_dir = project_root / ".specify"
 
-    # Load custom steps if in a spec-kit project
-    custom_keys: set[str] = set()
+    # Read installed custom steps from registry only — no dynamic imports
+    installed: dict = {}
     if specify_dir.exists():
-        from .workflows import load_custom_steps
-        loaded = load_custom_steps(project_root)
-        custom_keys.update(loaded)
-        # Also read registry for metadata
         registry = StepRegistry(project_root)
         installed = registry.list()
-        custom_keys.update(installed.keys())
 
     console.print("\n[bold cyan]Installed Step Types:[/bold cyan]\n")
 
-    built_in: list[str] = []
-    custom: list[str] = []
-    for key in sorted(STEP_REGISTRY.keys()):
-        if key in custom_keys:
-            custom.append(key)
-        else:
-            built_in.append(key)
-
+    built_in = sorted(k for k in STEP_REGISTRY if k not in installed)
     if built_in:
         console.print("  [bold]Built-in:[/bold]")
         for key in built_in:
             console.print(f"    • {key}")
         console.print()
 
-    if custom:
+    if installed:
         console.print("  [bold]Custom (installed):[/bold]")
-        if specify_dir.exists():
-            registry = StepRegistry(project_root)
-            for key in custom:
-                meta = registry.get(key) or {}
-                name = meta.get("name", key)
-                version = meta.get("version", "?")
-                console.print(f"    • [bold]{name}[/bold] ({key}) v{version}")
-        else:
-            for key in custom:
-                console.print(f"    • {key}")
+        for key in sorted(installed):
+            meta = installed[key] or {}
+            name = meta.get("name", key)
+            version = meta.get("version", "?")
+            console.print(f"    • [bold]{name}[/bold] ({key}) v{version}")
         console.print()
 
-    # Show custom steps that are installed but failed to load
-    if specify_dir.exists():
-        registry = StepRegistry(project_root)
-        installed = registry.list()
-        failed = [
-            k for k in sorted(installed.keys())
-            if k not in STEP_REGISTRY
-        ]
-        if failed:
-            console.print("  [bold yellow]Custom (installed, failed to load):[/bold yellow]")
-            for key in failed:
-                meta = installed.get(key, {})
-                name = meta.get("name", key)
-                version = meta.get("version", "?")
-                console.print(f"    • [dim]{name}[/dim] ({key}) v{version}")
-            console.print()
-
-    if not built_in and not custom:
+    if not built_in and not installed:
         console.print("[yellow]No step types found.[/yellow]")
 
     if specify_dir.exists():
@@ -5505,48 +5471,55 @@ def workflow_step_add(
     except ValueError:
         console.print(f"[red]Error:[/red] Invalid step id '{step_id}'")
         raise typer.Exit(1)
-    step_dir.mkdir(parents=True, exist_ok=True)
 
+    import shutil
+    import tempfile
+
+    # Download and validate in a temp directory first; only move to the final
+    # location on success so a transient failure can never corrupt or delete a
+    # pre-existing directory at step_dir.
+    tmp_path = Path(tempfile.mkdtemp(prefix="speckit_step_"))
+    _install_success = False
     try:
-        step_yml_content = _safe_fetch(step_yml_url)
-        init_py_content = _safe_fetch(init_url)
-    except Exception as exc:
-        import shutil
-        shutil.rmtree(step_dir, ignore_errors=True)
-        console.print(f"[red]Error:[/red] Failed to download step files: {exc}")
-        raise typer.Exit(1)
+        try:
+            step_yml_content = _safe_fetch(step_yml_url)
+            init_py_content = _safe_fetch(init_url)
+        except Exception as exc:
+            console.print(f"[red]Error:[/red] Failed to download step files: {exc}")
+            raise typer.Exit(1)
 
-    # Validate step.yml
-    try:
-        import yaml as _yaml
+        # Validate step.yml
+        try:
+            import yaml as _yaml
 
-        meta = _yaml.safe_load(step_yml_content.decode("utf-8")) or {}
-    except Exception as exc:
-        import shutil
-        shutil.rmtree(step_dir, ignore_errors=True)
-        console.print(f"[red]Error:[/red] Invalid step.yml: {exc}")
-        raise typer.Exit(1)
+            meta = _yaml.safe_load(step_yml_content.decode("utf-8")) or {}
+        except Exception as exc:
+            console.print(f"[red]Error:[/red] Invalid step.yml: {exc}")
+            raise typer.Exit(1)
 
-    step_meta = meta.get("step", {})
-    type_key = step_meta.get("type_key", "")
-    if not type_key:
-        import shutil
-        shutil.rmtree(step_dir, ignore_errors=True)
-        console.print("[red]Error:[/red] step.yml missing 'step.type_key' field")
-        raise typer.Exit(1)
+        step_meta = meta.get("step", {})
+        type_key = step_meta.get("type_key", "")
+        if not type_key:
+            console.print("[red]Error:[/red] step.yml missing 'step.type_key' field")
+            raise typer.Exit(1)
 
-    if type_key != step_id:
-        import shutil
-        shutil.rmtree(step_dir, ignore_errors=True)
-        console.print(
-            f"[red]Error:[/red] step.yml type_key ({type_key!r}) does not match "
-            f"catalog ID ({step_id!r})"
-        )
-        raise typer.Exit(1)
+        if type_key != step_id:
+            console.print(
+                f"[red]Error:[/red] step.yml type_key ({type_key!r}) does not match "
+                f"catalog ID ({step_id!r})"
+            )
+            raise typer.Exit(1)
 
-    # Write files
-    (step_dir / "step.yml").write_bytes(step_yml_content)
-    (step_dir / "__init__.py").write_bytes(init_py_content)
+        # Write validated files to temp location, then move atomically
+        (tmp_path / "step.yml").write_bytes(step_yml_content)
+        (tmp_path / "__init__.py").write_bytes(init_py_content)
+
+        steps_base_dir.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(tmp_path), str(step_dir))
+        _install_success = True
+    finally:
+        if not _install_success:
+            shutil.rmtree(tmp_path, ignore_errors=True)
 
     # Register in step registry
     registry = StepRegistry(project_root)
@@ -5658,10 +5631,6 @@ def workflow_step_info(
     if not (project_root / ".specify").exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         raise typer.Exit(1)
-
-    # Load custom steps so registry is up to date
-    from .workflows import load_custom_steps
-    load_custom_steps(project_root)
 
     registry = StepRegistry(project_root)
     installed_meta = registry.get(step_id)

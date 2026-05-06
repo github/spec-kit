@@ -359,11 +359,14 @@ class WorkflowCatalog:
             )
 
         # Write cache
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        with open(meta_file, "w", encoding="utf-8") as f:
-            json.dump({"url": entry.url, "fetched_at": time.time()}, f)
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            with open(meta_file, "w", encoding="utf-8") as f:
+                json.dump({"url": entry.url, "fetched_at": time.time()}, f)
+        except OSError:
+            pass  # Proceed without caching if disk write fails
 
         return data
 
@@ -692,7 +695,7 @@ class StepCatalog:
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
                 "HTTP is only allowed for localhost."
             )
-        if not parsed.netloc:
+        if not parsed.hostname:
             raise StepValidationError(
                 "Catalog URL must be a valid URL with a host."
             )
@@ -880,11 +883,14 @@ class StepCatalog:
                 f"Catalog from {entry.url} is not a valid JSON object."
             )
 
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        with open(meta_file, "w", encoding="utf-8") as f:
-            json.dump({"url": entry.url, "fetched_at": time.time()}, f)
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            with open(meta_file, "w", encoding="utf-8") as f:
+                json.dump({"url": entry.url, "fetched_at": time.time()}, f)
+        except OSError:
+            pass  # Proceed without caching if disk write fails
 
         return data
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -1937,6 +1938,7 @@ class TestStepRegistryCustom:
         registry2.add("deploy", {"name": "Deploy", "type_key": "deploy"})
         assert registry2.is_installed("deploy")
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="chmod not reliable on Windows")
     def test_registry_unreadable_file_resets(self, project_dir):
         """OSError reading the registry file should fall back to default."""
         from specify_cli.workflows.catalog import StepRegistry
