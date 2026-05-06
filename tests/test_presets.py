@@ -297,6 +297,7 @@ class TestPresetManifest:
             "/tmp/outside.md",
             "templates/../../outside.md",
             "C:\\Windows\\outside.md",
+            "C:outside.md",
         ],
     )
     def test_invalid_template_file_path(self, temp_dir, valid_pack_data, bad_file):
@@ -1588,6 +1589,47 @@ class TestPresetCatalog:
             catalog.download_pack("test-pack", target_dir=project_dir)
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_fetch_single_catalog_uses_bounded_read(self, project_dir):
+        """Catalog JSON responses must use the shared bounded-read helper."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        mock_response = MagicMock()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        entry = PresetCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="custom",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch(
+                 "specify_cli.presets.read_response_limited",
+                 side_effect=PresetError("catalog too large"),
+             ):
+            with pytest.raises(PresetError, match="catalog too large"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_fetch_catalog_uses_bounded_read(self, project_dir):
+        """The legacy single-catalog path must also bound catalog JSON reads."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        mock_response = MagicMock()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "get_catalog_url", return_value="https://example.com/catalog.json"), \
+             patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch(
+                 "specify_cli.presets.read_response_limited",
+                 side_effect=PresetError("catalog too large"),
+             ):
+            with pytest.raises(PresetError, match="catalog too large"):
+                catalog.fetch_catalog(force_refresh=True)
 
     def test_download_pack_verifies_sha256(self, project_dir):
         """Catalog-provided checksums are enforced when present."""

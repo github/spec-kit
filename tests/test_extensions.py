@@ -301,6 +301,7 @@ class TestExtensionManifest:
             "/tmp/outside.md",
             "commands/../../outside.md",
             "C:\\Windows\\outside.md",
+            "C:outside.md",
         ],
     )
     def test_invalid_command_file_path(self, temp_dir, valid_manifest_data, bad_file):
@@ -2669,6 +2670,47 @@ class TestExtensionCatalog:
             catalog._fetch_single_catalog(entry, force_refresh=True)
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_fetch_single_catalog_uses_bounded_read(self, temp_dir):
+        """Catalog JSON responses must use the shared bounded-read helper."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        entry = CatalogEntry(
+            url="https://example.com/catalog.json",
+            name="custom",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch(
+                 "specify_cli.extensions.read_response_limited",
+                 side_effect=ExtensionError("catalog too large"),
+             ):
+            with pytest.raises(ExtensionError, match="catalog too large"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_fetch_catalog_uses_bounded_read(self, temp_dir):
+        """The legacy single-catalog path must also bound catalog JSON reads."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "get_catalog_url", return_value="https://example.com/catalog.json"), \
+             patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch(
+                 "specify_cli.extensions.read_response_limited",
+                 side_effect=ExtensionError("catalog too large"),
+             ):
+            with pytest.raises(ExtensionError, match="catalog too large"):
+                catalog.fetch_catalog(force_refresh=True)
 
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
         """download_extension passes Authorization header via opener for GitHub URLs."""

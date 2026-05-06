@@ -80,7 +80,7 @@ def _safe_zip_name(name: str, *, error_type: type[ErrorT]) -> str:
 
     normalized = name.replace("\\", "/")
     path = PurePosixPath(normalized)
-    has_windows_drive = re.match(r"^[A-Za-z]:/", normalized) is not None
+    has_windows_drive = re.match(r"^[A-Za-z]:", normalized) is not None
     if (
         not path.parts
         or path.is_absolute()

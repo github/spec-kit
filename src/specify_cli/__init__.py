@@ -54,6 +54,7 @@ from rich.table import Table
 from rich.tree import Tree
 from typer.core import TyperGroup
 
+from ._download_security import read_response_limited
 from .integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
     resolve_integration_options as _resolve_integration_options_impl,
@@ -1772,7 +1773,13 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
         req.add_header("Authorization", f"Bearer {token}")
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
+            payload = json.loads(
+                read_response_limited(
+                    resp,
+                    max_bytes=1024 * 1024,
+                    label="GitHub latest release",
+                ).decode("utf-8")
+            )
             tag = payload.get("tag_name")
             if not isinstance(tag, str) or not tag:
                 raise ValueError("GitHub API response missing valid tag_name")
@@ -3376,8 +3383,10 @@ def preset_add(
                 zip_path = Path(tmpdir) / "preset.zip"
                 try:
                     with urllib.request.urlopen(from_url, timeout=60) as response:
-                        zip_path.write_bytes(response.read())
-                except urllib.error.URLError as e:
+                        zip_path.write_bytes(
+                            read_response_limited(response, label=f"preset {from_url}")
+                        )
+                except (urllib.error.URLError, ValueError) as e:
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
                     raise typer.Exit(1)
 
@@ -4280,12 +4289,15 @@ def extension_add(
 
                 try:
                     with urllib.request.urlopen(from_url, timeout=60) as response:
-                        zip_data = response.read()
+                        zip_data = read_response_limited(
+                            response,
+                            label=f"extension {from_url}",
+                        )
                     zip_path.write_bytes(zip_data)
 
                     # Install from downloaded ZIP
                     manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
-                except urllib.error.URLError as e:
+                except (urllib.error.URLError, ValueError) as e:
                     console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
                     raise typer.Exit(1)
                 finally:
@@ -5526,7 +5538,7 @@ def workflow_add(
                     console.print(f"[red]Error:[/red] URL redirected to non-HTTPS: {final_url}")
                     raise typer.Exit(1)
                 with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
-                    tmp.write(resp.read())
+                    tmp.write(read_response_limited(resp, label=f"workflow {source}"))
                     tmp_path = Path(tmp.name)
         except typer.Exit:
             raise
@@ -5630,7 +5642,9 @@ def workflow_add(
                     f"[red]Error:[/red] Workflow '{source}' redirected to non-HTTPS URL: {final_url}"
                 )
                 raise typer.Exit(1)
-            workflow_file.write_bytes(response.read())
+            workflow_file.write_bytes(
+                read_response_limited(response, label=f"workflow {source}")
+            )
     except Exception as exc:
         if workflow_dir.exists():
             import shutil

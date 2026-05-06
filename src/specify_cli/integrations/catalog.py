@@ -21,6 +21,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 from packaging import version as pkg_version
 
+from .._download_security import read_response_limited
+
 
 # ---------------------------------------------------------------------------
 # Errors
@@ -294,7 +296,13 @@ class IntegrationCatalog:
                 final_url = resp.geturl()
                 if final_url != entry.url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(resp.read())
+                catalog_data = json.loads(
+                    read_response_limited(
+                        resp,
+                        error_type=IntegrationCatalogError,
+                        label=f"integration catalog {entry.url}",
+                    )
+                )
 
             if not isinstance(catalog_data, dict):
                 raise IntegrationCatalogError(

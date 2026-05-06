@@ -91,7 +91,7 @@ uvx --from bandit==1.9.4 bandit -r src -lll --baseline .github/bandit-baseline.j
 Run these before changing dependency metadata, workflow execution code, subprocess usage, or security-sensitive paths. Pull request, push, and manual CI audits use the committed hashed requirements file so they stay deterministic. The scheduled CI audit also resolves the runtime and `test` extra dependency set across the supported Python and OS matrix to catch newly published advisories. If dependency metadata changes, refresh the committed audit input before running pip-audit:
 
 ```bash
-uv pip compile pyproject.toml --extra test --universal --generate-hashes --quiet --output-file .github/security-audit-requirements.txt
+uv pip compile pyproject.toml --extra test --universal --generate-hashes --quiet --no-header --output-file .github/security-audit-requirements.txt
 ```
 
 ### Manual testing

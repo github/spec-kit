@@ -173,7 +173,7 @@ class TestCatalogFetch:
                 self._data = json.dumps(data).encode()
                 self._url = url
 
-            def read(self):
+            def read(self, _size=-1):
                 return self._data
 
             def geturl(self):
@@ -293,6 +293,50 @@ class TestCatalogFetch:
 
         with pytest.raises(IntegrationCatalogError, match="Failed to fetch any integration catalog"):
             cat.search()
+
+    def test_fetch_single_catalog_uses_bounded_read(self, tmp_path, monkeypatch):
+        cat = IntegrationCatalog(tmp_path)
+        entry = IntegrationCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+
+        class FakeResponse:
+            def read(self, _size=-1):
+                return b"{}"
+
+            def geturl(self):
+                return entry.url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                pass
+
+        def fake_urlopen(url, timeout=10):
+            assert url == entry.url
+            assert timeout == 10
+            return FakeResponse()
+
+        def fake_read_response_limited(response, **kwargs):
+            assert isinstance(response, FakeResponse)
+            assert kwargs["error_type"] is IntegrationCatalogError
+            assert kwargs["label"] == "integration catalog https://example.com/catalog.json"
+            raise IntegrationCatalogError("catalog too large")
+
+        import urllib.request
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(
+            "specify_cli.integrations.catalog.read_response_limited",
+            fake_read_response_limited,
+        )
+
+        with pytest.raises(IntegrationCatalogError, match="catalog too large"):
+            cat._fetch_single_catalog(entry, force_refresh=True)
 
     def test_clear_cache(self, tmp_path):
         (tmp_path / ".specify").mkdir()
@@ -492,7 +536,7 @@ class TestIntegrationListCatalog:
             def __init__(self, data, url=""):
                 self._data = json.dumps(data).encode()
                 self._url = url
-            def read(self):
+            def read(self, _size=-1):
                 return self._data
             def geturl(self):
                 return self._url

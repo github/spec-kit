@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 2
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -40,6 +42,14 @@ jobs:
       - name: Run pip-audit (scheduled live resolution)
         if: ${{ github.event_name == 'schedule' }}
         run: uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r "${{ runner.temp }}/spec-kit-audit-requirements.txt" --progress-spinner off
+
+      - name: Check committed audit requirements are current
+        if: ${{ github.event_name != 'schedule' }}
+        env:
+          DEPENDENCY_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          DEPENDENCY_DIFF_HEAD: ${{ github.sha }}
+          GENERATED_REQUIREMENTS: ${{ runner.temp }}/security-audit-requirements.txt
+        run: python .github/scripts/check_security_requirements.py
 
       - name: Run pip-audit (committed requirements)
         if: ${{ github.event_name != 'schedule' }}

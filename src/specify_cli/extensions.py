@@ -250,7 +250,7 @@ class ExtensionManifest:
 
             normalized_file = cmd["file"].replace("\\", "/")
             file_path = PurePosixPath(normalized_file)
-            has_windows_drive = re.match(r"^[A-Za-z]:/", normalized_file) is not None
+            has_windows_drive = re.match(r"^[A-Za-z]:", normalized_file) is not None
             if (
                 file_path.is_absolute()
                 or has_windows_drive
@@ -1921,7 +1921,13 @@ class ExtensionCatalog:
         # Fetch from network
         try:
             with self._open_url(entry.url, timeout=10) as response:
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        error_type=ExtensionError,
+                        label=f"extension catalog {entry.url}",
+                    )
+                )
 
             if "schema_version" not in catalog_data or "extensions" not in catalog_data:
                 raise ExtensionError(f"Invalid catalog format from {entry.url}")
@@ -2037,7 +2043,13 @@ class ExtensionCatalog:
             import urllib.error
 
             with self._open_url(catalog_url, timeout=10) as response:
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        error_type=ExtensionError,
+                        label=f"extension catalog {catalog_url}",
+                    )
+                )
 
             # Validate catalog structure
             if "schema_version" not in catalog_data or "extensions" not in catalog_data:

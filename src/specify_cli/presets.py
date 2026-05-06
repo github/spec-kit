@@ -226,7 +226,7 @@ class PresetManifest:
                 )
             normalized = file_path.replace("\\", "/")
             normalized_path = PurePosixPath(normalized)
-            has_windows_drive = re.match(r"^[A-Za-z]:/", normalized) is not None
+            has_windows_drive = re.match(r"^[A-Za-z]:", normalized) is not None
             if normalized_path.is_absolute() or any(
                 part == ".." for part in normalized_path.parts
             ) or has_windows_drive:
@@ -2045,7 +2045,13 @@ class PresetCatalog:
 
         try:
             with self._open_url(entry.url, timeout=10) as response:
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        error_type=PresetError,
+                        label=f"preset catalog {entry.url}",
+                    )
+                )
 
             if (
                 "schema_version" not in catalog_data
@@ -2138,7 +2144,13 @@ class PresetCatalog:
 
         try:
             with self._open_url(catalog_url, timeout=10) as response:
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        error_type=PresetError,
+                        label=f"preset catalog {catalog_url}",
+                    )
+                )
 
             if (
                 "schema_version" not in catalog_data
