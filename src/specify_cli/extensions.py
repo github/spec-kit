@@ -2148,13 +2148,13 @@ class ExtensionCatalog:
         except urllib.error.URLError as e:
             raise ExtensionError(f"Failed to download extension from {download_url}: {e}")
         except IOError as e:
-            raise ExtensionError(f"Failed to save extension archive: {e}")
+            raise ExtensionError(f"Failed to read extension archive from {download_url}: {e}")
 
         # Choose file extension based on detected format.
         if not archive_fmt:
             raise ExtensionError(
                 f"Could not determine archive format for {download_url}. "
-                "Ensure the URL points to a .zip or .tar.gz file."
+                "Ensure the URL points to a .zip or .tar.gz/.tgz file."
             )
         if archive_fmt == "tar.gz":
             archive_filename = f"{extension_id}-{version}.tar.gz"
