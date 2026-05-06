@@ -14,6 +14,7 @@ class OpencodeIntegration(MarkdownIntegration):
     }
     registrar_config = {
         "dir": ".opencode/commands",
+        "legacy_dir": ".opencode/command",
         "format": "markdown",
         "args": "$ARGUMENTS",
         "extension": ".md",

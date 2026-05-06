@@ -453,7 +453,9 @@ class CommandRegistrar:
             raise ValueError(f"Unsupported agent: {agent_name}")
 
         agent_config = self.AGENT_CONFIGS[agent_name]
-        commands_dir = project_root / agent_config["dir"]
+        commands_dir = self._resolve_agent_dir(
+            agent_name, agent_config, project_root,
+        )
         commands_dir.mkdir(parents=True, exist_ok=True)
 
         registered = []
@@ -609,6 +611,40 @@ class CommandRegistrar:
         CommandRegistrar._ensure_inside(prompt_file, prompts_dir)
         prompt_file.write_text(f"---\nagent: {cmd_name}\n---\n", encoding="utf-8")
 
+    @staticmethod
+    def _resolve_agent_dir(
+        agent_name: str,
+        agent_config: dict[str, Any],
+        project_root: Path,
+    ) -> Path:
+        """Return the agent command directory, falling back to legacy_dir.
+
+        When the canonical directory (``agent_config["dir"]``) does not
+        exist but a ``legacy_dir`` is configured and present on disk,
+        returns the legacy path and emits a deprecation warning advising
+        the user to upgrade.
+
+        Integrations that do not declare ``legacy_dir`` get the canonical
+        path unconditionally — no fallback, no warning.
+        """
+        agent_dir = project_root / agent_config["dir"]
+        if not agent_dir.exists():
+            legacy = agent_config.get("legacy_dir")
+            if legacy:
+                legacy_dir = project_root / legacy
+                if legacy_dir.exists():
+                    import warnings
+
+                    warnings.warn(
+                        f"Found legacy {legacy}/ directory for "
+                        f"{agent_name}. Run 'specify integration "
+                        f"upgrade {agent_name}' to migrate to "
+                        f"{agent_config['dir']}/.",
+                        stacklevel=3,
+                    )
+                    return legacy_dir
+        return agent_dir
+
     def register_commands_for_all_agents(
         self,
         commands: List[Dict[str, Any]],
@@ -633,7 +669,9 @@ class CommandRegistrar:
 
         self._ensure_configs()
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
-            agent_dir = project_root / agent_config["dir"]
+            agent_dir = self._resolve_agent_dir(
+                agent_name, agent_config, project_root,
+            )
 
             if agent_dir.exists():
                 try:
@@ -681,7 +719,9 @@ class CommandRegistrar:
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
             if agent_config.get("extension") == "/SKILL.md":
                 continue
-            agent_dir = project_root / agent_config["dir"]
+            agent_dir = self._resolve_agent_dir(
+                agent_name, agent_config, project_root,
+            )
             if agent_dir.exists():
                 try:
                     registered = self.register_commands(
@@ -710,7 +750,9 @@ class CommandRegistrar:
                 continue
 
             agent_config = self.AGENT_CONFIGS[agent_name]
-            commands_dir = project_root / agent_config["dir"]
+            commands_dir = self._resolve_agent_dir(
+                agent_name, agent_config, project_root,
+            )
 
             for cmd_name in cmd_names:
                 output_name = self._compute_output_name(
