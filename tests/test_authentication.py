@@ -244,6 +244,30 @@ class TestLoadAuthConfig:
         with pytest.raises(ValueError, match="does not support"):
             load_auth_config(cfg)
 
+    def test_dangerous_wildcard_host_raises(self, tmp_path):
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{"hosts": ["*github.com"], "provider": "github", "auth": "bearer", "token_env": "X"}]
+        }))
+        with pytest.raises(ValueError, match="invalid host pattern"):
+            load_auth_config(cfg)
+
+    def test_multi_wildcard_host_raises(self, tmp_path):
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{"hosts": ["*.*.example.com"], "provider": "github", "auth": "bearer", "token_env": "X"}]
+        }))
+        with pytest.raises(ValueError, match="invalid host pattern"):
+            load_auth_config(cfg)
+
+    def test_valid_star_dot_host_accepted(self, tmp_path):
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{"hosts": ["*.visualstudio.com"], "provider": "azure-devops", "auth": "basic-pat", "token_env": "X"}]
+        }))
+        entries = load_auth_config(cfg)
+        assert entries[0].hosts == ("*.visualstudio.com",)
+
     @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits not supported on Windows")
     def test_world_readable_warns(self, tmp_path):
         import stat
@@ -656,6 +680,71 @@ class TestAuthenticatedHttpNegative:
                     side_effect=socket.timeout("timed out")):
             with pytest.raises(socket.timeout):
                 open_url("https://example.com/file")
+
+
+# ---------------------------------------------------------------------------
+# _load_config caching
+# ---------------------------------------------------------------------------
+
+
+class TestLoadConfigCaching:
+    def test_config_cached_after_first_load(self, monkeypatch):
+        """_load_config() should call load_auth_config only once per process."""
+        from unittest.mock import patch
+        from specify_cli.authentication import http as _mod
+        from specify_cli.authentication.config import AuthConfigEntry
+        # Allow the real load path (no override)
+        monkeypatch.setattr(_mod, "_config_override", None)
+        monkeypatch.setattr(_mod, "_config_cache", None)
+
+        entry = _github_entry()
+        call_count = 0
+
+        def fake_load(path=None):
+            nonlocal call_count
+            call_count += 1
+            return [entry]
+
+        with patch.object(_mod, "load_auth_config", side_effect=fake_load):
+            _mod._load_config()
+            _mod._load_config()
+            _mod._load_config()
+
+        assert call_count == 1
+
+    def test_cache_bypassed_by_override(self, monkeypatch):
+        """When _config_override is set, the cache is ignored entirely."""
+        from specify_cli.authentication import http as _mod
+        sentinel: list = [object()]  # type: ignore[list-item]
+        monkeypatch.setattr(_mod, "_config_override", sentinel)
+        monkeypatch.setattr(_mod, "_config_cache", None)
+
+        result = _mod._load_config()
+        assert result is sentinel
+        # Cache must not have been populated when override is active
+        assert _mod._config_cache is None
+
+    def test_failed_load_warns_once_and_caches_empty(self, monkeypatch):
+        """A bad auth.json emits exactly one warning and subsequent calls use cache."""
+        from unittest.mock import patch
+        from specify_cli.authentication import http as _mod
+        import warnings as _warnings
+        monkeypatch.setattr(_mod, "_config_override", None)
+        monkeypatch.setattr(_mod, "_config_cache", None)
+
+        def fail_load(path=None):
+            raise ValueError("bad config")
+
+        with patch.object(_mod, "load_auth_config", side_effect=fail_load):
+            with _warnings.catch_warnings(record=True) as w:
+                _warnings.simplefilter("always")
+                _mod._load_config()
+                _mod._load_config()
+                _mod._load_config()
+
+        user_warnings = [x for x in w if issubclass(x.category, UserWarning)]
+        assert len(user_warnings) == 1, "Expected exactly one warning"
+        assert _mod._config_cache == []
 
 
 # ---------------------------------------------------------------------------

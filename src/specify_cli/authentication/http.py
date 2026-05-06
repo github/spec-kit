@@ -21,14 +21,22 @@ from .config import AuthConfigEntry, _default_config_path, find_entries_for_url,
 
 
 _config_override: list[AuthConfigEntry] | None = None
+_config_cache: list[AuthConfigEntry] | None = None  # None = not yet loaded
 
 
 def _load_config() -> list[AuthConfigEntry]:
-    """Load auth config, using override if set (for testing)."""
+    """Load auth config, using override if set (for testing).
+
+    The result is cached per-process so ``auth.json`` is read at most once,
+    and any warning about a malformed file fires only once.
+    """
+    global _config_cache
     if _config_override is not None:
         return _config_override
+    if _config_cache is not None:
+        return _config_cache
     try:
-        return load_auth_config()
+        _config_cache = load_auth_config()
     except (ValueError, OSError) as exc:
         import warnings
         config_path = _default_config_path()
@@ -38,7 +46,8 @@ def _load_config() -> list[AuthConfigEntry]:
             UserWarning,
             stacklevel=2,
         )
-        return []
+        _config_cache = []
+    return _config_cache
 
 
 def _hostname_in_hosts(hostname: str, hosts: tuple[str, ...]) -> bool:

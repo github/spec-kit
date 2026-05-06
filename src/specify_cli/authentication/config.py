@@ -36,6 +36,22 @@ def _default_config_path() -> Path:
     return Path.home() / ".specify" / "auth.json"
 
 
+def _is_valid_host_pattern(pattern: str) -> bool:
+    """Return True for safe host patterns: exact hostnames or ``*.suffix`` only.
+
+    Rejects patterns like ``*github.com`` (which would match
+    ``github.com.evil.com``) or multi-wildcard forms.  Only these two
+    forms are accepted:
+
+    * ``example.com``         — exact hostname
+    * ``*.example.com``       — single leading wildcard for one sub-domain level
+    """
+    if "*" not in pattern:
+        return True  # exact hostname — already validated as non-empty
+    # Only *.suffix is allowed; no other wildcard positions
+    return pattern.startswith("*.") and "*" not in pattern[2:]
+
+
 def load_auth_config(
     path: Path | None = None,
 ) -> list[AuthConfigEntry]:
@@ -92,6 +108,14 @@ def load_auth_config(
             raise ValueError(f"providers[{i}]: each host must be a non-empty string")
         # Normalize hosts: strip whitespace and lowercase
         hosts = [h.strip().lower() for h in hosts]
+        # Reject dangerous wildcard forms (e.g. *github.com matches github.com.evil.com)
+        for h in hosts:
+            if not _is_valid_host_pattern(h):
+                raise ValueError(
+                    f"providers[{i}]: invalid host pattern {h!r}. "
+                    "Only exact hostnames or '*.suffix' forms are allowed "
+                    "(e.g. 'github.com' or '*.visualstudio.com')."
+                )
 
         provider = entry_raw.get("provider", "")
         if not isinstance(provider, str) or not provider:
