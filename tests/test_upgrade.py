@@ -279,7 +279,7 @@ class TestUserStory2:
         assert "Installed: 0.7.4" in output
         if expected_reason == _RATE_LIMITED_REASON:
             assert "Could not check latest release: rate limited" in output
-            assert "auth.json" in output
+            assert str(_default_config_path()) in output
         else:
             assert f"Could not check latest release: {expected_reason}" in output
 
