@@ -593,13 +593,20 @@ class StepRegistry:
 
     def _load(self) -> dict[str, Any]:
         """Load registry from disk or create default."""
+        _default: dict[str, Any] = {"schema_version": self.SCHEMA_VERSION, "steps": {}}
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, ValueError):
-                return {"schema_version": self.SCHEMA_VERSION, "steps": {}}
-        return {"schema_version": self.SCHEMA_VERSION, "steps": {}}
+                    data = json.load(f)
+                # Validate shape: must be a dict with a dict "steps" field
+                if not isinstance(data, dict):
+                    return _default
+                if not isinstance(data.get("steps"), dict):
+                    data["steps"] = {}
+                return data
+            except (json.JSONDecodeError, ValueError, OSError, UnicodeError):
+                return _default
+        return _default
 
     def save(self) -> None:
         """Persist registry to disk."""
@@ -971,7 +978,7 @@ class StepCatalog:
 
         data: dict[str, Any] = {"catalogs": []}
         if config_path.exists():
-            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
             if not isinstance(raw, dict):
                 raise StepValidationError(
                     "Catalog config file is corrupted (expected a mapping)."

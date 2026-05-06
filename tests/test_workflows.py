@@ -1918,6 +1918,45 @@ class TestStepRegistryCustom:
         registry2 = StepRegistry(project_dir)
         assert registry2.list() == {}
 
+    def test_registry_missing_steps_key_resets(self, project_dir):
+        """Valid JSON but missing 'steps' key should not crash add/get."""
+        from specify_cli.workflows.catalog import StepRegistry
+        import json as _json
+
+        registry = StepRegistry(project_dir)
+        registry.steps_dir.mkdir(parents=True, exist_ok=True)
+        # Valid JSON but 'steps' is not a dict
+        registry.registry_path.write_text(
+            _json.dumps({"schema_version": "1.0", "steps": "bad"}),
+            encoding="utf-8",
+        )
+
+        registry2 = StepRegistry(project_dir)
+        # Should be safe to call add/get without KeyError
+        assert registry2.list() == {}
+        registry2.add("deploy", {"name": "Deploy", "type_key": "deploy"})
+        assert registry2.is_installed("deploy")
+
+    def test_registry_unreadable_file_resets(self, project_dir):
+        """OSError reading the registry file should fall back to default."""
+        from specify_cli.workflows.catalog import StepRegistry
+        import json as _json
+
+        registry = StepRegistry(project_dir)
+        registry.steps_dir.mkdir(parents=True, exist_ok=True)
+        # Write valid registry first
+        registry.registry_path.write_text(
+            _json.dumps({"schema_version": "1.0", "steps": {"existing": {}}}),
+            encoding="utf-8",
+        )
+        # Make it unreadable
+        registry.registry_path.chmod(0o000)
+        try:
+            registry2 = StepRegistry(project_dir)
+            assert registry2.list() == {}
+        finally:
+            registry.registry_path.chmod(0o644)
+
 
 # ===== Step Catalog Tests =====
 
@@ -1986,6 +2025,21 @@ class TestStepCatalog:
         data = yaml.safe_load(config_path.read_text())
         assert len(data["catalogs"]) == 1
         assert data["catalogs"][0]["url"] == "https://example.com/new-steps.json"
+
+    def test_add_catalog_empty_yaml_file(self, project_dir):
+        """An empty YAML config file should be treated as empty, not corrupted."""
+        from specify_cli.workflows.catalog import StepCatalog
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text("", encoding="utf-8")
+
+        catalog = StepCatalog(project_dir)
+        # Should not raise StepValidationError "corrupted"
+        catalog.add_catalog("https://example.com/steps.json", "my-steps")
+
+        data = yaml.safe_load(config_path.read_text())
+        assert len(data["catalogs"]) == 1
+        assert data["catalogs"][0]["url"] == "https://example.com/steps.json"
 
     def test_add_catalog_duplicate_rejected(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog, StepValidationError
