@@ -1948,7 +1948,6 @@ def install_self_test_preset(manager: PresetManager, speckit_version: str = "0.1
         return manager.install_from_directory(SELF_TEST_PRESET_DIR, speckit_version)
 
 
-
 class TestSelfTestPreset:
     """Tests using the self-test preset that ships with the repo.
 
