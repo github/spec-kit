@@ -5387,6 +5387,23 @@ def workflow_step_list():
                 console.print(f"    • {key}")
         console.print()
 
+    # Show custom steps that are installed but failed to load
+    if specify_dir.exists():
+        registry = StepRegistry(project_root)
+        installed = registry.list()
+        failed = [
+            k for k in sorted(installed.keys())
+            if k not in STEP_REGISTRY
+        ]
+        if failed:
+            console.print("  [bold yellow]Custom (installed, failed to load):[/bold yellow]")
+            for key in failed:
+                meta = installed.get(key, {})
+                name = meta.get("name", key)
+                version = meta.get("version", "?")
+                console.print(f"    • [dim]{name}[/dim] ({key}) v{version}")
+            console.print()
+
     if not built_in and not custom:
         console.print("[yellow]No step types found.[/yellow]")
 
@@ -5427,6 +5444,24 @@ def workflow_step_add(
         console.print("Direct installation is not enabled for this catalog source.")
         raise typer.Exit(1)
 
+    # Reject step IDs that collide with built-in step types
+    from .workflows import STEP_REGISTRY as _step_reg
+    if step_id in _step_reg:
+        console.print(
+            f"[red]Error:[/red] Step type '{step_id}' conflicts with a built-in step type"
+        )
+        raise typer.Exit(1)
+
+    # Reject if already installed
+    registry = StepRegistry(project_root)
+    if registry.is_installed(step_id):
+        console.print(
+            f"[red]Error:[/red] Step type '{step_id}' is already installed. "
+            "Remove it first with: [cyan]specify workflow step remove "
+            f"{step_id}[/cyan]"
+        )
+        raise typer.Exit(1)
+
     step_yml_url = info.get("step_yml_url") or info.get("url")
     if not step_yml_url:
         console.print(f"[red]Error:[/red] Catalog entry for '{step_id}' has no URL")
@@ -5463,7 +5498,13 @@ def workflow_step_add(
                 raise ValueError(f"Redirect to non-HTTPS URL: {final_url}")
             return resp.read()
 
-    step_dir = project_root / ".specify" / "workflows" / "steps" / step_id
+    steps_base_dir = (project_root / ".specify" / "workflows" / "steps").resolve()
+    step_dir = (steps_base_dir / step_id).resolve()
+    try:
+        step_dir.relative_to(steps_base_dir)
+    except ValueError:
+        console.print(f"[red]Error:[/red] Invalid step id '{step_id}'")
+        raise typer.Exit(1)
     step_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -5548,7 +5589,13 @@ def workflow_step_remove(
         console.print(f"[red]Error:[/red] Step type '{step_id}' is not installed")
         raise typer.Exit(1)
 
-    step_dir = project_root / ".specify" / "workflows" / "steps" / step_id
+    steps_base_dir = (project_root / ".specify" / "workflows" / "steps").resolve()
+    step_dir = (steps_base_dir / step_id).resolve()
+    try:
+        step_dir.relative_to(steps_base_dir)
+    except ValueError:
+        console.print(f"[red]Error:[/red] Invalid step id '{step_id}'")
+        raise typer.Exit(1)
     if step_dir.exists():
         import shutil
         shutil.rmtree(step_dir)

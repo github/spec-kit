@@ -303,9 +303,9 @@ class WorkflowCatalog:
         try:
             with open(meta_file, encoding="utf-8") as f:
                 meta = json.load(f)
-            fetched_at = meta.get("fetched_at", 0)
+            fetched_at = float(meta.get("fetched_at", 0))
             return (time.time() - fetched_at) < self.CACHE_DURATION
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
             return False
 
     def _fetch_single_catalog(
@@ -820,9 +820,9 @@ class StepCatalog:
         try:
             with open(meta_file, encoding="utf-8") as f:
                 meta = json.load(f)
-            fetched_at = meta.get("fetched_at", 0)
+            fetched_at = float(meta.get("fetched_at", 0))
             return (time.time() - fetched_at) < self.CACHE_DURATION
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
             return False
 
     def _fetch_single_catalog(
