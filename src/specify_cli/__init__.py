@@ -90,6 +90,7 @@ def _build_agent_config() -> dict[str, dict[str, Any]]:
     return config
 
 AGENT_CONFIG = _build_agent_config()
+DEFAULT_INIT_INTEGRATION = "copilot"
 
 AI_ASSISTANT_ALIASES = {
     "kiro": "kiro-cli",
@@ -151,6 +152,9 @@ def _build_ai_deprecation_warning(
         "[bold]--ai[/bold] is deprecated and will no longer be available in version 0.10.0 or later.\n\n"
         f"Use [bold]{replacement}[/bold] instead."
     )
+
+def _stdin_is_interactive() -> bool:
+    return sys.stdin.isatty()
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
@@ -995,7 +999,8 @@ def init(
 
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your coding agent integration
+    2. Let you choose your coding agent integration, or default to Copilot
+       in non-interactive sessions
     3. Download template from GitHub (or use bundled assets with --offline)
     4. Initialize a fresh git repository (if not --no-git and no existing repo)
     5. Optionally set up coding agent integration commands
@@ -1162,13 +1167,19 @@ def init(
             console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
             raise typer.Exit(1)
         selected_ai = ai_assistant
+    elif not _stdin_is_interactive():
+        console.print(
+            f"[dim]Non-interactive session detected: defaulting to '{DEFAULT_INIT_INTEGRATION}'. "
+            "Use --integration to choose a different agent.[/dim]"
+        )
+        selected_ai = DEFAULT_INIT_INTEGRATION
     else:
         # Create options dict for selection (agent_key: display_name)
         ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
         selected_ai = select_with_arrows(
             ai_choices,
             "Choose your coding agent integration:",
-            "copilot"
+            DEFAULT_INIT_INTEGRATION,
         )
 
     # Auto-promote interactively selected agents to the integration path
@@ -1233,7 +1244,7 @@ def init(
     else:
         default_script = "ps" if os.name == "nt" else "sh"
 
-        if sys.stdin.isatty():
+        if _stdin_is_interactive():
             selected_script = select_with_arrows(SCRIPT_TYPE_CHOICES, "Choose script type (or press Enter)", default_script)
         else:
             selected_script = default_script

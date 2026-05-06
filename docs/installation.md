@@ -41,6 +41,8 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here
 
 ### Specify Integration
 
+Interactive terminals prompt you to choose a coding agent integration during initialization. Non-interactive sessions, such as CI or piped runs, default to GitHub Copilot unless you pass `--integration`.
+
 You can proactively specify your coding agent integration during initialization:
 
 ```bash
