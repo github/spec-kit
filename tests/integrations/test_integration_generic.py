@@ -193,7 +193,7 @@ class TestGenericIntegration:
         implement_file = tmp_path / ".custom" / "cmds" / "speckit.implement.md"
         assert implement_file.exists()
         content = implement_file.read_text(encoding="utf-8")
-        assert "/memory/constitution.md" in content
+        assert ".specify/memory/constitution.md" in content
 
     # -- CLI --------------------------------------------------------------
 
