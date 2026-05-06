@@ -17,7 +17,7 @@ from fnmatch import fnmatch
 from urllib.parse import urlparse
 
 from . import get_provider
-from .config import AuthConfigEntry, find_entries_for_url, load_auth_config
+from .config import AuthConfigEntry, _default_config_path, find_entries_for_url, load_auth_config
 
 
 _config_override: list[AuthConfigEntry] | None = None
@@ -31,8 +31,9 @@ def _load_config() -> list[AuthConfigEntry]:
         return load_auth_config()
     except (ValueError, OSError) as exc:
         import warnings
+        config_path = _default_config_path()
         warnings.warn(
-            f"Failed to load ~/.specify/auth.json: {exc}. "
+            f"Failed to load {config_path}: {exc}. "
             "All requests will be unauthenticated.",
             UserWarning,
             stacklevel=2,

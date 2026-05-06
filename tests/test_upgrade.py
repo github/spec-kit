@@ -23,6 +23,7 @@ from specify_cli import (
     _normalize_tag,
     app,
 )
+from specify_cli.authentication.config import _default_config_path
 
 from tests.conftest import strip_ansi
 
@@ -30,6 +31,10 @@ runner = CliRunner()
 
 SENTINEL_GH_TOKEN = "SENTINEL-GH-TOKEN-VALUE"
 SENTINEL_GITHUB_TOKEN = "SENTINEL-GITHUB-TOKEN-VALUE"
+
+_RATE_LIMITED_REASON = (
+    f"rate limited (configure {_default_config_path()} with a GitHub token)"
+)
 
 
 def _mock_urlopen_response(payload: dict) -> MagicMock:
@@ -66,11 +71,20 @@ class TestSelfUpgradeStub:
         ]
 
     def test_stub_makes_no_network_call(self):
-        # If the stub ever starts calling urllib, this patch's side_effect
-        # would fire and the assertion below would fail.
-        with patch(
-            "specify_cli.authentication.http.urllib.request.urlopen",
-            side_effect=AssertionError("stub must not hit the network"),
+        # The stub must not hit the network via either urllib path:
+        # unauthenticated requests use urlopen() directly; authenticated ones
+        # go through build_opener(...).open().  Both are patched so that any
+        # accidental network call raises immediately.
+        network_error = AssertionError("stub must not hit the network")
+        with (
+            patch(
+                "specify_cli.authentication.http.urllib.request.urlopen",
+                side_effect=network_error,
+            ),
+            patch(
+                "specify_cli.authentication.http.urllib.request.build_opener",
+                side_effect=network_error,
+            ),
         ):
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 0
@@ -223,7 +237,7 @@ class TestFailureCategorization:
         ):
             tag, reason = _fetch_latest_release_tag()
         assert tag is None
-        assert reason == "rate limited (try setting GH_TOKEN and configuring ~/.specify/auth.json)"
+        assert reason == _RATE_LIMITED_REASON
 
     @pytest.mark.parametrize("code", [404, 500, 502])
     def test_other_http_uses_code_string(self, code):
@@ -247,7 +261,7 @@ class TestFailureCategorization:
 
 _FAILURE_CASES = [
     ("offline or timeout", urllib.error.URLError("down")),
-    ("rate limited (try setting GH_TOKEN and configuring ~/.specify/auth.json)", _http_error(403)),
+    (_RATE_LIMITED_REASON, _http_error(403)),
     ("HTTP 500", _http_error(500)),
 ]
 
@@ -263,9 +277,8 @@ class TestUserStory2:
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
         assert "Installed: 0.7.4" in output
-        if expected_reason == "rate limited (try setting GH_TOKEN and configuring ~/.specify/auth.json)":
+        if expected_reason == _RATE_LIMITED_REASON:
             assert "Could not check latest release: rate limited" in output
-            assert "GH_TOKEN" in output
             assert "auth.json" in output
         else:
             assert f"Could not check latest release: {expected_reason}" in output

@@ -1721,6 +1721,7 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     On anything else — including a malformed response body — the exception
     propagates; there is no catch-all (research D-006).
     """
+    from .authentication.config import _default_config_path as _auth_config_path
     from .authentication.http import open_url
 
     try:
@@ -1737,7 +1738,9 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     except urllib.error.HTTPError as e:
         # Order matters: HTTPError is a subclass of URLError.
         if e.code == 403:
-            return None, "rate limited (try setting GH_TOKEN and configuring ~/.specify/auth.json)"
+            return None, (
+                f"rate limited (configure {_auth_config_path()} with a GitHub token)"
+            )
         return None, f"HTTP {e.code}"
     except (urllib.error.URLError, OSError):
         return None, "offline or timeout"
