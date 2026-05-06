@@ -56,6 +56,9 @@ Choose your preferred installation method:
 
 Install once and use everywhere. Pin a specific release tag for stability (check [Releases](https://github.com/github/spec-kit/releases) for the latest):
 
+> [!NOTE]
+> The `uv tool install` commands below require **[uv](https://docs.astral.sh/uv/)** — a fast Python package manager. If you see `command not found: uv`, [install uv first](./docs/install/uv.md). The `pipx` alternative does not require uv.
+
 ```bash
 # Install a specific stable release (recommended — replace vX.Y.Z with the latest tag)
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
