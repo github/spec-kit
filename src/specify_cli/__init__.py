@@ -5515,8 +5515,12 @@ def workflow_step_add(
         (tmp_path / "__init__.py").write_bytes(init_py_content)
 
         steps_base_dir.mkdir(parents=True, exist_ok=True)
+        # Remove any pre-existing step_dir before the move; shutil.move would
+        # otherwise place tmp_path as a *subdirectory* of an existing target.
+        if step_dir.exists():
+            shutil.rmtree(step_dir)
         shutil.move(str(tmp_path), str(step_dir))
-        _install_success = True
+        _install_success = True  # set immediately after move succeeds
     finally:
         if not _install_success:
             shutil.rmtree(tmp_path, ignore_errors=True)
