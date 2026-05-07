@@ -22,7 +22,7 @@ Create `~/.specify/auth.json` to enable authentication:
 ```
 
 > **Security:** Restrict the file to owner-only access:
-> ```
+> ```bash
 > chmod 600 ~/.specify/auth.json
 > ```
 
