@@ -1613,6 +1613,7 @@ class TestPresetCatalog:
 
         mock_response = MagicMock()
         mock_response.read.return_value = zip_bytes
+        mock_response.geturl.return_value = "https://github.com/org/repo/releases/download/v1/test-pack.zip"
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 

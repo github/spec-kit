@@ -2314,13 +2314,16 @@ class PresetCatalog:
         version = pack_info.get("version", "unknown")
 
         # Detect archive format from URL; resolve via Content-Type when needed.
+        # `final_url` may differ from `download_url` if the server redirects.
         archive_fmt = detect_archive_format(download_url)
+        final_url = download_url
 
         try:
             with self._open_url(download_url, timeout=60) as response:
+                final_url = response.geturl()
                 if not archive_fmt:
                     content_type = response.headers.get("Content-Type", "")
-                    archive_fmt = detect_archive_format(download_url, content_type)
+                    archive_fmt = detect_archive_format(final_url, content_type)
                 archive_data = response.read()
 
         except urllib.error.URLError as e:
@@ -2329,6 +2332,16 @@ class PresetCatalog:
             )
         except IOError as e:
             raise PresetError(f"Failed to read preset archive from {download_url}: {e}")
+
+        # Re-validate scheme after any redirect to guard against scheme-downgrade.
+        _final_parsed = urlparse(final_url)
+        _final_is_localhost = _final_parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        if _final_parsed.scheme != "https" and not (
+            _final_parsed.scheme == "http" and _final_is_localhost
+        ):
+            raise PresetError(
+                f"Preset download URL was redirected to a non-HTTPS URL: {final_url}"
+            )
 
         # Choose file extension based on detected format.
         if not archive_fmt:

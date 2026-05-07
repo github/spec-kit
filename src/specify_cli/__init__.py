@@ -2633,14 +2633,23 @@ def preset_add(
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 archive_fmt = _det_fmt(from_url)
+                final_url = from_url
                 try:
                     with urllib.request.urlopen(from_url, timeout=60) as response:
+                        final_url = response.geturl()
                         if not archive_fmt:
                             content_type = response.headers.get("Content-Type", "")
-                            archive_fmt = _det_fmt(from_url, content_type)
+                            archive_fmt = _det_fmt(final_url, content_type)
                         archive_data = response.read()
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
+                    raise typer.Exit(1)
+
+                # Re-validate scheme after any redirect (scheme-downgrade guard).
+                _fp = _urlparse(final_url)
+                _fl = _fp.hostname in ("localhost", "127.0.0.1", "::1")
+                if _fp.scheme != "https" and not (_fp.scheme == "http" and _fl):
+                    console.print(f"[red]Error:[/red] URL was redirected to a non-HTTPS URL: {final_url}")
                     raise typer.Exit(1)
 
                 if not archive_fmt:
@@ -3652,14 +3661,23 @@ def extension_add(
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
                 download_dir.mkdir(parents=True, exist_ok=True)
                 archive_fmt = detect_archive_format(from_url)
+                final_url = from_url
                 archive_path = None
 
                 try:
                     with urllib.request.urlopen(from_url, timeout=60) as response:
+                        final_url = response.geturl()
                         if not archive_fmt:
                             content_type = response.headers.get("Content-Type", "")
-                            archive_fmt = detect_archive_format(from_url, content_type)
+                            archive_fmt = detect_archive_format(final_url, content_type)
                         archive_data = response.read()
+
+                    # Re-validate scheme after any redirect (scheme-downgrade guard).
+                    _fp = urlparse(final_url)
+                    _fl = _fp.hostname in ("localhost", "127.0.0.1", "::1")
+                    if _fp.scheme != "https" and not (_fp.scheme == "http" and _fl):
+                        console.print(f"[red]Error:[/red] URL was redirected to a non-HTTPS URL: {final_url}")
+                        raise typer.Exit(1)
 
                     if not archive_fmt:
                         console.print("[red]Error:[/red] Could not determine archive format from URL or Content-Type.")

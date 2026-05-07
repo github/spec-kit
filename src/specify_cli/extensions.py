@@ -173,11 +173,15 @@ def safe_extract_tarball(
     # Tar metadata member types to skip during validation — they carry no
     # extractable payload and are generated automatically by many common
     # archiving tools (e.g. PAX headers, GNU longname/longlink entries).
+    # GNUTYPE_SPARSE is intentionally excluded: it carries a real file payload
+    # and tarfile.TarInfo.isreg() returns True for it, so it passes the
+    # regular-file check below and is extracted correctly.
     _TAR_METADATA_TYPES = (
-        tarfile.XHDTYPE,          # PAX extended header
-        tarfile.XGLTYPE,          # PAX global extended header
-        tarfile.SOLARIS_XHDTYPE,  # Solaris PAX extended header
-        *tarfile.GNU_TYPES,       # GNU longname / longlink / sparse
+        tarfile.XHDTYPE,           # PAX extended header
+        tarfile.XGLTYPE,           # PAX global extended header
+        tarfile.SOLARIS_XHDTYPE,   # Solaris PAX extended header
+        tarfile.GNUTYPE_LONGNAME,  # GNU long path name (metadata only)
+        tarfile.GNUTYPE_LONGLINK,  # GNU long link name (metadata only)
     )
 
     try:
@@ -2153,20 +2157,33 @@ class ExtensionCatalog:
         version = ext_info.get("version", "unknown")
 
         # Detect archive format from URL; resolve via Content-Type when needed.
+        # `final_url` may differ from `download_url` if the server redirects.
         archive_fmt = detect_archive_format(download_url)
+        final_url = download_url
 
         # Download the archive
         try:
             with self._open_url(download_url, timeout=60) as response:
+                final_url = response.geturl()
                 if not archive_fmt:
                     content_type = response.headers.get("Content-Type", "")
-                    archive_fmt = detect_archive_format(download_url, content_type)
+                    archive_fmt = detect_archive_format(final_url, content_type)
                 archive_data = response.read()
 
         except urllib.error.URLError as e:
             raise ExtensionError(f"Failed to download extension from {download_url}: {e}")
         except IOError as e:
             raise ExtensionError(f"Failed to read extension archive from {download_url}: {e}")
+
+        # Re-validate scheme after any redirect to guard against scheme-downgrade.
+        _final_parsed = urlparse(final_url)
+        _final_is_localhost = _final_parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        if _final_parsed.scheme != "https" and not (
+            _final_parsed.scheme == "http" and _final_is_localhost
+        ):
+            raise ExtensionError(
+                f"Extension download URL was redirected to a non-HTTPS URL: {final_url}"
+            )
 
         # Choose file extension based on detected format.
         if not archive_fmt:
