@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-07T15:37:14Z",
+  "updated_at": "2026-05-07T17:30:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2132,7 +2132,7 @@
         "speckit_version": ">=0.4.0"
       },
       "provides": {
-        "commands": 3,
+        "commands": 4,
         "hooks": 1
       },
       "tags": [
