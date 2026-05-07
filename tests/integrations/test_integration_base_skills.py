@@ -159,6 +159,22 @@ class SkillsIntegrationTests:
             assert "{SCRIPT}" not in content, f"{f.name} has unprocessed {{SCRIPT}}"
             assert "__AGENT__" not in content, f"{f.name} has unprocessed __AGENT__"
             assert "{ARGS}" not in content, f"{f.name} has unprocessed {{ARGS}}"
+            assert "__SPECKIT_COMMAND_" not in content, f"{f.name} has unprocessed __SPECKIT_COMMAND_*__"
+
+    def test_command_refs_use_hyphen_separator(self, tmp_path):
+        """Skills agents must resolve command refs with hyphen separator."""
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        skill_files = [f for f in created if "scripts" not in f.parts]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            # Skills agents must use /speckit-<name>, not /speckit.<name>
+            assert "/speckit." not in content, (
+                f"{f.name} contains dot-notation /speckit. reference; "
+                f"skills agents must use /speckit-<name>"
+            )
 
     def test_skill_body_has_content(self, tmp_path):
         """Each SKILL.md body should contain template content after the frontmatter."""
@@ -172,6 +188,23 @@ class SkillsIntegrationTests:
             parts = content.split("---", 2)
             body = parts[2].strip() if len(parts) >= 3 else ""
             assert len(body) > 0, f"{f} has empty body"
+
+    def test_plan_references_correct_context_file(self, tmp_path):
+        """The generated plan skill must reference this integration's context file."""
+        i = get_integration(self.KEY)
+        if not i.context_file:
+            return
+        m = IntegrationManifest(self.KEY, tmp_path)
+        i.setup(tmp_path, m)
+        plan_file = i.skills_dest(tmp_path) / "speckit-plan" / "SKILL.md"
+        assert plan_file.exists(), f"Plan skill {plan_file} not created"
+        content = plan_file.read_text(encoding="utf-8")
+        assert i.context_file in content, (
+            f"Plan skill should reference {i.context_file!r} but it was not found"
+        )
+        assert "__CONTEXT_FILE__" not in content, (
+            "Plan skill has unprocessed __CONTEXT_FILE__ placeholder"
+        )
 
     def test_all_files_tracked_in_manifest(self, tmp_path):
         i = get_integration(self.KEY)
@@ -217,30 +250,34 @@ class SkillsIntegrationTests:
 
         assert (foreign_dir / "SKILL.md").exists(), "Foreign skill was removed"
 
-    # -- Scripts ----------------------------------------------------------
+    # -- Context section ---------------------------------------------------
 
-    def test_setup_installs_update_context_scripts(self, tmp_path):
+    def test_setup_upserts_context_section(self, tmp_path):
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
-        scripts_dir = tmp_path / ".specify" / "integrations" / self.KEY / "scripts"
-        assert scripts_dir.is_dir(), f"Scripts directory not created for {self.KEY}"
-        assert (scripts_dir / "update-context.sh").exists()
-        assert (scripts_dir / "update-context.ps1").exists()
+        if i.context_file:
+            ctx_path = tmp_path / i.context_file
+            assert ctx_path.exists(), f"Context file {i.context_file} not created for {self.KEY}"
+            content = ctx_path.read_text(encoding="utf-8")
+            assert "<!-- SPECKIT START -->" in content
+            assert "<!-- SPECKIT END -->" in content
+            assert "read the current plan" in content
 
-    def test_scripts_tracked_in_manifest(self, tmp_path):
+    def test_teardown_removes_context_section(self, tmp_path):
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
-        script_rels = [k for k in m.files if "update-context" in k]
-        assert len(script_rels) >= 2
-
-    def test_sh_script_is_executable(self, tmp_path):
-        i = get_integration(self.KEY)
-        m = IntegrationManifest(self.KEY, tmp_path)
-        i.setup(tmp_path, m)
-        sh = tmp_path / ".specify" / "integrations" / self.KEY / "scripts" / "update-context.sh"
-        assert os.access(sh, os.X_OK)
+        m.save()
+        if i.context_file:
+            ctx_path = tmp_path / i.context_file
+            content = ctx_path.read_text(encoding="utf-8")
+            ctx_path.write_text("# My Rules\n\n" + content + "\n# Footer\n", encoding="utf-8")
+            i.teardown(tmp_path, m)
+            remaining = ctx_path.read_text(encoding="utf-8")
+            assert "<!-- SPECKIT START -->" not in remaining
+            assert "<!-- SPECKIT END -->" not in remaining
+            assert "# My Rules" in remaining
 
     # -- CLI auto-promote -------------------------------------------------
 
@@ -286,6 +323,30 @@ class SkillsIntegrationTests:
         skills_dir = i.skills_dest(project)
         assert skills_dir.is_dir(), f"Skills directory {skills_dir} not created"
 
+    def test_init_options_includes_context_file(self, tmp_path):
+        """init-options.json must include context_file for the active integration."""
+        import json
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / f"opts-{self.KEY}"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", self.KEY, "--script", "sh",
+                "--no-git", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        opts = json.loads((project / ".specify" / "init-options.json").read_text())
+        i = get_integration(self.KEY)
+        assert opts.get("context_file") == i.context_file, (
+            f"Expected context_file={i.context_file!r}, got {opts.get('context_file')!r}"
+        )
+
     # -- IntegrationOption ------------------------------------------------
 
     def test_options_include_skills_flag(self):
@@ -316,8 +377,6 @@ class SkillsIntegrationTests:
             ".specify/init-options.json",
             ".specify/integration.json",
             f".specify/integrations/{self.KEY}.manifest.json",
-            f".specify/integrations/{self.KEY}/scripts/update-context.ps1",
-            f".specify/integrations/{self.KEY}/scripts/update-context.sh",
             ".specify/integrations/speckit.manifest.json",
             ".specify/memory/constitution.md",
         ]
@@ -328,7 +387,7 @@ class SkillsIntegrationTests:
                 ".specify/scripts/bash/common.sh",
                 ".specify/scripts/bash/create-new-feature.sh",
                 ".specify/scripts/bash/setup-plan.sh",
-                ".specify/scripts/bash/update-agent-context.sh",
+                ".specify/scripts/bash/setup-tasks.sh",
             ]
         else:
             files += [
@@ -336,17 +395,24 @@ class SkillsIntegrationTests:
                 ".specify/scripts/powershell/common.ps1",
                 ".specify/scripts/powershell/create-new-feature.ps1",
                 ".specify/scripts/powershell/setup-plan.ps1",
-                ".specify/scripts/powershell/update-agent-context.ps1",
+                ".specify/scripts/powershell/setup-tasks.ps1",
             ]
         # Templates
         files += [
-            ".specify/templates/agent-file-template.md",
             ".specify/templates/checklist-template.md",
             ".specify/templates/constitution-template.md",
             ".specify/templates/plan-template.md",
             ".specify/templates/spec-template.md",
             ".specify/templates/tasks-template.md",
         ]
+        # Bundled workflow
+        files += [
+            ".specify/workflows/speckit/workflow.yml",
+            ".specify/workflows/workflow-registry.json",
+        ]
+        # Agent context file (if set)
+        if i.context_file:
+            files.append(i.context_file)
         return sorted(files)
 
     def test_complete_file_inventory_sh(self, tmp_path):

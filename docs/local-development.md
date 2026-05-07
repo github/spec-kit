@@ -20,7 +20,7 @@ You can execute the CLI via the module entrypoint without installing anything:
 ```bash
 # From repo root
 python -m src.specify_cli --help
-python -m src.specify_cli init demo-project --ai claude --ignore-agent-tools --script sh
+python -m src.specify_cli init demo-project --integration claude --ignore-agent-tools --script sh
 ```
 
 If you prefer invoking the script file style (uses shebang):
@@ -52,7 +52,7 @@ Re-running after code edits requires no reinstall because of editable mode.
 `uvx` can run from a local path (or a Git ref) to simulate user flows:
 
 ```bash
-uvx --from . specify init demo-uvx --ai copilot --ignore-agent-tools --script sh
+uvx --from . specify init demo-uvx --integration copilot --ignore-agent-tools --script sh
 ```
 
 You can also point uvx at a specific branch without merging:
@@ -69,14 +69,14 @@ If you're in another directory, use an absolute path instead of `.`:
 
 ```bash
 uvx --from /mnt/c/GitHub/spec-kit specify --help
-uvx --from /mnt/c/GitHub/spec-kit specify init demo-anywhere --ai copilot --ignore-agent-tools --script sh
+uvx --from /mnt/c/GitHub/spec-kit specify init demo-anywhere --integration copilot --ignore-agent-tools --script sh
 ```
 
 Set an environment variable for convenience:
 
 ```bash
 export SPEC_KIT_SRC=/mnt/c/GitHub/spec-kit
-uvx --from "$SPEC_KIT_SRC" specify init demo-env --ai copilot --ignore-agent-tools --script ps
+uvx --from "$SPEC_KIT_SRC" specify init demo-env --integration copilot --ignore-agent-tools --script ps
 ```
 
 (Optional) Define a shell function:
@@ -123,21 +123,19 @@ When testing `init --here` in a dirty directory, create a temp workspace:
 
 ```bash
 mkdir /tmp/spec-test && cd /tmp/spec-test
-python -m src.specify_cli init --here --ai claude --ignore-agent-tools --script sh  # if repo copied here
+python -m src.specify_cli init --here --integration claude --ignore-agent-tools --script sh  # if repo copied here
 ```
 
 Or copy only the modified CLI portion if you want a lighter sandbox.
 
-## 9. Debug Network / TLS Skips
+## 9. Debug Network / TLS Issues
 
-If you need to bypass TLS validation while experimenting:
-
-```bash
-specify check --skip-tls
-specify init demo --skip-tls --ai gemini --ignore-agent-tools --script ps
-```
-
-(Use only for local experimentation.)
+> **Deprecated:** The `--skip-tls` flag is a no-op and has no effect.
+> It was previously used to bypass TLS validation during local testing.
+> If you encounter TLS errors (e.g., on a corporate network), configure your
+> environment's certificate store or proxy instead.
+>
+> For example, set `SSL_CERT_FILE` or configure `HTTPS_PROXY` / `HTTP_PROXY`.
 
 ## 10. Rapid Edit Loop Summary
 
@@ -166,7 +164,7 @@ rm -rf .venv dist build *.egg-info
 | Scripts not executable (Linux) | Re-run init or `chmod +x scripts/*.sh` |
 | Git step skipped | You passed `--no-git` or Git not installed |
 | Wrong script type downloaded | Pass `--script sh` or `--script ps` explicitly |
-| TLS errors on corporate network | Try `--skip-tls` (not for production) |
+| TLS errors on corporate network | Configure your environment's certificate store or proxy. The `--skip-tls` flag is deprecated and has no effect. |
 
 ## 13. Next Steps
 

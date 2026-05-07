@@ -27,6 +27,22 @@ class CodexIntegration(SkillsIntegration):
         "extension": "/SKILL.md",
     }
     context_file = "AGENTS.md"
+    multi_install_safe = True
+
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+    ) -> list[str] | None:
+        # Codex uses ``codex exec "prompt"`` for non-interactive mode.
+        args: list[str] = ["codex", "exec", prompt]
+        if model:
+            args.extend(["--model", model])
+        if output_json:
+            args.append("--json")
+        return args
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:

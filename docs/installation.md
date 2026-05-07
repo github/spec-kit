@@ -4,15 +4,20 @@
 
 - **Linux/macOS** (or Windows; PowerShell scripts now supported without WSL)
 - AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Codebuddy CLI](https://www.codebuddy.ai/cli), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Pi Coding Agent](https://pi.dev)
-- [uv](https://docs.astral.sh/uv/) for package management
+- [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pypa.github.io/pipx/) for persistent installation
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
 
 ## Installation
 
+> **Important:** The only official, maintained packages for Spec Kit come from the [github/spec-kit](https://github.com/github/spec-kit) GitHub repository. Any packages with the same name available on PyPI (e.g. `specify-cli` on pypi.org) are **not** affiliated with this project and are not maintained by the Spec Kit maintainers. For normal installs, use the GitHub-based commands shown below. For offline or air-gapped environments, locally built wheels created from this repository are also valid.
+
 ### Initialize a New Project
 
 The easiest way to get started is to initialize a new project. Pin a specific release tag for stability (check [Releases](https://github.com/github/spec-kit/releases) for the latest):
+
+> [!NOTE]
+> The `uvx` commands below require **[uv](https://docs.astral.sh/uv/)**. If you see `command not found: uvx`, [install uv first](./install/uv.md). The `pipx` alternative does not require uv.
 
 ```bash
 # Install from a specific stable release (recommended — replace vX.Y.Z with the latest tag)
@@ -22,6 +27,13 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <PROJE
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 ```
 
+> [!NOTE]
+> For a persistent installation, `pipx` works equally well:
+> ```bash
+> pipx install git+https://github.com/github/spec-kit.git@vX.Y.Z
+> ```
+> The project uses a standard `hatchling` build backend and has no uv-specific dependencies.
+
 Or initialize in the current directory:
 
 ```bash
@@ -30,16 +42,18 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init .
 uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here
 ```
 
-### Specify AI Agent
+### Specify Integration
 
-You can proactively specify your AI agent during initialization:
+Interactive terminals prompt you to choose a coding agent integration during initialization. Non-interactive sessions, such as CI or piped runs, default to GitHub Copilot unless you pass `--integration`.
+
+You can proactively specify your coding agent integration during initialization:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai claude
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai gemini
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai copilot
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai codebuddy
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai pi
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration claude
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration gemini
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration copilot
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration codebuddy
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration pi
 ```
 
 ### Specify Script Type (Shell vs PowerShell)
@@ -64,12 +78,20 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <proje
 If you prefer to get the templates without checking for the right tools:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --ai claude --ignore-agent-tools
+uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <project_name> --integration claude --ignore-agent-tools
 ```
 
 ## Verification
 
-After initialization, you should see the following commands available in your AI agent:
+After installation, run the following command to confirm the correct version is installed:
+
+```bash
+specify version
+```
+
+This helps verify you are running the official Spec Kit build from GitHub, not an unrelated package with the same name.
+
+After initialization, you should see the following commands available in your coding agent:
 
 - `/speckit.specify` - Create specifications
 - `/speckit.plan` - Generate implementation plans  
@@ -114,12 +136,10 @@ pip install --no-index --find-links=./dist specify-cli
 
 ```bash
 # Initialize a project — no GitHub access needed
-specify init my-project --ai claude --offline
+specify init my-project --integration claude
 ```
 
-The `--offline` flag tells the CLI to use the templates, commands, and scripts bundled inside the wheel instead of downloading from GitHub.
-
-> **Deprecation notice:** Starting with v0.6.0, `specify init` will use bundled assets by default and the `--offline` flag will be removed. The GitHub download path will be retired because bundled assets eliminate the need for network access, avoid proxy/firewall issues, and guarantee that templates always match the installed CLI version. No action will be needed — `specify init` will simply work without network access out of the box.
+Bundled assets are used by default — no network access is required.
 
 > **Note:** Python 3.11+ is required.
 

@@ -36,6 +36,7 @@ def get_integration(key: str) -> IntegrationBase | None:
 
 # -- Register built-in integrations --------------------------------------
 
+
 def _register_builtins() -> None:
     """Register all built-in integrations.
 
@@ -55,14 +56,17 @@ def _register_builtins() -> None:
     from .codex import CodexIntegration
     from .copilot import CopilotIntegration
     from .cursor_agent import CursorAgentIntegration
+    from .devin import DevinIntegration
     from .forge import ForgeIntegration
     from .gemini import GeminiIntegration
     from .generic import GenericIntegration
+    from .goose import GooseIntegration
     from .iflow import IflowIntegration
     from .junie import JunieIntegration
     from .kilocode import KilocodeIntegration
     from .kimi import KimiIntegration
     from .kiro_cli import KiroCliIntegration
+    from .lingma import LingmaIntegration
     from .opencode import OpencodeIntegration
     from .pi import PiIntegration
     from .qodercli import QodercliIntegration
@@ -84,14 +88,17 @@ def _register_builtins() -> None:
     _register(CodexIntegration())
     _register(CopilotIntegration())
     _register(CursorAgentIntegration())
+    _register(DevinIntegration())
     _register(ForgeIntegration())
     _register(GeminiIntegration())
     _register(GenericIntegration())
+    _register(GooseIntegration())
     _register(IflowIntegration())
     _register(JunieIntegration())
     _register(KilocodeIntegration())
     _register(KimiIntegration())
     _register(KiroCliIntegration())
+    _register(LingmaIntegration())
     _register(OpencodeIntegration())
     _register(PiIntegration())
     _register(QodercliIntegration())

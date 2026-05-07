@@ -19,3 +19,4 @@ class JunieIntegration(MarkdownIntegration):
         "extension": ".md",
     }
     context_file = ".junie/AGENTS.md"
+    multi_install_safe = True
