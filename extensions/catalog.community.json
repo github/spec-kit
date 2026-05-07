@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-07T05:51:00Z",
+  "updated_at": "2026-05-07T15:37:14Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -99,6 +99,43 @@
       "stars": 0,
       "created_at": "2026-05-04T00:00:00Z",
       "updated_at": "2026-05-04T00:00:00Z"
+    },
+    "api-evolve": {
+      "name": "API Evolve",
+      "id": "api-evolve",
+      "description": "Managed API contract evolution — breaking-change detection, semver enforcement, deprecation orchestration, and lifecycle gates across REST, GraphQL, and gRPC.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-api-evolve/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-api-evolve",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-api-evolve",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-api-evolve/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-api-evolve/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 12,
+        "hooks": 5
+      },
+      "tags": [
+        "api",
+        "contracts",
+        "versioning",
+        "openapi",
+        "graphql",
+        "grpc",
+        "deprecation",
+        "breaking-changes",
+        "semver",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-07T00:00:00Z",
+      "updated_at": "2026-05-07T00:00:00Z"
     },
     "architect-preview": {
       "name": "Architect Impact Previewer",
