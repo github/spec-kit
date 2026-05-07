@@ -3,6 +3,7 @@
 import codecs
 import json
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import yaml
@@ -556,3 +557,96 @@ class TestClaudeHookCommandNote:
         assert "user-invocable: true" in result
         assert "disable-model-invocation: false" in result
         assert "replace dots" in result
+
+
+class TestSpeckitManifestRecordsSkippedFiles:
+    """Regression test for issue #2107.
+
+    ``install_shared_infra`` must record every shared-infrastructure file
+    under ``.specify/`` in ``speckit.manifest.json``, including files that
+    were *skipped* because they already existed on disk and ``force=False``.
+
+    Before the fix, the skip branches in the scripts and templates loops
+    appended to ``skipped_files`` without calling ``manifest.record_existing``.
+    So when ``install_shared_infra`` ran with a fresh (or lost) manifest
+    against an already-populated ``.specify/`` tree, every file went down the
+    skip path, ``planned_copies`` and ``planned_templates`` stayed empty, and
+    ``manifest.save()`` wrote an empty ``files`` field — leaving the
+    integration believing nothing was installed.
+
+    Reproduction (without the fix) using ``install_shared_infra`` directly:
+
+        install_shared_infra(p, "sh", ..., force=False)   # 1st run → 10 files
+        (p / ".specify/integrations/speckit.manifest.json").unlink()
+        install_shared_infra(p, "sh", ..., force=False)   # 2nd run → 0 files
+                                                          # ^^ BUG: empty
+    """
+
+    def _read_manifest_files(self, project_path: Path) -> dict:
+        manifest_path = (
+            project_path / ".specify" / "integrations" / "speckit.manifest.json"
+        )
+        assert manifest_path.exists(), (
+            f"speckit.manifest.json not written at {manifest_path}"
+        )
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        return data.get("files") or data.get("_files") or {}
+
+    def test_install_shared_infra_records_skipped_files(self, tmp_path):
+        """With ``force=False`` and ``.specify/`` already populated, the
+        manifest must still record every file — the skip branches are not
+        allowed to drop files from the manifest."""
+        from rich.console import Console
+        from specify_cli.shared_infra import install_shared_infra
+
+        # Resolve the project's own packaged sources by walking up from this
+        # test file to the repo root (which contains ``scripts/`` and
+        # ``templates/`` that ``shared_scripts_source`` looks for).
+        repo_root = Path(__file__).resolve().parents[2]
+        console = Console(quiet=True)
+
+        # First run — fresh project, manifest gets populated normally.
+        install_shared_infra(
+            tmp_path,
+            "sh",
+            version="0.0.0",
+            core_pack=None,
+            repo_root=repo_root,
+            console=console,
+            force=False,
+        )
+        first_files = self._read_manifest_files(tmp_path)
+        assert first_files, "first install produced an empty manifest"
+
+        # Simulate a lost manifest while ``.specify/`` is still on disk
+        # (e.g. the manifest was deleted, corrupted, or the layout was
+        # extracted out-of-band).
+        manifest_path = (
+            tmp_path / ".specify" / "integrations" / "speckit.manifest.json"
+        )
+        manifest_path.unlink()
+
+        # Second run — every file already exists, so every iteration takes
+        # the skip branch. With the fix, those files are still recorded.
+        install_shared_infra(
+            tmp_path,
+            "sh",
+            version="0.0.0",
+            core_pack=None,
+            repo_root=repo_root,
+            console=console,
+            force=False,
+        )
+        second_files = self._read_manifest_files(tmp_path)
+        assert second_files, (
+            "speckit.manifest.json files dict is empty after install with "
+            "skipped files (issue #2107) — every file went down the skip "
+            "branch but none were recorded"
+        )
+
+        # The recovered manifest must cover everything the first run tracked.
+        missing = set(first_files) - set(second_files)
+        assert not missing, (
+            f"these files were tracked on the first install but missing after "
+            f"the skipped-files re-install: {sorted(missing)[:5]}"
+        )
