@@ -334,6 +334,10 @@ class WorkflowCatalog:
                 raise WorkflowCatalogError(
                     f"Refusing to fetch catalog from non-HTTPS URL: {url}"
                 )
+            if not parsed.hostname:
+                raise WorkflowCatalogError(
+                    f"Refusing to fetch catalog from URL with no hostname: {url}"
+                )
 
         _validate_catalog_url(entry.url)
 
@@ -859,6 +863,10 @@ class StepCatalog:
             ):
                 raise StepCatalogError(
                     f"Refusing to fetch catalog from non-HTTPS URL: {url}"
+                )
+            if not parsed.hostname:
+                raise StepCatalogError(
+                    f"Refusing to fetch catalog from URL with no hostname: {url}"
                 )
 
         _validate_url(entry.url)

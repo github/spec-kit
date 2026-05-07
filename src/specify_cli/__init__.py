@@ -4698,12 +4698,14 @@ def workflow_run(
     ),
 ):
     """Run a workflow from an installed ID or local YAML path."""
+    from .workflows import load_custom_steps
     from .workflows.engine import WorkflowEngine
 
     project_root = Path.cwd()
     if not (project_root / ".specify").exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         raise typer.Exit(1)
+    load_custom_steps(project_root)
     engine = WorkflowEngine(project_root)
     engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
@@ -4765,12 +4767,14 @@ def workflow_resume(
     run_id: str = typer.Argument(..., help="Run ID to resume"),
 ):
     """Resume a paused or failed workflow run."""
+    from .workflows import load_custom_steps
     from .workflows.engine import WorkflowEngine
 
     project_root = Path.cwd()
     if not (project_root / ".specify").exists():
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         raise typer.Exit(1)
+    load_custom_steps(project_root)
     engine = WorkflowEngine(project_root)
     engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
@@ -5454,6 +5458,8 @@ def workflow_step_add(
         is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
             raise ValueError(f"Refusing to fetch from non-HTTPS URL: {url}")
+        if not parsed.hostname:
+            raise ValueError(f"Refusing to fetch from URL with no hostname: {url}")
         with urlopen(url, timeout=30) as resp:  # noqa: S310
             final_url = resp.geturl()
             final_parsed = urlparse(final_url)
@@ -5462,6 +5468,8 @@ def workflow_step_add(
                 final_parsed.scheme == "http" and final_is_localhost
             ):
                 raise ValueError(f"Redirect to non-HTTPS URL: {final_url}")
+            if not final_parsed.hostname:
+                raise ValueError(f"Redirect to URL with no hostname: {final_url}")
             return resp.read()
 
     steps_base_dir = (project_root / ".specify" / "workflows" / "steps").resolve()
