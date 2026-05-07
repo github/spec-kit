@@ -405,16 +405,19 @@ def install_shared_infra(
         )
         for path in skipped_files:
             console.print(f"    {path}")
-        console.print(
-            "To refresh shared infrastructure, run "
-            "[cyan]specify init --here --force[/cyan] or "
-            "[cyan]specify integration upgrade --force[/cyan]."
-        )
+        if refresh_managed and refresh_hint:
+            console.print(refresh_hint)
+        else:
+            console.print(
+                "To refresh shared infrastructure, run "
+                "[cyan]specify init --here --force[/cyan] or "
+                "[cyan]specify integration upgrade --force[/cyan]."
+            )
 
     if symlinked_files:
         console.print(
             f"[yellow]⚠[/yellow]  Skipped {len(symlinked_files)} symlinked shared "
-            "infrastructure file(s) — symlinks are never overwritten because they "
+            "infrastructure path(s) — symlinks are never overwritten because they "
             "may resolve outside the project root:"
         )
         for path in symlinked_files:

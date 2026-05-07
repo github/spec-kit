@@ -446,8 +446,8 @@ class TestInitIntegrationFlag:
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_shared_infra_install_preflights_before_writing(self, tmp_path):
-        """Full shared infra installs validate destinations before writing any file."""
+    def test_shared_infra_install_buckets_unsafe_destinations_and_continues(self, tmp_path):
+        """Symlinked destinations are bucketed with a warning; safe destinations in the same install still complete."""
         from specify_cli.shared_infra import install_shared_infra
 
         project = tmp_path / "preflight-install-test"
