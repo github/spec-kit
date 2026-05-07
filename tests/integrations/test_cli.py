@@ -297,8 +297,8 @@ class TestInitIntegrationFlag:
         assert "A new shared manifest will be created" in captured.out
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_shared_infra_refuses_symlinked_script_destination(self, tmp_path, capsys):
-        """Shared script refreshes must not follow destination symlinks."""
+    def test_shared_infra_buckets_symlinked_script_destination(self, tmp_path, capsys):
+        """Symlinked script destinations are bucketed with a warning; the symlink target is preserved."""
         from specify_cli import _install_shared_infra
 
         project = tmp_path / "symlink-script-test"
@@ -318,8 +318,8 @@ class TestInitIntegrationFlag:
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_shared_infra_refuses_symlinked_template_destination(self, tmp_path, capsys):
-        """Shared template installs must not follow destination symlinks."""
+    def test_shared_infra_buckets_symlinked_template_destination(self, tmp_path, capsys):
+        """Symlinked template destinations are bucketed with a warning; the symlink target is preserved."""
         from specify_cli import _install_shared_infra
 
         project = tmp_path / "symlink-template-test"
