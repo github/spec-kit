@@ -5513,7 +5513,14 @@ def workflow_step_add(
             console.print(f"[red]Error:[/red] Invalid step.yml: {exc}")
             raise typer.Exit(1)
 
+        if not isinstance(meta, dict):
+            console.print("[red]Error:[/red] step.yml must be a YAML mapping")
+            raise typer.Exit(1)
+
         step_meta = meta.get("step", {})
+        if not isinstance(step_meta, dict):
+            console.print("[red]Error:[/red] step.yml 'step' field must be a mapping")
+            raise typer.Exit(1)
         type_key = step_meta.get("type_key", "")
         if not type_key:
             console.print("[red]Error:[/red] step.yml missing 'step.type_key' field")

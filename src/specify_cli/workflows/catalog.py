@@ -166,7 +166,7 @@ class WorkflowCatalog:
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
                 "HTTP is only allowed for localhost."
             )
-        if not parsed.netloc:
+        if not parsed.hostname:
             raise WorkflowValidationError(
                 "Catalog URL must be a valid URL with a host."
             )
@@ -715,6 +715,11 @@ class StepCatalog:
         except (yaml.YAMLError, OSError, UnicodeError) as exc:
             raise StepValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
+            )
+        if not isinstance(data, dict):
+            raise StepValidationError(
+                f"Invalid catalog config: expected a mapping, "
+                f"got {type(data).__name__}"
             )
         catalogs_data = data.get("catalogs", [])
         if not catalogs_data:
