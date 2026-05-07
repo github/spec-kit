@@ -2650,8 +2650,12 @@ def preset_add(
 
                 suffix = ".tar.gz" if archive_fmt == "tar.gz" else ".zip"
                 archive_path = Path(tmpdir) / f"preset{suffix}"
-                archive_path.write_bytes(archive_data)
-                manifest = manager.install_from_zip(archive_path, speckit_version, priority)
+                try:
+                    archive_path.write_bytes(archive_data)
+                    manifest = manager.install_from_zip(archive_path, speckit_version, priority)
+                except OSError as e:
+                    console.print(f"[red]Error:[/red] Failed to save or install archive: {e}")
+                    raise typer.Exit(1)
 
             console.print(f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})")
 
@@ -3672,6 +3676,9 @@ def extension_add(
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
                     raise typer.Exit(1)
+                except OSError as e:
+                    console.print(f"[red]Error:[/red] Failed to save or install archive: {e}")
+                    raise typer.Exit(1)
                 finally:
                     # Clean up the downloaded archive
                     if archive_path is not None and archive_path.exists():
@@ -4347,7 +4354,10 @@ def extension_update(
                                     with f:
                                         manifest_data = yaml.safe_load(f.read()) or {}
                             except KeyError:
-                                # Look for extension.yml in a single top-level subdirectory
+                                pass
+                            # Fall back to nested-directory search if root-level
+                            # was missing (KeyError) or not a regular file (None).
+                            if manifest_data is None:
                                 members = [m for m in tf.getmembers() if m.name.endswith("/extension.yml") and m.name.count("/") == 1]
                                 if len(members) == 1:
                                     f = tf.extractfile(members[0])
