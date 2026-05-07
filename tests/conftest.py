@@ -66,3 +66,18 @@ requires_bash = pytest.mark.skipif(
 def strip_ansi(text: str) -> str:
     """Remove ANSI escape codes from Rich-formatted CLI output."""
     return _ANSI_ESCAPE_RE.sub("", text)
+
+
+# ---------------------------------------------------------------------------
+# Auth config isolation — prevents tests from reading ~/.specify/auth.json
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _isolate_auth_config(monkeypatch):
+    """Ensure no test reads the real ~/.specify/auth.json."""
+    from specify_cli.authentication import http as _auth_http
+    monkeypatch.setattr(_auth_http, "_config_override", [])
+    # Also clear the per-process cache so tests that unset _config_override
+    # won't see a previously cached real-file result.
+    monkeypatch.setattr(_auth_http, "_config_cache", None)

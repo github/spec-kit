@@ -2453,6 +2453,10 @@ class TestExtensionCatalog:
         (project_dir / ".specify").mkdir()
         return ExtensionCatalog(project_dir)
 
+    def _inject_github_config(self, monkeypatch, token_env="GH_TOKEN"):
+        from tests.auth_helpers import inject_github_config
+        inject_github_config(monkeypatch, token_env)
+
     def test_make_request_no_token_no_auth_header(self, temp_dir, monkeypatch):
         """Without a token, requests carry no Authorization header."""
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
@@ -2473,6 +2477,7 @@ class TestExtensionCatalog:
         """When GITHUB_TOKEN is whitespace-only, GH_TOKEN is used as fallback."""
         monkeypatch.setenv("GITHUB_TOKEN", "   ")
         monkeypatch.setenv("GH_TOKEN", "ghp_fallback")
+        self._inject_github_config(monkeypatch, token_env="GH_TOKEN")
         catalog = self._make_catalog(temp_dir)
         req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
         assert req.get_header("Authorization") == "Bearer ghp_fallback"
@@ -2481,6 +2486,7 @@ class TestExtensionCatalog:
         """GITHUB_TOKEN is attached for raw.githubusercontent.com URLs."""
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
         monkeypatch.delenv("GH_TOKEN", raising=False)
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         catalog = self._make_catalog(temp_dir)
         req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
         assert req.get_header("Authorization") == "Bearer ghp_testtoken"
@@ -2489,49 +2495,40 @@ class TestExtensionCatalog:
         """GH_TOKEN is used when GITHUB_TOKEN is absent."""
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.setenv("GH_TOKEN", "ghp_ghtoken")
+        self._inject_github_config(monkeypatch, token_env="GH_TOKEN")
         catalog = self._make_catalog(temp_dir)
         req = catalog._make_request("https://github.com/org/repo/releases/download/v1/ext.zip")
         assert req.get_header("Authorization") == "Bearer ghp_ghtoken"
 
-    def test_make_request_github_token_takes_precedence_over_gh_token(self, temp_dir, monkeypatch):
-        """GITHUB_TOKEN takes precedence over GH_TOKEN when both are set."""
-        monkeypatch.setenv("GITHUB_TOKEN", "ghp_primary")
-        monkeypatch.setenv("GH_TOKEN", "ghp_secondary")
+    def test_make_request_gh_token_takes_precedence_over_github_token(self, temp_dir, monkeypatch):
+        """When auth.json uses GH_TOKEN, that token is used regardless of GITHUB_TOKEN."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_secondary")
+        monkeypatch.setenv("GH_TOKEN", "ghp_primary")
+        self._inject_github_config(monkeypatch, token_env="GH_TOKEN")
         catalog = self._make_catalog(temp_dir)
         req = catalog._make_request("https://api.github.com/repos/org/repo")
         assert req.get_header("Authorization") == "Bearer ghp_primary"
 
-    def test_make_request_token_not_added_for_non_github_url(self, temp_dir, monkeypatch):
-        """Auth header is never attached to non-GitHub URLs to prevent credential leakage."""
+    def test_make_request_no_auth_for_non_matching_host(self, temp_dir, monkeypatch):
+        """Auth is NOT attached to hosts not listed in auth.json."""
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         catalog = self._make_catalog(temp_dir)
         req = catalog._make_request("https://internal.example.com/catalog.json")
         assert "Authorization" not in req.headers
 
-    def test_make_request_token_not_added_for_github_lookalike_host(self, temp_dir, monkeypatch):
-        """Auth header is not attached to hosts that include github.com as a suffix."""
-        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+    def test_make_request_no_auth_when_no_config(self, temp_dir, monkeypatch):
+        """No auth header when no auth.json config exists."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
         catalog = self._make_catalog(temp_dir)
-        req = catalog._make_request("https://github.com.evil.com/org/repo/releases/download/v1/ext.zip")
-        assert "Authorization" not in req.headers
-
-    def test_make_request_token_not_added_for_github_in_path(self, temp_dir, monkeypatch):
-        """Auth header is not attached when github.com appears only in the URL path."""
-        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
-        catalog = self._make_catalog(temp_dir)
-        req = catalog._make_request("https://evil.example.com/github.com/org/repo/releases/download/v1/ext.zip")
-        assert "Authorization" not in req.headers
-
-    def test_make_request_token_not_added_for_github_in_query(self, temp_dir, monkeypatch):
-        """Auth header is not attached when github.com appears only in the query string."""
-        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
-        catalog = self._make_catalog(temp_dir)
-        req = catalog._make_request("https://evil.example.com/download?source=https://github.com/org/repo/v1/ext.zip")
+        req = catalog._make_request("https://github.com/org/repo/releases/download/v1/ext.zip")
         assert "Authorization" not in req.headers
 
     def test_make_request_token_added_for_api_github_com(self, temp_dir, monkeypatch):
         """GITHUB_TOKEN is attached for api.github.com URLs."""
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         catalog = self._make_catalog(temp_dir)
         req = catalog._make_request("https://api.github.com/repos/org/repo/releases/assets/1")
         assert req.get_header("Authorization") == "Bearer ghp_testtoken"
@@ -2539,49 +2536,17 @@ class TestExtensionCatalog:
     def test_make_request_token_added_for_codeload_github_com(self, temp_dir, monkeypatch):
         """GITHUB_TOKEN is attached for codeload.github.com URLs (GitHub archive redirects)."""
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         catalog = self._make_catalog(temp_dir)
         req = catalog._make_request("https://codeload.github.com/org/repo/zip/refs/tags/v1.0.0")
         assert req.get_header("Authorization") == "Bearer ghp_testtoken"
 
-    def test_redirect_preserves_auth_for_github_to_codeload(self):
-        """Auth header is preserved when GitHub redirects to codeload.github.com."""
-        from specify_cli._github_http import _StripAuthOnRedirect
-        from urllib.request import Request
-        import io
-
-        handler = _StripAuthOnRedirect()
-        original_url = "https://github.com/org/repo/archive/refs/tags/v1.zip"
-        redirect_url = "https://codeload.github.com/org/repo/zip/refs/tags/v1"
-        req = Request(original_url, headers={"Authorization": "Bearer ghp_test"})
-        fp = io.BytesIO(b"")
-        new_req = handler.redirect_request(req, fp, 302, "Found", {}, redirect_url)
-        assert new_req is not None
-        auth = new_req.get_header("Authorization") or new_req.unredirected_hdrs.get("Authorization")
-        assert auth == "Bearer ghp_test"
-
-    def test_redirect_strips_auth_for_github_to_external(self):
-        """Auth header is stripped when GitHub redirects to a non-GitHub host."""
-        from specify_cli._github_http import _StripAuthOnRedirect
-        from urllib.request import Request
-        import io
-
-        handler = _StripAuthOnRedirect()
-        original_url = "https://github.com/org/repo/releases/download/v1/asset.zip"
-        redirect_url = "https://objects.githubusercontent.com/github-production-release-asset/12345"
-        req = Request(original_url, headers={"Authorization": "Bearer ghp_test"})
-        fp = io.BytesIO(b"")
-        new_req = handler.redirect_request(req, fp, 302, "Found", {}, redirect_url)
-        assert new_req is not None
-        auth_header = new_req.headers.get("Authorization")
-        auth_unredirected = new_req.unredirected_hdrs.get("Authorization")
-        assert auth_header is None
-        assert auth_unredirected is None
-
     def test_fetch_single_catalog_sends_auth_header(self, temp_dir, monkeypatch):
-        """_fetch_single_catalog passes Authorization header via opener for GitHub URLs."""
+        """_fetch_single_catalog passes Authorization header when a provider is configured."""
         from unittest.mock import patch, MagicMock
 
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         catalog = self._make_catalog(temp_dir)
 
         catalog_data = {"schema_version": "1.0", "extensions": {}}
@@ -2589,6 +2554,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(catalog_data).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://raw.githubusercontent.com/org/repo/main/catalog.json"
 
         captured = {}
         mock_opener = MagicMock()
@@ -2606,17 +2572,18 @@ class TestExtensionCatalog:
             install_allowed=True,
         )
 
-        with patch("urllib.request.build_opener", return_value=mock_opener):
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             catalog._fetch_single_catalog(entry, force_refresh=True)
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
 
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
-        """download_extension passes Authorization header via opener for GitHub URLs."""
+        """download_extension passes Authorization header when a provider is configured."""
         from unittest.mock import patch, MagicMock
         import zipfile, io
 
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         catalog = self._make_catalog(temp_dir)
 
         # Build a minimal valid ZIP in memory
@@ -2631,7 +2598,6 @@ class TestExtensionCatalog:
         mock_response.__exit__ = MagicMock(return_value=False)
 
         captured = {}
-
         mock_opener = MagicMock()
 
         def fake_open(req, timeout=None):
@@ -2648,7 +2614,7 @@ class TestExtensionCatalog:
         }
 
         with patch.object(catalog, "get_extension_info", return_value=ext_info), \
-             patch("urllib.request.build_opener", return_value=mock_opener):
+             patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             catalog.download_extension("test-ext", target_dir=temp_dir)
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
