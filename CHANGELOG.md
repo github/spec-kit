@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.7] - 2026-05-07
+
+### Changed
+
+- feat: add agent-orchestrator to community extension catalog (#2236)
+- chore: update extension versions in community catalog (#2468)
+- fix(goose): Declare args parameter in generated recipes (#2402)
+- feat: Add lingma support (#2348)
+- docs: Add uv installation guide and inline callouts (#2465)
+- Add fx-to-dotnet to community extension catalog (#2471)
+- fix: default non-interactive init to copilot integration (#2414)
+- fix(forge): use hyphen notation for command refs in Forge integration (#2462)
+- feat(catalog): add Cost Tracker (cost) community extension (#2448)
+- chore: release 0.8.6, begin 0.8.7.dev0 development (#2463)
+
 ## [0.8.6] - 2026-05-06
 
 ### Changed
