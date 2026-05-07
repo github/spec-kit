@@ -4354,7 +4354,8 @@ def extension_update(
                                     with f:
                                         manifest_data = yaml.safe_load(f.read()) or {}
                             except KeyError:
-                                pass
+                                # extension.yml not present at archive root; use nested fallback below.
+                                manifest_data = None
                             # Fall back to nested-directory search if root-level
                             # was missing (KeyError) or not a regular file (None).
                             if manifest_data is None:
