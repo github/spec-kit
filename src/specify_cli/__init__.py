@@ -1762,22 +1762,14 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     On anything else — including a malformed response body — the exception
     propagates; there is no catch-all (research D-006).
     """
-    req = urllib.request.Request(
-        GITHUB_API_LATEST,
-        headers={"Accept": "application/vnd.github+json"},
-    )
-    token = None
-    for env_var in ("GH_TOKEN", "GITHUB_TOKEN"):
-        candidate = os.environ.get(env_var)
-        if candidate is not None:
-            candidate = candidate.strip()
-            if candidate:
-                token = candidate
-                break
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
+    from .authentication.http import open_url
+
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with open_url(
+            GITHUB_API_LATEST,
+            timeout=5,
+            extra_headers={"Accept": "application/vnd.github+json"},
+        ) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
             tag = payload.get("tag_name")
             if not isinstance(tag, str) or not tag:
@@ -1786,7 +1778,9 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     except urllib.error.HTTPError as e:
         # Order matters: HTTPError is a subclass of URLError.
         if e.code == 403:
-            return None, "rate limited (try setting GH_TOKEN or GITHUB_TOKEN)"
+            return None, (
+                "rate limited (configure ~/.specify/auth.json with a GitHub token)"
+            )
         return None, f"HTTP {e.code}"
     except (urllib.error.URLError, OSError):
         return None, "offline or timeout"
@@ -3381,7 +3375,9 @@ def preset_add(
             with tempfile.TemporaryDirectory() as tmpdir:
                 zip_path = Path(tmpdir) / "preset.zip"
                 try:
-                    with urllib.request.urlopen(from_url, timeout=60) as response:
+                    from specify_cli.authentication.http import open_url as _open_url
+
+                    with _open_url(from_url, timeout=60) as response:
                         zip_path.write_bytes(response.read())
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
@@ -4285,7 +4281,9 @@ def extension_add(
                 zip_path = download_dir / f"{extension}-url-download.zip"
 
                 try:
-                    with urllib.request.urlopen(from_url, timeout=60) as response:
+                    from specify_cli.authentication.http import open_url as _open_url
+
+                    with _open_url(from_url, timeout=60) as response:
                         zip_data = response.read()
                     zip_path.write_bytes(zip_data)
 
@@ -5500,7 +5498,7 @@ def workflow_add(
     if source.startswith("http://") or source.startswith("https://"):
         from ipaddress import ip_address
         from urllib.parse import urlparse
-        from urllib.request import urlopen  # noqa: S310
+        from specify_cli.authentication.http import open_url as _open_url
 
         parsed_src = urlparse(source)
         src_host = parsed_src.hostname or ""
@@ -5517,7 +5515,7 @@ def workflow_add(
 
         import tempfile
         try:
-            with urlopen(source, timeout=30) as resp:  # noqa: S310
+            with _open_url(source, timeout=30) as resp:
                 final_url = resp.geturl()
                 final_parsed = urlparse(final_url)
                 final_host = final_parsed.hostname or ""
@@ -5613,10 +5611,10 @@ def workflow_add(
     workflow_file = workflow_dir / "workflow.yml"
 
     try:
-        from urllib.request import urlopen  # noqa: S310 — URL comes from catalog
+        from specify_cli.authentication.http import open_url as _open_url
 
         workflow_dir.mkdir(parents=True, exist_ok=True)
-        with urlopen(workflow_url, timeout=30) as response:  # noqa: S310
+        with _open_url(workflow_url, timeout=30) as response:
             # Validate final URL after redirects
             final_url = response.geturl()
             final_parsed = urlparse(final_url)
