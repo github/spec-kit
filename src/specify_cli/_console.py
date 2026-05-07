@@ -1,3 +1,10 @@
+"""Base Rich/Typer console layer for the specify CLI.
+
+This module is the single source of Rich ``Console`` instances and Typer UI
+helpers used throughout ``specify_cli``.  Nothing in this file should import
+from other ``specify_cli`` sub-modules; all dependencies must flow *into* this
+layer, not out of it, to avoid circular imports.
+"""
 from __future__ import annotations
 import readchar
 import typer
@@ -128,7 +135,11 @@ def get_key():
 
     return key
 
-def select_with_arrows(options: dict, prompt_text: str = "Select an option", default_key: str = None) -> str:
+def select_with_arrows(
+    options: dict[str, str],
+    prompt_text: str = "Select an option",
+    default_key: str | None = None,
+) -> str:
     """
     Interactive selection using arrow keys with Rich Live display.
 
@@ -140,6 +151,9 @@ def select_with_arrows(options: dict, prompt_text: str = "Select an option", def
     Returns:
         Selected option key
     """
+    if not options:
+        raise ValueError("select_with_arrows() requires at least one option.")
+
     option_keys = list(options.keys())
     if default_key and default_key in option_keys:
         selected_index = option_keys.index(default_key)
