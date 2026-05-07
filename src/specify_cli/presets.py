@@ -27,7 +27,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
-from .extensions import ExtensionRegistry, normalize_priority
+from .extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 
 
 def _substitute_core_template(
@@ -576,7 +576,7 @@ class PresetManager:
                 raise PresetCompatibilityError(
                     f"Preset requires spec-kit {required}, "
                     f"but {speckit_version} is installed.\n"
-                    f"Upgrade spec-kit with: uv tool install specify-cli --force"
+                    f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
                 )
         except InvalidSpecifier:
             raise PresetCompatibilityError(
@@ -1845,20 +1845,20 @@ class PresetCatalog:
             )
 
     def _make_request(self, url: str):
-        """Build a urllib Request, adding a GitHub auth header when available.
+        """Build a urllib Request, adding auth headers when a provider matches.
 
-        Delegates to :func:`specify_cli._github_http.build_github_request`.
+        Delegates to :func:`specify_cli.authentication.http.build_request`.
         """
-        from specify_cli._github_http import build_github_request
-        return build_github_request(url)
+        from specify_cli.authentication.http import build_request
+        return build_request(url)
 
     def _open_url(self, url: str, timeout: int = 10):
-        """Open a URL with GitHub auth, stripping the header on cross-host redirects.
+        """Open a URL with provider-based auth, trying each configured provider.
 
-        Delegates to :func:`specify_cli._github_http.open_github_url`.
+        Delegates to :func:`specify_cli.authentication.http.open_url`.
         """
-        from specify_cli._github_http import open_github_url
-        return open_github_url(url, timeout)
+        from specify_cli.authentication.http import open_url
+        return open_url(url, timeout)
 
     def _load_catalog_config(self, config_path: Path) -> Optional[List[PresetCatalogEntry]]:
         """Load catalog stack configuration from a YAML file.

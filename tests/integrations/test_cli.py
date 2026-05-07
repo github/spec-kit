@@ -1,11 +1,19 @@
 """Tests for --integration flag on specify init (CLI-level)."""
 
+import io
 import json
 import os
 
+import pytest
 import yaml
+from rich.console import Console
 
 from tests.conftest import strip_ansi
+
+
+class _NoopConsole:
+    def print(self, *args, **kwargs):
+        pass
 
 
 def _normalize_cli_output(output: str) -> str:
@@ -72,6 +80,29 @@ class TestInitIntegrationFlag:
 
         shared_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
         assert shared_manifest.exists()
+
+    def test_noninteractive_init_defaults_to_copilot(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("non-interactive init should not open the integration picker")
+
+        monkeypatch.setattr(specify_cli, "select_with_arrows", fail_select)
+
+        runner = CliRunner()
+        project = tmp_path / "noninteractive"
+        result = runner.invoke(app, [
+            "init", str(project), "--script", "sh", "--no-git", "--ignore-agent-tools",
+        ], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert f"defaulting to '{specify_cli.DEFAULT_INIT_INTEGRATION}'" in result.output
+        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
 
     def test_ai_copilot_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner
@@ -253,6 +284,310 @@ class TestInitIntegrationFlag:
         # Rich may wrap long lines; normalize whitespace for the second command
         normalized = " ".join(captured.out.split())
         assert "specify integration upgrade --force" in normalized
+
+    def test_shared_infra_warns_when_manifest_cannot_be_loaded(self, tmp_path, capsys):
+        """Invalid shared manifests warn before falling back to a new manifest."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "bad-shared-manifest-test"
+        project.mkdir()
+        integrations_dir = project / ".specify" / "integrations"
+        integrations_dir.mkdir(parents=True)
+        manifest_path = integrations_dir / "speckit.manifest.json"
+        manifest_path.write_text("{not json", encoding="utf-8")
+
+        _install_shared_infra(project, "sh")
+
+        captured = capsys.readouterr()
+        assert "Could not read shared infrastructure manifest" in captured.out
+        assert "A new shared manifest will be created" in captured.out
+
+    def test_shared_infra_warns_when_manifest_cannot_be_decoded(self, tmp_path, capsys):
+        """Non-UTF-8 shared manifests warn before falling back to a new manifest."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "bad-shared-manifest-encoding-test"
+        project.mkdir()
+        integrations_dir = project / ".specify" / "integrations"
+        integrations_dir.mkdir(parents=True)
+        manifest_path = integrations_dir / "speckit.manifest.json"
+        manifest_path.write_bytes(b"\xff\xfe\x00")
+
+        _install_shared_infra(project, "sh")
+
+        captured = capsys.readouterr()
+        assert "Could not read shared infrastructure manifest" in captured.out
+        assert "A new shared manifest will be created" in captured.out
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_infra_refuses_symlinked_script_destination(self, tmp_path):
+        """Shared script refreshes must not follow destination symlinks."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "symlink-script-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        outside = tmp_path / "outside-script.sh"
+        outside.write_text("# outside\n", encoding="utf-8")
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        os.symlink(outside, scripts_dir / "common.sh")
+
+        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
+            _install_shared_infra(project, "sh", force=True)
+
+        assert outside.read_text(encoding="utf-8") == "# outside\n"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_infra_refuses_symlinked_template_destination(self, tmp_path):
+        """Shared template installs must not follow destination symlinks."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "symlink-template-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        outside = tmp_path / "outside-template.md"
+        outside.write_text("# outside\n", encoding="utf-8")
+        templates_dir = project / ".specify" / "templates"
+        templates_dir.mkdir(parents=True)
+        os.symlink(outside, templates_dir / "plan-template.md")
+
+        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
+            _install_shared_infra(project, "sh", force=True)
+
+        assert outside.read_text(encoding="utf-8") == "# outside\n"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_template_refresh_refuses_symlinked_destination(self, tmp_path):
+        """Template-only refreshes must not follow destination symlinks."""
+        from specify_cli import _refresh_shared_templates
+
+        project = tmp_path / "symlink-refresh-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        outside = tmp_path / "outside-refresh.md"
+        outside.write_text("# outside\n", encoding="utf-8")
+        templates_dir = project / ".specify" / "templates"
+        templates_dir.mkdir(parents=True)
+        os.symlink(outside, templates_dir / "plan-template.md")
+
+        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
+            _refresh_shared_templates(project, invoke_separator=".", force=True)
+
+        assert outside.read_text(encoding="utf-8") == "# outside\n"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_infra_refuses_symlinked_specify_directory_before_mkdir(self, tmp_path):
+        """Shared infra directory creation must not follow a symlinked .specify."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "symlink-dir-test"
+        project.mkdir()
+        outside = tmp_path / "outside-specify"
+        outside.mkdir()
+        os.symlink(outside, project / ".specify")
+
+        with pytest.raises(ValueError, match="symlinked shared infrastructure directory"):
+            _install_shared_infra(project, "sh", force=True)
+
+        assert not (outside / "scripts").exists()
+        assert not (outside / "templates").exists()
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_infra_refuses_symlinked_shared_manifest(self, tmp_path):
+        """Shared infra manifest saves must not follow destination symlinks."""
+        from specify_cli.shared_infra import install_shared_infra
+
+        project = tmp_path / "symlink-shared-manifest-test"
+        project.mkdir()
+        integrations_dir = project / ".specify" / "integrations"
+        integrations_dir.mkdir(parents=True)
+
+        outside = tmp_path / "outside-manifest.json"
+        outside.write_text("# outside\n", encoding="utf-8")
+        os.symlink(outside, integrations_dir / "speckit.manifest.json")
+
+        core_pack = tmp_path / "core-pack"
+        templates_src = core_pack / "templates"
+        templates_src.mkdir(parents=True)
+        (templates_src / "plan-template.md").write_text("# plan\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="symlinked integration manifest"):
+            install_shared_infra(
+                project,
+                "sh",
+                version="test",
+                core_pack=core_pack,
+                repo_root=tmp_path / "unused",
+                console=_NoopConsole(),
+                force=True,
+            )
+
+        assert outside.read_text(encoding="utf-8") == "# outside\n"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_template_refresh_preflights_before_writing(self, tmp_path):
+        """Template refresh validates all destinations before writing any file."""
+        from specify_cli.shared_infra import refresh_shared_templates
+
+        project = tmp_path / "preflight-refresh-test"
+        project.mkdir()
+        templates_dir = project / ".specify" / "templates"
+        templates_dir.mkdir(parents=True)
+
+        core_pack = tmp_path / "core-pack"
+        templates_src = core_pack / "templates"
+        templates_src.mkdir(parents=True)
+        (templates_src / "a-template.md").write_text("# new a\n", encoding="utf-8")
+        (templates_src / "z-template.md").write_text("# new z\n", encoding="utf-8")
+
+        existing = templates_dir / "a-template.md"
+        existing.write_text("# old a\n", encoding="utf-8")
+        outside = tmp_path / "outside-z.md"
+        outside.write_text("# outside\n", encoding="utf-8")
+        os.symlink(outside, templates_dir / "z-template.md")
+
+        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
+            refresh_shared_templates(
+                project,
+                version="test",
+                core_pack=core_pack,
+                repo_root=tmp_path / "unused",
+                console=_NoopConsole(),
+                invoke_separator=".",
+                force=True,
+            )
+
+        assert existing.read_text(encoding="utf-8") == "# old a\n"
+        assert outside.read_text(encoding="utf-8") == "# outside\n"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_shared_infra_install_preflights_before_writing(self, tmp_path):
+        """Full shared infra installs validate destinations before writing any file."""
+        from specify_cli.shared_infra import install_shared_infra
+
+        project = tmp_path / "preflight-install-test"
+        project.mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        core_pack = tmp_path / "core-pack"
+        scripts_src = core_pack / "scripts" / "bash"
+        scripts_src.mkdir(parents=True)
+        (scripts_src / "a.sh").write_text("# new a\n", encoding="utf-8")
+        (scripts_src / "z.sh").write_text("# new z\n", encoding="utf-8")
+
+        existing = scripts_dir / "a.sh"
+        existing.write_text("# old a\n", encoding="utf-8")
+        outside = tmp_path / "outside-z.sh"
+        outside.write_text("# outside\n", encoding="utf-8")
+        os.symlink(outside, scripts_dir / "z.sh")
+
+        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
+            install_shared_infra(
+                project,
+                "sh",
+                version="test",
+                core_pack=core_pack,
+                repo_root=tmp_path / "unused",
+                console=_NoopConsole(),
+                force=True,
+            )
+
+        assert existing.read_text(encoding="utf-8") == "# old a\n"
+        assert outside.read_text(encoding="utf-8") == "# outside\n"
+
+    def test_shared_infra_install_supports_nested_script_sources(self, tmp_path):
+        """Nested script source files create safe destination parents at write time."""
+        from specify_cli.shared_infra import install_shared_infra
+
+        project = tmp_path / "nested-script-install-test"
+        project.mkdir()
+
+        core_pack = tmp_path / "core-pack"
+        nested_src = core_pack / "scripts" / "bash" / "nested"
+        nested_src.mkdir(parents=True)
+        (nested_src / "deep.sh").write_text("# nested\n", encoding="utf-8")
+
+        install_shared_infra(
+            project,
+            "sh",
+            version="test",
+            core_pack=core_pack,
+            repo_root=tmp_path / "unused",
+            console=_NoopConsole(),
+            force=True,
+        )
+
+        nested_dest = project / ".specify" / "scripts" / "bash" / "nested" / "deep.sh"
+        assert nested_dest.read_text(encoding="utf-8") == "# nested\n"
+
+    def test_shared_infra_skip_warning_uses_posix_paths(self, tmp_path):
+        """Skipped shared infra paths are reported consistently across platforms."""
+        from specify_cli.shared_infra import install_shared_infra
+
+        project = tmp_path / "posix-skip-warning-test"
+        project.mkdir()
+        nested_dest = project / ".specify" / "scripts" / "bash" / "nested"
+        nested_dest.mkdir(parents=True)
+        (nested_dest / "deep.sh").write_text("# existing script\n", encoding="utf-8")
+
+        templates_dest = project / ".specify" / "templates"
+        templates_dest.mkdir(parents=True)
+        (templates_dest / "plan-template.md").write_text("# existing template\n", encoding="utf-8")
+
+        core_pack = tmp_path / "core-pack"
+        nested_src = core_pack / "scripts" / "bash" / "nested"
+        nested_src.mkdir(parents=True)
+        (nested_src / "deep.sh").write_text("# bundled script\n", encoding="utf-8")
+
+        templates_src = core_pack / "templates"
+        templates_src.mkdir(parents=True)
+        (templates_src / "plan-template.md").write_text("# bundled template\n", encoding="utf-8")
+
+        buffer = io.StringIO()
+        install_shared_infra(
+            project,
+            "sh",
+            version="test",
+            core_pack=core_pack,
+            repo_root=tmp_path / "unused",
+            console=Console(file=buffer, force_terminal=False, width=120),
+            force=False,
+        )
+
+        output = buffer.getvalue()
+        assert ".specify/scripts/bash/nested/deep.sh" in output
+        assert ".specify/templates/plan-template.md" in output
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits are not stable on Windows")
+    def test_shared_template_writes_are_not_world_writable(self, tmp_path):
+        """Shared template writes use a safe default mode instead of chmod 666."""
+        from specify_cli.shared_infra import install_shared_infra
+
+        project = tmp_path / "template-mode-test"
+        project.mkdir()
+
+        core_pack = tmp_path / "core-pack"
+        templates_src = core_pack / "templates"
+        templates_src.mkdir(parents=True)
+        (templates_src / "plan-template.md").write_text("# plan\n", encoding="utf-8")
+
+        install_shared_infra(
+            project,
+            "sh",
+            version="test",
+            core_pack=core_pack,
+            repo_root=tmp_path / "unused",
+            console=_NoopConsole(),
+            force=True,
+        )
+
+        written = project / ".specify" / "templates" / "plan-template.md"
+        assert written.stat().st_mode & 0o777 == 0o644
 
     def test_shared_infra_no_warning_when_forced(self, tmp_path, capsys):
         """No skip warning when force=True (all files overwritten)."""
@@ -473,6 +808,32 @@ class TestGitExtensionAutoInstall:
         assert "will be removed" in normalized_output
         assert "git extension will no longer be enabled by default" in normalized_output
 
+    def test_default_git_auto_enable_emits_notice(self, tmp_path):
+        """Default git auto-enable emits notice about the v0.10.0 opt-in change."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "git-default-notice"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here", "--ai", "claude", "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 0, result.output
+        # Check for key message components (notice may have box-drawing chars)
+        assert "git extension is currently enabled by default" in normalized_output
+        assert "v0.10.0" in normalized_output
+        assert "explicit opt-in" in normalized_output
+        assert "specify extension add git" in normalized_output
+
     def test_git_extension_commands_registered(self, tmp_path):
         """Git extension commands are registered with the agent during init."""
         from typer.testing import CliRunner
@@ -628,3 +989,663 @@ class TestSharedInfraCommandRefs:
         assert "/speckit-plan" in content, "Copilot --skills should use /speckit-plan"
         assert "/speckit.plan" not in content, "dot-notation leaked into Copilot skills page template"
         assert "__SPECKIT_COMMAND_" not in content
+
+
+class TestIntegrationCatalogDiscoveryCLI:
+    """End-to-end CLI tests for `integration search`, `info`, and `catalog …`.
+
+    All tests patch `IntegrationCatalog._get_merged_integrations` so no network
+    or on-disk cache is touched. Adds #2344 coverage without affecting any
+    existing integration install/switch/uninstall/upgrade behavior.
+    """
+
+    FAKE_INTEGRATIONS = [
+        {
+            "id": "acme-coder",
+            "name": "Acme Coder",
+            "version": "2.0.0",
+            "description": "Community integration for Acme Coder",
+            "author": "acme-org",
+            "tags": ["cli", "acme"],
+            "_catalog_name": "community",
+            "_install_allowed": False,
+        },
+        {
+            "id": "stellar-agent",
+            "name": "Stellar Agent",
+            "version": "1.3.0",
+            "description": "First-party Stellar agent integration",
+            "author": "stellar-labs",
+            "tags": ["ide"],
+            "_catalog_name": "default",
+            "_install_allowed": True,
+        },
+    ]
+
+    def _make_project(self, tmp_path):
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        return project
+
+    def _patch_catalog(self, monkeypatch, integrations=None):
+        """Return a stubbed `_get_merged_integrations` that yields *integrations*."""
+        from specify_cli.integrations.catalog import IntegrationCatalog
+
+        data = list(integrations if integrations is not None else self.FAKE_INTEGRATIONS)
+
+        def fake_merged(self, force_refresh=False):
+            return data
+
+        monkeypatch.setattr(IntegrationCatalog, "_get_merged_integrations", fake_merged)
+
+    def _invoke(self, argv, cwd):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        old = os.getcwd()
+        try:
+            os.chdir(cwd)
+            return runner.invoke(app, argv, catch_exceptions=False)
+        finally:
+            os.chdir(old)
+
+    # -- Project guard -----------------------------------------------------
+
+    def test_search_requires_specify_project(self, tmp_path):
+        project = tmp_path / "bare"
+        project.mkdir()
+        result = self._invoke(["integration", "search"], project)
+        assert result.exit_code == 1
+        assert "Not a spec-kit project" in result.output
+
+    def test_catalog_list_requires_specify_project(self, tmp_path):
+        project = tmp_path / "bare"
+        project.mkdir()
+        result = self._invoke(["integration", "catalog", "list"], project)
+        assert result.exit_code == 1
+        assert "Not a spec-kit project" in result.output
+
+    def test_primary_integration_commands_require_specify_project(self, tmp_path):
+        project = tmp_path / "bare"
+        project.mkdir()
+        commands = [
+            ["integration", "list"],
+            ["integration", "install", "codex"],
+            ["integration", "use", "codex"],
+            ["integration", "uninstall"],
+            ["integration", "switch", "codex"],
+            ["integration", "upgrade"],
+        ]
+
+        for command in commands:
+            result = self._invoke(command, project)
+            failure_context = (
+                f"command={command!r}, exit_code={result.exit_code}, output={result.output!r}"
+            )
+            assert result.exit_code == 1, failure_context
+            assert "Not a spec-kit project" in result.output, failure_context
+
+    def test_integration_commands_require_specify_directory(self, tmp_path):
+        project = tmp_path / "bad"
+        project.mkdir()
+        (project / ".specify").write_text("not a directory")
+
+        commands = [
+            ["integration", "list"],
+            ["integration", "use", "codex"],
+        ]
+
+        for command in commands:
+            result = self._invoke(command, project)
+            assert result.exit_code == 1, result.output
+            assert "Not a spec-kit project" in result.output
+
+    def test_project_scoped_commands_require_specify_directory(self, tmp_path):
+        project = tmp_path / "bad-feature-commands"
+        project.mkdir()
+        (project / ".specify").write_text("not a directory")
+
+        commands = [
+            ["preset", "list"],
+            ["preset", "add", "demo"],
+            ["preset", "remove", "demo"],
+            ["preset", "search"],
+            ["preset", "resolve", "spec-template"],
+            ["preset", "info", "demo"],
+            ["preset", "set-priority", "demo", "5"],
+            ["preset", "enable", "demo"],
+            ["preset", "disable", "demo"],
+            ["preset", "catalog", "list"],
+            ["preset", "catalog", "add", "https://example.com/catalog.yml", "--name", "demo"],
+            ["preset", "catalog", "remove", "demo"],
+            ["extension", "list"],
+            ["extension", "add", "demo"],
+            ["extension", "remove", "demo"],
+            ["extension", "search"],
+            ["extension", "info", "demo"],
+            ["extension", "update", "demo"],
+            ["extension", "enable", "demo"],
+            ["extension", "disable", "demo"],
+            ["extension", "set-priority", "demo", "5"],
+            ["extension", "catalog", "list"],
+            ["extension", "catalog", "add", "https://example.com/catalog.yml", "--name", "demo"],
+            ["extension", "catalog", "remove", "demo"],
+            ["workflow", "run", "demo"],
+            ["workflow", "resume", "demo"],
+            ["workflow", "status"],
+            ["workflow", "list"],
+            ["workflow", "add", "demo"],
+            ["workflow", "remove", "demo"],
+            ["workflow", "search"],
+            ["workflow", "info", "demo"],
+            ["workflow", "catalog", "list"],
+            ["workflow", "catalog", "add", "https://example.com/catalog.yml"],
+            ["workflow", "catalog", "remove", "0"],
+        ]
+
+        for command in commands:
+            result = self._invoke(command, project)
+            failure_context = (
+                f"command={command!r}, exit_code={result.exit_code}, output={result.output!r}"
+            )
+            assert result.exit_code == 1, failure_context
+            assert "Not a spec-kit project" in result.output, failure_context
+
+    def test_catalog_config_output_uses_posix_paths(self, tmp_path):
+        project = self._make_project(tmp_path)
+
+        preset_add = self._invoke([
+            "preset", "catalog", "add",
+            "https://example.com/preset-catalog.yml",
+            "--name", "demo-presets",
+        ], project)
+        assert preset_add.exit_code == 0, preset_add.output
+        assert "Config saved to .specify/preset-catalogs.yml" in preset_add.output
+
+        preset_list = self._invoke(["preset", "catalog", "list"], project)
+        assert preset_list.exit_code == 0, preset_list.output
+        assert "Config: .specify/preset-catalogs.yml" in preset_list.output
+
+        extension_add = self._invoke([
+            "extension", "catalog", "add",
+            "https://example.com/extension-catalog.yml",
+            "--name", "demo-extensions",
+        ], project)
+        assert extension_add.exit_code == 0, extension_add.output
+        assert "Config saved to .specify/extension-catalogs.yml" in extension_add.output
+
+        extension_list = self._invoke(["extension", "catalog", "list"], project)
+        assert extension_list.exit_code == 0, extension_list.output
+        assert "Config: .specify/extension-catalogs.yml" in extension_list.output
+
+    # -- search ------------------------------------------------------------
+
+    def test_search_lists_all(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(["integration", "search"], project)
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 0, result.output
+        assert "Found 2 integration(s)" in result.output
+        assert "acme-coder" in result.output
+        assert "stellar-agent" in result.output
+        assert "specify integration install stellar-agent" not in normalized_output
+        assert "Only built-in integration IDs can be installed" in normalized_output
+
+    def test_search_validates_integration_json_before_catalog_lookup(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        (project / ".specify" / "integration.json").write_text(
+            "{bad json\n", encoding="utf-8"
+        )
+
+        from specify_cli.integrations.catalog import IntegrationCatalog
+
+        def fail_search(self, **kwargs):
+            raise AssertionError("catalog search should not be called")
+
+        monkeypatch.setattr(IntegrationCatalog, "search", fail_search)
+
+        result = self._invoke(["integration", "search"], project)
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 1
+        assert "contains invalid JSON" in normalized_output
+        assert "integration.json" in normalized_output
+
+    def test_search_filters_by_tag(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(["integration", "search", "--tag", "acme"], project)
+        assert result.exit_code == 0, result.output
+        assert "Found 1 integration(s)" in result.output
+        assert "acme-coder" in result.output
+        assert "stellar-agent" not in result.output
+
+    def test_search_filters_by_author(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(
+            ["integration", "search", "--author", "stellar-labs"], project
+        )
+        assert result.exit_code == 0, result.output
+        assert "Found 1 integration(s)" in result.output
+        assert "stellar-agent" in result.output
+
+    def test_search_no_match_hint(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(
+            ["integration", "search", "--tag", "nope"], project
+        )
+        assert result.exit_code == 0, result.output
+        assert "No integrations found" in result.output
+        assert "specify integration search" in result.output
+
+    def test_search_marks_discovery_only_entry(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(["integration", "search", "acme"], project)
+        assert result.exit_code == 0, result.output
+        # acme-coder is flagged _install_allowed=False, so we should warn
+        assert "Not directly installable" in result.output
+
+    # -- info --------------------------------------------------------------
+
+    def test_info_found(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(
+            ["integration", "info", "stellar-agent"], project
+        )
+        assert result.exit_code == 0, result.output
+        assert "Stellar Agent" in result.output
+        assert "stellar-agent" in result.output
+        assert "v1.3.0" in result.output
+
+    def test_info_not_found(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(
+            ["integration", "info", "does-not-exist"], project
+        )
+        assert result.exit_code == 1
+        assert "not found" in result.output
+
+    def test_info_builtin_not_in_catalog(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        # Empty catalog, but copilot is a registered built-in.
+        self._patch_catalog(monkeypatch, integrations=[])
+        result = self._invoke(["integration", "info", "copilot"], project)
+        assert result.exit_code == 0, result.output
+        assert "Built-in integration" in result.output
+
+    # -- validation vs network guidance ------------------------------------
+
+    def test_search_local_config_error_shows_local_config_tip(
+        self, tmp_path, monkeypatch
+    ):
+        """`integration search` must point at .specify/integration-catalogs.yml
+        for local-config errors (not the generic 'temporarily unavailable')."""
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        # Corrupt YAML to drive _load_catalog_config -> IntegrationValidationError.
+        cfg = project / ".specify" / "integration-catalogs.yml"
+        invalid_yaml = "catalogs:\n  - [bad\n"
+        cfg.write_text(invalid_yaml, encoding="utf-8")
+
+        result = self._invoke(["integration", "search"], project)
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 1, result.output
+        assert "configuration file path shown above" in normalized_output
+        assert ".specify/integration-catalogs.yml" in normalized_output
+        assert "~/.specify/integration-catalogs.yml" in normalized_output
+        assert "temporarily unavailable" not in normalized_output
+
+    def test_search_invalid_env_catalog_url_shows_env_tip(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CATALOG_URL",
+            "http://insecure.example.com/catalog.json",
+        )
+
+        result = self._invoke(["integration", "search"], project)
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 1, result.output
+        assert "SPECKIT_INTEGRATION_CATALOG_URL environment variable" in normalized_output
+        assert "unset it to use the configured catalog files" in normalized_output
+        assert ".specify/integration-catalogs.yml" in normalized_output
+        assert "~/.specify/integration-catalogs.yml" in normalized_output
+        assert "temporarily unavailable" not in normalized_output
+
+    def test_search_whitespace_env_catalog_url_uses_generic_catalog_tip(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("SPECKIT_INTEGRATION_CATALOG_URL", "   ")
+
+        from specify_cli.integrations.catalog import (
+            IntegrationCatalog,
+            IntegrationCatalogError,
+        )
+
+        def fail_search(self, **kwargs):
+            raise IntegrationCatalogError("catalog offline")
+
+        monkeypatch.setattr(IntegrationCatalog, "search", fail_search)
+
+        result = self._invoke(["integration", "search"], project)
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 1, result.output
+        assert "temporarily unavailable" in normalized_output
+        assert (
+            "SPECKIT_INTEGRATION_CATALOG_URL environment variable"
+            not in normalized_output
+        )
+
+    def test_info_unknown_with_local_config_error_shows_local_config_tip(
+        self, tmp_path, monkeypatch
+    ):
+        """`integration info <unknown>` falls back to the catalog-error branch
+        and must show local-config guidance, not 'Try again when online'."""
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        cfg = project / ".specify" / "integration-catalogs.yml"
+        invalid_yaml = "catalogs:\n  - [bad\n"
+        cfg.write_text(invalid_yaml, encoding="utf-8")
+
+        result = self._invoke(
+            ["integration", "info", "definitely-not-real"], project
+        )
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 1, result.output
+        assert "configuration file path shown above" in normalized_output
+        assert ".specify/integration-catalogs.yml" in normalized_output
+        assert "~/.specify/integration-catalogs.yml" in normalized_output
+        assert "Try again when online" not in normalized_output
+
+    def test_info_unknown_with_invalid_env_catalog_url_shows_env_tip(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CATALOG_URL",
+            "http://insecure.example.com/catalog.json",
+        )
+
+        result = self._invoke(
+            ["integration", "info", "definitely-not-real"], project
+        )
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 1, result.output
+        assert "SPECKIT_INTEGRATION_CATALOG_URL" in normalized_output
+        assert "unset it to use the configured catalog files" in normalized_output
+        assert "Try again when online" not in normalized_output
+
+    # -- catalog list / add / remove ---------------------------------------
+
+    def test_catalog_list_shows_builtin_defaults(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        result = self._invoke(["integration", "catalog", "list"], project)
+        assert result.exit_code == 0, result.output
+        assert "Integration Catalog Sources" in result.output
+        assert "No project-level catalog sources configured" in result.output
+        assert "Active catalog sources" in result.output
+        assert "non-removable" in result.output
+        assert "default" in result.output
+        assert "community" in result.output
+        # Built-in defaults are active, but not removable project entries.
+        assert "[0]" not in result.output
+        assert "[1]" not in result.output
+
+    def test_catalog_add_then_remove_roundtrip(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+
+        add_result = self._invoke(
+            [
+                "integration",
+                "catalog",
+                "add",
+                "https://new.example.com/catalog.json",
+                "--name",
+                "mine",
+            ],
+            project,
+        )
+        assert add_result.exit_code == 0, add_result.output
+        assert "Catalog source added" in add_result.output
+
+        cfg_path = project / ".specify" / "integration-catalogs.yml"
+        assert cfg_path.exists()
+
+        list_result = self._invoke(["integration", "catalog", "list"], project)
+        assert list_result.exit_code == 0, list_result.output
+        assert "Project catalog sources" in list_result.output
+        assert "[0]" in list_result.output
+        assert "mine" in list_result.output
+        assert "default" not in list_result.output
+        assert "community" not in list_result.output
+
+        remove_result = self._invoke(
+            ["integration", "catalog", "remove", "0"], project
+        )
+        assert remove_result.exit_code == 0, remove_result.output
+        assert "'mine' removed" in remove_result.output
+
+    def test_catalog_list_normalizes_blank_project_catalog_names(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        cfg_path = project / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "url": "https://null-name.example.com/catalog.json",
+                            "name": None,
+                        },
+                        {
+                            "url": "https://blank-name.example.com/catalog.json",
+                            "name": "   ",
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = self._invoke(["integration", "catalog", "list"], project)
+        normalized_output = _normalize_cli_output(result.output)
+
+        assert result.exit_code == 0, result.output
+        assert "[0] catalog-1" in normalized_output
+        assert "[1] catalog-2" in normalized_output
+        assert "None" not in normalized_output
+
+    def test_catalog_list_env_override_supersedes_project_config(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CATALOG_URL",
+            "https://env.example.com/catalog.json",
+        )
+        cfg_path = project / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "url": "https://project.example.com/catalog.json",
+                            "name": "project",
+                            "priority": 1,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = self._invoke(["integration", "catalog", "list"], project)
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 0, result.output
+        assert "SPECKIT_INTEGRATION_CATALOG_URL is set" in normalized_output
+        assert "supersedes configured catalog files" in normalized_output
+        assert "non-removable" in normalized_output
+        assert "https://env.example.com/catalog.json" in normalized_output
+        assert "https://project.example.com/catalog.json" not in normalized_output
+        assert "[0]" not in normalized_output
+
+    def test_catalog_add_strips_whitespace_in_success_output_and_storage(
+        self, tmp_path, monkeypatch
+    ):
+        """Surrounding whitespace in the URL must not appear in the success
+        message or be persisted to the YAML config."""
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+
+        padded_url = "  https://padded.example.com/catalog.json  "
+        clean_url = "https://padded.example.com/catalog.json"
+
+        add_result = self._invoke(
+            [
+                "integration",
+                "catalog",
+                "add",
+                padded_url,
+                "--name",
+                "padded",
+            ],
+            project,
+        )
+        assert add_result.exit_code == 0, add_result.output
+        assert clean_url in add_result.output
+        assert padded_url not in add_result.output
+
+        cfg_path = project / ".specify" / "integration-catalogs.yml"
+        import yaml as _yaml
+        data = _yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        urls = [c["url"] for c in data["catalogs"]]
+        assert clean_url in urls
+        assert padded_url not in urls
+
+    def test_catalog_add_rejects_invalid_url(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        result = self._invoke(
+            [
+                "integration",
+                "catalog",
+                "add",
+                "http://insecure.example.com/catalog.json",
+            ],
+            project,
+        )
+        assert result.exit_code == 1
+        assert "HTTPS" in result.output
+
+    def test_catalog_add_rejects_duplicate(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        url = "https://dup.example.com/catalog.json"
+        first = self._invoke(
+            ["integration", "catalog", "add", url], project
+        )
+        assert first.exit_code == 0, first.output
+        second = self._invoke(
+            ["integration", "catalog", "add", url], project
+        )
+        assert second.exit_code == 1
+        assert "already configured" in second.output
+
+    def test_catalog_remove_out_of_range(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        # Need a config file for remove to attempt an index lookup
+        self._invoke(
+            [
+                "integration",
+                "catalog",
+                "add",
+                "https://only.example.com/catalog.json",
+            ],
+            project,
+        )
+        result = self._invoke(
+            ["integration", "catalog", "remove", "9"], project
+        )
+        assert result.exit_code == 1
+        assert "out of range" in result.output
+
+    def test_catalog_remove_without_config(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        result = self._invoke(
+            ["integration", "catalog", "remove", "0"], project
+        )
+        assert result.exit_code == 1
+        assert "No catalog config" in result.output
+
+    def test_catalog_remove_final_entry_restores_defaults(
+        self, tmp_path, monkeypatch
+    ):
+        """End-to-end: add → remove-last-entry → list should not error.
+
+        Regression for the flow where a user adds a catalog, removes it, then
+        runs any follow-up integration command. Without the fix the config
+        file would be left as `catalogs: []` and every subsequent
+        `integration` call would fail with "contains no 'catalogs' entries".
+        """
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+
+        add = self._invoke(
+            [
+                "integration",
+                "catalog",
+                "add",
+                "https://only.example.com/catalog.json",
+                "--name",
+                "only",
+            ],
+            project,
+        )
+        assert add.exit_code == 0, add.output
+
+        remove = self._invoke(
+            ["integration", "catalog", "remove", "0"], project
+        )
+        assert remove.exit_code == 0, remove.output
+        assert "'only' removed" in remove.output
+
+        cfg_path = project / ".specify" / "integration-catalogs.yml"
+        assert not cfg_path.exists(), (
+            "config file should be deleted when the final catalog is removed"
+        )
+
+        # Follow-up command must succeed and show the built-in defaults,
+        # not error out on "contains no 'catalogs' entries".
+        listing = self._invoke(["integration", "catalog", "list"], project)
+        assert listing.exit_code == 0, listing.output
+        assert "default" in listing.output
+        assert "community" in listing.output

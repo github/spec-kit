@@ -962,29 +962,40 @@ class ExtensionManager:
 
         return written
 
-    def _unregister_extension_skills(self, skill_names: List[str], extension_id: str) -> None:
+    def _unregister_extension_skills(
+        self,
+        skill_names: List[str],
+        extension_id: str,
+        skills_dir: Optional[Path] = None,
+    ) -> None:
         """Remove SKILL.md directories for extension skills.
 
         Called during extension removal to clean up skill files that
         were created by ``_register_extension_skills()``.
 
-        If ``_get_skills_dir()`` returns ``None`` (e.g. the user removed
-        init-options.json or toggled ai_skills after installation), we
-        fall back to scanning all known agent skills directories so that
-        orphaned skill directories are still cleaned up.  In that case
-        each candidate directory is verified against the SKILL.md
-        ``metadata.source`` field before removal to avoid accidentally
-        deleting user-created skills with the same name.
+        If *skills_dir* is not provided and ``_get_skills_dir()`` returns
+        ``None`` (e.g. the user removed init-options.json or toggled
+        ai_skills after installation), we fall back to scanning all known
+        agent skills directories so that orphaned skill directories are
+        still cleaned up.  In that case each candidate directory is
+        verified against the SKILL.md ``metadata.source`` field before
+        removal to avoid accidentally deleting user-created skills with
+        the same name.
 
         Args:
             skill_names: List of skill names to remove.
             extension_id: Extension ID used to verify ownership during
                 fallback candidate scanning.
+            skills_dir: Optional explicit skills directory to use instead
+                of resolving via ``_get_skills_dir()``.  Useful when the
+                caller needs to target a specific agent's skills directory
+                regardless of the currently-active agent in init-options.
         """
         if not skill_names:
             return
 
-        skills_dir = self._get_skills_dir()
+        if skills_dir is None:
+            skills_dir = self._get_skills_dir()
 
         if skills_dir:
             # Fast path: we know the exact skills directory
@@ -1108,7 +1119,7 @@ class ExtensionManager:
                 raise CompatibilityError(
                     f"Extension requires spec-kit {required}, "
                     f"but {speckit_version} is installed.\n"
-                    f"Upgrade spec-kit with: uv tool install specify-cli --force"
+                    f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
                 )
         except InvalidSpecifier:
             raise CompatibilityError(f"Invalid version specifier: {required}")
@@ -1332,6 +1343,156 @@ class ExtensionManager:
 
         return True
 
+    @staticmethod
+    def _valid_name_list(value: Any) -> List[str]:
+        """Return string entries from a registry list, ignoring corrupt values."""
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, str)]
+
+    def unregister_agent_artifacts(self, agent_name: str) -> None:
+        """Remove extension files registered for a specific agent.
+
+        Extension command files are tracked per agent in ``registered_commands``.
+        Extension skills are scoped to the provided *agent_name*; they are removed
+        from that agent's skills directory (resolved via its integration config)
+        and the registry field is cleared.
+
+        Skips cleanup when *agent_name* is not a supported agent to avoid
+        losing registry entries while leaving orphaned files on disk.
+        """
+        if not agent_name:
+            return
+
+        registrar = CommandRegistrar()
+        if agent_name not in registrar.AGENT_CONFIGS:
+            return
+
+        # Resolve the skills directory for the specific agent so cleanup is
+        # agent-scoped and does not depend on the currently-active agent in
+        # init-options.  Use the same helper that extension install uses.
+        from . import _get_skills_dir as resolve_skills_dir
+
+        agent_skills_dir = resolve_skills_dir(self.project_root, agent_name)
+
+        for ext_id, metadata in self.registry.list().items():
+            updates: Dict[str, Any] = {}
+
+            registered_commands = metadata.get("registered_commands", {})
+            if isinstance(registered_commands, dict) and agent_name in registered_commands:
+                command_names = self._valid_name_list(registered_commands.get(agent_name))
+                if command_names:
+                    registrar.unregister_commands({agent_name: command_names}, self.project_root)
+
+                new_registered = copy.deepcopy(registered_commands)
+                new_registered.pop(agent_name, None)
+                updates["registered_commands"] = new_registered
+
+            registered_skills = self._valid_name_list(metadata.get("registered_skills", []))
+            if registered_skills:
+                # Only pass the resolved skills_dir when it actually exists.
+                # Otherwise let _unregister_extension_skills fall back to
+                # scanning all known agent skills directories, which is useful
+                # for cleaning up stale entries created by earlier installs.
+                skills_dir = agent_skills_dir if agent_skills_dir.is_dir() else None
+                self._unregister_extension_skills(
+                    registered_skills, ext_id, skills_dir=skills_dir
+                )
+
+                # Only reconcile registry state when cleanup was scoped to a
+                # specific existing directory. When skills_dir is None,
+                # _unregister_extension_skills falls back to scanning multiple
+                # candidate directories, so agent_skills_dir cannot be used to
+                # infer what was removed.  When skills_dir is set,
+                # _unregister_extension_skills may intentionally skip deletion
+                # when ownership cannot be verified (e.g., corrupted/missing
+                # SKILL.md or mismatching metadata.source).  Only drop registry
+                # entries for skill directories that were actually removed so
+                # future cleanup attempts can still find skipped ones.
+                if skills_dir is not None:
+                    remaining_skills = [
+                        skill_name
+                        for skill_name in registered_skills
+                        if (skills_dir / skill_name).is_dir()
+                    ]
+                    if remaining_skills != registered_skills:
+                        updates["registered_skills"] = remaining_skills
+
+            if updates:
+                self.registry.update(ext_id, updates)
+
+    def register_enabled_extensions_for_agent(self, agent_name: str) -> None:
+        """Register installed, enabled extensions for ``agent_name``.
+
+        This is intended to be called after switching integrations. Command
+        registration is scoped to the explicit ``agent_name`` argument, but some
+        behavior still depends on the current init-options state (for example,
+        skills-mode handling uses the active ``ai`` / ``ai_skills`` settings).
+
+        Callers should therefore pass the agent that has just been made active
+        in init-options; in normal use, ``agent_name`` is expected to match the
+        current ``ai`` value. This mirrors extension install behavior while
+        avoiding stale default-mode command directories when that active agent
+        is running in skills mode (notably Copilot ``--skills``).
+        """
+        if not agent_name:
+            return
+
+        from . import load_init_options
+
+        registrar = CommandRegistrar()
+        agent_config = registrar.AGENT_CONFIGS.get(agent_name)
+        init_options = load_init_options(self.project_root)
+        if not isinstance(init_options, dict):
+            init_options = {}
+
+        active_agent = init_options.get("ai")
+        skills_mode_active = (
+            active_agent == agent_name
+            and bool(init_options.get("ai_skills"))
+            and bool(agent_config)
+            and agent_config.get("extension") != "/SKILL.md"
+        )
+
+        for ext_id, metadata in self.registry.list().items():
+            if not metadata.get("enabled", True):
+                continue
+
+            manifest = self.get_extension(ext_id)
+            if manifest is None:
+                continue
+
+            ext_dir = self.extensions_dir / ext_id
+            updates: Dict[str, Any] = {}
+
+            if agent_config and not skills_mode_active:
+                registered = registrar.register_commands_for_agent(
+                    agent_name, manifest, ext_dir, self.project_root
+                )
+                registered_commands = metadata.get("registered_commands", {})
+                if not isinstance(registered_commands, dict):
+                    registered_commands = {}
+                new_registered = copy.deepcopy(registered_commands)
+                if registered:
+                    new_registered[agent_name] = registered
+                else:
+                    # Registration returned empty list (e.g., corrupted
+                    # manifest pointing at missing command files).  Clear
+                    # stale entry so later cleanup doesn't try to remove
+                    # files that were never written.
+                    new_registered.pop(agent_name, None)
+                if new_registered != registered_commands:
+                    updates["registered_commands"] = new_registered
+
+            registered_skills = self._register_extension_skills(manifest, ext_dir)
+            if registered_skills:
+                existing_skills = self._valid_name_list(metadata.get("registered_skills", []))
+                merged_skills = list(dict.fromkeys(existing_skills + registered_skills))
+                updates["registered_skills"] = merged_skills
+
+            if updates:
+                self.registry.update(ext_id, updates)
+
     def list_installed(self) -> List[Dict[str, Any]]:
         """List all installed extensions with metadata.
 
@@ -1546,20 +1707,20 @@ class ExtensionCatalog:
             raise ValidationError("Catalog URL must be a valid URL with a host.")
 
     def _make_request(self, url: str):
-        """Build a urllib Request, adding a GitHub auth header when available.
+        """Build a urllib Request, adding auth headers when a provider matches.
 
-        Delegates to :func:`specify_cli._github_http.build_github_request`.
+        Delegates to :func:`specify_cli.authentication.http.build_request`.
         """
-        from specify_cli._github_http import build_github_request
-        return build_github_request(url)
+        from specify_cli.authentication.http import build_request
+        return build_request(url)
 
     def _open_url(self, url: str, timeout: int = 10):
-        """Open a URL with GitHub auth, stripping the header on cross-host redirects.
+        """Open a URL with provider-based auth, trying each configured provider.
 
-        Delegates to :func:`specify_cli._github_http.open_github_url`.
+        Delegates to :func:`specify_cli.authentication.http.open_url`.
         """
-        from specify_cli._github_http import open_github_url
-        return open_github_url(url, timeout)
+        from specify_cli.authentication.http import open_url
+        return open_url(url, timeout)
 
     def _load_catalog_config(self, config_path: Path) -> Optional[List[CatalogEntry]]:
         """Load catalog stack configuration from a YAML file.

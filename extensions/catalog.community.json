@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-28T00:00:00Z",
+  "updated_at": "2026-05-07T05:51:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -68,6 +68,38 @@
       "created_at": "2026-03-31T00:00:00Z",
       "updated_at": "2026-03-31T00:00:00Z"
     },
+    "agent-orchestrator": {
+      "name": "Intelligent Agent Orchestrator",
+      "id": "agent-orchestrator",
+      "description": "Cross-catalog agent discovery and intelligent prompt-to-command routing",
+      "author": "pragya247",
+      "version": "0.1.0",
+      "download_url": "https://github.com/pragya247/spec-kit-orchestrator/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/pragya247/spec-kit-orchestrator",
+      "homepage": "https://github.com/pragya247/spec-kit-orchestrator",
+      "documentation": "https://github.com/pragya247/spec-kit-orchestrator/blob/main/README.md",
+      "changelog": "https://github.com/pragya247/spec-kit-orchestrator/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.1"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "orchestrator",
+        "routing",
+        "discovery",
+        "agent",
+        "ai"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-04T00:00:00Z",
+      "updated_at": "2026-05-04T00:00:00Z"
+    },
     "architect-preview": {
       "name": "Architect Impact Previewer",
       "id": "architect-preview",
@@ -99,6 +131,39 @@
       "stars": 0,
       "created_at": "2026-04-14T00:00:00Z",
       "updated_at": "2026-04-14T00:00:00Z"
+    },
+    "architecture-guard": {
+      "name": "Architecture Guard",
+      "id": "architecture-guard",
+      "description": "Continuous architecture governance for AI-assisted development. Reviews specs, plans, and code for architecture drift, producing structured refactor tasks and evolution proposals.",
+      "author": "DyanGalih",
+      "version": "1.6.7",
+      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.6.7.zip",
+      "repository": "https://github.com/DyanGalih/spec-kit-architecture-guard",
+      "homepage": "https://github.com/DyanGalih/spec-kit-architecture-guard",
+      "documentation": "https://github.com/DyanGalih/spec-kit-architecture-guard/blob/main/README.md",
+      "changelog": "https://github.com/DyanGalih/spec-kit-architecture-guard/releases",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 0
+      },
+      "tags": [
+        "architecture",
+        "governance",
+        "drift-detection",
+        "refactor",
+        "monolithic",
+        "microservices"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-05T07:26:00Z",
+      "updated_at": "2026-05-06T22:28:55Z"
     },
     "archive": {
       "name": "Archive Extension",
@@ -547,6 +612,38 @@
       "created_at": "2026-03-29T00:00:00Z",
       "updated_at": "2026-03-29T00:00:00Z"
     },
+    "cost": {
+      "name": "Cost Tracker",
+      "id": "cost",
+      "description": "Track real LLM dollar cost across SDD workflows — per-feature budgets, per-integration comparison, and finance-ready exports.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-cost/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-cost",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-cost",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-cost/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-cost/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 0
+      },
+      "tags": [
+        "cost",
+        "budget",
+        "tokens",
+        "visibility",
+        "finance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-03T00:00:00Z",
+      "updated_at": "2026-05-05T00:00:00Z"
+    },
     "diagram": {
       "name": "Spec Diagram",
       "id": "diagram",
@@ -776,6 +873,44 @@
       "stars": 0,
       "created_at": "2026-03-06T00:00:00Z",
       "updated_at": "2026-03-31T00:00:00Z"
+    },
+    "fx-to-dotnet": {
+      "name": ".NET Framework to Modern .NET Migration",
+      "id": "fx-to-dotnet",
+      "description": "Orchestrate end-to-end .NET Framework to modern .NET migration across 7 phases, with SDD lifecycle integration.",
+      "author": "RogerBestMsft",
+      "version": "0.8.0",
+      "download_url": "https://github.com/RogerBestMsft/spec-kit-FxToNet/releases/download/v0.8.0/fx-to-dotnet.zip",
+      "repository": "https://github.com/RogerBestMsft/spec-kit-FxToNet",
+      "homepage": "https://github.com/RogerBestMsft/spec-kit-FxToNet",
+      "documentation": "https://github.com/RogerBestMsft/spec-kit-FxToNet/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "Microsoft.GitHubCopilot.Modernization.Mcp",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 12,
+        "hooks": 5
+      },
+      "tags": [
+        "dotnet",
+        "migration",
+        "modernization",
+        "framework",
+        "aspnet",
+        "shared-artifact"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-06T00:00:00Z",
+      "updated_at": "2026-05-06T00:00:00Z"
     },
     "github-issues": {
       "name": "GitHub Issues Integration 1",
@@ -1278,20 +1413,20 @@
     "memory-md": {
       "name": "Memory MD",
       "id": "memory-md",
-      "description": "Repository-native durable memory for Spec Kit projects",
+      "description": "Spec Kit extension for repository-native Markdown memory that captures durable decisions, bugs, and project context",
       "author": "DyanGalih",
-      "version": "0.6.2",
-      "download_url": "https://github.com/DyanGalih/spec-kit-memory-hub/archive/refs/tags/v0.6.2.zip",
+      "version": "0.7.9",
+      "download_url": "https://github.com/DyanGalih/spec-kit-memory-hub/archive/refs/tags/v0.7.9.zip",
       "repository": "https://github.com/DyanGalih/spec-kit-memory-hub",
       "homepage": "https://github.com/DyanGalih/spec-kit-memory-hub",
       "documentation": "https://github.com/DyanGalih/spec-kit-memory-hub/blob/main/README.md",
-      "changelog": "https://github.com/DyanGalih/spec-kit-memory-hub/blob/main/docs/memory-workflow-v0.6.md",
+      "changelog": "https://github.com/DyanGalih/spec-kit-memory-hub/blob/main/CHANGELOG.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.6.0"
+        "speckit_version": ">=0.2.0"
       },
       "provides": {
-        "commands": 5,
+        "commands": 6,
         "hooks": 0
       },
       "tags": [
@@ -1299,13 +1434,14 @@
         "workflow",
         "docs",
         "copilot",
-        "markdown"
+        "markdown",
+        "ai-context"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-23T00:00:00Z",
-      "updated_at": "2026-04-23T00:00:00Z"
+      "updated_at": "2026-05-06T22:28:55Z"
     },
     "memorylint": {
       "name": "MemoryLint",
@@ -1338,6 +1474,56 @@
       "stars": 0,
       "created_at": "2026-04-09T00:00:00Z",
       "updated_at": "2026-04-16T13:10:26Z"
+    },
+    "multi-model-review": {
+      "name": "Multi-Model Review",
+      "id": "multi-model-review",
+      "description": "Cross-model Spec Kit handoffs for spec authoring, implementation routing, and review.",
+      "author": "formin",
+      "version": "0.1.0",
+      "download_url": "https://github.com/formin/multi-model-review/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/formin/multi-model-review",
+      "homepage": "https://github.com/formin/multi-model-review",
+      "documentation": "https://github.com/formin/multi-model-review/blob/main/README.md",
+      "changelog": "https://github.com/formin/multi-model-review/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "codex",
+            "required": false
+          },
+          {
+            "name": "gemini",
+            "required": false
+          },
+          {
+            "name": "claude",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "review",
+        "workflow",
+        "multi-model",
+        "spec-driven-development",
+        "code"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-04T02:51:52Z",
+      "updated_at": "2026-05-04T02:51:52Z"
     },
     "onboard": {
       "name": "Onboard",
@@ -1597,12 +1783,12 @@
       "id": "ralph",
       "description": "Autonomous implementation loop using AI agent CLI.",
       "author": "Rubiss",
-      "version": "1.0.1",
-      "download_url": "https://github.com/Rubiss/spec-kit-ralph/archive/refs/tags/v1.0.1.zip",
-      "repository": "https://github.com/Rubiss/spec-kit-ralph",
-      "homepage": "https://github.com/Rubiss/spec-kit-ralph",
-      "documentation": "https://github.com/Rubiss/spec-kit-ralph/blob/main/README.md",
-      "changelog": "https://github.com/Rubiss/spec-kit-ralph/blob/main/CHANGELOG.md",
+      "version": "1.0.2",
+      "download_url": "https://github.com/Rubiss-Projects/spec-kit-ralph/archive/refs/tags/v1.0.2.zip",
+      "repository": "https://github.com/Rubiss-Projects/spec-kit-ralph",
+      "homepage": "https://github.com/Rubiss-Projects/spec-kit-ralph",
+      "documentation": "https://github.com/Rubiss-Projects/spec-kit-ralph/blob/main/README.md",
+      "changelog": "https://github.com/Rubiss-Projects/spec-kit-ralph/blob/main/CHANGELOG.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.1.0",
@@ -1631,7 +1817,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-09T00:00:00Z",
-      "updated_at": "2026-04-12T19:00:00Z"
+      "updated_at": "2026-05-04T17:02:08Z"
     },
     "reconcile": {
       "name": "Reconcile Extension",
@@ -1929,10 +2115,10 @@
     "security-review": {
       "name": "Security Review",
       "id": "security-review",
-      "description": "Comprehensive security audit of codebases using AI-powered DevSecOps analysis",
+      "description": "Full-project secure-by-design security audits plus staged, branch/PR, plan, task, follow-up, and apply reviews",
       "author": "DyanGalih",
-      "version": "1.1.1",
-      "download_url": "https://github.com/DyanGalih/spec-kit-security-review/archive/refs/tags/v1.1.1.zip",
+      "version": "1.4.5",
+      "download_url": "https://github.com/DyanGalih/spec-kit-security-review/archive/refs/tags/v1.4.5.zip",
       "repository": "https://github.com/DyanGalih/spec-kit-security-review",
       "homepage": "https://github.com/DyanGalih/spec-kit-security-review",
       "documentation": "https://github.com/DyanGalih/spec-kit-security-review/blob/main/README.md",
@@ -1942,7 +2128,7 @@
         "speckit_version": ">=0.1.0"
       },
       "provides": {
-        "commands": 3,
+        "commands": 7,
         "hooks": 0
       },
       "tags": [
@@ -1956,7 +2142,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-03T03:24:03Z",
-      "updated_at": "2026-04-03T04:15:00Z"
+      "updated_at": "2026-05-06T22:28:55Z"
     },
     "sf": {
       "name": "SFSpeckit — Salesforce Spec-Driven Development",
@@ -2095,6 +2281,38 @@
       "created_at": "2026-04-20T00:00:00Z",
       "updated_at": "2026-04-21T00:00:00Z"
     },
+    "spec2cloud": {
+      "name": "Spec2Cloud",
+      "id": "spec2cloud",
+      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
+      "author": "Azure Samples",
+      "version": "1.1.0",
+      "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/download/spec-kit-spec2cloud-v1.1.0/extension.zip",
+      "repository": "https://github.com/Azure-Samples/Spec2Cloud",
+      "homepage": "https://aka.ms/spec2cloud",
+      "documentation": "https://github.com/Azure-Samples/Spec2Cloud/blob/main/spec-kit/README.md",
+      "changelog": "https://github.com/Azure-Samples/Spec2Cloud/blob/main/spec-kit/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "spec2cloud",
+        "azure",
+        "cloud",
+        "deploy",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-30T00:00:00Z",
+      "updated_at": "2026-04-30T00:00:00Z"
+    },
     "speckit-utils": {
       "name": "SDD Utilities",
       "id": "speckit-utils",
@@ -2159,6 +2377,45 @@
       "stars": 0,
       "created_at": "2026-04-10T16:00:00Z",
       "updated_at": "2026-04-10T16:00:00Z"
+    },
+    "squad": {
+      "name": "Squad Bridge",
+      "id": "squad",
+      "description": "Bootstrap and synchronize a Squad agent team from your Spec Kit spec and tasks.",
+      "author": "jwill824",
+      "version": "1.1.0",
+      "download_url": "https://github.com/jwill824/spec-kit-squad/archive/refs/tags/v1.1.0.zip",
+      "repository": "https://github.com/jwill824/spec-kit-squad",
+      "homepage": "https://github.com/jwill824/spec-kit-squad",
+      "documentation": "https://github.com/jwill824/spec-kit-squad/blob/main/README.md",
+      "changelog": "https://github.com/jwill824/spec-kit-squad/blob/main/docs/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "@bradygaster/squad-cli",
+            "version": ">=0.1.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 2
+      },
+      "tags": [
+        "multi-agent",
+        "agents",
+        "orchestration",
+        "process",
+        "integration"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-29T00:00:00Z",
+      "updated_at": "2026-04-29T00:00:00Z"
     },
     "staff-review": {
       "name": "Staff Review Extension",
@@ -2392,13 +2649,76 @@
       "created_at": "2026-04-10T00:00:00Z",
       "updated_at": "2026-04-10T00:00:00Z"
     },
+    "threatmodel": {
+      "name": "OWASP LLM Threat Model",
+      "id": "threatmodel",
+      "description": "OWASP Top 10 for LLM Applications 2025 threat analysis on agent artifacts",
+      "author": "NaviaSamal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/NaviaSamal/spec-kit-threatmodel/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/NaviaSamal/spec-kit-threatmodel",
+      "homepage": "https://github.com/NaviaSamal/spec-kit-threatmodel",
+      "documentation": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/README.md",
+      "changelog": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "security",
+        "owasp",
+        "threat-model",
+        "llm",
+        "analysis"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-25T00:00:00Z",
+      "updated_at": "2026-04-25T00:00:00Z"
+    },
+    "token-analyzer": {
+      "name": "Token Consumption Analyzer",
+      "id": "token-analyzer",
+      "description": "Captures, analyzes, and compares token consumption across SDD workflows",
+      "author": "Chris Roberts | coderandhiker",
+      "version": "0.1.0",
+      "download_url": "https://github.com/coderandhiker/spec-kit-token-analyzer/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/coderandhiker/spec-kit-token-analyzer",
+      "homepage": "https://github.com/coderandhiker/spec-kit-token-analyzer",
+      "documentation": "https://github.com/coderandhiker/spec-kit-token-analyzer/blob/main/README.md",
+      "changelog": "https://github.com/coderandhiker/spec-kit-token-analyzer/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 4
+      },
+      "tags": [
+        "tokens",
+        "measurement",
+        "optimization",
+        "analysis"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-01T00:00:00Z",
+      "updated_at": "2026-05-01T00:00:00Z"
+    },
     "v-model": {
       "name": "V-Model Extension Pack",
       "id": "v-model",
       "description": "Enforces V-Model paired generation of development specs and test specs with full traceability.",
       "author": "leocamello",
-      "version": "0.5.0",
-      "download_url": "https://github.com/leocamello/spec-kit-v-model/archive/refs/tags/v0.5.0.zip",
+      "version": "0.6.0",
+      "download_url": "https://github.com/leocamello/spec-kit-v-model/archive/refs/tags/v0.6.0.zip",
       "repository": "https://github.com/leocamello/spec-kit-v-model",
       "homepage": "https://github.com/leocamello/spec-kit-v-model",
       "documentation": "https://github.com/leocamello/spec-kit-v-model/blob/main/README.md",
@@ -2420,9 +2740,9 @@
       ],
       "verified": false,
       "downloads": 0,
-      "stars": 0,
+      "stars": 21,
       "created_at": "2026-02-20T00:00:00Z",
-      "updated_at": "2026-04-06T00:00:00Z"
+      "updated_at": "2026-04-25T00:00:00Z"
     },
     "verify": {
       "name": "Verify Extension",
@@ -2580,6 +2900,50 @@
       "stars": 0,
       "created_at": "2026-04-22T00:00:00Z",
       "updated_at": "2026-04-22T00:00:00Z"
+    },
+    "workiq": {
+      "name": "Work IQ",
+      "id": "workiq",
+      "description": "Integrate Microsoft 365 organizational knowledge into spec-driven development workflows",
+      "author": "sakitA",
+      "version": "1.0.0",
+      "download_url": "https://github.com/sakitA/spec-kit-workiq/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/sakitA/spec-kit-workiq",
+      "homepage": "https://github.com/sakitA/spec-kit-workiq",
+      "documentation": "https://github.com/sakitA/spec-kit-workiq/blob/main/README.md",
+      "changelog": "https://github.com/sakitA/spec-kit-workiq/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "workiq",
+            "version": ">=1.0.0",
+            "required": true
+          },
+          {
+            "name": "node",
+            "version": ">=18.0.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 2
+      },
+      "tags": [
+        "microsoft-365",
+        "work-iq",
+        "context",
+        "integration",
+        "productivity"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-29T00:00:00Z",
+      "updated_at": "2026-04-29T00:00:00Z"
     },
     "worktree": {
       "name": "Worktree Isolation",

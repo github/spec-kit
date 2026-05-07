@@ -2,6 +2,96 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.7] - 2026-05-07
+
+### Changed
+
+- feat: add agent-orchestrator to community extension catalog (#2236)
+- chore: update extension versions in community catalog (#2468)
+- fix(goose): Declare args parameter in generated recipes (#2402)
+- feat: Add lingma support (#2348)
+- docs: Add uv installation guide and inline callouts (#2465)
+- Add fx-to-dotnet to community extension catalog (#2471)
+- fix: default non-interactive init to copilot integration (#2414)
+- fix(forge): use hyphen notation for command refs in Forge integration (#2462)
+- feat(catalog): add Cost Tracker (cost) community extension (#2448)
+- chore: release 0.8.6, begin 0.8.7.dev0 development (#2463)
+
+## [0.8.6] - 2026-05-06
+
+### Changed
+
+- Load constitution context in `/speckit.implement` to enforce governance during implementation (#2460)
+- feat: improve catalog submission templates and CODEOWNERS (#2401)
+- fix: validate URL scheme in build_github_request (#2449)
+- Add Architecture Guard to community catalog (#2430)
+- Add multi-model-review extension to community catalog (#2446)
+- Update Ralph Loop to v1.0.2 (#2435)
+- Pin GitHub Actions by SHA (#2441)
+- fix(workflows): require project for catalog list (#2436)
+- Add agent-parity-governance to community catalog (#2382)
+- chore: release 0.8.5, begin 0.8.6.dev0 development (#2447)
+
+## [0.8.5] - 2026-05-04
+
+### Changed
+
+- feat(presets): add Spec2Cloud preset for Azure deployment workflow (#2413)
+- update security-review and memory-md extensions to latest versions (#2445)
+- fix: honor template overrides for tasks-template (#2278) (#2292)
+- Add token-analyzer to community catalog (#2433)
+- docs: add April 2026 newsletter (#2434)
+- feat: emit init-time notice for git extension default change (#2165) (#2432)
+- Update DyanGalih(Memory Hub and Security Review) community extensions (#2429)
+- Support controlled multi-install for safe AI agent integrations (#2389)
+- chore(integrations): clean up docs and project guard (#2428)
+- chore: release 0.8.4, begin 0.8.5.dev0 development (#2431)
+
+## [0.8.4] - 2026-05-01
+
+### Changed
+
+- fix(specify): correct self-referencing step number in validation flow (#2152)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action (#2425)
+- Add security-governance to community catalog (#2386)
+- Add cross-platform-governance to community catalog (#2384)
+- Add architecture-governance to community catalog (#2383)
+- Add a11y-governance to community catalog (#2381)
+- feat(extensions): add Spec2Cloud extension for Azure deployment workflow (#2412)
+- fix: migrate extension commands on integration switch (#2404)
+- feat: add Squad Bridge extension to community catalog (#2417)
+- chore: release 0.8.3, begin 0.8.4.dev0 development (#2418)
+
+## [0.8.3] - 2026-04-29
+
+### Changed
+
+- Add Work IQ extension to community catalog (#2415)
+- feat(integrations): add Devin for Terminal skills-based integration (#2364)
+- fix: include --from git+... in upgrade hint to avoid PyPI squat package (#2411)
+- fix: dispatch opencode commands via run (#2410)
+- feat: add catalog discovery CLI commands (#2360)
+- update security review extension catalog to v1.3.0 (#2374)
+- chore(catalog): bump v-model extension to v0.6.0 (#2399)
+- feat: add threatmodel extension to community catalog (#2369)
+- Add isaqb-architecture-governance to community catalog (#2385)
+- chore: release 0.8.2, begin 0.8.3.dev0 development (#2397)
+
+## [0.8.2] - 2026-04-28
+
+### Changed
+
+- Add MarkItDown Document Converter extension to community catalog (#2390)
+- feat: Speckit preset fiction book v1.7 - Support for RAG (Chroma DB) offline semantic search (#2367)
+- fix(extensions): use explicit UTF-8 encoding when reading manifest YAML (#2370)
+- catalog: add m365 community extension
+- docs: replace deprecated --ai flag with --integration in all documentation (#2359)
+- feat(extensions,presets): authenticate GitHub-hosted catalog and download requests with GITHUB_TOKEN/GH_TOKEN (#2331)
+- Update extensify to v1.1.0 in community catalog (#2337)
+- feat(init): deprecate --no-git flag, gate deprecations at v0.10.0 (#2357)
+- Add Spec Orchestrator extension to community catalog (#2350)
+- chore: release 0.8.1, begin 0.8.2.dev0 development (#2356)
+
 ## [0.8.1] - 2026-04-24
 
 ### Changed

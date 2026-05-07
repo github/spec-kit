@@ -87,8 +87,10 @@ class ForgeIntegration(MarkdownIntegration):
         "strip_frontmatter_keys": ["handoffs"],
         "inject_name": True,
         "format_name": format_forge_command_name,  # Custom name formatter
+        "invoke_separator": "-",
     }
     context_file = "AGENTS.md"
+    invoke_separator = "-"
 
     def setup(
         self,
@@ -133,6 +135,7 @@ class ForgeIntegration(MarkdownIntegration):
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
                 context_file=self.context_file or "",
+                invoke_separator=self.invoke_separator,
             )
 
             # FORGE-SPECIFIC: Ensure any remaining $ARGUMENTS placeholders are
