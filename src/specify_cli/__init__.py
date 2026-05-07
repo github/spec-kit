@@ -5483,11 +5483,19 @@ def workflow_step_add(
     import shutil
     import tempfile
 
-    # Download and validate in a temp directory first; only move to the final
-    # location on success so a transient failure can never corrupt or delete a
-    # pre-existing directory at step_dir.
-    tmp_path = Path(tempfile.mkdtemp(prefix="speckit_step_"))
-    _install_success = False
+    # Refuse if step_dir already exists (e.g. leftover from a previous failed/manual
+    # install that wasn't registered). The user should remove it before retrying.
+    if step_dir.exists():
+        console.print(
+            f"[red]Error:[/red] Step directory already exists at '{step_dir}'. "
+            f"Remove it manually or use: [cyan]specify workflow step remove {step_id}[/cyan]"
+        )
+        raise typer.Exit(1)
+
+    # Create steps_base_dir now so the staging temp dir is on the same filesystem,
+    # enabling a truly atomic os.rename() below.
+    steps_base_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = Path(tempfile.mkdtemp(prefix="speckit_step_tmp_", dir=steps_base_dir))
     try:
         try:
             step_yml_content = _safe_fetch(step_yml_url)
@@ -5518,20 +5526,16 @@ def workflow_step_add(
             )
             raise typer.Exit(1)
 
-        # Write validated files to temp location, then move atomically
+        # Write validated files to the staged temp location, then atomically rename
+        # into place. Both paths are under steps_base_dir (same filesystem), so
+        # os.rename() is atomic on POSIX and won't leave a partially-written
+        # directory at step_dir on failure.
         (tmp_path / "step.yml").write_bytes(step_yml_content)
         (tmp_path / "__init__.py").write_bytes(init_py_content)
-
-        steps_base_dir.mkdir(parents=True, exist_ok=True)
-        # Remove any pre-existing step_dir before the move; shutil.move would
-        # otherwise place tmp_path as a *subdirectory* of an existing target.
-        if step_dir.exists():
-            shutil.rmtree(step_dir)
-        shutil.move(str(tmp_path), str(step_dir))
-        _install_success = True  # set immediately after move succeeds
+        os.rename(tmp_path, step_dir)
     finally:
-        if not _install_success:
-            shutil.rmtree(tmp_path, ignore_errors=True)
+        # Clean up if the rename hasn't moved tmp_path yet (i.e. on any failure).
+        shutil.rmtree(tmp_path, ignore_errors=True)
 
     # Register in step registry
     registry = StepRegistry(project_root)
