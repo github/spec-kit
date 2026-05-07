@@ -34,7 +34,7 @@ Each entry in the `providers` array has the following fields:
 
 | Field | Required | Description |
 |---|---|---|
-| `hosts` | Yes | Array of hostnames this entry applies to.  Supports wildcards (e.g. `*.visualstudio.com`). |
+| `hosts` | Yes | Array of hostnames this entry applies to. Supports exact hostnames, or a leading `*.` wildcard for subdomains only (for example, `*.visualstudio.com`). `*.visualstudio.com` matches `foo.visualstudio.com`, but not `visualstudio.com`. Other glob patterns such as `*github.com` or `gith?b.com` are not supported. |
 | `provider` | Yes | Built-in provider key: `github` or `azure-devops`. |
 | `auth` | Yes | Auth scheme (see below). |
 | `token` | No | Token value (inline). Use `token_env` instead when possible. |
