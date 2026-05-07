@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-07T17:30:00Z",
+  "updated_at": "2026-05-07T20:05:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2121,8 +2121,8 @@
       "id": "schedule",
       "description": "Optimal multi-agent task scheduling via CP-SAT solver with DAG precedence, hallucination-aware caps, file-conflict avoidance, stochastic durations, replanning, and interactive HTML output",
       "author": "Julio César Franco Ardila",
-      "version": "0.6.1",
-      "download_url": "https://github.com/jfranc38/spec-kit-schedule/archive/refs/tags/v0.6.1.zip",
+      "version": "0.6.2",
+      "download_url": "https://github.com/jfranc38/spec-kit-schedule/archive/refs/tags/v0.6.2.zip",
       "repository": "https://github.com/jfranc38/spec-kit-schedule",
       "homepage": "https://github.com/jfranc38/spec-kit-schedule",
       "documentation": "https://github.com/jfranc38/spec-kit-schedule/blob/main/README.md",
@@ -2132,7 +2132,7 @@
         "speckit_version": ">=0.4.0"
       },
       "provides": {
-        "commands": 4,
+        "commands": 5,
         "hooks": 1
       },
       "tags": [
