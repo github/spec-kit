@@ -170,6 +170,15 @@ def safe_extract_tarball(
         error_class: If any member is unsafe or the archive cannot be read.
     """
     dest_resolved = dest_dir.resolve()
+    # Tar metadata member types to skip during validation — they carry no
+    # extractable payload and are generated automatically by many common
+    # archiving tools (e.g. PAX headers, GNU longname/longlink entries).
+    _TAR_METADATA_TYPES = (
+        tarfile.XHDTYPE,          # PAX extended header
+        tarfile.XGLTYPE,          # PAX global extended header
+        tarfile.SOLARIS_XHDTYPE,  # Solaris PAX extended header
+        *tarfile.GNU_TYPES,       # GNU longname / longlink / sparse
+    )
 
     try:
         with tarfile.open(archive_path, "r:gz") as tf:
@@ -195,13 +204,17 @@ def safe_extract_tarball(
                         f"Unsafe path in tar archive: {member.name} (potential path traversal)"
                     )
 
+                # Skip tar metadata members — they carry no extractable payload.
+                if member.type in _TAR_METADATA_TYPES:
+                    continue
+
                 # Reject symlinks and hard links.
                 if member.issym() or member.islnk():
                     raise error_class(
                         f"Symlinks are not allowed in archive: {member.name}"
                     )
 
-                # Only allow regular files and directories.
+                # Reject devices, FIFOs and other special file types.
                 if not (member.isreg() or member.isdir()):
                     raise error_class(
                         f"Non-regular file in archive: {member.name}"

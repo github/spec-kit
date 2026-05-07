@@ -1882,15 +1882,14 @@ class TestWorkflowAddArchive:
     def test_workflow_add_local_zip_flat(self, project_dir):
         """workflow add installs from a local ZIP with workflow.yml at root."""
         import zipfile
+        from unittest.mock import patch
         runner, app = self._runner_and_app()
 
         archive = project_dir / "workflow.zip"
         with zipfile.ZipFile(archive, "w") as zf:
             zf.writestr("workflow.yml", MINIMAL_WORKFLOW_YAML)
 
-        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
-            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
-        ):
+        with patch.object(Path, "cwd", return_value=project_dir):
             result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=False)
 
         assert result.exit_code == 0, result.output
@@ -1901,15 +1900,14 @@ class TestWorkflowAddArchive:
     def test_workflow_add_local_zip_nested(self, project_dir):
         """workflow add installs from a local ZIP with workflow.yml in a subdirectory."""
         import zipfile
+        from unittest.mock import patch
         runner, app = self._runner_and_app()
 
         archive = project_dir / "workflow.zip"
         with zipfile.ZipFile(archive, "w") as zf:
             zf.writestr("repo-1.0/workflow.yml", MINIMAL_WORKFLOW_YAML)
 
-        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
-            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
-        ):
+        with patch.object(Path, "cwd", return_value=project_dir):
             result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=False)
 
         assert result.exit_code == 0, result.output
@@ -1918,15 +1916,14 @@ class TestWorkflowAddArchive:
     def test_workflow_add_local_zip_missing_workflow_yml(self, project_dir):
         """workflow add exits with an error when the ZIP has no workflow.yml."""
         import zipfile
+        from unittest.mock import patch
         runner, app = self._runner_and_app()
 
         archive = project_dir / "empty.zip"
         with zipfile.ZipFile(archive, "w") as zf:
             zf.writestr("README.md", "nothing here")
 
-        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
-            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
-        ):
+        with patch.object(Path, "cwd", return_value=project_dir):
             result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=True)
 
         assert result.exit_code != 0
@@ -1937,6 +1934,7 @@ class TestWorkflowAddArchive:
     def test_workflow_add_local_tar_gz_flat(self, project_dir):
         """workflow add installs from a local .tar.gz with workflow.yml at root."""
         import tarfile, io
+        from unittest.mock import patch
         runner, app = self._runner_and_app()
 
         archive = project_dir / "workflow.tar.gz"
@@ -1946,9 +1944,7 @@ class TestWorkflowAddArchive:
             info.size = len(data)
             tf.addfile(info, io.BytesIO(data))
 
-        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
-            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
-        ):
+        with patch.object(Path, "cwd", return_value=project_dir):
             result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=False)
 
         assert result.exit_code == 0, result.output
@@ -1959,6 +1955,7 @@ class TestWorkflowAddArchive:
     def test_workflow_add_local_tar_gz_nested(self, project_dir):
         """workflow add installs from a local .tar.gz with workflow.yml in a subdirectory."""
         import tarfile, io
+        from unittest.mock import patch
         runner, app = self._runner_and_app()
 
         archive = project_dir / "workflow.tar.gz"
@@ -1968,9 +1965,7 @@ class TestWorkflowAddArchive:
             info.size = len(data)
             tf.addfile(info, io.BytesIO(data))
 
-        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
-            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
-        ):
+        with patch.object(Path, "cwd", return_value=project_dir):
             result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=False)
 
         assert result.exit_code == 0, result.output
@@ -1979,6 +1974,7 @@ class TestWorkflowAddArchive:
     def test_workflow_add_local_tgz_flat(self, project_dir):
         """workflow add recognises the .tgz extension as a gzipped tarball."""
         import tarfile, io
+        from unittest.mock import patch
         runner, app = self._runner_and_app()
 
         archive = project_dir / "workflow.tgz"
@@ -1988,9 +1984,7 @@ class TestWorkflowAddArchive:
             info.size = len(data)
             tf.addfile(info, io.BytesIO(data))
 
-        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
-            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
-        ):
+        with patch.object(Path, "cwd", return_value=project_dir):
             result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=False)
 
         assert result.exit_code == 0, result.output
@@ -1999,6 +1993,7 @@ class TestWorkflowAddArchive:
     def test_workflow_add_local_tar_gz_missing_workflow_yml(self, project_dir):
         """workflow add exits with an error when the .tar.gz has no workflow.yml."""
         import tarfile, io
+        from unittest.mock import patch
         runner, app = self._runner_and_app()
 
         archive = project_dir / "empty.tar.gz"
@@ -2008,9 +2003,7 @@ class TestWorkflowAddArchive:
             info.size = len(data)
             tf.addfile(info, io.BytesIO(data))
 
-        with __import__("unittest.mock", fromlist=["patch"]).patch.object(
-            __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
-        ):
+        with patch.object(Path, "cwd", return_value=project_dir):
             result = runner.invoke(app, ["workflow", "add", str(archive)], catch_exceptions=True)
 
         assert result.exit_code != 0
@@ -2041,9 +2034,7 @@ class TestWorkflowAddArchive:
         mock_resp.__exit__ = MagicMock(return_value=False)
 
         with patch("urllib.request.urlopen", return_value=mock_resp), \
-             patch.object(
-                 __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
-             ):
+             patch.object(Path, "cwd", return_value=project_dir):
             result = runner.invoke(
                 app, ["workflow", "add", "https://example.com/workflow.tar.gz"],
                 catch_exceptions=False,
@@ -2071,9 +2062,7 @@ class TestWorkflowAddArchive:
         mock_resp.__exit__ = MagicMock(return_value=False)
 
         with patch("urllib.request.urlopen", return_value=mock_resp), \
-             patch.object(
-                 __import__("pathlib", fromlist=["Path"]).Path, "cwd", return_value=project_dir
-             ):
+             patch.object(Path, "cwd", return_value=project_dir):
             result = runner.invoke(
                 app, ["workflow", "add", "https://example.com/workflow.zip"],
                 catch_exceptions=False,
