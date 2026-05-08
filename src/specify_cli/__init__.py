@@ -5933,6 +5933,11 @@ def workflow_step_list():
         )
 
 
+# IDs that map to internal names used under .specify/workflows/steps/ and must
+# not be used as custom step IDs (dotfile check is done separately at runtime).
+_RESERVED_STEP_IDS: frozenset[str] = frozenset({".cache", "step-registry.json"})
+
+
 @workflow_step_app.command("add")
 def workflow_step_add(
     step_id: str = typer.Argument(..., help="Step type ID from catalog"),
@@ -6033,7 +6038,6 @@ def workflow_step_add(
     # Reject IDs that collide with internal names used under steps_base_dir
     # (dotfiles, the cache dir, and the registry filename) to prevent
     # corrupting caching or registry persistence.
-    _RESERVED_STEP_IDS = {".cache", "step-registry.json"}
     if step_id.startswith(".") or step_id in _RESERVED_STEP_IDS:
         console.print(
             f"[red]Error:[/red] '{step_id}' is a reserved name and cannot be used as a step ID"

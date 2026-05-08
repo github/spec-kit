@@ -81,6 +81,8 @@ def load_custom_steps(project_root: Path) -> list[str]:
     Silently skips packages that fail to import or validate.
     """
     import importlib.util as _importlib_util
+    import re as _re
+    import sys as _sys
 
     steps_dir = Path(project_root) / ".specify" / "workflows" / "steps"
     if not steps_dir.is_dir():
@@ -107,9 +109,6 @@ def load_custom_steps(project_root: Path) -> list[str]:
             # Skip if already registered (e.g. built-in or previously loaded)
             if type_key in STEP_REGISTRY:
                 continue
-
-            import re as _re
-            import sys as _sys
 
             # Sanitize type_key so the synthetic module name is a valid identifier
             # (e.g. "test-custom" → "_speckit_custom_step_test_custom").
