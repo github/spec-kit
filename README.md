@@ -131,7 +131,11 @@ Launch your coding agent in the project directory. Most agents expose spec-kit a
 Use the **`/speckit.constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
 
 ```bash
-/speckit.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements
+/speckit.constitution
+
+Create principles focused on code quality,
+testing standards, user experience consistency,
+and performance requirements.
 ```
 
 ### 3. Create the spec
@@ -139,7 +143,21 @@ Use the **`/speckit.constitution`** command to create your project's governing p
 Use the **`/speckit.specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
 ```bash
-/speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
+/speckit.specify
+
+Build an application that can help me
+organize my photos in separate
+photo albums.
+
+Albums are grouped by date and can be
+re-organized by dragging and dropping
+on the main page.
+
+Albums are never in other nested
+albums.
+
+Within each album, photos are
+previewed in a tile-like interface.
 ```
 
 ### 4. Create a technical implementation plan
@@ -147,7 +165,17 @@ Use the **`/speckit.specify`** command to describe what you want to build. Focus
 Use the **`/speckit.plan`** command to provide your tech stack and architecture choices.
 
 ```bash
-/speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+/speckit.plan
+
+The application uses Vite with
+minimal number of libraries.
+
+Use vanilla HTML, CSS, and
+JavaScript as much as possible.
+
+Images are not uploaded anywhere and
+metadata is stored in a local
+SQLite database.
 ```
 
 ### 5. Break down into tasks
