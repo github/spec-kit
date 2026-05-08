@@ -2513,9 +2513,12 @@ class HookExecutor:
         if not isinstance(config, dict):
             config = {}
 
-        # Ensure "installed" is a list (defensive)
+        # Ensure "installed" is a list of strings (defensive)
         if "installed" not in config or not isinstance(config["installed"], list):
             config["installed"] = []
+        else:
+            # Sanitize: keep only strings to prevent TypeError on sort
+            config["installed"] = [x for x in config["installed"] if isinstance(x, str)]
 
         if extension_id not in config["installed"]:
             config["installed"].append(extension_id)
@@ -2560,8 +2563,8 @@ class HookExecutor:
         if not isinstance(config, dict):
             config = {}
 
-        # Ensure hooks dict exists
-        if "hooks" not in config:
+        # Ensure hooks dict exists and is a mapping
+        if "hooks" not in config or not isinstance(config["hooks"], dict):
             config["hooks"] = {}
 
         # Register each hook
@@ -2610,14 +2613,21 @@ class HookExecutor:
 
         config = self.get_project_config()
 
+        if not isinstance(config, dict):
+            return
+
         if "hooks" not in config or not isinstance(config["hooks"], dict):
             return
 
         # Remove hooks for this extension
         for hook_name in list(config["hooks"].keys()):
+            hook_list = config["hooks"][hook_name]
+            if not isinstance(hook_list, list):
+                config["hooks"][hook_name] = []
+                continue
             config["hooks"][hook_name] = [
                 h
-                for h in config["hooks"][hook_name]
+                for h in hook_list
                 if isinstance(h, dict) and h.get("extension") != extension_id
             ]
 

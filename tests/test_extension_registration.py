@@ -255,3 +255,65 @@ class TestExtensionRegistration:
         assert len(config["hooks"]["after_tasks"]) == 1
         assert config["hooks"]["after_tasks"][0].get("extension") == "ext-2"
 
+    def test_register_hooks_no_hooks_still_registers(self, project_dir, tmp_path):
+        """Commands-only manifest: register_hooks() must still update installed even with no hooks."""
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "commands-only-ext",
+                "name": "Commands Only",
+                "version": "1.0.0",
+                "description": "No hooks, only commands",
+            },
+            "requires": {
+                "speckit_version": ">=0.1.0",
+                "commands": []
+            },
+            "provides": {"commands": [{"name": "speckit.commands-only-ext.run", "file": "commands/run.md"}]},
+        }
+        manifest_path = tmp_path / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(manifest)
+
+        config = executor.get_project_config()
+        assert "commands-only-ext" in config["installed"]
+
+    def test_register_extension_mixed_type_installed(self, project_dir):
+        """Regression: installed list with non-string entries must not crash on sort."""
+        executor = HookExecutor(project_dir)
+
+        # Manually write a corrupted installed list with non-string entries
+        config_path = project_dir / ".specify" / "extensions.yml"
+        config_path.write_text(yaml.dump({"installed": [1, True, "existing-ext"]}))
+
+        # Should not raise TypeError on sort
+        executor.register_extension("new-ext")
+
+        config = executor.get_project_config()
+        # Non-string entries are dropped; valid strings are preserved
+        assert "existing-ext" in config["installed"]
+        assert "new-ext" in config["installed"]
+        assert 1 not in config["installed"]
+        assert True not in config["installed"]
+
+    def test_unregister_hooks_null_hook_values(self, project_dir):
+        """Regression: hooks: {after_tasks: null} must not crash in unregister_hooks()."""
+        executor = HookExecutor(project_dir)
+
+        # Manually write a config with null hook event value
+        config_path = project_dir / ".specify" / "extensions.yml"
+        config_path.write_text(yaml.dump({
+            "installed": ["broken-ext"],
+            "hooks": {"after_tasks": None}
+        }))
+
+        # Should not raise TypeError when iterating None
+        executor.unregister_hooks("broken-ext")
+
+        config = executor.get_project_config()
+        assert "broken-ext" not in config["installed"]
+
