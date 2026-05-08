@@ -2556,6 +2556,10 @@ class HookExecutor:
 
         config = self.get_project_config()
 
+        # Ensure config is a dict (defensive)
+        if not isinstance(config, dict):
+            config = {}
+
         # Ensure hooks dict exists
         if "hooks" not in config:
             config["hooks"] = {}

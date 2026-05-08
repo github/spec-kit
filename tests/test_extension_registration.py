@@ -111,3 +111,147 @@ class TestExtensionRegistration:
         config = executor.get_project_config()
         assert "installed" in config
         assert config["installed"] == ["new-ext"]
+
+    def test_unregister_hooks_full_workflow(self, project_dir, tmp_path):
+        """Full Workflow: unregister_hooks should remove hooks and prune installed list."""
+        # Create a manifest with hooks
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "hook-ext",
+                "name": "Hook Ext",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {
+                "speckit_version": ">=0.1.0",
+                "commands": []
+            },
+            "provides": {"commands": []},
+            "hooks": {
+                "after_tasks": {"command": "speckit.hook-ext.run"}
+            }
+        }
+        manifest_path = tmp_path / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(manifest_data, f)
+        
+        manifest = ExtensionManifest(manifest_path)
+        executor = HookExecutor(project_dir)
+        
+        # Register hooks first
+        executor.register_hooks(manifest)
+        
+        config = executor.get_project_config()
+        assert "hook-ext" in config["installed"]
+        assert "after_tasks" in config["hooks"]
+        
+        # Now unregister hooks
+        executor.unregister_hooks("hook-ext")
+        
+        config = executor.get_project_config()
+        assert "hook-ext" not in config["installed"]
+        # Hook entry should be removed from hooks dict
+        if "after_tasks" in config["hooks"]:
+            assert len(config["hooks"]["after_tasks"]) == 0
+
+    def test_unregister_hooks_no_hooks_key(self, project_dir):
+        """Resilience: unregister_hooks should work even if config has no 'hooks' key."""
+        executor = HookExecutor(project_dir)
+        
+        # Register extension without hooks
+        executor.register_extension("ext-no-hooks")
+        
+        config = executor.get_project_config()
+        assert "ext-no-hooks" in config["installed"]
+        
+        # Unregister should not crash even if no hooks key exists
+        executor.unregister_hooks("ext-no-hooks")
+        
+        config = executor.get_project_config()
+        assert "ext-no-hooks" not in config["installed"]
+
+    def test_unregister_hooks_corrupted_config(self, project_dir):
+        """Resilience: unregister_hooks should gracefully handle corrupted config."""
+        # Create a corrupted config (root is a list)
+        config_path = project_dir / ".specify" / "extensions.yml"
+        config_path.write_text(yaml.dump(["corrupted", "list"]))
+        
+        executor = HookExecutor(project_dir)
+        
+        # Should not raise even with corrupted config
+        executor.unregister_hooks("non-existent")
+        
+        # Config should remain as-is or be handled gracefully
+        config = executor.get_project_config()
+        # If it's corrupted, it's returned as-is or handled by defensive logic
+        assert config is not None
+
+    def test_unregister_hooks_with_multiple_extensions(self, project_dir, tmp_path):
+        """Multiple Extensions: unregister_hooks should only remove target extension's hooks."""
+        # Create two manifests
+        manifest_data_1 = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-1",
+                "name": "Ext 1",
+                "version": "1.0.0",
+                "description": "Test 1",
+            },
+            "requires": {
+                "speckit_version": ">=0.1.0",
+                "commands": []
+            },
+            "provides": {"commands": []},
+            "hooks": {
+                "after_tasks": {"command": "speckit.ext-1.run"}
+            }
+        }
+        manifest_data_2 = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-2",
+                "name": "Ext 2",
+                "version": "1.0.0",
+                "description": "Test 2",
+            },
+            "requires": {
+                "speckit_version": ">=0.1.0",
+                "commands": []
+            },
+            "provides": {"commands": []},
+            "hooks": {
+                "after_tasks": {"command": "speckit.ext-2.run"}
+            }
+        }
+        
+        manifest_path_1 = tmp_path / "extension1.yml"
+        manifest_path_2 = tmp_path / "extension2.yml"
+        with open(manifest_path_1, "w") as f:
+            yaml.dump(manifest_data_1, f)
+        with open(manifest_path_2, "w") as f:
+            yaml.dump(manifest_data_2, f)
+        
+        manifest1 = ExtensionManifest(manifest_path_1)
+        manifest2 = ExtensionManifest(manifest_path_2)
+        executor = HookExecutor(project_dir)
+        
+        # Register both extensions
+        executor.register_hooks(manifest1)
+        executor.register_hooks(manifest2)
+        
+        config = executor.get_project_config()
+        assert "ext-1" in config["installed"]
+        assert "ext-2" in config["installed"]
+        assert len(config["hooks"]["after_tasks"]) == 2
+        
+        # Unregister first extension
+        executor.unregister_hooks("ext-1")
+        
+        config = executor.get_project_config()
+        assert "ext-1" not in config["installed"]
+        assert "ext-2" in config["installed"]
+        # ext-2's hook should still be there
+        assert len(config["hooks"]["after_tasks"]) == 1
+        assert config["hooks"]["after_tasks"][0].get("extension") == "ext-2"
+
