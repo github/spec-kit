@@ -1619,6 +1619,79 @@ inputs:
         resolved = engine._resolve_inputs(definition, {})
         assert resolved["integration"] == "auto"
 
+    def test_integration_auto_resolves_modern_normalized_state(self, project_dir):
+        """`integration: auto` must resolve modern state files that record
+        ``default_integration`` / ``installed_integrations`` and omit the
+        legacy ``integration`` field."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir(parents=True, exist_ok=True)
+        (specify_dir / "integration.json").write_text(
+            json.dumps(
+                {
+                    "version": "0.8.3",
+                    "integration_state_schema": 1,
+                    "default_integration": "claude",
+                    "installed_integrations": ["claude", "copilot"],
+                    "integration_settings": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "auto-modern"
+  name: "Auto Modern"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+""")
+        engine = WorkflowEngine(project_dir)
+        resolved = engine._resolve_inputs(definition, {})
+        assert resolved["integration"] == "claude"
+
+    def test_integration_auto_rejects_future_state_schema(self, project_dir):
+        """`integration: auto` must not silently use a state file written by a newer
+        CLI (``integration_state_schema`` greater than the current supported value);
+        the resolver falls back to the literal default rather than guessing."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.integration_state import INTEGRATION_STATE_SCHEMA
+
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir(parents=True, exist_ok=True)
+        (specify_dir / "integration.json").write_text(
+            json.dumps(
+                {
+                    "version": "99.0.0",
+                    "integration_state_schema": INTEGRATION_STATE_SCHEMA + 1,
+                    "default_integration": "claude",
+                    "installed_integrations": ["claude"],
+                    "integration_settings": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "auto-future-schema"
+  name: "Auto Future Schema"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+""")
+        engine = WorkflowEngine(project_dir)
+        resolved = engine._resolve_inputs(definition, {})
+        assert resolved["integration"] == "auto"
+
     def test_default_value_is_validated_against_enum(self, project_dir):
         """Defaults must run through the same coercion/enum check as provided inputs."""
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition

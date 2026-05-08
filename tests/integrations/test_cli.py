@@ -1191,6 +1191,30 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert "contains invalid JSON" in normalized_output
         assert "integration.json" in normalized_output
 
+    def test_search_rejects_non_utf8_integration_json_before_catalog_lookup(
+        self, tmp_path, monkeypatch
+    ):
+        """A non-UTF8 ``integration.json`` must surface a clear error and
+        avoid falling through to the catalog lookup, mirroring the malformed-JSON
+        case but for the ``UnicodeDecodeError`` branch in ``_read_integration_json``."""
+        project = self._make_project(tmp_path)
+        # 0xFF is invalid as the leading byte of any UTF-8 sequence, so
+        # ``Path.read_text(encoding="utf-8")`` raises ``UnicodeDecodeError``.
+        (project / ".specify" / "integration.json").write_bytes(b"\xff\xfe\x00\x00")
+
+        from specify_cli.integrations.catalog import IntegrationCatalog
+
+        def fail_search(self, **kwargs):
+            raise AssertionError("catalog search should not be called")
+
+        monkeypatch.setattr(IntegrationCatalog, "search", fail_search)
+
+        result = self._invoke(["integration", "search"], project)
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 1
+        assert "not valid UTF-8" in normalized_output
+        assert "integration.json" in normalized_output
+
     def test_search_filters_by_tag(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         self._patch_catalog(monkeypatch)

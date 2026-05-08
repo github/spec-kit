@@ -19,7 +19,12 @@ from typing import Any
 
 import yaml
 
-from ..integration_state import INTEGRATION_JSON
+from ..integration_state import (
+    INTEGRATION_JSON,
+    INTEGRATION_STATE_SCHEMA,
+    default_integration_key,
+    normalize_integration_state,
+)
 from .base import RunStatus, StepContext, StepResult, StepStatus
 
 
@@ -785,9 +790,14 @@ class WorkflowEngine:
         return default
 
     def _load_project_integration(self) -> str | None:
-        """Read the active integration key from ``.specify/integration.json``.
+        """Read the default integration key from ``.specify/integration.json``.
 
-        Returns None when the file is missing or malformed; callers are
+        Honors the same schema guard as ``_read_integration_json`` (rejects
+        files whose ``integration_state_schema`` is newer than this CLI
+        supports) and reads the canonical normalized state, so modern
+        installs that record ``default_integration`` / ``installed_integrations``
+        resolve correctly under ``integration: auto``. Returns None when the
+        file is missing, malformed, or written by a newer CLI; callers are
         expected to fall back to a literal default.
         """
         path = self.project_root / INTEGRATION_JSON
@@ -799,10 +809,14 @@ class WorkflowEngine:
             return None
         if not isinstance(data, dict):
             return None
-        value = data.get("integration")
-        if isinstance(value, str) and value:
-            return value
-        return None
+        schema = data.get("integration_state_schema")
+        if (
+            isinstance(schema, int)
+            and not isinstance(schema, bool)
+            and schema > INTEGRATION_STATE_SCHEMA
+        ):
+            return None
+        return default_integration_key(normalize_integration_state(data))
 
     @staticmethod
     def _coerce_input(
