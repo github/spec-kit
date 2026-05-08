@@ -6,7 +6,22 @@ Commands are deprecated; ``--skills`` defaults to ``True``.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+from typing import Any
+
 from ..base import IntegrationOption, SkillsIntegration
+from ..manifest import IntegrationManifest
+
+# Note injected into hook sections so Codex maps dot-notation command
+# names (from extensions.yml) to the hyphenated skill names it uses.
+# Without this, Codex emits ``/speckit.git.commit`` (which does not
+# resolve) instead of ``/speckit-git-commit``.
+_HOOK_COMMAND_NOTE = (
+    "- When constructing slash commands from hook command names, "
+    "replace dots (`.`) with hyphens (`-`). "
+    "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
+)
 
 
 class CodexIntegration(SkillsIntegration):
@@ -54,3 +69,64 @@ class CodexIntegration(SkillsIntegration):
                 help="Install as agent skills (default for Codex)",
             ),
         ]
+
+    @staticmethod
+    def _inject_hook_command_note(content: str) -> str:
+        """Insert a dot-to-hyphen note before each hook output instruction.
+
+        Targets the line ``- For each executable hook, output the following``
+        and inserts the note on the line before it, matching its indentation.
+        Skips if the note is already present.
+        """
+        if "replace dots" in content:
+            return content
+
+        def repl(m: re.Match[str]) -> str:
+            indent = m.group(1)
+            instruction = m.group(2)
+            eol = m.group(3)
+            return (
+                indent
+                + _HOOK_COMMAND_NOTE.rstrip("\n")
+                + eol
+                + indent
+                + instruction
+                + eol
+            )
+
+        return re.sub(
+            r"(?m)^(\s*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
+            repl,
+            content,
+        )
+
+    def post_process_skill_content(self, content: str) -> str:
+        """Inject the dot-to-hyphen hook command note."""
+        return self._inject_hook_command_note(content)
+
+    def setup(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        parsed_options: dict[str, Any] | None = None,
+        **opts: Any,
+    ) -> list[Path]:
+        """Install Codex skills, then inject the hook command note."""
+        created = super().setup(project_root, manifest, parsed_options, **opts)
+
+        skills_dir = self.skills_dest(project_root).resolve()
+        for path in created:
+            try:
+                path.resolve().relative_to(skills_dir)
+            except ValueError:
+                continue
+            if path.name != "SKILL.md":
+                continue
+
+            content = path.read_bytes().decode("utf-8")
+            updated = self.post_process_skill_content(content)
+            if updated != content:
+                path.write_bytes(updated.encode("utf-8"))
+                self.record_file_in_manifest(path, project_root, manifest)
+
+        return created
