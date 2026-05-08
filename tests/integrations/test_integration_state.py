@@ -99,6 +99,14 @@ class TestReadIntegrationState:
     def test_returns_none_when_file_missing(self, tmp_path):
         assert read_integration_state(tmp_path) is None
 
+    def test_raises_when_path_is_directory(self, tmp_path):
+        """integration.json exists as a directory — should raise, not silently return None."""
+        (tmp_path / ".specify").mkdir()
+        (tmp_path / ".specify" / "integration.json").mkdir()
+
+        with pytest.raises(IntegrationStateError, match="not a regular file"):
+            read_integration_state(tmp_path)
+
     def test_returns_normalized_state(self, tmp_path):
         data = {"integration": "claude", "version": "0.8.0"}
         (tmp_path / ".specify").mkdir()

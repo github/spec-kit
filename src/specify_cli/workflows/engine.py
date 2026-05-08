@@ -756,7 +756,8 @@ class WorkflowEngine:
                     value = self._resolve_default(name, value)
                 resolved[name] = self._coerce_input(name, value, input_def)
             elif "default" in input_def:
-                resolved[name] = self._resolve_default(name, input_def["default"])
+                default_value = self._resolve_default(name, input_def["default"])
+                resolved[name] = self._coerce_input(name, default_value, input_def)
             elif input_def.get("required", False):
                 msg = f"Required input {name!r} not provided."
                 raise ValueError(msg)

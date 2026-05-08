@@ -1751,6 +1751,62 @@ steps:
         resolved = engine._resolve_inputs(definition, {"integration": "auto"})
         assert resolved["integration"] == "claude"
 
+    def test_integration_auto_default_validates_against_enum(self, project_dir):
+        """Auto default resolving to an allowed value passes enum validation."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "claude"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "enum-default-test"
+  name: "Enum Default Test"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    enum: ["claude", "copilot"]
+    default: "auto"
+steps:
+  - id: echo
+    type: shell
+    run: "echo {{ inputs.integration }}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        resolved = engine._resolve_inputs(definition, {})
+        assert resolved["integration"] == "claude"
+
+    def test_integration_auto_default_rejects_value_not_in_enum(self, project_dir):
+        """Auto default resolving to a value outside the enum raises ValueError."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "enum-reject-test"
+  name: "Enum Reject Test"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    enum: ["copilot", "claude"]
+    default: "auto"
+steps:
+  - id: echo
+    type: shell
+    run: "echo {{ inputs.integration }}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        with pytest.raises(ValueError, match="not in allowed values"):
+            engine._resolve_inputs(definition, {})
+
     def test_workflow_level_integration_auto_resolves_in_context(self, project_dir):
         from specify_cli.workflows.engine import WorkflowEngine
 

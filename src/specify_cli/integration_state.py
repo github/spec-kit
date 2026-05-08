@@ -184,8 +184,12 @@ def read_integration_state(project_root: Path) -> dict[str, Any] | None:
     """
 
     path = project_root / INTEGRATION_JSON
-    if not path.is_file():
+    if not path.exists():
         return None
+    if not path.is_file():
+        raise IntegrationStateError(
+            f"{path} exists but is not a regular file."
+        )
 
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
