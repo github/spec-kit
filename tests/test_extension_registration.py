@@ -1,6 +1,5 @@
 import pytest
 import yaml
-from pathlib import Path
 from specify_cli.extensions import HookExecutor, ExtensionManifest
 
 @pytest.fixture

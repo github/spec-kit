@@ -2509,7 +2509,12 @@ class HookExecutor:
         """
         config = self.get_project_config()
 
-        if "installed" not in config:
+        # Ensure config is a dict (defensive)
+        if not isinstance(config, dict):
+            config = {}
+
+        # Ensure "installed" is a list (defensive)
+        if "installed" not in config or not isinstance(config["installed"], list):
             config["installed"] = []
 
         if extension_id not in config["installed"]:
@@ -2526,7 +2531,14 @@ class HookExecutor:
         """
         config = self.get_project_config()
 
-        if "installed" in config and extension_id in config["installed"]:
+        if not isinstance(config, dict):
+            return
+
+        if (
+            "installed" in config
+            and isinstance(config["installed"], list)
+            and extension_id in config["installed"]
+        ):
             config["installed"].remove(extension_id)
             self.save_project_config(config)
 
@@ -2589,17 +2601,20 @@ class HookExecutor:
         Args:
             extension_id: ID of extension to unregister
         """
+        # Always remove from installed list (Feedback from review)
+        self.unregister_extension(extension_id)
+
         config = self.get_project_config()
 
-        if "hooks" not in config:
+        if "hooks" not in config or not isinstance(config["hooks"], dict):
             return
 
         # Remove hooks for this extension
-        for hook_name in config["hooks"]:
+        for hook_name in list(config["hooks"].keys()):
             config["hooks"][hook_name] = [
                 h
                 for h in config["hooks"][hook_name]
-                if h.get("extension") != extension_id
+                if isinstance(h, dict) and h.get("extension") != extension_id
             ]
 
         # Clean up empty hook arrays
@@ -2608,9 +2623,6 @@ class HookExecutor:
         }
 
         self.save_project_config(config)
-
-        # Also remove from installed list
-        self.unregister_extension(extension_id)
 
     def get_hooks_for_event(self, event_name: str) -> List[Dict[str, Any]]:
         """Get all registered hooks for a specific event.
