@@ -21,3 +21,9 @@ def test_step_tracker_instantiable():
     tracker.add("step1", "Step One")
     tracker.complete("step1", "done")
     assert tracker.steps[0]["status"] == "done"
+
+
+def test_select_with_arrows_raises_on_empty_options():
+    import pytest
+    with pytest.raises(ValueError, match="at least one option"):
+        select_with_arrows({})

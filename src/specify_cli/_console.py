@@ -6,6 +6,9 @@ from other ``specify_cli`` sub-modules; all dependencies must flow *into* this
 layer, not out of it, to avoid circular imports.
 """
 from __future__ import annotations
+
+from collections.abc import Callable
+
 import readchar
 import typer
 from rich.align import Align
@@ -38,9 +41,9 @@ class StepTracker:
         self.title = title
         self.steps = []  # list of dicts: {key, label, status, detail}
         self.status_order = {"pending": 0, "running": 1, "done": 2, "error": 3, "skipped": 4}
-        self._refresh_cb = None  # callable to trigger UI refresh
+        self._refresh_cb: Callable[[], None] | None = None
 
-    def attach_refresh(self, cb):
+    def attach_refresh(self, cb: Callable[[], None]) -> None:
         self._refresh_cb = cb
 
     def add(self, key: str, label: str):
@@ -114,6 +117,7 @@ class StepTracker:
 
             tree.add(line)
         return tree
+
 
 def get_key():
     """Get a single keypress in a cross-platform way using readchar."""
@@ -201,19 +205,19 @@ def select_with_arrows(
                         break
                     elif key == 'escape':
                         console.print("\n[yellow]Selection cancelled[/yellow]")
-                        raise typer.Exit(1)
+                        raise typer.Exit(code=1)
 
                     live.update(create_selection_panel(), refresh=True)
 
                 except KeyboardInterrupt:
                     console.print("\n[yellow]Selection cancelled[/yellow]")
-                    raise typer.Exit(1)
+                    raise typer.Exit(code=1)
 
     run_selection_loop()
 
     if selected_key is None:
         console.print("\n[red]Selection failed.[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(code=1)
 
     return selected_key
 
