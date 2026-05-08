@@ -25,6 +25,7 @@ import yaml
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def temp_dir():
     """Create a temporary directory for tests."""
@@ -86,6 +87,7 @@ def sample_workflow_file(project_dir, sample_workflow_yaml):
 
 # ===== Step Registry Tests =====
 
+
 class TestStepRegistry:
     """Test STEP_REGISTRY and auto-discovery."""
 
@@ -98,8 +100,16 @@ class TestStepRegistry:
         from specify_cli.workflows import STEP_REGISTRY
 
         expected = {
-            "command", "shell", "prompt", "gate", "if", "switch",
-            "while", "do-while", "fan-out", "fan-in",
+            "command",
+            "shell",
+            "prompt",
+            "gate",
+            "if",
+            "switch",
+            "while",
+            "do-while",
+            "fan-out",
+            "fan-in",
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 
@@ -128,6 +138,7 @@ class TestStepRegistry:
 
         class EmptyStep(StepBase):
             type_key = ""
+
             def execute(self, config, context):
                 return StepResult()
 
@@ -136,6 +147,7 @@ class TestStepRegistry:
 
 
 # ===== Base Classes Tests =====
+
 
 class TestBaseClasses:
     """Test StepBase, StepContext, StepResult."""
@@ -194,6 +206,7 @@ class TestBaseClasses:
 
 # ===== Expression Engine Tests =====
 
+
 class TestExpressions:
     """Test sandboxed expression evaluator."""
 
@@ -208,9 +221,7 @@ class TestExpressions:
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
-        ctx = StepContext(
-            steps={"specify": {"output": {"file": "spec.md"}}}
-        )
+        ctx = StepContext(steps={"specify": {"output": {"file": "spec.md"}}})
         assert evaluate_expression("{{ steps.specify.output.file }}", ctx) == "spec.md"
 
     def test_string_interpolation(self):
@@ -233,9 +244,7 @@ class TestExpressions:
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
-        ctx = StepContext(
-            steps={"run-tests": {"output": {"exit_code": 1}}}
-        )
+        ctx = StepContext(steps={"run-tests": {"output": {"exit_code": 1}}})
         result = evaluate_expression("{{ steps.run-tests.output.exit_code != 0 }}", ctx)
         assert result is True
 
@@ -243,11 +252,13 @@ class TestExpressions:
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
-        ctx = StepContext(
-            steps={"plan": {"output": {"task_count": 7}}}
+        ctx = StepContext(steps={"plan": {"output": {"task_count": 7}}})
+        assert (
+            evaluate_expression("{{ steps.plan.output.task_count > 5 }}", ctx) is True
         )
-        assert evaluate_expression("{{ steps.plan.output.task_count > 5 }}", ctx) is True
-        assert evaluate_expression("{{ steps.plan.output.task_count < 5 }}", ctx) is False
+        assert (
+            evaluate_expression("{{ steps.plan.output.task_count < 5 }}", ctx) is False
+        )
 
     def test_boolean_and(self):
         from specify_cli.workflows.expressions import evaluate_expression
@@ -268,7 +279,10 @@ class TestExpressions:
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext()
-        assert evaluate_expression("{{ inputs.missing | default('fallback') }}", ctx) == "fallback"
+        assert (
+            evaluate_expression("{{ inputs.missing | default('fallback') }}", ctx)
+            == "fallback"
+        )
 
     def test_filter_join(self):
         from specify_cli.workflows.expressions import evaluate_expression
@@ -327,7 +341,9 @@ class TestExpressions:
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext(
-            steps={"tasks": {"output": {"task_list": [{"file": "a.md"}, {"file": "b.md"}]}}}
+            steps={
+                "tasks": {"output": {"task_list": [{"file": "a.md"}, {"file": "b.md"}]}}
+            }
         )
         result = evaluate_expression("{{ steps.tasks.output.task_list[0].file }}", ctx)
         assert result == "a.md"
@@ -335,11 +351,13 @@ class TestExpressions:
 
 # ===== Integration Dispatch Tests =====
 
+
 class TestBuildExecArgs:
     """Test build_exec_args for CLI-based integrations."""
 
     def test_claude_exec_args(self):
         from specify_cli.integrations.claude import ClaudeIntegration
+
         impl = ClaudeIntegration()
         args = impl.build_exec_args("do stuff", model="sonnet-4")
         assert args[0] == "claude"
@@ -351,6 +369,7 @@ class TestBuildExecArgs:
 
     def test_gemini_exec_args(self):
         from specify_cli.integrations.gemini import GeminiIntegration
+
         impl = GeminiIntegration()
         args = impl.build_exec_args("do stuff", model="gemini-2.5-pro")
         assert args[0] == "gemini"
@@ -360,6 +379,7 @@ class TestBuildExecArgs:
 
     def test_codex_exec_args(self):
         from specify_cli.integrations.codex import CodexIntegration
+
         impl = CodexIntegration()
         args = impl.build_exec_args("do stuff")
         assert args[0] == "codex"
@@ -371,6 +391,7 @@ class TestBuildExecArgs:
         monkeypatch.delenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", raising=False)
         monkeypatch.delenv("SPECKIT_ALLOW_ALL_TOOLS", raising=False)
         from specify_cli.integrations.copilot import CopilotIntegration
+
         impl = CopilotIntegration()
         args = impl.build_exec_args("do stuff", model="claude-sonnet-4-20250514")
         assert args[0] == "copilot"
@@ -382,6 +403,7 @@ class TestBuildExecArgs:
         monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
         monkeypatch.delenv("SPECKIT_ALLOW_ALL_TOOLS", raising=False)
         from specify_cli.integrations.copilot import CopilotIntegration
+
         impl = CopilotIntegration()
         args = impl.build_exec_args("do stuff")
         assert "--yolo" not in args
@@ -391,6 +413,7 @@ class TestBuildExecArgs:
         monkeypatch.setenv("SPECKIT_ALLOW_ALL_TOOLS", "0")
         import warnings
         from specify_cli.integrations.copilot import CopilotIntegration
+
         impl = CopilotIntegration()
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
@@ -406,29 +429,34 @@ class TestBuildExecArgs:
         monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "1")
         monkeypatch.setenv("SPECKIT_ALLOW_ALL_TOOLS", "0")
         from specify_cli.integrations.copilot import CopilotIntegration
+
         impl = CopilotIntegration()
         args = impl.build_exec_args("do stuff")
         assert "--yolo" in args
 
     def test_ide_only_returns_none(self):
         from specify_cli.integrations.windsurf import WindsurfIntegration
+
         impl = WindsurfIntegration()
         assert impl.build_exec_args("test") is None
 
     def test_no_model_omits_flag(self):
         from specify_cli.integrations.claude import ClaudeIntegration
+
         impl = ClaudeIntegration()
         args = impl.build_exec_args("do stuff", model=None)
         assert "--model" not in args
 
     def test_no_json_omits_flag(self):
         from specify_cli.integrations.claude import ClaudeIntegration
+
         impl = ClaudeIntegration()
         args = impl.build_exec_args("do stuff", output_json=False)
         assert "--output-format" not in args
 
 
 # ===== Step Type Tests =====
+
 
 class TestCommandStep:
     """Test the command step type."""
@@ -448,7 +476,9 @@ class TestCommandStep:
             "command": "speckit.specify",
             "input": {"args": "{{ inputs.name }}"},
         }
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch(
+            "specify_cli.workflows.steps.command.shutil.which", return_value=None
+        ):
             result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["command"] == "speckit.specify"
@@ -525,7 +555,9 @@ class TestCommandStep:
             "command": "speckit.specify",
             "input": {"args": "{{ inputs.name }}"},
         }
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch(
+            "specify_cli.workflows.steps.command.shutil.which", return_value=None
+        ):
             result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["dispatched"] is False
@@ -554,8 +586,13 @@ class TestCommandStep:
         mock_result.stdout = '{"result": "done"}'
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value="/usr/local/bin/claude"), \
-             patch("subprocess.run", return_value=mock_result) as mock_run:
+        with (
+            patch(
+                "specify_cli.workflows.steps.command.shutil.which",
+                return_value="/usr/local/bin/claude",
+            ),
+            patch("subprocess.run", return_value=mock_result) as mock_run,
+        ):
             result = step.execute(config, ctx)
 
         assert result.status == StepStatus.COMPLETED
@@ -591,8 +628,13 @@ class TestCommandStep:
         mock_result.stdout = ""
         mock_result.stderr = "API error"
 
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value="/usr/local/bin/claude"), \
-             patch("subprocess.run", return_value=mock_result):
+        with (
+            patch(
+                "specify_cli.workflows.steps.command.shutil.which",
+                return_value="/usr/local/bin/claude",
+            ),
+            patch("subprocess.run", return_value=mock_result),
+        ):
             result = step.execute(config, ctx)
 
         assert result.status == StepStatus.FAILED
@@ -618,7 +660,9 @@ class TestPromptStep:
             "type": "prompt",
             "prompt": "Review {{ inputs.file }} for security issues",
         }
-        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value=None):
+        with patch(
+            "specify_cli.workflows.steps.prompt.shutil.which", return_value=None
+        ):
             result = step.execute(config, ctx)
         assert result.status == StepStatus.FAILED
         assert result.output["prompt"] == "Review auth.py for security issues"
@@ -676,8 +720,13 @@ class TestPromptStep:
         mock_result.stdout = "Here is the explanation"
         mock_result.stderr = ""
 
-        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value="/usr/local/bin/claude"), \
-             patch("subprocess.run", return_value=mock_result):
+        with (
+            patch(
+                "specify_cli.workflows.steps.prompt.shutil.which",
+                return_value="/usr/local/bin/claude",
+            ),
+            patch("subprocess.run", return_value=mock_result),
+        ):
             result = step.execute(config, ctx)
 
         assert result.status == StepStatus.COMPLETED
@@ -765,11 +814,13 @@ class TestGateStep:
         from specify_cli.workflows.steps.gate import GateStep
 
         step = GateStep()
-        errors = step.validate({
-            "id": "test",
-            "message": "Review",
-            "on_reject": "invalid",
-        })
+        errors = step.validate(
+            {
+                "id": "test",
+                "message": "Review",
+                "on_reject": "invalid",
+            }
+        )
         assert any("on_reject" in e for e in errors)
 
 
@@ -825,9 +876,7 @@ class TestSwitchStep:
         from specify_cli.workflows.base import StepContext
 
         step = SwitchStep()
-        ctx = StepContext(
-            steps={"review": {"output": {"choice": "approve"}}}
-        )
+        ctx = StepContext(steps={"review": {"output": {"choice": "approve"}}})
         config = {
             "id": "route",
             "expression": "{{ steps.review.output.choice }}",
@@ -846,9 +895,7 @@ class TestSwitchStep:
         from specify_cli.workflows.base import StepContext
 
         step = SwitchStep()
-        ctx = StepContext(
-            steps={"review": {"output": {"choice": "unknown"}}}
-        )
+        ctx = StepContext(steps={"review": {"output": {"choice": "unknown"}}})
         config = {
             "id": "route",
             "expression": "{{ steps.review.output.choice }}",
@@ -866,9 +913,7 @@ class TestSwitchStep:
         from specify_cli.workflows.base import StepContext
 
         step = SwitchStep()
-        ctx = StepContext(
-            steps={"review": {"output": {"choice": "other"}}}
-        )
+        ctx = StepContext(steps={"review": {"output": {"choice": "other"}}})
         config = {
             "id": "route",
             "expression": "{{ steps.review.output.choice }}",
@@ -891,12 +936,14 @@ class TestSwitchStep:
         from specify_cli.workflows.steps.switch import SwitchStep
 
         step = SwitchStep()
-        errors = step.validate({
-            "id": "test",
-            "expression": "{{ x }}",
-            "cases": {"a": "not-a-list"},
-            "default": "also-bad",
-        })
+        errors = step.validate(
+            {
+                "id": "test",
+                "expression": "{{ x }}",
+                "cases": {"a": "not-a-list"},
+                "default": "also-bad",
+            }
+        )
         assert any("case 'a' must be a list" in e for e in errors)
         assert any("'default' must be a list" in e for e in errors)
 
@@ -909,9 +956,7 @@ class TestWhileStep:
         from specify_cli.workflows.base import StepContext
 
         step = WhileStep()
-        ctx = StepContext(
-            steps={"run-tests": {"output": {"exit_code": 1}}}
-        )
+        ctx = StepContext(steps={"run-tests": {"output": {"exit_code": 1}}})
         config = {
             "id": "retry",
             "condition": "{{ steps.run-tests.output.exit_code != 0 }}",
@@ -927,9 +972,7 @@ class TestWhileStep:
         from specify_cli.workflows.base import StepContext
 
         step = WhileStep()
-        ctx = StepContext(
-            steps={"run-tests": {"output": {"exit_code": 0}}}
-        )
+        ctx = StepContext(steps={"run-tests": {"output": {"exit_code": 0}}})
         config = {
             "id": "retry",
             "condition": "{{ steps.run-tests.output.exit_code != 0 }}",
@@ -952,7 +995,9 @@ class TestWhileStep:
         from specify_cli.workflows.steps.while_loop import WhileStep
 
         step = WhileStep()
-        errors = step.validate({"id": "test", "condition": "{{ true }}", "max_iterations": 0, "steps": []})
+        errors = step.validate(
+            {"id": "test", "condition": "{{ true }}", "max_iterations": 0, "steps": []}
+        )
         assert any("must be an integer >= 1" in e for e in errors)
 
 
@@ -1021,12 +1066,14 @@ class TestDoWhileStep:
         from specify_cli.workflows.steps.do_while import DoWhileStep
 
         step = DoWhileStep()
-        errors = step.validate({
-            "id": "test",
-            "condition": "{{ true }}",
-            "max_iterations": 3,
-            "steps": "not-a-list",
-        })
+        errors = step.validate(
+            {
+                "id": "test",
+                "condition": "{{ true }}",
+                "max_iterations": 3,
+                "steps": "not-a-list",
+            }
+        )
         assert any("'steps' must be a list" in e for e in errors)
 
 
@@ -1039,10 +1086,16 @@ class TestFanOutStep:
 
         step = FanOutStep()
         ctx = StepContext(
-            steps={"tasks": {"output": {"task_list": [
-                {"file": "a.md"},
-                {"file": "b.md"},
-            ]}}}
+            steps={
+                "tasks": {
+                    "output": {
+                        "task_list": [
+                            {"file": "a.md"},
+                            {"file": "b.md"},
+                        ]
+                    }
+                }
+            }
         )
         config = {
             "id": "parallel",
@@ -1081,11 +1134,13 @@ class TestFanOutStep:
         from specify_cli.workflows.steps.fan_out import FanOutStep
 
         step = FanOutStep()
-        errors = step.validate({
-            "id": "test",
-            "items": "{{ x }}",
-            "step": "not-a-dict",
-        })
+        errors = step.validate(
+            {
+                "id": "test",
+                "items": "{{ x }}",
+                "step": "not-a-dict",
+            }
+        )
         assert any("'step' must be a mapping" in e for e in errors)
 
 
@@ -1098,9 +1153,7 @@ class TestFanInStep:
 
         step = FanInStep()
         ctx = StepContext(
-            steps={
-                "parallel": {"output": {"item_count": 2, "status": "done"}}
-            }
+            steps={"parallel": {"output": {"item_count": 2, "status": "done"}}}
         )
         config = {
             "id": "collect",
@@ -1163,6 +1216,7 @@ class TestFanInStep:
 
 # ===== Workflow Definition Tests =====
 
+
 class TestWorkflowDefinition:
     """Test WorkflowDefinition loading and parsing."""
 
@@ -1198,6 +1252,7 @@ class TestWorkflowDefinition:
 
 
 # ===== Workflow Validation Tests =====
+
 
 class TestWorkflowValidation:
     """Test workflow validation."""
@@ -1326,6 +1381,7 @@ steps:
 
 # ===== Workflow Engine Tests =====
 
+
 class TestWorkflowEngine:
     """Test WorkflowEngine execution."""
 
@@ -1374,7 +1430,9 @@ steps:
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        with patch(
+            "specify_cli.workflows.steps.command.shutil.which", return_value=None
+        ):
             state = engine.execute(definition, {"name": "login"})
 
         assert state.status == RunStatus.FAILED
@@ -1496,7 +1554,455 @@ steps:
             engine.execute(definition, {})
 
 
+class TestIntegrationAutoDetect:
+    """Tests for integration auto-detection in the workflow engine."""
+
+    def test_integration_auto_default_uses_project_integration(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "auto-test"
+  name: "Auto Test"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+steps:
+  - id: echo
+    type: shell
+    run: "echo {{ inputs.integration }}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        resolved = engine._resolve_inputs(definition, {})
+        assert resolved["integration"] == "opencode"
+
+    def test_integration_auto_default_falls_back_to_copilot_when_no_json(
+        self, project_dir
+    ):
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "fallback-test"
+  name: "Fallback Test"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+steps:
+  - id: echo
+    type: shell
+    run: "echo {{ inputs.integration }}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        resolved = engine._resolve_inputs(definition, {})
+        assert resolved["integration"] == "copilot"
+
+    def test_integration_explicit_input_overrides_auto(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "explicit-test"
+  name: "Explicit Test"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+steps:
+  - id: echo
+    type: shell
+    run: "echo {{ inputs.integration }}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        resolved = engine._resolve_inputs(definition, {"integration": "claude"})
+        assert resolved["integration"] == "claude"
+
+    def test_integration_explicit_auto_input_also_resolves(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "gemini"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "explicit-auto-test"
+  name: "Explicit Auto Test"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+steps:
+  - id: echo
+    type: shell
+    run: "echo {{ inputs.integration }}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        resolved = engine._resolve_inputs(definition, {"integration": "auto"})
+        assert resolved["integration"] == "gemini"
+
+    def test_integration_auto_raises_on_malformed_integration_json(self, project_dir):
+        from specify_cli.integration_state import IntegrationStateError
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            "not valid json", encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        with pytest.raises(IntegrationStateError):
+            engine._load_project_integration()
+
+    def test_integration_auto_raises_on_oserror(self, project_dir):
+        from unittest.mock import patch
+
+        from specify_cli.integration_state import IntegrationStateError
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "claude"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        with patch("pathlib.Path.read_text", side_effect=OSError("permission denied")):
+            with pytest.raises(IntegrationStateError):
+                engine._load_project_integration()
+
+    def test_integration_auto_ignores_whitespace_only_value(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "   "}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        assert engine._load_project_integration() == "copilot"
+
+    def test_integration_auto_falls_back_to_init_options_json(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "init-options.json").write_text(
+            '{"integration": "claude"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        assert engine._load_project_integration() == "claude"
+
+    def test_integration_auto_init_options_ai_key_fallback(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "init-options.json").write_text(
+            '{"ai": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        assert engine._load_project_integration() == "opencode"
+
+    def test_integration_auto_integration_json_takes_priority(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "gemini"}', encoding="utf-8"
+        )
+        (project_dir / ".specify" / "init-options.json").write_text(
+            '{"integration": "claude"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        assert engine._load_project_integration() == "gemini"
+
+    def test_integration_explicit_auto_with_enum_constraint(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "claude"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "enum-auto-test"
+  name: "Enum Auto Test"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    enum: ["claude", "copilot"]
+    default: "auto"
+steps:
+  - id: echo
+    type: shell
+    run: "echo {{ inputs.integration }}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        resolved = engine._resolve_inputs(definition, {"integration": "auto"})
+        assert resolved["integration"] == "claude"
+
+    def test_workflow_level_integration_auto_resolves_in_context(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        resolved = engine._resolve_workflow_integration("auto")
+        assert resolved == "opencode"
+
+    def test_integration_auto_reads_default_integration_field(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"default_integration": "gemini", "integration_state_schema": 1}',
+            encoding="utf-8",
+        )
+        engine = WorkflowEngine(project_dir)
+        assert engine._load_project_integration() == "gemini"
+
+    def test_resolved_integration_persisted_in_run_state(self, project_dir):
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import (
+            RunState,
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "persist-test"
+  name: "Persist Test"
+  version: "1.0.0"
+  integration: auto
+steps:
+  - id: gate
+    type: gate
+    message: "Proceed?"
+    options: [proceed]
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.PAUSED
+        assert state.resolved_integration == "opencode"
+
+        reloaded = RunState.load(state.run_id, project_dir)
+        assert reloaded.resolved_integration == "opencode"
+
+    def test_resume_uses_persisted_integration_not_current_project_state(
+        self, project_dir
+    ):
+        from unittest.mock import MagicMock
+
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "resume-test"
+  name: "Resume Test"
+  version: "1.0.0"
+  integration: auto
+steps:
+  - id: gate
+    type: gate
+    message: "Proceed?"
+    options: [proceed]
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        state = engine.execute(definition)
+        assert state.status == RunStatus.PAUSED
+        assert state.resolved_integration == "opencode"
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "claude"}', encoding="utf-8"
+        )
+
+        spy = MagicMock(wraps=engine._resolve_workflow_integration)
+        engine._resolve_workflow_integration = spy
+
+        engine.resume(state.run_id)
+
+        spy.assert_not_called()
+
+    def test_resume_pins_legacy_integration_on_first_resume(self, project_dir):
+        from specify_cli.workflows.engine import (
+            RunState,
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "gemini"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "legacy-resume-test"
+  name: "Legacy Resume Test"
+  version: "1.0.0"
+  integration: auto
+steps:
+  - id: gate
+    type: gate
+    message: "Proceed?"
+    options: [proceed]
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        state = engine.execute(definition)
+        state.resolved_integration = None
+        state.save()
+
+        reloaded = RunState.load(state.run_id, project_dir)
+        assert reloaded.resolved_integration is None
+
+        resumed = engine.resume(state.run_id)
+        assert resumed.resolved_integration == "gemini"
+
+    def test_integration_auto_raises_on_future_schema(self, project_dir):
+        from specify_cli.integration_state import IntegrationStateSchemaError
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration_state_schema": 999}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        with pytest.raises(IntegrationStateSchemaError):
+            engine._load_project_integration()
+
+    def test_bundled_speckit_workflow_has_auto_default(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        repo_root = Path(__file__).parent.parent
+        workflow_path = repo_root / "workflows" / "speckit" / "workflow.yml"
+        assert workflow_path.exists()
+
+        definition = WorkflowDefinition.from_yaml(workflow_path)
+        integration_input = definition.inputs.get("integration", {})
+        assert integration_input.get("default") == "auto"
+
+    def test_bundled_speckit_workflow_auto_resolves_for_engine(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        repo_root = Path(__file__).parent.parent
+        workflow_path = repo_root / "workflows" / "speckit" / "workflow.yml"
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        definition = WorkflowDefinition.from_yaml(workflow_path)
+        resolved = engine._resolve_inputs(definition, {"spec": "demo"})
+        assert resolved.get("integration") == "opencode"
+
+    def test_execute_fails_cleanly_on_corrupted_integration_json(self, project_dir):
+        """execute() records FAILED state when integration.json is corrupted."""
+        from specify_cli.integration_state import IntegrationStateError
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import (
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+
+        (project_dir / ".specify" / "integration.json").write_text(
+            "not valid json", encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "corrupt-test"
+  name: "Corrupt Test"
+  version: "1.0.0"
+  integration: auto
+steps:
+  - id: gate
+    type: gate
+    message: "Proceed?"
+    options: [proceed]
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        with pytest.raises(IntegrationStateError):
+            engine.execute(definition)
+
+        # Verify that a run was created and persisted as FAILED
+        runs = engine.list_runs()
+        assert len(runs) == 1
+        assert runs[0]["status"] == RunStatus.FAILED.value
+
+    def test_resume_fails_cleanly_on_corrupted_integration_json(self, project_dir):
+        """resume() records FAILED state when integration.json is corrupted
+        and no persisted resolved_integration exists."""
+        from specify_cli.integration_state import IntegrationStateError
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import (
+            RunState,
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+
+        # Start with valid config so execute() succeeds
+        (project_dir / ".specify" / "integration.json").write_text(
+            '{"integration": "opencode"}', encoding="utf-8"
+        )
+        engine = WorkflowEngine(project_dir)
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "resume-corrupt-test"
+  name: "Resume Corrupt Test"
+  version: "1.0.0"
+  integration: auto
+steps:
+  - id: gate
+    type: gate
+    message: "Proceed?"
+    options: [proceed]
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        state = engine.execute(definition)
+        assert state.status == RunStatus.PAUSED
+
+        # Corrupt the file and clear persisted resolved_integration
+        # to force resume() to re-resolve from the corrupted file
+        (project_dir / ".specify" / "integration.json").write_text(
+            "not valid json", encoding="utf-8"
+        )
+        state.resolved_integration = None
+        state.save()
+
+        with pytest.raises(IntegrationStateError):
+            engine.resume(state.run_id)
+
+        # Verify that the run was updated to FAILED
+        reloaded = RunState.load(state.run_id, project_dir)
+        assert reloaded.status == RunStatus.FAILED
+
+
 # ===== State Persistence Tests =====
+
 
 class TestRunState:
     """Test RunState persistence and loading."""
@@ -1585,6 +2091,7 @@ steps:
 
 # ===== Workflow Registry Tests =====
 
+
 class TestWorkflowRegistry:
     """Test WorkflowRegistry operations."""
 
@@ -1642,6 +2149,7 @@ class TestWorkflowRegistry:
 
 # ===== Workflow Catalog Tests =====
 
+
 class TestWorkflowCatalog:
     """Test WorkflowCatalog catalog resolution."""
 
@@ -1657,7 +2165,9 @@ class TestWorkflowCatalog:
     def test_env_var_override(self, project_dir, monkeypatch):
         from specify_cli.workflows.catalog import WorkflowCatalog
 
-        monkeypatch.setenv("SPECKIT_WORKFLOW_CATALOG_URL", "https://example.com/catalog.json")
+        monkeypatch.setenv(
+            "SPECKIT_WORKFLOW_CATALOG_URL", "https://example.com/catalog.json"
+        )
         catalog = WorkflowCatalog(project_dir)
         entries = catalog.get_active_catalogs()
         assert len(entries) == 1
@@ -1668,14 +2178,20 @@ class TestWorkflowCatalog:
         from specify_cli.workflows.catalog import WorkflowCatalog
 
         config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text(yaml.dump({
-            "catalogs": [{
-                "name": "custom",
-                "url": "https://example.com/wf-catalog.json",
-                "priority": 1,
-                "install_allowed": True,
-            }]
-        }))
+        config_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "custom",
+                            "url": "https://example.com/wf-catalog.json",
+                            "priority": 1,
+                            "install_allowed": True,
+                        }
+                    ]
+                }
+            )
+        )
 
         catalog = WorkflowCatalog(project_dir)
         entries = catalog.get_active_catalogs()
@@ -1683,7 +2199,10 @@ class TestWorkflowCatalog:
         assert entries[0].name == "custom"
 
     def test_validate_url_http_rejected(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowValidationError,
+        )
 
         catalog = WorkflowCatalog(project_dir)
         with pytest.raises(WorkflowValidationError, match="HTTPS"):
@@ -1709,7 +2228,10 @@ class TestWorkflowCatalog:
         assert data["catalogs"][0]["url"] == "https://example.com/new-catalog.json"
 
     def test_add_catalog_duplicate_rejected(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowValidationError,
+        )
 
         catalog = WorkflowCatalog(project_dir)
         catalog.add_catalog("https://example.com/catalog.json")
@@ -1732,7 +2254,10 @@ class TestWorkflowCatalog:
         assert len(data["catalogs"]) == 1
 
     def test_remove_catalog_invalid_index(self, project_dir):
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowValidationError,
+        )
 
         catalog = WorkflowCatalog(project_dir)
         catalog.add_catalog("https://example.com/c1.json")
@@ -1751,6 +2276,7 @@ class TestWorkflowCatalog:
 
 
 # ===== Integration Test =====
+
 
 class TestWorkflowIntegration:
     """End-to-end workflow execution tests."""

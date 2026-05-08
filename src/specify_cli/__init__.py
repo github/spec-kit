@@ -61,13 +61,14 @@ from .integration_runtime import (
 )
 from .integration_state import (
     INTEGRATION_JSON,
-    INTEGRATION_STATE_SCHEMA,
+    IntegrationStateError as _IntegrationStateError,
+    IntegrationStateSchemaError as _IntegrationStateSchemaError,
     dedupe_integration_keys as _dedupe_integration_keys,
     default_integration_key as _default_integration_key,
     installed_integration_keys as _installed_integration_keys,
     integration_setting as _integration_setting,
     integration_settings as _integration_settings,
-    normalize_integration_state as _normalize_integration_state,
+    read_integration_state as _read_integration_state,
     write_integration_json as _write_integration_json_file,
 )
 from .shared_infra import (
@@ -1926,34 +1927,19 @@ integration_app.add_typer(integration_catalog_app, name="catalog")
 
 def _read_integration_json(project_root: Path) -> dict[str, Any]:
     """Load ``.specify/integration.json``. Returns normalized state when present."""
-    path = project_root / INTEGRATION_JSON
-    if not path.exists():
-        return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        console.print(f"[red]Error:[/red] {path} contains invalid JSON.")
-        console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
-        console.print(f"[dim]Details:[/dim] {exc}")
-        raise typer.Exit(1)
-    except OSError as exc:
-        console.print(f"[red]Error:[/red] Could not read {path}.")
-        console.print(f"Please fix file permissions or delete {INTEGRATION_JSON} and retry.")
-        console.print(f"[dim]Details:[/dim] {exc}")
-        raise typer.Exit(1)
-    if not isinstance(data, dict):
-        console.print(f"[red]Error:[/red] {path} must contain a JSON object, got {type(data).__name__}.")
-        console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
-        raise typer.Exit(1)
-    schema = data.get("integration_state_schema")
-    if isinstance(schema, int) and not isinstance(schema, bool) and schema > INTEGRATION_STATE_SCHEMA:
-        console.print(
-            f"[red]Error:[/red] {path} uses integration state schema {schema}, "
-            f"but this CLI only supports schema {INTEGRATION_STATE_SCHEMA}."
-        )
+        state = _read_integration_state(project_root)
+    except _IntegrationStateSchemaError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
         console.print("Please upgrade Spec Kit before modifying integrations.")
         raise typer.Exit(1)
-    return _normalize_integration_state(data)
+    except _IntegrationStateError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
+        raise typer.Exit(1)
+    if state is None:
+        return {}
+    return state
 
 
 def _write_integration_json(
