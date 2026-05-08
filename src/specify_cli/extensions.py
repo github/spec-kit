@@ -982,6 +982,8 @@ class ExtensionManager:
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root
             )
+            from .integrations.base import IntegrationBase as _IntegrationBase
+            body = _IntegrationBase.resolve_command_refs(body, "-")
 
             original_desc = frontmatter.get("description", "")
             description = original_desc or f"Extension command: {cmd_name}"

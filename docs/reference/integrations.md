@@ -28,7 +28,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Kiro CLI](https://kiro.dev/docs/cli/)                                               | `kiro-cli`       | Kiro CLI does not substitute `$ARGUMENTS` in file-based prompts, so Spec Kit ships a prose fallback at render time (see [Manage prompts](https://kiro.dev/docs/cli/chat/manage-prompts/) and issue [#1926](https://github.com/github/spec-kit/issues/1926)). Alias: `--integration kiro` |
 | [Lingma](https://lingma.aliyun.com/)                                                 | `lingma`         | Skills-based integration; skills are installed automatically                                                                               |
 | [Mistral Vibe](https://github.com/mistralai/mistral-vibe)                            | `vibe`           |                                                                                                                                           |
-| [opencode](https://opencode.ai/)                                                     | `opencode`       |                                                                                                                                           |
+| [opencode](https://opencode.ai/)                                                     | `opencode`       | Supports `--skills` for agent-skills scaffolding (`speckit-<name>/SKILL.md`)                                                            |
 | [Pi Coding Agent](https://pi.dev)                                                    | `pi`             | Pi doesn't have MCP support out of the box, so `taskstoissues` won't work as intended. MCP support can be added via [extensions](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#extensions) |
 | [Qoder CLI](https://qoder.com/cli)                                                   | `qodercli`       |                                                                                                                                           |
 | [Qwen Code](https://github.com/QwenLM/qwen-code)                                     | `qwen`           |                                                                                                                                           |
@@ -134,6 +134,7 @@ Some integrations accept additional options via `--integration-options`:
 | ----------- | ------------------- | -------------------------------------------------------------- |
 | `generic`   | `--commands-dir`    | Required. Directory for command files                          |
 | `kimi`      | `--migrate-legacy`  | Migrate legacy dotted skill directories to hyphenated format   |
+| `opencode`  | `--skills`          | Scaffold commands as agent skills (`speckit-<name>/SKILL.md`) instead of `.md` command files |
 
 Example:
 

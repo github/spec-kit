@@ -369,6 +369,26 @@ def register(app: typer.Typer) -> None:
 
                 ensure_constitution_from_template(project_path, tracker=tracker)
 
+                # Persist the CLI options so later operations (e.g. extension install, preset add)
+                # can adapt their behaviour without re-scanning the filesystem.
+                # Must be saved BEFORE extension and preset install so _get_skills_dir() works.
+                init_opts = {
+                    "ai": selected_ai,
+                    "integration": resolved_integration.key,
+                    "branch_numbering": branch_numbering or "sequential",
+                    "context_file": resolved_integration.context_file,
+                    "here": here,
+                    "script": selected_script,
+                    "speckit_version": get_speckit_version(),
+                }
+                # Use parsed_options as the source of truth for skills mode, not
+                # _skills_mode (a mutable runtime flag), so the setting persists
+                # correctly even if the integration is restored without setup().
+                from ..integrations.base import SkillsIntegration as _SkillsPersist
+                if isinstance(resolved_integration, _SkillsPersist) or integration_parsed_options.get("skills"):
+                    init_opts["ai_skills"] = True
+                save_init_options(project_path, init_opts)
+
                 if not no_git:
                     tracker.start("git")
                     git_messages = []
@@ -447,19 +467,6 @@ def register(app: typer.Typer) -> None:
                 except Exception as wf_err:
                     sanitized_wf = str(wf_err).replace('\n', ' ').strip()
                     tracker.error("workflow", f"install failed: {sanitized_wf[:120]}")
-
-                init_opts = {
-                    "ai": selected_ai,
-                    "integration": resolved_integration.key,
-                    "branch_numbering": branch_numbering or "sequential",
-                    "here": here,
-                    "script": selected_script,
-                    "speckit_version": get_speckit_version(),
-                }
-                from ..integrations.base import SkillsIntegration as _SkillsPersist
-                if isinstance(resolved_integration, _SkillsPersist) or getattr(resolved_integration, "_skills_mode", False):
-                    init_opts["ai_skills"] = True
-                save_init_options(project_path, init_opts)
 
                 # --- agent-context extension (bundled, auto-installed) ---
                 # Installed after init-options.json is written so that skill
@@ -627,8 +634,8 @@ def register(app: typer.Typer) -> None:
         cursor_agent_skill_mode = selected_ai == "cursor-agent" and _is_skills_integration
         copilot_skill_mode = selected_ai == "copilot" and _is_skills_integration
         devin_skill_mode = selected_ai == "devin"
-        cline_skill_mode = selected_ai == "cline"
-        native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode or trae_skill_mode or cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode
+        opencode_skill_mode = selected_ai == "opencode" and _is_skills_integration
+        native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode or trae_skill_mode or cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode or opencode_skill_mode
 
         if codex_skill_mode:
             steps_lines.append(f"{step_num}. Start Codex in this project directory; spec-kit skills were installed to [cyan].agents/skills[/cyan]")
@@ -642,6 +649,9 @@ def register(app: typer.Typer) -> None:
         if devin_skill_mode:
             steps_lines.append(f"{step_num}. Start Devin in this project directory; spec-kit skills were installed to [cyan].devin/skills[/cyan]")
             step_num += 1
+        if opencode_skill_mode:
+            steps_lines.append(f"{step_num}. Start opencode in this project directory; spec-kit skills were installed to [cyan].opencode/skills[/cyan]")
+            step_num += 1
         usage_label = "skills" if native_skill_mode else "slash commands"
 
         def _display_cmd(name: str) -> str:
@@ -651,7 +661,7 @@ def register(app: typer.Typer) -> None:
                 return f"/speckit-{name}"
             if kimi_skill_mode:
                 return f"/skill:speckit-{name}"
-            if cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode or cline_skill_mode:
+            if cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode or opencode_skill_mode:
                 return f"/speckit-{name}"
             return f"/speckit.{name}"
 
