@@ -2253,3 +2253,68 @@ class TestCustomStep(StepBase):
         # Should not propagate exception
         loaded = load_custom_steps(project_dir)
         assert "broken-step" not in loaded
+
+    def test_module_name_sanitized_for_hyphenated_type_key(self, project_dir):
+        """type_key values with hyphens produce valid Python module identifiers."""
+        import sys
+        from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "my-hyphen-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: my-hyphen-step\n  name: Hyphen Step\n",
+            encoding="utf-8",
+        )
+
+        init_py = """
+from specify_cli.workflows.base import StepBase, StepResult
+
+class HyphenStep(StepBase):
+    type_key = "my-hyphen-step"
+
+    def execute(self, config, context):
+        return StepResult()
+"""
+        (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
+
+        loaded = load_custom_steps(project_dir)
+        assert "my-hyphen-step" in loaded
+        assert "my-hyphen-step" in STEP_REGISTRY
+        # Synthetic module name must be a valid identifier (hyphens → underscores)
+        assert "_speckit_custom_step_my_hyphen_step" in sys.modules
+
+    def test_package_relative_import(self, project_dir):
+        """Steps can use relative imports to access sibling modules."""
+        import sys
+        from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "pkg-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: pkg-step\n  name: Package Step\n",
+            encoding="utf-8",
+        )
+        # Helper module that the step will import relatively
+        (step_dir / "helpers.py").write_text(
+            "HELPER_VALUE = 'hello'\n", encoding="utf-8"
+        )
+        init_py = """
+from specify_cli.workflows.base import StepBase, StepResult
+from .helpers import HELPER_VALUE
+
+class PkgStep(StepBase):
+    type_key = "pkg-step"
+    helper = HELPER_VALUE
+
+    def execute(self, config, context):
+        return StepResult()
+"""
+        (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
+
+        loaded = load_custom_steps(project_dir)
+        assert "pkg-step" in loaded
+        assert "pkg-step" in STEP_REGISTRY
+        # Verify the relative import actually resolved
+        module_name = "_speckit_custom_step_pkg_step"
+        assert module_name in sys.modules
+        assert sys.modules[module_name].PkgStep.helper == "hello"

@@ -108,13 +108,32 @@ def load_custom_steps(project_root: Path) -> list[str]:
             if type_key in STEP_REGISTRY:
                 continue
 
+            import re as _re
+            import sys as _sys
+
+            # Sanitize type_key so the synthetic module name is a valid identifier
+            # (e.g. "test-custom" → "_speckit_custom_step_test_custom").
+            safe_key = _re.sub(r"[^A-Za-z0-9_]", "_", type_key)
+            module_name = f"_speckit_custom_step_{safe_key}"
+
+            # Treat the step directory as a proper package so that relative
+            # imports inside the step (e.g. ``from .helpers import …``) work.
             spec = _importlib_util.spec_from_file_location(
-                f"_speckit_custom_step_{type_key}", init_py
+                module_name,
+                init_py,
+                submodule_search_locations=[str(step_dir)],
             )
             if spec is None or spec.loader is None:
                 continue
             module = _importlib_util.module_from_spec(spec)
-            spec.loader.exec_module(module)  # type: ignore[union-attr]
+            module.__package__ = module_name
+            # Register before exec so relative imports resolve correctly.
+            _sys.modules[module_name] = module
+            try:
+                spec.loader.exec_module(module)  # type: ignore[union-attr]
+            except Exception:
+                _sys.modules.pop(module_name, None)
+                raise
 
             # Find the StepBase subclass in the module
             from .base import StepBase as _StepBase
