@@ -9,8 +9,8 @@ third-party hosts on redirects.
 import os
 import urllib.error
 import urllib.request
-from urllib.parse import urlparse
 from typing import Dict
+from urllib.parse import urlparse
 
 # GitHub-owned hostnames that should receive the Authorization header.
 # Includes codeload.github.com because GitHub archive URL downloads
@@ -31,12 +31,25 @@ def build_github_request(url: str) -> urllib.request.Request:
     ``Authorization: Bearer <value>`` header when the target hostname is one
     of the known GitHub-owned domains. Non-GitHub URLs are returned as plain
     requests so credentials are never leaked to third-party hosts.
+
+    Raises:
+        ValueError: If ``url`` is empty or whitespace-only.
+        ValueError: If ``url`` does not use the ``http`` or ``https`` scheme.
+        ValueError: If ``url`` does not include a hostname.
     """
     headers: Dict[str, str] = {}
+    url = url.strip()
+    if not url:
+        raise ValueError("url must not be empty")
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(f"url must start with http:// or https://, got: {url!r}")
+    if not parsed.hostname:
+        raise ValueError(f"url must include a hostname, got: {url!r}")
     github_token = (os.environ.get("GITHUB_TOKEN") or "").strip()
     gh_token = (os.environ.get("GH_TOKEN") or "").strip()
     token = github_token or gh_token or None
-    hostname = (urlparse(url).hostname or "").lower()
+    hostname = parsed.hostname.lower()
     if token and hostname in GITHUB_HOSTS:
         headers["Authorization"] = f"Bearer {token}"
     return urllib.request.Request(url, headers=headers)

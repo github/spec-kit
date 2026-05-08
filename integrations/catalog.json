@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-28T00:00:00Z",
+  "updated_at": "2026-04-29T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/integrations/catalog.json",
   "integrations": {
     "claude": {
@@ -209,6 +209,15 @@
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "skills"]
+    },
+    "lingma": {
+      "id": "lingma",
+      "name": "Lingma",
+      "version": "1.0.0",
+      "description": "Lingma IDE skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide", "skills"]
     },
     "pi": {
       "id": "pi",

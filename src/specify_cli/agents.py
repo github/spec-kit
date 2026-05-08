@@ -7,12 +7,12 @@ command files into agent-specific directories in the correct format.
 """
 
 import os
-from pathlib import Path
-from typing import Dict, List, Any, Optional
-
 import platform
 import re
 from copy import deepcopy
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import yaml
 
 
@@ -25,7 +25,16 @@ def _build_agent_configs() -> dict[str, Any]:
         if key == "generic":
             continue
         if integration.registrar_config:
-            configs[key] = dict(integration.registrar_config)
+            config = dict(integration.registrar_config)
+            # Propagate invoke_separator from the integration class when the
+            # registrar_config dict doesn't already declare it explicitly.
+            # SkillsIntegration subclasses (claude, codex, …) set
+            # invoke_separator="-" as a class attribute but omit it from
+            # registrar_config, so without this they would fall back to "."
+            # when register_commands() resolves __SPECKIT_COMMAND_*__ tokens.
+            if "invoke_separator" not in config:
+                config["invoke_separator"] = integration.invoke_separator
+            configs[key] = config
     return configs
 
 
@@ -419,9 +428,7 @@ class CommandRegistrar:
         normalized = Path(os.path.normpath(candidate))
         base_normalized = Path(os.path.normpath(base))
         if not normalized.is_relative_to(base_normalized):
-            raise ValueError(
-                f"Output path {candidate!r} escapes directory {base!r}"
-            )
+            raise ValueError(f"Output path {candidate!r} escapes directory {base!r}")
 
     def register_commands(
         self,
@@ -483,7 +490,10 @@ class CommandRegistrar:
 
             if frontmatter.get("strategy") == "wrap":
                 from .presets import _substitute_core_template
-                body, core_frontmatter = _substitute_core_template(body, cmd_name, project_root, self)
+
+                body, core_frontmatter = _substitute_core_template(
+                    body, cmd_name, project_root, self
+                )
                 frontmatter = dict(frontmatter)
                 for key in ("scripts", "agent_scripts"):
                     if key not in frontmatter and key in core_frontmatter:
@@ -504,6 +514,16 @@ class CommandRegistrar:
                 body, "$ARGUMENTS", agent_config["args"]
             )
 
+            # Resolve __SPECKIT_COMMAND_*__ tokens using the agent's invoke separator.
+            # The separator is sourced from agent_config (populated by _build_agent_configs,
+            # which propagates each integration's invoke_separator class attribute).
+            # Deferred import of IntegrationBase avoids a circular import at module load
+            # (base.py itself imports CommandRegistrar lazily).
+            from specify_cli.integrations.base import IntegrationBase  # noqa: PLC0415
+
+            _sep = agent_config.get("invoke_separator", ".")
+            body = IntegrationBase.resolve_command_refs(body, _sep)
+
             output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
 
             if agent_config["extension"] == "/SKILL.md":
@@ -517,12 +537,22 @@ class CommandRegistrar:
                     project_root,
                 )
             elif agent_config["format"] == "markdown":
-                body = self.resolve_skill_placeholders(agent_name, frontmatter, body, project_root)
-                body = self._convert_argument_placeholder(body, "$ARGUMENTS", agent_config["args"])
-                output = self.render_markdown_command(frontmatter, body, source_id, context_note)
+                body = self.resolve_skill_placeholders(
+                    agent_name, frontmatter, body, project_root
+                )
+                body = self._convert_argument_placeholder(
+                    body, "$ARGUMENTS", agent_config["args"]
+                )
+                output = self.render_markdown_command(
+                    frontmatter, body, source_id, context_note
+                )
             elif agent_config["format"] == "toml":
-                body = self.resolve_skill_placeholders(agent_name, frontmatter, body, project_root)
-                body = self._convert_argument_placeholder(body, "$ARGUMENTS", agent_config["args"])
+                body = self.resolve_skill_placeholders(
+                    agent_name, frontmatter, body, project_root
+                )
+                body = self._convert_argument_placeholder(
+                    body, "$ARGUMENTS", agent_config["args"]
+                )
                 output = self.render_toml_command(frontmatter, body, source_id)
             elif agent_config["format"] == "yaml":
                 output = self.render_yaml_command(
@@ -697,8 +727,11 @@ class CommandRegistrar:
             if agent_dir.exists():
                 try:
                     registered = self.register_commands(
-                        agent_name, commands, source_id,
-                        source_dir, project_root,
+                        agent_name,
+                        commands,
+                        source_id,
+                        source_dir,
+                        project_root,
                         context_note=context_note,
                     )
                     if registered:

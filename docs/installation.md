@@ -16,6 +16,9 @@
 
 The easiest way to get started is to initialize a new project. Pin a specific release tag for stability (check [Releases](https://github.com/github/spec-kit/releases) for the latest):
 
+> [!NOTE]
+> The `uvx` commands below require **[uv](https://docs.astral.sh/uv/)**. If you see `command not found: uvx`, [install uv first](./install/uv.md). The `pipx` alternative does not require uv.
+
 ```bash
 # Install from a specific stable release (recommended — replace vX.Y.Z with the latest tag)
 uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <PROJECT_NAME>
@@ -40,6 +43,8 @@ uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here
 ```
 
 ### Specify Integration
+
+Interactive terminals prompt you to choose a coding agent integration during initialization. Non-interactive sessions, such as CI or piped runs, default to GitHub Copilot unless you pass `--integration`.
 
 You can proactively specify your coding agent integration during initialization:
 

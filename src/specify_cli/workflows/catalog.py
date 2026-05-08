@@ -20,7 +20,6 @@ from typing import Any
 import yaml
 
 from specify_cli._download_security import read_response_limited
-from specify_cli._github_http import open_github_url
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +324,7 @@ class WorkflowCatalog:
 
         # Fetch from URL — validate scheme before opening and after redirects
         from urllib.parse import urlparse
+        from specify_cli.authentication.http import open_url as _open_url
 
         def _validate_catalog_url(url: str) -> None:
             parsed = urlparse(url)
@@ -339,7 +339,7 @@ class WorkflowCatalog:
         _validate_catalog_url(entry.url)
 
         try:
-            with open_github_url(
+            with _open_url(
                 entry.url,
                 timeout=30,
                 strict_redirects=True,

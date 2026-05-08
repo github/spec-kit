@@ -1,0 +1,59 @@
+name: "Catalog: Auto-assign submission"
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  assign:
+    if: >
+      (github.event.action == 'opened' && (
+        contains(github.event.issue.labels.*.name, 'extension-submission') ||
+        contains(github.event.issue.labels.*.name, 'preset-submission')
+      )) ||
+      (github.event.action == 'labeled' && (
+        github.event.label.name == 'extension-submission' ||
+        github.event.label.name == 'preset-submission'
+      ))
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const assigned = (issue.assignees || []).map(a => a.login);
+            const marker = '<!-- catalog-assign-bot -->';
+
+            // Assign mnriem if not already assigned
+            if (!assigned.includes('mnriem')) {
+              try {
+                await github.rest.issues.addAssignees({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  assignees: ['mnriem'],
+                });
+              } catch (e) {
+                console.log(`Warning: could not assign mnriem: ${e.message}`);
+              }
+            }
+
+            // Post team notification if not already posted
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              }
+            );
+            if (!comments.some(c => c.body && c.body.includes(marker))) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: marker + '\ncc @github/spec-kit-maintainers — new catalog submission for review.',
+              });
+            }

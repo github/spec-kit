@@ -166,12 +166,12 @@ class TestCatalogFetch:
     """Tests that use a local HTTP server stub via monkeypatch."""
 
     def _patch_urlopen(self, monkeypatch, catalog_data):
-        """Patch urllib.request.urlopen to return *catalog_data*."""
+        """Patch authentication.http.urllib.request.urlopen to return *catalog_data*."""
 
         class FakeResponse:
             def __init__(self, data, url=""):
                 self._data = json.dumps(data).encode()
-                self._url = url
+                self._url = url if isinstance(url, str) else url.full_url
 
             def read(self, _size=-1):
                 return self._data
@@ -185,11 +185,12 @@ class TestCatalogFetch:
             def __exit__(self, *a):
                 pass
 
-        def fake_urlopen(url, timeout=10):
+        def fake_urlopen(req, timeout=10):
+            url = req if isinstance(req, str) else req.full_url
             return FakeResponse(catalog_data, url)
 
-        import urllib.request
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        import specify_cli.authentication.http as _auth_http
+        monkeypatch.setattr(_auth_http.urllib.request, "urlopen", fake_urlopen)
 
     def test_fetch_and_search_all(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HOME", str(tmp_path))
@@ -316,8 +317,8 @@ class TestCatalogFetch:
             def __exit__(self, *_args):
                 pass
 
-        def fake_urlopen(url, timeout=10):
-            assert url == entry.url
+        def fake_urlopen(req, timeout=10):
+            assert (req if isinstance(req, str) else req.full_url) == entry.url
             assert timeout == 10
             return FakeResponse()
 
@@ -530,22 +531,27 @@ class TestIntegrationListCatalog:
             },
         }
 
-        import urllib.request
+        import specify_cli.authentication.http as _auth_http
 
         class FakeResponse:
             def __init__(self, data, url=""):
                 self._data = json.dumps(data).encode()
-                self._url = url
+                self._url = url if isinstance(url, str) else url.full_url
+
             def read(self, _size=-1):
                 return self._data
+
             def geturl(self):
                 return self._url
+
             def __enter__(self):
                 return self
+
             def __exit__(self, *a):
                 pass
 
-        monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=10: FakeResponse(catalog, url))
+        monkeypatch.setattr(_auth_http.urllib.request, "urlopen",
+                            lambda req, timeout=10: FakeResponse(catalog, req if isinstance(req, str) else req.full_url))
 
         old = os.getcwd()
         try:

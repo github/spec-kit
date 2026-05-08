@@ -91,6 +91,7 @@ def _build_agent_config() -> dict[str, dict[str, Any]]:
     return config
 
 AGENT_CONFIG = _build_agent_config()
+DEFAULT_INIT_INTEGRATION = "copilot"
 
 AI_ASSISTANT_ALIASES = {
     "kiro": "kiro-cli",
@@ -152,6 +153,9 @@ def _build_ai_deprecation_warning(
         "[bold]--ai[/bold] is deprecated and will no longer be available in version 0.10.0 or later.\n\n"
         f"Use [bold]{replacement}[/bold] instead."
     )
+
+def _stdin_is_interactive() -> bool:
+    return sys.stdin.isatty()
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
@@ -1001,7 +1005,8 @@ def init(
 
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your coding agent integration
+    2. Let you choose your coding agent integration, or default to Copilot
+       in non-interactive sessions
     3. Download template from GitHub (or use bundled assets with --offline)
     4. Initialize a fresh git repository (if not --no-git and no existing repo)
     5. Optionally set up coding agent integration commands
@@ -1168,13 +1173,19 @@ def init(
             console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
             raise typer.Exit(1)
         selected_ai = ai_assistant
+    elif not _stdin_is_interactive():
+        console.print(
+            f"[dim]Non-interactive session detected: defaulting to '{DEFAULT_INIT_INTEGRATION}'. "
+            "Use --integration to choose a different agent.[/dim]"
+        )
+        selected_ai = DEFAULT_INIT_INTEGRATION
     else:
         # Create options dict for selection (agent_key: display_name)
         ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
         selected_ai = select_with_arrows(
             ai_choices,
             "Choose your coding agent integration:",
-            "copilot"
+            DEFAULT_INIT_INTEGRATION,
         )
 
     # Auto-promote interactively selected agents to the integration path
@@ -1239,7 +1250,7 @@ def init(
     else:
         default_script = "ps" if os.name == "nt" else "sh"
 
-        if sys.stdin.isatty():
+        if _stdin_is_interactive():
             selected_script = select_with_arrows(SCRIPT_TYPE_CHOICES, "Choose script type (or press Enter)", default_script)
         else:
             selected_script = default_script
@@ -1757,22 +1768,14 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     On anything else — including a malformed response body — the exception
     propagates; there is no catch-all (research D-006).
     """
-    req = urllib.request.Request(
-        GITHUB_API_LATEST,
-        headers={"Accept": "application/vnd.github+json"},
-    )
-    token = None
-    for env_var in ("GH_TOKEN", "GITHUB_TOKEN"):
-        candidate = os.environ.get(env_var)
-        if candidate is not None:
-            candidate = candidate.strip()
-            if candidate:
-                token = candidate
-                break
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
+    from .authentication.http import open_url
+
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with open_url(
+            GITHUB_API_LATEST,
+            timeout=5,
+            extra_headers={"Accept": "application/vnd.github+json"},
+        ) as resp:
             payload = json.loads(
                 read_response_limited(
                     resp,
@@ -1787,7 +1790,9 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     except urllib.error.HTTPError as e:
         # Order matters: HTTPError is a subclass of URLError.
         if e.code == 403:
-            return None, "rate limited (try setting GH_TOKEN or GITHUB_TOKEN)"
+            return None, (
+                "rate limited (configure ~/.specify/auth.json with a GitHub token)"
+            )
         return None, f"HTTP {e.code}"
     except (urllib.error.URLError, OSError):
         return None, "offline or timeout"
@@ -3382,9 +3387,18 @@ def preset_add(
             with tempfile.TemporaryDirectory() as tmpdir:
                 zip_path = Path(tmpdir) / "preset.zip"
                 try:
-                    with urllib.request.urlopen(from_url, timeout=60) as response:
+                    from specify_cli.authentication.http import open_url as _open_url
+
+                    with _open_url(
+                        from_url,
+                        timeout=60,
+                        strict_redirects=True,
+                    ) as response:
                         zip_path.write_bytes(
-                            read_response_limited(response, label=f"preset {from_url}")
+                            read_response_limited(
+                                response,
+                                label=f"preset {from_url}",
+                            )
                         )
                 except (urllib.error.URLError, ValueError) as e:
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
@@ -4288,7 +4302,13 @@ def extension_add(
                 zip_path = download_dir / f"{extension}-url-download.zip"
 
                 try:
-                    with urllib.request.urlopen(from_url, timeout=60) as response:
+                    from specify_cli.authentication.http import open_url as _open_url
+
+                    with _open_url(
+                        from_url,
+                        timeout=60,
+                        strict_redirects=True,
+                    ) as response:
                         zip_data = read_response_limited(
                             response,
                             label=f"extension {from_url}",
@@ -5506,7 +5526,7 @@ def workflow_add(
     if source.startswith("http://") or source.startswith("https://"):
         from ipaddress import ip_address
         from urllib.parse import urlparse
-        from urllib.request import urlopen  # noqa: S310
+        from specify_cli.authentication.http import open_url as _open_url
 
         parsed_src = urlparse(source)
         src_host = parsed_src.hostname or ""
@@ -5523,7 +5543,7 @@ def workflow_add(
 
         import tempfile
         try:
-            with urlopen(source, timeout=30) as resp:  # noqa: S310
+            with _open_url(source, timeout=30) as resp:
                 final_url = resp.geturl()
                 final_parsed = urlparse(final_url)
                 final_host = final_parsed.hostname or ""
@@ -5619,10 +5639,10 @@ def workflow_add(
     workflow_file = workflow_dir / "workflow.yml"
 
     try:
-        from urllib.request import urlopen  # noqa: S310 — URL comes from catalog
+        from specify_cli.authentication.http import open_url as _open_url
 
         workflow_dir.mkdir(parents=True, exist_ok=True)
-        with urlopen(workflow_url, timeout=30) as response:  # noqa: S310
+        with _open_url(workflow_url, timeout=30) as response:
             # Validate final URL after redirects
             final_url = response.geturl()
             final_parsed = urlparse(final_url)
@@ -5825,7 +5845,7 @@ def workflow_catalog_list():
     """List configured workflow catalog sources."""
     from .workflows.catalog import WorkflowCatalog, WorkflowCatalogError
 
-    project_root = Path.cwd()
+    project_root = _require_specify_project()
     catalog = WorkflowCatalog(project_root)
 
     try:

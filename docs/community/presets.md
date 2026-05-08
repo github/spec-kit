@@ -1,13 +1,14 @@
 # Community Presets
 
 > [!NOTE]
-> Community presets are independently created and maintained by their respective authors. GitHub and the Spec Kit maintainers may review pull requests that add entries to the community catalog for formatting, catalog structure, or policy compliance, but they do **not review, audit, endorse, or support the preset code itself**. Review preset source code before installation and use at your own discretion.
+> Community presets are independently created and maintained by their respective authors. Maintainers only verify that catalog entries are complete and correctly formatted — they do **not review, audit, endorse, or support the preset code itself**. Review preset source code before installation and use at your own discretion.
 
 The following community-contributed presets customize how Spec Kit behaves — overriding templates, commands, and terminology without changing any tooling. Presets are available in [`catalog.community.json`](https://github.com/github/spec-kit/blob/main/presets/catalog.community.json):
 
 | Preset | Purpose | Provides | Requires | URL |
 |--------|---------|----------|----------|-----|
 | A11Y Governance | Adds WCAG 2.2 AA accessibility checks, bilingual DE/EN delivery, CEFR-B2 readability, CLI accessibility, and inclusive-content guidance | 9 templates, 3 commands | — | [spec-kit-preset-a11y-governance](https://github.com/hindermath/spec-kit-preset-a11y-governance) |
+| Agent Parity Governance | Keeps shared AI-agent instructions aligned across project-defined agent guidance surfaces and documents intentional deviations | 6 templates, 3 commands | — | [spec-kit-preset-agent-parity-governance](https://github.com/hindermath/spec-kit-preset-agent-parity-governance) |
 | AIDE In-Place Migration | Adapts the AIDE extension workflow for in-place technology migrations (X → Y pattern) — adds migration objectives, verification gates, knowledge documents, and behavioral equivalence criteria | 2 templates, 8 commands | AIDE extension | [spec-kit-presets](https://github.com/mnriem/spec-kit-presets) |
 | Architecture Governance | Adds secure architecture governance: trust boundaries, threat modeling, STRIDE/CAPEC, S-ADRs, Zero Trust applicability, and OWASP SAMM | 11 templates, 3 commands | — | [spec-kit-preset-architecture-governance](https://github.com/hindermath/spec-kit-preset-architecture-governance) |
 | Canon Core | Adapts original Spec Kit workflow to work together with Canon extension | 2 templates, 8 commands | — | [spec-kit-canon](https://github.com/maximiliamus/spec-kit-canon) |
@@ -21,6 +22,7 @@ The following community-contributed presets customize how Spec Kit behaves — o
 | Pirate Speak (Full) | Transforms all Spec Kit output into pirate speak — specs become "Voyage Manifests", plans become "Battle Plans", tasks become "Crew Assignments" | 6 templates, 9 commands | — | [spec-kit-presets](https://github.com/mnriem/spec-kit-presets) |
 | Screenwriting | Spec-Driven Development for screenwriting/scriptwriting/tutorials: feature films, television (pilot, episode, limited series), and stage plays. Adapts the Spec Kit workflow to screenplay craft — slug lines, action lines, act breaks, beat sheets, and industry-standard pitch documents. Supports three-act, Save the Cat, TV pilot, network episode, cable/streaming episode, and stage-play structural frameworks. Export to Fountain, FTX, PDF | 26 templates, 32 commands, 1 script | — | [speckit-preset-screenwriting](https://github.com/adaumann/speckit-preset-screenwriting) |
 | Security Governance | Adds secure development governance: memory-safe-language preference, secure code generation, NIST SSDF, CWE Top 25, OWASP ASVS, SBOM/VEX/SLSA, OpenSSF Scorecard, and EU CRA applicability | 12 templates, 3 commands | — | [spec-kit-preset-security-governance](https://github.com/hindermath/spec-kit-preset-security-governance) |
+| Spec2Cloud | Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy | 5 templates, 8 commands | — | [spec2cloud](https://github.com/Azure-Samples/Spec2Cloud) |
 | Table of Contents Navigation | Adds a navigable Table of Contents to generated spec.md, plan.md, and tasks.md documents | 3 templates, 3 commands | — | [spec-kit-preset-toc-navigation](https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation) |
 | VS Code Ask Questions | Enhances the clarify command to use `vscode/askQuestions` for batched interactive questioning. | 1 command | — | [spec-kit-presets](https://github.com/fdcastel/spec-kit-presets) |
 

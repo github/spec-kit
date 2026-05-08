@@ -267,7 +267,6 @@ class IntegrationCatalog:
     ) -> Dict[str, Any]:
         """Fetch one catalog, with per-URL caching."""
         import urllib.error
-        import urllib.request
 
         url_hash = hashlib.sha256(entry.url.encode()).hexdigest()[:16]
         cache_file = self.cache_dir / f"catalog-{url_hash}.json"
@@ -291,7 +290,9 @@ class IntegrationCatalog:
                     pass  # Cache cleanup is best-effort; ignore deletion failures.
 
         try:
-            with urllib.request.urlopen(entry.url, timeout=10) as resp:
+            from specify_cli.authentication.http import open_url
+
+            with open_url(entry.url, timeout=10) as resp:
                 # Validate final URL after redirects
                 final_url = resp.geturl()
                 if final_url != entry.url:
