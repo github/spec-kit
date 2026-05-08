@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
+from tests.conftest import strip_ansi
 
 
 runner = CliRunner()
@@ -49,7 +50,10 @@ def _write_invalid_manifest(project, key):
 
 
 def _integration_list_row_cells(output: str, key: str) -> list[str]:
-    row = next(line for line in output.splitlines() if line.startswith(f"│ {key}"))
+    normalized_output = strip_ansi(output)
+    row = next(
+        line for line in normalized_output.splitlines() if line.lstrip().startswith(f"│ {key}")
+    )
     return [cell.strip() for cell in row.split("│")[1:-1]]
 
 
@@ -161,7 +165,7 @@ class TestIntegrationInstall:
             os.chdir(old_cwd)
         assert result.exit_code == 0
         assert "already installed" in result.output
-        normalized = " ".join(result.output.split())
+        normalized = " ".join(strip_ansi(result.output).split())
         assert "specify integration upgrade copilot" in normalized
         assert "specify integration uninstall copilot" in normalized
 
@@ -174,9 +178,10 @@ class TestIntegrationInstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Installed integrations: copilot" in result.output
-        assert "Default integration: copilot" in result.output
-        assert "--force" in result.output
+        normalized = " ".join(strip_ansi(result.output).split())
+        assert "Installed integrations: copilot" in normalized
+        assert "Default integration: copilot" in normalized
+        assert "--force" in normalized
 
     def test_install_multi_safe_integration(self, tmp_path):
         project = _init_project(tmp_path, "claude")

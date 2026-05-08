@@ -362,6 +362,19 @@ class ExtensionManifest:
         """Get hook definitions."""
         return self.data.get("hooks", {})
 
+    @property
+    def config_files(self) -> List[Dict[str, Any]]:
+        """Get configured extension config-file entries.
+
+        Returns:
+            List of entries from provides.config, or an empty list.
+        """
+        provides = self.data.get("provides", {})
+        if not isinstance(provides, dict):
+            return []
+        config_entries = provides.get("config", [])
+        return config_entries if isinstance(config_entries, list) else []
+
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
         with open(self.path, 'rb') as f:
@@ -806,6 +819,75 @@ class ExtensionManager:
 
         return _ignore
 
+    @staticmethod
+    def _resolve_manifest_relative_path(
+        extension_dir: Path,
+        relative_path: str,
+        field_name: str,
+    ) -> Path:
+        """Resolve and validate a manifest relative path stays within extension root."""
+        rel = Path(relative_path)
+        if rel.is_absolute():
+            raise ValidationError(f"{field_name} must be a relative path: {relative_path!r}")
+
+        try:
+            ext_root = extension_dir.resolve()
+            resolved = (ext_root / rel).resolve()
+            resolved.relative_to(ext_root)
+        except (OSError, ValueError):
+            raise ValidationError(
+                f"{field_name} escapes extension directory: {relative_path!r}"
+            )
+
+        return resolved
+
+    def _materialize_config_files(self, manifest: ExtensionManifest, extension_dir: Path) -> None:
+        """Create config files declared in provides.config from their templates.
+
+        Config files are only created when missing; existing files are preserved.
+        """
+        for idx, entry in enumerate(manifest.config_files):
+            if not isinstance(entry, dict):
+                raise ValidationError(
+                    f"Invalid provides.config entry at index {idx}: expected a mapping"
+                )
+
+            name = entry.get("name")
+            template = entry.get("template")
+            if not isinstance(name, str) or not name.strip():
+                raise ValidationError(
+                    f"Invalid provides.config[{idx}].name: expected non-empty string"
+                )
+            if not isinstance(template, str) or not template.strip():
+                raise ValidationError(
+                    f"Invalid provides.config[{idx}].template: expected non-empty string"
+                )
+
+            name = name.strip()
+            template = template.strip()
+
+            target_path = self._resolve_manifest_relative_path(
+                extension_dir,
+                name,
+                f"provides.config[{idx}].name",
+            )
+            template_path = self._resolve_manifest_relative_path(
+                extension_dir,
+                template,
+                f"provides.config[{idx}].template",
+            )
+
+            if not template_path.is_file():
+                raise ValidationError(
+                    f"Template file not found for provides.config[{idx}]: {template!r}"
+                )
+
+            if target_path.exists():
+                continue
+
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(template_path, target_path)
+
     def _get_skills_dir(self) -> Optional[Path]:
         """Return the active skills directory for extension skill registration.
 
@@ -1216,6 +1298,10 @@ class ExtensionManager:
 
         ignore_fn = self._load_extensionignore(source_dir)
         shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
+
+        # Materialize declared config files from templates (without
+        # overwriting existing files in the copied extension directory).
+        self._materialize_config_files(manifest, dest_dir)
 
         # Register commands with AI agents
         registered_commands = {}
@@ -2250,7 +2336,7 @@ class ConfigManager:
     Configuration layers (in order of precedence from lowest to highest):
     1. Defaults (from extension.yml)
     2. Project config (.specify/extensions/{ext-id}/{ext-id}-config.yml)
-    3. Local config (.specify/extensions/{ext-id}/local-config.yml) - gitignored
+    3. Local config (legacy local.yml + local-config.yml, with local-config.yml winning)
     4. Environment variables (SPECKIT_{EXT_ID}_{KEY})
     """
 
@@ -2310,8 +2396,11 @@ class ConfigManager:
         Returns:
             Local configuration dictionary
         """
-        config_file = self.extension_dir / "local-config.yml"
-        return self._load_yaml_config(config_file)
+        # Backward compatibility: support historical local.yml while preferring
+        # local-config.yml when both files exist.
+        legacy_config = self._load_yaml_config(self.extension_dir / "local.yml")
+        canonical_config = self._load_yaml_config(self.extension_dir / "local-config.yml")
+        return self._merge_configs(legacy_config, canonical_config)
 
     def _get_env_config(self) -> Dict[str, Any]:
         """Get configuration from environment variables.

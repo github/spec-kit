@@ -311,30 +311,39 @@ credentials:
   api_key: "${MY_EXT_API_KEY}"
 ```
 
+When the extension is installed, each `provides.config` entry copies its
+`template` file to `name` if the target file does not already exist.
+
 ### Config Loading
 
-In your command, load config with layered precedence:
+Use the built-in resolver command to load layered config:
 
-1. Extension defaults (`extension.yml` → `defaults`)
+1. Extension defaults (`extension.yml` → `config.defaults`)
 2. Project config (`.specify/extensions/my-ext/my-ext-config.yml`)
-3. Local overrides (`.specify/extensions/my-ext/my-ext-config.local.yml` - gitignored)
+3. Local overrides (`.specify/extensions/my-ext/local-config.yml` - gitignored)
 4. Environment variables (`SPECKIT_MY_EXT_*`)
 
-**Example loading script**:
+Note: `local.yml` is still read for backward compatibility, but `local-config.yml` is the canonical filename and wins when both are present.
+
+**Recommended command usage**:
+
+```bash
+# JSON for structured consumers
+config_json=$(specify extension config resolve my-ext --format json)
+
+# Or flattened env vars for shell scripts
+eval "$(specify extension config resolve my-ext --format env --prefix MY_EXT_CFG_)"
+```
+
+**Example script usage after env export**:
 
 ```bash
 #!/usr/bin/env bash
-EXT_DIR=".specify/extensions/my-ext"
+set -euo pipefail
 
-# Load and merge config
-config=$(yq eval '.' "$EXT_DIR/my-ext-config.yml" -o=json)
-
-# Apply env overrides
-if [ -n "${SPECKIT_MY_EXT_API_KEY:-}" ]; then
-  config=$(echo "$config" | jq ".api.api_key = \"$SPECKIT_MY_EXT_API_KEY\"")
-fi
-
-echo "$config"
+eval "$(specify extension config resolve my-ext --format env --prefix MY_EXT_CFG_)"
+echo "Endpoint: ${MY_EXT_CFG_API_ENDPOINT:-}"
+echo "Timeout: ${MY_EXT_CFG_API_TIMEOUT:-30}"
 ```
 
 ---

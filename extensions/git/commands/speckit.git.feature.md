@@ -28,11 +28,21 @@ If the user explicitly provided `GIT_BRANCH_NAME` (e.g., via environment variabl
 
 ## Branch Numbering Mode
 
-Determine the branch numbering strategy by checking configuration in this order:
+Determine the branch numbering strategy by resolving the extension configuration:
+
+```bash
+# shellcheck disable=SC2046
+# eval is required here because resolver emits KEY=VALUE lines
+# for the current shell session.
+eval "$(specify extension config resolve git --format env --prefix GIT_CFG_)"
+BRANCH_NUMBERING="${GIT_CFG_BRANCH_NUMBERING:-sequential}"
+```
+
+For backward compatibility, if `specify` is unavailable, fall back to:
 
 1. Check `.specify/extensions/git/git-config.yml` for `branch_numbering` value
-2. Check `.specify/init-options.json` for `branch_numbering` value (backward compatibility)
-3. Default to `sequential` if neither exists
+2. Check `.specify/init-options.json` for `branch_numbering` value
+3. Default to `sequential`
 
 ## Execution
 

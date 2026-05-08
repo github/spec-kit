@@ -24,15 +24,22 @@ _find_project_root() {
 REPO_ROOT=$(_find_project_root "$SCRIPT_DIR") || REPO_ROOT="$(pwd)"
 cd "$REPO_ROOT"
 
-# Read commit message from extension config, fall back to default
-COMMIT_MSG="[Spec Kit] Initial commit"
-_config_file="$REPO_ROOT/.specify/extensions/git/git-config.yml"
-if [ -f "$_config_file" ]; then
-    _msg=$(grep '^init_commit_message:' "$_config_file" 2>/dev/null | sed 's/^init_commit_message:[[:space:]]*//' | sed 's/^["'\'']//' | sed 's/["'\'']*$//')
-    if [ -n "$_msg" ]; then
-        COMMIT_MSG="$_msg"
+# Resolve commit message: env var set by caller (via config resolver) takes priority,
+# then fall back to ad-hoc YAML read for backward compatibility, then hardcoded default.
+#
+# Callers should export GIT_CFG_INIT_COMMIT_MESSAGE before invoking this script:
+#   eval "$(specify extension config resolve git --format env --prefix GIT_CFG_)"
+COMMIT_MSG="${GIT_CFG_INIT_COMMIT_MESSAGE:-}"
+if [ -z "$COMMIT_MSG" ]; then
+    _config_file="$REPO_ROOT/.specify/extensions/git/git-config.yml"
+    if [ -f "$_config_file" ]; then
+        _msg=$(grep '^init_commit_message:' "$_config_file" 2>/dev/null | sed 's/^init_commit_message:[[:space:]]*//' | sed 's/^["'\'']//' | sed 's/["'\'']*$//')
+        if [ -n "$_msg" ]; then
+            COMMIT_MSG="$_msg"
+        fi
     fi
 fi
+: "${COMMIT_MSG:=[Spec Kit] Initial commit}"
 
 # Check if git is available
 if ! command -v git >/dev/null 2>&1; then

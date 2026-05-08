@@ -837,3 +837,356 @@ class TestGitCommonPowerShell:
             text=True,
         )
         assert result.returncode == 0
+
+
+# ── ConfigManager layering tests (git extension) ─────────────────────────────
+
+
+class TestGitConfigManagerLayering:
+    """Unit tests for ConfigManager layering specific to the git extension.
+
+    Covers:
+    1. defaults only (from extension.yml)
+    2. git-config.yml overrides defaults
+    3. local-config.yml overrides project config
+    4. SPECKIT_GIT_* env vars override all files
+    """
+
+    def _install_git_extension(self, project_dir: Path) -> Path:
+        """Install the git extension into project_dir and return the installed ext dir."""
+        from specify_cli.extensions import ExtensionManager
+
+        (project_dir / ".specify").mkdir(exist_ok=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(EXT_DIR, "0.5.0", register_commands=False)
+        return project_dir / ".specify" / "extensions" / "git"
+
+    def test_defaults_only(self, tmp_path: Path):
+        """ConfigManager returns manifest defaults when no config files exist."""
+        from specify_cli.extensions import ConfigManager
+
+        ext_dir = self._install_git_extension(tmp_path)
+        # Remove any config file that install may have created
+        for f in ("git-config.yml", "local-config.yml"):
+            (ext_dir / f).unlink(missing_ok=True)
+
+        config = ConfigManager(tmp_path, "git").get_config()
+
+        assert config["branch_numbering"] == "sequential"
+        assert config["init_commit_message"] == "[Spec Kit] Initial commit"
+        assert config["auto_commit"]["default"] is False
+
+    def test_project_config_overrides_defaults(self, tmp_path: Path):
+        """git-config.yml overrides manifest defaults."""
+        from specify_cli.extensions import ConfigManager
+
+        ext_dir = self._install_git_extension(tmp_path)
+        (ext_dir / "git-config.yml").write_text(
+            "branch_numbering: timestamp\n"
+            "init_commit_message: \"[Custom] Init\"\n",
+            encoding="utf-8",
+        )
+        (ext_dir / "local-config.yml").unlink(missing_ok=True)
+
+        config = ConfigManager(tmp_path, "git").get_config()
+
+        assert config["branch_numbering"] == "timestamp"
+        assert config["init_commit_message"] == "[Custom] Init"
+        # Unmentioned key still comes from defaults
+        assert "auto_commit" in config
+
+    def test_local_config_overrides_project_config(self, tmp_path: Path):
+        """local-config.yml overrides git-config.yml which overrides defaults."""
+        from specify_cli.extensions import ConfigManager
+
+        ext_dir = self._install_git_extension(tmp_path)
+        (ext_dir / "git-config.yml").write_text(
+            "branch_numbering: timestamp\n",
+            encoding="utf-8",
+        )
+        (ext_dir / "local-config.yml").write_text(
+            "branch_numbering: sequential\n"
+            "init_commit_message: \"[Local] Override\"\n",
+            encoding="utf-8",
+        )
+
+        config = ConfigManager(tmp_path, "git").get_config()
+
+        assert config["branch_numbering"] == "sequential"
+        assert config["init_commit_message"] == "[Local] Override"
+
+    def test_env_var_creates_nested_path(self, tmp_path: Path):
+        """ConfigManager maps SPECKIT_GIT_A_B_C to a nested path a.b.c.
+
+        Note: the ConfigManager splits env var suffixes on every underscore, so
+        keys with underscores in their name (like branch_numbering) cannot be
+        directly overridden via env var — the env var instead creates a *new*
+        nested key at that path.  This test documents that design constraint.
+        """
+        from specify_cli.extensions import ConfigManager
+
+        ext_dir = self._install_git_extension(tmp_path)
+        (ext_dir / "git-config.yml").unlink(missing_ok=True)
+        (ext_dir / "local-config.yml").unlink(missing_ok=True)
+
+        # SPECKIT_GIT_AUTO_COMMIT_DEFAULT -> path ["auto", "commit", "default"]
+        # which does NOT match the key "auto_commit" -> it creates a new "auto" key.
+        env_patch = {"SPECKIT_GIT_AUTO_COMMIT_DEFAULT": "true"}
+        original = {k: os.environ.get(k) for k in env_patch}
+        try:
+            os.environ.update(env_patch)
+            config = ConfigManager(tmp_path, "git").get_config()
+        finally:
+            for k, v in original.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+        # The env var creates a new nested "auto.commit.default" path alongside "auto_commit"
+        assert config["auto"]["commit"]["default"] == "true"
+        # The original auto_commit key from defaults is unaffected
+        assert config["auto_commit"]["default"] is False
+
+    def test_env_var_prefix_format(self, tmp_path: Path):
+        """SPECKIT_GIT_* is the correct env prefix for the git extension."""
+        from specify_cli.extensions import ConfigManager
+
+        ext_dir = self._install_git_extension(tmp_path)
+        (ext_dir / "git-config.yml").unlink(missing_ok=True)
+        (ext_dir / "local-config.yml").unlink(missing_ok=True)
+
+        # A single-segment suffix produces a top-level key
+        env_patch = {"SPECKIT_GIT_TESTKEY": "testval"}
+        original = {k: os.environ.get(k) for k in env_patch}
+        try:
+            os.environ.update(env_patch)
+            config = ConfigManager(tmp_path, "git").get_config()
+        finally:
+            for k, v in original.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+        assert config["testkey"] == "testval"
+
+
+# ── CLI resolver integration tests (git extension) ───────────────────────────
+
+
+class TestGitConfigResolverCLI:
+    """Integration tests for `specify extension config resolve git`.
+
+    Verifies --format json, --format env, and invalid format behaviour
+    against an installed git extension.
+    """
+
+    def _install_git_extension(self, project_dir: Path) -> Path:
+        from specify_cli.extensions import ExtensionManager
+
+        (project_dir / ".specify").mkdir(exist_ok=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(EXT_DIR, "0.5.0", register_commands=False)
+        return project_dir / ".specify" / "extensions" / "git"
+
+    def _invoke(self, project_dir: Path, *args: str, env: dict | None = None):
+        """Invoke the CLI via typer's test runner with project_dir as cwd."""
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            return runner.invoke(app, list(args), catch_exceptions=False, env=env or {})
+
+    def test_resolve_json_returns_defaults(self, tmp_path: Path):
+        """--format json returns at least the manifest defaults."""
+        ext_dir = self._install_git_extension(tmp_path)
+        (ext_dir / "git-config.yml").unlink(missing_ok=True)
+        (ext_dir / "local-config.yml").unlink(missing_ok=True)
+
+        result = self._invoke(tmp_path, "extension", "config", "resolve", "git", "--format", "json")
+        assert result.exit_code == 0, result.output
+        import json as _json
+        data = _json.loads(result.output)
+        assert data["branch_numbering"] == "sequential"
+        assert data["init_commit_message"] == "[Spec Kit] Initial commit"
+        assert data["auto_commit"]["default"] is False
+
+    def test_resolve_json_project_config_overrides(self, tmp_path: Path):
+        """--format json reflects project config overrides on top of defaults."""
+        ext_dir = self._install_git_extension(tmp_path)
+        (ext_dir / "git-config.yml").write_text(
+            "branch_numbering: timestamp\n",
+            encoding="utf-8",
+        )
+        (ext_dir / "local-config.yml").unlink(missing_ok=True)
+
+        result = self._invoke(tmp_path, "extension", "config", "resolve", "git", "--format", "json")
+        assert result.exit_code == 0, result.output
+        import json as _json
+        data = _json.loads(result.output)
+        assert data["branch_numbering"] == "timestamp"
+
+    def test_resolve_env_prefix_normalisation(self, tmp_path: Path):
+        """--format env emits GIT_CFG_BRANCH_NUMBERING with correct prefix."""
+        ext_dir = self._install_git_extension(tmp_path)
+        (ext_dir / "git-config.yml").unlink(missing_ok=True)
+        (ext_dir / "local-config.yml").unlink(missing_ok=True)
+
+        result = self._invoke(
+            tmp_path,
+            "extension", "config", "resolve", "git",
+            "--format", "env",
+            "--prefix", "GIT_CFG_",
+        )
+        assert result.exit_code == 0, result.output
+        assert "GIT_CFG_BRANCH_NUMBERING=" in result.output
+        assert "GIT_CFG_INIT_COMMIT_MESSAGE=" in result.output
+
+    def test_resolve_env_local_config_reflected(self, tmp_path: Path):
+        """--format env reflects local-config.yml override."""
+        ext_dir = self._install_git_extension(tmp_path)
+        (ext_dir / "git-config.yml").write_text(
+            "branch_numbering: sequential\n",
+            encoding="utf-8",
+        )
+        (ext_dir / "local-config.yml").write_text(
+            "branch_numbering: timestamp\n",
+            encoding="utf-8",
+        )
+
+        result = self._invoke(
+            tmp_path,
+            "extension", "config", "resolve", "git",
+            "--format", "env",
+            "--prefix", "GIT_CFG_",
+        )
+        assert result.exit_code == 0, result.output
+        assert "GIT_CFG_BRANCH_NUMBERING=timestamp" in result.output
+
+    def test_resolve_invalid_format_exits_nonzero(self, tmp_path: Path):
+        """--format yaml is rejected with exit code 1."""
+        self._install_git_extension(tmp_path)
+
+        result = self._invoke(
+            tmp_path,
+            "extension", "config", "resolve", "git",
+            "--format", "yaml",
+        )
+        assert result.exit_code != 0
+
+
+# ── initialize-repo.sh env-var override tests ────────────────────────────────
+
+
+@requires_bash
+class TestInitializeRepoEnvOverride:
+    """initialize-repo.sh reads GIT_CFG_INIT_COMMIT_MESSAGE before falling back to YAML."""
+
+    def test_env_var_overrides_config_file(self, tmp_path: Path):
+        """GIT_CFG_INIT_COMMIT_MESSAGE takes priority over git-config.yml."""
+        project = _setup_project(tmp_path, git=False)
+        _write_config(project, 'init_commit_message: "From config file"\n')
+
+        result = _run_bash(
+            "initialize-repo.sh", project,
+            env_extra={"GIT_CFG_INIT_COMMIT_MESSAGE": "From env var"},
+        )
+        assert result.returncode == 0, result.stderr
+
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "From env var" in log.stdout
+
+    def test_env_var_overrides_default(self, tmp_path: Path):
+        """GIT_CFG_INIT_COMMIT_MESSAGE overrides the hardcoded default when no config file."""
+        project = _setup_project(tmp_path, git=False)
+        config = project / ".specify" / "extensions" / "git" / "git-config.yml"
+        config.unlink(missing_ok=True)
+
+        result = _run_bash(
+            "initialize-repo.sh", project,
+            env_extra={"GIT_CFG_INIT_COMMIT_MESSAGE": "Env-only message"},
+        )
+        assert result.returncode == 0, result.stderr
+
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "Env-only message" in log.stdout
+
+
+# ── auto-commit.sh env-var override tests ────────────────────────────────────
+
+
+@requires_bash
+class TestAutoCommitEnvOverride:
+    """auto-commit.sh reads GIT_CFG_AUTO_COMMIT_* env vars before falling back to YAML."""
+
+    def test_env_enabled_overrides_disabled_config(self, tmp_path: Path):
+        """GIT_CFG_AUTO_COMMIT_AFTER_SPECIFY_ENABLED=true commits even when config says false."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: false\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify",
+            env_extra={
+                "GIT_CFG_AUTO_COMMIT_DEFAULT": "false",
+                "GIT_CFG_AUTO_COMMIT_AFTER_SPECIFY_ENABLED": "true",
+                "GIT_CFG_AUTO_COMMIT_AFTER_SPECIFY_MESSAGE": "Env-driven commit",
+            },
+        )
+        assert result.returncode == 0, result.stderr
+
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "Env-driven commit" in log.stdout
+
+    def test_env_default_true_with_no_event_key(self, tmp_path: Path):
+        """GIT_CFG_AUTO_COMMIT_DEFAULT=true triggers commit when no per-event env var."""
+        project = _setup_project(tmp_path)
+        # No config file — purely env-driven
+        config = project / ".specify" / "extensions" / "git" / "git-config.yml"
+        config.unlink(missing_ok=True)
+        (project / "new-file.txt").write_text("content")
+
+        result = _run_bash(
+            "auto-commit.sh", project, "after_tasks",
+            env_extra={"GIT_CFG_AUTO_COMMIT_DEFAULT": "true"},
+        )
+        assert result.returncode == 0, result.stderr
+        assert "[OK] Changes committed" in result.stderr
+
+    def test_env_disabled_prevents_commit(self, tmp_path: Path):
+        """GIT_CFG_AUTO_COMMIT_AFTER_SPECIFY_ENABLED=false suppresses commit even when default=true."""
+        project = _setup_project(tmp_path)
+        _write_config(project, "auto_commit:\n  default: true\n")
+        (project / "new-file.txt").write_text("content")
+
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify",
+            env_extra={
+                "GIT_CFG_AUTO_COMMIT_DEFAULT": "true",
+                "GIT_CFG_AUTO_COMMIT_AFTER_SPECIFY_ENABLED": "false",
+            },
+        )
+        assert result.returncode == 0, result.stderr
+        # Verify no new commit was made (still only the seed commit)
+        log = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert log.stdout.strip().count("\n") == 0

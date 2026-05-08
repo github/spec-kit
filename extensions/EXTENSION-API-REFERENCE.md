@@ -48,7 +48,7 @@ provides:
 
   config:                # Optional, array of config files
     - name: string       # Config file name
-      template: string   # Template file path
+      template: string   # Template file path (copied to `name` on install if missing)
       description: string
       required: boolean  # Default: false
 
@@ -514,10 +514,29 @@ field_mappings:
 
 ### Config Layers
 
-1. **Extension Defaults** (from `extension.yml` `defaults` section)
+1. **Extension Defaults** (from `extension.yml` `config.defaults` section)
 2. **Project Config** (`{extension-id}-config.yml`)
-3. **Local Override** (`{extension-id}-config.local.yml`, gitignored)
+3. **Local Override** (`local-config.yml`, gitignored)
 4. **Environment Variables** (`SPECKIT_{EXTENSION}_*`)
+
+Backward compatibility: `local.yml` is also loaded as a legacy local-override file, but `local-config.yml` is canonical and takes precedence when both exist.
+
+### Config Resolution Command
+
+Use the built-in resolver instead of re-implementing YAML merge logic in each extension:
+
+```bash
+# Emit merged config as JSON
+specify extension config resolve jira --format json
+
+# Emit flattened env assignments for shell scripts
+specify extension config resolve jira --format env --prefix JIRA_CFG_
+```
+
+For `--format env`, nested keys are flattened with `_`:
+
+- `project.key` -> `JIRA_CFG_PROJECT_KEY`
+- `feature.enabled` -> `JIRA_CFG_FEATURE_ENABLED`
 
 ### Environment Variable Pattern
 
@@ -621,6 +640,21 @@ EXECUTE_COMMAND: {command}
 - `--all` - Show both installed and available
 
 **Output**: List of installed extensions with metadata
+
+### extension config resolve
+
+**Usage**: `specify extension config resolve EXTENSION [OPTIONS]`
+
+Resolves layered extension configuration and emits either JSON or shell env assignments.
+
+**Options**:
+
+- `--format [json|env]` - Output mode (default: `json`)
+- `--prefix TEXT` - Env key prefix for `--format env` (default: `EXTCFG_`)
+
+**Arguments**:
+
+- `EXTENSION` - Installed extension ID or display name
 
 ### extension catalog list
 

@@ -25,18 +25,25 @@ $repoRoot = Find-ProjectRoot -StartDir $PSScriptRoot
 if (-not $repoRoot) { $repoRoot = Get-Location }
 Set-Location $repoRoot
 
-# Read commit message from extension config, fall back to default
-$commitMsg = "[Spec Kit] Initial commit"
-$configFile = Join-Path $repoRoot ".specify/extensions/git/git-config.yml"
-if (Test-Path $configFile) {
-    foreach ($line in Get-Content $configFile) {
-        if ($line -match '^init_commit_message:\s*(.+)$') {
-            $val = $matches[1].Trim() -replace '^["'']' -replace '["'']$'
-            if ($val) { $commitMsg = $val }
-            break
+# Resolve commit message: env var set by caller (via config resolver) takes priority,
+# then fall back to ad-hoc YAML read for backward compatibility, then hardcoded default.
+#
+# Callers should export GIT_CFG_INIT_COMMIT_MESSAGE before invoking this script:
+#   specify extension config resolve git --format env --prefix GIT_CFG_ | Invoke-Expression
+$commitMsg = $env:GIT_CFG_INIT_COMMIT_MESSAGE
+if (-not $commitMsg) {
+    $configFile = Join-Path $repoRoot ".specify/extensions/git/git-config.yml"
+    if (Test-Path $configFile) {
+        foreach ($line in Get-Content $configFile) {
+            if ($line -match '^init_commit_message:\s*(.+)$') {
+                $val = $matches[1].Trim() -replace '^["'']' -replace '["'']$'
+                if ($val) { $commitMsg = $val }
+                break
+            }
         }
     }
 }
+if (-not $commitMsg) { $commitMsg = "[Spec Kit] Initial commit" }
 
 # Check if git is available
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {

@@ -122,4 +122,20 @@ specify extension add <extension-name> --from https://github.com/<org>/<repo>/ar
 specify extension list
 ```
 
+## Resolving Extension Config
+
+Extensions can expose layered config (defaults + project file + local overrides + env vars).
+Use the built-in resolver instead of hand-rolling merge logic in every script:
+
+```bash
+# Emit merged config as JSON
+specify extension config resolve <extension-id> --format json
+
+# Emit flattened env assignments for shell scripts
+eval "$(specify extension config resolve <extension-id> --format env --prefix EXT_CFG_)"
+```
+
+When an extension declares `provides.config` entries, install now materializes each
+declared `name` from its `template` when the target file is missing.
+
 For more information, see the [Extension User Guide](EXTENSION-USER-GUIDE.md).

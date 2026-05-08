@@ -1871,6 +1871,13 @@ catalog_app = typer.Typer(
 )
 extension_app.add_typer(catalog_app, name="catalog")
 
+extension_config_app = typer.Typer(
+    name="config",
+    help="Resolve extension configuration",
+    add_completion=False,
+)
+extension_app.add_typer(extension_config_app, name="config")
+
 preset_app = typer.Typer(
     name="preset",
     help="Manage spec-kit presets",
@@ -3897,6 +3904,76 @@ def preset_catalog_remove(
 
 
 # ===== Extension Commands =====
+
+
+def _flatten_config_items(config: Any, key_parts: tuple[str, ...] = ()):
+    """Yield flattened key-path tuples for scalar/list/dict config leaf values."""
+    if isinstance(config, dict):
+        for key in sorted(config.keys()):
+            value = config[key]
+            if not isinstance(key, str):
+                key = str(key)
+            yield from _flatten_config_items(value, (*key_parts, key))
+    else:
+        if key_parts:
+            yield key_parts, config
+
+
+def _config_value_to_env_string(value: Any) -> str:
+    """Convert resolved config values to deterministic shell-friendly strings."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return ""
+    if isinstance(value, (int, float, str)):
+        return str(value)
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+@extension_config_app.command("resolve")
+def extension_config_resolve(
+    extension: str = typer.Argument(help="Installed extension ID or display name"),
+    format: str = typer.Option("json", "--format", help="Output format: json | env"),
+    prefix: str = typer.Option("EXTCFG_", "--prefix", help="Prefix for --format env keys"),
+):
+    """Resolve layered extension config and emit it for commands/scripts.
+
+    Layers (low -> high): manifest defaults, project config, local config, env.
+    """
+    from .extensions import ExtensionManager, ConfigManager
+
+    output_format = format.lower().strip()
+    if output_format not in {"json", "env"}:
+        console.print("[red]Error:[/red] --format must be one of: json, env")
+        raise typer.Exit(1)
+
+    project_root = _require_specify_project()
+    manager = ExtensionManager(project_root)
+    installed = manager.list_installed()
+    extension_id, _ = _resolve_installed_extension(
+        extension, installed, "config resolve"
+    )
+
+    config = ConfigManager(project_root, extension_id).get_config()
+
+    if output_format == "json":
+        typer.echo(json.dumps(config, indent=2, sort_keys=True))
+        return
+
+    env_prefix = prefix.strip().upper()
+    if not env_prefix:
+        console.print("[red]Error:[/red] --prefix must not be empty when using --format env")
+        raise typer.Exit(1)
+    if not env_prefix.endswith("_"):
+        env_prefix += "_"
+
+    lines: list[str] = []
+    for key_parts, value in _flatten_config_items(config):
+        env_key = env_prefix + "_".join(part.upper() for part in key_parts)
+        env_value = _config_value_to_env_string(value)
+        lines.append(f"{env_key}={shlex.quote(env_value)}")
+
+    typer.echo("\n".join(lines))
 
 
 def _resolve_installed_extension(

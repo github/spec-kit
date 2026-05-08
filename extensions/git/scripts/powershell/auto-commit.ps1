@@ -51,12 +51,49 @@ if (-not $isRepo) {
     exit 0
 }
 
-# Read per-command config from git-config.yml
-$configFile = Join-Path $repoRoot ".specify/extensions/git/git-config.yml"
+# Resolve per-command config.
+#
+# Preferred path: caller exports GIT_CFG_* via the config resolver before
+# invoking this script:
+#   specify extension config resolve git --format env --prefix GIT_CFG_ | Invoke-Expression
+#
+# The resolver flattens nested YAML keys with underscores, so:
+#   auto_commit.<event>.enabled  -> GIT_CFG_AUTO_COMMIT_<EVENT>_ENABLED
+#   auto_commit.<event>.message  -> GIT_CFG_AUTO_COMMIT_<EVENT>_MESSAGE
+#   auto_commit.default          -> GIT_CFG_AUTO_COMMIT_DEFAULT
+#
+# Fallback path: if GIT_CFG_* vars are absent, parse git-config.yml directly
+# (backward compatibility).
+
 $enabled = $false
 $commitMsg = ""
 
-if (Test-Path $configFile) {
+# Build the env-var key fragment for this event (upper-case, hyphens->underscores)
+$eventKey = $EventName.ToUpper() -replace '-', '_'
+$envEnabledVar  = "GIT_CFG_AUTO_COMMIT_${eventKey}_ENABLED"
+$envMsgVar      = "GIT_CFG_AUTO_COMMIT_${eventKey}_MESSAGE"
+$envDefaultVar  = "GIT_CFG_AUTO_COMMIT_DEFAULT"
+
+$envEnabledVal = [System.Environment]::GetEnvironmentVariable($envEnabledVar)
+$envDefaultVal = [System.Environment]::GetEnvironmentVariable($envDefaultVar)
+
+if ($null -ne $envEnabledVal -or $null -ne $envDefaultVal) {
+    # Resolver env vars are present — consume them
+    if ($null -ne $envEnabledVal) {
+        $enabled = ($envEnabledVal.Trim().ToLower() -eq 'true')
+    } elseif ($null -ne $envDefaultVal -and $envDefaultVal.Trim().ToLower() -eq 'true') {
+        $enabled = $true
+    }
+    $commitMsg = [System.Environment]::GetEnvironmentVariable($envMsgVar) ?? ""
+} else {
+    # Fallback: parse git-config.yml directly
+    $configFile = Join-Path $repoRoot ".specify/extensions/git/git-config.yml"
+
+    if (-not (Test-Path $configFile)) {
+        # No config file — auto-commit disabled by default
+        exit 0
+    }
+
     # Parse YAML to find auto_commit section
     $inAutoCommit = $false
     $inEvent = $false
@@ -114,9 +151,6 @@ if (Test-Path $configFile) {
             $enabled = $true
         }
     }
-} else {
-    # No config file — auto-commit disabled by default
-    exit 0
 }
 
 if (-not $enabled) {

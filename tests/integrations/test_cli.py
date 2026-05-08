@@ -258,8 +258,8 @@ class TestInitIntegrationFlag:
         captured = capsys.readouterr()
         assert "already exist and were not updated" in captured.out
         assert "specify init --here --force" in captured.out
-        # Rich may wrap long lines; normalize whitespace for the second command
-        normalized = " ".join(captured.out.split())
+        # Rich may inject styling/wrapping; normalize before substring checks
+        normalized = _normalize_cli_output(captured.out)
         assert "specify integration upgrade --force" in normalized
 
     def test_shared_infra_warns_when_manifest_cannot_be_loaded(self, tmp_path, capsys):

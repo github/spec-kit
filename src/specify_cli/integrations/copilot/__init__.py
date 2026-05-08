@@ -254,11 +254,57 @@ class CopilotIntegration(IntegrationBase):
         """Copilot commands use ``.agent.md`` extension."""
         return f"speckit.{template_name}.agent.md"
 
-    def post_process_skill_content(self, content: str) -> str:
-        """Inject Copilot-specific ``mode:`` field into SKILL.md frontmatter.
+    @staticmethod
+    def _inject_frontmatter_field(content: str, key: str, value: str) -> str:
+        """Insert ``key: value`` before the closing ``---`` if not already present.
+        
+        Handles proper YAML quoting for string values.
+        """
+        lines = content.splitlines(keepends=True)
 
-        Inserts ``mode: speckit.<stem>`` before the closing ``---`` so
-        Copilot can associate the skill with its agent mode.
+        # Pre-scan: bail out if already present in frontmatter
+        dash_count = 0
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith(f"{key}:"):
+                return content
+
+        # Inject before the closing --- of frontmatter
+        out: list[str] = []
+        dash_count = 0
+        injected = False
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2 and not injected:
+                    if line.endswith("\r\n"):
+                        eol = "\r\n"
+                    elif line.endswith("\n"):
+                        eol = "\n"
+                    else:
+                        eol = ""
+                    # Quote string values that look like they need it
+                    if value.startswith(("speckit.", "speckit-")) or " " in value:
+                        out.append(f'{key}: "{value}"{eol}')
+                    else:
+                        out.append(f"{key}: {value}{eol}")
+                    injected = True
+            out.append(line)
+        return "".join(out)
+
+    def post_process_skill_content(self, content: str) -> str:
+        """Inject Copilot-specific frontmatter fields into SKILL.md.
+
+        Inserts:
+        - mode: speckit.<stem> for Copilot's skill dispatch
+        - user-invocable: true (official field, aligns with Claude)
+        - target: github-copilot (makes platform explicit)
         """
         lines = content.splitlines(keepends=True)
 
@@ -274,7 +320,9 @@ class CopilotIntegration(IntegrationBase):
                 continue
             if dash_count == 1:
                 if stripped.startswith("mode:"):
-                    return content  # already present
+                    # mode already present, just add other fields if missing
+                    updated = self._inject_frontmatter_field(content, "user-invocable", "true")
+                    return updated
                 if stripped.startswith("name:"):
                     # Parse: name: "speckit-plan" → speckit.plan
                     val = stripped.split(":", 1)[1].strip().strip('"').strip("'")
@@ -287,23 +335,25 @@ class CopilotIntegration(IntegrationBase):
         if not skill_name:
             return content
 
-        # Inject mode: before the closing --- of frontmatter
+        # Inject mode and other fields before the closing --- of frontmatter
         out: list[str] = []
         dash_count = 0
-        injected = False
+        mode_injected = False
         for line in lines:
             stripped = line.rstrip("\n\r")
             if stripped == "---":
                 dash_count += 1
-                if dash_count == 2 and not injected:
+                if dash_count == 2 and not mode_injected:
                     if line.endswith("\r\n"):
                         eol = "\r\n"
                     elif line.endswith("\n"):
                         eol = "\n"
                     else:
                         eol = ""
+                    # Inject in order: mode, then user-invocable
                     out.append(f"mode: {skill_name}{eol}")
-                    injected = True
+                    out.append(f"user-invocable: true{eol}")
+                    mode_injected = True
             out.append(line)
         return "".join(out)
 
@@ -367,6 +417,12 @@ class CopilotIntegration(IntegrationBase):
                 raw, self.key, script_type, arg_placeholder,
                 context_file=self.context_file or "",
             )
+            
+            # Inject name and other Copilot-specific frontmatter
+            agent_name = f"speckit.{src_file.stem}"
+            processed = self._inject_frontmatter_field(processed, "name", agent_name)
+            processed = self._inject_frontmatter_field(processed, "user-invocable", "true")
+            
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
                 processed, dest / dst_name, project_root, manifest

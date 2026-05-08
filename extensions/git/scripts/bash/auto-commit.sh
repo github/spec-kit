@@ -42,12 +42,53 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     exit 0
 fi
 
-# Read per-command config from git-config.yml
-_config_file="$REPO_ROOT/.specify/extensions/git/git-config.yml"
+# Resolve per-command config.
+#
+# Preferred path: caller exports GIT_CFG_* via the config resolver before
+# invoking this script:
+#   eval "$(specify extension config resolve git --format env --prefix GIT_CFG_)"
+#
+# The resolver flattens nested YAML keys with underscores, so:
+#   auto_commit.<event>.enabled  -> GIT_CFG_AUTO_COMMIT_<EVENT>_ENABLED
+#   auto_commit.<event>.message  -> GIT_CFG_AUTO_COMMIT_<EVENT>_MESSAGE
+#   auto_commit.default          -> GIT_CFG_AUTO_COMMIT_DEFAULT
+#
+# Fallback path: if GIT_CFG_* vars are absent, parse git-config.yml directly
+# (backward compatibility).
+
 _enabled=false
 _commit_msg=""
 
-if [ -f "$_config_file" ]; then
+# Build the env-var key fragment for this event (upper-case, hyphens->underscores)
+_EVENT_KEY=$(echo "$EVENT_NAME" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+
+# Check whether resolver-provided env vars are present for this event
+_env_prefix_event="GIT_CFG_AUTO_COMMIT_${_EVENT_KEY}_"
+_env_enabled_var="${_env_prefix_event}ENABLED"
+_env_msg_var="${_env_prefix_event}MESSAGE"
+_env_default_var="GIT_CFG_AUTO_COMMIT_DEFAULT"
+
+if [ -n "${!_env_enabled_var+x}" ] || [ -n "${!_env_default_var+x}" ]; then
+    # Resolver env vars are present — consume them
+    _event_enabled="${!_env_enabled_var:-}"
+    _default_enabled="${!_env_default_var:-false}"
+
+    if [ -n "$_event_enabled" ]; then
+        [ "$_event_enabled" = "true" ] && _enabled=true || _enabled=false
+    elif [ "$_default_enabled" = "true" ]; then
+        _enabled=true
+    fi
+
+    _commit_msg="${!_env_msg_var:-}"
+else
+    # Fallback: parse git-config.yml directly
+    _config_file="$REPO_ROOT/.specify/extensions/git/git-config.yml"
+
+    if [ ! -f "$_config_file" ]; then
+        # No config file — auto-commit disabled by default
+        exit 0
+    fi
+
     # Parse the auto_commit section for this event.
     # Look for auto_commit.<event_name>.enabled and .message
     # Also check auto_commit.default as fallback.
@@ -108,9 +149,6 @@ if [ -f "$_config_file" ]; then
             _enabled=true
         fi
     fi
-else
-    # No config file — auto-commit disabled by default
-    exit 0
 fi
 
 if [ "$_enabled" != "true" ]; then

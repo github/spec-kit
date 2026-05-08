@@ -190,8 +190,38 @@ class ClaudeIntegration(SkillsIntegration):
         )
 
     def post_process_skill_content(self, content: str) -> str:
-        """Inject Claude-specific frontmatter flags and hook notes."""
-        updated = self._inject_frontmatter_flag(content, "user-invocable")
+        """Inject Claude-specific frontmatter flags, mode, and hook notes.
+        
+        Injects:
+        - mode: speckit.<skill-name> for Claude's slash command routing
+        - user-invocable: true (official Copilot/Claude field)
+        - disable-model-invocation: false (official Copilot/Claude field)
+        - Hook command notes for dot-to-hyphen mapping
+        """
+        # Extract skill name to derive mode value
+        lines = content.splitlines(keepends=True)
+        dash_count = 0
+        skill_name = ""
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith("name:"):
+                val = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+                if val.startswith("speckit-"):
+                    skill_name = "speckit." + val[len("speckit-"):]
+                else:
+                    skill_name = val
+        
+        # Inject mode if we have a skill name
+        updated = content
+        if skill_name:
+            updated = self._inject_frontmatter_flag(updated, "mode", skill_name)
+        
+        updated = self._inject_frontmatter_flag(updated, "user-invocable")
         updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
         updated = self._inject_hook_command_note(updated)
         return updated

@@ -47,7 +47,26 @@ This extension provides Git operations as an optional, self-contained module. It
 
 ## Configuration
 
-Configuration is stored in `.specify/extensions/git/git-config.yml`:
+Configuration uses a layered model (lowest to highest precedence):
+
+1. **Manifest defaults** — baked into `extension.yml` under `config.defaults`
+2. **Project config** — `.specify/extensions/git/git-config.yml` (committed, shared with team)
+3. **Local override** — `.specify/extensions/git/local-config.yml` (gitignored, machine-specific)
+4. **Environment variables** — `SPECKIT_GIT_<KEY>` overrides all files
+
+### Resolving config at runtime
+
+```bash
+# JSON output (structured consumers)
+specify extension config resolve git --format json
+
+# Flat env export for shell scripts
+# shellcheck disable=SC2046
+eval "$(specify extension config resolve git --format env --prefix GIT_CFG_)"
+echo "Numbering: ${GIT_CFG_BRANCH_NUMBERING:-sequential}"
+```
+
+### Example project config (`.specify/extensions/git/git-config.yml`)
 
 ```yaml
 # Branch numbering strategy: "sequential" or "timestamp"
@@ -63,6 +82,20 @@ auto_commit:
   after_specify:
     enabled: true
     message: "[Spec Kit] Add specification"
+```
+
+### Example local override (`.specify/extensions/git/local-config.yml`, gitignored)
+
+```yaml
+# Override branch numbering for this machine only
+branch_numbering: timestamp
+```
+
+### Environment variable override
+
+```bash
+# Override branch numbering via env (highest precedence)
+export SPECKIT_GIT_BRANCH_NUMBERING=timestamp
 ```
 
 ## Installation

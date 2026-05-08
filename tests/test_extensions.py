@@ -769,6 +769,90 @@ class TestExtensionManager:
         assert (ext_dir / "extension.yml").exists()
         assert (ext_dir / "commands" / "hello.md").exists()
 
+    def test_install_materializes_config_file_from_template(self, temp_dir, project_dir):
+        """Install should create provides.config target files from templates."""
+        import yaml
+
+        ext_dir = temp_dir / "cfg-ext"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nBody")
+        (ext_dir / "config-template.yml").write_text("alpha: 1\nbeta:\n  nested: true\n")
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "cfg-ext",
+                "name": "Config Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.cfg-ext.cmd",
+                        "file": "commands/cmd.md",
+                    }
+                ],
+                "config": [
+                    {
+                        "name": "cfg-ext-config.yml",
+                        "template": "config-template.yml",
+                        "required": False,
+                    }
+                ],
+            },
+        }
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        installed_dir = project_dir / ".specify" / "extensions" / "cfg-ext"
+        generated = installed_dir / "cfg-ext-config.yml"
+        assert generated.exists()
+        assert generated.read_text() == (installed_dir / "config-template.yml").read_text()
+
+    def test_install_config_template_missing_raises_validation_error(self, temp_dir, project_dir):
+        """Install should fail when provides.config references a missing template file."""
+        import yaml
+
+        ext_dir = temp_dir / "missing-template"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nBody")
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "missing-template",
+                "name": "Missing Template",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.missing-template.cmd",
+                        "file": "commands/cmd.md",
+                    }
+                ],
+                "config": [
+                    {
+                        "name": "missing-template-config.yml",
+                        "template": "does-not-exist.yml",
+                    }
+                ],
+            },
+        }
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ValidationError, match="Template file not found"):
+            manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
     def test_install_duplicate(self, extension_dir, project_dir):
         """Test installing already installed extension."""
         manager = ExtensionManager(project_dir)
@@ -3763,6 +3847,465 @@ class TestExtensionAddCLI:
         assert result.exit_code != 0
         assert "bundled with spec-kit" in result.output
         assert "reinstall" in result.output.lower()
+
+
+class TestExtensionConfigResolveCLI:
+    """CLI integration tests for extension config resolve."""
+
+    @staticmethod
+    def _install_configured_extension(project_dir: Path, tmp_path: Path) -> None:
+        import yaml
+
+        ext_dir = tmp_path / "cfg-ext"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nBody")
+        (ext_dir / "config-template.yml").write_text(
+            "depth:\n  level: signatures\nextra:\n  mode: from-template\n"
+        )
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "cfg-ext",
+                "name": "Config Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.cfg-ext.cmd",
+                        "file": "commands/cmd.md",
+                    }
+                ],
+                "config": [
+                    {
+                        "name": "cfg-ext-config.yml",
+                        "template": "config-template.yml",
+                    }
+                ],
+            },
+            "config": {
+                "defaults": {
+                    "depth": {"level": "metadata", "max_lines": 100},
+                    "feature": {"enabled": False},
+                }
+            },
+        }
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        installed_dir = project_dir / ".specify" / "extensions" / "cfg-ext"
+        (installed_dir / "local-config.yml").write_text(
+            "depth:\n  max_lines: 250\nlocal:\n  only: true\n"
+        )
+
+    def test_resolve_json_outputs_layered_config(self, tmp_path):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        self._install_configured_extension(project_dir, tmp_path)
+
+        env = {
+            "SPECKIT_CFG_EXT_DEPTH_LEVEL": "full",
+        }
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "config", "resolve", "cfg-ext", "--format", "json"],
+                env=env,
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["depth"]["level"] == "full"
+        assert payload["depth"]["max_lines"] == 250
+        assert payload["extra"]["mode"] == "from-template"
+        assert payload["feature"]["enabled"] is False
+        assert payload["local"]["only"] is True
+
+    def test_resolve_env_outputs_flat_assignments(self, tmp_path):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        self._install_configured_extension(project_dir, tmp_path)
+
+        env = {
+            "SPECKIT_CFG_EXT_DEPTH_LEVEL": "full",
+        }
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                [
+                    "extension",
+                    "config",
+                    "resolve",
+                    "cfg-ext",
+                    "--format",
+                    "env",
+                    "--prefix",
+                    "REVENGE_CFG",
+                ],
+                env=env,
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        output_lines = result.output.splitlines()
+        assert "REVENGE_CFG_DEPTH_LEVEL=full" in output_lines
+        assert "REVENGE_CFG_DEPTH_MAX_LINES=250" in output_lines
+        assert "REVENGE_CFG_FEATURE_ENABLED=false" in output_lines
+        assert "REVENGE_CFG_LOCAL_ONLY=true" in output_lines
+
+    def test_resolve_json_prefers_local_over_project_file(self, tmp_path):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        self._install_configured_extension(project_dir, tmp_path)
+
+        installed_dir = project_dir / ".specify" / "extensions" / "cfg-ext"
+        (installed_dir / "cfg-ext-config.yml").write_text(
+            "depth:\n"
+            "  level: logic\n"
+            "  max_lines: 220\n"
+            "feature:\n"
+            "  enabled: true\n"
+            "project:\n"
+            "  from_file: true\n"
+        )
+        (installed_dir / "local-config.yml").write_text(
+            "depth:\n"
+            "  max_lines: 260\n"
+            "local:\n"
+            "  from_file: true\n"
+        )
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "config", "resolve", "cfg-ext", "--format", "json"],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["depth"]["level"] == "logic"
+        assert payload["depth"]["max_lines"] == 260
+        assert payload["feature"]["enabled"] is True
+        assert payload["project"]["from_file"] is True
+        assert payload["local"]["from_file"] is True
+
+    def test_resolve_by_display_name(self, tmp_path):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        self._install_configured_extension(project_dir, tmp_path)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "config", "resolve", "Config Extension", "--format", "json"],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["depth"]["max_lines"] == 250
+        assert payload["local"]["only"] is True
+
+    def test_resolve_invalid_format_fails_with_clear_error(self, tmp_path):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        self._install_configured_extension(project_dir, tmp_path)
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "config", "resolve", "cfg-ext", "--format", "yaml"],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 1
+        output = strip_ansi(result.output)
+        assert "--format must be one of: json, env" in output
+
+
+class TestConfigManagerLayering:
+    """Unit tests for ConfigManager file-layer precedence."""
+
+    def test_get_config_uses_extension_config_and_local_override(self, tmp_path):
+        """local-config.yml should override <ext>-config.yml, which overrides defaults."""
+        import yaml
+        from specify_cli.extensions import ConfigManager
+
+        project_dir = tmp_path / "project"
+        extension_dir = project_dir / ".specify" / "extensions" / "cfg-ext"
+        extension_dir.mkdir(parents=True)
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "cfg-ext",
+                "name": "Config Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": []},
+            "config": {
+                "defaults": {
+                    "depth": {"level": "metadata", "max_lines": 100},
+                    "feature": {"enabled": False},
+                }
+            },
+        }
+        (extension_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+
+        # Project config layer (<extension>-config.yml)
+        (extension_dir / "cfg-ext-config.yml").write_text(
+            "depth:\n"
+            "  level: signatures\n"
+            "  max_lines: 200\n"
+            "project:\n"
+            "  from_file: true\n"
+        )
+
+        # Local config layer (local-config.yml)
+        (extension_dir / "local-config.yml").write_text(
+            "depth:\n"
+            "  max_lines: 300\n"
+            "local:\n"
+            "  from_file: true\n"
+        )
+
+        config = ConfigManager(project_dir, "cfg-ext").get_config()
+
+        # defaults -> project config -> local config
+        assert config["depth"]["level"] == "signatures"
+        assert config["depth"]["max_lines"] == 300
+        assert config["feature"]["enabled"] is False
+        assert config["project"]["from_file"] is True
+        assert config["local"]["from_file"] is True
+
+    def test_get_config_without_local_uses_extension_config(self, tmp_path):
+        """When local-config.yml is absent, <extension>-config.yml should still override defaults."""
+        import yaml
+        from specify_cli.extensions import ConfigManager
+
+        project_dir = tmp_path / "project"
+        extension_dir = project_dir / ".specify" / "extensions" / "cfg-ext"
+        extension_dir.mkdir(parents=True)
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "cfg-ext",
+                "name": "Config Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": []},
+            "config": {
+                "defaults": {
+                    "depth": {"level": "metadata", "max_lines": 100},
+                }
+            },
+        }
+        (extension_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+
+        (extension_dir / "cfg-ext-config.yml").write_text(
+            "depth:\n"
+            "  level: logic\n"
+            "  max_lines: 220\n"
+        )
+
+        config = ConfigManager(project_dir, "cfg-ext").get_config()
+
+        assert config["depth"]["level"] == "logic"
+        assert config["depth"]["max_lines"] == 220
+
+    def test_get_config_legacy_local_yml_overrides_extension_config(self, tmp_path):
+        """Legacy local.yml should still act as local override when local-config.yml is absent."""
+        import yaml
+        from specify_cli.extensions import ConfigManager
+
+        project_dir = tmp_path / "project"
+        extension_dir = project_dir / ".specify" / "extensions" / "cfg-ext"
+        extension_dir.mkdir(parents=True)
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "cfg-ext",
+                "name": "Config Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": []},
+            "config": {
+                "defaults": {
+                    "depth": {"level": "metadata", "max_lines": 100},
+                }
+            },
+        }
+        (extension_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+
+        (extension_dir / "cfg-ext-config.yml").write_text(
+            "depth:\n"
+            "  level: signatures\n"
+            "  max_lines: 200\n"
+        )
+        (extension_dir / "local.yml").write_text(
+            "depth:\n"
+            "  max_lines: 350\n"
+            "legacy_local:\n"
+            "  used: true\n"
+        )
+
+        config = ConfigManager(project_dir, "cfg-ext").get_config()
+
+        assert config["depth"]["level"] == "signatures"
+        assert config["depth"]["max_lines"] == 350
+        assert config["legacy_local"]["used"] is True
+
+    def test_get_config_prefers_local_config_over_legacy_local_yml(self, tmp_path):
+        """When both local files exist, local-config.yml should win over local.yml."""
+        import yaml
+        from specify_cli.extensions import ConfigManager
+
+        project_dir = tmp_path / "project"
+        extension_dir = project_dir / ".specify" / "extensions" / "cfg-ext"
+        extension_dir.mkdir(parents=True)
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "cfg-ext",
+                "name": "Config Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": []},
+            "config": {
+                "defaults": {
+                    "depth": {"level": "metadata", "max_lines": 100},
+                }
+            },
+        }
+        (extension_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+
+        (extension_dir / "cfg-ext-config.yml").write_text(
+            "depth:\n"
+            "  max_lines: 200\n"
+        )
+        (extension_dir / "local.yml").write_text(
+            "depth:\n"
+            "  max_lines: 350\n"
+        )
+        (extension_dir / "local-config.yml").write_text(
+            "depth:\n"
+            "  max_lines: 400\n"
+        )
+
+        config = ConfigManager(project_dir, "cfg-ext").get_config()
+
+        assert config["depth"]["max_lines"] == 400
+
+    def test_get_config_env_overrides_project_and_local(self, tmp_path, monkeypatch):
+        """Environment values should override both project and local file layers."""
+        import yaml
+        from specify_cli.extensions import ConfigManager
+
+        project_dir = tmp_path / "project"
+        extension_dir = project_dir / ".specify" / "extensions" / "cfg-ext"
+        extension_dir.mkdir(parents=True)
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "cfg-ext",
+                "name": "Config Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": []},
+            "config": {
+                "defaults": {
+                    "depth": {"level": "metadata", "max_lines": 100},
+                }
+            },
+        }
+        (extension_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+
+        (extension_dir / "cfg-ext-config.yml").write_text(
+            "depth:\n"
+            "  level: signatures\n"
+            "  max_lines: 200\n"
+        )
+        (extension_dir / "local-config.yml").write_text(
+            "depth:\n"
+            "  max_lines: 300\n"
+        )
+
+        monkeypatch.setenv("SPECKIT_CFG_EXT_DEPTH_LEVEL", "full")
+
+        config = ConfigManager(project_dir, "cfg-ext").get_config()
+
+        # env -> local -> project -> defaults
+        assert config["depth"]["level"] == "full"
+        assert config["depth"]["max_lines"] == 300
 
 
 class TestDownloadExtensionBundled:

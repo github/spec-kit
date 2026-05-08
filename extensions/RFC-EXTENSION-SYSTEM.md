@@ -249,14 +249,15 @@ provides:
       executable: true            # Make executable on install
 
 # Extension configuration defaults (OPTIONAL)
-defaults:
-  project:
-    key: null                     # No default, user must configure
-  hierarchy:
-    issue_type: "subtask"
-  update_behavior:
-    mode: "update"
-    sync_completion: true
+config:
+  defaults:
+    project:
+      key: null                     # No default, user must configure
+    hierarchy:
+      issue_type: "subtask"
+    update_behavior:
+      mode: "update"
+      sync_completion: true
 
 # Configuration schema for validation (OPTIONAL)
 config_schema:
@@ -378,9 +379,9 @@ vim .specify/extensions/jira/jira-config.yml
 
 **Config discovery order:**
 
-1. Extension defaults (`extension.yml` → `defaults`)
+1. Extension defaults (`extension.yml` → `config.defaults`)
 2. Project config (`jira-config.yml`)
-3. Local overrides (`jira-config.local.yml` - gitignored)
+3. Local overrides (`local-config.yml` - gitignored; legacy `local.yml` also supported)
 4. Environment variables (`SPECKIT_JIRA_*`)
 
 ### 4. Usage
@@ -613,14 +614,10 @@ project:
 
 hierarchy:
   issue_type: "subtask"
-
-defaults:
-  epic:
-    labels: ["spec-driven", "typescript"]
 ```
 
 ```yaml
-# .specify/extensions/jira/jira-config.local.yml (Local overrides - gitignored)
+# .specify/extensions/jira/local-config.yml (Local overrides - gitignored)
 project:
   key: "MYTEST"  # Override for local testing
 ```
@@ -637,49 +634,24 @@ export SPECKIT_JIRA_PROJECT_KEY="DEVTEST"
 ````markdown
 ## Load Configuration
 
-1. Run helper script to load and merge config:
+1. Use built-in config resolver (single source of truth):
 
 ```bash
-config_json=$(bash .specify/extensions/jira/scripts/parse-jira-config.sh)
+config_json=$(specify extension config resolve jira --format json)
 echo "$config_json"
 ```
 
 1. Parse JSON and use in subsequent steps
 ````
 
-**Script**: `.specify/extensions/jira/scripts/parse-jira-config.sh`
+For shell-first scripts, emit flattened env assignments:
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-EXT_DIR=".specify/extensions/jira"
-CONFIG_FILE="$EXT_DIR/jira-config.yml"
-LOCAL_CONFIG="$EXT_DIR/jira-config.local.yml"
-
-# Start with defaults from extension.yml
-defaults=$(yq eval '.defaults' "$EXT_DIR/extension.yml" -o=json)
-
-# Merge project config
-if [ -f "$CONFIG_FILE" ]; then
-  project_config=$(yq eval '.' "$CONFIG_FILE" -o=json)
-  defaults=$(echo "$defaults $project_config" | jq -s '.[0] * .[1]')
-fi
-
-# Merge local config
-if [ -f "$LOCAL_CONFIG" ]; then
-  local_config=$(yq eval '.' "$LOCAL_CONFIG" -o=json)
-  defaults=$(echo "$defaults $local_config" | jq -s '.[0] * .[1]')
-fi
-
-# Apply environment variable overrides
-if [ -n "${SPECKIT_JIRA_PROJECT_KEY:-}" ]; then
-  defaults=$(echo "$defaults" | jq ".project.key = \"$SPECKIT_JIRA_PROJECT_KEY\"")
-fi
-
-# Output merged config as JSON
-echo "$defaults"
+eval "$(specify extension config resolve jira --format env --prefix JIRA_CFG_)"
+echo "project_key=${JIRA_CFG_PROJECT_KEY:-}"
 ```
+
+This avoids re-implementing YAML merge/override logic in every extension script.
 
 ### Config Validation
 
@@ -694,12 +666,14 @@ echo "$defaults"
 ```python
 import jsonschema
 
-schema = load_yaml(".specify/extensions/jira/extension.yml")['config_schema']
+manifest = load_yaml(".specify/extensions/jira/extension.yml")
+schema = manifest.get("config_schema")
 config = json.loads(config_json)
 
-try:
+if schema:
+  try:
     jsonschema.validate(config, schema)
-except jsonschema.ValidationError as e:
+  except jsonschema.ValidationError as e:
     print(f"❌ Invalid jira-config.yml: {e.message}")
     print(f"   Path: {'.'.join(str(p) for p in e.path)}")
     exit(1)

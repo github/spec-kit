@@ -11,7 +11,7 @@ Automatically stage and commit all changes after a Spec Kit command completes.
 This command is invoked as a hook after (or before) core commands. It:
 
 1. Determines the event name from the hook context (e.g., if invoked as an `after_specify` hook, the event is `after_specify`; if `before_plan`, the event is `before_plan`)
-2. Checks `.specify/extensions/git/git-config.yml` for the `auto_commit` section
+2. Resolves extension configuration via the CLI resolver to obtain the `auto_commit` section
 3. Looks up the specific event key to see if auto-commit is enabled
 4. Falls back to `auto_commit.default` if no event-specific key exists
 5. Uses the per-command `message` if configured, otherwise a default message
@@ -28,9 +28,19 @@ Replace `<event_name>` with the actual hook event (e.g., `after_specify`, `befor
 
 ## Configuration
 
-In `.specify/extensions/git/git-config.yml`:
+Resolve the config before invoking the script so scripts receive values as environment variables:
+
+```bash
+# shellcheck disable=SC2046
+# eval is required here because resolver emits KEY=VALUE lines
+# for the current shell session.
+eval "$(specify extension config resolve git --format env --prefix GIT_CFG_)"
+```
+
+Defaults and overrides are managed in `git-config.yml` (project-level) and `local-config.yml` (machine-local, gitignored). Example project config:
 
 ```yaml
+# .specify/extensions/git/git-config.yml
 auto_commit:
   default: false          # Global toggle — set true to enable for all commands
   after_specify:
