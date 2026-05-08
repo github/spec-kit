@@ -1190,7 +1190,7 @@ class ExtensionManager:
         # was used during project initialisation (feature parity).
         registered_skills = self._register_extension_skills(manifest, dest_dir)
 
-        # Register hooks
+        # Register hooks and update installed list in extensions.yml
         hook_executor = HookExecutor(self.project_root)
         hook_executor.register_hooks(manifest)
 
@@ -2501,12 +2501,44 @@ class HookExecutor:
             encoding="utf-8",
         )
 
+    def register_extension(self, extension_id: str):
+        """Add extension to the installed list in project config.
+
+        Args:
+            extension_id: ID of extension to register
+        """
+        config = self.get_project_config()
+
+        if "installed" not in config:
+            config["installed"] = []
+
+        if extension_id not in config["installed"]:
+            config["installed"].append(extension_id)
+            # Maintain alphabetical order for readability and diff stability
+            config["installed"].sort()
+            self.save_project_config(config)
+
+    def unregister_extension(self, extension_id: str):
+        """Remove extension from the installed list in project config.
+
+        Args:
+            extension_id: ID of extension to unregister
+        """
+        config = self.get_project_config()
+
+        if "installed" in config and extension_id in config["installed"]:
+            config["installed"].remove(extension_id)
+            self.save_project_config(config)
+
     def register_hooks(self, manifest: ExtensionManifest):
         """Register extension hooks in project config.
 
         Args:
             manifest: Extension manifest with hooks to register
         """
+        # Always ensure the extension is in the installed list
+        self.register_extension(manifest.id)
+
         if not hasattr(manifest, "hooks") or not manifest.hooks:
             return
 
@@ -2576,6 +2608,9 @@ class HookExecutor:
         }
 
         self.save_project_config(config)
+
+        # Also remove from installed list
+        self.unregister_extension(extension_id)
 
     def get_hooks_for_event(self, event_name: str) -> List[Dict[str, Any]]:
         """Get all registered hooks for a specific event.
