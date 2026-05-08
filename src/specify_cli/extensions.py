@@ -2159,7 +2159,6 @@ class ExtensionCatalog:
         # Detect archive format from URL; resolve via Content-Type when needed.
         # `final_url` may differ from `download_url` if the server redirects.
         archive_fmt = detect_archive_format(download_url)
-        final_url = download_url
 
         # Download the archive
         try:
