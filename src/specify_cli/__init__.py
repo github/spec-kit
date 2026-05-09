@@ -4799,8 +4799,7 @@ def _print_extension_info(ext_info: dict, manager):
 @extension_app.command("update")
 def extension_update(
     extension: str = typer.Argument(None, help="Extension ID or name to update (or all)"),
-    dev: bool = typer.Option(False, "--dev", help="Update from local development directory"),
-    dev_path: Optional[str] = typer.Option(None, "--dev-path", help="Path to development directory (requires --dev)"),
+    dev: Optional[str] = typer.Option(None, "--dev", help="Update from local development directory (path)"),
 ):
     """Update extension(s) to latest version."""
     from .extensions import (
@@ -4829,14 +4828,7 @@ def extension_update(
             installed = manager.list_installed()
             extension_id, ext_display_name = _resolve_installed_extension(extension, installed, "update")
 
-            # Use provided path or prompt for it
-            if dev_path:
-                source_path = Path(dev_path).expanduser().resolve()
-            else:
-                console.print(f"[cyan]Updating {ext_display_name}...[/cyan]")
-                console.print("Enter the path to the development directory:")
-                dev_path_input = typer.prompt("Path")
-                source_path = Path(dev_path_input).expanduser().resolve()
+            source_path = Path(dev).expanduser().resolve()
 
             # Validate source directory
             if not source_path.exists():

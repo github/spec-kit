@@ -1401,18 +1401,16 @@ class ExtensionManager:
                         continue
                     config_backups[cfg_file.name] = cfg_file.read_text(encoding="utf-8")
 
-            # 3. Clear extension directory (but preserve the directory itself)
+            # 3. Clear extension directory and copy new files
             if dest_dir.exists():
-                for item in dest_dir.iterdir():
-                    if item.is_dir():
-                        shutil.rmtree(item)
-                    else:
-                        item.unlink()
+                shutil.rmtree(dest_dir)
+            dest_dir.mkdir(parents=True, exist_ok=True)
 
-            # 4. Copy new extension files
+            # 4. Copy new extension files using the same ignore logic as install
             ignore_fn = self._load_extensionignore(source_dir)
             for item in source_dir.iterdir():
-                if ignore_fn and ignore_fn((str(source_dir), [item.name])):
+                # Check if this item should be ignored
+                if ignore_fn and item.name in ignore_fn(str(source_dir), [item.name]):
                     continue
                 if item.is_dir():
                     shutil.copytree(item, dest_dir / item.name)
