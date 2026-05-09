@@ -260,7 +260,7 @@
       "name": "Game Narrative Writing",
       "id": "game-narrative-writing",
       "version": "1.0.0",
-      "description": "Spec-Driven Development for interactive game narrative for pre-production for video games. Authors write in a portable generic format, Twine/Sugarcube (.twee) or Ink (.ink). Covers choice-IF, visual novels, and branching dialogue. Supports Tier 1 mechanic hooks (flag, counter, inventory, timer, trust, currency, npc_state, ending_condition), multi-ending design, series carry-over variable registry, and NPC-focused character architecture.",
+      "description": "Spec-Driven Development for interactive game-narrative pre-production in video games. Authors write in a portable generic format, Twine/Sugarcube (.twee) or Ink (.ink). Covers choice-IF, visual novels, and branching dialogue. Supports Tier 1 mechanic hooks (flag, counter, inventory, timer, trust, currency, npc_state, ending_condition), multi-ending design, series carry-over variable registry, and NPC-focused character architecture.",
       "author": "Andreas Daumann",
       "repository": "https://github.com/adaumann/speckit-preset-game-narrative-writing",
       "download_url": "https://github.com/adaumann/speckit-preset-game-narrative-writing/archive/refs/tags/v1.0.0.zip",
