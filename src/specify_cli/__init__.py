@@ -4799,6 +4799,8 @@ def _print_extension_info(ext_info: dict, manager):
 @extension_app.command("update")
 def extension_update(
     extension: str = typer.Argument(None, help="Extension ID or name to update (or all)"),
+    dev: bool = typer.Option(False, "--dev", help="Update from local development directory"),
+    dev_path: Optional[str] = typer.Option(None, "--dev-path", help="Path to development directory (requires --dev)"),
 ):
     """Update extension(s) to latest version."""
     from .extensions import (
@@ -4815,10 +4817,62 @@ def extension_update(
 
     project_root = _require_specify_project()
     manager = ExtensionManager(project_root)
-    catalog = ExtensionCatalog(project_root)
     speckit_version = get_speckit_version()
 
     try:
+        # Handle --dev mode (update from local directory)
+        if dev:
+            if not extension:
+                console.print("[red]Error:[/red] Extension ID required when using --dev")
+                raise typer.Exit(1)
+
+            installed = manager.list_installed()
+            extension_id, ext_display_name = _resolve_installed_extension(extension, installed, "update")
+
+            # Use provided path or prompt for it
+            if dev_path:
+                source_path = Path(dev_path).expanduser().resolve()
+            else:
+                console.print(f"[cyan]Updating {ext_display_name}...[/cyan]")
+                console.print("Enter the path to the development directory:")
+                dev_path_input = typer.prompt("Path")
+                source_path = Path(dev_path_input).expanduser().resolve()
+
+            # Validate source directory
+            if not source_path.exists():
+                console.print(f"[red]Error:[/red] Directory not found: {source_path}")
+                raise typer.Exit(1)
+
+            if not (source_path / "extension.yml").exists():
+                console.print(f"[red]Error:[/red] No extension.yml found in {source_path}")
+                raise typer.Exit(1)
+
+            # Perform in-place update from dev directory
+            with console.status(f"[cyan]Updating {ext_display_name} from {source_path}...[/cyan]"):
+                try:
+                    new_manifest = manager.update_from_directory(
+                        source_path,
+                        speckit_version,
+                        extension_id
+                    )
+
+                    console.print(f"\n[green]✓[/green] Updated {ext_display_name} to v{new_manifest.version}")
+                    console.print("\n[bold cyan]Commands:[/bold cyan]")
+                    for cmd in new_manifest.commands:
+                        console.print(f"  • {cmd['name']} - {cmd.get('description', '')}")
+
+                except ExtensionError as e:
+                    console.print(f"\n[red]Error:[/red] {e}")
+                    raise typer.Exit(1)
+                except ValidationError as e:
+                    console.print(f"\n[red]Validation Error:[/red] {e}")
+                    raise typer.Exit(1)
+
+            raise typer.Exit(0)
+
+        # Non-dev mode: update from catalog
+        catalog = ExtensionCatalog(project_root)
+
         # Get list of extensions to update
         installed = manager.list_installed()
         if extension:

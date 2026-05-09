@@ -1333,6 +1333,131 @@ class ExtensionManager:
 
         return manifest
 
+    def update_from_directory(
+        self,
+        source_dir: Path,
+        speckit_version: str,
+        extension_id: str,
+    ) -> ExtensionManifest:
+        """Update an installed extension from a local directory (in-place).
+
+        Performs a seamless update without remove/reinstall cycle. Preserves
+        extension state (enabled, priority, installed_at) and configuration files.
+
+        Args:
+            source_dir: Path to extension directory
+            speckit_version: Current spec-kit version
+            extension_id: ID of extension to update
+
+        Returns:
+            Updated extension manifest
+
+        Raises:
+            ExtensionError: If extension is not installed
+            ValidationError: If manifest is invalid
+            CompatibilityError: If extension is incompatible
+        """
+        # Verify extension is installed
+        if not self.registry.is_installed(extension_id):
+            raise ExtensionError(
+                f"Extension '{extension_id}' is not installed. "
+                f"Use 'specify extension add --dev {source_dir}' to install it."
+            )
+
+        # Load and validate new manifest
+        manifest_path = source_dir / "extension.yml"
+        new_manifest = ExtensionManifest(manifest_path)
+
+        # Verify IDs match
+        if new_manifest.id != extension_id:
+            raise ValidationError(
+                f"Extension ID mismatch: expected '{extension_id}', got '{new_manifest.id}'"
+            )
+
+        # Check compatibility
+        self.check_compatibility(new_manifest, speckit_version)
+
+        # Get old metadata before any changes
+        old_metadata = self.registry.get(extension_id)
+        if old_metadata is None or not isinstance(old_metadata, dict):
+            raise ExtensionError(
+                f"Registry entry for '{extension_id}' is corrupted"
+            )
+
+        dest_dir = self.extensions_dir / extension_id
+        registrar = CommandRegistrar()
+
+        try:
+            # 1. Unregister old commands
+            old_registered_commands = old_metadata.get("registered_commands", {})
+            if old_registered_commands:
+                registrar.unregister_commands(old_registered_commands, self.project_root)
+
+            # 2. Backup config files before updating extension directory
+            config_backups = {}
+            if dest_dir.exists():
+                for cfg_file in dest_dir.glob("*.yml"):
+                    if cfg_file.name == "extension.yml":
+                        continue
+                    config_backups[cfg_file.name] = cfg_file.read_text(encoding="utf-8")
+
+            # 3. Clear extension directory (but preserve the directory itself)
+            if dest_dir.exists():
+                for item in dest_dir.iterdir():
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+
+            # 4. Copy new extension files
+            ignore_fn = self._load_extensionignore(source_dir)
+            for item in source_dir.iterdir():
+                if ignore_fn and ignore_fn((str(source_dir), [item.name])):
+                    continue
+                if item.is_dir():
+                    shutil.copytree(item, dest_dir / item.name)
+                else:
+                    shutil.copy2(item, dest_dir / item.name)
+
+            # 5. Materialize new config files from templates
+            self._materialize_config_files(new_manifest, dest_dir)
+
+            # 6. Restore old config files (user configs always win)
+            for cfg_name, cfg_content in config_backups.items():
+                (dest_dir / cfg_name).write_text(cfg_content, encoding="utf-8")
+
+            # 7. Re-register commands
+            registered_commands = registrar.register_commands_for_all_agents(
+                new_manifest, dest_dir, self.project_root
+            )
+
+            # 8. Update registry while preserving state
+            new_metadata = {
+                "version": new_manifest.version,
+                "source": old_metadata.get("source", "local"),
+                "manifest_hash": new_manifest.get_hash(),
+                "enabled": old_metadata.get("enabled", True),
+                "priority": old_metadata.get("priority", 10),
+                "registered_commands": registered_commands,
+                "registered_skills": old_metadata.get("registered_skills", []),
+            }
+
+            # Preserve original installation timestamp
+            if "installed_at" in old_metadata:
+                new_metadata["installed_at"] = old_metadata["installed_at"]
+
+            self.registry.restore(extension_id, new_metadata)
+
+            return new_manifest
+
+        except Exception:
+            # Attempt rollback by restoring old metadata
+            try:
+                self.registry.restore(extension_id, old_metadata)
+            except Exception:
+                pass  # Registry restore failed, but we tried
+            raise
+
     def install_from_zip(
         self,
         zip_path: Path,
