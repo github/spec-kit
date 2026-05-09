@@ -26,6 +26,13 @@ Or install globally:
     specify init --here
 """
 
+# Public API - intentional re-exports for backward compatibility.
+__all__ = [
+    "BANNER",
+    "TAGLINE",
+    "get_key",
+]
+
 import os
 import subprocess
 import sys
