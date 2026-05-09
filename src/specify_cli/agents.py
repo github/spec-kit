@@ -68,6 +68,33 @@ class CommandRegistrar:
                 pass  # Circular import during module init; retry on next access
 
     @staticmethod
+    def _hyphenate_frontmatter_refs(val: Any) -> Any:
+        """Recursively find any dotted references starting with speckit. and hyphenate them."""
+        if isinstance(val, dict):
+            return {
+                k: CommandRegistrar._hyphenate_frontmatter_refs(v)
+                for k, v in val.items()
+            }
+        elif isinstance(val, list):
+            return [CommandRegistrar._hyphenate_frontmatter_refs(x) for x in val]
+        elif isinstance(val, str):
+            return re.sub(
+                r"\bspeckit\.[A-Za-z0-9-_]+(?:\.[A-Za-z0-9-_]+)*\b",
+                lambda m: m.group(0).replace(".", "-"),
+                val,
+            )
+        return val
+
+    @staticmethod
+    def _hyphenate_body_refs(body: str) -> str:
+        """Hyphenate dotted speckit references in command body text."""
+        return re.sub(
+            r"\bspeckit\.[A-Za-z0-9-_]+(?:\.[A-Za-z0-9-_]+)*\b",
+            lambda m: m.group(0).replace(".", "-"),
+            body,
+        )
+
+    @staticmethod
     def parse_frontmatter(content: str) -> tuple[dict, str]:
         """Parse YAML frontmatter from Markdown content.
 
@@ -401,6 +428,9 @@ class CommandRegistrar:
     ) -> str:
         """Compute the on-disk command or skill name for an agent."""
         if agent_config["extension"] != "/SKILL.md":
+            format_name = agent_config.get("format_name")
+            if format_name:
+                return format_name(cmd_name)
             return cmd_name
 
         short_name = cmd_name
@@ -429,6 +459,13 @@ class CommandRegistrar:
         base_normalized = Path(os.path.normpath(base))
         if not normalized.is_relative_to(base_normalized):
             raise ValueError(f"Output path {candidate!r} escapes directory {base!r}")
+
+    @staticmethod
+    def _is_safe_command_name(name: str) -> bool:
+        """Reject names that could escape the commands directory via path traversal."""
+        if os.path.sep in name or "/" in name or "\\" in name:
+            return False
+        return os.path.normpath(name) == name
 
     def register_commands(
         self,
@@ -475,9 +512,11 @@ class CommandRegistrar:
         commands_dir.mkdir(parents=True, exist_ok=True)
 
         registered = []
+        is_cline_ext = agent_name == "cline" and source_id != "core"
 
         for cmd_info in commands:
             cmd_name = cmd_info["name"]
+            aliases = cmd_info.get("aliases", [])
             cmd_file = cmd_info["file"]
 
             source_file = source_dir / cmd_file
@@ -508,6 +547,10 @@ class CommandRegistrar:
                 # Use custom name formatter if provided (e.g., Forge's hyphenated format)
                 format_name = agent_config.get("format_name")
                 frontmatter["name"] = format_name(cmd_name) if format_name else cmd_name
+
+            if is_cline_ext:
+                frontmatter = self._hyphenate_frontmatter_refs(frontmatter)
+                body = self._hyphenate_body_refs(body)
 
             body = self._convert_argument_placeholder(
                 body, "$ARGUMENTS", agent_config["args"]
@@ -578,7 +621,7 @@ class CommandRegistrar:
 
             registered.append(cmd_name)
 
-            for alias in cmd_info.get("aliases", []):
+            for alias in aliases:
                 alias_output_name = self._compute_output_name(
                     agent_name, alias, agent_config
                 )
@@ -902,22 +945,32 @@ class CommandRegistrar:
                 output_name = self._compute_output_name(
                     agent_name, cmd_name, agent_config
                 )
+
+                names_to_clean = [output_name]
+                if output_name != cmd_name and self._is_safe_command_name(cmd_name):
+                    names_to_clean.append(cmd_name)
+
                 for target_dir in dirs_to_clean:
-                    cmd_file = (
-                        target_dir / f"{output_name}{agent_config['extension']}"
-                    )
-                    if cmd_file.exists() or cmd_file.is_symlink():
-                        cmd_file.unlink()
-                        # For SKILL.md agents each command lives in its own
-                        # subdirectory (e.g. .agents/skills/speckit-ext-cmd/
-                        # SKILL.md).  Remove the parent dir when it becomes
-                        # empty to avoid orphaned directories.
-                        parent = cmd_file.parent
-                        if parent != target_dir and parent.exists():
-                            try:
-                                parent.rmdir()
-                            except OSError:
-                                pass
+                    for name in names_to_clean:
+                        cmd_file = (
+                            target_dir / f"{name}{agent_config['extension']}"
+                        )
+                        try:
+                            self._ensure_inside(cmd_file, target_dir)
+                        except ValueError:
+                            continue
+                        if cmd_file.exists() or cmd_file.is_symlink():
+                            cmd_file.unlink()
+                            # For SKILL.md agents each command lives in its own
+                            # subdirectory (e.g. .agents/skills/speckit-ext-cmd/
+                            # SKILL.md).  Remove the parent dir when it becomes
+                            # empty to avoid orphaned directories.
+                            parent = cmd_file.parent
+                            if parent != target_dir and parent.exists():
+                                try:
+                                    parent.rmdir()
+                                except OSError:
+                                    pass
 
                 if agent_name == "copilot":
                     prompt_file = (

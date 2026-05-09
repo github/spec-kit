@@ -3118,9 +3118,17 @@ def extension_add(
         for warning in manifest.warnings:
             console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {warning}")
 
+        is_cline = load_init_options(project_root).get("ai") == "cline"
+
+        if is_cline:
+            from specify_cli.integrations.cline import format_cline_command_name
+
         console.print("\n[bold cyan]Provided commands:[/bold cyan]")
         for cmd in manifest.commands:
-            console.print(f"  • {cmd['name']} - {cmd.get('description', '')}")
+            cmd_name = cmd['name']
+            if is_cline:
+                cmd_name = format_cline_command_name(cmd_name)
+            console.print(f"  • {cmd_name} - {cmd.get('description', '')}")
 
         # Report agent skills registration
         reg_meta = manager.registry.get(manifest.id)

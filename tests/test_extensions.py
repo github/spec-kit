@@ -1315,6 +1315,42 @@ $ARGUMENTS
         assert not (skills_dir / "speckit-specify" / "SKILL.md").exists()
         assert not (skills_dir / "speckit-shortcut" / "SKILL.md").exists()
 
+    def test_unregister_commands_handles_legacy_dot_notated_files(self, project_dir):
+        """Unregister should clean up both legacy dot-notated and new hyphenated files."""
+        # 1. Mock an agent that uses hyphenated/formatted names (e.g. Cline)
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+        registrar = AgentCommandRegistrar()
+
+        # We'll use "cline" since it has format_name
+        assert "cline" in registrar.AGENT_CONFIGS
+        cline_config = registrar.AGENT_CONFIGS["cline"]
+        cline_dir = project_dir / cline_config["dir"]
+        cline_dir.mkdir(parents=True, exist_ok=True)
+
+        # 2. Create both legacy and new files
+        # Command name: speckit.git.commit
+        # Formatted name: speckit-git-commit
+        cmd_name = "speckit.git.commit"
+        formatted_name = "speckit-git-commit"
+
+        legacy_file = cline_dir / f"{cmd_name}.md"
+        formatted_file = cline_dir / f"{formatted_name}.md"
+
+        legacy_file.write_text("legacy body")
+        formatted_file.write_text("formatted body")
+
+        assert legacy_file.exists()
+        assert formatted_file.exists()
+
+        # 3. Call unregister
+        registrar.unregister_commands({"cline": [cmd_name]}, project_dir)
+
+        # 4. Verify both are gone
+        assert not legacy_file.exists(), "Legacy dot-notated file should be removed"
+        assert (
+            not formatted_file.exists()
+        ), "Formatted hyphenated file should be removed"
+
     def test_register_commands_for_all_agents_distinguishes_codex_from_amp(self, extension_dir, project_dir):
         """A Codex project under .agents/skills should not implicitly activate Amp."""
         skills_dir = project_dir / ".agents" / "skills"
@@ -4555,6 +4591,43 @@ class TestHookInvocationRendering:
         assert execution["command"] == "speckit.tasks"
         assert execution["invocation"] == "$speckit-tasks"
 
+    def test_cline_hooks_render_hyphenated_invocation(self, project_dir):
+        """Cline projects should render /speckit-* invocations."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "cline"}))
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "speckit.tasks",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "speckit.tasks"
+        assert execution["invocation"] == "/speckit-tasks"
+
+    def test_cline_hooks_render_extension_command(self, project_dir):
+        """Cline projects should render /speckit-my-ext-cmd for extension hooks."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "cline"}))
+
+        hook_executor = HookExecutor(project_dir)
+        # Test with a non-speckit. command
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "my-extension.do-something",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "my-extension.do-something"
+        assert execution["invocation"] == "/speckit-my-extension-do-something"
+
     def test_non_skill_command_keeps_slash_invocation(self, project_dir):
         """Custom hook commands should keep slash invocation style."""
         init_options = project_dir / ".specify" / "init-options.json"
@@ -4690,3 +4763,157 @@ class TestExtensionRemoveCLI:
             )
 
         assert "2 commands" in result.output
+
+
+class TestClineExtensionHyphenation:
+    """Test that Cline integration uses hyphenated commands and frontmatter references."""
+
+    def _setup_mock_extension(self, tmp_path, ai_name):
+        import yaml
+        import json
+
+        # 1. Setup mock project
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.write_text(json.dumps({"ai": ai_name}), encoding="utf-8")
+
+        if ai_name == "cline":
+            commands_dest_dir = project_dir / ".clinerules" / "workflows"
+        else:
+            commands_dest_dir = project_dir / ".agents" / "commands"
+        commands_dest_dir.mkdir(parents=True, exist_ok=True)
+
+        # 2. Setup mock extension directory
+        ext_dir = tmp_path / "mock-ext"
+        ext_dir.mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "mock-ext",
+                "name": "Mock Extension",
+                "version": "1.0.0",
+                "description": f"Mock extension for {ai_name} tests",
+                "author": "Tester",
+                "repository": "https://github.com/test/mock-ext",
+                "license": "MIT",
+            },
+            "requires": {
+                "speckit_version": ">=0.1.0",
+            },
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.mock-ext.hello",
+                        "file": "commands/hello.md",
+                        "description": "Test hello command",
+                        "aliases": ["speckit.mock-ext.greet"]
+                    }
+                ]
+            }
+        }
+
+        with open(ext_dir / "extension.yml", "w", encoding="utf-8") as f:
+            yaml.dump(manifest_data, f)
+
+        commands_dir = ext_dir / "commands"
+        commands_dir.mkdir()
+
+        # Command file with dotted speckit references in frontmatter and body
+        cmd_content = """---
+description: "Test hello command"
+agent: speckit.tasks
+handoffs:
+  - agent: speckit.iterate.start
+    message: "Hand off to start"
+---
+
+# Test Hello Command
+
+Please refer to speckit.mock-ext.greet for instructions.
+$ARGUMENTS
+"""
+        (commands_dir / "hello.md").write_text(cmd_content, encoding="utf-8")
+
+        return project_dir, ext_dir, commands_dest_dir
+
+    def test_cline_extension_hyphenation(self, tmp_path):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.agents import CommandRegistrar
+
+        project_dir, ext_dir, cline_workflows_dir = self._setup_mock_extension(tmp_path, "cline")
+
+        # 3. Run specify extension add
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["extension", "add", str(ext_dir), "--dev"], catch_exceptions=False
+            )
+
+        # Verify CLI printed hyphenated commands
+        # Note: We assert that the primary command 'speckit-mock-ext-hello' is printed,
+        # but we do not assert that the alias 'speckit-mock-ext-greet' is printed in the console
+        # because manifest.commands only lists primary commands.
+        assert "speckit-mock-ext-hello" in result.output
+        assert "speckit.mock-ext.hello" not in result.output
+
+        # Verify on-disk command names are hyphenated
+        hello_file = cline_workflows_dir / "speckit-mock-ext-hello.md"
+        greet_file = cline_workflows_dir / "speckit-mock-ext-greet.md"
+
+        assert hello_file.exists()
+        assert greet_file.exists()
+
+        # Verify frontmatter in the generated files is recursively hyphenated
+        hello_text = hello_file.read_text(encoding="utf-8")
+        hello_fm, hello_body = CommandRegistrar.parse_frontmatter(hello_text)
+        assert hello_fm["agent"] == "speckit-tasks"
+        assert hello_fm["handoffs"][0]["agent"] == "speckit-iterate-start"
+
+        # Verify body references are hyphenated for Cline
+        assert "speckit-mock-ext-greet" in hello_body
+        assert "speckit.mock-ext.greet" not in hello_body
+
+    def test_non_cline_extension_no_hyphenation(self, tmp_path):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.agents import CommandRegistrar
+
+        project_dir, ext_dir, claude_commands_dir = self._setup_mock_extension(tmp_path, "claude")
+
+        # 3. Run specify extension add
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["extension", "add", str(ext_dir), "--dev"], catch_exceptions=False
+            )
+
+        # Verify CLI printed dotted commands
+        # Note: We assert that the primary command 'speckit.mock-ext.hello' is printed,
+        # but we do not assert that the alias 'speckit.mock-ext.greet' is printed in the console
+        # because manifest.commands only lists primary commands.
+        assert "speckit.mock-ext.hello" in result.output
+        assert "speckit-mock-ext-hello" not in result.output
+
+        # Verify on-disk command names are dotted
+        hello_file = claude_commands_dir / "speckit.mock-ext.hello.md"
+        greet_file = claude_commands_dir / "speckit.mock-ext.greet.md"
+
+        assert hello_file.exists()
+        assert greet_file.exists()
+
+        # Verify frontmatter references are still dotted
+        hello_text = hello_file.read_text(encoding="utf-8")
+        hello_fm, hello_body = CommandRegistrar.parse_frontmatter(hello_text)
+        assert hello_fm["agent"] == "speckit.tasks"
+        assert hello_fm["handoffs"][0]["agent"] == "speckit.iterate.start"
+
+        # Verify body references are still dotted for non-Cline
+        assert "speckit.mock-ext.greet" in hello_body
+        assert "speckit-mock-ext-greet" not in hello_body
