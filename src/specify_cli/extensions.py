@@ -2454,6 +2454,7 @@ class HookExecutor:
         claude_skill_mode = selected_ai == "claude" and bool(init_options.get("ai_skills"))
         kimi_skill_mode = selected_ai == "kimi"
         cursor_skill_mode = selected_ai == "cursor-agent" and bool(init_options.get("ai_skills"))
+        cline_mode = selected_ai == "cline"
 
         skill_name = self._skill_name_from_command(command_id)
         if codex_skill_mode and skill_name:
@@ -2464,6 +2465,11 @@ class HookExecutor:
             return f"/skill:{skill_name}"
         if cursor_skill_mode and skill_name:
             return f"/{skill_name}"
+        if cline_mode:
+            if "." in command_id or command_id.startswith("speckit.") or command_id.startswith("speckit-"):
+                from .integrations.cline import format_cline_command_name
+
+                return f"/{format_cline_command_name(command_id)}"
 
         return f"/{command_id}"
 
