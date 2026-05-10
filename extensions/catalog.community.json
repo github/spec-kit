@@ -3,39 +3,6 @@
   "updated_at": "2026-05-07T15:37:14Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
-    "aide": {
-      "name": "AI-Driven Engineering (AIDE)",
-      "id": "aide",
-      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation.",
-      "author": "mnriem",
-      "version": "1.0.0",
-      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/aide-v1.0.0/aide.zip",
-      "repository": "https://github.com/mnriem/spec-kit-extensions",
-      "homepage": "https://github.com/mnriem/spec-kit-extensions",
-      "documentation": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/README.md",
-      "changelog": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.2.0"
-      },
-      "provides": {
-        "commands": 7,
-        "hooks": 0
-      },
-      "tags": [
-        "workflow",
-        "project-management",
-        "ai-driven",
-        "new-project",
-        "planning",
-        "experimental"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-18T00:00:00Z",
-      "updated_at": "2026-03-18T00:00:00Z"
-    },
     "agent-assign": {
       "name": "Agent Assign",
       "id": "agent-assign",
@@ -100,10 +67,43 @@
       "created_at": "2026-05-04T00:00:00Z",
       "updated_at": "2026-05-04T00:00:00Z"
     },
+    "aide": {
+      "name": "AI-Driven Engineering (AIDE)",
+      "id": "aide",
+      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants \u2014 from vision through implementation.",
+      "author": "mnriem",
+      "version": "1.0.0",
+      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/aide-v1.0.0/aide.zip",
+      "repository": "https://github.com/mnriem/spec-kit-extensions",
+      "homepage": "https://github.com/mnriem/spec-kit-extensions",
+      "documentation": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/README.md",
+      "changelog": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 0
+      },
+      "tags": [
+        "workflow",
+        "project-management",
+        "ai-driven",
+        "new-project",
+        "planning",
+        "experimental"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-18T00:00:00Z",
+      "updated_at": "2026-03-18T00:00:00Z"
+    },
     "api-evolve": {
       "name": "API Evolve",
       "id": "api-evolve",
-      "description": "Managed API contract evolution — breaking-change detection, semver enforcement, deprecation orchestration, and lifecycle gates across REST, GraphQL, and gRPC.",
+      "description": "Managed API contract evolution \u2014 breaking-change detection, semver enforcement, deprecation orchestration, and lifecycle gates across REST, GraphQL, and gRPC.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-api-evolve/archive/refs/tags/v1.0.0.zip",
@@ -339,7 +339,7 @@
     "brownfield": {
       "name": "Brownfield Bootstrap",
       "id": "brownfield",
-      "description": "Bootstrap spec-kit for existing codebases — auto-discover architecture and adopt SDD incrementally.",
+      "description": "Bootstrap spec-kit for existing codebases \u2014 auto-discover architecture and adopt SDD incrementally.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-brownfield/archive/refs/tags/v1.0.0.zip",
@@ -368,10 +368,27 @@
       "created_at": "2026-04-10T00:00:00Z",
       "updated_at": "2026-04-10T00:00:00Z"
     },
+    "brownkit": {
+      "id": "brownkit",
+      "name": "BrownKit \u2014 Brownfield Discovery",
+      "description": "Evidence-driven capability discovery, security and QA risk assessment for existing codebases.",
+      "repository": "https://github.com/MaksimShevtsov/BrownKit",
+      "commit": "f9a4f8d60f33b69a707c4c8da521d33d74cf4616",
+      "version": "1.0.0",
+      "author": "Maksim Shautsou",
+      "license": "MIT",
+      "tags": [
+        "brownfield",
+        "discovery",
+        "security",
+        "qa",
+        "capabilities"
+      ]
+    },
     "bugfix": {
       "name": "Bugfix Workflow",
       "id": "bugfix",
-      "description": "Structured bugfix workflow — capture bugs, trace to spec artifacts, and patch specs surgically.",
+      "description": "Structured bugfix workflow \u2014 capture bugs, trace to spec artifacts, and patch specs surgically.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-bugfix/archive/refs/tags/v1.0.0.zip",
@@ -438,7 +455,7 @@
     "catalog-ci": {
       "name": "Catalog CI",
       "id": "catalog-ci",
-      "description": "Automated validation for spec-kit community catalog entries — structure, URLs, diffs, and linting.",
+      "description": "Automated validation for spec-kit community catalog entries \u2014 structure, URLs, diffs, and linting.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-catalog-ci/archive/refs/tags/v1.0.0.zip",
@@ -466,39 +483,6 @@
       "stars": 0,
       "created_at": "2026-04-16T00:00:00Z",
       "updated_at": "2026-04-16T00:00:00Z"
-    },
-    "ci-guard": {
-      "name": "CI Guard",
-      "id": "ci-guard",
-      "description": "Spec compliance gates for CI/CD — verify specs exist, check drift, and block merges on gaps.",
-      "author": "Quratulain-bilal",
-      "version": "1.0.0",
-      "download_url": "https://github.com/Quratulain-bilal/spec-kit-ci-guard/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/Quratulain-bilal/spec-kit-ci-guard",
-      "homepage": "https://github.com/Quratulain-bilal/spec-kit-ci-guard",
-      "documentation": "https://github.com/Quratulain-bilal/spec-kit-ci-guard/blob/main/README.md",
-      "changelog": "https://github.com/Quratulain-bilal/spec-kit-ci-guard/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.4.0"
-      },
-      "provides": {
-        "commands": 5,
-        "hooks": 2
-      },
-      "tags": [
-        "ci-cd",
-        "compliance",
-        "governance",
-        "quality-gate",
-        "drift-detection",
-        "automation"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-04-10T17:00:00Z",
-      "updated_at": "2026-04-10T17:00:00Z"
     },
     "checkpoint": {
       "name": "Checkpoint Extension",
@@ -528,6 +512,39 @@
       "stars": 0,
       "created_at": "2026-03-22T00:00:00Z",
       "updated_at": "2026-03-22T00:00:00Z"
+    },
+    "ci-guard": {
+      "name": "CI Guard",
+      "id": "ci-guard",
+      "description": "Spec compliance gates for CI/CD \u2014 verify specs exist, check drift, and block merges on gaps.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-ci-guard/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-ci-guard",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-ci-guard",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-ci-guard/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-ci-guard/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "ci-cd",
+        "compliance",
+        "governance",
+        "quality-gate",
+        "drift-detection",
+        "automation"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-10T17:00:00Z",
+      "updated_at": "2026-04-10T17:00:00Z"
     },
     "cleanup": {
       "name": "Cleanup Extension",
@@ -591,36 +608,6 @@
       "created_at": "2026-03-19T12:08:20Z",
       "updated_at": "2026-04-03T12:35:01Z"
     },
-    "critique": {
-      "name": "Spec Critique Extension",
-      "id": "critique",
-      "description": "Dual-lens critical review of spec and plan from product strategy and engineering risk perspectives.",
-      "author": "arunt14",
-      "version": "1.0.0",
-      "download_url": "https://github.com/arunt14/spec-kit-critique/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/arunt14/spec-kit-critique",
-      "homepage": "https://github.com/arunt14/spec-kit-critique",
-      "documentation": "https://github.com/arunt14/spec-kit-critique/blob/main/README.md",
-      "changelog": "https://github.com/arunt14/spec-kit-critique/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "commands": 1,
-        "hooks": 1
-      },
-      "tags": [
-        "docs",
-        "review",
-        "planning"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-04-01T00:00:00Z",
-      "updated_at": "2026-04-01T00:00:00Z"
-    },
     "confluence": {
       "name": "Confluence Extension",
       "id": "confluence",
@@ -652,7 +639,7 @@
     "cost": {
       "name": "Cost Tracker",
       "id": "cost",
-      "description": "Track real LLM dollar cost across SDD workflows — per-feature budgets, per-integration comparison, and finance-ready exports.",
+      "description": "Track real LLM dollar cost across SDD workflows \u2014 per-feature budgets, per-integration comparison, and finance-ready exports.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-cost/archive/refs/tags/v1.0.0.zip",
@@ -680,6 +667,36 @@
       "stars": 0,
       "created_at": "2026-05-03T00:00:00Z",
       "updated_at": "2026-05-05T00:00:00Z"
+    },
+    "critique": {
+      "name": "Spec Critique Extension",
+      "id": "critique",
+      "description": "Dual-lens critical review of spec and plan from product strategy and engineering risk perspectives.",
+      "author": "arunt14",
+      "version": "1.0.0",
+      "download_url": "https://github.com/arunt14/spec-kit-critique/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/arunt14/spec-kit-critique",
+      "homepage": "https://github.com/arunt14/spec-kit-critique",
+      "documentation": "https://github.com/arunt14/spec-kit-critique/blob/main/README.md",
+      "changelog": "https://github.com/arunt14/spec-kit-critique/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "docs",
+        "review",
+        "planning"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
     },
     "diagram": {
       "name": "Spec Diagram",
@@ -714,7 +731,7 @@
       "updated_at": "2026-04-08T00:00:00Z"
     },
     "docguard": {
-      "name": "DocGuard — CDD Enforcement",
+      "name": "DocGuard \u2014 CDD Enforcement",
       "id": "docguard",
       "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. Zero NPM runtime dependencies.",
       "author": "raccioly",
@@ -1024,7 +1041,7 @@
     "iterate": {
       "name": "Iterate",
       "id": "iterate",
-      "description": "Iterate on spec documents with a two-phase define-and-apply workflow — refine specs mid-implementation and go straight back to building",
+      "description": "Iterate on spec documents with a two-phase define-and-apply workflow \u2014 refine specs mid-implementation and go straight back to building",
       "author": "Vianca Martinez",
       "version": "2.0.0",
       "download_url": "https://github.com/imviancagrace/spec-kit-iterate/archive/refs/tags/v2.0.0.zip",
@@ -1152,9 +1169,9 @@
       "updated_at": "2026-04-28T00:00:00Z"
     },
     "maqa": {
-      "name": "MAQA — Multi-Agent & Quality Assurance",
+      "name": "MAQA \u2014 Multi-Agent & Quality Assurance",
       "id": "maqa",
-      "description": "Coordinator → feature → QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins (Trello, Linear, GitHub Projects, Jira, Azure DevOps). Optional CI gate.",
+      "description": "Coordinator \u2192 feature \u2192 QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins (Trello, Linear, GitHub Projects, Jira, Azure DevOps). Optional CI gate.",
       "author": "GenieRobot",
       "version": "0.1.3",
       "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.1.3/maqa.zip",
@@ -1630,7 +1647,7 @@
     "orchestrator": {
       "name": "Spec Orchestrator",
       "id": "orchestrator",
-      "description": "Cross-feature orchestration — track state, select tasks, and detect conflicts across parallel specs.",
+      "description": "Cross-feature orchestration \u2014 track state, select tasks, and detect conflicts across parallel specs.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-orchestrator/archive/refs/tags/v1.0.0.zip",
@@ -1756,7 +1773,7 @@
     "product-forge": {
       "name": "Product Forge",
       "id": "product-forge",
-      "description": "Full product lifecycle from research to release — portfolio, lite mode, monorepo, optional V-Model",
+      "description": "Full product lifecycle from research to release \u2014 portfolio, lite mode, monorepo, optional V-Model",
       "author": "VaiYav",
       "version": "1.5.1",
       "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.5.1.zip",
@@ -2087,7 +2104,7 @@
     "ripple": {
       "name": "Ripple",
       "id": "ripple",
-      "description": "Detect side effects that tests can't catch after implementation — delta-anchored analysis across 9 domain-agnostic categories with fix-induced side effect detection",
+      "description": "Detect side effects that tests can't catch after implementation \u2014 delta-anchored analysis across 9 domain-agnostic categories with fix-induced side effect detection",
       "author": "chordpli",
       "version": "1.0.0",
       "download_url": "https://github.com/chordpli/spec-kit-ripple/archive/refs/tags/v1.0.0.zip",
@@ -2119,7 +2136,7 @@
     "scope": {
       "name": "Spec Scope",
       "id": "scope",
-      "description": "Effort estimation and scope tracking — estimate work, detect creep, and budget time per phase.",
+      "description": "Effort estimation and scope tracking \u2014 estimate work, detect creep, and budget time per phase.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-scope-/archive/refs/tags/v1.0.0.zip",
@@ -2182,7 +2199,7 @@
       "updated_at": "2026-05-06T22:28:55Z"
     },
     "sf": {
-      "name": "SFSpeckit — Salesforce Spec-Driven Development",
+      "name": "SFSpeckit \u2014 Salesforce Spec-Driven Development",
       "id": "sf",
       "description": "Enterprise-Grade Spec-Driven Development (SDD) Framework for Salesforce.",
       "author": "Sumanth Yanamala",
@@ -2289,7 +2306,7 @@
     "spec-validate": {
       "name": "Spec Validate",
       "id": "spec-validate",
-      "description": "Comprehension validation, review gating, and approval state for spec-kit artifacts — staged-reveal quizzes, peer review SLA, and a hard gate before /speckit.implement.",
+      "description": "Comprehension validation, review gating, and approval state for spec-kit artifacts \u2014 staged-reveal quizzes, peer review SLA, and a hard gate before /speckit.implement.",
       "author": "Ahmed Eltayeb",
       "version": "1.0.1",
       "download_url": "https://github.com/aeltayeb/spec-kit-spec-validate/archive/refs/tags/v1.0.1.zip",
@@ -2321,7 +2338,7 @@
     "spec2cloud": {
       "name": "Spec2Cloud",
       "id": "spec2cloud",
-      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
+      "description": "Spec-driven workflow tuned for shipping to Azure: spec \u2192 plan \u2192 tasks \u2192 implement \u2192 deploy.",
       "author": "Azure Samples",
       "version": "1.1.0",
       "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/download/spec-kit-spec2cloud-v1.1.0/extension.zip",
@@ -2487,7 +2504,7 @@
     "status": {
       "name": "Project Status",
       "id": "status",
-      "description": "Show current SDD workflow progress — active feature, artifact status, task completion, workflow phase, and extensions summary.",
+      "description": "Show current SDD workflow progress \u2014 active feature, artifact status, task completion, workflow phase, and extensions summary.",
       "author": "KhawarHabibKhan",
       "version": "1.0.0",
       "download_url": "https://github.com/KhawarHabibKhan/spec-kit-status/archive/refs/tags/v1.0.0.zip",
@@ -2654,38 +2671,6 @@
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
     },
-    "tinyspec": {
-      "name": "TinySpec",
-      "id": "tinyspec",
-      "description": "Lightweight single-file workflow for small tasks — skip the heavy multi-step SDD process.",
-      "author": "Quratulain-bilal",
-      "version": "1.0.0",
-      "download_url": "https://github.com/Quratulain-bilal/spec-kit-tinyspec/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/Quratulain-bilal/spec-kit-tinyspec",
-      "homepage": "https://github.com/Quratulain-bilal/spec-kit-tinyspec",
-      "documentation": "https://github.com/Quratulain-bilal/spec-kit-tinyspec/blob/main/README.md",
-      "changelog": "https://github.com/Quratulain-bilal/spec-kit-tinyspec/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.4.0"
-      },
-      "provides": {
-        "commands": 3,
-        "hooks": 1
-      },
-      "tags": [
-        "lightweight",
-        "small-tasks",
-        "workflow",
-        "productivity",
-        "efficiency"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-04-10T00:00:00Z",
-      "updated_at": "2026-04-10T00:00:00Z"
-    },
     "threatmodel": {
       "name": "OWASP LLM Threat Model",
       "id": "threatmodel",
@@ -2717,6 +2702,38 @@
       "stars": 0,
       "created_at": "2026-04-25T00:00:00Z",
       "updated_at": "2026-04-25T00:00:00Z"
+    },
+    "tinyspec": {
+      "name": "TinySpec",
+      "id": "tinyspec",
+      "description": "Lightweight single-file workflow for small tasks \u2014 skip the heavy multi-step SDD process.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-tinyspec/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-tinyspec",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-tinyspec",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-tinyspec/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-tinyspec/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "lightweight",
+        "small-tasks",
+        "workflow",
+        "productivity",
+        "efficiency"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-10T00:00:00Z",
+      "updated_at": "2026-04-10T00:00:00Z"
     },
     "token-analyzer": {
       "name": "Token Consumption Analyzer",
@@ -3017,7 +3034,7 @@
     "worktrees": {
       "name": "Worktrees",
       "id": "worktrees",
-      "description": "Default-on worktree isolation for parallel agents — sibling or nested layout",
+      "description": "Default-on worktree isolation for parallel agents \u2014 sibling or nested layout",
       "author": "dango85",
       "version": "1.0.0",
       "download_url": "https://github.com/dango85/spec-kit-worktree-parallel/archive/refs/tags/v1.0.0.zip",
