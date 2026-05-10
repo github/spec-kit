@@ -435,7 +435,7 @@ def install_shared_infra(
 
     if skipped_files:
         console.print(
-            f"[yellow]⚠[/yellow]  {len(skipped_files)} shared infrastructure file(s) already exist and were not updated:"
+            f"[yellow]⚠[/yellow]  {len(skipped_files)} shared infrastructure path(s) already exist and were not updated:"
         )
         for path in skipped_files:
             console.print(f"    {path}")

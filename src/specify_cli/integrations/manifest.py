@@ -147,12 +147,28 @@ class IntegrationManifest:
         return abs_path
 
     def record_existing(self, rel_path: str | Path) -> None:
-        """Record the hash of an already-existing file at *rel_path*.
+        """Record the hash of an already-existing regular file at *rel_path*.
 
-        Raises ``ValueError`` if *rel_path* resolves outside the project root.
+        Raises:
+            ValueError: if *rel_path* resolves outside the project root, is
+                a symlink, or is not a regular file. A directory or other
+                non-file path cannot be silently recorded — its hash would
+                be meaningless and ``check_modified``/``uninstall`` would
+                treat the entry as permanently broken.
         """
         rel = Path(rel_path)
+        # Check ``is_symlink()`` on the un-resolved path because
+        # ``_validate_rel_path`` resolves the path (which would follow
+        # the symlink and silently record the target instead).
+        if (self.project_root / rel).is_symlink():
+            raise ValueError(
+                f"Refusing to record symlinked manifest path: {rel}"
+            )
         abs_path = _validate_rel_path(rel, self.project_root)
+        if not abs_path.is_file():
+            raise ValueError(
+                f"Manifest path is not a regular file: {rel}"
+            )
         normalized = abs_path.relative_to(self.project_root).as_posix()
         self._files[normalized] = _sha256(abs_path)
 
