@@ -2513,17 +2513,24 @@ class HookExecutor:
         if not isinstance(config, dict):
             config = {}
 
-        # Ensure "installed" is a list of strings (defensive)
-        if "installed" not in config or not isinstance(config["installed"], list):
-            config["installed"] = []
-        else:
-            # Sanitize: keep only strings to prevent TypeError on sort
-            config["installed"] = [x for x in config["installed"] if isinstance(x, str)]
+        # Load and sanitize existing installed list
+        installed = config.get("installed")
+        if not isinstance(installed, list):
+            installed = []
+        
+        sanitized = [x for x in installed if isinstance(x, str)]
+        
+        # We need to save if we dropped non-string entries or if the ID is new
+        changed = len(sanitized) != len(installed)
 
-        if extension_id not in config["installed"]:
-            config["installed"].append(extension_id)
+        if extension_id not in sanitized:
+            sanitized.append(extension_id)
             # Maintain alphabetical order for readability and diff stability
-            config["installed"].sort()
+            sanitized.sort()
+            changed = True
+        
+        if changed:
+            config["installed"] = sanitized
             self.save_project_config(config)
 
     def unregister_extension(self, extension_id: str):
@@ -2537,12 +2544,21 @@ class HookExecutor:
         if not isinstance(config, dict):
             return
 
-        if (
-            "installed" in config
-            and isinstance(config["installed"], list)
-            and extension_id in config["installed"]
-        ):
-            config["installed"].remove(extension_id)
+        installed = config.get("installed")
+        if not isinstance(installed, list):
+            return
+
+        sanitized = [x for x in installed if isinstance(x, str)]
+        
+        # Save if we drop non-strings or if we remove the extension
+        changed = len(sanitized) != len(installed)
+        
+        if extension_id in sanitized:
+            sanitized.remove(extension_id)
+            changed = True
+            
+        if changed:
+            config["installed"] = sanitized
             self.save_project_config(config)
 
     def register_hooks(self, manifest: ExtensionManifest):
@@ -2560,17 +2576,21 @@ class HookExecutor:
         config = self.get_project_config()
 
         # Ensure config is a dict (defensive)
+        changed = False
         if not isinstance(config, dict):
             config = {}
+            changed = True
 
         # Ensure hooks dict exists and is a mapping
         if "hooks" not in config or not isinstance(config["hooks"], dict):
             config["hooks"] = {}
+            changed = True
 
         # Register each hook
         for hook_name, hook_config in manifest.hooks.items():
-            if hook_name not in config["hooks"]:
+            if hook_name not in config["hooks"] or not isinstance(config["hooks"][hook_name], list):
                 config["hooks"][hook_name] = []
+                changed = True
 
             # Add hook entry
             hook_entry = {
@@ -2586,21 +2606,23 @@ class HookExecutor:
             }
 
             # Check if already registered
-            existing = [
-                h
-                for h in config["hooks"][hook_name]
-                if h.get("extension") == manifest.id
-            ]
+            existing_idx = -1
+            for i, h in enumerate(config["hooks"][hook_name]):
+                if isinstance(h, dict) and h.get("extension") == manifest.id:
+                    existing_idx = i
+                    break
 
-            if not existing:
+            if existing_idx == -1:
                 config["hooks"][hook_name].append(hook_entry)
+                changed = True
             else:
-                # Update existing
-                for i, h in enumerate(config["hooks"][hook_name]):
-                    if h.get("extension") == manifest.id:
-                        config["hooks"][hook_name][i] = hook_entry
+                # Update existing if changed
+                if config["hooks"][hook_name][existing_idx] != hook_entry:
+                    config["hooks"][hook_name][existing_idx] = hook_entry
+                    changed = True
 
-        self.save_project_config(config)
+        if changed:
+            self.save_project_config(config)
 
     def unregister_hooks(self, extension_id: str):
         """Remove extension hooks from project config.

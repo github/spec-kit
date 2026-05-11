@@ -317,3 +317,44 @@ class TestExtensionRegistration:
         config = executor.get_project_config()
         assert "broken-ext" not in config["installed"]
 
+    def test_register_hooks_corrupted_hook_values(self, project_dir, tmp_path):
+        """Regression: register_hooks() must handle non-list hook event values in config."""
+        executor = HookExecutor(project_dir)
+
+        # Manually write a config with null hook event value
+        config_path = project_dir / ".specify" / "extensions.yml"
+        config_path.write_text(yaml.dump({
+            "installed": ["some-ext"],
+            "hooks": {"after_tasks": None}
+        }))
+
+        # Create a manifest with a hook for the same event
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "new-ext",
+                "name": "New Ext",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {
+                "speckit_version": ">=0.1.0",
+                "commands": []
+            },
+            "provides": {"commands": []},
+            "hooks": {"after_tasks": {"command": "speckit.new-ext.run"}}
+        }
+        manifest_path = tmp_path / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(manifest_data, f)
+        
+        manifest = ExtensionManifest(manifest_path)
+        
+        # Should not raise TypeError when trying to append to None
+        executor.register_hooks(manifest)
+
+        config = executor.get_project_config()
+        assert "new-ext" in config["installed"]
+        assert isinstance(config["hooks"]["after_tasks"], list)
+        assert any(h["extension"] == "new-ext" for h in config["hooks"]["after_tasks"])
+
