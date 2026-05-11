@@ -358,7 +358,7 @@ Governance MUST ensure:
 
 This article ensures that governance is not static and that specifications remain the authoritative source. When a gap or requirement emerges during implementation, teams may create a new specification, update an existing one, or regenerate derived artifacts—whichever approach fits their workflow—as long as the specification continues to drive implementation rather than the reverse.
 
-The constitution follows semantic versioning—major for removed or redefined principles, minor for additions, patch for clarifications. Specifications are versioned through branch-based workflows—each feature specification lives in its own branch and is reviewed and merged like code. Together, these models create an auditable trail of architectural and product decisions.
+The constitution follows semantic versioning—major for removed or redefined principles, minor for additions, patch for clarifications. Specifications must be versioned and reviewable before acceptance. Together, these practices create an auditable trail of architectural and product decisions.
 
 #### Articles VII & VIII: Simplicity and Anti-Abstraction
 
