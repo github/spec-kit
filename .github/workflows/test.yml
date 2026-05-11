@@ -7,6 +7,13 @@ on:
   push:
     branches: ["main"]
   pull_request:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "templates/**"
+      - "workflows/**"
+      - "extensions/**"
+      - "pyproject.toml"
 
 jobs:
   ruff:
@@ -29,6 +36,7 @@ jobs:
   pytest:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: true
       matrix:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.12", "3.13"]
@@ -38,6 +46,9 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6

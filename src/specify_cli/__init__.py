@@ -4091,6 +4091,17 @@ def extension_list(
             console.print(f"     [dim]{ext['id']}[/dim]")
             console.print(f"     {ext['description']}")
             console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Priority: {ext['priority']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
+            cp = ext.get("cost_profile", {})
+            if cp:
+                tier = cp.get("recommended_model_tier", "haiku")
+                calls = cp.get("llm_calls_per_invocation", "none")
+                tokens = cp.get("estimated_tokens_per_call", 0)
+                caching = cp.get("supports_caching", False)
+                caching_str = "[green]yes[/green]" if caching else "no"
+                console.print(
+                    f"     [dim]Cost: tier=[cyan]{tier}[/cyan]  calls={calls}  "
+                    f"tokens/call~{tokens}  caching={caching_str}[/dim]"
+                )
             console.print()
 
     if available or all_extensions:

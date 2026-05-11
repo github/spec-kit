@@ -17,6 +17,21 @@
         "workflow",
         "core"
       ]
+    },
+    "cost-tracker": {
+      "name": "LLM Cost Tracker",
+      "id": "cost-tracker",
+      "version": "1.0.0",
+      "description": "Records actual LLM spend back to the spec's Cost Allocation section and surfaces per-feature budget status",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "bundled": true,
+      "tags": [
+        "finops",
+        "cost",
+        "llm",
+        "budget"
+      ]
     }
   }
 }

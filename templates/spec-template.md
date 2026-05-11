@@ -5,6 +5,17 @@
 **Status**: Draft  
 **Input**: User description: "$ARGUMENTS"
 
+## Cost Allocation
+
+| Field | Value |
+|-------|-------|
+| **Team** | [team name] |
+| **Cost Center** | [cost-center-id] |
+| **Feature Priority** | [P1 / P2 / P3 — aligns with User Story priorities below] |
+| **Approved LLM Budget (USD)** | [$X.XX] |
+| **Actual LLM Spend (USD)** | [populated by Cost Tracker extension] |
+| **Clarification Budget (rounds)** | [3] |
+
 ## User Scenarios & Testing *(mandatory)*
 
 <!--

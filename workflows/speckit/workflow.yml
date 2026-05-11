@@ -24,6 +24,10 @@ inputs:
     type: string
     default: "full"
     enum: ["full", "backend-only", "frontend-only"]
+  budget_usd:
+    type: number
+    default: 10.00
+    prompt: "Approved LLM budget in USD for this feature"
 
 steps:
   - id: specify
@@ -35,6 +39,15 @@ steps:
   - id: review-spec
     type: gate
     message: "Review the generated spec before planning."
+    options: [approve, reject]
+    on_reject: abort
+
+  - id: cost-review
+    type: gate
+    message: >
+      Budget confirmation required before planning begins.
+      Review the spec's Cost Allocation section and confirm the approved
+      LLM budget covers the planned AI usage for this feature.
     options: [approve, reject]
     on_reject: abort
 
@@ -61,3 +74,12 @@ steps:
     integration: "{{ inputs.integration }}"
     input:
       args: "{{ inputs.spec }}"
+
+  - id: spend-check
+    type: budget-gate
+    threshold_usd: "{{ inputs.budget_usd }}"
+    # Wire to your cost-tracker extension output once installed:
+    #   current_spend_usd: "{{ steps.cost-tracker.output.total_spend_usd }}"
+    current_spend_usd: 0
+    on_warning: notify
+    on_exceeded: pause

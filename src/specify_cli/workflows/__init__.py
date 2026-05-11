@@ -42,6 +42,7 @@ def get_step_type(type_key: str) -> StepBase | None:
 
 def _register_builtin_steps() -> None:
     """Register all built-in step types."""
+    from .steps.budget_gate import BudgetGateStep
     from .steps.command import CommandStep
     from .steps.do_while import DoWhileStep
     from .steps.fan_in import FanInStep
@@ -53,6 +54,7 @@ def _register_builtin_steps() -> None:
     from .steps.switch import SwitchStep
     from .steps.while_loop import WhileStep
 
+    _register_step(BudgetGateStep())
     _register_step(CommandStep())
     _register_step(DoWhileStep())
     _register_step(FanInStep())

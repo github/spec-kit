@@ -1,0 +1,53 @@
+schema_version: "1.0"
+
+extension:
+  id: "cost-tracker"
+  name: "LLM Cost Tracker"
+  version: "1.0.0"
+  description: "Records actual LLM spend back to the spec's Cost Allocation section and surfaces per-feature budget status"
+  author: "spec-kit-core"
+  repository: "https://github.com/github/spec-kit"
+  license: "MIT"
+  homepage: "https://github.com/github/spec-kit"
+
+requires:
+  speckit_version: ">=0.7.2"
+
+provides:
+  commands:
+    - name: "speckit.cost-tracker.record"
+      file: "commands/speckit.cost-tracker.record.md"
+      description: "Update the Actual LLM Spend field in the current spec with the reported spend amount"
+
+    - name: "speckit.cost-tracker.report"
+      file: "commands/speckit.cost-tracker.report.md"
+      description: "Show a budget summary table across all specs in the project"
+
+  config:
+    - name: "cost-tracker-config.yml"
+      template: "config-template.yml"
+      description: "Cost tracker configuration"
+      required: false
+
+hooks:
+  after_implement:
+    command: "speckit.cost-tracker.record"
+    optional: true
+    prompt: "Record LLM spend for this implementation step?"
+    description: "Prompts for actual spend and writes it to the spec's Cost Allocation section"
+
+tags:
+  - "finops"
+  - "cost"
+  - "llm"
+  - "budget"
+
+cost_profile:
+  llm_calls_per_invocation: "none"
+  estimated_tokens_per_call: 0
+  supports_caching: false
+  recommended_model_tier: "haiku"
+
+defaults:
+  currency: "USD"
+  warn_at_pct: 80

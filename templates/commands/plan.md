@@ -55,6 +55,24 @@ You **MUST** consider the user input before proceeding (if not empty).
     ```
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
+**Validate cost fields before planning**:
+- After loading the IMPL_PLAN template (Outline step 2), inspect the
+  **Technical Context** section for:
+  - `**AI Model Tier**`
+  - `**Estimated Token Budget**`
+- If either field is absent OR still contains the literal placeholder text
+  (`[haiku | sonnet | opus]` or `[~N tokens / ~$X.XX]`), stop and emit:
+
+  ```
+  ERROR: Plan cannot proceed. The following Technical Context fields are
+  empty or contain unfilled placeholders:
+    - AI Model Tier
+    - Estimated Token Budget
+  Fill these fields before re-running `__SPECKIT_COMMAND_PLAN__`.
+  ```
+
+- Do NOT infer or auto-fill these values; they require an explicit human decision.
+
 ## Outline
 
 1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").

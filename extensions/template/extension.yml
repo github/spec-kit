@@ -86,6 +86,14 @@ tags:
   - "template"
   # ADD MORE: "category", "tool-name", etc.
 
+# CUSTOMIZE: Declare the cost characteristics of this extension (optional)
+# llm_calls_per_invocation: none=0 calls, low=1-3, medium=4-10, high=>10
+cost_profile:
+  llm_calls_per_invocation: "none"   # none | low | medium | high
+  estimated_tokens_per_call: 0       # average tokens per LLM call
+  supports_caching: false            # true if prompt caching reduces cost
+  recommended_model_tier: "haiku"    # haiku | sonnet | opus
+
 # CUSTOMIZE: Default configuration values (optional)
 # These are merged with user config
 defaults:

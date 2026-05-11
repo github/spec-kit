@@ -1,0 +1,15 @@
+# Cost Tracker Extension Configuration
+# Copy to .specify/extensions/cost-tracker/cost-tracker-config.yml and customize.
+
+# Percentage of approved budget at which a warning is emitted (default: 80)
+warn_at_pct: 80
+
+# Currency symbol used in output (display only)
+currency: "USD"
+
+# Token pricing used when converting token counts to USD.
+# Defaults match Anthropic haiku pricing at time of writing.
+# Override if you use a different model or pricing has changed.
+token_pricing:
+  input_per_1k: 0.00025   # USD per 1,000 input tokens
+  output_per_1k: 0.00125  # USD per 1,000 output tokens
