@@ -1,31 +1,30 @@
 name: Release to PyPI + GitHub
 
-# Every push to main that touches the package's contents (source, prompts,
-# pyproject, or this workflow) triggers a release. The workflow:
+# Every merge to main triggers a full release. The workflow:
 #
 # 1. Computes the next patch version from the latest git tag.
 # 2. Skips if a GitHub release already exists for that version.
 # 3. Stamps the version into pyproject.toml.
 # 4. Builds the wheel + sdist with `uv build`.
-# 5. Runs `twine check` against the built artifacts (catches malformed
-#    README / metadata before we hit PyPI).
+# 5. Runs `twine check --strict` against the built artifacts.
 # 6. Publishes to PyPI via trusted publishing (PEP 740 / OIDC) — no API
 #    tokens required, see https://docs.pypi.org/trusted-publishers/.
-# 7. Creates a GitHub Release with the wheel + sdist attached.
-# 8. Commits the version bump back to main with `[skip ci]`.
+# 7. Creates a GitHub Release with the wheel + sdist attached. The tag
+#    is created server-side by `gh release create` against the merge
+#    commit on main.
+# 8. Commits the version bump back to main with `[skip ci]` so the next
+#    push (which would otherwise see the same latest_tag) picks up from
+#    the bumped pyproject.toml.
+#
+# `[skip ci]` is honoured natively by GitHub Actions — the version-bump
+# commit does not re-trigger this workflow.
 #
 # If any step fails, subsequent steps are skipped — including the version
-# bump, so the next CI run will retry from the same version number.
+# bump — so the next CI run will retry from the same version number.
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'src/**'
-      - 'templates/**'
-      - 'pyproject.toml'
-      - '.github/workflows/release.yml'
-      - '.github/workflows/scripts/**'
   workflow_dispatch:
 
 # Cancel any in-flight release if a newer commit arrives on main. Only one
@@ -112,11 +111,12 @@ jobs:
           # Set TWINE_PASSWORD via the OIDC token; no API key needed.
           # See https://docs.pypi.org/trusted-publishers/ for setup.
 
-      - name: Create GitHub Release with wheel + sdist
+      - name: Create GitHub Release (also creates the tag against main)
         if: steps.check_release.outputs.exists == 'false'
         run: |
           gh release create "${{ steps.get_tag.outputs.new_version }}" \
             dist/*.whl dist/*.tar.gz \
+            --target main \
             --title "InfraKit CLI ${{ steps.get_tag.outputs.new_version }}" \
             --notes-file release_notes.md
         env:

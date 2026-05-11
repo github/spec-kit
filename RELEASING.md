@@ -4,25 +4,25 @@ This document covers how InfraKit ships releases to PyPI and GitHub, and what to
 
 ## TL;DR
 
-> **Every push to `main` that touches `src/**`, `templates/**`, `pyproject.toml`, or `.github/workflows/**` ships a new patch release to PyPI and GitHub.**
+> **Every merge to `main` ships a new patch release: PyPI upload, GitHub Release, and tag — all in one workflow run.**
 
-No manual steps. No release branches. No "let's wait for a freeze." The contract is: if your change is worth merging, it's worth shipping.
+No path filters. No manual steps. No release branches. No "let's wait for a freeze." The contract is: if your change is worth merging, it's worth shipping.
 
 ## The release pipeline
 
-The full pipeline lives in [`.github/workflows/release.yml`](./.github/workflows/release.yml). Each release does, in order:
+The full pipeline lives in a single workflow — [`.github/workflows/release.yml`](./.github/workflows/release.yml). Every push to `main` runs it. Each run does, in order:
 
 1. **Resolve next version.** Reads the latest git tag (e.g. `v0.1.13`), bumps the patch component (`v0.1.14`).
-2. **Skip if the release already exists.** Lets the workflow re-run safely (idempotent).
+2. **Skip if the release already exists.** Lets the workflow re-run safely (idempotent). Every subsequent step is gated on this check.
 3. **Stamp `pyproject.toml`.** Writes the new version into the package metadata.
 4. **Build wheel + sdist** with `uv build`. Templates are force-included into the wheel via `[tool.hatch.build.targets.wheel.force-include]`.
 5. **`twine check --strict`** against the built artifacts. Catches malformed README, broken `long_description_content_type`, missing license, etc. before they reach PyPI.
 6. **Generate release notes** from the commits since the last tag.
 7. **Publish to PyPI** via [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (PEP 740 / OIDC). No API token in the repo.
-8. **Create GitHub Release** with the wheel + sdist attached.
-9. **Commit the version bump** back to `main` with `[skip ci]` so the next push picks up from the new version.
+8. **Create GitHub Release** with the wheel + sdist attached. `gh release create --target main` creates the tag server-side against the merge commit at the same time.
+9. **Commit the version bump** back to `main` with `[skip ci]` so future pushes pick up from the new version. The `[skip ci]` marker is honoured natively by GitHub Actions — the bump commit does **not** re-trigger this workflow.
 
-If any step fails, subsequent steps are skipped — **including** the version bump — so the next CI run retries from the same version number.
+If any step fails, subsequent steps are skipped — **including** the version bump — so the next CI run retries from the same version number. PyPI publish + GitHub Release + tag therefore ship atomically: either all three or none.
 
 ## One-time setup (already done)
 
@@ -60,36 +60,21 @@ After these three steps, the workflow's `pypa/gh-action-pypi-publish` step authe
 
 ## What triggers a release
 
-Path filters in [`release.yml`](./.github/workflows/release.yml):
+**Any merge to `main`.** No path filter. Every commit that lands on main runs the workflow and ships a release. README typos, doc tweaks, example refreshes — they all bump a patch version and upload a new wheel.
 
-```yaml
-paths:
-  - 'src/**'
-  - 'templates/**'
-  - 'pyproject.toml'
-  - '.github/workflows/release.yml'
-  - '.github/workflows/scripts/**'
-```
+This is a deliberate choice. The alternative (path filters) requires constant maintenance ("does this dir count? what about that one?") and tends to drift out of sync with reality. Bumping a patch number for a README edit is essentially free; the cost of *missing* a release because the trigger filter didn't fire is much higher.
 
-Changes that affect what users install ship a release. Changes that don't (README polish, examples, docs/, CHANGELOG entry for an already-released version) don't.
-
-### Should `examples/**` trigger a release?
-
-No. The examples are static reference material; they don't end up in the wheel beyond the sdist. Releasing for an example tweak would burn version numbers for no behavioural reason.
-
-### Should `README.md` trigger a release?
-
-No. PyPI keeps the long-description from the version that was uploaded; later README edits don't backfill. If you want the PyPI long-description updated, make a change that *also* touches `src/**` (or bump the version manually via a tagged release).
+If you want to land changes without a release — for instance, in-progress doc cleanup that doesn't justify a version bump — squash them into your next substantive PR.
 
 ### Manual releases
 
-If you really need to release without a path-triggered commit, run the workflow with `workflow_dispatch`:
+Outside of a normal merge, you can fire the workflow on demand:
 
 ```bash
 gh workflow run release.yml --ref main
 ```
 
-This goes through the exact same steps. The version still bumps off the latest tag.
+Same workflow, same outcome: PyPI upload, GitHub Release, tag, version-bump commit.
 
 ## Versioning
 
