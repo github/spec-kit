@@ -6106,29 +6106,37 @@ def workflow_step_add(
         # relative-path → URL. step.yml and __init__.py are ignored here (already
         # written). Paths are validated to stay within the step package directory to
         # prevent path-traversal attacks.
-        extra_files = info.get("extra_files") or {}
-        if isinstance(extra_files, dict):
-            for rel_path, file_url in extra_files.items():
-                if rel_path in ("step.yml", "__init__.py"):
-                    continue  # already written above
-                dest = (tmp_path / rel_path).resolve()
-                try:
-                    dest.relative_to(tmp_path)
-                except ValueError:
-                    console.print(
-                        f"[red]Error:[/red] extra_files path '{rel_path}' is outside "
-                        "the step package directory"
-                    )
-                    raise typer.Exit(1)
-                try:
-                    file_content = _safe_fetch(file_url)
-                except Exception as exc:
-                    console.print(
-                        f"[red]Error:[/red] Failed to download extra file '{rel_path}': {exc}"
-                    )
-                    raise typer.Exit(1)
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(file_content)
+        extra_files = info.get("extra_files")
+        if extra_files is not None and not isinstance(extra_files, dict):
+            console.print(
+                "[yellow]Warning:[/yellow] Catalog entry 'extra_files' is not a mapping; "
+                "additional package files will not be downloaded."
+            )
+            extra_files = {}
+        for rel_path, file_url in (extra_files or {}).items():
+            if rel_path in ("step.yml", "__init__.py"):
+                continue  # already written above
+            # Resolve both destination and base to handle any symlinks in tmp_path itself,
+            # ensuring the traversal check is robust even on non-canonical paths.
+            resolved_base = tmp_path.resolve()
+            dest = (tmp_path / rel_path).resolve()
+            try:
+                dest.relative_to(resolved_base)
+            except ValueError:
+                console.print(
+                    f"[red]Error:[/red] extra_files path '{rel_path}' is outside "
+                    "the step package directory"
+                )
+                raise typer.Exit(1)
+            try:
+                file_content = _safe_fetch(file_url)
+            except Exception as exc:
+                console.print(
+                    f"[red]Error:[/red] Failed to download extra file '{rel_path}': {exc}"
+                )
+                raise typer.Exit(1)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(file_content)
 
         # Atomically rename the staging directory to the final location.
         # Both paths are under steps_base_dir (same filesystem), so os.rename()
