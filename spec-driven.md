@@ -329,7 +329,7 @@ All requirements MUST be:
 - Traceable: mapped from user stories through tasks to implementation
 ```
 
-This article drives the clarification, checklist, and analysis pipeline. The `/speckit.clarify` command scans for ambiguity across functional scope, data modeling, interaction flows, and edge cases. The `/speckit.checklist` command generates "unit tests for English"—validating requirement quality rather than implementation correctness. The `/speckit.analyze` command performs cross-artifact consistency checks, catching coverage gaps, terminology drift, and duplicate or conflicting requirements before any code is written.
+This article drives the clarification, checklist, and analysis pipeline. Before planning begins, specifications are scanned for ambiguity across functional scope, data modeling, interaction flows, and edge cases. "Unit tests for English" validate requirement quality rather than implementation correctness. Cross-artifact consistency checks catch coverage gaps, terminology drift, and duplicate or conflicting requirements before any code is written.
 
 #### Article V: Non-Functional Standards
 
@@ -343,7 +343,7 @@ Non-functional requirements MUST be specified for:
 - Accessibility: interaction standards for all user interfaces
 ```
 
-Without this article, LLMs default to functional-only implementations—code that works but cannot be monitored, secured, or maintained in production. The clarification pipeline explicitly scans for non-functional coverage gaps, and checklists can target specific quality dimensions (security, performance, UX) to ensure these concerns are captured in requirements before implementation begins.
+Without this article, LLMs default to functional-only implementations—code that works but cannot be monitored, secured, or maintained in production. The clarification pipeline explicitly scans for non-functional coverage gaps, and checklists can target specific quality dimensions to ensure these concerns are captured in requirements before implementation begins.
 
 #### Article VI: Governance and Versioning
 
@@ -356,7 +356,7 @@ Constitution amendments MUST:
 - Maintain cross-artifact consistency after every change
 ```
 
-This article ensures that governance is not static. When principles evolve, the `/speckit.constitution` command validates that plan templates, spec templates, task templates, and command files remain aligned. Version bumps are classified by impact—major for removed or redefined principles, minor for additions, patch for clarifications—creating an auditable trail of architectural decisions.
+This article ensures that governance is not static. When principles evolve, plan templates, spec templates, task templates, and command files must remain aligned. Version bumps are classified by impact—major for removed or redefined principles, minor for additions, patch for clarifications—creating an auditable trail of architectural decisions.
 
 #### Articles VII & VIII: Simplicity and Anti-Abstraction
 
