@@ -375,3 +375,51 @@ class TestExtensionRegistration:
         raw_config = yaml.safe_load(config_path.read_text())
         assert raw_config["installed"] == ["test-ext"]
 
+    def test_register_extension_with_dict_entry(self, project_dir):
+        """Review Feedback: register_extension should support and preserve dict entries."""
+        executor = HookExecutor(project_dir)
+        config_path = project_dir / ".specify" / "extensions.yml"
+        
+        # Setup config with a pinned extension (dict)
+        pinned_ext = {"id": "pinned-ext", "version": "1.0.0"}
+        config_path.write_text(yaml.dump({
+            "installed": [pinned_ext, "string-ext"]
+        }))
+        
+        # Register a new extension
+        executor.register_extension("new-ext")
+        
+        config = executor.get_project_config()
+        # Should contain all three, sorted by id: new-ext, pinned-ext, string-ext
+        assert config["installed"] == ["new-ext", pinned_ext, "string-ext"]
+
+    def test_unregister_extension_with_dict_entry(self, project_dir):
+        """Review Feedback: unregister_extension should support removing matching dict entries."""
+        executor = HookExecutor(project_dir)
+        config_path = project_dir / ".specify" / "extensions.yml"
+        
+        pinned_ext = {"id": "to-remove", "version": "1.0.0"}
+        config_path.write_text(yaml.dump({
+            "installed": [pinned_ext, "other-ext"]
+        }))
+        
+        # Unregister by ID
+        executor.unregister_extension("to-remove")
+        
+        config = executor.get_project_config()
+        assert config["installed"] == ["other-ext"]
+
+    def test_unregister_extension_corrupted_installed(self, project_dir):
+        """Hardening: unregister_extension should handle non-list installed key."""
+        executor = HookExecutor(project_dir)
+        config_path = project_dir / ".specify" / "extensions.yml"
+        
+        config_path.write_text(yaml.dump({
+            "installed": "not-a-list"
+        }))
+        
+        # Should not crash and should normalize to []
+        executor.unregister_extension("any-ext")
+        
+        config = executor.get_project_config()
+        assert config["installed"] == []

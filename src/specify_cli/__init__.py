@@ -4851,8 +4851,8 @@ def extension_update(
             backup_config_dir = backup_base / "config"
 
             # Store backup state
-            backup_registry_entry = None
             backup_hooks = None  # None means no hooks key in config; {} means hooks key existed
+            backup_installed = None  # Original installed list from extensions.yml
             backed_up_command_files = {}
 
             try:
@@ -4903,10 +4903,11 @@ def extension_update(
                                 shutil.copy2(prompt_file, backup_prompt_path)
                                 backed_up_command_files[str(prompt_file)] = str(backup_prompt_path)
 
-                # 4. Backup hooks from extensions.yml
+                # 4. Backup hooks and installed list from extensions.yml
                 # Use backup_hooks=None to indicate config had no "hooks" key (don't create on restore)
                 # Use backup_hooks={} to indicate config had "hooks" key with no hooks for this extension
                 config = hook_executor.get_project_config()
+                backup_installed = config.get("installed")
                 if "hooks" in config:
                     backup_hooks = {}  # Config has hooks key - preserve this fact
                     for hook_name, hook_list in config["hooks"].items():
@@ -5095,6 +5096,12 @@ def extension_update(
 
                         if modified:
                             hook_executor.save_project_config(config)
+
+                    # Restore installed list in extensions.yml
+                    if backup_installed is not None:
+                        config = hook_executor.get_project_config()
+                        config["installed"] = backup_installed
+                        hook_executor.save_project_config(config)
 
                     # Restore registry entry (use restore() since entry was removed)
                     if backup_registry_entry:

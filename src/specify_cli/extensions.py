@@ -2513,24 +2513,34 @@ class HookExecutor:
         if not isinstance(config, dict):
             config = {}
 
-        # Load and sanitize existing installed list
-        installed = config.get("installed")
-        if not isinstance(installed, list):
-            installed = []
+        # Load existing installed list, defaulting to [] if missing or corrupted
+        raw_installed = config.get("installed")
+        installed = raw_installed if isinstance(raw_installed, list) else []
         
-        # Capture original state to check for changes (Feedback from review)
-        original_installed = list(installed)
+        # Sanitize: keep strings and mappings with an 'id' (Feedback from review)
+        sanitized = [
+            x for x in installed 
+            if isinstance(x, str) or (isinstance(x, dict) and isinstance(x.get("id"), str))
+        ]
         
-        # Sanitize: keep only strings
-        sanitized = [x for x in installed if isinstance(x, str)]
-        
-        if extension_id not in sanitized:
+        # Check if already present (as string or in a mapping)
+        already_present = False
+        for x in sanitized:
+            if x == extension_id or (isinstance(x, dict) and x.get("id") == extension_id):
+                already_present = True
+                break
+                
+        if not already_present:
             sanitized.append(extension_id)
         
-        # Maintain alphabetical order for readability and diff stability
-        sanitized.sort()
+        # Maintain alphabetical order by ID for readability and diff stability
+        def _get_sort_id(x):
+            return x if isinstance(x, str) else x.get("id", "")
+            
+        sanitized.sort(key=_get_sort_id)
         
-        if sanitized != original_installed:
+        # Always persist if sanitized state differs from raw config (ensures normalization)
+        if sanitized != raw_installed:
             config["installed"] = sanitized
             self.save_project_config(config)
 
@@ -2545,23 +2555,29 @@ class HookExecutor:
         if not isinstance(config, dict):
             return
 
-        installed = config.get("installed")
-        if not isinstance(installed, list):
-            return
+        # Load existing installed list, defaulting to [] if missing or corrupted
+        raw_installed = config.get("installed")
+        installed = raw_installed if isinstance(raw_installed, list) else []
 
-        # Capture original state to check for changes (Feedback from review)
-        original_installed = list(installed)
-
-        # Sanitize and remove
-        sanitized = [x for x in installed if isinstance(x, str)]
+        # Sanitize and remove (Feedback from review: support mappings)
+        sanitized = [
+            x for x in installed 
+            if isinstance(x, str) or (isinstance(x, dict) and isinstance(x.get("id"), str))
+        ]
         
-        if extension_id in sanitized:
-            sanitized.remove(extension_id)
+        sanitized = [
+            x for x in sanitized
+            if not (x == extension_id or (isinstance(x, dict) and x.get("id") == extension_id))
+        ]
             
         # Maintain alphabetical order for consistency
-        sanitized.sort()
+        def _get_sort_id(x):
+            return x if isinstance(x, str) else x.get("id", "")
             
-        if sanitized != original_installed:
+        sanitized.sort(key=_get_sort_id)
+            
+        # Always persist if sanitized state differs from raw config (ensures normalization)
+        if sanitized != raw_installed:
             config["installed"] = sanitized
             self.save_project_config(config)
 
