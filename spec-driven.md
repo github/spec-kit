@@ -273,7 +273,7 @@ The templates transform the LLM from a creative writer into a disciplined specif
 
 ## The Constitutional Foundation: Enforcing Architectural Discipline
 
-At the heart of SDD lies a constitution—a set of governing principles that define how specifications become code. The constitution acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
+At the heart of SDD lies a constitution—a set of governing principles that define how specifications become code. The constitution acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality. Run `/speckit.constitution` to create or update your project's constitution; the resulting file is stored at `.specify/memory/constitution.md`.
 
 ### The Nine Articles of Development
 
@@ -318,47 +318,17 @@ No implementation code shall be written before:
 
 This completely inverts traditional AI code generation. Instead of generating code and hoping it works, the LLM must first generate comprehensive tests that define behavior, get them approved, and only then generate implementation.
 
-#### Article IV: Requirement Quality and Coverage
+#### Articles IV, V & VI: Project-Specific Standards
 
-Specifications must be complete, unambiguous, and verifiable before planning begins:
+Articles IV, V, and VI are the primary customization points in the constitution. Teams define these articles to address their own integration, operational, and lifecycle concerns by running `/speckit.constitution`. The principles are stored in `.specify/memory/constitution.md` and `/speckit.analyze` validates spec, plan, and task artifacts against every principle in the project constitution.
 
-```text
-All requirements MUST be:
-- Testable: each requirement has measurable acceptance criteria
-- Unambiguous: no vague qualifiers without quantified thresholds
-- Traceable: mapped from user stories through tasks to implementation
-```
+Common choices for these articles include:
 
-This forces the LLM to treat requirement quality as a first-class engineering concern. Before planning begins, specifications must be scanned for ambiguity across functional scope, data modeling, interaction flows, and edge cases. "Unit tests for English" validate requirement quality rather than implementation correctness. Cross-artifact consistency checks catch coverage gaps, terminology drift, and duplicate or conflicting requirements before any code is written.
+- **Integration concerns** (Article IV): requirement quality and coverage standards—for example, rules about testability, unambiguity, and traceability that specifications must satisfy before planning begins for that project.
+- **Operational concerns** (Article V): non-functional standards—for example, explicit thresholds for performance, security, observability, and accessibility that the project requires.
+- **Lifecycle concerns** (Article VI): governance and versioning practices—for example, how the constitution and specifications are versioned, how derived artifacts stay consistent with their source, and how implementation gaps are resolved.
 
-#### Article V: Non-Functional Standards
-
-Every project must explicitly address operational and quality concerns beyond functional correctness:
-
-```text
-Non-functional requirements MUST be specified for:
-- Performance: quantified metrics and thresholds
-- Security: authentication, data protection, and failure response
-- Observability: structured logging, monitoring, and debuggability
-- Accessibility: interaction standards for all user interfaces
-```
-
-Without this article, LLMs default to functional-only implementations—code that works but cannot be monitored, secured, or maintained in production. Specifications must explicitly address non-functional coverage gaps, and quality checklists can target specific dimensions to ensure these concerns are captured in requirements before implementation begins.
-
-#### Article VI: Governance and Versioning
-
-The constitution and specifications are the authoritative sources of truth. Plans and tasks are derived execution artifacts:
-
-```text
-Governance MUST ensure:
-- Constitution and specifications are versioned and traceable
-- Derived artifacts (plans, tasks) remain consistent with their source specifications
-- Implementation gaps are addressed through specifications, not through untracked code changes
-```
-
-This article ensures that governance is not static and that specifications remain the authoritative source. When a gap or requirement emerges during implementation, teams may create a new specification, update an existing one, or regenerate derived artifacts—whichever approach fits their process—as long as the specification continues to drive implementation rather than the reverse.
-
-The constitution follows semantic versioning—major for removed or redefined principles, minor for additions, patch for clarifications. Specifications must be versioned and reviewable before acceptance. Together, these practices create an auditable trail of architectural and product decisions.
+Teams are free to name and scope these articles in whatever way best fits their project. The number of principles is also flexible—`/speckit.constitution` supports fewer or more than the template default.
 
 #### Articles VII & VIII: Simplicity and Anti-Abstraction
 
