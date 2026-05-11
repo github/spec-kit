@@ -227,10 +227,10 @@ def safe_extract_tarball(
                 safe_members.append(member)
 
             # Extract — use the "data" filter on Python 3.12+ for extra hardening.
-            # On older versions pass only the pre-validated members so that no
+            # On all versions pass only the pre-validated members so that no
             # unvetted entry (added concurrently or via a race) slips through.
             if sys.version_info >= (3, 12):
-                tf.extractall(dest_dir, filter="data")  # type: ignore[call-arg]
+                tf.extractall(dest_dir, members=safe_members, filter="data")  # type: ignore[call-arg]
             else:
                 tf.extractall(dest_dir, members=safe_members)  # noqa: S202 — validated above
     except error_class:
