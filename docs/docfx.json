@@ -7,7 +7,7 @@
           "toc.yml",
           "community/*.md",
           "reference/*.md",
-          "install/"
+          "install/*.md"
         ]
       },
       {
