@@ -347,16 +347,16 @@ Without this article, LLMs default to functional-only implementations—code tha
 
 #### Article VI: Governance and Versioning
 
-The constitution itself must be versioned, and changes must propagate consistently across all project artifacts:
+All project artifacts—constitution, specifications, plans, and tasks—must be versioned, and changes must propagate consistently across dependent artifacts:
 
 ```text
-Constitution amendments MUST:
-- Follow semantic versioning (MAJOR.MINOR.PATCH)
-- Include a sync impact report across all templates
+Artifact changes MUST:
+- Be versioned and traceable through version control
+- Propagate to all dependent artifacts when modified
 - Maintain cross-artifact consistency after every change
 ```
 
-This article ensures that governance is not static. When principles evolve, plan templates, spec templates, task templates, and command files must remain aligned. Version bumps are classified by impact—major for removed or redefined principles, minor for additions, patch for clarifications—creating an auditable trail of architectural decisions.
+This article ensures that governance is not static and that drift between artifacts is caught rather than silently accumulated. When a specification changes, affected plans and tasks must be re-evaluated. When principles evolve, templates and command files must remain aligned. Version bumps are classified by impact—major for removed or redefined principles, minor for additions, patch for clarifications—creating an auditable trail of architectural decisions.
 
 #### Articles VII & VIII: Simplicity and Anti-Abstraction
 
