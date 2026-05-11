@@ -4839,6 +4839,10 @@ def extension_update(
         registrar = CommandRegistrar()
         hook_executor = HookExecutor(project_root)
 
+        # Sentinels for atomic backup/restore (Review Feedback)
+        UNSET = object()
+        MISSING = object()
+
         for update in updates_available:
             extension_id = update["id"]
             ext_name = update["name"]  # Use display name for user-facing messages
@@ -4852,7 +4856,7 @@ def extension_update(
 
             # Store backup state
             backup_hooks = None  # None means no hooks key in config; {} means hooks key existed
-            backup_installed = None  # Original installed list from extensions.yml
+            backup_installed = UNSET  # Original installed list from extensions.yml
             backed_up_command_files = {}
 
             try:
@@ -4912,8 +4916,6 @@ def extension_update(
                 if not isinstance(config, dict):
                     config = {}
                 
-                # Sentinel for missing key (Review Feedback)
-                MISSING = object()
                 backup_installed = config.get("installed", MISSING)
                 
                 if "hooks" in config:
@@ -5108,23 +5110,24 @@ def extension_update(
                             hook_executor.save_project_config(config)
 
                     # Restore installed list in extensions.yml
-                    if backup_installed is not MISSING:
-                        config = hook_executor.get_project_config()
-                        if not isinstance(config, dict):
-                            config = {}
-                        
-                        if backup_installed is None:
-                            # Original was present but null
-                            config["installed"] = None
-                        else:
-                            config["installed"] = backup_installed
-                        hook_executor.save_project_config(config)
-                    else:
-                        # Original was missing entirely
-                        config = hook_executor.get_project_config()
-                        if isinstance(config, dict) and "installed" in config:
-                            del config["installed"]
+                    if backup_installed is not UNSET:
+                        if backup_installed is not MISSING:
+                            config = hook_executor.get_project_config()
+                            if not isinstance(config, dict):
+                                config = {}
+                            
+                            if backup_installed is None:
+                                # Original was present but null
+                                config["installed"] = None
+                            else:
+                                config["installed"] = backup_installed
                             hook_executor.save_project_config(config)
+                        else:
+                            # Original was missing entirely
+                            config = hook_executor.get_project_config()
+                            if isinstance(config, dict) and "installed" in config:
+                                del config["installed"]
+                                hook_executor.save_project_config(config)
 
                     # Restore registry entry (use restore() since entry was removed)
                     if backup_registry_entry:
