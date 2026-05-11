@@ -1,6 +1,18 @@
 """
 Agent configurations for infrakit-cli.
 Shared between CLI initialization and the extension system.
+
+Each entry's runtime-rendering keys mirror what `template_renderer` consumes:
+- ``folder``: agent-specific root directory under the project (e.g. ``.claude/``).
+- ``commands_subdir``: subdir under ``folder`` where rendered commands live.
+- ``command_format``: ``markdown`` | ``toml`` | ``agent.md``.
+- ``command_args``: the token that replaces ``{ARGS}`` in command bodies.
+- ``command_extension``: the file extension applied to ``infrakit:<name>``.
+- ``extras`` (optional list): post-render hooks. Recognised values:
+    * ``"copilot_prompts"`` — for every ``infrakit:*.agent.md`` produced, also
+      emit a companion ``infrakit:*.prompt.md`` with ``agent:`` frontmatter.
+    * ``"vscode_settings"`` — copy ``templates/vscode-settings.json`` to
+      ``.vscode/settings.json``.
 """
 
 # Default values for agent metadata
@@ -15,9 +27,10 @@ AGENT_CONFIG = {
         "commands_subdir": "agents",
         "install_url": None,
         "requires_cli": False,
-        "command_format": DEFAULT_FORMAT,
+        "command_format": "agent.md",
         "command_args": DEFAULT_ARGS,
-        "command_extension": DEFAULT_EXTENSION,
+        "command_extension": ".agent.md",
+        "extras": ["copilot_prompts", "vscode_settings"],
     },
     "claude": {
         "name": "Claude Code",
@@ -94,7 +107,7 @@ AGENT_CONFIG = {
     "kilocode": {
         "name": "Kilo Code",
         "folder": ".kilocode/",
-        "commands_subdir": "rules",
+        "commands_subdir": "workflows",
         "install_url": None,
         "requires_cli": False,
         "command_format": DEFAULT_FORMAT,
@@ -104,7 +117,7 @@ AGENT_CONFIG = {
     "auggie": {
         "name": "Auggie CLI",
         "folder": ".augment/",
-        "commands_subdir": "rules",
+        "commands_subdir": "commands",
         "install_url": "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli",
         "requires_cli": True,
         "command_format": DEFAULT_FORMAT,
@@ -134,7 +147,7 @@ AGENT_CONFIG = {
     "roo": {
         "name": "Roo Code",
         "folder": ".roo/",
-        "commands_subdir": "rules",
+        "commands_subdir": "commands",
         "install_url": None,
         "requires_cli": False,
         "command_format": DEFAULT_FORMAT,
@@ -193,7 +206,7 @@ AGENT_CONFIG = {
     },
     "generic": {
         "name": "Generic (bring your own agent)",
-        "folder": None,
+        "folder": ".infrakit/",
         "commands_subdir": "commands",
         "install_url": None,
         "requires_cli": False,

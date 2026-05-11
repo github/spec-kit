@@ -71,8 +71,8 @@ class TestAgentConfig:
             )
 
     def test_command_format_valid(self):
-        """Command format must be either 'markdown' or 'toml'."""
-        valid_formats = ["markdown", "toml"]
+        """Command format must be one of the recognised renderer formats."""
+        valid_formats = ["markdown", "toml", "agent.md"]
 
         for agent_key, config in AGENT_CONFIG.items():
             fmt = config["command_format"]
@@ -93,6 +93,10 @@ class TestAgentConfig:
             elif fmt == "toml":
                 assert ext == ".toml", (
                     f"Agent '{agent_key}' is toml but has extension '{ext}'"
+                )
+            elif fmt == "agent.md":
+                assert ext == ".agent.md", (
+                    f"Agent '{agent_key}' is agent.md but has extension '{ext}'"
                 )
 
     def test_command_args_placeholder(self):
@@ -145,8 +149,8 @@ class TestAgentConfig:
             "opencode": (".opencode/", "command"),
             "codex": (".codex/", "prompts"),
             "windsurf": (".windsurf/", "workflows"),
-            "kilocode": (".kilocode/", "rules"),
-            "auggie": (".augment/", "rules"),
+            "kilocode": (".kilocode/", "workflows"),
+            "auggie": (".augment/", "commands"),
             "q": (".amazonq/", "prompts"),
         }
 

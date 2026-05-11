@@ -4,10 +4,9 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'memory/**'
-      - 'scripts/**'
       - 'src/**'
       - 'templates/**'
+      - 'pyproject.toml'
       - '.github/workflows/**'
   workflow_dispatch:
 
@@ -17,17 +16,21 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # Required for trusted PyPI publishing via OIDC.
+      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Get latest tag
+
+      - name: Get next version
         id: get_tag
         run: |
           chmod +x .github/workflows/scripts/get-next-version.sh
           .github/workflows/scripts/get-next-version.sh
+
       - name: Check if release already exists
         id: check_release
         run: |
@@ -35,29 +38,51 @@ jobs:
           .github/workflows/scripts/check-release-exists.sh ${{ steps.get_tag.outputs.new_version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create release package variants
+
+      - name: Set up Python
+        if: steps.check_release.outputs.exists == 'false'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        if: steps.check_release.outputs.exists == 'false'
+        uses: astral-sh/setup-uv@v3
+
+      - name: Stamp version into pyproject.toml
         if: steps.check_release.outputs.exists == 'false'
         run: |
-          chmod +x .github/workflows/scripts/create-release-packages.sh
-          .github/workflows/scripts/create-release-packages.sh ${{ steps.get_tag.outputs.new_version }}
+          chmod +x .github/workflows/scripts/update-version.sh
+          .github/workflows/scripts/update-version.sh ${{ steps.get_tag.outputs.new_version }}
+
+      - name: Build wheel and sdist
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          uv build
+          ls -la dist/
+
       - name: Generate release notes
         if: steps.check_release.outputs.exists == 'false'
         id: release_notes
         run: |
           chmod +x .github/workflows/scripts/generate-release-notes.sh
           .github/workflows/scripts/generate-release-notes.sh ${{ steps.get_tag.outputs.new_version }} ${{ steps.get_tag.outputs.latest_tag }}
-      - name: Create GitHub Release
+
+      - name: Publish to PyPI
+        if: steps.check_release.outputs.exists == 'false'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+      - name: Create GitHub Release (wheel + sdist attached)
         if: steps.check_release.outputs.exists == 'false'
         run: |
-          chmod +x .github/workflows/scripts/create-github-release.sh
-          .github/workflows/scripts/create-github-release.sh ${{ steps.get_tag.outputs.new_version }}
+          gh release create "${{ steps.get_tag.outputs.new_version }}" dist/*.whl dist/*.tar.gz \
+            --title "InfraKit CLI - ${{ steps.get_tag.outputs.new_version }}" \
+            --notes-file release_notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Update version in pyproject.toml (for release artifacts only)
-        if: steps.check_release.outputs.exists == 'false'
-        run: |
-          chmod +x .github/workflows/scripts/update-version.sh
-          .github/workflows/scripts/update-version.sh ${{ steps.get_tag.outputs.new_version }}
+
       - name: Commit version bump to main
         if: steps.check_release.outputs.exists == 'false'
         run: |
@@ -66,4 +91,3 @@ jobs:
           git add pyproject.toml
           git diff --cached --quiet || git commit -m "chore: bump version to ${{ steps.get_tag.outputs.new_version }} [skip ci]"
           git push
-

@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Single-artifact release**. Templates and prompts now ship inside the `infrakit-cli` PyPI wheel instead of as 76 per-agent GitHub release ZIPs (19 agents × 2 IaC × 2 scripts). `infrakit init` performs all per-agent layout transformations (folder placement, TOML wrapping, Copilot prompt pairs, VS Code settings) at install time from the bundled prompts. **Effects**:
+  - `infrakit init` now runs entirely offline; no network calls.
+  - `--github-token` and `--skip-tls` flags are removed (templates no longer download).
+  - Existing user projects continue to work — the prompts they already have in `.claude/commands/` (or equivalent) are unchanged. Re-running `infrakit init --here` will re-materialize the latest in-package prompts.
+
+- **Full walkthrough examples**. `examples/terraform/` and `examples/crossplane/` now contain complete end-to-end runs (config, spec, plan, tasks, reviews, generated code) for an AWS S3 secure-bucket module and an `XPostgreSQLInstance` composition respectively.
+
+### Removed
+
+- Per-agent GitHub release ZIPs (`infrakit-template-<agent>-<iac>-<script>-vX.Y.Z.zip`). Install the CLI from PyPI (`pip install infrakit-cli` or `uv pip install infrakit-cli`) and run `infrakit init`.
+- The `--github-token` and `--skip-tls` flags on `infrakit init` (templates are now bundled in the wheel).
+- Six unused root template files (`plan-template.md`, `spec-template.md`, `tasks-template.md`, `agent-file-template.md`, `checklist-template.md`, `tagging-constraint-template.md`) and ten helper scripts (`setup-plan.sh/.ps1`, `create-new-feature.sh/.ps1`, `update-agent-context.sh/.ps1`, `check-prerequisites.sh/.ps1`, `common.sh/.ps1`) that fed them. None were referenced by any current InfraKit prompt.
+
 ### Added
 
 - **Auto-generated Task Lists**: `/infrakit:plan` now automatically generates `tasks.md` after the user accepts the plan. Tasks are checkbox items (`- [ ]`) that `/infrakit:implement` marks off as it executes. No separate `/infrakit:tasks` command needed.

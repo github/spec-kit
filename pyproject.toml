@@ -25,6 +25,21 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/infrakit_cli"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"templates" = "infrakit_cli/templates"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/infrakit_cli/**",
+    "templates/**",
+    "examples/**",
+    "tests/**",
+    "README.md",
+    "CHANGELOG.md",
+    "pyproject.toml",
+    "LICENSE",
+]
+
 [project.optional-dependencies]
 test = [
     "pytest>=7.0",

@@ -28,8 +28,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-import zipfile
-import tempfile
 import shutil
 import shlex
 import json
@@ -637,486 +635,14 @@ def init_git_repo(
         os.chdir(original_cwd)
 
 
-def handle_vscode_settings(
-    sub_item, dest_file, rel_path, verbose=False, tracker=None
-) -> None:
-    """Handle merging or copying of .vscode/settings.json files."""
-
-    def log(message, color="green"):
-        if verbose and not tracker:
-            console.print(f"[{color}]{message}[/] {rel_path}")
-
-    try:
-        with open(sub_item, "r", encoding="utf-8") as f:
-            new_settings = json.load(f)
-
-        if dest_file.exists():
-            merged = merge_json_files(
-                dest_file, new_settings, verbose=verbose and not tracker
-            )
-            with open(dest_file, "w", encoding="utf-8") as f:
-                json.dump(merged, f, indent=4)
-                f.write("\n")
-            log("Merged:", "green")
-        else:
-            shutil.copy2(sub_item, dest_file)
-            log("Copied (no existing settings.json):", "blue")
-
-    except Exception as e:
-        log(f"Warning: Could not merge, copying instead: {e}", "yellow")
-        shutil.copy2(sub_item, dest_file)
-
-
-def merge_json_files(
-    existing_path: Path, new_content: dict, verbose: bool = False
-) -> dict:
-    """Merge new JSON content into existing JSON file.
-
-    Performs a deep merge where:
-    - New keys are added
-    - Existing keys are preserved unless overwritten by new content
-    - Nested dictionaries are merged recursively
-    - Lists and other values are replaced (not merged)
-
-    Args:
-        existing_path: Path to existing JSON file
-        new_content: New JSON content to merge in
-        verbose: Whether to print merge details
-
-    Returns:
-        Merged JSON content as dict
-    """
-    try:
-        with open(existing_path, "r", encoding="utf-8") as f:
-            existing_content = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        # If file doesn't exist or is invalid, just use new content
-        return new_content
-
-    def deep_merge(base: dict, update: dict) -> dict:
-        """Recursively merge update dict into base dict."""
-        result = base.copy()
-        for key, value in update.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
-                # Recursively merge nested dictionaries
-                result[key] = deep_merge(result[key], value)
-            else:
-                # Add new key or replace existing value
-                result[key] = value
-        return result
-
-    merged = deep_merge(existing_content, new_content)
-
-    if verbose:
-        console.print(f"[cyan]Merged JSON file:[/cyan] {existing_path.name}")
-
-    return merged
-
-
-def download_template_from_github(
-    ai_assistant: str,
-    download_dir: Path,
-    *,
-    iac_tool: str = "crossplane",
-    script_type: str = "sh",
-    verbose: bool = True,
-    show_progress: bool = True,
-    client: httpx.Client = None,
-    debug: bool = False,
-    github_token: str = None,
-) -> Tuple[Path, dict]:
-    repo_owner = "neelneelpurk"
-    repo_name = "infrakit"
-    if client is None:
-        client = httpx.Client(verify=ssl_context)
-
-    if verbose:
-        console.print("[cyan]Fetching latest release information...[/cyan]")
-    api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
-
-    try:
-        response = client.get(
-            api_url,
-            timeout=30,
-            follow_redirects=True,
-            headers=_github_auth_headers(github_token),
-        )
-        status = response.status_code
-        if status != 200:
-            # Format detailed error message with rate-limit info
-            error_msg = _format_rate_limit_error(status, response.headers, api_url)
-            if debug:
-                error_msg += f"\n\n[dim]Response body (truncated 500):[/dim]\n{response.text[:500]}"
-            raise RuntimeError(error_msg)
-        try:
-            release_data = response.json()
-        except ValueError as je:
-            raise RuntimeError(
-                f"Failed to parse release JSON: {je}\nRaw (truncated 400): {response.text[:400]}"
-            )
-    except Exception as e:
-        console.print("[red]Error fetching release information[/red]")
-        console.print(Panel(str(e), title="Fetch Error", border_style="red"))
-        raise typer.Exit(1)
-
-    assets = release_data.get("assets", [])
-    pattern = f"infrakit-template-{ai_assistant}-{iac_tool}-{script_type}"
-    matching_assets = [
-        asset
-        for asset in assets
-        if pattern in asset["name"] and asset["name"].endswith(".zip")
-    ]
-
-    asset = matching_assets[0] if matching_assets else None
-
-    if asset is None:
-        console.print(
-            f"[red]No matching release asset found[/red] for [bold]{ai_assistant}[/bold] (expected pattern: [bold]{pattern}[/bold])"
-        )
-        asset_names = [a.get("name", "?") for a in assets]
-        console.print(
-            Panel(
-                "\n".join(asset_names) or "(no assets)",
-                title="Available Assets",
-                border_style="yellow",
-            )
-        )
-        raise typer.Exit(1)
-
-    download_url = asset["browser_download_url"]
-    filename = asset["name"]
-    file_size = asset["size"]
-
-    if verbose:
-        console.print(f"[cyan]Found template:[/cyan] {filename}")
-        console.print(f"[cyan]Size:[/cyan] {file_size:,} bytes")
-        console.print(f"[cyan]Release:[/cyan] {release_data['tag_name']}")
-
-    zip_path = download_dir / filename
-    if verbose:
-        console.print("[cyan]Downloading template...[/cyan]")
-
-    try:
-        with client.stream(
-            "GET",
-            download_url,
-            timeout=60,
-            follow_redirects=True,
-            headers=_github_auth_headers(github_token),
-        ) as response:
-            if response.status_code != 200:
-                # Handle rate-limiting on download as well
-                error_msg = _format_rate_limit_error(
-                    response.status_code, response.headers, download_url
-                )
-                if debug:
-                    error_msg += f"\n\n[dim]Response body (truncated 400):[/dim]\n{response.text[:400]}"
-                raise RuntimeError(error_msg)
-            total_size = int(response.headers.get("content-length", 0))
-            with open(zip_path, "wb") as f:
-                if total_size == 0:
-                    for chunk in response.iter_bytes(chunk_size=8192):
-                        f.write(chunk)
-                else:
-                    if show_progress:
-                        with Progress(
-                            SpinnerColumn(),
-                            TextColumn("[progress.description]{task.description}"),
-                            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                            console=console,
-                        ) as progress:
-                            task = progress.add_task("Downloading...", total=total_size)
-                            downloaded = 0
-                            for chunk in response.iter_bytes(chunk_size=8192):
-                                f.write(chunk)
-                                downloaded += len(chunk)
-                                progress.update(task, completed=downloaded)
-                    else:
-                        for chunk in response.iter_bytes(chunk_size=8192):
-                            f.write(chunk)
-    except Exception as e:
-        console.print("[red]Error downloading template[/red]")
-        detail = str(e)
-        if zip_path.exists():
-            zip_path.unlink()
-        console.print(Panel(detail, title="Download Error", border_style="red"))
-        raise typer.Exit(1)
-    if verbose:
-        console.print(f"Downloaded: {filename}")
-    metadata = {
-        "filename": filename,
-        "size": file_size,
-        "release": release_data["tag_name"],
-        "asset_url": download_url,
-    }
-    return zip_path, metadata
-
-
-def download_and_extract_template(
-    project_path: Path,
-    ai_assistant: str,
-    script_type: str,
-    is_current_dir: bool = False,
-    *,
-    iac_tool: str = "crossplane",
-    verbose: bool = True,
-    tracker: StepTracker | None = None,
-    client: httpx.Client = None,
-    debug: bool = False,
-    github_token: str = None,
-) -> Path:
-    """Download the latest release and extract it to create a new project.
-    Returns project_path. Uses tracker if provided (with keys: fetch, download, extract, cleanup)
-    """
-    current_dir = Path.cwd()
-
-    if tracker:
-        tracker.start("fetch", "contacting GitHub API")
-    try:
-        zip_path, meta = download_template_from_github(
-            ai_assistant,
-            current_dir,
-            iac_tool=iac_tool,
-            script_type=script_type,
-            verbose=verbose and tracker is None,
-            show_progress=(tracker is None),
-            client=client,
-            debug=debug,
-            github_token=github_token,
-        )
-        if tracker:
-            tracker.complete(
-                "fetch", f"release {meta['release']} ({meta['size']:,} bytes)"
-            )
-            tracker.add("download", "Download template")
-            tracker.complete("download", meta["filename"])
-    except Exception as e:
-        if tracker:
-            tracker.error("fetch", str(e))
-        else:
-            if verbose:
-                console.print(f"[red]Error downloading template:[/red] {e}")
-        raise
-
-    if tracker:
-        tracker.add("extract", "Extract template")
-        tracker.start("extract")
-    elif verbose:
-        console.print("Extracting template...")
-
-    try:
-        if not is_current_dir:
-            project_path.mkdir(parents=True)
-
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_contents = zip_ref.namelist()
-            if tracker:
-                tracker.start("zip-list")
-                tracker.complete("zip-list", f"{len(zip_contents)} entries")
-            elif verbose:
-                console.print(f"[cyan]ZIP contains {len(zip_contents)} items[/cyan]")
-
-            if is_current_dir:
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    temp_path = Path(temp_dir)
-                    zip_ref.extractall(temp_path)
-
-                    extracted_items = list(temp_path.iterdir())
-                    if tracker:
-                        tracker.start("extracted-summary")
-                        tracker.complete(
-                            "extracted-summary", f"temp {len(extracted_items)} items"
-                        )
-                    elif verbose:
-                        console.print(
-                            f"[cyan]Extracted {len(extracted_items)} items to temp location[/cyan]"
-                        )
-
-                    source_dir = temp_path
-                    if len(extracted_items) == 1 and extracted_items[0].is_dir():
-                        source_dir = extracted_items[0]
-                        if tracker:
-                            tracker.add("flatten", "Flatten nested directory")
-                            tracker.complete("flatten")
-                        elif verbose:
-                            console.print(
-                                "[cyan]Found nested directory structure[/cyan]"
-                            )
-
-                    for item in source_dir.iterdir():
-                        dest_path = project_path / item.name
-                        if item.is_dir():
-                            if dest_path.exists():
-                                if verbose and not tracker:
-                                    console.print(
-                                        f"[yellow]Merging directory:[/yellow] {item.name}"
-                                    )
-                                for sub_item in item.rglob("*"):
-                                    if sub_item.is_file():
-                                        rel_path = sub_item.relative_to(item)
-                                        dest_file = dest_path / rel_path
-                                        dest_file.parent.mkdir(
-                                            parents=True, exist_ok=True
-                                        )
-                                        # Special handling for .vscode/settings.json - merge instead of overwrite
-                                        if (
-                                            dest_file.name == "settings.json"
-                                            and dest_file.parent.name == ".vscode"
-                                        ):
-                                            handle_vscode_settings(
-                                                sub_item,
-                                                dest_file,
-                                                rel_path,
-                                                verbose,
-                                                tracker,
-                                            )
-                                        else:
-                                            shutil.copy2(sub_item, dest_file)
-                            else:
-                                shutil.copytree(item, dest_path)
-                        else:
-                            if dest_path.exists() and verbose and not tracker:
-                                console.print(
-                                    f"[yellow]Overwriting file:[/yellow] {item.name}"
-                                )
-                            shutil.copy2(item, dest_path)
-                    if verbose and not tracker:
-                        console.print(
-                            "[cyan]Template files merged into current directory[/cyan]"
-                        )
-            else:
-                zip_ref.extractall(project_path)
-
-                extracted_items = list(project_path.iterdir())
-                if tracker:
-                    tracker.start("extracted-summary")
-                    tracker.complete(
-                        "extracted-summary", f"{len(extracted_items)} top-level items"
-                    )
-                elif verbose:
-                    console.print(
-                        f"[cyan]Extracted {len(extracted_items)} items to {project_path}:[/cyan]"
-                    )
-                    for item in extracted_items:
-                        console.print(
-                            f"  - {item.name} ({'dir' if item.is_dir() else 'file'})"
-                        )
-
-                if len(extracted_items) == 1 and extracted_items[0].is_dir():
-                    nested_dir = extracted_items[0]
-                    temp_move_dir = project_path.parent / f"{project_path.name}_temp"
-
-                    shutil.move(str(nested_dir), str(temp_move_dir))
-
-                    project_path.rmdir()
-
-                    shutil.move(str(temp_move_dir), str(project_path))
-                    if tracker:
-                        tracker.add("flatten", "Flatten nested directory")
-                        tracker.complete("flatten")
-                    elif verbose:
-                        console.print(
-                            "[cyan]Flattened nested directory structure[/cyan]"
-                        )
-
-    except Exception as e:
-        if tracker:
-            tracker.error("extract", str(e))
-        else:
-            if verbose:
-                console.print(f"[red]Error extracting template:[/red] {e}")
-                if debug:
-                    console.print(
-                        Panel(str(e), title="Extraction Error", border_style="red")
-                    )
-
-        if not is_current_dir and project_path.exists():
-            shutil.rmtree(project_path)
-        raise typer.Exit(1)
-    else:
-        if tracker:
-            tracker.complete("extract")
-    finally:
-        if tracker:
-            tracker.add("cleanup", "Remove temporary archive")
-
-        if zip_path.exists():
-            zip_path.unlink()
-            if tracker:
-                tracker.complete("cleanup")
-            elif verbose:
-                console.print(f"Cleaned up: {zip_path.name}")
-
-    return project_path
-
-
-def ensure_executable_scripts(
-    project_path: Path, tracker: StepTracker | None = None
-) -> None:
-    """Ensure POSIX .sh scripts under .infrakit/scripts (recursively) have execute bits (no-op on Windows)."""
-    if os.name == "nt":
-        return  # Windows: skip silently
-    scripts_root = project_path / ".infrakit" / "scripts"
-    if not scripts_root.is_dir():
-        return
-    failures: list[str] = []
-    updated = 0
-    for script in scripts_root.rglob("*.sh"):
-        try:
-            if script.is_symlink() or not script.is_file():
-                continue
-            try:
-                with script.open("rb") as f:
-                    if f.read(2) != b"#!":
-                        continue
-            except Exception:
-                continue
-            st = script.stat()
-            mode = st.st_mode
-            if mode & 0o111:
-                continue
-            new_mode = mode
-            if mode & 0o400:
-                new_mode |= 0o100
-            if mode & 0o040:
-                new_mode |= 0o010
-            if mode & 0o004:
-                new_mode |= 0o001
-            if not (new_mode & 0o100):
-                new_mode |= 0o100
-            os.chmod(script, new_mode)
-            updated += 1
-        except Exception as e:
-            failures.append(f"{script.relative_to(scripts_root)}: {e}")
-    if tracker:
-        detail = f"{updated} updated" + (
-            f", {len(failures)} failed" if failures else ""
-        )
-        tracker.add("chmod", "Set script permissions recursively")
-        (tracker.error if failures else tracker.complete)("chmod", detail)
-    else:
-        if updated:
-            console.print(
-                f"[cyan]Updated execute permissions on {updated} script(s) recursively[/cyan]"
-            )
-        if failures:
-            console.print("[yellow]Some scripts could not be updated:[/yellow]")
-            for f in failures:
-                console.print(f"  - {f}")
-
-
 def ensure_project_context_from_template(
     project_path: Path, tracker: StepTracker | None = None
 ) -> None:
     """Copy project context template to memory if it doesn't exist (preserves existing project context on reinitialization)."""
+    from .template_renderer import templates_root
+
     memory_context = project_path / ".infrakit" / "memory" / "project-context.md"
-    template_context = (
-        project_path / ".infrakit" / "templates" / "project-context-template.md"
-    )
+    template_context = templates_root() / "project-context-template.md"
 
     # If project context already exists in memory, preserve it
     if memory_context.exists():
@@ -1214,8 +740,12 @@ def install_ai_skills(
         ``True`` if at least one skill was installed or all skills were
         already present (idempotent re-run), ``False`` otherwise.
     """
-    # Locate command templates in the agent's extracted commands directory.
-    # download_and_extract_template() already placed the .md files here.
+    # Locate command templates. They were just rendered by materialize_project
+    # into the agent's folder; for agents whose rendered commands are not .md
+    # (e.g. gemini emits .toml), fall back to the bundled source templates so
+    # we can install skills from the canonical markdown.
+    from .template_renderer import templates_root
+
     agent_config = AGENT_CONFIG.get(selected_ai, {})
     agent_folder = agent_config.get("folder", "")
     commands_subdir = agent_config.get("commands_subdir", "commands")
@@ -1225,11 +755,7 @@ def install_ai_skills(
         templates_dir = project_path / commands_subdir
 
     if not templates_dir.exists() or not any(templates_dir.glob("*.md")):
-        # Fallback: try the repo-relative path (for running from source checkout)
-        # This also covers agents whose extracted commands are in a different
-        # format (e.g. gemini uses .toml, not .md).
-        script_dir = Path(__file__).parent.parent.parent  # up from src/infrakit_cli/
-        fallback_dir = script_dir / "templates" / "commands"
+        fallback_dir = templates_root() / "commands"
         if fallback_dir.exists() and any(fallback_dir.glob("*.md")):
             templates_dir = fallback_dir
 
@@ -1397,20 +923,13 @@ def initialize_iac_config(
             tracker.error("iac-config", f"unknown IaC tool: {iac_tool}")
         return
 
-    # Locate the templates/iac/<tool>/ directory
-    # Try the repo-relative path first (running from source checkout)
-    script_dir = Path(__file__).parent.parent.parent  # up from src/infrakit_cli/
-    iac_templates_dir = script_dir / "templates" / "iac" / iac_tool
+    # Templates ship inside the installed package. The renderer resolves the
+    # right directory regardless of whether we're running from a source checkout
+    # or a pip-installed wheel.
+    from .template_renderer import templates_root
 
-    if not iac_templates_dir.is_dir():
-        # When installed via pip, templates are not included in the package.
-        # This is expected because the GitHub release ZIP already contains the extracted templates.
-        # We only log a debug message and continue so configuration like config.yaml is generated.
-        if tracker:
-            tracker.add("iac-config-assets", "Check IaC templates")
-            tracker.skip(
-                "iac-config-assets", f"No local template dir, rely on downloaded ZIP"
-            )
+    tpl_root = templates_root()
+    iac_templates_dir = tpl_root / "iac" / iac_tool
 
     # --- 1. Create .infrakit/ configuration directory ---
     if tracker:
@@ -1474,7 +993,7 @@ def initialize_iac_config(
     # tagging-standard.md — shared IaC-agnostic tagging standard (updated by /infrakit:setup)
     tagging_std_md = infrakit_dir / "tagging-standard.md"
     if not tagging_std_md.exists():
-        shared_tagging_template = script_dir / "templates" / "tagging-standard-template.md"
+        shared_tagging_template = tpl_root / "tagging-standard-template.md"
         if shared_tagging_template.is_file():
             shutil.copy2(shared_tagging_template, tagging_std_md)
         else:
@@ -1504,84 +1023,31 @@ def initialize_iac_config(
     tracks_dir = infrakit_tracks_dir / "tracks"
     tracks_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy IaC-specific agents
-    agents_src = iac_templates_dir / "agent_personas"
-    agents_dest = infrakit_dir / "agent_personas"
-    if agents_src.is_dir():
-        agents_dest.mkdir(parents=True, exist_ok=True)
-        for agent_file in agents_src.iterdir():
-            if agent_file.is_file():
-                dest = agents_dest / agent_file.name
-                if not dest.exists():
-                    shutil.copy2(agent_file, dest)
-
-    # Copy generic agents
-    generic_agents_src = script_dir / "templates" / "agent_personas"
-    if generic_agents_src.is_dir():
-        agents_dest.mkdir(parents=True, exist_ok=True)
-        for agent_file in generic_agents_src.iterdir():
-            if agent_file.is_file():
-                dest = agents_dest / agent_file.name
-                if not dest.exists():
-                    shutil.copy2(agent_file, dest)
-
     if tracker:
         tracker.complete("iac-config", f"{iac_tool} ({iac_cfg.get('name', '')})")
 
-    # --- 2. Generate IaC-native commands ---
+    # --- 2. Render commands + personas via the runtime renderer ---
     if tracker:
         tracker.start("iac-commands")
 
-    agent_config = AGENT_CONFIG.get(ai_assistant, {})
-    agent_folder = agent_config.get("folder", "")
-    commands_subdir = agent_config.get("commands_subdir", "commands")
-    command_ext = agent_config.get("command_extension", ".md")
+    from .template_renderer import materialize_project
 
-    if agent_folder:
-        cmds_dest = project_path / agent_folder.rstrip("/") / commands_subdir
-    else:
-        cmds_dest = project_path / commands_subdir
+    counts = materialize_project(
+        project_path,
+        ai_assistant=ai_assistant,
+        iac_tool=iac_tool,
+        overwrite=False,
+    )
 
-    cmds_dest.mkdir(parents=True, exist_ok=True)
-
-    # Copy generic commands from templates/commands/ (filtered by iac_config generic_commands list)
-    generic_commands_dir = script_dir / "templates" / "commands"
-    allowed_generic = set(iac_cfg.get("generic_commands", []))
-    generic_count = 0
-    if generic_commands_dir.is_dir():
-        for cmd_file in generic_commands_dir.iterdir():
-            if (
-                cmd_file.is_file()
-                and cmd_file.suffix == ".md"
-                and cmd_file.stem in allowed_generic
-            ):
-                dest_name = f"infrakit:{cmd_file.stem}{command_ext}"
-                dest = cmds_dest / dest_name
-                if not dest.exists():
-                    shutil.copy2(cmd_file, dest)
-                    generic_count += 1
-
-    # Copy IaC-native commands from templates/iac/<tool>/commands/ (filtered by iac_config iac_commands list)
-    iac_commands_dir = iac_templates_dir / "commands"
-    allowed_iac = set(iac_cfg.get("iac_commands", []))
-    iac_count = 0
-    if iac_commands_dir.is_dir():
-        for cmd_file in iac_commands_dir.iterdir():
-            if (
-                cmd_file.is_file()
-                and cmd_file.suffix == ".md"
-                and cmd_file.stem in allowed_iac
-            ):
-                dest_name = f"infrakit:{cmd_file.stem}{command_ext}"
-                dest = cmds_dest / dest_name
-                if not dest.exists():
-                    shutil.copy2(cmd_file, dest)
-                    iac_count += 1
+    agent_cfg = AGENT_CONFIG.get(ai_assistant, {})
+    agent_folder = (agent_cfg.get("folder") or "").rstrip("/")
+    commands_subdir = agent_cfg.get("commands_subdir", "commands")
+    cmds_dest = project_path / agent_folder / commands_subdir if agent_folder else project_path / commands_subdir
 
     if tracker:
         tracker.complete(
             "iac-commands",
-            f"{generic_count} generic + {iac_count} IaC commands → {cmds_dest.relative_to(project_path)}",
+            f"{counts['generic_commands']} generic + {counts['iac_commands']} IaC commands → {cmds_dest.relative_to(project_path)}",
         )
 
 
@@ -1625,18 +1091,10 @@ def init(
         "--force",
         help="Force merge/overwrite when using --here (skip confirmation)",
     ),
-    skip_tls: bool = typer.Option(
-        False, "--skip-tls", help="Skip SSL/TLS verification (not recommended)"
-    ),
     debug: bool = typer.Option(
         False,
         "--debug",
-        help="Show verbose diagnostic output for network and extraction failures",
-    ),
-    github_token: str = typer.Option(
-        None,
-        "--github-token",
-        help="GitHub token to use for API requests (or set GH_TOKEN or GITHUB_TOKEN environment variable)",
+        help="Show verbose diagnostic output for initialization failures",
     ),
     ai_skills: bool = typer.Option(
         False,
@@ -1645,14 +1103,17 @@ def init(
     ),
 ):
     """
-    Initialize a new InfraKit project from the latest template.
+    Initialize a new InfraKit project.
+
+    Templates ship inside the CLI package — `infrakit init` runs entirely
+    offline and renders the per-agent layout (Claude, Gemini, Copilot, etc.)
+    from the bundled prompts.
 
     This command will:
     1. Check that required tools are installed (git is optional)
     2. Let you choose your AI assistant and IaC tool
-    3. Download the appropriate template from GitHub
-    4. Extract the template and set up IaC-native commands
-    5. Initialize a fresh git repository (if not --no-git and no existing repo)
+    3. Render commands + personas for the selected agent into the project
+    4. Initialize a fresh git repository (if not --no-git and no existing repo)
 
     Examples:
         infrakit init my-project --ai claude --iac crossplane
@@ -1872,21 +1333,14 @@ def init(
     tracker.add("script-select", "Select script type")
     tracker.complete("script-select", selected_script)
     for key, label in [
-        ("fetch", "Fetch latest release"),
-        ("download", "Download template"),
-        ("extract", "Extract template"),
-        ("zip-list", "Archive contents"),
-        ("extracted-summary", "Extraction summary"),
-        ("chmod", "Ensure scripts executable"),
         ("project_context", "Project Context setup"),
         ("iac-config", "IaC configuration"),
-        ("iac-commands", "IaC-native commands"),
+        ("iac-commands", "Render commands & personas"),
     ]:
         tracker.add(key, label)
     if ai_skills:
         tracker.add("ai-skills", "Install agent skills")
     for key, label in [
-        ("cleanup", "Cleanup"),
         ("git", "Initialize git repository"),
         ("final", "Finalize"),
     ]:
@@ -1900,43 +1354,25 @@ def init(
     ) as live:
         tracker.attach_refresh(lambda: live.update(tracker.render()))
         try:
-            verify = not skip_tls
-            local_ssl_context = ssl_context if verify else False
-            local_client = httpx.Client(verify=local_ssl_context)
-
-            download_and_extract_template(
-                project_path,
-                selected_ai,
-                selected_script,
-                here,
-                iac_tool=selected_iac,
-                verbose=False,
-                tracker=tracker,
-                client=local_client,
-                debug=debug,
-                github_token=github_token,
-            )
-
-            # For generic agent, rename placeholder directory to user-specified path
-            if selected_ai == "generic" and ai_commands_dir:
-                placeholder_dir = project_path / ".infrakit" / "commands"
-                target_dir = project_path / ai_commands_dir
-                if placeholder_dir.is_dir():
-                    target_dir.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.move(str(placeholder_dir), str(target_dir))
-                    # Clean up empty .infrakit dir if it's now empty
-                    infrakit_dir = project_path / ".infrakit"
-                    if infrakit_dir.is_dir() and not any(infrakit_dir.iterdir()):
-                        infrakit_dir.rmdir()
-
-            ensure_executable_scripts(project_path, tracker=tracker)
+            # Templates ship inside the package; no network calls.
+            if not here:
+                project_path.mkdir(parents=True, exist_ok=True)
 
             ensure_project_context_from_template(project_path, tracker=tracker)
 
-            # IaC-specific setup
+            # Materialise .infrakit/, .infrakit_tracks/, commands, personas.
             initialize_iac_config(
                 project_path, selected_iac, selected_ai, tracker=tracker
             )
+
+            # For generic agent, rename the rendered .infrakit/commands/ to the
+            # user-specified path so they can place commands wherever they want.
+            if selected_ai == "generic" and ai_commands_dir:
+                placeholder_dir = project_path / ".infrakit" / "commands"
+                target_dir = project_path / ai_commands_dir
+                if placeholder_dir.is_dir() and placeholder_dir != target_dir:
+                    target_dir.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(placeholder_dir), str(target_dir))
 
             if ai_skills:
                 skills_ok = install_ai_skills(

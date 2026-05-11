@@ -95,12 +95,11 @@ class TestVersionCommand:
 class TestUpdateCommand:
     """Test the update command."""
 
-    @patch("infrakit_cli.download_and_extract_template")
-    @patch("infrakit_cli.ensure_executable_scripts")
+    @patch("infrakit_cli.initialize_iac_config")
     @patch("infrakit_cli.install_ai_skills")
-    def test_update_command_runs(self, mock_skills, mock_scripts, mock_download):
+    def test_update_command_runs(self, mock_skills, mock_iac):
         """update command should execute without errors."""
-        mock_download.return_value = True
+        mock_iac.return_value = None
         mock_skills.return_value = True
 
         result = runner.invoke(app, ["update", "--script", "sh"])

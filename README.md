@@ -287,10 +287,10 @@ Per-resource artifacts written by `/infrakit:implement`:
 | `--ignore-agent-tools` | Flag | Skip AI agent tool availability checks |
 | `--no-git` | Flag | Skip `git init` |
 | `--force` | Flag | Skip confirmation when initializing in a non-empty directory |
-| `--skip-tls` | Flag | Skip SSL/TLS verification for corporate proxies |
 | `--debug` | Flag | Enable verbose diagnostic output |
-| `--github-token` | String | GitHub API token (or set `GH_TOKEN` / `GITHUB_TOKEN`) |
 | `--ai-skills` | Flag | Install templates as agent skills |
+
+> **Note**: Prompts and templates ship inside the `infrakit-cli` PyPI package — `infrakit init` runs entirely offline. No GitHub token, no template download, no per-agent release ZIPs. Per-agent rendering (Claude/Gemini/Copilot/etc. layout) happens on your machine at init time.
 
 ### `infrakit init` Examples
 
@@ -309,9 +309,6 @@ infrakit init --here --force --ai claude --iac crossplane
 
 # Skip git initialization (useful in CI)
 infrakit init my-infra --ai gemini --iac crossplane --no-git
-
-# Corporate GitHub with PAT
-infrakit init my-infra --ai claude --iac crossplane --github-token ghp_your_token
 
 # Bring your own agent
 infrakit init my-infra --ai generic --ai-commands-dir .myagent/commands/ --iac crossplane
@@ -494,24 +491,7 @@ rm gcm-linux_amd64.2.6.1.deb
 
 ### Corporate Proxy / Self-Signed Certificates
 
-```bash
-infrakit init my-infra --ai claude --iac crossplane --skip-tls
-```
-
-### Template Download Fails
-
-Use a GitHub personal access token if rate-limited or behind a firewall:
-
-```bash
-infrakit init my-infra --ai claude --iac crossplane --github-token ghp_your_token
-```
-
-Or set the environment variable:
-
-```bash
-export GH_TOKEN=ghp_your_token
-infrakit init my-infra --ai claude --iac crossplane
-```
+Templates ship inside the InfraKit wheel, so `infrakit init` does not call any network. The only network call is the optional version check in `infrakit version`, which uses the system trust store via `truststore`. If you cannot reach `api.github.com` for the version check, the rest of the CLI still works — just skip `infrakit version`.
 
 ### `tasks.md` Not Found When Running `/infrakit:implement`
 
