@@ -9,7 +9,7 @@ import yaml
 
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from specify_cli.integrations.base import IntegrationBase
-from specify_cli.integrations.claude import ARGUMENT_HINTS
+from specify_cli.integrations.claude import ARGUMENT_HINTS, FORK_CONTEXT_COMMANDS
 from specify_cli.integrations.manifest import IntegrationManifest
 
 
@@ -494,6 +494,72 @@ class TestClaudeDisableModelInvocation:
             return  # codex not registered in this build
         content = "---\nname: test\n---\nBody"
         assert codex.post_process_skill_content(content) == content
+
+
+class TestClaudeForkContext:
+    """Verify context: fork is injected only for commands listed in FORK_CONTEXT_COMMANDS."""
+
+    def test_analyze_skill_runs_in_forked_subagent(self, tmp_path):
+        """speckit-analyze must opt into context: fork + agent."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        i.setup(tmp_path, m, script_type="sh")
+        analyze_skill = tmp_path / ".claude/skills/speckit-analyze/SKILL.md"
+        assert analyze_skill.exists()
+        content = analyze_skill.read_text(encoding="utf-8")
+        parts = content.split("---", 2)
+        parsed = yaml.safe_load(parts[1])
+        assert parsed.get("context") == "fork"
+        assert parsed.get("agent") == "general-purpose"
+
+    def test_other_skills_do_not_fork(self, tmp_path):
+        """Skills not in FORK_CONTEXT_COMMANDS must not get context: fork."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        created = i.setup(tmp_path, m, script_type="sh")
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        for f in skill_files:
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
+            if stem in FORK_CONTEXT_COMMANDS:
+                continue
+            content = f.read_text(encoding="utf-8")
+            parts = content.split("---", 2)
+            parsed = yaml.safe_load(parts[1])
+            assert "context" not in parsed, (
+                f"{f.parent.name}: must not have context frontmatter"
+            )
+            assert "agent" not in parsed, (
+                f"{f.parent.name}: must not have agent frontmatter"
+            )
+
+    def test_fork_flags_inside_frontmatter(self, tmp_path):
+        """context/agent must appear in the frontmatter, not in the body."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        i.setup(tmp_path, m, script_type="sh")
+        analyze_skill = tmp_path / ".claude/skills/speckit-analyze/SKILL.md"
+        content = analyze_skill.read_text(encoding="utf-8")
+        parts = content.split("---", 2)
+        assert len(parts) >= 3
+        frontmatter = parts[1]
+        body = parts[2]
+        assert "context: fork" in frontmatter
+        assert "agent: general-purpose" in frontmatter
+        assert "context: fork" not in body
+        assert "agent: general-purpose" not in body
+
+    def test_fork_injection_idempotent(self, tmp_path):
+        """Re-running setup must not duplicate the fork frontmatter keys."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        i.setup(tmp_path, m, script_type="sh")
+        i.setup(tmp_path, m, script_type="sh")
+        analyze_skill = tmp_path / ".claude/skills/speckit-analyze/SKILL.md"
+        content = analyze_skill.read_text(encoding="utf-8")
+        assert content.count("context: fork") == 1
+        assert content.count("agent: general-purpose") == 1
 
 
 class TestClaudeHookCommandNote:
