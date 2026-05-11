@@ -4,8 +4,10 @@ argument-hint: "[optional: describe your project briefly]"
 handoffs:
   - label: "Configure Coding Style"
     agent: "infrakit:setup-coding-style"
-  - label: "Create New Composition"
+  - label: "Create New Composition (Crossplane)"
     agent: "infrakit:new_composition"
+  - label: "Create New Module (Terraform)"
+    agent: "infrakit:create_terraform_code"
   - label: "Check Status"
     agent: "infrakit:status"
 ---
@@ -393,9 +395,12 @@ Track all infrastructure compositions and their current status.
 > This populates `.infrakit/coding-style.md`, which all code generation commands depend on.
 >
 > **Once coding style is configured, start building:**
-> - **Crossplane**: Run `/infrakit:new_composition`
-> - **Terraform**: Run `/infrakit:create_terraform_code`
+> - Run the appropriate "create" command for your IaC tool (based on `<iac-tool>` from `.infrakit/config.yaml`):
+>   - If `<iac-tool>` is **crossplane**: `/infrakit:new_composition`
+>   - If `<iac-tool>` is **terraform**: `/infrakit:create_terraform_code`
 > - Run `/infrakit:status` to see all track statuses"
+
+**Note**: Only print the line for the user's actual IaC tool. Suppress the other.
 
 ---
 

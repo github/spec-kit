@@ -1173,7 +1173,7 @@ SKILL_DESCRIPTIONS = {
     "checklist": "Generate quality checklists for validating infrastructure resource completeness and Crossplane best-practice compliance.",
     "taskstoissues": "Convert tasks from tasks.md into GitHub issues. Use after task breakdown to track work items in GitHub project management.",
     "coding_style": "Specify and update the project coding style standards using the coding-style-template.md.",
-    "tagging": "Update project tagging requirements using the tagging-constraint-template.md.",
+    "tagging": "Update project tagging requirements using the tagging-standard-template.md.",
 }
 
 

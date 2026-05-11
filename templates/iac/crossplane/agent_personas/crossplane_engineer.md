@@ -141,7 +141,6 @@ This agent is activated during `/implement`:
 |------|------|---------|
 | **context.md** | `${workspacePath}/.infrakit/context.md` | Project context: API groups, naming conventions, organization standards, cloud provider defaults |
 | **coding-style.md** | `${workspacePath}/.infrakit/coding-style.md` | Coding standards: tagging requirements, connection secrets, security rules, patch patterns |
-| **coding-style.md** | `${workspacePath}/.infrakit/coding-style.md` | Coding standards: tagging requirements, connection secrets, security rules, patch patterns |
 
 ### Context Loading Protocol
 
@@ -156,9 +155,7 @@ This agent is activated during `/implement`:
    - Review security requirements (no hardcoded secrets, encryption, etc.)
    - Follow Pipeline mode requirements
 
-
-
-4. **Apply Context Throughout**
+3. **Apply Context Throughout**
    - Use API groups from context.md in XRD definitions
    - Follow coding-style.md STRICTLY for all generated YAML
 

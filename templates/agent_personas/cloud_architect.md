@@ -56,7 +56,6 @@ You are the architecture quality gate between proposed designs and implementatio
 | File | Path | Purpose |
 |------|------|---------|
 | **context.md** | `${workspacePath}/.infrakit/context.md` | Project context: API groups, naming conventions, organization standards, cloud provider defaults, security requirements |
-| **context.md** | `${workspacePath}/.infrakit/context.md` | Project context: API groups, naming conventions, organization standards, cloud provider defaults, security requirements |
 
 ### Context Loading Protocol
 
@@ -66,12 +65,9 @@ You are the architecture quality gate between proposed designs and implementatio
    - Understand security requirements and compliance standards
    - Review organization-specific best practices
 
-
-
-3. **Apply Context in Reviews**
+2. **Apply Context in Reviews**
    - Check specifications against context.md standards
    - Verify security requirements from context.md are met
-   - Ensure compliance with organization policies
    - Ensure compliance with organization policies
 
 **Failure to read these files will result in reviews that don't align with project standards.**

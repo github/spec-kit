@@ -59,7 +59,6 @@ You are the bridge between human intent (e.g., "I need a secure cache") and clou
 | File | Path | Purpose |
 |------|------|---------|
 | **context.md** | `${workspacePath}/.infrakit/context.md` | Project context: API groups, naming conventions, organization standards, cloud provider defaults |
-| **context.md** | `${workspacePath}/.infrakit/context.md` | Project context: API groups, naming conventions, organization standards, cloud provider defaults |
 
 ### Context Loading Protocol
 
@@ -68,9 +67,7 @@ You are the bridge between human intent (e.g., "I need a secure cache") and clou
    - Note API group patterns, naming conventions, security requirements
    - Understand organization-specific requirements
 
-
-
-3. **Apply Context**
+2. **Apply Context**
    - Use API groups from context.md when suggesting resource names
    - Follow naming conventions in specifications
    - Respect security requirements from context.md
