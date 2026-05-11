@@ -2256,6 +2256,7 @@ class TestCustomStep(StepBase):
 
     def test_module_name_sanitized_for_hyphenated_type_key(self, project_dir):
         """type_key values with hyphens produce valid Python module identifiers."""
+        import hashlib
         import sys
         from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
 
@@ -2281,10 +2282,14 @@ class HyphenStep(StepBase):
         assert "my-hyphen-step" in loaded
         assert "my-hyphen-step" in STEP_REGISTRY
         # Synthetic module name must be a valid identifier (hyphens → underscores)
-        assert "_speckit_custom_step_my_hyphen_step" in sys.modules
+        # and include a collision-resistant hash suffix.
+        key_hash = hashlib.sha256(b"my-hyphen-step").hexdigest()[:8]
+        module_name = f"_speckit_custom_step_my_hyphen_step_{key_hash}"
+        assert module_name in sys.modules
 
     def test_package_relative_import(self, project_dir):
         """Steps can use relative imports to access sibling modules."""
+        import hashlib
         import sys
         from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
 
@@ -2314,7 +2319,94 @@ class PkgStep(StepBase):
         loaded = load_custom_steps(project_dir)
         assert "pkg-step" in loaded
         assert "pkg-step" in STEP_REGISTRY
-        # Verify the relative import actually resolved
-        module_name = "_speckit_custom_step_pkg_step"
+        # Verify the relative import actually resolved; module name includes hash suffix.
+        key_hash = hashlib.sha256(b"pkg-step").hexdigest()[:8]
+        module_name = f"_speckit_custom_step_pkg_step_{key_hash}"
         assert module_name in sys.modules
         assert sys.modules[module_name].PkgStep.helper == "hello"
+
+    def test_module_name_collision_resistance(self, project_dir):
+        """'a-b' and 'a_b' produce different module names despite the same sanitized form."""
+        import hashlib
+
+        # Simulate the module name generation for two type_keys that sanitize the same way
+        def make_module_name(type_key: str) -> str:
+            import re
+            safe_key = re.sub(r"[^A-Za-z0-9_]", "_", type_key)
+            key_hash = hashlib.sha256(type_key.encode()).hexdigest()[:8]
+            return f"_speckit_custom_step_{safe_key}_{key_hash}"
+
+        name_a = make_module_name("a-b")
+        name_b = make_module_name("a_b")
+        assert name_a != name_b, "Module names for 'a-b' and 'a_b' must differ"
+
+
+# ===== CLI Step Remove Tests =====
+
+class TestWorkflowStepRemoveCLI:
+    """Test the 'specify workflow step remove' CLI command edge cases."""
+
+    def test_remove_orphaned_directory(self, project_dir, monkeypatch):
+        """step remove works when directory exists but registry entry is missing.
+
+        This covers the case where the registry was reset due to corruption.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+
+        # Create an orphaned step directory (no registry entry)
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "orphan-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: orphan-step\n", encoding="utf-8"
+        )
+        (step_dir / "__init__.py").write_text("", encoding="utf-8")
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "remove", "orphan-step"])
+
+        assert result.exit_code == 0, result.output
+        assert not step_dir.exists()
+        # Warning should be printed about missing registry entry
+        assert "Warning" in result.output or "warning" in result.output.lower()
+
+    def test_remove_not_installed(self, project_dir, monkeypatch):
+        """step remove fails cleanly when neither directory nor registry entry exist."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "remove", "ghost-step"])
+
+        assert result.exit_code != 0
+        assert "not installed" in result.output
+
+    def test_remove_registered_step(self, project_dir, monkeypatch):
+        """step remove works normally when both directory and registry entry exist."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepRegistry
+
+        monkeypatch.chdir(project_dir)
+
+        # Set up a registered step with a directory
+        registry = StepRegistry(project_dir)
+        registry.add("my-step", {"name": "My Step", "type_key": "my-step", "version": "1.0.0"})
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "my-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: my-step\n", encoding="utf-8"
+        )
+        (step_dir / "__init__.py").write_text("", encoding="utf-8")
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "remove", "my-step"])
+
+        assert result.exit_code == 0, result.output
+        assert not step_dir.exists()
+        registry2 = StepRegistry(project_dir)
+        assert not registry2.is_installed("my-step")

@@ -80,6 +80,7 @@ def load_custom_steps(project_root: Path) -> list[str]:
     Returns a list of type_keys that were successfully loaded.
     Silently skips packages that fail to import or validate.
     """
+    import hashlib as _hashlib
     import importlib.util as _importlib_util
     import re as _re
     import sys as _sys
@@ -111,9 +112,14 @@ def load_custom_steps(project_root: Path) -> list[str]:
                 continue
 
             # Sanitize type_key so the synthetic module name is a valid identifier
-            # (e.g. "test-custom" → "_speckit_custom_step_test_custom").
+            # (e.g. "test-custom" → "_speckit_custom_step_test_custom_<hash>").
+            # The 8-char SHA-256 hash of the original type_key makes the name
+            # collision-resistant when different type_keys produce the same
+            # sanitized form (e.g. "a-b" and "a_b" both sanitize to "a_b" but
+            # have different hashes).
             safe_key = _re.sub(r"[^A-Za-z0-9_]", "_", type_key)
-            module_name = f"_speckit_custom_step_{safe_key}"
+            key_hash = _hashlib.sha256(type_key.encode()).hexdigest()[:8]
+            module_name = f"_speckit_custom_step_{safe_key}_{key_hash}"
 
             # Treat the step directory as a proper package so that relative
             # imports inside the step (e.g. ``from .helpers import …``) work.

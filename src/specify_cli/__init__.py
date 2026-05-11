@@ -6097,12 +6097,43 @@ def workflow_step_add(
             )
             raise typer.Exit(1)
 
-        # Write validated files to the staged temp location, then atomically rename
-        # into place. Both paths are under steps_base_dir (same filesystem), so
-        # os.rename() is atomic on POSIX and won't leave a partially-written
-        # directory at step_dir on failure.
+        # Write the two required files.
         (tmp_path / "step.yml").write_bytes(step_yml_content)
         (tmp_path / "__init__.py").write_bytes(init_py_content)
+
+        # Optionally download additional package files declared in the catalog entry
+        # (e.g. helper modules). Each entry in ``extra_files`` is a mapping of
+        # relative-path → URL. step.yml and __init__.py are ignored here (already
+        # written). Paths are validated to stay within the step package directory to
+        # prevent path-traversal attacks.
+        extra_files = info.get("extra_files") or {}
+        if isinstance(extra_files, dict):
+            for rel_path, file_url in extra_files.items():
+                if rel_path in ("step.yml", "__init__.py"):
+                    continue  # already written above
+                dest = (tmp_path / rel_path).resolve()
+                try:
+                    dest.relative_to(tmp_path)
+                except ValueError:
+                    console.print(
+                        f"[red]Error:[/red] extra_files path '{rel_path}' is outside "
+                        "the step package directory"
+                    )
+                    raise typer.Exit(1)
+                try:
+                    file_content = _safe_fetch(file_url)
+                except Exception as exc:
+                    console.print(
+                        f"[red]Error:[/red] Failed to download extra file '{rel_path}': {exc}"
+                    )
+                    raise typer.Exit(1)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(file_content)
+
+        # Atomically rename the staging directory to the final location.
+        # Both paths are under steps_base_dir (same filesystem), so os.rename()
+        # is atomic on POSIX and won't leave a partially-written directory at
+        # step_dir on failure.
         os.rename(tmp_path, step_dir)
     finally:
         # Clean up if the rename hasn't moved tmp_path yet (i.e. on any failure).
@@ -6145,9 +6176,7 @@ def workflow_step_remove(
         raise typer.Exit(1)
 
     registry = StepRegistry(project_root)
-    if not registry.is_installed(step_id):
-        console.print(f"[red]Error:[/red] Step type '{step_id}' is not installed")
-        raise typer.Exit(1)
+    in_registry = registry.is_installed(step_id)
 
     steps_base_dir = (project_root / ".specify" / "workflows" / "steps").resolve()
     step_dir = (steps_base_dir / step_id).resolve()
@@ -6156,11 +6185,28 @@ def workflow_step_remove(
     except ValueError:
         console.print(f"[red]Error:[/red] Invalid step id '{step_id}'")
         raise typer.Exit(1)
-    if step_dir.exists():
+
+    dir_exists = step_dir.exists()
+
+    if not in_registry and not dir_exists:
+        console.print(f"[red]Error:[/red] Step type '{step_id}' is not installed")
+        raise typer.Exit(1)
+
+    if not in_registry and dir_exists:
+        # The registry was likely reset due to corruption.  Warn the user that the
+        # directory is being removed even though there is no registry entry, so
+        # the orphaned package can be cleaned up and a fresh install attempted.
+        console.print(
+            f"[yellow]Warning:[/yellow] '{step_id}' has no registry entry "
+            "(registry may have been reset). Removing the orphaned directory."
+        )
+
+    if dir_exists:
         import shutil
         shutil.rmtree(step_dir)
 
-    registry.remove(step_id)
+    if in_registry:
+        registry.remove(step_id)
     console.print(f"[green]✓[/green] Step type '{step_id}' uninstalled")
 
 
