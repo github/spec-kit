@@ -1,8 +1,6 @@
 """Tests for BannerGroup class."""
 
-from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from infrakit_cli import app, BannerGroup

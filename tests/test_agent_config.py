@@ -10,7 +10,6 @@ Tests cover:
 """
 
 import pytest
-from pathlib import Path
 from infrakit_cli.agent_config import AGENT_CONFIG
 
 

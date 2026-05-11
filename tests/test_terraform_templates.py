@@ -11,7 +11,6 @@ Tests cover:
 - terraform_engineer.md agent persona has correct frontmatter
 """
 
-import re
 from pathlib import Path
 
 import pytest

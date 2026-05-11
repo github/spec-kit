@@ -39,7 +39,6 @@ import typer
 import httpx
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.text import Text
 from rich.live import Live
 from rich.align import Align
@@ -49,11 +48,10 @@ from typer.core import TyperGroup
 
 # For cross-platform keyboard input
 import readchar
-from typing import Optional
 from datetime import datetime, timezone
 
 from .agent_config import AGENT_CONFIG
-from .iac_config import IAC_CONFIG, get_iac_choices, get_iac_commands
+from .iac_config import IAC_CONFIG, get_iac_choices
 from .mcp_config import MCP_RECIPES
 
 # SSL context for httpx - use True for default system certificates
@@ -525,7 +523,7 @@ def _build_mcp_markdown_block(recipe_key: str, recipe: dict, agent_name: str) ->
         lines += [
             "```json",
             f'"{recipe_key}": {{',
-            f'  "type": "stdio",',
+            '  "type": "stdio",',
             f'  "command": "{recipe["command"]}",',
             f'  "args": {json.dumps(recipe["args"])}',
             "}",
@@ -536,7 +534,7 @@ def _build_mcp_markdown_block(recipe_key: str, recipe: dict, agent_name: str) ->
         lines += [
             "```json",
             f'"{recipe_key}": {{',
-            f'  "type": "sse",',
+            '  "type": "sse",',
             f'  "url": "{recipe["url"]}"',
             "}",
             "```",
@@ -1512,26 +1510,23 @@ def init(
 
     steps_lines.append(f"{step_num}. Start using slash commands with your AI agent:")
 
-    iac_cfg = IAC_CONFIG.get(selected_iac, {})
-    resource_term = iac_cfg.get("resource_term", "composition")
-
     steps_lines.append(
-        f"   2.1 [cyan]/infrakit:project_context[/] - Establish infrastructure principles"
+        "   2.1 [cyan]/infrakit:project_context[/] - Establish infrastructure principles"
     )
     steps_lines.append(
-        f"   2.2 [cyan]/infrakit:new_composition[/] - Create a new resource with multi-agent workflow"
+        "   2.2 [cyan]/infrakit:new_composition[/] - Create a new resource with multi-agent workflow"
     )
     steps_lines.append(
-        f"   2.3 [cyan]/infrakit:update_composition[/] - Update an existing resource"
+        "   2.3 [cyan]/infrakit:update_composition[/] - Update an existing resource"
     )
     steps_lines.append(
-        f"   2.4 [cyan]/infrakit:status[/] - Track progress of all tracks"
+        "   2.4 [cyan]/infrakit:status[/] - Track progress of all tracks"
     )
     steps_lines.append(
-        f"   2.5 [cyan]/infrakit:review_composition[/] - Review against best practices"
+        "   2.5 [cyan]/infrakit:review_composition[/] - Review against best practices"
     )
     steps_lines.append(
-        f"   2.6 [cyan]/infrakit:validate_composition[/] - Validate generated YAML"
+        "   2.6 [cyan]/infrakit:validate_composition[/] - Validate generated YAML"
     )
 
     steps_panel = Panel(

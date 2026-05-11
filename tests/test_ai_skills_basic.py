@@ -1,9 +1,8 @@
 """Tests for install_ai_skills function."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import patch
 
-import pytest
 
 from infrakit_cli import install_ai_skills, _get_skills_dir
 

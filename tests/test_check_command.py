@@ -7,10 +7,9 @@ Tests cover:
 - Health check output
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from typer.testing import CliRunner
-from infrakit_cli import app, check_tool
+from infrakit_cli import app
 from infrakit_cli.agent_config import AGENT_CONFIG
 
 

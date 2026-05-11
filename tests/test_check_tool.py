@@ -1,8 +1,7 @@
 """Tests for check_tool function."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from infrakit_cli import check_tool, StepTracker
 
