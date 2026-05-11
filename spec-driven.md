@@ -318,6 +318,46 @@ No implementation code shall be written before:
 
 This completely inverts traditional AI code generation. Instead of generating code and hoping it works, the LLM must first generate comprehensive tests that define behavior, get them approved, and only then generate implementation.
 
+#### Article IV: Requirement Quality and Coverage
+
+Specifications must be complete, unambiguous, and verifiable before planning begins:
+
+```text
+All requirements MUST be:
+- Testable: each requirement has measurable acceptance criteria
+- Unambiguous: no vague qualifiers without quantified thresholds
+- Traceable: mapped from user stories through tasks to implementation
+```
+
+This article drives the clarification, checklist, and analysis pipeline. The `/speckit.clarify` command scans for ambiguity across functional scope, data modeling, interaction flows, and edge cases. The `/speckit.checklist` command generates "unit tests for English"—validating requirement quality rather than implementation correctness. The `/speckit.analyze` command performs cross-artifact consistency checks, catching coverage gaps, terminology drift, and duplicate or conflicting requirements before any code is written.
+
+#### Article V: Non-Functional Standards
+
+Every project must explicitly address operational and quality concerns beyond functional correctness:
+
+```text
+Non-functional requirements MUST be specified for:
+- Performance: quantified metrics and thresholds
+- Security: authentication, data protection, and failure response
+- Observability: structured logging, monitoring, and debuggability
+- Accessibility: interaction standards for all user interfaces
+```
+
+Without this article, LLMs default to functional-only implementations—code that works but cannot be monitored, secured, or maintained in production. The clarification pipeline explicitly scans for non-functional coverage gaps, and checklists can target specific quality dimensions (security, performance, UX) to ensure these concerns are captured in requirements before implementation begins.
+
+#### Article VI: Governance and Versioning
+
+The constitution itself must be versioned, and changes must propagate consistently across all project artifacts:
+
+```text
+Constitution amendments MUST:
+- Follow semantic versioning (MAJOR.MINOR.PATCH)
+- Include a sync impact report across all templates
+- Maintain cross-artifact consistency after every change
+```
+
+This article ensures that governance is not static. When principles evolve, the `/speckit.constitution` command validates that plan templates, spec templates, task templates, and command files remain aligned. Version bumps are classified by impact—major for removed or redefined principles, minor for additions, patch for clarifications—creating an auditable trail of architectural decisions.
+
 #### Articles VII & VIII: Simplicity and Anti-Abstraction
 
 These paired articles combat over-engineering:
