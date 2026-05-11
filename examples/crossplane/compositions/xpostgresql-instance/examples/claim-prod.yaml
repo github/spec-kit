@@ -1,0 +1,23 @@
+apiVersion: database.platform.acme.com/v1alpha1
+kind: PostgreSQLInstance
+metadata:
+  name: orders-primary
+  namespace: payments
+spec:
+  parameters:
+    environment: prod
+    teamName: payments
+    costCenter: CC-1042
+    region: us-east-1
+    engineVersion: "16.3"
+    instanceClass: db.r6g.xlarge
+    storageGB: 500
+    storageType: gp3
+    backupRetentionDays: 30
+    # multiAZ omitted — defaults to true for prod
+    # deletionProtection omitted — defaults to true for prod
+    subnetGroupName: prod-rds-private
+    securityGroupIds:
+      - sg-0fedcba9876543210
+  writeConnectionSecretToRef:
+    name: orders-primary-pg

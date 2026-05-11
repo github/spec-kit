@@ -475,6 +475,7 @@ Required tags applied to every managed resource. Both mandatory tags (always app
 | [Installation Guide](./docs/installation.md) | Detailed installation, upgrades, and corporate proxy setup |
 | [Upgrade Guide](./docs/upgrade.md) | How to upgrade the CLI and update project template files |
 | [Constraint-Driven Development](./constraint-driven.md) | Methodology deep dive: CDD principles and why they work |
+| [Examples](./examples/) | Full walkthroughs for [Terraform](./examples/terraform/) (AWS S3 secure-bucket module) and [Crossplane](./examples/crossplane/) (XPostgreSQLInstance composition) — every artifact InfraKit produces, in one directory each |
 | [CHANGELOG](./CHANGELOG.md) | Full version history and breaking changes |
 | [CONTRIBUTING](./CONTRIBUTING.md) | How to contribute to InfraKit |
 

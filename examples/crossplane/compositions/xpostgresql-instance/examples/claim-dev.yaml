@@ -1,0 +1,23 @@
+apiVersion: database.platform.acme.com/v1alpha1
+kind: PostgreSQLInstance
+metadata:
+  name: orders-events
+  namespace: payments
+spec:
+  parameters:
+    environment: dev
+    teamName: payments
+    costCenter: CC-1042
+    region: us-east-1
+    engineVersion: "16.3"
+    instanceClass: db.t3.small
+    storageGB: 50
+    storageType: gp3
+    backupRetentionDays: 7
+    # multiAZ omitted — defaults to false for dev
+    # deletionProtection omitted — defaults to false for dev
+    subnetGroupName: dev-rds-private
+    securityGroupIds:
+      - sg-0123456789abcdef0
+  writeConnectionSecretToRef:
+    name: orders-events-pg
