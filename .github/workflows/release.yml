@@ -1,23 +1,52 @@
-name: Create Release
+name: Release to PyPI + GitHub
+
+# Every push to main that touches the package's contents (source, prompts,
+# pyproject, or this workflow) triggers a release. The workflow:
+#
+# 1. Computes the next patch version from the latest git tag.
+# 2. Skips if a GitHub release already exists for that version.
+# 3. Stamps the version into pyproject.toml.
+# 4. Builds the wheel + sdist with `uv build`.
+# 5. Runs `twine check` against the built artifacts (catches malformed
+#    README / metadata before we hit PyPI).
+# 6. Publishes to PyPI via trusted publishing (PEP 740 / OIDC) — no API
+#    tokens required, see https://docs.pypi.org/trusted-publishers/.
+# 7. Creates a GitHub Release with the wheel + sdist attached.
+# 8. Commits the version bump back to main with `[skip ci]`.
+#
+# If any step fails, subsequent steps are skipped — including the version
+# bump, so the next CI run will retry from the same version number.
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
       - 'src/**'
       - 'templates/**'
       - 'pyproject.toml'
-      - '.github/workflows/**'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/scripts/**'
   workflow_dispatch:
+
+# Cancel any in-flight release if a newer commit arrives on main. Only one
+# release runs at a time per ref to avoid version-bump collisions.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
+    name: Build, publish, and tag
     runs-on: ubuntu-latest
+    # PyPI Trusted Publisher requires the workflow to run under an
+    # environment matching the configuration at pypi.org/manage/project.
+    environment:
+      name: pypi
+      url: https://pypi.org/project/infrakit-cli/
     permissions:
-      contents: write
-      pull-requests: write
-      # Required for trusted PyPI publishing via OIDC.
-      id-token: write
+      contents: write         # create tags, commit version bump
+      pull-requests: write    # for completeness if hooks need it
+      id-token: write         # trusted publishing OIDC token
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -25,13 +54,13 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get next version
+      - name: Resolve next version
         id: get_tag
         run: |
           chmod +x .github/workflows/scripts/get-next-version.sh
           .github/workflows/scripts/get-next-version.sh
 
-      - name: Check if release already exists
+      - name: Skip if release already exists
         id: check_release
         run: |
           chmod +x .github/workflows/scripts/check-release-exists.sh
@@ -39,7 +68,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         if: steps.check_release.outputs.exists == 'false'
         uses: actions/setup-python@v5
         with:
@@ -61,29 +90,39 @@ jobs:
           uv build
           ls -la dist/
 
+      - name: Validate PyPI metadata and README rendering
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          uvx twine check --strict dist/*.whl dist/*.tar.gz
+
       - name: Generate release notes
         if: steps.check_release.outputs.exists == 'false'
         id: release_notes
         run: |
           chmod +x .github/workflows/scripts/generate-release-notes.sh
-          .github/workflows/scripts/generate-release-notes.sh ${{ steps.get_tag.outputs.new_version }} ${{ steps.get_tag.outputs.latest_tag }}
+          .github/workflows/scripts/generate-release-notes.sh \
+            ${{ steps.get_tag.outputs.new_version }} \
+            ${{ steps.get_tag.outputs.latest_tag }}
 
-      - name: Publish to PyPI
+      - name: Publish to PyPI (Trusted Publisher / OIDC)
         if: steps.check_release.outputs.exists == 'false'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          # Set TWINE_PASSWORD via the OIDC token; no API key needed.
+          # See https://docs.pypi.org/trusted-publishers/ for setup.
 
-      - name: Create GitHub Release (wheel + sdist attached)
+      - name: Create GitHub Release with wheel + sdist
         if: steps.check_release.outputs.exists == 'false'
         run: |
-          gh release create "${{ steps.get_tag.outputs.new_version }}" dist/*.whl dist/*.tar.gz \
-            --title "InfraKit CLI - ${{ steps.get_tag.outputs.new_version }}" \
+          gh release create "${{ steps.get_tag.outputs.new_version }}" \
+            dist/*.whl dist/*.tar.gz \
+            --title "InfraKit CLI ${{ steps.get_tag.outputs.new_version }}" \
             --notes-file release_notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Commit version bump to main
+      - name: Commit version bump back to main
         if: steps.check_release.outputs.exists == 'false'
         run: |
           git config user.name "github-actions[bot]"

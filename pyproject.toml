@@ -1,8 +1,54 @@
 [project]
 name = "infrakit-cli"
 version = "0.1.13"
-description = "InfraKit CLI — spec-kit for IaC, with a multi-persona pipeline. Bootstrap Crossplane / Terraform projects with structured spec-driven workflows."
+description = "spec-kit for IaC, with a multi-persona pipeline. Bootstrap Crossplane / Terraform projects with structured spec-driven workflows for any of 19 AI coding agents."
+readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "neelneelpurk" },
+]
+maintainers = [
+    { name = "neelneelpurk" },
+]
+keywords = [
+    "infrastructure",
+    "iac",
+    "terraform",
+    "opentofu",
+    "crossplane",
+    "kubernetes",
+    "aws",
+    "azure",
+    "gcp",
+    "ai",
+    "llm",
+    "claude",
+    "copilot",
+    "gemini",
+    "cursor",
+    "spec-driven-development",
+    "scaffolding",
+    "cli",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: System :: Installation/Setup",
+    "Topic :: System :: Systems Administration",
+]
 dependencies = [
     "typer",
     "click>=8.1",
@@ -15,8 +61,22 @@ dependencies = [
     "packaging>=23.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/neelneelpurk/infrakit"
+Documentation = "https://github.com/neelneelpurk/infrakit#readme"
+Repository = "https://github.com/neelneelpurk/infrakit"
+Issues = "https://github.com/neelneelpurk/infrakit/issues"
+Changelog = "https://github.com/neelneelpurk/infrakit/blob/main/CHANGELOG.md"
+"Examples" = "https://github.com/neelneelpurk/infrakit/tree/main/examples"
+
 [project.scripts]
 infrakit = "infrakit_cli:main"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -40,12 +100,6 @@ include = [
     "LICENSE",
 ]
 
-[project.optional-dependencies]
-test = [
-    "pytest>=7.0",
-    "pytest-cov>=4.0",
-]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
@@ -66,5 +120,3 @@ omit = ["*/tests/*", "*/__pycache__/*"]
 precision = 2
 show_missing = true
 skip_covered = false
-
-

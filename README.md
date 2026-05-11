@@ -9,10 +9,12 @@
 </p>
 
 <p align="center">
-    <a href="https://github.com/neelneelpurk/infrakit/releases/latest"><img src="https://img.shields.io/github/v/release/neelneelpurk/infrakit" alt="Latest Release"/></a>
-    <a href="https://pypi.org/project/infrakit-cli/"><img src="https://img.shields.io/pypi/v/infrakit-cli" alt="PyPI"/></a>
-    <a href="https://github.com/neelneelpurk/infrakit/stargazers"><img src="https://img.shields.io/github/stars/neelneelpurk/infrakit?style=social" alt="GitHub stars"/></a>
+    <a href="https://pypi.org/project/infrakit-cli/"><img src="https://img.shields.io/pypi/v/infrakit-cli?logo=pypi&logoColor=white&label=PyPI" alt="PyPI"/></a>
+    <a href="https://pypi.org/project/infrakit-cli/"><img src="https://img.shields.io/pypi/pyversions/infrakit-cli?logo=python&logoColor=white" alt="Python versions"/></a>
+    <a href="https://pypi.org/project/infrakit-cli/"><img src="https://img.shields.io/pypi/dm/infrakit-cli?logo=pypi&logoColor=white" alt="PyPI downloads"/></a>
+    <a href="https://github.com/neelneelpurk/infrakit/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/neelneelpurk/infrakit/release.yml?branch=main&logo=githubactions&logoColor=white&label=release" alt="Release status"/></a>
     <a href="https://github.com/neelneelpurk/infrakit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/neelneelpurk/infrakit" alt="License"/></a>
+    <a href="https://github.com/neelneelpurk/infrakit/stargazers"><img src="https://img.shields.io/github/stars/neelneelpurk/infrakit?style=social" alt="GitHub stars"/></a>
 </p>
 
 ---
@@ -55,11 +57,12 @@ Choose your preferred installation method:
 > The commands below require **[uv](https://docs.astral.sh/uv/)** — a fast Python package manager. If you see `command not found: uv`, [install uv first](https://docs.astral.sh/uv/getting-started/installation/). The `pipx` alternative does not require uv.
 
 ```bash
-# Persistent installation (recommended) — installs from PyPI
+# Persistent installation (recommended) — installs the latest release from PyPI
 uv tool install infrakit-cli
 
-# Pin a specific release
-uv tool install infrakit-cli==0.2.0
+# Pin a specific release (replace X.Y.Z with the latest from
+# https://pypi.org/project/infrakit-cli/ or the Releases page)
+uv tool install infrakit-cli==X.Y.Z
 
 # Alternative: pipx
 pipx install infrakit-cli
@@ -70,6 +73,8 @@ Verify the install:
 ```bash
 infrakit version
 ```
+
+[![PyPI](https://img.shields.io/pypi/v/infrakit-cli?logo=pypi&logoColor=white&label=latest%20on%20PyPI)](https://pypi.org/project/infrakit-cli/)
 
 #### One-time usage
 
