@@ -353,10 +353,10 @@ The constitution and specifications are the authoritative sources of truth. Plan
 Governance MUST ensure:
 - Constitution and specifications are versioned and traceable
 - Derived artifacts (plans, tasks) remain consistent with their source specifications
-- Implementation gaps are addressed through new specifications, not by retrofitting code back into existing specs
+- Implementation gaps are addressed through specifications, not through untracked code changes
 ```
 
-This article ensures that governance is not static and that the dependency direction is preserved—specifications drive implementation, never the reverse. When a gap or requirement emerges during implementation, it is addressed through a new specification rather than patching artifacts in place. Constitution amendments follow semantic versioning—major for removed or redefined principles, minor for additions, patch for clarifications—creating an auditable trail of architectural decisions.
+This article ensures that governance is not static and that specifications remain the authoritative source. When a gap or requirement emerges during implementation, teams may create a new specification, update an existing one, or regenerate derived artifacts—whichever approach fits their workflow—as long as the specification continues to drive implementation rather than the reverse. Constitution amendments follow semantic versioning—major for removed or redefined principles, minor for additions, patch for clarifications—creating an auditable trail of architectural decisions.
 
 #### Articles VII & VIII: Simplicity and Anti-Abstraction
 
