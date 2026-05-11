@@ -5,7 +5,7 @@
 </div>
 
 <p align="center">
-    <strong>spec-kit for IaC, with a multi-persona pipeline. Open-source; works with 19 AI coding agents; ships Crossplane and Terraform out of the box.</strong>
+    <strong>spec-kit for IaC, with a multi-persona pipeline. Open-source; works with Claude Code, Codex, Gemini, Copilot, plus any generic agent; ships Crossplane and Terraform out of the box.</strong>
 </p>
 
 <p align="center">
@@ -155,31 +155,19 @@ For a complete worked walkthrough, see [`examples/`](./examples/).
 
 ## 🤖 Supported AI Coding Agents
 
-InfraKit installs slash commands (or skills via `--ai-skills`) into any of these agents:
+InfraKit installs slash commands (or skills via `--ai-skills`) into any of these five agents:
 
-| Agent                                                                                          | Flag                | Notes                                  |
-| ---------------------------------------------------------------------------------------------- | ------------------- | -------------------------------------- |
-| [Claude Code](https://www.anthropic.com/claude-code)                                           | `--ai claude`       |                                        |
-| [GitHub Copilot](https://github.com/features/copilot)                                          | `--ai copilot`      | Auto-emits prompt + agent file pair    |
-| [Gemini CLI](https://github.com/google-gemini/gemini-cli)                                      | `--ai gemini`       | TOML-wrapped commands                  |
-| [Cursor](https://cursor.sh/)                                                                   | `--ai cursor-agent` |                                        |
-| [Qwen Code](https://github.com/QwenLM/qwen-code)                                               | `--ai qwen`         | TOML-wrapped commands                  |
-| [Codex CLI](https://github.com/openai/codex)                                                   | `--ai codex`        |                                        |
-| [Windsurf](https://windsurf.com/)                                                              | `--ai windsurf`     |                                        |
-| [opencode](https://opencode.ai/)                                                               | `--ai opencode`     |                                        |
-| [Amp](https://ampcode.com/)                                                                    | `--ai amp`          |                                        |
-| [Auggie CLI](https://docs.augmentcode.com/cli/overview)                                        | `--ai auggie`       |                                        |
-| [CodeBuddy CLI](https://www.codebuddy.ai/cli)                                                  | `--ai codebuddy`    |                                        |
-| [Kilo Code](https://github.com/Kilo-Org/kilocode)                                              | `--ai kilocode`     |                                        |
-| [Roo Code](https://roocode.com/)                                                               | `--ai roo`          |                                        |
-| [Qoder CLI](https://qoder.com/cli)                                                             | `--ai qodercli`     |                                        |
-| [SHAI (OVHcloud)](https://github.com/ovh/shai)                                                 | `--ai shai`         |                                        |
-| [Amazon Q Developer CLI](https://aws.amazon.com/developer/learning/q-developer-cli/)           | `--ai q`            | ⚠️ No custom args for slash commands  |
-| [Antigravity (agy)](https://agy.ai/)                                                           | `--ai agy`          |                                        |
-| [IBM Bob](https://www.ibm.com/products/bob)                                                    | `--ai bob`          |                                        |
-| Generic — bring your own agent                                                                 | `--ai generic`      | Use with `--ai-commands-dir <path>`    |
+| Agent                                                                                | Flag             | Subagents | Notes                                                                |
+| ------------------------------------------------------------------------------------ | ---------------- | --------- | -------------------------------------------------------------------- |
+| [Claude Code](https://www.anthropic.com/claude-code)                                 | `--ai claude`    | ✅ Yes   | Recommended — uses the `Task` tool to isolate persona review phases. |
+| [Codex CLI](https://github.com/openai/codex)                                         | `--ai codex`     | —         |                                                                      |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | `--ai gemini`    | —         | Commands rendered as TOML.                                           |
+| [GitHub Copilot](https://github.com/features/copilot)                                | `--ai copilot`   | —         | Auto-emits prompt + agent file pair; configures VS Code settings.    |
+| Generic — bring your own agent                                                       | `--ai generic`   | —         | Use with `--ai-commands-dir <path>`.                                 |
 
-If you encounter issues with an agent, please [open an issue](https://github.com/neelneelpurk/infrakit/issues/new) so we can refine the integration.
+The "Subagents" column flags whether the agent has a built-in primitive (Claude Code's `Task` tool) that InfraKit's multi-persona commands can delegate to. With native subagents, the **Cloud Architect** and **Cloud Security Engineer** review phases run in isolated context windows — the architect's reasoning never sees the security review's reasoning, and vice versa. On agents without subagents, the same review prompts run inline; the context boundaries are explicit but not enforced.
+
+If you encounter issues with one of the supported agents, please [open an issue](https://github.com/neelneelpurk/infrakit/issues/new). Other agents were dropped in v0.2 because the maintenance surface (per-agent layout, MCP install paths, command-format quirks, untested subagent semantics) was unmaintainable; if you want first-class support for another agent, please open an issue describing the use case.
 
 ## 🧰 Supported IaC Platforms
 

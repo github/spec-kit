@@ -134,15 +134,14 @@ class TestWriteCommand:
     [
         ("claude", "terraform", ".claude/commands", ".md"),
         ("claude", "crossplane", ".claude/commands", ".md"),
-        ("gemini", "terraform", ".gemini/commands", ".toml"),
-        ("qwen", "crossplane", ".qwen/commands", ".toml"),
-        ("copilot", "terraform", ".github/agents", ".agent.md"),
-        ("cursor-agent", "crossplane", ".cursor/commands", ".md"),
-        ("opencode", "terraform", ".opencode/command", ".md"),
+        ("codex", "terraform", ".codex/prompts", ".md"),
         ("codex", "crossplane", ".codex/prompts", ".md"),
-        ("q", "terraform", ".amazonq/prompts", ".md"),
-        ("amp", "crossplane", ".agents/commands", ".md"),
+        ("gemini", "terraform", ".gemini/commands", ".toml"),
+        ("gemini", "crossplane", ".gemini/commands", ".toml"),
+        ("copilot", "terraform", ".github/agents", ".agent.md"),
+        ("copilot", "crossplane", ".github/agents", ".agent.md"),
         ("generic", "terraform", ".infrakit/commands", ".md"),
+        ("generic", "crossplane", ".infrakit/commands", ".md"),
     ],
 )
 def test_materialize_project_layouts(

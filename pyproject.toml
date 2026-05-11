@@ -1,7 +1,7 @@
 [project]
 name = "infrakit-cli"
 version = "0.1.13"
-description = "spec-kit for IaC, with a multi-persona pipeline. Bootstrap Crossplane / Terraform projects with structured spec-driven workflows for any of 19 AI coding agents."
+description = "spec-kit for IaC, with a multi-persona pipeline. Bootstrap Crossplane / Terraform projects with structured spec-driven workflows for Claude Code, Codex, Gemini, Copilot, or any generic agent."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

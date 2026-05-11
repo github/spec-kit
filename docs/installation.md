@@ -48,9 +48,9 @@ Specify your agent with `--ai`:
 
 ```bash
 infrakit init my-infra --ai claude --iac crossplane
+infrakit init my-infra --ai codex --iac crossplane
 infrakit init my-infra --ai gemini --iac crossplane
 infrakit init my-infra --ai copilot --iac crossplane
-infrakit init my-infra --ai cursor-agent --iac crossplane
 ```
 
 For a full list of supported agents see [Supported AI Agents](../README.md#supported-ai-agents).

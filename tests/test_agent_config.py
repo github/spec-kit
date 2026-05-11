@@ -141,27 +141,33 @@ class TestAgentConfig:
         """Verify known agent directory patterns are correct."""
         expected_patterns = {
             "claude": (".claude/", "commands"),
+            "codex": (".codex/", "prompts"),
             "gemini": (".gemini/", "commands"),
             "copilot": (".github/", "agents"),
-            "cursor-agent": (".cursor/", "commands"),
-            "qwen": (".qwen/", "commands"),
-            "opencode": (".opencode/", "command"),
-            "codex": (".codex/", "prompts"),
-            "windsurf": (".windsurf/", "workflows"),
-            "kilocode": (".kilocode/", "workflows"),
-            "auggie": (".augment/", "commands"),
-            "q": (".amazonq/", "prompts"),
+            "generic": (".infrakit/", "commands"),
         }
 
         for agent_key, (expected_folder, expected_subdir) in expected_patterns.items():
-            if agent_key in AGENT_CONFIG:
-                config = AGENT_CONFIG[agent_key]
-                assert config["folder"] == expected_folder, (
-                    f"Agent '{agent_key}' folder mismatch"
-                )
-                assert config["commands_subdir"] == expected_subdir, (
-                    f"Agent '{agent_key}' commands_subdir mismatch"
-                )
+            assert agent_key in AGENT_CONFIG, (
+                f"Supported agent '{agent_key}' missing from AGENT_CONFIG"
+            )
+            config = AGENT_CONFIG[agent_key]
+            assert config["folder"] == expected_folder, (
+                f"Agent '{agent_key}' folder mismatch"
+            )
+            assert config["commands_subdir"] == expected_subdir, (
+                f"Agent '{agent_key}' commands_subdir mismatch"
+            )
+
+    def test_only_supported_agents_are_present(self):
+        """AGENT_CONFIG must include exactly the five supported agents."""
+        assert set(AGENT_CONFIG.keys()) == {
+            "claude",
+            "codex",
+            "gemini",
+            "copilot",
+            "generic",
+        }
 
     def test_no_duplicate_folder_names(self):
         """No two agents should use the same folder."""
@@ -200,29 +206,14 @@ class TestAgentConfig:
         # Command extension should start with .
         assert config["command_extension"].startswith(".")
 
-    def test_agent_keys_are_cli_names(self):
-        """Agent keys should match actual CLI tool names (no shorthand)."""
-        # These are known CLI tool names - verify they're used as keys
-        known_cli_tools = [
-            "claude",
-            "gemini",
-            "qwen",
-            "opencode",
-            "codebuddy",
-            "qodercli",
-            "q",
-            "amp",
-            "shai",
-        ]
-
-        for tool in known_cli_tools:
-            if tool in AGENT_CONFIG:
-                assert AGENT_CONFIG[tool]["requires_cli"] is True, (
-                    f"Tool '{tool}' should have requires_cli=True"
-                )
-
-        # Verify no shorthand keys exist (like "cursor" instead of "cursor-agent")
-        assert "cursor" not in AGENT_CONFIG, (
-            "Should use 'cursor-agent' as key, not shorthand 'cursor'"
-        )
-        assert "amazonq" not in AGENT_CONFIG, "Should use 'q' as key for Amazon Q"
+    def test_cli_agents_have_install_url_and_require_cli(self):
+        """CLI-installed agents must declare requires_cli=True and an install URL."""
+        cli_agents = ["claude", "codex", "gemini"]
+        for tool in cli_agents:
+            cfg = AGENT_CONFIG[tool]
+            assert cfg["requires_cli"] is True, (
+                f"Agent '{tool}' should have requires_cli=True"
+            )
+            assert cfg["install_url"], (
+                f"Agent '{tool}' should declare an install_url"
+            )
