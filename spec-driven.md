@@ -347,16 +347,16 @@ Without this article, LLMs default to functional-only implementations—code tha
 
 #### Article VI: Governance and Versioning
 
-All project artifacts—constitution, specifications, plans, and tasks—must be versioned, and changes must propagate consistently across dependent artifacts:
+The constitution and specifications are the authoritative sources of truth. Plans and tasks are derived execution artifacts:
 
 ```text
-Artifact changes MUST:
-- Be versioned and traceable through version control
-- Propagate to all dependent artifacts when modified
-- Maintain cross-artifact consistency after every change
+Governance MUST ensure:
+- Constitution and specifications are versioned and traceable
+- Derived artifacts (plans, tasks) remain consistent with their source specifications
+- Implementation gaps are addressed through new specifications, not by retrofitting code back into existing specs
 ```
 
-This article ensures that governance is not static and that drift between artifacts is caught rather than silently accumulated. When a specification changes, affected plans and tasks must be re-evaluated. When principles evolve, templates and command files must remain aligned. Version bumps are classified by impact—major for removed or redefined principles, minor for additions, patch for clarifications—creating an auditable trail of architectural decisions.
+This article ensures that governance is not static and that the dependency direction is preserved—specifications drive implementation, never the reverse. When a gap or requirement emerges during implementation, it is addressed through a new specification rather than patching artifacts in place. Constitution amendments follow semantic versioning—major for removed or redefined principles, minor for additions, patch for clarifications—creating an auditable trail of architectural decisions.
 
 #### Articles VII & VIII: Simplicity and Anti-Abstraction
 
