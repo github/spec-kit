@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Split `src/infrakit_cli/__init__.py` into focused modules**. The 1,837-line megafile is now 11 modules of 100–600 lines each (`cli.py`, `bootstrap.py`, `skills.py`, `mcp.py`, `git_utils.py`, `tools.py`, `tracker.py`, `interactive.py`, `banner.py`, `console.py`, `github_api.py`). `__init__.py` is now an explicit re-export shim with `__all__` so existing imports (`from infrakit_cli import app`, etc.) continue to work. No behaviour change.
+
+- **Dropped the "Constraint-Driven Development" branding**. InfraKit is now described as "spec-kit for IaC, with a multi-persona pipeline" — a more honest framing that credits [spec-kit](https://github.com/github/spec-kit) for the workflow shape and reserves InfraKit's claims for its actual contribution (the four-persona Cloud Solutions Engineer → Architect → Security → IaC Engineer pipeline). The CDD name appeared only in marketing and docs; prompts and runtime code were already neutral. The methodology document at `constraint-driven.md` keeps its filename (URL stability) but reads as Spec-Driven Development with InfraKit-specific additions.
+
 - **Single-artifact release**. Templates and prompts now ship inside the `infrakit-cli` PyPI wheel instead of as 76 per-agent GitHub release ZIPs (19 agents × 2 IaC × 2 scripts). `infrakit init` performs all per-agent layout transformations (folder placement, TOML wrapping, Copilot prompt pairs, VS Code settings) at install time from the bundled prompts. **Effects**:
   - `infrakit init` now runs entirely offline; no network calls.
   - `--github-token` and `--skip-tls` flags are removed (templates no longer download).
@@ -136,7 +140,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Generates Markdown commands with `$ARGUMENTS` format (compatible with most agents)
   - Example: `infrakit init my-project --ai generic --ai-commands-dir .myagent/commands/`
   - Enables users to start with InfraKit immediately while their agent awaits formal support
-
 
 ## [0.0.102] - 2026-02-20
 

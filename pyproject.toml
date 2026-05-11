@@ -1,7 +1,7 @@
 [project]
 name = "infrakit-cli"
 version = "0.1.13"
-description = "InfraKit CLI - Infrastructure-First Constraint-Driven Development toolkit. Bootstrap infrastructure projects with IaC-native workflows."
+description = "InfraKit CLI — spec-kit for IaC, with a multi-persona pipeline. Bootstrap Crossplane / Terraform projects with structured spec-driven workflows."
 requires-python = ">=3.11"
 dependencies = [
     "typer",

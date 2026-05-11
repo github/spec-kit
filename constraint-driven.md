@@ -1,14 +1,18 @@
-# Specification-Driven Development (CDD)
+# InfraKit Methodology Notes — Spec-Driven Development with a Multi-Persona Pipeline
+
+> **Origin and acknowledgement.** Much of the framing in this document is adapted from [GitHub Spec Kit's `spec-driven.md`](https://github.com/github/spec-kit/blob/main/spec-driven.md). The vocabulary — "spec as source of truth", "from idea to PRD via iterative dialogue", "implementation plans regenerated from spec changes" — is theirs, and we credit it as such. **InfraKit's own contribution is the multi-persona pipeline layered on top of that workflow** (see "What InfraKit adds" further down).
+>
+> An earlier version of this document branded the methodology as "Constraint-Driven Development (CDD)." That branding has been dropped — InfraKit is spec-driven development with a few IaC-specific twists, not a new methodology. The filename `constraint-driven.md` is preserved for backwards-compatible URLs only.
 
 ## The Power Inversion
 
 For decades, code has been king. Specifications served code—they were the scaffolding we built and then discarded once the "real work" of coding began. We wrote PRDs to guide development, created design docs to inform implementation, drew diagrams to visualize architecture. But these were always subordinate to the code itself. Code was truth. Everything else was, at best, good intentions. Code was the source of truth, and as it moved forward, specs rarely kept pace. As the asset (code) and the implementation are one, it's not easy to have a parallel implementation without trying to build from the code.
 
-Constraint-Driven Development (CDD) inverts this power structure. Specifications don't serve code—code serves specifications. The Product Requirements Document (PRD) isn't a guide for implementation; it's the source that generates implementation. Technical plans aren't documents that inform coding; they're precise definitions that produce code. This isn't an incremental improvement to how we build software. It's a fundamental rethinking of what drives development.
+Spec-Driven Development (SDD) inverts this power structure. Specifications don't serve code—code serves specifications. The Product Requirements Document (PRD) isn't a guide for implementation; it's the source that generates implementation. Technical plans aren't documents that inform coding; they're precise definitions that produce code. This isn't an incremental improvement to how we build software. It's a fundamental rethinking of what drives development.
 
-The gap between specification and implementation has plagued software development since its inception. We've tried to bridge it with better documentation, more detailed requirements, stricter processes. These approaches fail because they accept the gap as inevitable. They try to narrow it but never eliminate it. CDD eliminates the gap by making specifications and their concrete implementation plans born from the specification executable. When specifications and implementation plans generate code, there is no gap—only transformation.
+The gap between specification and implementation has plagued software development since its inception. We've tried to bridge it with better documentation, more detailed requirements, stricter processes. These approaches fail because they accept the gap as inevitable. They try to narrow it but never eliminate it. SDD eliminates the gap by making specifications and their concrete implementation plans born from the specification executable. When specifications and implementation plans generate code, there is no gap—only transformation.
 
-This transformation is now possible because AI can understand and implement complex specifications, and create detailed implementation plans. But raw AI generation without structure produces chaos. CDD provides that structure through specifications and subsequent implementation plans that are precise, complete, and unambiguous enough to generate working systems. The specification becomes the primary artifact. Code becomes its expression (as an implementation from the implementation plan) in a particular language and framework.
+This transformation is now possible because AI can understand and implement complex specifications, and create detailed implementation plans. But raw AI generation without structure produces chaos. SDD provides that structure through specifications and subsequent implementation plans that are precise, complete, and unambiguous enough to generate working systems. The specification becomes the primary artifact. Code becomes its expression (as an implementation from the implementation plan) in a particular language and framework.
 
 In this new world, maintaining software means evolving specifications. The intent of the development team is expressed in natural language ("**intent-driven development**"), design assets, core principles and other guidelines. The **lingua franca** of development moves to a higher level, and code is the last-mile approach.
 
@@ -16,7 +20,18 @@ Debugging means fixing specifications and their implementation plans that genera
 
 The development team focuses in on their creativity, experimentation, their critical thinking.
 
-## The CDD Workflow in Practice
+## What InfraKit adds (the multi-persona pipeline)
+
+The spec-driven loop above is generic — it works for application code as well as infrastructure code. InfraKit's contribution is a layer of **specialised personas** that the spec routes through before any HCL or YAML is generated:
+
+1. **Cloud Solutions Engineer.** Owns requirements gathering. Translates "I need a Postgres" into a structured spec with explicit parameters, outputs, security requirements, and acceptance criteria. Asks one clarifying question at a time; refuses to hand off until the spec is unambiguous.
+2. **Cloud Architect.** Owns design. Presents 2–3 named design options with trade-off tables (complexity, cost, flexibility, risk) instead of one recommendation. The user picks. Catches environment-aware gaps (Multi-AZ for prod, backup retention vs SOC 2 minimums, KMS key per resource vs shared).
+3. **Cloud Security Engineer.** Owns compliance posture. Audits the spec against the frameworks the user picks (SOC 2, HIPAA, ISO 27001, CIS, NIST, PCI-DSS) *before any code is written*. Findings are categorised by severity; CRITICAL/HIGH require either remediation or a documented waiver.
+4. **IaC Engineer.** Owns implementation. Verifies provider API versions and field names against official docs before writing anything. Generates `plan.md`, auto-generates `tasks.md`, then walks the task list mechanically — marking each `- [ ]` → `- [x]` as it goes. Writes post-implementation artifacts (`.infrakit_context.md`, `.infrakit_changelog.md`, contract file) alongside the code.
+
+Why split into four roles instead of one careful prompt? The empirical claim is that each persona produces sharper output when its context window is narrowed to a single concern. A model in "security audit" mode catches different things than the same model in "let's build this" mode. We are still validating this claim with benchmarks; see the README's Acknowledgements section for the candid version of where the evidence is and isn't.
+
+## The SDD Workflow in Practice
 
 The workflow begins with an idea—often vague and incomplete. Through iterative dialogue with AI, this idea becomes a comprehensive PRD. The AI asks clarifying questions, identifies edge cases, and helps define precise acceptance criteria. What might take days of meetings and documentation in traditional development happens in hours of focused specification work. This transforms the traditional SDLC—requirements and design become continuous activities rather than discrete phases. This is supportive of a **team process**, where team-reviewed specifications are expressed and versioned, created in branches, and merged.
 
@@ -30,19 +45,19 @@ Code generation begins as soon as specifications and their implementation plans 
 
 The feedback loop extends beyond initial development. Production metrics and incidents don't just trigger hotfixes—they update specifications for the next regeneration. Performance bottlenecks become new non-functional requirements. Security vulnerabilities become constraints that affect all future generations. This iterative dance between specification, implementation, and operational reality is where true understanding emerges and where the traditional SDLC transforms into a continuous evolution.
 
-## Why CDD Matters Now
+## Why SDD Matters Now
 
-Three trends make CDD not just possible but necessary:
+Three trends make SDD not just possible but necessary:
 
 First, AI capabilities have reached a threshold where natural language specifications can reliably generate working code. This isn't about replacing developers—it's about amplifying their effectiveness by automating the mechanical translation from specification to implementation. It can amplify exploration and creativity, support "start-over" easily, and support addition, subtraction, and critical thinking.
 
-Second, software complexity continues to grow exponentially. Modern systems integrate dozens of services, frameworks, and dependencies. Keeping all these pieces aligned with original intent through manual processes becomes increasingly difficult. CDD provides systematic alignment through specification-driven generation. Frameworks may evolve to provide AI-first support, not human-first support, or architect around reusable components.
+Second, software complexity continues to grow exponentially. Modern systems integrate dozens of services, frameworks, and dependencies. Keeping all these pieces aligned with original intent through manual processes becomes increasingly difficult. SDD provides systematic alignment through specification-driven generation. Frameworks may evolve to provide AI-first support, not human-first support, or architect around reusable components.
 
 Third, the pace of change accelerates. Requirements change far more rapidly today than ever before. Pivoting is no longer exceptional—it's expected. Modern product development demands rapid iteration based on user feedback, market conditions, and competitive pressures. Traditional development treats these changes as disruptions. Each pivot requires manually propagating changes through documentation, design, and code. The result is either slow, careful updates that limit velocity, or fast, reckless changes that accumulate technical debt.
 
-CDD can support what-if/simulation experiments: "If we need to re-implement or change the application to promote a business need to sell more T-shirts, how would we implement and experiment for that?"
+SDD can support what-if/simulation experiments: "If we need to re-implement or change the application to promote a business need to sell more T-shirts, how would we implement and experiment for that?"
 
-CDD transforms requirement changes from obstacles into normal workflow. When specifications drive implementation, pivots become systematic regenerations rather than manual rewrites. Change a core requirement in the PRD, and affected implementation plans update automatically. Modify a user story, and corresponding API endpoints regenerate. This isn't just about initial development—it's about maintaining engineering velocity through inevitable changes.
+SDD transforms requirement changes from obstacles into normal workflow. When specifications drive implementation, pivots become systematic regenerations rather than manual rewrites. Change a core requirement in the PRD, and affected implementation plans update automatically. Modify a user story, and corresponding API endpoints regenerate. This isn't just about initial development—it's about maintaining engineering velocity through inevitable changes.
 
 ## Core Principles
 
@@ -60,7 +75,7 @@ CDD transforms requirement changes from obstacles into normal workflow. When spe
 
 ## Implementation Approaches
 
-Today, practicing CDD requires assembling existing tools and maintaining discipline throughout the process. The methodology can be practiced with:
+Today, practicing SDD requires assembling existing tools and maintaining discipline throughout the process. The methodology can be practiced with:
 
 - AI assistants for iterative specification development
 - Research agents for gathering technical context
@@ -70,9 +85,9 @@ Today, practicing CDD requires assembling existing tools and maintaining discipl
 
 The key is treating specifications as the source of truth, with code as the generated output that serves the specification rather than the other way around.
 
-## Streamlining CDD with Commands
+## Streamlining SDD with Commands
 
-The CDD methodology is significantly enhanced through InfraKit's infrastructure-native commands that automate the specification → planning → implementation → review → validation workflow:
+The SDD methodology is significantly enhanced through InfraKit's infrastructure-native commands that automate the specification → planning → implementation → review → validation workflow:
 
 ### The `/infrakit:specify_composition` Command
 
@@ -108,7 +123,7 @@ Here's how these commands transform traditional IaC authoring:
 Total: ~13 hours of YAML authoring
 ```
 
-**CDD with InfraKit Commands Approach:**
+**SDD with InfraKit Commands Approach:**
 
 ```bash
 # Step 1: Create the resource specification (5 minutes)
@@ -143,7 +158,7 @@ These commands don't just save time—they enforce consistency and completeness:
 3. **Living Documentation**: Specifications stay in sync with code because they generate it
 4. **Rapid Iteration**: Change requirements and regenerate plans in minutes, not days
 
-The commands embody CDD principles by treating specifications as executable artifacts rather than static documents. They transform the specification process from a necessary evil into the driving force of development.
+The commands embody SDD principles by treating specifications as executable artifacts rather than static documents. They transform the specification process from a necessary evil into the driving force of development.
 
 ### Template-Driven Quality: How Structure Constrains LLMs for Better Outcomes
 
@@ -256,7 +271,7 @@ The templates transform the LLM from a creative writer into a disciplined specif
 
 ## The Project Contextal Foundation: Enforcing Architectural Discipline
 
-At the heart of CDD lies a project context—a set of immutable principles that govern how specifications become code. The project context (`memory/project-context.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
+At the heart of SDD lies a project context—a set of immutable principles that govern how specifications become code. The project context (`memory/project-context.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
 
 ### The Nine Articles of Development
 
@@ -386,10 +401,10 @@ The project context isn't just a rulebook—it's a philosophy that shapes how LL
 - **Integration Over Isolation**: Test in real environments, not artificial ones
 - **Modularity Over Monoliths**: Every feature is a library with clear boundaries
 
-By embedding these principles into the specification and planning process, CDD ensures that generated code isn't just functional—it's maintainable, testable, and architecturally sound. The project context transforms AI from a code generator into an architectural partner that respects and reinforces system design principles.
+By embedding these principles into the specification and planning process, SDD ensures that generated code isn't just functional—it's maintainable, testable, and architecturally sound. The project context transforms AI from a code generator into an architectural partner that respects and reinforces system design principles.
 
 ## The Transformation
 
 This isn't about replacing developers or automating creativity. It's about amplifying human capability by automating mechanical translation. It's about creating a tight feedback loop where specifications, research, and code evolve together, each iteration bringing deeper understanding and better alignment between intent and implementation.
 
-Software development needs better tools for maintaining alignment between intent and implementation. CDD provides the methodology for achieving this alignment through executable specifications that generate code rather than merely guiding it.
+Software development needs better tools for maintaining alignment between intent and implementation. SDD provides the methodology for achieving this alignment through executable specifications that generate code rather than merely guiding it.

@@ -48,10 +48,10 @@ Here are a few things you can do that will increase the likelihood of your pull 
 
 - Follow the project's coding conventions.
 - Write tests for new functionality.
-- Update documentation (`README.md`, `constraint-driven.md`) if your changes affect user-facing features.
+- Update documentation (`README.md`, `constraint-driven.md` — methodology notes) if your changes affect user-facing features.
 - Keep your change as focused as possible. If there are multiple changes you would like to make that are not dependent upon each other, consider submitting them as separate pull requests.
 - Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
-- Test your changes with the Constraint-Driven Development workflow to ensure compatibility.
+- Test your changes against the spec → plan → implement → review pipeline to ensure compatibility with both Crossplane and Terraform.
 
 ## Development workflow
 
@@ -144,7 +144,8 @@ Please be respectful to maintainers and disclose AI assistance.
 
 ## Resources
 
-- [Constraint-Driven Development Methodology](./constraint-driven.md)
+- [Methodology notes — multi-persona spec-driven pipeline](./constraint-driven.md)
+- [Spec Kit (upstream methodology InfraKit builds on)](https://github.com/github/spec-kit)
 - [How to Contribute to Open Source](https://opensource.guide/how-to-contribute/)
 - [Using Pull Requests](https://help.github.com/articles/about-pull-requests/)
 - [GitHub Help](https://help.github.com)

@@ -2,9 +2,9 @@
 
 ## About InfraKit
 
-**GitHub InfraKit** is an infrastructure-first toolkit for implementing Constraint-Driven Development (CDD) - a methodology that emphasizes defining infrastructure requirements and constraints before generating any code. The toolkit includes IaC templates, scripts, and AI agent workflows that guide teams through a structured approach to building production-ready infrastructure.
+**InfraKit** is [spec-kit](https://github.com/github/spec-kit) for infrastructure-as-code, with a multi-persona pipeline layered on top. It captures the spec for an IaC change first, routes it through four specialized personas (Cloud Solutions Engineer → Cloud Architect → Cloud Security Engineer → IaC Engineer), and then generates Crossplane YAML or Terraform HCL — with the full audit trail committed to git alongside the code.
 
-**InfraKit CLI** is the command-line interface that bootstraps projects with the InfraKit framework. It sets up the necessary directory structures, templates, and AI agent integrations to support the Constraint-Driven Development workflow.
+**InfraKit CLI** is the command-line interface that bootstraps projects with the InfraKit framework. It sets up the necessary directory structures, templates, and AI agent integrations to support the spec-driven workflow.
 
 The toolkit supports multiple AI coding assistants, allowing teams to use their preferred tools while maintaining consistent project structure and development practices.
 
@@ -16,7 +16,7 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 ## Adding New Agent Support
 
-This section explains how to add support for new AI agents/assistants to the InfraKit CLI. Use this guide as a reference when integrating new AI tools into the Constraint-Driven Development workflow.
+This section explains how to add support for new AI agents/assistants to the InfraKit CLI. Use this guide as a reference when integrating new AI tools into the spec-driven workflow.
 
 ### Overview
 
@@ -416,7 +416,7 @@ Different agents use different argument placeholders:
 When adding new agents:
 
 - Consider the agent's native command/workflow patterns
-- Ensure compatibility with the Constraint-Driven Development process
+- Ensure compatibility with the multi-persona spec-driven pipeline
 - Document any special requirements or limitations
 - Update this guide with lessons learned
 - Verify the actual CLI tool name before adding to AGENT_CONFIG

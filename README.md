@@ -5,7 +5,7 @@
 </div>
 
 <p align="center">
-    <strong>An open-source toolkit that brings constraint-driven development to infrastructure-as-code — your standards, your compliance, enforced before a single line of HCL or YAML is written.</strong>
+    <strong>spec-kit for IaC, with a multi-persona pipeline. Open-source; works with 19 AI coding agents; ships Crossplane and Terraform out of the box.</strong>
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@
 
 ## Table of Contents
 
-- [🤔 What is Constraint-Driven IaC?](#-what-is-constraint-driven-iac)
+- [🤔 What is InfraKit?](#-what-is-infrakit)
 - [⚡ Get Started](#-get-started)
 - [🤖 Supported AI Coding Agents](#-supported-ai-coding-agents)
 - [🧰 Supported IaC Platforms](#-supported-iac-platforms)
@@ -37,11 +37,13 @@
 - [🙏 Acknowledgements](#-acknowledgements)
 - [📄 License](#-license)
 
-## 🤔 What is Constraint-Driven IaC?
+## 🤔 What is InfraKit?
 
-Constraint-Driven Development (CDD) **flips the script** on how infrastructure-as-code gets written. For decades, IaC was a place where conventions lived in tribal knowledge — naming guesses, half-remembered tag rules, compliance audits chasing the code after it shipped. CDD changes this: **your constraints (cloud provider standards, naming conventions, tagging rules, compliance frameworks) are captured first, and every artifact — spec, plan, generated HCL or YAML — is forced to honour them.**
+InfraKit is **[spec-kit](https://github.com/github/spec-kit) for infrastructure-as-code**, with a multi-persona pipeline layered on top. Spec-kit pioneered Spec-Driven Development for application code: capture the spec first, then plan, then implement, with every artifact committed to git. InfraKit takes that shape, points it at Crossplane and Terraform, and inserts four specialized personas between the spec and the code so that cloud architecture, security compliance, and IaC implementation each get their own dedicated review pass.
 
-InfraKit drives this with a four-persona pipeline. A **Cloud Solutions Engineer** translates intent into a structured spec. A **Cloud Architect** presents 2–3 design options with cost/reliability trade-offs. A **Cloud Security Engineer** audits the spec against SOC 2, HIPAA, ISO 27001, CIS, and NIST *before any code is written*. An **IaC Engineer** then generates Crossplane YAML or Terraform HCL that already meets every constraint — and a full audit trail (spec, plan, task list, contract, changelog) lands alongside the code in git.
+Concretely: a **Cloud Solutions Engineer** persona translates intent into a structured spec. A **Cloud Architect** presents 2–3 design options with cost/reliability trade-offs. A **Cloud Security Engineer** flags structural patterns that commonly violate SOC 2, HIPAA, ISO 27001, CIS, and NIST controls *before any code is written*. An **IaC Engineer** then generates Crossplane YAML or Terraform HCL — and a full audit trail (spec, plan, task list, contract, changelog) lands alongside the code in git.
+
+> **A note on compliance**: the security review is a heuristic LLM pass that flags common control violations against named frameworks. It is **not** a substitute for a real audit conducted by qualified humans with evidence collection. Use it as a first-pass guardrail, not as your compliance system of record.
 
 ## ⚡ Get Started
 
@@ -190,7 +192,7 @@ After running `infrakit init`, your AI coding agent has access to these slash co
 
 ### Core Commands
 
-Essential commands for the constraint-driven workflow:
+Essential commands for the spec-driven workflow:
 
 | Command                          | Description                                                                              |
 | -------------------------------- | ---------------------------------------------------------------------------------------- |
@@ -324,11 +326,11 @@ Per-resource artifacts written by `/infrakit:implement` (committed alongside the
 
 ## 📚 Core Philosophy
 
-Constraint-Driven IaC is a structured process built on four ideas:
+InfraKit borrows its core philosophy from [spec-kit](https://github.com/github/spec-kit) — capture intent in a structured spec before writing code — and layers four IaC-specific ideas on top:
 
-- **Constraints first** — capture cloud provider standards, naming, tagging, compliance, and security defaults *before* writing any code. Every artifact must honour them.
-- **Multi-persona refinement** — separate the requirements, architecture, security, and implementation roles into distinct personas with distinct vocabularies. One model wearing four hats produces sharper output than one model trying to balance all four at once.
-- **Provider-verified field names** — the IaC Engineer reads official provider docs before writing anything. Hallucinated `aws_db_instance` argument names that look right but cause apply failures are the #1 reason teams stop trusting AI for IaC. CDD makes that class of error structurally impossible.
+- **Standards first** — cloud provider standards, naming, tagging, compliance, and security defaults are captured *before* writing any code (via `/infrakit:setup`). Every downstream artifact must honour them.
+- **Multi-persona refinement** — separate the requirements, architecture, security, and implementation roles into distinct personas with distinct vocabularies. The hypothesis is that one model wearing four hats produces sharper output than one model trying to balance all four at once. *(This is an empirical claim we are still validating; see the [acknowledgements](#-acknowledgements) note.)*
+- **Provider-verified field names** — the IaC Engineer is prompted to read official provider docs before writing anything. Hallucinated `aws_db_instance` argument names that look right but cause apply failures are one of the most common reasons teams stop trusting AI for IaC.
 - **Full audit trail in git** — spec, plan, task list, per-persona reviews, and the final code all land together. Every architectural decision and every compliance waiver is traceable from the resource back to a human approval.
 
 ## 🌟 Development Phases
@@ -363,7 +365,7 @@ Each example contains the `.infrakit/` config, a single track under `.infrakit_t
 ## 📋 Detailed Process
 
 <details>
-<summary>Click to expand the full constraint-driven workflow walkthrough</summary>
+<summary>Click to expand the full spec-driven workflow walkthrough</summary>
 
 ### Step 0 — Bootstrap the project
 
@@ -533,8 +535,8 @@ mv .infrakit/tracks.md .infrakit_tracks/tracks.md
 | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | [Quick Start Guide](./docs/quickstart.md)                      | End-to-end Crossplane workflow walkthrough                                               |
 | [Installation Guide](./docs/installation.md)                   | Detailed installation, upgrades, and corporate-proxy setup                               |
-| [Upgrade Guide](./docs/upgrade.md)                             | How to upgrade the CLI and update project template files                                 |
-| [Constraint-Driven Development](./constraint-driven.md)        | Methodology deep dive: CDD principles and why they work                                  |
+| [Upgrade Guide](./docs/upgrade.md)                              | How to upgrade the CLI and update project template files                                 |
+| [Methodology notes](./constraint-driven.md)                    | Deeper notes on the multi-persona pipeline and how it extends spec-driven development    |
 | [Examples](./examples/)                                        | Full Terraform and Crossplane walkthroughs                                               |
 | [CHANGELOG](./CHANGELOG.md)                                    | Full version history and breaking changes                                                |
 | [CONTRIBUTING](./CONTRIBUTING.md)                              | How to contribute to InfraKit                                                            |

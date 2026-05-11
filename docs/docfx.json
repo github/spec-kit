@@ -58,7 +58,7 @@
     "globalMetadata": {
       "_appTitle": "InfraKit Documentation",
       "_appName": "InfraKit",
-      "_appFooter": "InfraKit - An infrastructure-first toolkit for constraint-driven development",
+      "_appFooter": "InfraKit — spec-kit for IaC, with a multi-persona pipeline",
       "_enableSearch": true,
       "_disableContribution": false,
       "_gitContribute": {

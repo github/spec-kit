@@ -2,11 +2,11 @@
 
 *Build production-ready infrastructure faster.*
 
-**An infrastructure-first toolkit that brings Constraint-Driven Development to IaC — specify what you need, let agents generate it.**
+**spec-kit for IaC, with a multi-persona pipeline — specify what you need, let four AI personas review it, generate the code.**
 
 ## What is InfraKit?
 
-InfraKit applies **Constraint-Driven Development** to Infrastructure as Code. Instead of writing YAML by hand, you describe what infrastructure you need — InfraKit's AI agent workflow produces production-ready manifests through a structured **spec → plan → implement → review** pipeline.
+InfraKit is [spec-kit](https://github.com/github/spec-kit) for infrastructure-as-code. Instead of writing YAML or HCL by hand, you describe what infrastructure you need — InfraKit routes the spec through four specialized personas (Cloud Solutions Engineer → Cloud Architect → Cloud Security Engineer → IaC Engineer), produces a plan, and generates production-ready manifests through a structured **spec → plan → implement → review** pipeline.
 
 Each infrastructure resource gets its own **track** under `.infrakit_tracks/tracks/`, containing the spec, plan, and auto-generated task list. Multiple tracks can run in parallel, and every step is transparent and user-controlled.
 
@@ -21,12 +21,12 @@ InfraKit supports **Crossplane** (Kubernetes-native IaC) and **Terraform** (Hash
 
 ## Core Philosophy
 
-Constraint-Driven Development for infrastructure means:
+The InfraKit pipeline is built on four ideas:
 
-- **Spec before YAML** — define *what* the resource must do before any code is written
+- **Spec before code** — define *what* the resource must do before any HCL or YAML is written
 - **Multi-persona review** — Cloud Solutions Engineer, Cloud Architect, Cloud Security Engineer, and IaC Engineer each own a distinct phase
-- **Never guess schemas** — all `apiVersion` and field names are verified against provider documentation
-- **Standards enforced** — mandatory tagging, Pipeline mode, and `providerConfigRef` baked in from the start
+- **Never guess schemas** — all `apiVersion` / argument names are verified against provider documentation before code is written
+- **Standards enforced** — mandatory tagging, secure defaults, and provider config baked in from the start
 
 ## Development Phases
 
@@ -45,7 +45,6 @@ InfraKit uses four specialized AI personas, each with a distinct scope:
 | **Cloud Architect** | Reviews architecture, reliability, cost | Phase 2 |
 | **Cloud Security Engineer** | Audits against compliance frameworks (SOC2, HIPAA, etc.) | Phase 2.5 |
 | **IaC Engineer** | Implements spec to verified Crossplane/Terraform code | Phase 3 |
-
 
 ## Contributing
 
