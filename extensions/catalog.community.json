@@ -1416,6 +1416,35 @@
       "created_at": "2026-04-28T00:00:00Z",
       "updated_at": "2026-04-28T00:00:00Z"
     },
+    "mde": {
+      "name": "MDE",
+      "id": "mde",
+      "description": "A Spec Kit extension that exposes a minimal model-driven engineering workflow with setup, next, and status commands.",
+      "author": "AI-MDE",
+      "version": "0.5.1",
+      "download_url": "https://github.com/AI-MDE/spec-kit-mde/archive/refs/tags/v0.5.1.zip",
+      "repository": "https://github.com/AI-MDE/spec-kit-mde",
+      "homepage": "https://github.com/AI-MDE/spec-kit-mde",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 1
+      },
+      "tags": [
+        "mde",
+        "model-driven-engineering",
+        "workflow",
+        "process"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-08T00:00:00Z",
+      "updated_at": "2026-05-08T00:00:00Z"
+    },
     "memory-loader": {
       "name": "Memory Loader",
       "id": "memory-loader",
