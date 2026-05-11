@@ -90,6 +90,7 @@ def _build_agent_config() -> dict[str, dict[str, Any]]:
     return config
 
 AGENT_CONFIG = _build_agent_config()
+DEFAULT_INIT_INTEGRATION = "copilot"
 
 AI_ASSISTANT_ALIASES = {
     "kiro": "kiro-cli",
@@ -151,6 +152,9 @@ def _build_ai_deprecation_warning(
         "[bold]--ai[/bold] is deprecated and will no longer be available in version 0.10.0 or later.\n\n"
         f"Use [bold]{replacement}[/bold] instead."
     )
+
+def _stdin_is_interactive() -> bool:
+    return sys.stdin.isatty()
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
@@ -765,6 +769,8 @@ def _install_shared_infra(
     tracker: StepTracker | None = None,
     force: bool = False,
     invoke_separator: str = ".",
+    refresh_managed: bool = False,
+    refresh_hint: str | None = None,
 ) -> bool:
     """Install shared infrastructure files into *project_path*.
 
@@ -776,9 +782,23 @@ def _install_shared_infra(
     placeholders using *invoke_separator* (``"."`` for markdown agents,
     ``"-"`` for skills agents).
 
-    When *force* is ``True``, existing files are overwritten with the
-    latest bundled versions.  When ``False`` (default), only missing
-    files are added and existing ones are skipped.
+    Overwrite policy:
+
+    * ``force=True``  — overwrite every existing file (still skips symlinks
+      to avoid following links outside the project root).
+    * ``refresh_managed=True`` — overwrite only files whose on-disk hash
+      still matches the previously recorded manifest hash (i.e. unmodified
+      files installed by spec-kit). Files with diverging hashes are
+      treated as user customizations and preserved with a warning.
+    * Default — only add missing files; existing ones are skipped.
+
+    *refresh_hint* — caller-supplied rich-text fragment shown after the
+    "Preserved customized files" warning to tell the user which flag/command
+    they should re-run with to overwrite their customizations. Each caller
+    passes the flag that's actually valid in its CLI surface (e.g.
+    ``--refresh-shared-infra`` for ``integration switch``,
+    ``--force`` for ``init``/``integration upgrade``). When ``None``, no
+    remediation hint is printed for customizations.
 
     Returns ``True`` on success.
     """
@@ -791,6 +811,8 @@ def _install_shared_infra(
         console=console,
         force=force,
         invoke_separator=invoke_separator,
+        refresh_managed=refresh_managed,
+        refresh_hint=refresh_hint,
     )
 
 
@@ -800,6 +822,8 @@ def _install_shared_infra_or_exit(
     tracker: StepTracker | None = None,
     force: bool = False,
     invoke_separator: str = ".",
+    refresh_managed: bool = False,
+    refresh_hint: str | None = None,
 ) -> bool:
     try:
         return _install_shared_infra(
@@ -808,6 +832,8 @@ def _install_shared_infra_or_exit(
             tracker=tracker,
             force=force,
             invoke_separator=invoke_separator,
+            refresh_managed=refresh_managed,
+            refresh_hint=refresh_hint,
         )
     except (ValueError, OSError) as exc:
         console.print(f"[red]Error:[/red] Failed to install shared infrastructure: {exc}")
@@ -995,7 +1021,8 @@ def init(
 
     This command will:
     1. Check that required tools are installed (git is optional)
-    2. Let you choose your coding agent integration
+    2. Let you choose your coding agent integration, or default to Copilot
+       in non-interactive sessions
     3. Download template from GitHub (or use bundled assets with --offline)
     4. Initialize a fresh git repository (if not --no-git and no existing repo)
     5. Optionally set up coding agent integration commands
@@ -1162,13 +1189,19 @@ def init(
             console.print(f"[red]Error:[/red] Invalid AI assistant '{ai_assistant}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
             raise typer.Exit(1)
         selected_ai = ai_assistant
+    elif not _stdin_is_interactive():
+        console.print(
+            f"[dim]Non-interactive session detected: defaulting to '{DEFAULT_INIT_INTEGRATION}'. "
+            "Use --integration to choose a different agent.[/dim]"
+        )
+        selected_ai = DEFAULT_INIT_INTEGRATION
     else:
         # Create options dict for selection (agent_key: display_name)
         ai_choices = {key: config["name"] for key, config in AGENT_CONFIG.items()}
         selected_ai = select_with_arrows(
             ai_choices,
             "Choose your coding agent integration:",
-            "copilot"
+            DEFAULT_INIT_INTEGRATION,
         )
 
     # Auto-promote interactively selected agents to the integration path
@@ -1233,7 +1266,7 @@ def init(
     else:
         default_script = "ps" if os.name == "nt" else "sh"
 
-        if sys.stdin.isatty():
+        if _stdin_is_interactive():
             selected_script = select_with_arrows(SCRIPT_TYPE_CHOICES, "Choose script type (or press Enter)", default_script)
         else:
             selected_script = default_script
@@ -1751,22 +1784,14 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     On anything else — including a malformed response body — the exception
     propagates; there is no catch-all (research D-006).
     """
-    req = urllib.request.Request(
-        GITHUB_API_LATEST,
-        headers={"Accept": "application/vnd.github+json"},
-    )
-    token = None
-    for env_var in ("GH_TOKEN", "GITHUB_TOKEN"):
-        candidate = os.environ.get(env_var)
-        if candidate is not None:
-            candidate = candidate.strip()
-            if candidate:
-                token = candidate
-                break
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
+    from .authentication.http import open_url
+
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with open_url(
+            GITHUB_API_LATEST,
+            timeout=5,
+            extra_headers={"Accept": "application/vnd.github+json"},
+        ) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
             tag = payload.get("tag_name")
             if not isinstance(tag, str) or not tag:
@@ -1775,7 +1800,9 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     except urllib.error.HTTPError as e:
         # Order matters: HTTPError is a subclass of URLError.
         if e.code == 403:
-            return None, "rate limited (try setting GH_TOKEN or GITHUB_TOKEN)"
+            return None, (
+                "rate limited (configure ~/.specify/auth.json with a GitHub token)"
+            )
         return None, f"HTTP {e.code}"
     except (urllib.error.URLError, OSError):
         return None, "offline or timeout"
@@ -2578,7 +2605,8 @@ def integration_uninstall(
 def integration_switch(
     target: str = typer.Argument(help="Integration key to switch to"),
     script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
-    force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall"),
+    force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall of the previous integration"),
+    refresh_shared_infra: bool = typer.Option(False, "--refresh-shared-infra", help="Also overwrite shared infrastructure files even if you customized them (otherwise customizations are preserved)"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the target integration'),
 ):
     """Switch from the current integration to a different one."""
@@ -2749,13 +2777,26 @@ def integration_switch(
         target_integration, current, target, integration_options
     )
 
-    # Ensure shared infrastructure is present (safe to run unconditionally;
-    # _install_shared_infra merges missing files without overwriting).
+    # Refresh shared infrastructure to the current CLI version. Switching
+    # integrations is exactly when stale vendored shared scripts (e.g.
+    # update-agent-context.sh that pre-dates the target integration's
+    # supported-agent list) would silently break the new integration.
+    #
+    # Use refresh_managed=True so only files that match their previously
+    # recorded hash are overwritten — user customizations are detected via
+    # hash divergence and preserved with a warning. Pass
+    # --refresh-shared-infra to overwrite customizations as well. See #2293.
     _install_shared_infra_or_exit(
         project_root,
         selected_script,
+        force=refresh_shared_infra,
+        refresh_managed=True,
         invoke_separator=_invoke_separator_for_integration(
             target_integration, current, target, parsed_options
+        ),
+        refresh_hint=(
+            "To overwrite customizations, re-run with "
+            "[cyan]specify integration switch ... --refresh-shared-infra[/cyan]."
         ),
     )
     if os.name != "nt":
@@ -3370,7 +3411,9 @@ def preset_add(
             with tempfile.TemporaryDirectory() as tmpdir:
                 zip_path = Path(tmpdir) / "preset.zip"
                 try:
-                    with urllib.request.urlopen(from_url, timeout=60) as response:
+                    from specify_cli.authentication.http import open_url as _open_url
+
+                    with _open_url(from_url, timeout=60) as response:
                         zip_path.write_bytes(response.read())
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
@@ -4274,7 +4317,9 @@ def extension_add(
                 zip_path = download_dir / f"{extension}-url-download.zip"
 
                 try:
-                    with urllib.request.urlopen(from_url, timeout=60) as response:
+                    from specify_cli.authentication.http import open_url as _open_url
+
+                    with _open_url(from_url, timeout=60) as response:
                         zip_data = response.read()
                     zip_path.write_bytes(zip_data)
 
@@ -5489,7 +5534,7 @@ def workflow_add(
     if source.startswith("http://") or source.startswith("https://"):
         from ipaddress import ip_address
         from urllib.parse import urlparse
-        from urllib.request import urlopen  # noqa: S310
+        from specify_cli.authentication.http import open_url as _open_url
 
         parsed_src = urlparse(source)
         src_host = parsed_src.hostname or ""
@@ -5506,7 +5551,7 @@ def workflow_add(
 
         import tempfile
         try:
-            with urlopen(source, timeout=30) as resp:  # noqa: S310
+            with _open_url(source, timeout=30) as resp:
                 final_url = resp.geturl()
                 final_parsed = urlparse(final_url)
                 final_host = final_parsed.hostname or ""
@@ -5602,10 +5647,10 @@ def workflow_add(
     workflow_file = workflow_dir / "workflow.yml"
 
     try:
-        from urllib.request import urlopen  # noqa: S310 — URL comes from catalog
+        from specify_cli.authentication.http import open_url as _open_url
 
         workflow_dir.mkdir(parents=True, exist_ok=True)
-        with urlopen(workflow_url, timeout=30) as response:  # noqa: S310
+        with _open_url(workflow_url, timeout=30) as response:
             # Validate final URL after redirects
             final_url = response.geturl()
             final_parsed = urlparse(final_url)
@@ -5806,7 +5851,7 @@ def workflow_catalog_list():
     """List configured workflow catalog sources."""
     from .workflows.catalog import WorkflowCatalog, WorkflowCatalogError
 
-    project_root = Path.cwd()
+    project_root = _require_specify_project()
     catalog = WorkflowCatalog(project_root)
 
     try:

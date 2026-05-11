@@ -5,7 +5,6 @@ from pathlib import Path
 from specify_cli import AGENT_CONFIG, AI_ASSISTANT_ALIASES, AI_ASSISTANT_HELP
 from specify_cli.extensions import CommandRegistrar
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -199,3 +198,88 @@ class TestAgentConfigConsistency:
     def test_ai_help_includes_goose(self):
         """CLI help text for --ai should include goose."""
         assert "goose" in AI_ASSISTANT_HELP
+
+    # --- invoke_separator propagation checks ---
+
+    def test_skills_agents_have_hyphen_invoke_separator_in_agent_configs(self):
+        """Skills-based agents must expose invoke_separator='-' in AGENT_CONFIGS.
+
+        SkillsIntegration sets ``invoke_separator = "-"`` as a class attribute,
+        but individual skills integrations (claude, codex, …) do not repeat it in
+        their ``registrar_config`` dicts. ``_build_agent_configs()`` must
+        propagate the class attribute so that ``register_commands()`` resolves
+        ``__SPECKIT_COMMAND_*__`` tokens with the correct hyphen separator.
+        """
+        cfg = CommandRegistrar.AGENT_CONFIGS
+        skills_agents = [
+            key for key, c in cfg.items() if c.get("extension") == "/SKILL.md"
+        ]
+        assert skills_agents, (
+            "Expected at least one skills-based agent in AGENT_CONFIGS"
+        )
+        for agent in skills_agents:
+            assert cfg[agent].get("invoke_separator") == "-", (
+                f"Skills agent '{agent}' has invoke_separator="
+                f"{cfg[agent].get('invoke_separator')!r} in AGENT_CONFIGS; "
+                "expected '-' (propagated from SkillsIntegration.invoke_separator)"
+            )
+
+    def test_skills_agent_command_token_resolves_with_hyphen(self, tmp_path):
+        """__SPECKIT_COMMAND_*__ tokens in extension commands resolve to /speckit-<cmd>
+        when registered for a skills-based agent (e.g. claude).
+
+        Regression guard: before the fix, _build_agent_configs() did not
+        propagate invoke_separator from the integration class, so
+        register_commands() fell back to '.' and emitted /speckit.specify instead
+        of /speckit-specify for skills agents.
+        """
+        import re
+        from pathlib import Path
+
+        from specify_cli.agents import CommandRegistrar
+
+        repo_root = Path(__file__).resolve().parent.parent
+        ext_dir = repo_root / "extensions" / "git"
+        cmd_source = ext_dir / "commands" / "speckit.git.feature.md"
+        assert cmd_source.exists(), (
+            f"Git extension command source not found at {cmd_source}"
+        )
+        assert "__SPECKIT_COMMAND_SPECIFY__" in cmd_source.read_text(
+            encoding="utf-8"
+        ), (
+            "Expected __SPECKIT_COMMAND_SPECIFY__ token in speckit.git.feature.md; "
+            "check that the file uses the token rather than a hard-coded ref."
+        )
+
+        registrar = CommandRegistrar()
+        commands = [
+            {"name": "speckit.git.feature", "file": "commands/speckit.git.feature.md"}
+        ]
+
+        registered = registrar.register_commands(
+            "claude",
+            commands,
+            "git",
+            ext_dir,
+            tmp_path,
+        )
+
+        assert "speckit.git.feature" in registered
+        skill_file = (
+            tmp_path / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md"
+        )
+        assert skill_file.exists(), (
+            f"Expected Claude skill file not found at {skill_file}"
+        )
+        content = skill_file.read_text(encoding="utf-8")
+        assert "/speckit-specify" in content, (
+            "Expected '/speckit-specify' (hyphen) in generated Claude skill for git.feature; "
+            "__SPECKIT_COMMAND_SPECIFY__ was not resolved with the correct separator."
+        )
+        # Negative lookbehind (?<![a-zA-Z0-9_]) excludes file-path occurrences
+        # such as 'source: git:commands/speckit.git.feature.md' in frontmatter,
+        # where the '/' is a path separator preceded by a word character.
+        assert not re.search(r"(?<![a-zA-Z0-9_])/speckit\.[a-z]", content), (
+            "Found dot-notation command ref (/speckit.<cmd>) in generated Claude skill. "
+            "Skills agents must use hyphen notation."
+        )

@@ -95,11 +95,18 @@ body:
     validations:
       required: true
 
+  - type: input
+    id: required-extensions
+    attributes:
+      label: Required Extensions (optional)
+      description: Comma-separated list of required extension IDs (e.g., aide)
+      placeholder: "e.g., aide, canon"
+
   - type: textarea
     id: templates-provided
     attributes:
       label: Templates Provided
-      description: List the template overrides your preset provides
+      description: List the template overrides your preset provides (enter "None" if command-only)
       placeholder: |
         - spec-template.md — adds compliance section
         - plan-template.md — includes audit checkpoints
@@ -110,10 +117,19 @@ body:
   - type: textarea
     id: commands-provided
     attributes:
-      label: Commands Provided (optional)
-      description: List any command overrides your preset provides
+      label: Commands Provided
+      description: List the command overrides your preset provides (enter "None" if template-only)
       placeholder: |
         - speckit.specify.md — customized for compliance workflows
+    validations:
+      required: true
+
+  - type: input
+    id: scripts-count
+    attributes:
+      label: Number of Scripts (optional)
+      description: How many scripts does your preset provide? (leave empty if none)
+      placeholder: "e.g., 1"
 
   - type: textarea
     id: tags

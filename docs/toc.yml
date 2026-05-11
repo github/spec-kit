@@ -11,6 +11,8 @@
       href: quickstart.md
     - name: Upgrade
       href: upgrade.md
+    - name: Install uv
+      href: install/uv.md
 
 # Reference
 - name: Reference

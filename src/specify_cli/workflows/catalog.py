@@ -322,7 +322,7 @@ class WorkflowCatalog:
 
         # Fetch from URL — validate scheme before opening and after redirects
         from urllib.parse import urlparse
-        from urllib.request import urlopen
+        from specify_cli.authentication.http import open_url as _open_url
 
         def _validate_catalog_url(url: str) -> None:
             parsed = urlparse(url)
@@ -337,7 +337,7 @@ class WorkflowCatalog:
         _validate_catalog_url(entry.url)
 
         try:
-            with urlopen(entry.url, timeout=30) as resp:  # noqa: S310
+            with _open_url(entry.url, timeout=30) as resp:
                 _validate_catalog_url(resp.geturl())
                 data = json.loads(resp.read().decode("utf-8"))
         except Exception as exc:
