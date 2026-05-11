@@ -12,13 +12,13 @@ This transformation is now possible because AI can understand and implement comp
 
 In this new world, maintaining software means evolving specifications. The intent of the development team is expressed in natural language ("**intent-driven development**"), design assets, core principles and other guidelines. The **lingua franca** of development moves to a higher level, and code is the last-mile approach.
 
-Debugging means fixing specifications and their implementation plans that generate incorrect code. Refactoring means restructuring for clarity. The entire development workflow reorganizes around specifications as the central source of truth, with implementation plans and code as the continuously regenerated output. Updating apps with new features or creating a new parallel implementation because we are creative beings, means revisiting the specification and creating new implementation plans. This process is therefore a 0 -> 1, (1', ..), 2, 3, N.
+Debugging means fixing specifications and their implementation plans that generate incorrect code. Refactoring means restructuring for clarity. The entire development process reorganizes around specifications as the central source of truth, with implementation plans and code as the continuously regenerated output. Updating apps with new features or creating a new parallel implementation because we are creative beings, means revisiting the specification and creating new implementation plans. This process is therefore a 0 -> 1, (1', ..), 2, 3, N.
 
 The development team focuses in on their creativity, experimentation, their critical thinking.
 
 ## The SDD Process in Practice
 
-The workflow begins with an idea—often vague and incomplete. Through iterative dialogue with AI, this idea becomes a comprehensive PRD. The AI asks clarifying questions, identifies edge cases, and helps define precise acceptance criteria. What might take days of meetings and documentation in traditional development happens in hours of focused specification work. This transforms the traditional SDLC—requirements and design become continuous activities rather than discrete phases. This is supportive of a **team process**, where team-reviewed specifications are expressed, versioned, reviewed, and accepted.
+The process begins with an idea—often vague and incomplete. Through iterative dialogue with AI, this idea becomes a comprehensive PRD. The AI asks clarifying questions, identifies edge cases, and helps define precise acceptance criteria. What might take days of meetings and documentation in traditional development happens in hours of focused specification work. This transforms the traditional SDLC—requirements and design become continuous activities rather than discrete phases. This is supportive of a **team process**, where team-reviewed specifications are expressed, versioned, reviewed, and accepted.
 
 When a product manager updates acceptance criteria, implementation plans automatically flag affected technical decisions. When an architect discovers a better pattern, the PRD updates to reflect new possibilities.
 
@@ -42,7 +42,7 @@ Third, the pace of change accelerates. Requirements change far more rapidly toda
 
 SDD can support what-if/simulation experiments: "If we need to re-implement or change the application to promote a business need to sell more T-shirts, how would we implement and experiment for that?"
 
-SDD transforms requirement changes from obstacles into normal workflow. When specifications drive implementation, pivots become systematic regenerations rather than manual rewrites. Change a core requirement in the PRD, and affected implementation plans update automatically. Modify a user story, and corresponding API endpoints regenerate. This isn't just about initial development—it's about maintaining engineering velocity through inevitable changes.
+SDD transforms requirement changes from obstacles into normal process. When specifications drive implementation, pivots become systematic regenerations rather than manual rewrites. Change a core requirement in the PRD, and affected implementation plans update automatically. Modify a user story, and corresponding API endpoints regenerate. This isn't just about initial development—it's about maintaining engineering velocity through inevitable changes.
 
 ## Core Principles
 
@@ -65,14 +65,14 @@ Today, practicing SDD requires assembling existing tools and maintaining discipl
 - AI assistants for iterative specification development
 - Research agents for gathering technical context
 - Code generation tools for translating specifications to implementation
-- Version control systems adapted for specification-first workflows
+- Version control systems adapted for specification-first processes
 - Consistency checking through AI analysis of specification documents
 
 The key is treating specifications as the source of truth, with code as the generated output that serves the specification rather than the other way around.
 
 ## Streamlining SDD with Commands
 
-The SDD methodology is significantly enhanced through three powerful commands that automate the specification → planning → tasking workflow:
+The SDD methodology is significantly enhanced through three powerful commands that automate the specification → planning → tasking process:
 
 ### The `/speckit.specify` Command
 
@@ -104,7 +104,7 @@ After a plan is created, this command analyzes the plan and related design docum
 
 ### Example: Building a Chat Feature
 
-Here's how these commands transform the traditional development workflow:
+Here's how these commands transform the traditional development process:
 
 **Traditional Approach:**
 
@@ -356,7 +356,7 @@ Governance MUST ensure:
 - Implementation gaps are addressed through specifications, not through untracked code changes
 ```
 
-This article ensures that governance is not static and that specifications remain the authoritative source. When a gap or requirement emerges during implementation, teams may create a new specification, update an existing one, or regenerate derived artifacts—whichever approach fits their workflow—as long as the specification continues to drive implementation rather than the reverse.
+This article ensures that governance is not static and that specifications remain the authoritative source. When a gap or requirement emerges during implementation, teams may create a new specification, update an existing one, or regenerate derived artifacts—whichever approach fits their process—as long as the specification continues to drive implementation rather than the reverse.
 
 The constitution follows semantic versioning—major for removed or redefined principles, minor for additions, patch for clarifications. Specifications must be versioned and reviewable before acceptance. Together, these practices create an auditable trail of architectural and product decisions.
 
