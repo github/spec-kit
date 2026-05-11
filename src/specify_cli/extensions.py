@@ -357,6 +357,11 @@ class ExtensionManifest:
         """Get hook definitions."""
         return self.data.get("hooks", {})
 
+    @property
+    def cost_profile(self) -> Dict[str, Any]:
+        """Get cost profile metadata (optional — returns empty dict if absent)."""
+        return self.data.get("cost_profile", {})
+
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
         with open(self.path, 'rb') as f:
@@ -1519,7 +1524,8 @@ class ExtensionManager:
                     "priority": normalize_priority(metadata.get("priority")),
                     "installed_at": metadata.get("installed_at"),
                     "command_count": len(manifest.commands),
-                    "hook_count": len(manifest.hooks)
+                    "hook_count": len(manifest.hooks),
+                    "cost_profile": manifest.cost_profile,
                 })
             except ValidationError:
                 # Corrupted extension

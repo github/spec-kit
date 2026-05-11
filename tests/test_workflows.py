@@ -1047,12 +1047,27 @@ class TestFanOutStep:
         config = {
             "id": "parallel",
             "items": "{{ steps.tasks.output.task_list }}",
-            "max_concurrency": 3,
+            "max_parallel": 3,
             "step": {"id": "impl", "command": "speckit.implement"},
         }
         result = step.execute(config, ctx)
         assert result.output["item_count"] == 2
-        assert result.output["max_concurrency"] == 3
+        assert result.output["max_parallel"] == 3
+
+    def test_execute_max_concurrency_alias(self):
+        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.base import StepContext
+
+        step = FanOutStep()
+        ctx = StepContext()
+        config = {
+            "id": "parallel",
+            "items": "[]",
+            "max_concurrency": 5,  # deprecated alias
+            "step": {"id": "impl", "command": "speckit.implement"},
+        }
+        result = step.execute(config, ctx)
+        assert result.output["max_parallel"] == 5
 
     def test_execute_non_list_items_resolves_empty(self):
         from specify_cli.workflows.steps.fan_out import FanOutStep
@@ -1087,6 +1102,18 @@ class TestFanOutStep:
             "step": "not-a-dict",
         })
         assert any("'step' must be a mapping" in e for e in errors)
+
+    def test_validate_max_parallel_invalid(self):
+        from specify_cli.workflows.steps.fan_out import FanOutStep
+
+        step = FanOutStep()
+        errors = step.validate({
+            "id": "test",
+            "items": "{{ x }}",
+            "step": {"id": "impl", "command": "speckit.implement"},
+            "max_parallel": 0,
+        })
+        assert any("must be a positive integer" in e for e in errors)
 
 
 class TestFanInStep:
@@ -1843,3 +1870,143 @@ steps:
         assert state.status == RunStatus.COMPLETED
         assert "do-plan" in state.step_results
         assert "do-specify" not in state.step_results
+
+
+class TestBudgetGateStep:
+    """Test the budget-gate step type."""
+
+    def test_ok_below_threshold(self):
+        from specify_cli.workflows.steps.budget_gate import BudgetGateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = BudgetGateStep()
+        ctx = StepContext()
+        config = {
+            "id": "budget",
+            "threshold_usd": 10.0,
+            "current_spend_usd": 5.0,
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["status"] == "ok"
+        assert result.output["pct_used"] == 50.0
+
+    def test_warning_at_eighty_percent(self):
+        from specify_cli.workflows.steps.budget_gate import BudgetGateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = BudgetGateStep()
+        ctx = StepContext()
+        config = {
+            "id": "budget",
+            "threshold_usd": 10.0,
+            "current_spend_usd": 8.5,  # 85% — above 80% warning threshold
+            "on_warning": "continue",
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["status"] == "warning"
+        assert result.output["pct_used"] == 85.0
+
+    def test_exceeded_aborts(self):
+        from specify_cli.workflows.steps.budget_gate import BudgetGateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = BudgetGateStep()
+        ctx = StepContext()
+        config = {
+            "id": "budget",
+            "threshold_usd": 10.0,
+            "current_spend_usd": 12.0,  # 120% — exceeded
+            "on_exceeded": "abort",
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.FAILED
+        assert result.output["status"] == "exceeded"
+        assert result.error is not None
+        assert "exceeded" in result.error
+
+    def test_exceeded_pauses(self):
+        from specify_cli.workflows.steps.budget_gate import BudgetGateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = BudgetGateStep()
+        ctx = StepContext()
+        config = {
+            "id": "budget",
+            "threshold_usd": 10.0,
+            "current_spend_usd": 11.0,
+            "on_exceeded": "pause",
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.PAUSED
+        assert result.output["status"] == "exceeded"
+
+    def test_zero_threshold_always_ok(self):
+        from specify_cli.workflows.steps.budget_gate import BudgetGateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = BudgetGateStep()
+        ctx = StepContext()
+        config = {
+            "id": "budget",
+            "threshold_usd": 0,
+            "current_spend_usd": 999.0,
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["status"] == "ok"
+
+    def test_expression_resolution(self):
+        from specify_cli.workflows.steps.budget_gate import BudgetGateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = BudgetGateStep()
+        ctx = StepContext(
+            steps={"tracker": {"output": {"total_spend": 3.5}}}
+        )
+        config = {
+            "id": "budget",
+            "threshold_usd": 10.0,
+            "current_spend_usd": "{{ steps.tracker.output.total_spend }}",
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["current_spend_usd"] == 3.5
+
+    def test_validate_missing_fields(self):
+        from specify_cli.workflows.steps.budget_gate import BudgetGateStep
+
+        step = BudgetGateStep()
+        errors = step.validate({"id": "budget"})
+        assert any("threshold_usd" in e for e in errors)
+        assert any("current_spend_usd" in e for e in errors)
+
+    def test_validate_invalid_on_warning(self):
+        from specify_cli.workflows.steps.budget_gate import BudgetGateStep
+
+        step = BudgetGateStep()
+        errors = step.validate({
+            "id": "budget",
+            "threshold_usd": 10.0,
+            "current_spend_usd": 5.0,
+            "on_warning": "explode",
+        })
+        assert any("on_warning" in e for e in errors)
+
+    def test_validate_invalid_on_exceeded(self):
+        from specify_cli.workflows.steps.budget_gate import BudgetGateStep
+
+        step = BudgetGateStep()
+        errors = step.validate({
+            "id": "budget",
+            "threshold_usd": 10.0,
+            "current_spend_usd": 5.0,
+            "on_exceeded": "ignore",
+        })
+        assert any("on_exceeded" in e for e in errors)
+
+    def test_registered_in_step_registry(self):
+        from specify_cli.workflows import STEP_REGISTRY
+
+        assert "budget-gate" in STEP_REGISTRY

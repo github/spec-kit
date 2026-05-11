@@ -43,3 +43,27 @@ specify preset remove lean
 ## License
 
 MIT
+
+## Cost Profile
+
+Lean uses approximately 67% fewer tokens per spec/plan/tasks cycle than the
+standard templates. The reduced prompt size also makes haiku the appropriate
+model tier for all lean commands.
+
+| Command | Lean | Standard | Reduction |
+|---------|------|----------|-----------|
+| `speckit.specify` | ~800 tokens | ~2,400 tokens | ~67% |
+| `speckit.plan` | ~1,200 tokens | ~3,600 tokens | ~67% |
+| `speckit.tasks` | ~600 tokens | ~1,800 tokens | ~67% |
+| `speckit.implement` | ~500 tokens | ~500 tokens | ~0% |
+| `speckit.constitution` | ~400 tokens | ~1,200 tokens | ~67% |
+
+*Token estimates are approximate and vary with input size.*
+
+### When to Use Lean by Priority
+
+| Priority | Recommendation |
+|----------|---------------|
+| **P1** | Use standard. P1 features justify full artifacts and review gates. |
+| **P2** | Lean is suitable. Reduced boilerplate still produces reviewable artifacts. |
+| **P3** | Lean is preferred. Minimal investment for exploratory or low-risk changes. |

@@ -28,6 +28,17 @@
 [PRINCIPLE_5_DESCRIPTION]
 <!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
 
+### VI. Economic Efficiency
+
+Every AI-assisted workflow step must declare its model tier and token budget
+before execution. Use the lowest-cost model tier (haiku) by default; justify
+in writing any step that requires sonnet or opus. Fan-out operations must cap
+parallel invocations to `max_parallel: 3` unless a higher limit is approved
+in the plan. LLM spend against each feature is tracked against the approved
+budget in the spec's Cost Allocation section; the feature is paused for
+budget review if actual spend reaches 80% of approved before implementation
+is complete.
+
 ## [SECTION_2_NAME]
 <!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
 

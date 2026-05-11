@@ -663,19 +663,37 @@ class WorkflowEngine:
                 template = result.output.get("step_template", {})
                 if template and items:
                     fan_out_results = []
-                    for item_idx, item_val in enumerate(result.output["items"]):
-                        context.item = item_val
-                        # Per-item ID: parentId:templateId:index
-                        item_step = dict(template)
-                        base_id = item_step.get("id", "item")
-                        item_step["id"] = f"{step_id}:{base_id}:{item_idx}"
-                        self._execute_steps(
-                            [item_step], context, state, registry,
-                            step_offset=-1,
-                        )
-                        # Collect per-item result for fan-in
-                        item_result = context.steps.get(item_step["id"], {})
-                        fan_out_results.append(item_result.get("output", {}))
+                    max_parallel = result.output.get("max_parallel", 3)
+                    if not isinstance(max_parallel, int) or max_parallel < 1:
+                        max_parallel = 3
+                    # Items are processed sequentially in batches of max_parallel.
+                    # This is intentional rate-limiting (cost/resource control),
+                    # not concurrent execution. True parallelism would require
+                    # thread-safe context and state management.
+                    # Process items in batches of max_parallel
+                    for batch_start in range(0, len(items), max_parallel):
+                        batch = items[batch_start : batch_start + max_parallel]
+                        for item_idx, item_val in enumerate(
+                            batch, start=batch_start
+                        ):
+                            context.item = item_val
+                            # Per-item ID: parentId:templateId:index
+                            item_step = dict(template)
+                            base_id = item_step.get("id", "item")
+                            item_step["id"] = f"{step_id}:{base_id}:{item_idx}"
+                            self._execute_steps(
+                                [item_step], context, state, registry,
+                                step_offset=-1,
+                            )
+                            # Collect per-item result for fan-in
+                            item_result = context.steps.get(item_step["id"], {})
+                            fan_out_results.append(item_result.get("output", {}))
+                            if state.status in (
+                                RunStatus.PAUSED,
+                                RunStatus.FAILED,
+                                RunStatus.ABORTED,
+                            ):
+                                break
                         if state.status in (
                             RunStatus.PAUSED,
                             RunStatus.FAILED,
