@@ -4907,11 +4907,21 @@ def extension_update(
                 # Use backup_hooks=None to indicate config had no "hooks" key (don't create on restore)
                 # Use backup_hooks={} to indicate config had "hooks" key with no hooks for this extension
                 config = hook_executor.get_project_config()
-                backup_installed = config.get("installed")
+                
+                # Defensive: ensure config is a dict (Review Feedback)
+                if not isinstance(config, dict):
+                    config = {}
+                
+                # Sentinel for missing key (Review Feedback)
+                MISSING = object()
+                backup_installed = config.get("installed", MISSING)
+                
                 if "hooks" in config:
                     backup_hooks = {}  # Config has hooks key - preserve this fact
                     for hook_name, hook_list in config["hooks"].items():
-                        ext_hooks = [h for h in hook_list if h.get("extension") == extension_id]
+                        if not isinstance(hook_list, list):
+                            continue
+                        ext_hooks = [h for h in hook_list if isinstance(h, dict) and h.get("extension") == extension_id]
                         if ext_hooks:
                             backup_hooks[hook_name] = ext_hooks
 
@@ -5098,10 +5108,23 @@ def extension_update(
                             hook_executor.save_project_config(config)
 
                     # Restore installed list in extensions.yml
-                    if backup_installed is not None:
+                    if backup_installed is not MISSING:
                         config = hook_executor.get_project_config()
-                        config["installed"] = backup_installed
+                        if not isinstance(config, dict):
+                            config = {}
+                        
+                        if backup_installed is None:
+                            # Original was present but null
+                            config["installed"] = None
+                        else:
+                            config["installed"] = backup_installed
                         hook_executor.save_project_config(config)
+                    else:
+                        # Original was missing entirely
+                        config = hook_executor.get_project_config()
+                        if isinstance(config, dict) and "installed" in config:
+                            del config["installed"]
+                            hook_executor.save_project_config(config)
 
                     # Restore registry entry (use restore() since entry was removed)
                     if backup_registry_entry:

@@ -423,3 +423,34 @@ class TestExtensionRegistration:
         
         config = executor.get_project_config()
         assert config["installed"] == []
+
+    def test_unregister_extension_scalar_root(self, project_dir):
+        """Hardening: unregister_extension should handle scalar root config."""
+        executor = HookExecutor(project_dir)
+        config_path = project_dir / ".specify" / "extensions.yml"
+        
+        config_path.write_text(yaml.dump(123))
+        
+        # Should not crash and should normalize to {}
+        executor.unregister_extension("any-ext")
+        
+        config = executor.get_project_config()
+        assert isinstance(config, dict)
+        assert config["installed"] == []
+
+    def test_unregister_hooks_scalar_hook_values(self, project_dir):
+        """Regression: unregister_hooks() must handle scalar hook event values."""
+        executor = HookExecutor(project_dir)
+        config_path = project_dir / ".specify" / "extensions.yml"
+        
+        config_path.write_text(yaml.dump({
+            "installed": ["some-ext"],
+            "hooks": {"after_tasks": 123}
+        }))
+        
+        # Should not raise TypeError when iterating
+        executor.unregister_hooks("some-ext")
+        
+        config = executor.get_project_config()
+        assert "some-ext" not in config["installed"]
+        assert "after_tasks" not in config["hooks"]

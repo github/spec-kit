@@ -2553,7 +2553,7 @@ class HookExecutor:
         config = self.get_project_config()
 
         if not isinstance(config, dict):
-            return
+            config = {}
 
         # Load existing installed list, defaulting to [] if missing or corrupted
         raw_installed = config.get("installed")
@@ -2656,6 +2656,9 @@ class HookExecutor:
         config = self.get_project_config()
 
         if not isinstance(config, dict):
+            config = {}
+            # We don't save yet, as there are no hooks to unregister, 
+            # but unregister_extension above might have already saved a normalized config.
             return
 
         if "hooks" not in config or not isinstance(config["hooks"], dict):
