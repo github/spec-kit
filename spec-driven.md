@@ -18,7 +18,7 @@ The development team focuses in on their creativity, experimentation, their crit
 
 ## The SDD Workflow in Practice
 
-The workflow begins with an idea—often vague and incomplete. Through iterative dialogue with AI, this idea becomes a comprehensive PRD. The AI asks clarifying questions, identifies edge cases, and helps define precise acceptance criteria. What might take days of meetings and documentation in traditional development happens in hours of focused specification work. This transforms the traditional SDLC—requirements and design become continuous activities rather than discrete phases. This is supportive of a **team process**, where team-reviewed specifications are expressed and versioned, created in branches, and merged.
+The workflow begins with an idea—often vague and incomplete. Through iterative dialogue with AI, this idea becomes a comprehensive PRD. The AI asks clarifying questions, identifies edge cases, and helps define precise acceptance criteria. What might take days of meetings and documentation in traditional development happens in hours of focused specification work. This transforms the traditional SDLC—requirements and design become continuous activities rather than discrete phases. This is supportive of a **team process**, where team-reviewed specifications are expressed, versioned, reviewed, and accepted.
 
 When a product manager updates acceptance criteria, implementation plans automatically flag affected technical decisions. When an architect discovers a better pattern, the PRD updates to reflect new possibilities.
 
@@ -149,7 +149,7 @@ In 15 minutes, you have:
 - A detailed implementation plan with technology choices and rationale
 - API contracts and data models ready for code generation
 - Comprehensive test scenarios for both automated and manual testing
-- All documents properly versioned in a feature branch
+- All documents properly versioned and reviewable
 
 ### The Power of Structured Automation
 
@@ -273,7 +273,7 @@ The templates transform the LLM from a creative writer into a disciplined specif
 
 ## The Constitutional Foundation: Enforcing Architectural Discipline
 
-At the heart of SDD lies a constitution—a set of immutable principles that govern how specifications become code. The constitution (`memory/constitution.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
+At the heart of SDD lies a constitution—a set of governing principles that define how specifications become code. The constitution acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
 
 ### The Nine Articles of Development
 
@@ -413,9 +413,9 @@ The implementation plan template operationalizes these articles through concrete
 
 These gates act as compile-time checks for architectural principles. The LLM cannot proceed without either passing the gates or documenting justified exceptions in the "Complexity Tracking" section.
 
-### The Power of Immutable Principles
+### The Power of Governing Principles
 
-The constitution's power lies in its immutability. While implementation details can evolve, the core principles remain constant. This provides:
+The constitution's power lies in its stability. While implementation details can evolve freely, changes to core principles require deliberate governance—explicit rationale, review, and versioning. This provides:
 
 1. **Consistency Across Time**: Code generated today follows the same principles as code generated next year
 2. **Consistency Across LLMs**: Different AI models produce architecturally compatible code
@@ -424,7 +424,7 @@ The constitution's power lies in its immutability. While implementation details 
 
 ### Constitutional Evolution
 
-While principles are immutable, their application can evolve:
+While principles are stable, both their application and the principles themselves can evolve through a governed process:
 
 ```text
 Section 4.2: Amendment Process
