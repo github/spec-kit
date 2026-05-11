@@ -6006,7 +6006,7 @@ def workflow_step_add(
             raise typer.Exit(1)
 
     from urllib.parse import urlparse
-    from urllib.request import urlopen
+    from specify_cli.authentication.http import open_url as _open_url
 
     def _safe_fetch(url: str) -> bytes:
         parsed = urlparse(url)
@@ -6015,7 +6015,7 @@ def workflow_step_add(
             raise ValueError(f"Refusing to fetch from non-HTTPS URL: {url}")
         if not parsed.hostname:
             raise ValueError(f"Refusing to fetch from URL with no hostname: {url}")
-        with urlopen(url, timeout=30) as resp:  # noqa: S310
+        with _open_url(url, timeout=30) as resp:
             final_url = resp.geturl()
             final_parsed = urlparse(final_url)
             final_is_localhost = final_parsed.hostname in ("localhost", "127.0.0.1", "::1")

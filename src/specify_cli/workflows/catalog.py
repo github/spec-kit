@@ -858,7 +858,7 @@ class StepCatalog:
                 pass
 
         from urllib.parse import urlparse
-        from urllib.request import urlopen
+        from specify_cli.authentication.http import open_url as _open_url
 
         def _validate_url(url: str) -> None:
             parsed = urlparse(url)
@@ -877,7 +877,7 @@ class StepCatalog:
         _validate_url(entry.url)
 
         try:
-            with urlopen(entry.url, timeout=30) as resp:  # noqa: S310
+            with _open_url(entry.url, timeout=30) as resp:
                 _validate_url(resp.geturl())
                 data = json.loads(resp.read().decode("utf-8"))
         except Exception as exc:
