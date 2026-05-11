@@ -358,3 +358,20 @@ class TestExtensionRegistration:
         assert isinstance(config["hooks"]["after_tasks"], list)
         assert any(h["extension"] == "new-ext" for h in config["hooks"]["after_tasks"])
 
+    def test_register_extension_already_present_in_corrupted_list(self, project_dir):
+        """Regression: if extension is already present but list has non-strings, it must still be sanitized."""
+        executor = HookExecutor(project_dir)
+
+        # Extension is present, but list has garbage
+        config_path = project_dir / ".specify" / "extensions.yml"
+        config_path.write_text(yaml.dump({"installed": [1, "test-ext", True]}))
+
+        # This should trigger sanitization and save, even though "test-ext" is already there
+        executor.register_extension("test-ext")
+
+        config = executor.get_project_config()
+        assert config["installed"] == ["test-ext"]
+        # Verify it was actually saved to disk
+        raw_config = yaml.safe_load(config_path.read_text())
+        assert raw_config["installed"] == ["test-ext"]
+

@@ -2518,18 +2518,19 @@ class HookExecutor:
         if not isinstance(installed, list):
             installed = []
         
+        # Capture original state to check for changes (Feedback from review)
+        original_installed = list(installed)
+        
+        # Sanitize: keep only strings
         sanitized = [x for x in installed if isinstance(x, str)]
         
-        # We need to save if we dropped non-string entries or if the ID is new
-        changed = len(sanitized) != len(installed)
-
         if extension_id not in sanitized:
             sanitized.append(extension_id)
-            # Maintain alphabetical order for readability and diff stability
-            sanitized.sort()
-            changed = True
         
-        if changed:
+        # Maintain alphabetical order for readability and diff stability
+        sanitized.sort()
+        
+        if sanitized != original_installed:
             config["installed"] = sanitized
             self.save_project_config(config)
 
@@ -2548,16 +2549,19 @@ class HookExecutor:
         if not isinstance(installed, list):
             return
 
+        # Capture original state to check for changes (Feedback from review)
+        original_installed = list(installed)
+
+        # Sanitize and remove
         sanitized = [x for x in installed if isinstance(x, str)]
-        
-        # Save if we drop non-strings or if we remove the extension
-        changed = len(sanitized) != len(installed)
         
         if extension_id in sanitized:
             sanitized.remove(extension_id)
-            changed = True
             
-        if changed:
+        # Maintain alphabetical order for consistency
+        sanitized.sort()
+            
+        if sanitized != original_installed:
             config["installed"] = sanitized
             self.save_project_config(config)
 
