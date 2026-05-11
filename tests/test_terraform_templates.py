@@ -402,9 +402,12 @@ class TestTerraformAgentPersona:
         assert "registry.terraform.io" in content
 
     def test_persona_references_never_guess(self, content):
-        """Persona must instruct agent to never guess argument names."""
-        assert "NEVER" in content
-        assert "guess" in content.lower() or "GUESS" in content
+        """Persona must instruct the agent never to guess argument names."""
+        # Case-insensitive: the v0.2 personas use sentence case rather than
+        # shouting in all-caps. Both styles satisfy this contract.
+        lowered = content.lower()
+        assert "never" in lowered
+        assert "guess" in lowered
 
     def test_persona_references_compliance_check(self, content):
         """Persona must include a compliance/checklist section."""

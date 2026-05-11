@@ -172,6 +172,40 @@ def _emit_copilot_prompts(agents_dir: Path, prompts_dir: Path) -> int:
     return count
 
 
+_FRONTMATTER_NAME_RE = re.compile(r"^name:\s*(\S+)\s*$", re.MULTILINE)
+
+
+def _emit_claude_subagents(persona_src_dirs: list[Path], dest_dir: Path) -> int:
+    """Copy persona files into ``.claude/agents/<name>.md`` so Claude Code can
+    invoke them via ``Task`` with ``subagent_type: <name>``.
+
+    The persona's frontmatter ``name:`` value (e.g. ``cloud-architect``) drives
+    the output filename. The body is unchanged — the persona file IS the
+    subagent's system prompt. Returns the number of subagent files written.
+
+    Falls back to the persona's underscored basename (e.g.
+    ``cloud_solutions_engineer``) if the frontmatter has no ``name:`` key.
+    """
+    if not persona_src_dirs:
+        return 0
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    written = 0
+    for src_dir in persona_src_dirs:
+        if not src_dir.is_dir():
+            continue
+        for source_file in sorted(src_dir.glob("*.md")):
+            text = source_file.read_text(encoding="utf-8")
+            match = _FRONTMATTER_NAME_RE.search(text)
+            if match:
+                name = match.group(1).strip().strip('"').strip("'")
+            else:
+                name = source_file.stem
+            dest_path = dest_dir / f"{name}.md"
+            dest_path.write_text(text, encoding="utf-8")
+            written += 1
+    return written
+
+
 def _copy_vscode_settings(project_path: Path) -> bool:
     """Materialise ``.vscode/settings.json`` from the bundled template.
 
@@ -266,7 +300,13 @@ def materialize_project(
     "personas": N, "prompt_files": N}`` — useful for the tracker UI.
     """
     project_path.mkdir(parents=True, exist_ok=True)
-    counts = {"generic_commands": 0, "iac_commands": 0, "personas": 0, "prompt_files": 0}
+    counts = {
+        "generic_commands": 0,
+        "iac_commands": 0,
+        "personas": 0,
+        "prompt_files": 0,
+        "subagents": 0,
+    }
 
     agent_cfg = AGENT_CONFIG.get(ai_assistant)
     if not agent_cfg:
@@ -326,7 +366,8 @@ def materialize_project(
         iac_root / "agent_personas", personas_dest, overwrite=overwrite
     )
 
-    # --- 3. Per-agent extras (Copilot prompts, VS Code settings) ----------
+    # --- 3. Per-agent extras (Copilot prompts, VS Code settings, Claude
+    #         custom subagents) -------------------------------------------
 
     if "copilot_prompts" in extras and folder:
         counts["prompt_files"] = _emit_copilot_prompts(
@@ -335,6 +376,15 @@ def materialize_project(
 
     if "vscode_settings" in extras:
         _copy_vscode_settings(project_path)
+
+    if "claude_subagents" in extras and folder:
+        # Register every persona (generic + IaC-specific) as a Claude Code
+        # custom subagent at .claude/agents/<persona-name>.md. The slash
+        # commands invoke them with Task(subagent_type=<name>).
+        counts["subagents"] = _emit_claude_subagents(
+            [tpl_root / "agent_personas", iac_root / "agent_personas"],
+            project_path / folder / "agents",
+        )
 
     return counts
 

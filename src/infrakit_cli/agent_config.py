@@ -43,6 +43,9 @@ AGENT_CONFIG = {
         "command_extension": DEFAULT_EXTENSION,
         "mcp_install_path": ".mcp.json",
         "supports_subagents": True,
+        # Render persona files into .claude/agents/ so the Task tool can
+        # invoke them by subagent_type matching the frontmatter `name:`.
+        "extras": ["claude_subagents"],
     },
     "codex": {
         "name": "Codex CLI",

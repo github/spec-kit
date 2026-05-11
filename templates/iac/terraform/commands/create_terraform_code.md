@@ -248,32 +248,25 @@ Greenfield (Create new)
 
 ---
 
-## Phase 4: Cloud Architect Review (delegated when subagents are available)
+## Phase 4: Cloud Architect Review (delegated subagent on Claude)
 
-This phase is **read-only against a finalised spec** — no user input is required mid-flight. That makes it the right shape to delegate to a subagent, which gives the architect's reasoning its own context window. Without delegation, the architect's prompt sees the entire Solutions Engineer Q&A history, which biases the review toward the answers already given.
+This phase is **read-only against a finalised spec** — no user input mid-flight. That makes it the right shape to delegate to a subagent: the architect's reasoning gets its own context window, uncontaminated by the Solutions Engineer's Q&A history.
 
-**If your harness supports subagents (Claude Code's `Task` tool):**
+**On Claude Code (`Task` tool with custom subagent type):**
 
 Invoke the `Task` tool with:
 
+- `subagent_type`: `cloud-architect` (registered at `.claude/agents/cloud-architect.md`)
 - `description`: `"Cloud Architect review of <track-name>"`
-- `subagent_type`: `general-purpose`
-- `prompt`:
+- `prompt`: `"Review .infrakit_tracks/tracks/<track-name>/spec.md against the project standards in .infrakit/{context,coding-style,tagging-standard}.md. Return the structured findings report in the format defined in your persona. Do not modify any files."`
 
-  > You are running an architecture review against an InfraKit track. Do not modify any files. Return only the structured report.
-  >
-  > 1. Read `.infrakit/agent_personas/cloud_architect.md` and adopt that persona for this entire task.
-  > 2. Read `.infrakit/context.md`, `.infrakit/coding-style.md`, `.infrakit/tagging-standard.md`.
-  > 3. Read `.infrakit_tracks/tracks/<track-name>/spec.md`.
-  > 4. Produce findings against the spec covering: structural security flags, cost, reliability, architecture correctness, completeness, environment-awareness.
-  > 5. Format the report exactly as documented in `.claude/commands/infrakit:architect-review.md` Step 6 (header, verdict, findings table, structural security flags, architecture correctness, reliability, cost, completeness).
-  > 6. Return the report as your final message. Do **not** edit `spec.md`.
+The persona file already tells the subagent what to read, what report format to return, and what NOT to do — that's the whole point of registering it as a custom subagent. Keep the orchestrator's invocation prompt one paragraph.
 
-When the subagent returns its report, paste it in your reply to the user and continue with the feedback loop below.
+When the subagent returns its report, paste it into your reply to the user and continue with the feedback loop below.
 
-**If your harness does not support subagents (Codex, Gemini, Copilot, generic):**
+**On Codex / Gemini / Copilot / generic (no custom-subagent primitive):**
 
-Switch context inline. Read `.infrakit/agent_personas/cloud_architect.md` and adopt that persona explicitly. Mark the boundary in your reply ("entering Cloud Architect phase") so the user can see the role switch. Then run the same review and produce the same report format as above. Return to the orchestrator persona before continuing.
+Switch context inline. Read `.infrakit/agent_personas/cloud_architect.md` and adopt that persona explicitly. Mark the boundary in your reply ("entering Cloud Architect phase"). Run the review and return the same report format. Then return to the orchestrator persona.
 
 ---
 
@@ -303,27 +296,21 @@ Same shape as Phase 4: read-only audit against a finalised spec, so it benefits 
 
 ### 5.2 Run the audit
 
-**If your harness supports subagents (Claude Code's `Task` tool):**
+**On Claude Code (`Task` tool with custom subagent type):**
 
 Invoke the `Task` tool with:
 
+- `subagent_type`: `cloud-security-engineer` (registered at `.claude/agents/cloud-security-engineer.md`)
 - `description`: `"Cloud Security Engineer audit of <track-name>"`
-- `subagent_type`: `general-purpose`
-- `prompt`:
+- `prompt`: `"Audit .infrakit_tracks/tracks/<track-name>/spec.md against these frameworks: {frameworks chosen in step 5.1}. Return the structured findings report in the format defined in your persona. Do not modify any files."`
 
-  > You are running a compliance audit against an InfraKit track. Do not modify any files. Return only the structured report.
-  >
-  > 1. Read `.infrakit/agent_personas/cloud_security_engineer.md` and adopt that persona for this entire task.
-  > 2. Read `.infrakit/context.md` and `.infrakit_tracks/tracks/<track-name>/spec.md`.
-  > 3. Audit the spec against the following compliance frameworks: **{frameworks chosen by the user in step 5.1}**.
-  > 4. Format the report exactly as documented in `.claude/commands/infrakit:security-review.md` Step 6 (header, verdict, findings table with severity, control coverage tables per framework, waiver section).
-  > 5. Return the report as your final message. Do **not** edit `spec.md`.
+The persona file tells the subagent what to read, what report format to return, and what NOT to do. Keep the orchestrator's prompt one sentence.
 
-When the subagent returns its report, paste it in your reply to the user and continue with the feedback loop below.
+Paste the returned report into your reply to the user and continue with the feedback loop below.
 
-**If your harness does not support subagents (Codex, Gemini, Copilot, generic):**
+**On Codex / Gemini / Copilot / generic (no custom-subagent primitive):**
 
-Switch context inline. Read `.infrakit/agent_personas/cloud_security_engineer.md` and adopt that persona explicitly. Mark the boundary in your reply ("entering Cloud Security Engineer phase"). Run the audit against the selected frameworks and produce the same report format as above. Return to the orchestrator persona before continuing.
+Switch context inline. Read `.infrakit/agent_personas/cloud_security_engineer.md` and adopt that persona explicitly. Mark the boundary in your reply ("entering Cloud Security Engineer phase"). Audit against the selected frameworks and return the same report format. Then return to the orchestrator persona.
 
 ---
 

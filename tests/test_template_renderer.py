@@ -176,6 +176,59 @@ def test_materialize_project_layouts(
     assert len(personas) >= 3  # 3 generic personas at minimum
 
 
+def test_materialize_claude_registers_custom_subagents(tmp_path: Path):
+    """Claude Code projects must materialise each persona as a registered
+    custom subagent at ``.claude/agents/<persona-name>.md`` so the multi-persona
+    commands can invoke them via ``Task(subagent_type=<name>)``.
+    """
+    project = tmp_path / "proj"
+    counts = materialize_project(
+        project, ai_assistant="claude", iac_tool="terraform", script_variant="sh"
+    )
+
+    agents_dir = project / ".claude" / "agents"
+    assert agents_dir.is_dir(), "Claude subagents directory not created"
+
+    # Generic personas plus terraform_engineer should all be registered.
+    registered = sorted(p.name for p in agents_dir.glob("*.md"))
+    assert "cloud-architect.md" in registered
+    assert "cloud-security-engineer.md" in registered
+    assert "cloud-solutions-engineer.md" in registered
+    assert "terraform-engineer.md" in registered
+
+    # The subagent file's frontmatter must contain the matching `name:` field —
+    # that's what subagent_type matches against.
+    architect = (agents_dir / "cloud-architect.md").read_text(encoding="utf-8")
+    assert "name: cloud-architect" in architect
+    assert "description:" in architect
+
+    assert counts["subagents"] >= 4
+
+
+def test_materialize_claude_crossplane_registers_crossplane_engineer(tmp_path: Path):
+    project = tmp_path / "proj"
+    materialize_project(
+        project, ai_assistant="claude", iac_tool="crossplane", script_variant="sh"
+    )
+    agents_dir = project / ".claude" / "agents"
+    assert (agents_dir / "crossplane-engineer.md").is_file()
+    assert not (agents_dir / "terraform-engineer.md").exists(), (
+        "terraform_engineer persona should not register on a crossplane project"
+    )
+
+
+def test_materialize_non_claude_agents_do_not_register_subagents(tmp_path: Path):
+    """Codex/Gemini/Copilot/generic must NOT get a .claude/agents/ tree."""
+    for agent in ["codex", "gemini", "copilot", "generic"]:
+        project = tmp_path / f"proj-{agent}"
+        materialize_project(
+            project, ai_assistant=agent, iac_tool="terraform", script_variant="sh"
+        )
+        assert not (project / ".claude" / "agents").exists(), (
+            f"agent {agent} should not produce a .claude/agents/ tree"
+        )
+
+
 def test_materialize_copilot_emits_prompt_pairs(tmp_path: Path):
     project = tmp_path / "proj"
     counts = materialize_project(

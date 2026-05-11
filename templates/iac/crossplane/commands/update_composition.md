@@ -484,25 +484,17 @@ If changes are classified as Breaking or Mixed, also write `.infrakit_tracks/tra
 
 The **analysis** part of this phase is read-only and benefits from subagent isolation; the **option-selection** part needs user input and must stay inline.
 
-**If your harness supports subagents (Claude Code's `Task` tool):**
+**On Claude Code (`Task` tool with custom subagent type):**
 
 Invoke the `Task` tool with:
 
+- `subagent_type`: `cloud-architect` (registered at `.claude/agents/cloud-architect.md`)
 - `description`: `"Cloud Architect design options for <track-name>"`
-- `subagent_type`: `general-purpose`
-- `prompt`:
-
-  > You are running an architecture-options analysis against an InfraKit update track. Do not modify any files. Return only the option set.
-  >
-  > 1. Read `.infrakit/agent_personas/cloud_architect.md` and adopt that persona.
-  > 2. Read `.infrakit/context.md`, `.infrakit/coding-style.md`, `.infrakit_tracks/tracks/<track-name>/spec.md`, plus the resource directory's `.infrakit_context.md` and `infrakit_composition_contract.md`.
-  > 3. Identify backward-compatibility constraints, XRD version strategy required, migration complexity and state risk, performance and reliability trade-offs.
-  > 4. Produce **2–3 distinct, named architecture options** following the format in Phase 6.2 below. Do NOT pick one — return all options for the user to choose from.
-  > 5. Return the formatted option set as your final message. Do **not** edit `spec.md`.
+- `prompt`: `"For the update spec at .infrakit_tracks/tracks/<track-name>/spec.md, identify backward-compatibility constraints, XRD version strategy required, and migration complexity by reading the existing .infrakit_context.md and infrakit_composition_contract.md in the resource directory. Then produce 2–3 distinct, named architecture options (Option A/B/C) following the format in Phase 6.2 of /infrakit:update_composition. Do NOT pick one; return all options for the user to choose from. Do not modify any files."`
 
 Paste the returned options into your reply and proceed to Phase 6.2 (user selection).
 
-**If your harness does not support subagents (Codex, Gemini, Copilot, generic):**
+**On Codex / Gemini / Copilot / generic (no custom-subagent primitive):**
 
 Read `.infrakit/agent_personas/cloud_architect.md` and adopt that persona inline. Mark the boundary in your reply ("entering Cloud Architect phase"). Run the analysis described in Phase 6.1 and produce the option set in Phase 6.2.
 
@@ -615,25 +607,17 @@ Update `.infrakit_tracks/tracks/<track-name>/spec.md` — append an **Architectu
 
 Ask which compliance frameworks apply. **WAIT** for response.
 
-**If your harness supports subagents (Claude Code's `Task` tool):**
+**On Claude Code (`Task` tool with custom subagent type):**
 
 Invoke the `Task` tool with:
 
+- `subagent_type`: `cloud-security-engineer` (registered at `.claude/agents/cloud-security-engineer.md`)
 - `description`: `"Cloud Security Engineer audit of update <track-name>"`
-- `subagent_type`: `general-purpose`
-- `prompt`:
-
-  > You are running a compliance audit against an InfraKit update spec. Do not modify any files. Return only the structured findings.
-  >
-  > 1. Read `.infrakit/agent_personas/cloud_security_engineer.md` and adopt that persona.
-  > 2. Read `.infrakit/context.md` and `.infrakit_tracks/tracks/<track-name>/spec.md` (including the Architecture Decision section).
-  > 3. Audit the selected architecture option against the user-chosen frameworks: **{frameworks chosen above}**.
-  > 4. Format findings as documented in `.claude/commands/infrakit:security-review.md` Step 6.
-  > 5. Return the report as your final message. Do **not** edit `spec.md`.
+- `prompt`: `"Audit the updated spec at .infrakit_tracks/tracks/<track-name>/spec.md (including its Architecture Decision section) against these frameworks: {frameworks chosen above}. Return the structured findings report per your persona. Do not modify any files."`
 
 Paste the report into your reply and proceed to the feedback loop below.
 
-**If your harness does not support subagents (Codex, Gemini, Copilot, generic):**
+**On Codex / Gemini / Copilot / generic (no custom-subagent primitive):**
 
 Read `.infrakit/agent_personas/cloud_security_engineer.md` and adopt that persona inline. Mark the boundary in your reply ("entering Cloud Security Engineer phase"). Audit the selected architecture option against the chosen frameworks and produce the same report format.
 
