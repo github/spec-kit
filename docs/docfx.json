@@ -6,7 +6,8 @@
           "*.md",
           "toc.yml",
           "community/*.md",
-          "reference/*.md"
+          "reference/*.md",
+          "install/*.md"
         ]
       },
       {
