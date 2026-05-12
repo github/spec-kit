@@ -6,6 +6,7 @@
           "*.md",
           "toc.yml",
           "community/*.md",
+          "concepts/*.md",
           "reference/*.md",
           "install/*.md"
         ]
@@ -50,7 +51,8 @@
     "fileMetadataFiles": [],
     "template": [
       "default",
-      "modern"
+      "modern",
+      "template"
     ],
     "postProcessors": [],
     "markdownEngineName": "markdig",
@@ -67,6 +69,11 @@
       "_gitContribute": {
         "repo": "https://github.com/github/spec-kit",
         "branch": "main"
+      }
+    },
+    "fileMetadata": {
+      "_layout": {
+        "index.md": "landing"
       }
     }
   }
