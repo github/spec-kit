@@ -4838,6 +4838,7 @@ def extension_update(
         failed_updates = []
         registrar = CommandRegistrar()
         hook_executor = HookExecutor(project_root)
+        from .agents import CommandRegistrar as _AgentReg  # used in backup and rollback paths
 
         # UNSET sentinel: backup not yet captured (exception before backup step)
         UNSET = object()
@@ -4881,7 +4882,6 @@ def extension_update(
                         shutil.copy2(cfg_file, backup_config_dir / cfg_file.name)
 
                 # 3. Backup command files for all agents
-                from .agents import CommandRegistrar as _AgentReg
                 registered_commands = backup_registry_entry.get("registered_commands", {}) if isinstance(backup_registry_entry, dict) else {}
                 for agent_name, cmd_names in registered_commands.items():
                     if agent_name not in registrar.AGENT_CONFIGS:

@@ -42,7 +42,9 @@ def test_extension_update_corrupted_config_root(project_dir, monkeypatch):
     # Run update
     result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
     
-    # It might fail because of the mock zip, but must NOT raise AttributeError from config handling
+    # extension_update() catches exceptions internally and exits with code 1 on failure;
+    # result.exception will be SystemExit(1), not AttributeError. Assert both:
+    assert "AttributeError" not in result.output
     assert not isinstance(result.exception, AttributeError)
 
 def test_extension_update_corrupted_hooks_value(project_dir, monkeypatch):
@@ -67,6 +69,9 @@ def test_extension_update_corrupted_hooks_value(project_dir, monkeypatch):
     
     result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
     
+    # extension_update() catches exceptions internally — result.exception is None on any handled
+    # failure; assert the CLI output has no AttributeError trace
+    assert "AttributeError" not in result.output
     assert not isinstance(result.exception, AttributeError)
 
 def test_extension_update_rollback_corrupted_config(project_dir, monkeypatch):
