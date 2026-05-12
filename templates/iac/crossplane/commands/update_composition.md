@@ -88,21 +88,23 @@ Check for required Crossplane files:
 
 ---
 
-## Phase 3: Validate and Generate Resource Contract Files
+## Phase 3: Validate and Generate Resource Context Files
 
 ### 3.1 Check for Required Resource Files
 
-Check for all three resource artifact files in `<resource_directory>`:
+Check for these resource artifact files in `<resource_directory>`:
 
 | File | Purpose |
 |------|---------|
-| `.infrakit_context.md` | Original spec, parameters, and design decisions |
-| `.infrakit_changelog.md` | History of all changes applied to this resource |
-| `infrakit_composition_contract.md` | Stable API surface and guarantees for consumers |
+| `.infrakit_context.md` | Resource interface summary — parameters, status fields, connection secret keys |
+| `.infrakit_changelog.md` | Append-only history of all changes applied to this resource |
+| `README.md` | User-facing usage docs (claim example, parameters, outputs) |
 
-**If ALL three exist**: Read them all and proceed to Phase 4.
+**If all exist**: Read them all and proceed to Phase 4.
 
-**If ANY are missing**: Scan the existing YAML files to generate the missing ones (Phases 3.2–3.4).
+**If any are missing**: Scan the existing YAML files to generate the missing ones (Phases 3.2–3.3).
+
+> **Note**: The previous `infrakit_composition_contract.md` is no longer produced. The XRD (`definition.yaml`) is the API contract — every parameter type, status field, and connection-secret key lives there in machine-readable form. The README adds the human-readable usage layer on top. Together they cover what the dropped contract file used to.
 
 ### 3.2 Scan Existing Resource Files
 
@@ -192,58 +194,9 @@ For each file that does not exist, generate it now:
 
 ---
 
-**`infrakit_composition_contract.md`** (if missing):
+**`README.md`** (if missing):
 
-```markdown
-# Composition Contract: <resource-name>
-
-<!-- This contract defines the stable API surface and guarantees for consumers of this composition. -->
-
-## Interface
-
-| Aspect | Value |
-|--------|-------|
-| XR Kind | `<Kind>` |
-| Claim Kind | `<ClaimKind>` |
-| API Group | `<api-group>` |
-| Current Version | `<version>` |
-| Stability | <Stable/Beta/Alpha — inferred from version prefix> |
-
-## Required Inputs
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| <required params from XRD spec> | | |
-
-## Optional Inputs (with defaults)
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| <optional params from XRD spec> | | | |
-
-## Guaranteed Outputs
-
-| Field | Type | Description |
-|-------|------|-------------|
-| <status fields from XRD status> | | |
-
-## Connection Secrets
-
-| Key | Description |
-|-----|-------------|
-| <connection secret keys from XRD> | |
-
-## Stability Guarantees
-- Required parameters will not be removed without a XRD version increment
-- Optional parameter types will not change without a XRD version increment
-- Status fields listed above are guaranteed to be populated when the resource is ready
-
-## Deprecation Policy
-- Deprecated parameters are kept for one major version with a deprecation annotation
-- Breaking changes require a new XRD version (e.g., `v1alpha1` → `v1beta1`)
-
-<!-- Reconstructed by `/infrakit:update_composition` from code analysis. -->
-```
+If the composition has no `README.md` yet, the IaC Engineer regenerates one from the XRD + Composition during Phase 9 (Implementation). For Phase 3 (validation), absence of README.md is not blocking — it will be produced/refreshed at the end of `/infrakit:implement` anyway.
 
 ### 3.4 Present Generated Files for Review
 
@@ -295,9 +248,9 @@ Register in `.infrakit_tracks/tracks.md` — add a row with Status `🔵 initial
 
 ## Phase 5: Cloud Solutions Engineer — Requirements Clarification and Spec
 
-**Adopt the Cloud Solutions Engineer persona.**
+This phase is **interactive** — you and the user iterate on what's changing. Run it **inline** in your current context regardless of whether your harness supports subagents: a subagent can't pause to wait for user input.
 
-Read `.infrakit/agent_personas/cloud_solutions_engineer.md` for detailed behavior.
+Adopt the Cloud Solutions Engineer persona by reading `.infrakit/agent_personas/cloud_solutions_engineer.md` and following its behaviour for the duration of Phase 5. Later phases (Architect and Security review) can be delegated to subagents when available — see Phases 6 and 7.
 
 > "I'll now guide you through defining the changes for this resource.
 > Acting as the **Cloud Solutions Engineer**, I'll ask clarifying questions until I fully understand your requirements before writing the spec."
@@ -453,9 +406,17 @@ If changes are classified as Breaking or Mixed, also write `.infrakit_tracks/tra
 1. <Step 1>
 2. <Step 2>
 
+**Crossplane state impact:**
+- XRD version transition: <none / `vNalpha` → `vNbeta`, served-by + storage strategy>
+- Existing managed resources: <Stay as-is / Renamed via `crossplane.io/external-name` annotation / Recreated>
+- Connection-secret schema changes: <none / additive / breaking>
+- If recreating managed resources: document whether existing cloud resources should be imported via `crossplane.io/external-name` or left to be recreated by the provider.
+
 ## Pre-Migration Checklist
-- [ ] Backup existing claims
+- [ ] Backup existing Claims and Composite Resources (`kubectl get -o yaml`)
+- [ ] Verify XRD `served` + `storage` versions cover both old and new shapes during rollout
 - [ ] Test migration in non-production environment
+- [ ] Update all consuming Claims in `terraform-live` / GitOps repos to the new parameter schema
 
 ## Rollback Plan
 1. <Rollback step 1>
@@ -480,17 +441,30 @@ If changes are classified as Breaking or Mixed, also write `.infrakit_tracks/tra
 
 ---
 
-## Phase 6: Cloud Architect — Design Options
+## Phase 6: Cloud Architect — Design Options (delegated when subagents are available)
 
-**Announce:**
+The **analysis** part of this phase is read-only and benefits from subagent isolation; the **option-selection** part needs user input and must stay inline.
+
+**On Claude Code (`Task` tool with custom subagent type):**
+
+Invoke the `Task` tool with:
+
+- `subagent_type`: `cloud-architect` (registered at `.claude/agents/cloud-architect.md`)
+- `description`: `"Cloud Architect design options for <track-name>"`
+- `prompt`: `"For the update spec at .infrakit_tracks/tracks/<track-name>/spec.md, identify backward-compatibility constraints, XRD version strategy required, and migration complexity by reading the existing definition.yaml (the XRD — the API contract), composition.yaml, and .infrakit_context.md in the resource directory. Then produce 2–3 distinct, named architecture options (Option A/B/C) following the format in Phase 6.2 of /infrakit:update_composition. Do NOT pick one; return all options for the user to choose from. Do not modify any files."`
+
+Paste the returned options into your reply and proceed to Phase 6.2 (user selection).
+
+**On Codex / Gemini / Copilot / generic (no custom-subagent primitive):**
+
+Read `.infrakit/agent_personas/cloud_architect.md` and adopt that persona inline. Mark the boundary in your reply ("entering Cloud Architect phase"). Run the analysis described in Phase 6.1 and produce the option set in Phase 6.2.
+
 > "Handing off to the Cloud Architect..."
 > "As the **Cloud Architect**, I'll review the spec and present distinct architecture options for implementing these changes. You choose the direction."
 
-Read `.infrakit/agent_personas/cloud_architect.md` for detailed behavior.
-
 ### 6.1 Architecture Analysis
 
-Review the spec alongside `.infrakit_context.md` and `infrakit_composition_contract.md`. Identify:
+Review the spec alongside `.infrakit_context.md`, `definition.yaml` (the existing XRD — your API contract), and `composition.yaml`. Identify:
 - Backward compatibility constraints from the current contract
 - XRD version strategy required
 - Migration complexity and state risk
@@ -577,6 +551,11 @@ Update `.infrakit_tracks/tracks/<track-name>/spec.md` — append an **Architectu
 - Target: `<version>`
 - Rationale: <why this version change>
 
+### Consumer Claim Changes
+- Required claim modifications: <what existing claims need to add/change/remove>
+- Backward-compatible: <Yes / No>
+- Old claims continue to work: <Yes — handled via XRD storage version / No — must be migrated>
+
 ### Backward Compatibility Notes
 <what existing claims will experience during and after the update>
 ```
@@ -592,11 +571,26 @@ Update `.infrakit_tracks/tracks/<track-name>/spec.md` — append an **Architectu
 **Announce:**
 > "Reviewing the update specification as the **Cloud Security Engineer**."
 
-Read `.infrakit/agent_personas/cloud_security_engineer.md` for detailed behavior.
+**Resolve compliance frameworks from `.infrakit/context.md` first.** Look for a `## Compliance` (or `## Security & Compliance` → `### Compliance Frameworks`) section listing frameworks (SOC 2, ISO 27001, HIPAA, PCI-DSS, NIST 800-53, FedRAMP, CIS Benchmarks).
 
-Ask which compliance frameworks apply. **WAIT** for response.
+- If context.md declares frameworks, announce: `"Using compliance frameworks declared in .infrakit/context.md: <frameworks>"` and use that list.
+- If context.md is silent on compliance, only then ask the user which frameworks apply. **WAIT** for response.
 
-Run inline compliance audit against the chosen architecture option. Present findings. **DO NOT modify spec.md automatically.**
+**On Claude Code (`Task` tool with custom subagent type):**
+
+Invoke the `Task` tool with:
+
+- `subagent_type`: `cloud-security-engineer` (registered at `.claude/agents/cloud-security-engineer.md`)
+- `description`: `"Cloud Security Engineer audit of update <track-name>"`
+- `prompt`: `"Audit the updated spec at .infrakit_tracks/tracks/<track-name>/spec.md (including its Architecture Decision section) against these frameworks: {frameworks chosen above}. Return the structured findings report per your persona. Do not modify any files."`
+
+Paste the report into your reply and proceed to the feedback loop below.
+
+**On Codex / Gemini / Copilot / generic (no custom-subagent primitive):**
+
+Read `.infrakit/agent_personas/cloud_security_engineer.md` and adopt that persona inline. Mark the boundary in your reply ("entering Cloud Security Engineer phase"). Audit the selected architecture option against the chosen frameworks and produce the same report format.
+
+**DO NOT modify `spec.md` automatically. Present findings first.**
 
 > "**Security Review Complete**
 >

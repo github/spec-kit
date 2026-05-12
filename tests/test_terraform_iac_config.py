@@ -73,7 +73,7 @@ class TestTerraformIacConfig:
         assert len(generic) > 0
 
     def test_terraform_generic_commands_include_core_workflow(self):
-        """Terraform must include the core CDD workflow generic commands."""
+        """Terraform must include the core spec-driven workflow generic commands."""
         expected = [
             "setup",
             "status",
@@ -130,11 +130,11 @@ class TestTerraformIacConfig:
         assert len(overlap) == 0, f"terraform command overlap: {overlap}"
 
     def test_terraform_uses_crossplane_generic_commands(self):
-        """Terraform generic commands should match Crossplane's (same CDD workflow)."""
+        """Terraform generic commands should match Crossplane's (same workflow)."""
         terraform_generic = set(IAC_CONFIG["terraform"]["generic_commands"])
         crossplane_generic = set(IAC_CONFIG["crossplane"]["generic_commands"])
         assert terraform_generic == crossplane_generic, (
-            "Terraform and Crossplane should share the same generic CDD commands"
+            "Terraform and Crossplane should share the same generic workflow commands"
         )
 
     def test_terraform_iac_commands_differ_from_crossplane(self):

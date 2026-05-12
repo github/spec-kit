@@ -1,0 +1,123 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xpostgresqlinstances.database.platform.acme.com
+  labels:
+    provider: aws
+    service: rds
+spec:
+  group: database.platform.acme.com
+  names:
+    kind: XPostgreSQLInstance
+    plural: xpostgresqlinstances
+  claimNames:
+    kind: PostgreSQLInstance
+    plural: postgresqlinstances
+  connectionSecretKeys:
+    - host
+    - port
+    - username
+    - password
+    - database
+    - endpoint
+  defaultCompositionRef:
+    name: postgres-aws
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  required:
+                    - environment
+                    - teamName
+                    - costCenter
+                  properties:
+                    environment:
+                      type: string
+                      enum: [dev, staging, prod]
+                      description: Target environment.
+                    teamName:
+                      type: string
+                      enum: [payments, data, frontend, mobile, platform]
+                      description: Owning team.
+                    costCenter:
+                      type: string
+                      pattern: "^CC-[0-9]{4}$"
+                      description: Billing allocation code (e.g., CC-1042).
+                    region:
+                      type: string
+                      default: us-east-1
+                      description: AWS region.
+                    engineVersion:
+                      type: string
+                      default: "16.3"
+                      pattern: "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$"
+                      description: PostgreSQL engine version.
+                    instanceClass:
+                      type: string
+                      default: db.t3.micro
+                      description: RDS instance class.
+                    storageGB:
+                      type: integer
+                      minimum: 20
+                      maximum: 16384
+                      default: 20
+                      description: Allocated storage in GB.
+                    storageType:
+                      type: string
+                      enum: [gp3, io2]
+                      default: gp3
+                    multiAZ:
+                      type: boolean
+                      description: Override Multi-AZ. Defaults from environment (prod = true).
+                    backupRetentionDays:
+                      type: integer
+                      minimum: 1
+                      maximum: 35
+                      default: 7
+                    deletionProtection:
+                      type: boolean
+                      description: Override deletion protection. Defaults from environment (prod = true).
+                    subnetGroupName:
+                      type: string
+                      description: Name of an existing DB subnet group in the target VPC.
+                    securityGroupIds:
+                      type: array
+                      items:
+                        type: string
+                      description: VPC security group IDs to attach.
+                  required:
+                    - subnetGroupName
+                    - securityGroupIds
+                writeConnectionSecretToRef:
+                  type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+            status:
+              type: object
+              properties:
+                endpoint:
+                  type: string
+                  description: PostgreSQL endpoint DNS name.
+                port:
+                  type: integer
+                  description: PostgreSQL port (default 5432).
+                arn:
+                  type: string
+                  description: ARN of the underlying RDS instance.
+                kmsKeyArn:
+                  type: string
+                  description: ARN of the KMS key encrypting storage.
+                ready:
+                  type: boolean
+                  description: True when both RDS and KMS resources are Ready.

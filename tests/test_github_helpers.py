@@ -2,10 +2,9 @@
 
 import os
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import httpx
-import pytest
 
 from infrakit_cli import (
     _github_auth_headers,

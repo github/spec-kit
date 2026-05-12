@@ -113,9 +113,9 @@ Register in `.infrakit_tracks/tracks.md` — add a row with Status `🔵 initial
 
 ## Phase 3: Cloud Solutions Engineer — Spec Generation
 
-**Adopt the Cloud Solutions Engineer persona.**
+This phase is **interactive** — you and the user iterate on requirements via clarifying questions. Run it **inline** in your current context regardless of whether your harness supports subagents: a subagent can't pause to wait for user input, so a `Task`-style delegation would either guess answers or hang.
 
-Read `.infrakit/agent_personas/cloud_solutions_engineer.md` for detailed behavior.
+Adopt the Cloud Solutions Engineer persona by reading `.infrakit/agent_personas/cloud_solutions_engineer.md` and following its behaviour for the duration of Phase 3. When Phase 4 begins, the persona will be swapped (and on Claude Code, the entire review will run in an isolated subagent — see Phase 4 below).
 
 > "I'll now guide you through creating a specification for this module.
 > Acting as the **Cloud Solutions Engineer**, I'll ask clarifying questions."
@@ -248,22 +248,29 @@ Greenfield (Create new)
 
 ---
 
-## Phase 4: Cloud Architect Review
+## Phase 4: Cloud Architect Review (delegated subagent on Claude)
 
-**Announce the handoff:**
+This phase is **read-only against a finalised spec** — no user input mid-flight. That makes it the right shape to delegate to a subagent: the architect's reasoning gets its own context window, uncontaminated by the Solutions Engineer's Q&A history.
 
-> "Handing off to architecture review..."
-> "Reviewing the specification as the **Cloud Architect**."
+**On Claude Code (`Task` tool with custom subagent type):**
 
-Read `.infrakit/agent_personas/cloud_architect.md` for detailed behavior.
+Invoke the `Task` tool with:
 
-Run the architecture review inline:
+- `subagent_type`: `cloud-architect` (registered at `.claude/agents/cloud-architect.md`)
+- `description`: `"Cloud Architect review of <track-name>"`
+- `prompt`: `"Review .infrakit_tracks/tracks/<track-name>/spec.md against the project standards in .infrakit/{context,coding-style,tagging-standard}.md. Return the structured findings report in the format defined in your persona. Do not modify any files."`
 
-1. Read `.infrakit_tracks/tracks/<track-name>/spec.md`
-2. Check: structural security flags, cost, reliability, architecture correctness, completeness
-3. Present findings as a structured report (see `/infrakit:architect-review` for report format)
+The persona file already tells the subagent what to read, what report format to return, and what NOT to do — that's the whole point of registering it as a custom subagent. Keep the orchestrator's invocation prompt one paragraph.
 
-**DO NOT modify spec.md automatically. Present findings first.**
+When the subagent returns its report, paste it into your reply to the user and continue with the feedback loop below.
+
+**On Codex / Gemini / Copilot / generic (no custom-subagent primitive):**
+
+Switch context inline. Read `.infrakit/agent_personas/cloud_architect.md` and adopt that persona explicitly. Mark the boundary in your reply ("entering Cloud Architect phase"). Run the review and return the same report format. Then return to the orchestrator persona.
+
+---
+
+In either case, **DO NOT modify `spec.md` automatically. Present findings first.**
 
 > "**Architecture Review Complete**
 >
@@ -277,22 +284,47 @@ Run the architecture review inline:
 
 ---
 
-## Phase 5: Cloud Security Engineer Review
+## Phase 5: Cloud Security Engineer Review (delegated when subagents are available)
 
-**Announce the handoff:**
+Same shape as Phase 4: read-only audit against a finalised spec, so it benefits from subagent isolation when available. The one nuance is the **framework-selection question** — that has to happen *before* the subagent is invoked, because subagents can't wait for user input.
 
-> "Handing off to security review..."
-> "Reviewing the specification as the **Cloud Security Engineer**."
+### 5.1 Resolve compliance frameworks (context.md first; ask only if missing)
 
-Read `.infrakit/agent_personas/cloud_security_engineer.md` for detailed behavior.
+**Read `.infrakit/context.md` first.** Look for a `## Compliance` (or `## Security & Compliance` → `### Compliance Frameworks`) section that names the project's frameworks. Recognised names: SOC 2, ISO 27001, HIPAA, PCI-DSS, NIST 800-53, FedRAMP, CIS Benchmarks.
 
-**Ask which compliance frameworks apply** (see Step 3 of `/infrakit:security-review` for the framework selection question).
+**If context.md declares frameworks**, announce what you found and proceed:
+
+> "Using compliance frameworks declared in `.infrakit/context.md`: **<frameworks>**."
+
+**If context.md is silent on compliance**, only then ask:
+
+> "`.infrakit/context.md` does not declare a compliance scope. Which security compliance frameworks apply to this resource? Select all that apply: SOC 2, HIPAA, ISO 27001, CIS, NIST, PCI-DSS, or 'None'.
+>
+> *(Tip: add a `## Compliance` section to `.infrakit/context.md` so this question doesn't appear on future tracks.)*"
 
 **WAIT** for response.
 
-Run the compliance audit inline. Present findings as a structured report.
+### 5.2 Run the audit
 
-**DO NOT modify spec.md automatically. Present findings first.**
+**On Claude Code (`Task` tool with custom subagent type):**
+
+Invoke the `Task` tool with:
+
+- `subagent_type`: `cloud-security-engineer` (registered at `.claude/agents/cloud-security-engineer.md`)
+- `description`: `"Cloud Security Engineer audit of <track-name>"`
+- `prompt`: `"Audit .infrakit_tracks/tracks/<track-name>/spec.md against these frameworks: {frameworks chosen in step 5.1}. Return the structured findings report in the format defined in your persona. Do not modify any files."`
+
+The persona file tells the subagent what to read, what report format to return, and what NOT to do. Keep the orchestrator's prompt one sentence.
+
+Paste the returned report into your reply to the user and continue with the feedback loop below.
+
+**On Codex / Gemini / Copilot / generic (no custom-subagent primitive):**
+
+Switch context inline. Read `.infrakit/agent_personas/cloud_security_engineer.md` and adopt that persona explicitly. Mark the boundary in your reply ("entering Cloud Security Engineer phase"). Audit against the selected frameworks and return the same report format. Then return to the orchestrator persona.
+
+---
+
+**DO NOT modify `spec.md` automatically. Present findings first.**
 
 > "**Security Review Complete**
 >

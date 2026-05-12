@@ -16,7 +16,7 @@ Tests cover:
 import shutil
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 from typer.testing import CliRunner
@@ -62,7 +62,7 @@ class TestInitHelpIncludesTerraform:
 class TestInitRejectsInvalidIacTool:
     """init must reject unrecognised --iac values with exit code 1."""
 
-    @patch("infrakit_cli.download_and_extract_template")
+    @patch("infrakit_cli.initialize_iac_config")
     def test_invalid_iac_tool_rejected(self, _mock_download):
         """Passing an unknown IaC tool should exit with code 1."""
         result = runner.invoke(
@@ -72,7 +72,7 @@ class TestInitRejectsInvalidIacTool:
         assert result.exit_code == 1
         assert "nonexistent-tool" in result.output or "invalid" in result.output.lower()
 
-    @patch("infrakit_cli.download_and_extract_template")
+    @patch("infrakit_cli.initialize_iac_config")
     def test_invalid_iac_tool_error_message_helpful(self, _mock_download):
         """Error message for unknown IaC tool should list valid options."""
         result = runner.invoke(

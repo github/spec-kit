@@ -61,14 +61,34 @@ Read the following files:
 
 ---
 
-## Step 3: Select Compliance Frameworks
+## Step 3: Resolve Compliance Frameworks
 
-Ask the user which frameworks apply:
+**Read `.infrakit/context.md` first.** The project-level `## Compliance` (or `## Security & Compliance`) section is the source of truth for which frameworks apply to this project. Only fall back to asking the user if context.md has no compliance scope declared.
 
-> "Which security compliance frameworks apply to this resource? Select all that apply:
+### 3.1 Try context.md
+
+Scan `.infrakit/context.md` for an explicit list of compliance frameworks. Look for any of:
+
+- A `## Compliance` section listing named frameworks (e.g. "SOC 2 Type II", "PCI-DSS", "HIPAA").
+- A `## Security & Compliance` section with a `### Compliance Frameworks` subsection.
+- A `Compliance` row in a project-information table.
+
+Extract the framework list. Recognised names: SOC 2 (or SOC 2 Type II), ISO 27001, HIPAA, PCI-DSS (or PCI), NIST 800-53, FedRAMP, CIS Benchmarks.
+
+**If frameworks are declared**, announce what you found and proceed:
+
+> "Using compliance frameworks declared in `.infrakit/context.md`: **SOC 2 Type II, PCI-DSS**. Run with `--frameworks` to override, or update `.infrakit/context.md` for permanent changes."
+
+**Skip Step 3.2 entirely.** Go to Step 4 with the framework list from context.md.
+
+### 3.2 Fallback — ask the user
+
+Only run this when context.md declared **no** frameworks.
+
+> "`.infrakit/context.md` does not declare a compliance scope. Which security compliance frameworks apply to this resource? Select all that apply:
 >
-> | # | Framework | Common Use Case |
-> |---|-----------|----------------|
+> | # | Framework | Common use case |
+> |---|-----------|-----------------|
 > | 1 | **SOC 2 Type II** | SaaS, cloud services |
 > | 2 | **ISO 27001** | International standard, enterprise |
 > | 3 | **HIPAA** | Healthcare data (US) |
@@ -76,9 +96,11 @@ Ask the user which frameworks apply:
 > | 5 | **NIST 800-53** | US federal systems |
 > | 6 | **FedRAMP** | US government cloud |
 > | 7 | **CIS Benchmarks** | General hardening |
-> | 8 | **Custom** | I'll describe our requirements
+> | 8 | **Custom** | I'll describe our requirements |
 >
-> You can select multiple (e.g., '1, 3') or type 'none' if no specific framework applies."
+> You can select multiple (e.g., '1, 3') or type 'none' if no specific framework applies.
+>
+> *(Tip: add a `## Compliance` section to `.infrakit/context.md` so this question doesn't appear on future tracks.)*"
 
 **WAIT** for response before continuing.
 

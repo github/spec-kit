@@ -1,8 +1,7 @@
 """Tests for check_tool function."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from infrakit_cli import check_tool, StepTracker
 
@@ -10,7 +9,7 @@ from infrakit_cli import check_tool, StepTracker
 class TestCheckTool:
     """Test suite for check_tool function."""
 
-    @patch("infrakit_cli.shutil.which")
+    @patch("infrakit_cli.tools.shutil.which")
     def test_check_tool_found(self, mock_which):
         """Test check_tool returns True when tool is found."""
         mock_which.return_value = "/usr/bin/git"
@@ -18,7 +17,7 @@ class TestCheckTool:
         result = check_tool("git")
         assert result is True
 
-    @patch("infrakit_cli.shutil.which")
+    @patch("infrakit_cli.tools.shutil.which")
     def test_check_tool_not_found(self, mock_which):
         """Test check_tool returns False when tool is not found."""
         mock_which.return_value = None
@@ -26,7 +25,7 @@ class TestCheckTool:
         result = check_tool("nonexistent-tool")
         assert result is False
 
-    @patch("infrakit_cli.shutil.which")
+    @patch("infrakit_cli.tools.shutil.which")
     def test_check_tool_with_tracker(self, mock_which):
         """Test check_tool with StepTracker."""
         mock_which.return_value = "/usr/bin/git"
@@ -36,7 +35,7 @@ class TestCheckTool:
         result = check_tool("git", tracker)
         assert result is True
 
-    @patch("infrakit_cli.shutil.which")
+    @patch("infrakit_cli.tools.shutil.which")
     def test_check_tool_with_tracker_not_found(self, mock_which):
         """Test check_tool with tracker when tool not found."""
         mock_which.return_value = None
@@ -46,7 +45,7 @@ class TestCheckTool:
         result = check_tool("nonexistent", tracker)
         assert result is False
 
-    @patch("infrakit_cli.shutil.which")
+    @patch("infrakit_cli.tools.shutil.which")
     def test_check_tool_empty_string(self, mock_which):
         """Test check_tool with empty string."""
         mock_which.return_value = None
@@ -54,7 +53,7 @@ class TestCheckTool:
         result = check_tool("")
         assert result is False
 
-    @patch("infrakit_cli.shutil.which")
+    @patch("infrakit_cli.tools.shutil.which")
     def test_check_tool_with_path(self, mock_which):
         """Test check_tool finds tool at specific path."""
         mock_which.return_value = "/usr/local/bin/custom-tool"

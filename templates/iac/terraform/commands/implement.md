@@ -242,22 +242,33 @@ Then append:
 
 ---
 
-## Step 9c: Update .infrakit_terraform_contract.md
+## Step 9c: Update README.md
 
-Re-read the freshly-written HCL files (`variables.tf`, `outputs.tf`, `main.tf`, `versions.tf`) and regenerate `.infrakit_terraform_contract.md` in the module directory to reflect the actual implemented state.
+Re-read the freshly-written HCL files and regenerate `<module_directory>/README.md` to reflect the actual implemented state.
 
-Use the same template structure as `update_terraform_code.md` Phase 3.3 for the contract file, but source all values from the implemented HCL files rather than the spec.
+The module's `README.md` is both the user-facing usage doc and the human-readable interface contract. It must include:
 
-Present the regenerated contract to the user:
+- A one-paragraph description of what the module provisions.
+- A **Usage** section with a complete `module "<name>" { source = "..." ... }` example showing the minimum required variables.
+- An **Inputs** table — variable, type, required, default, description — sourced from `variables.tf`.
+- An **Outputs** table — output, description — sourced from `outputs.tf`.
+- A **Requirements** section — Terraform + provider version constraints from `versions.tf`.
+- (Optional but recommended) A **Validation** section with the commands a reviewer can run locally (`tofu fmt -check`, `tofu init -backend=false`, `tofu validate`).
 
-> "I've updated `.infrakit_terraform_contract.md` to reflect the implementation. Please review:
+If `README.md` already exists, **regenerate** it rather than patching — the implementation is the source of truth, the README must match.
+
+Present the regenerated README to the user:
+
+> "I've regenerated `README.md` to match the implementation. Please review:
 >
-> <summary of key interface changes — variables added/removed/changed, outputs added/removed>
+> <summary of key changes: inputs added/removed, outputs added/removed, examples updated>
 >
-> A) **Accept** — Contract looks correct
+> A) **Accept** — README looks correct
 > B) **Edit manually** — Say 'done' when you've finished editing"
 
 **WAIT** for response before proceeding to Step 10.
+
+> **Note**: InfraKit no longer generates a separate `.infrakit_terraform_contract.md` — `variables.tf`, `outputs.tf`, and `versions.tf` are the machine-readable interface contract, and `README.md` is the human-readable one. Together they cover what the dropped contract file used to.
 
 ---
 
@@ -273,7 +284,7 @@ Update `.infrakit_tracks/tracks.md` — change the track's status to `✅ done`.
 > **Module files updated:**
 > - `<module_directory>/.infrakit_context.md`
 > - `<module_directory>/.infrakit_changelog.md`
-> - `<module_directory>/.infrakit_terraform_contract.md`
+> - `<module_directory>/README.md`
 >
 > Run `/infrakit:status` to see all track statuses."
 

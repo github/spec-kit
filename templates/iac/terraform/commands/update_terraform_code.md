@@ -89,21 +89,23 @@ Check for required Terraform files:
 
 ---
 
-## Phase 3: Validate and Generate Module Contract Files
+## Phase 3: Validate and Generate Module Context Files
 
 ### 3.1 Check for Required Module Files
 
-Check for all three module artifact files in `<module_directory>`:
+Check for these module artifact files in `<module_directory>`:
 
 | File | Purpose |
 |------|---------|
-| `.infrakit_context.md` | Original spec, variables, and design decisions |
-| `.infrakit_changelog.md` | History of all changes applied to this module |
-| `.infrakit_terraform_contract.md` | Stable module interface and guarantees for callers |
+| `.infrakit_context.md` | Module interface summary — variables, outputs, resources, providers |
+| `.infrakit_changelog.md` | Append-only history of all changes applied to this module |
+| `README.md` | User-facing usage docs (module example, inputs, outputs) |
 
-**If ALL three exist**: Read them all and proceed to Phase 4.
+**If all exist**: Read them all and proceed to Phase 4.
 
-**If ANY are missing**: Scan the existing `.tf` files to generate the missing ones (Phases 3.2–3.4).
+**If any are missing**: Scan the existing `.tf` files to generate the missing ones (Phases 3.2–3.3).
+
+> **Note**: The previous `.infrakit_terraform_contract.md` is no longer produced. `variables.tf`, `outputs.tf`, and `versions.tf` are the machine-readable interface contract — every variable type, output source, and version constraint lives there. The README adds the human-readable usage layer on top. Together they cover what the dropped contract file used to.
 
 ### 3.2 Scan Existing Module Files
 
@@ -201,61 +203,9 @@ For each file that does not exist, generate it now:
 
 ---
 
-**`.infrakit_terraform_contract.md`** (if missing):
+**`README.md`** (if missing):
 
-```markdown
-# Module Contract: <module-name>
-
-<!-- This contract defines the stable interface and guarantees for callers of this module. -->
-
-## Interface
-
-| Aspect | Value |
-|--------|-------|
-| Provider | `<provider>` |
-| Terraform Version | `>= <version>` |
-| Provider Version | `~> <version>` |
-| Stability | <Stable/Beta/Alpha — inferred from module maturity> |
-
-## Required Variables
-
-| Variable | Type | Description |
-|----------|------|-------------|
-| <required vars — no default> | | |
-
-## Optional Variables (with defaults)
-
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| <optional vars> | | | |
-
-## Outputs
-
-| Output | Type | Description |
-|--------|------|-------------|
-| <output name> | `<type>` | <desc> |
-
-## Resources Managed
-
-| Resource Type | Count | Notes |
-|---------------|-------|-------|
-| `<resource_type>` | <N> | <purpose or note> |
-
-## State Considerations
-- <Notes about Terraform state that callers should be aware of>
-- <Any resources that require careful state handling on changes>
-
-## Stability Guarantees
-- Required variables will not be removed without a documented breaking change notice
-- Output names and types will not change without a documented breaking change notice
-- Resources will not be renamed (causing destroy/recreate) without a migration guide
-
-## Breaking Change Policy
-- Breaking changes are documented in `.infrakit_changelog.md` with a migration guide
-- Callers must review the migration guide before re-applying after a breaking update
-
-<!-- Reconstructed by `/infrakit:update_terraform_code` from code analysis. -->
-```
+If the module has no `README.md` yet, the IaC Engineer regenerates one from `variables.tf` / `outputs.tf` / `versions.tf` / `main.tf` during Phase 9 (Implementation). For Phase 3 (validation), absence of README.md is not blocking — it will be produced/refreshed at the end of `/infrakit:implement` anyway.
 
 ### 3.4 Present Generated Files for Review
 
@@ -308,9 +258,9 @@ Register in `.infrakit_tracks/tracks.md` — add a row with Status `🔵 initial
 
 ## Phase 5: Cloud Solutions Engineer — Requirements Clarification and Spec
 
-**Adopt the Cloud Solutions Engineer persona.**
+This phase is **interactive** — you and the user iterate on what's changing. Run it **inline** in your current context regardless of whether your harness supports subagents: a subagent can't pause to wait for user input.
 
-Read `.infrakit/agent_personas/cloud_solutions_engineer.md` for detailed behavior.
+Adopt the Cloud Solutions Engineer persona by reading `.infrakit/agent_personas/cloud_solutions_engineer.md` and following its behaviour for the duration of Phase 5. Later phases (Architect and Security review) can be delegated to subagents when available — see Phases 6 and 7.
 
 > "I'll now guide you through defining the changes for this module.
 > Acting as the **Cloud Solutions Engineer**, I'll ask clarifying questions until I fully understand your requirements before writing the spec."
@@ -500,17 +450,30 @@ If changes are classified as Breaking or Mixed, also write `.infrakit_tracks/tra
 
 ---
 
-## Phase 6: Cloud Architect — Design Options
+## Phase 6: Cloud Architect — Design Options (delegated when subagents are available)
 
-**Announce:**
+The **analysis** part of this phase is read-only and benefits from subagent isolation; the **option-selection** part needs user input and must stay inline.
+
+**On Claude Code (`Task` tool with custom subagent type):**
+
+Invoke the `Task` tool with:
+
+- `subagent_type`: `cloud-architect` (registered at `.claude/agents/cloud-architect.md`)
+- `description`: `"Cloud Architect design options for <track-name>"`
+- `prompt`: `"For the update spec at .infrakit_tracks/tracks/<track-name>/spec.md, identify backward-compatibility constraints and state impact by reading the existing variables.tf, outputs.tf, versions.tf, main.tf, and .infrakit_context.md in the module directory. Then produce 2–3 distinct, named architecture options (Option A/B/C) following the format in Phase 6.2 of /infrakit:update_terraform_code. Do NOT pick one; return all options for the user to choose from. Do not modify any files."`
+
+Paste the returned options into your reply and proceed to Phase 6.2 (user selection).
+
+**On Codex / Gemini / Copilot / generic (no custom-subagent primitive):**
+
+Read `.infrakit/agent_personas/cloud_architect.md` and adopt that persona inline. Mark the boundary in your reply ("entering Cloud Architect phase"). Run the analysis described in Phase 6.1 and produce the option set described in Phase 6.2.
+
 > "Handing off to the Cloud Architect..."
 > "As the **Cloud Architect**, I'll review the spec and present distinct architecture options for implementing these changes. You choose the direction."
 
-Read `.infrakit/agent_personas/cloud_architect.md` for detailed behavior.
-
 ### 6.1 Architecture Analysis
 
-Review the spec alongside `.infrakit_context.md` and `.infrakit_terraform_contract.md`. Identify:
+Review the spec alongside `.infrakit_context.md`, `variables.tf`, `outputs.tf`, `versions.tf`, and `main.tf` (the existing module — your machine-readable contract). Identify:
 - Backward compatibility constraints from the current contract
 - State impact of each possible approach (in-place vs. destroy/recreate)
 - Whether `moved` blocks are needed for resource renames
@@ -615,11 +578,26 @@ Update `.infrakit_tracks/tracks/<track-name>/spec.md` — append an **Architectu
 **Announce:**
 > "Reviewing the update specification as the **Cloud Security Engineer**."
 
-Read `.infrakit/agent_personas/cloud_security_engineer.md` for detailed behavior.
+**Resolve compliance frameworks from `.infrakit/context.md` first.** Look for a `## Compliance` (or `## Security & Compliance` → `### Compliance Frameworks`) section listing frameworks (SOC 2, ISO 27001, HIPAA, PCI-DSS, NIST 800-53, FedRAMP, CIS Benchmarks).
 
-Ask which compliance frameworks apply. **WAIT** for response.
+- If context.md declares frameworks, announce: `"Using compliance frameworks declared in .infrakit/context.md: <frameworks>"` and use that list.
+- If context.md is silent on compliance, only then ask the user which frameworks apply. **WAIT** for response.
 
-Run inline compliance audit against the chosen architecture option. Present findings. **DO NOT modify spec.md automatically.**
+**On Claude Code (`Task` tool with custom subagent type):**
+
+Invoke the `Task` tool with:
+
+- `subagent_type`: `cloud-security-engineer` (registered at `.claude/agents/cloud-security-engineer.md`)
+- `description`: `"Cloud Security Engineer audit of update <track-name>"`
+- `prompt`: `"Audit the updated spec at .infrakit_tracks/tracks/<track-name>/spec.md (including its Architecture Decision section) against these frameworks: {frameworks chosen above}. Return the structured findings report per your persona. Do not modify any files."`
+
+Paste the report into your reply and proceed to the feedback loop below.
+
+**On Codex / Gemini / Copilot / generic (no custom-subagent primitive):**
+
+Read `.infrakit/agent_personas/cloud_security_engineer.md` and adopt that persona inline. Mark the boundary in your reply ("entering Cloud Security Engineer phase"). Audit the selected architecture option against the chosen frameworks and produce the same report format.
+
+**DO NOT modify `spec.md` automatically. Present findings first.**
 
 > "**Security Review Complete**
 >

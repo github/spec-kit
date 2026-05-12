@@ -1,0 +1,237 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: postgres-aws
+  labels:
+    provider: aws
+    service: rds
+spec:
+  compositeTypeRef:
+    apiVersion: database.platform.acme.com/v1alpha1
+    kind: XPostgreSQLInstance
+  writeConnectionSecretsToNamespace: crossplane-system
+  mode: Pipeline
+  pipeline:
+    - step: patch-and-transform
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          # ---------------------------------------------------------------
+          # 1. KMS key for RDS storage encryption
+          # ---------------------------------------------------------------
+          - name: kms-key
+            base:
+              apiVersion: kms.aws.upbound.io/v1beta1
+              kind: Key
+              spec:
+                forProvider:
+                  description: PostgreSQL storage encryption key
+                  enableKeyRotation: true
+                  deletionWindowInDays: 30
+                  tags:
+                    managed-by: crossplane
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.environment
+                toFieldPath: spec.forProvider.tags.environment
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.teamName
+                toFieldPath: spec.forProvider.tags.team
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.costCenter
+                toFieldPath: spec.forProvider.tags["cost-center"]
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.labels[crossplane.io/claim-name]
+                toFieldPath: spec.forProvider.tags["crossplane.io/claim-name"]
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+                toFieldPath: spec.forProvider.tags["crossplane.io/claim-namespace"]
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.arn
+                toFieldPath: status.kmsKeyArn
+                policy:
+                  fromFieldPath: Optional
+
+          # ---------------------------------------------------------------
+          # 2. RDS PostgreSQL Instance
+          # ---------------------------------------------------------------
+          - name: rds-instance
+            base:
+              apiVersion: rds.aws.upbound.io/v1beta1
+              kind: Instance
+              spec:
+                forProvider:
+                  engine: postgres
+                  username: dbadmin
+                  autoGeneratePassword: true
+                  passwordSecretRef:
+                    namespace: crossplane-system
+                    name: postgres-admin-credentials
+                    key: password
+                  publiclyAccessible: false
+                  storageEncrypted: true
+                  storageType: gp3
+                  copyTagsToSnapshot: true
+                  performanceInsightsEnabled: true
+                  performanceInsightsRetentionPeriod: 7
+                  enabledCloudwatchLogsExports:
+                    - postgresql
+                    - upgrade
+                  tags:
+                    managed-by: crossplane
+              writeConnectionSecretToRef:
+                namespace: crossplane-system
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.engineVersion
+                toFieldPath: spec.forProvider.engineVersion
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.instanceClass
+                toFieldPath: spec.forProvider.instanceClass
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.storageGB
+                toFieldPath: spec.forProvider.allocatedStorage
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.storageType
+                toFieldPath: spec.forProvider.storageType
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.backupRetentionDays
+                toFieldPath: spec.forProvider.backupRetentionPeriod
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.subnetGroupName
+                toFieldPath: spec.forProvider.dbSubnetGroupName
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.securityGroupIds
+                toFieldPath: spec.forProvider.vpcSecurityGroupIds
+              # KMS key wiring (from KMS resource above)
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.kmsKeyArn
+                toFieldPath: spec.forProvider.kmsKeyId
+                policy:
+                  fromFieldPath: Required
+              # Multi-AZ defaults: prod=true, others=false. Caller can override.
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.parameters.multiAZ
+                    - fromFieldPath: spec.parameters.environment
+                  strategy: string
+                  string:
+                    fmt: "%t|%s"
+                toFieldPath: spec.forProvider.multiAz
+                transforms:
+                  - type: map
+                    map:
+                      "true|dev": true
+                      "true|staging": true
+                      "true|prod": true
+                      "false|dev": false
+                      "false|staging": false
+                      "false|prod": false
+                      # When spec.parameters.multiAZ is unset, the variable
+                      # resolves to "<nil>". Map by environment alone:
+                      "<nil>|dev": false
+                      "<nil>|staging": false
+                      "<nil>|prod": true
+                policy:
+                  fromFieldPath: Optional
+              # Deletion protection defaults: prod=true, others=false.
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.parameters.deletionProtection
+                    - fromFieldPath: spec.parameters.environment
+                  strategy: string
+                  string:
+                    fmt: "%t|%s"
+                toFieldPath: spec.forProvider.deletionProtection
+                transforms:
+                  - type: map
+                    map:
+                      "true|dev": true
+                      "true|staging": true
+                      "true|prod": true
+                      "false|dev": false
+                      "false|staging": false
+                      "false|prod": false
+                      "<nil>|dev": false
+                      "<nil>|staging": false
+                      "<nil>|prod": true
+                policy:
+                  fromFieldPath: Optional
+              # Identifier: {env}-{team}-pg-primary
+              - type: CombineFromComposite
+                combine:
+                  variables:
+                    - fromFieldPath: spec.parameters.environment
+                    - fromFieldPath: spec.parameters.teamName
+                  strategy: string
+                  string:
+                    fmt: "%s-%s-pg-primary"
+                toFieldPath: spec.forProvider.identifier
+              # Tag patches
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.environment
+                toFieldPath: spec.forProvider.tags.environment
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.teamName
+                toFieldPath: spec.forProvider.tags.team
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.parameters.costCenter
+                toFieldPath: spec.forProvider.tags["cost-center"]
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.labels[crossplane.io/claim-name]
+                toFieldPath: spec.forProvider.tags["crossplane.io/claim-name"]
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.labels[crossplane.io/claim-namespace]
+                toFieldPath: spec.forProvider.tags["crossplane.io/claim-namespace"]
+              # Connection-secret name follows the claim
+              - type: PatchSet
+                patchSetName: connection-secret-name
+              # Status outputs
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.endpoint
+                toFieldPath: status.endpoint
+                policy:
+                  fromFieldPath: Optional
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.port
+                toFieldPath: status.port
+                policy:
+                  fromFieldPath: Optional
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.arn
+                toFieldPath: status.arn
+                policy:
+                  fromFieldPath: Optional
+            connectionDetails:
+              - fromConnectionSecretKey: endpoint
+                name: endpoint
+              - fromConnectionSecretKey: port
+                name: port
+              - fromConnectionSecretKey: username
+                name: username
+              - fromConnectionSecretKey: password
+                name: password
+              - type: FromFieldPath
+                name: database
+                fromFieldPath: status.atProvider.dbName
+              - type: FromFieldPath
+                name: host
+                fromFieldPath: status.atProvider.address
+
+        patchSets:
+          - name: connection-secret-name
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.writeConnectionSecretToRef.name
+                toFieldPath: spec.writeConnectionSecretToRef.name

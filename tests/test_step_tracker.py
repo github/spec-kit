@@ -1,6 +1,5 @@
 """Tests for StepTracker class."""
 
-import pytest
 
 from infrakit_cli import StepTracker
 

@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Personas rewritten — first 50 lines load-bearing, all files ≤265 lines.** The five persona files (`cloud_solutions_engineer.md`, `cloud_architect.md`, `cloud_security_engineer.md`, `terraform_engineer.md`, `crossplane_engineer.md`) totalled 2,147 lines before — now 1,063 (cut in half). The first ~50 lines of each now packs everything the model conditions on hardest: identity, scope, what they DON'T own (with explicit hand-off targets), what files they must read, and the hard rules. Everything else is reference material. Removed: long table-of-contents lists, ASCII flow diagrams, duplicate examples, multi-paragraph rationale for every rule, and the `MUST` / `CRITICAL` / `WAIT` all-caps shouting that frontier models don't respond to better than calm prose.
+
+- **Claude Code subagents are now real subagents, not role-play.** On Claude Code, the persona files are registered as **custom subagent types** at `.claude/agents/<persona-name>.md`. The multi-persona commands invoke them via `Task(subagent_type=cloud-architect, …)` with a one-paragraph delegation prompt; the persona file is the subagent's system prompt, the report contract is in the persona, and the orchestrator never sees the architect's reasoning steps — only the final report. New `claude_subagents` extras hook in `AGENT_CONFIG` drives the rendering; new tests cover the layout. Codex / Gemini / Copilot / generic agents keep the inline fallback as before (no custom-subagent primitive available there).
+
+- **Scoped supported AI agents from 19 down to 5**. The supported set is now: **Claude Code**, **Codex CLI**, **Gemini CLI**, **GitHub Copilot**, and a **generic** fallback for bring-your-own-agent setups. Dropped: cursor-agent, qwen, opencode, windsurf, kilocode, auggie, codebuddy, qodercli, roo, q (Amazon Q), amp, shai, agy, bob. The wider agent matrix accumulated faster than it could be tested end-to-end; per-agent prompt quality drifted because no one was running the workflow against 19 harnesses. The cap is now five agents that are tested on every release. If you need first-class support for another agent, open an issue. Existing user projects on dropped agents continue to work — the prompts they already have don't move; only fresh `infrakit init` is constrained.
+
+- **Multi-persona commands now invoke real subagents on agents that support them.** The four multi-persona commands (`/infrakit:create_terraform_code`, `/infrakit:new_composition`, `/infrakit:update_terraform_code`, `/infrakit:update_composition`) previously asked the parent agent to "adopt the X persona" inline — which produced role-play rather than real context isolation. On Claude Code, each read-only review phase (Cloud Architect, Cloud Security Engineer) now delegates to a fresh subagent via the `Task` tool, with the persona file as the subagent's system prompt and a structured-report return contract. The interactive Cloud Solutions Engineer phase still runs inline because subagents can't pause for user input. For Codex / Gemini / Copilot / generic agents (no `Task` primitive), the prompts include an explicit inline fallback that marks the persona-switch boundary in the agent's output. New `supports_subagents` field in `AGENT_CONFIG` is the source of truth.
+
+- **Split `src/infrakit_cli/__init__.py` into focused modules**. The 1,837-line megafile is now 11 modules of 100–600 lines each (`cli.py`, `bootstrap.py`, `skills.py`, `mcp.py`, `git_utils.py`, `tools.py`, `tracker.py`, `interactive.py`, `banner.py`, `console.py`, `github_api.py`). `__init__.py` is now an explicit re-export shim with `__all__` so existing imports (`from infrakit_cli import app`, etc.) continue to work. No behaviour change.
+
+- **Dropped the "Constraint-Driven Development" branding**. InfraKit is now described as "spec-kit for IaC, with a multi-persona pipeline" — a more honest framing that credits [spec-kit](https://github.com/github/spec-kit) for the workflow shape and reserves InfraKit's claims for its actual contribution (the four-persona Cloud Solutions Engineer → Architect → Security → IaC Engineer pipeline). The CDD name appeared only in marketing and docs; prompts and runtime code were already neutral. The methodology document at `constraint-driven.md` keeps its filename (URL stability) but reads as Spec-Driven Development with InfraKit-specific additions.
+
+- **Single-artifact release**. Templates and prompts now ship inside the `infrakit-cli` PyPI wheel instead of as 76 per-agent GitHub release ZIPs (19 agents × 2 IaC × 2 scripts). `infrakit init` performs all per-agent layout transformations (folder placement, TOML wrapping, Copilot prompt pairs, VS Code settings) at install time from the bundled prompts. **Effects**:
+  - `infrakit init` now runs entirely offline; no network calls.
+  - `--github-token` and `--skip-tls` flags are removed (templates no longer download).
+  - Existing user projects continue to work — the prompts they already have in `.claude/commands/` (or equivalent) are unchanged. Re-running `infrakit init --here` will re-materialize the latest in-package prompts.
+
+- **Full walkthrough examples**. `examples/terraform/` and `examples/crossplane/` now contain complete end-to-end runs (config, spec, plan, tasks, reviews, generated code) for an AWS S3 secure-bucket module and an `XPostgreSQLInstance` composition respectively.
+
+### Removed
+
+- Per-agent GitHub release ZIPs (`infrakit-template-<agent>-<iac>-<script>-vX.Y.Z.zip`). Install the CLI from PyPI (`pip install infrakit-cli` or `uv pip install infrakit-cli`) and run `infrakit init`.
+- The `--github-token` and `--skip-tls` flags on `infrakit init` (templates are now bundled in the wheel).
+- Six unused root template files (`plan-template.md`, `spec-template.md`, `tasks-template.md`, `agent-file-template.md`, `checklist-template.md`, `tagging-constraint-template.md`) and ten helper scripts (`setup-plan.sh/.ps1`, `create-new-feature.sh/.ps1`, `update-agent-context.sh/.ps1`, `check-prerequisites.sh/.ps1`, `common.sh/.ps1`) that fed them. None were referenced by any current InfraKit prompt.
+
 ### Added
 
 - **Auto-generated Task Lists**: `/infrakit:plan` now automatically generates `tasks.md` after the user accepts the plan. Tasks are checkbox items (`- [ ]`) that `/infrakit:implement` marks off as it executes. No separate `/infrakit:tasks` command needed.
@@ -121,7 +148,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Generates Markdown commands with `$ARGUMENTS` format (compatible with most agents)
   - Example: `infrakit init my-project --ai generic --ai-commands-dir .myagent/commands/`
   - Enables users to start with InfraKit immediately while their agent awaits formal support
-
 
 ## [0.0.102] - 2026-02-20
 
