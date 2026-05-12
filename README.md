@@ -46,6 +46,58 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ## ⚡ Get Started
 
+### Team workflow quickstart
+
+This fork is optimized for OpenCode skills, brownfield documentation ingestion,
+ticket-only Git branches, and an exploratory design step before final planning.
+
+Install this fork:
+
+```bash
+uv tool install specify-cli --force --from git+ssh://git@github.com/moogsG/spec-kit.git@main
+# Before this branch is merged, use:
+# uv tool install specify-cli --force --from git+ssh://git@github.com/moogsG/spec-kit.git@feat/team-workflow-customization
+```
+
+Initialize a new project with OpenCode skills:
+
+```bash
+specify init my-project --integration opencode --script sh
+cd my-project
+```
+
+Initialize an existing repository:
+
+```bash
+cd existing-repo
+specify init --here --integration opencode --script sh --force
+```
+
+For each feature, create or switch to a ticket-only branch before specifying work:
+
+```bash
+git checkout -b feature/GDEV-1234
+```
+
+Then run the skills in OpenCode:
+
+```text
+/speckit-context Use README.md and docs/ as authoritative project guidance
+/speckit-constitution Create or update project principles from the ingested context
+/speckit-specify Add login for existing users
+/speckit-design Explore implementation options, risks, and gaps before final planning
+/speckit-plan Use the existing backend DDD patterns and shared packages documented in AGENTS.md
+/speckit-tasks
+/speckit-implement
+```
+
+With branch `feature/GDEV-1234` and feature description `Add login for existing
+users`, the spec directory should be created as:
+
+```text
+specs/GDEV-1234-add-login/
+```
+
 ### 1. Install Specify CLI
 
 Choose your preferred installation method:
@@ -54,21 +106,21 @@ Choose your preferred installation method:
 
 #### Option 1: Persistent Installation (Recommended)
 
-Install once and use everywhere. Pin a specific release tag for stability (check [Releases](https://github.com/github/spec-kit/releases) for the latest):
+Install once and use everywhere. The commands below install this fork from `main` after the workflow branch is merged. To test this branch before merge, replace `@main` with `@feat/team-workflow-customization`.
 
 > [!NOTE]
 > The `uv tool install` commands below require **[uv](https://docs.astral.sh/uv/)** — a fast Python package manager. If you see `command not found: uv`, [install uv first](./docs/install/uv.md). The `pipx` alternative does not require uv.
 
 ```bash
-# Install a specific stable release (recommended — replace vX.Y.Z with the latest tag)
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+# Install this fork from main
+uv tool install specify-cli --from git+ssh://git@github.com/moogsG/spec-kit.git@main
 
-# Or install latest from main (may include unreleased changes)
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+# Replace an existing local install with this fork
+uv tool install specify-cli --force --from git+ssh://git@github.com/moogsG/spec-kit.git@main
 
-# Alternative: using pipx (also works)
-pipx install git+https://github.com/github/spec-kit.git@vX.Y.Z
-pipx install git+https://github.com/github/spec-kit.git
+# Alternative: using pipx
+pipx install git+ssh://git@github.com/moogsG/spec-kit.git@main
+pipx install --force git+ssh://git@github.com/moogsG/spec-kit.git@main
 ```
 
 Then verify the correct version is installed:
@@ -80,13 +132,11 @@ specify version
 And use the tool directly:
 
 ```bash
-# Create new project
-specify init <PROJECT_NAME>
+# Create a new OpenCode skills project
+specify init <PROJECT_NAME> --integration opencode --script sh
 
-# Or initialize in existing project
-specify init . --integration copilot
-# or
-specify init --here --integration copilot
+# Or initialize in an existing repository
+specify init --here --integration opencode --script sh --force
 
 # Check installed tools
 specify check
@@ -95,8 +145,8 @@ specify check
 To upgrade Specify, see the [Upgrade Guide](./docs/upgrade.md) for detailed instructions. Quick upgrade:
 
 ```bash
-uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@vX.Y.Z
-# pipx users: pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z
+uv tool install specify-cli --force --from git+ssh://git@github.com/moogsG/spec-kit.git@main
+# pipx users: pipx install --force git+ssh://git@github.com/moogsG/spec-kit.git@main
 ```
 
 #### Option 2: One-time Usage
@@ -104,13 +154,11 @@ uv tool install specify-cli --force --from git+https://github.com/github/spec-ki
 Run directly without installing:
 
 ```bash
-# Create new project (pinned to a stable release — replace vX.Y.Z with the latest tag)
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <PROJECT_NAME>
+# Create new OpenCode skills project
+uvx --from git+ssh://git@github.com/moogsG/spec-kit.git@main specify init <PROJECT_NAME> --integration opencode --script sh
 
-# Or initialize in existing project
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init . --integration copilot
-# or
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here --integration copilot
+# Or initialize in an existing repository
+uvx --from git+ssh://git@github.com/moogsG/spec-kit.git@main specify init --here --integration opencode --script sh --force
 ```
 
 **Benefits of persistent installation:**
@@ -126,44 +174,66 @@ If your environment blocks access to PyPI or GitHub, see the [Enterprise / Air-G
 
 ### 2. Establish project principles
 
-Launch your coding agent in the project directory. Most agents expose spec-kit as `/speckit.*` slash commands; Codex CLI in skills mode uses `$speckit-*` instead.
+Launch OpenCode in the project directory. This fork installs OpenCode commands as skills under `.opencode/skills/`, invoked with hyphenated slash commands such as `/speckit-specify`.
 
-Use the **`/speckit.constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
+For brownfield repositories or team projects with existing docs, first ingest that documentation:
 
-```bash
-/speckit.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements
+```text
+/speckit-context Use README.md, docs/design.md, docs/backend/ddd.md, and docs/shared-packages.md as authoritative project guidance
+```
+
+Then use the **`/speckit-constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
+
+```text
+/speckit-constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements
 ```
 
 ### 3. Create the spec
 
-Use the **`/speckit.specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
+Create or switch to a ticket-only branch before specifying work:
 
 ```bash
-/speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
+git checkout -b feature/GDEV-1234
 ```
 
-### 4. Create a technical implementation plan
+Use the **`/speckit-specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
-Use the **`/speckit.plan`** command to provide your tech stack and architecture choices.
-
-```bash
-/speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+```text
+/speckit-specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 ```
 
-### 5. Break down into tasks
+Accepted branch examples are `GDEV-1234`, `MSPS-1234`, `feature/GDEV-1234`, `fix/MSPS-1234`, `hotfix/GDEV-1234`, and `chore/MSPS-1234`. Spec Kit does not create branches automatically in this workflow.
 
-Use **`/speckit.tasks`** to create an actionable task list from your implementation plan.
+### 4. Explore design options
 
-```bash
-/speckit.tasks
+Use **`/speckit-design`** to rubber-duck implementation options, risks, gaps, and tradeoffs before finalizing the technical plan.
+
+```text
+/speckit-design Compare a minimal backend-only change against a shared-package change. Identify risks, missing requirements, and questions before finalizing the plan.
 ```
 
-### 6. Execute implementation
+### 5. Create a technical implementation plan
 
-Use **`/speckit.implement`** to execute all tasks and build your feature according to the plan.
+Use the **`/speckit-plan`** command to provide your tech stack and architecture choices.
 
-```bash
-/speckit.implement
+```text
+/speckit-plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+```
+
+### 6. Break down into tasks
+
+Use **`/speckit-tasks`** to create an actionable task list from your implementation plan.
+
+```text
+/speckit-tasks
+```
+
+### 7. Execute implementation
+
+Use **`/speckit-implement`** to execute all tasks and build your feature according to the plan.
+
+```text
+/speckit-implement
 ```
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
@@ -205,8 +275,8 @@ The following community-contributed extensions are available in [`catalog.commun
 | Architecture Guard | Continuous architecture governance for AI-assisted development. Reviews specs, plans, and code for architecture drift, producing structured refactor tasks and evolution proposals. | `process` | Read+Write | [spec-kit-architecture-guard](https://github.com/DyanGalih/spec-kit-architecture-guard) |
 | Archive Extension | Archive merged features into main project memory. | `docs` | Read+Write | [spec-kit-archive](https://github.com/stn1slv/spec-kit-archive) |
 | Azure DevOps Integration | Sync user stories and tasks to Azure DevOps work items using OAuth authentication | `integration` | Read+Write | [spec-kit-azure-devops](https://github.com/pragya247/spec-kit-azure-devops) |
-| Blueprint | Stay code-literate in AI-driven development: review a complete code blueprint for every task from spec artifacts before /speckit.implement runs | `docs` | Read+Write | [spec-kit-blueprint](https://github.com/chordpli/spec-kit-blueprint) |
-| Branch Convention | Configurable branch and folder naming conventions for /specify with presets and custom patterns | `process` | Read+Write | [spec-kit-branch-convention](https://github.com/Quratulain-bilal/spec-kit-branch-convention) |
+| Blueprint | Stay code-literate in AI-driven development: review a complete code blueprint for every task from spec artifacts before /speckit-implement runs | `docs` | Read+Write | [spec-kit-blueprint](https://github.com/chordpli/spec-kit-blueprint) |
+| Branch Convention | Configurable branch and folder naming conventions for `/speckit-specify` with presets and custom patterns | `process` | Read+Write | [spec-kit-branch-convention](https://github.com/Quratulain-bilal/spec-kit-branch-convention) |
 | Brownfield Bootstrap | Bootstrap spec-kit for existing codebases — auto-discover architecture and adopt SDD incrementally | `process` | Read+Write | [spec-kit-brownfield](https://github.com/Quratulain-bilal/spec-kit-brownfield) |
 | BrownKit | Evidence-driven capability discovery, security and QA risk assessment for existing codebases | `process` | Read+Write | [BrownKit](https://github.com/MaksimShevtsov/BrownKit) |
 | Bugfix Workflow | Structured bugfix workflow — capture bugs, trace to spec artifacts, and patch specs surgically | `process` | Read+Write | [spec-kit-bugfix](https://github.com/Quratulain-bilal/spec-kit-bugfix) |
@@ -256,7 +326,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | QA Testing Extension | Systematic QA testing with browser-driven or CLI-based validation of acceptance criteria from spec | `code` | Read-only | [spec-kit-qa](https://github.com/arunt14/spec-kit-qa) |
 | Ralph Loop | Autonomous implementation loop using AI agent CLI | `code` | Read+Write | [spec-kit-ralph](https://github.com/Rubiss-Projects/spec-kit-ralph) |
 | Reconcile Extension | Reconcile implementation drift by surgically updating feature artifacts. | `docs` | Read+Write | [spec-kit-reconcile](https://github.com/stn1slv/spec-kit-reconcile) |
-| Red Team | Adversarial review of specs before /speckit.plan — parallel lens agents surface risks that clarify/analyze structurally can't (prompt injection, integrity gaps, cross-spec drift, silent failures). Produces a structured findings report; no auto-edits to specs. | `docs` | Read+Write | [spec-kit-red-team](https://github.com/ashbrener/spec-kit-red-team) |
+| Red Team | Adversarial review of specs before /speckit-plan — parallel lens agents surface risks that clarify/analyze structurally can't (prompt injection, integrity gaps, cross-spec drift, silent failures). Produces a structured findings report; no auto-edits to specs. | `docs` | Read+Write | [spec-kit-red-team](https://github.com/ashbrener/spec-kit-red-team) |
 | Repository Index | Generate index for existing repo for overview, architecture and module level. | `docs` | Read-only | [spec-kit-repoindex](https://github.com/liuyiyu/spec-kit-repoindex) |
 | Retro Extension | Sprint retrospective analysis with metrics, spec accuracy assessment, and improvement suggestions | `process` | Read+Write | [spec-kit-retro](https://github.com/arunt14/spec-kit-retro) |
 | Retrospective Extension | Post-implementation retrospective with spec adherence scoring, drift analysis, and human-gated spec updates | `docs` | Read+Write | [spec-kit-retrospective](https://github.com/emi-dm/spec-kit-retrospective) |
@@ -275,7 +345,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | Spec Refine | Update specs in-place, propagate changes to plan and tasks, and diff impact across artifacts | `process` | Read+Write | [spec-kit-refine](https://github.com/Quratulain-bilal/spec-kit-refine) |
 | Spec Scope | Effort estimation and scope tracking — estimate work, detect creep, and budget time per phase | `process` | Read-only | [spec-kit-scope-](https://github.com/Quratulain-bilal/spec-kit-scope-) |
 | Spec Sync | Detect and resolve drift between specs and implementation. AI-assisted resolution with human approval | `docs` | Read+Write | [spec-kit-sync](https://github.com/bgervin/spec-kit-sync) |
-| Spec Validate | Comprehension validation, review gating, and approval state for spec-kit artifacts — staged quizzes, peer review SLA, and a hard gate before /speckit.implement | `process` | Read+Write | [spec-kit-spec-validate](https://github.com/aeltayeb/spec-kit-spec-validate) |
+| Spec Validate | Comprehension validation, review gating, and approval state for spec-kit artifacts — staged quizzes, peer review SLA, and a hard gate before /speckit-implement | `process` | Read+Write | [spec-kit-spec-validate](https://github.com/aeltayeb/spec-kit-spec-validate) |
 | Spec2Cloud | Spec-driven workflow tuned for shipping to Azure | `process` | Read+Write | [spec2cloud](https://github.com/Azure-Samples/Spec2Cloud) |
 | SpecTest | Auto-generate test scaffolds from spec criteria, map coverage, and find untested requirements | `code` | Read+Write | [spec-kit-spectest](https://github.com/Quratulain-bilal/spec-kit-spectest) |
 | Squad Bridge | Bootstrap and synchronize a Squad agent team from your Speckit spec and tasks | `process` | Read+Write | [spec-kit-squad](https://github.com/jwill824/spec-kit-squad) |
@@ -290,7 +360,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | Verify Tasks Extension | Detect phantom completions: tasks marked [X] in tasks.md with no real implementation | `code` | Read-only | [spec-kit-verify-tasks](https://github.com/datastone-inc/spec-kit-verify-tasks) |
 | Version Guard | Verify tech stack versions against live npm registries before planning and implementation | `process` | Read-only | [spec-kit-version-guard](https://github.com/KevinBrown5280/spec-kit-version-guard) |
 | What-if Analysis | Preview the downstream impact (complexity, effort, tasks, risks) of requirement changes before committing to them | `visibility` | Read-only | [spec-kit-whatif](https://github.com/DevAbdullah90/spec-kit-whatif) |
-| Wireframe Visual Feedback Loop | SVG wireframe generation, review, and sign-off for spec-driven development. Approved wireframes become spec constraints honored by /speckit.plan, /speckit.tasks, and /speckit.implement | `visibility` | Read+Write | [spec-kit-extension-wireframe](https://github.com/TortoiseWolfe/spec-kit-extension-wireframe) |
+| Wireframe Visual Feedback Loop | SVG wireframe generation, review, and sign-off for spec-driven development. Approved wireframes become spec constraints honored by /speckit-plan, /speckit-tasks, and /speckit-implement | `visibility` | Read+Write | [spec-kit-extension-wireframe](https://github.com/TortoiseWolfe/spec-kit-extension-wireframe) |
 | Work IQ | Integrate Microsoft 365 organizational knowledge into spec-driven development workflows | `integration` | Read-only | [spec-kit-workiq](https://github.com/sakitA/spec-kit-workiq) |
 | Worktree Isolation | Spawn isolated git worktrees for parallel feature development without checkout switching | `process` | Read+Write | [spec-kit-worktree](https://github.com/Quratulain-bilal/spec-kit-worktree) |
 | Worktrees | Default-on worktree isolation for parallel agents — sibling or nested layout | `process` | Read+Write | [spec-kit-worktree-parallel](https://github.com/dango85/spec-kit-worktree-parallel) |
@@ -322,30 +392,32 @@ Run `specify integration list` to see all available integrations in your install
 
 ## Available Slash Commands
 
-After running `specify init`, your AI coding agent will have access to these slash commands for structured development. For integrations that support skills mode, passing `--integration <agent> --integration-options="--skills"` installs agent skills instead of slash-command prompt files.
+After running `specify init`, your AI coding agent will have access to structured development commands. In this fork, OpenCode and Codex install skills by default and use hyphenated command names.
 
 #### Core Commands
 
 Essential commands for the Spec-Driven Development workflow:
 
-| Command                  | Agent Skill            | Description                                                                |
-| ------------------------ | ---------------------- | -------------------------------------------------------------------------- |
-| `/speckit.constitution`  | `speckit-constitution` | Create or update project governing principles and development guidelines   |
-| `/speckit.specify`       | `speckit-specify`      | Define what you want to build (requirements and user stories)              |
-| `/speckit.plan`          | `speckit-plan`         | Create technical implementation plans with your chosen tech stack          |
-| `/speckit.tasks`         | `speckit-tasks`        | Generate actionable task lists for implementation                          |
-| `/speckit.taskstoissues` | `speckit-taskstoissues`| Convert generated task lists into GitHub issues for tracking and execution |
-| `/speckit.implement`     | `speckit-implement`    | Execute all tasks to build the feature according to the plan               |
+| OpenCode/Codex command   | Agent Skill             | Description                                                                |
+| ------------------------ | ----------------------- | -------------------------------------------------------------------------- |
+| `/speckit-context`       | `speckit-context`       | Ingest existing docs into constitution, AGENTS.md, and project context      |
+| `/speckit-constitution`  | `speckit-constitution`  | Create or update project governing principles and development guidelines   |
+| `/speckit-specify`       | `speckit-specify`       | Define what you want to build (requirements and user stories)              |
+| `/speckit-design`        | `speckit-design`        | Explore options, gaps, risks, and tradeoffs before final planning          |
+| `/speckit-plan`          | `speckit-plan`          | Create technical implementation plans with your chosen tech stack          |
+| `/speckit-tasks`         | `speckit-tasks`         | Generate actionable task lists for implementation                          |
+| `/speckit-taskstoissues` | `speckit-taskstoissues` | Convert generated task lists into GitHub issues for tracking and execution |
+| `/speckit-implement`     | `speckit-implement`     | Execute all tasks to build the feature according to the plan               |
 
 #### Optional Commands
 
 Additional commands for enhanced quality and validation:
 
-| Command              | Agent Skill            | Description                                                                                                                          |
-| -------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `/speckit.clarify`   | `speckit-clarify`      | Clarify underspecified areas (recommended before `/speckit.plan`; formerly `/quizme`)                                                |
-| `/speckit.analyze`   | `speckit-analyze`      | Cross-artifact consistency & coverage analysis (run after `/speckit.tasks`, before `/speckit.implement`)                             |
-| `/speckit.checklist` | `speckit-checklist`    | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
+| OpenCode/Codex command | Agent Skill         | Description                                                                                                                          |
+| ---------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `/speckit-clarify`     | `speckit-clarify`   | Clarify underspecified areas (recommended before `/speckit-plan`; formerly `/quizme`)                                                |
+| `/speckit-analyze`     | `speckit-analyze`   | Cross-artifact consistency & coverage analysis (run after `/speckit-tasks`, before `/speckit-implement`)                             |
+| `/speckit-checklist`   | `speckit-checklist` | Generate custom quality checklists that validate requirements completeness, clarity, and consistency (like "unit tests for English") |
 
 ## 🔧 Specify CLI Reference
 
@@ -364,7 +436,7 @@ Spec Kit can be tailored to your needs through two complementary systems — **e
 
 - **Templates** are resolved at **runtime** — Spec Kit walks the stack top-down and uses the first match.
 - Project-local overrides (`.specify/templates/overrides/`) let you make one-off adjustments for a single project without creating a full preset.
-- **Extension/preset commands** are applied at **install time** — when you run `specify extension add` or `specify preset add`, command files are written into agent directories (e.g., `.claude/commands/`).
+- **Extension/preset commands** are applied at **install time** — when you run `specify extension add` or `specify preset add`, command files are written into agent directories (e.g., `.opencode/skills/` for OpenCode skills or `.claude/skills/` for Claude skills).
 - If multiple presets or extensions provide the same command, the highest-priority version wins. On removal, the next-highest-priority version is restored automatically.
 - If no overrides or customizations exist, Spec Kit uses its core defaults.
 
@@ -475,73 +547,84 @@ If you encounter issues with an agent, please open an issue so we can refine the
 <details>
 <summary>Click to expand the detailed step-by-step walkthrough</summary>
 
-You can use the Specify CLI to bootstrap your project, which will bring in the required artifacts in your environment. Run:
+Use the Specify CLI to bootstrap your project with the OpenCode skills integration:
 
 ```bash
-specify init <project_name>
+specify init <project_name> --integration opencode --script sh
 ```
 
 Or initialize in the current directory:
 
 ```bash
-specify init .
+specify init . --integration opencode --script sh
 # or use the --here flag
-specify init --here
+specify init --here --integration opencode --script sh
 # Skip confirmation when the directory already has files
-specify init . --force
+specify init . --force --integration opencode --script sh
 # or
-specify init --here --force
+specify init --here --force --integration opencode --script sh
 ```
 
 ![Specify CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
 
-In an interactive terminal, you will be prompted to select the coding agent integration you are using. In non-interactive sessions, such as CI or piped runs, `specify init` defaults to GitHub Copilot unless you pass `--integration`. You can also proactively specify the integration directly in the terminal:
+In an interactive terminal, you will be prompted to select the coding agent integration you are using. In this team's workflow, always pass `--integration opencode --script sh` explicitly so initialization is deterministic:
 
 ```bash
-specify init <project_name> --integration copilot
-specify init <project_name> --integration gemini
-specify init <project_name> --integration codex
+specify init <project_name> --integration opencode --script sh
+specify init <project_name> --integration codex --script sh
 
 # Or in current directory:
-specify init . --integration copilot
-specify init . --integration codex --integration-options="--skills"
+specify init . --integration opencode --script sh
+specify init . --integration codex --script sh
 
 # or use --here flag
-specify init --here --integration copilot
-specify init --here --integration codex --integration-options="--skills"
+specify init --here --integration opencode --script sh
+specify init --here --integration codex --script sh
 
 # Force merge into a non-empty current directory
-specify init . --force --integration copilot
+specify init . --force --integration opencode --script sh
 
 # or
-specify init --here --force --integration copilot
+specify init --here --force --integration opencode --script sh
 ```
 
 The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, Qoder CLI, Tabnine CLI, Kiro CLI, Pi, Forge, Goose, or Mistral Vibe installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
-specify init <project_name> --integration copilot --ignore-agent-tools
+specify init <project_name> --integration opencode --script sh --ignore-agent-tools
 ```
 
 ### **STEP 1:** Establish project principles
 
-Go to the project folder and run your coding agent. In our example, we're using `claude`.
+Go to the project folder and run your coding agent. In this fork's team workflow, use OpenCode with generated skills.
 
-![Bootstrapping Claude Code environment](./media/bootstrap-claude-code.gif)
+![Specify CLI bootstrapping a project](./media/specify_cli.gif)
 
-You will know that things are configured correctly if you see the `/speckit.constitution`, `/speckit.specify`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.implement` commands available.
+You will know that things are configured correctly if you see skills such as `/speckit-context`, `/speckit-constitution`, `/speckit-specify`, `/speckit-design`, `/speckit-plan`, `/speckit-tasks`, and `/speckit-implement` available.
 
-The first step should be establishing your project's governing principles using the `/speckit.constitution` command. This helps ensure consistent decision-making throughout all subsequent development phases:
+For brownfield repositories, first ingest existing documentation into operational project guidance:
 
 ```text
-/speckit.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements. Include governance for how these principles should guide technical decisions and implementation choices.
+/speckit-context Use README.md, docs/design.md, docs/backend/ddd.md, and docs/shared-packages.md as authoritative project guidance
+```
+
+Then establish your project's governing principles using the `/speckit-constitution` command. This helps ensure consistent decision-making throughout all subsequent development phases:
+
+```text
+/speckit-constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements. Include governance for how these principles should guide technical decisions and implementation choices.
 ```
 
 This step creates or updates the `.specify/memory/constitution.md` file with your project's foundational guidelines that the coding agent will reference during specification, planning, and implementation phases.
 
 ### **STEP 2:** Create project specifications
 
-With your project principles established, you can now create the functional specifications. Use the `/speckit.specify` command and then provide the concrete requirements for the project you want to develop.
+With your project principles established, create or switch to a ticket-only branch, then create the functional specification.
+
+```bash
+git checkout -b feature/GDEV-1234
+```
+
+Use the `/speckit-specify` command and provide the concrete requirements for the project you want to develop.
 
 > [!IMPORTANT]
 > Be as explicit as possible about *what* you are trying to build and *why*. **Do not focus on the tech stack at this point**.
@@ -567,31 +650,53 @@ see yours. You can edit any comments that you make, but you can't edit comments 
 delete any comments that you made, but you can't delete comments anybody else made.
 ```
 
-After this prompt is entered, you should see Claude Code kick off the planning and spec drafting process. Claude Code will also trigger some of the built-in scripts to set up the repository.
+After this prompt is entered, OpenCode will trigger the ticket-branch validation hook and draft the specification.
 
-Once this step is completed, you should have a new branch created (e.g., `001-create-taskify`), as well as a new specification in the `specs/001-create-taskify` directory.
+Once this step is completed, you should remain on your existing ticket branch (for example, `feature/GDEV-1234`) and have a new specification in a ticket-prefixed directory such as `specs/GDEV-1234-create-taskify`.
 
 The produced specification should contain a set of user stories and functional requirements, as defined in the template.
 
 At this stage, your project folder contents should resemble the following:
 
 ```text
-└── .specify
-    ├── memory
-    │  └── constitution.md
-    ├── scripts
-    │  ├── check-prerequisites.sh
-    │  ├── common.sh
-    │  ├── create-new-feature.sh
-    │  ├── setup-plan.sh
-    │  └── update-claude-md.sh
-    ├── specs
-    │  └── 001-create-taskify
-    │      └── spec.md
-    └── templates
-        ├── plan-template.md
-        ├── spec-template.md
-        └── tasks-template.md
+.
+├── AGENTS.md
+├── .opencode
+│   └── skills
+│       ├── speckit-context
+│       │   └── SKILL.md
+│       ├── speckit-specify
+│       │   └── SKILL.md
+│       ├── speckit-design
+│       │   └── SKILL.md
+│       └── ...
+├── .specify
+│   ├── feature.json
+│   ├── init-options.json
+│   ├── integration.json
+│   ├── integrations
+│   │   ├── opencode.manifest.json
+│   │   └── speckit.manifest.json
+│   ├── memory
+│   │   └── constitution.md
+│   ├── scripts
+│   │   └── bash
+│   │       ├── check-prerequisites.sh
+│   │       ├── common.sh
+│   │       ├── create-new-feature.sh
+│   │       ├── setup-plan.sh
+│   │       └── setup-tasks.sh
+│   └── templates
+│       ├── checklist-template.md
+│       ├── constitution-template.md
+│       ├── plan-template.md
+│       ├── spec-template.md
+│       └── tasks-template.md
+└── specs
+    └── GDEV-1234-create-taskify
+        ├── checklists
+        │   └── requirements.md
+        └── spec.md
 ```
 
 ### **STEP 3:** Functional specification clarification (required before planning)
@@ -602,12 +707,12 @@ You should run the structured clarification workflow **before** creating a techn
 
 Preferred order:
 
-1. Use `/speckit.clarify` (structured) – sequential, coverage-based questioning that records answers in a Clarifications section.
+1. Use `/speckit-clarify` (structured) – sequential, coverage-based questioning that records answers in a Clarifications section.
 2. Optionally follow up with ad-hoc free-form refinement if something still feels vague.
 
 If you intentionally want to skip clarification (e.g., spike or exploratory prototype), explicitly state that so the agent doesn't block on missing clarifications.
 
-Example free-form refinement prompt (after `/speckit.clarify` if still needed):
+Example free-form refinement prompt (after `/speckit-clarify` if still needed):
 
 ```text
 For each sample project or project that you create there should be a variable number of tasks between 5 and 15
@@ -615,19 +720,31 @@ tasks for each one randomly distributed into different states of completion. Mak
 one task in each stage of completion.
 ```
 
-You should also ask Claude Code to validate the **Review & Acceptance Checklist**, checking off the things that are validated/pass the requirements, and leave the ones that are not unchecked. The following prompt can be used:
+You should also ask OpenCode to validate the **Review & Acceptance Checklist**, checking off the things that are validated/pass the requirements, and leave the ones that are not unchecked. The following prompt can be used:
 
 ```text
 Read the review and acceptance checklist, and check off each item in the checklist if the feature spec meets the criteria. Leave it empty if it does not.
 ```
 
-It's important to use the interaction with Claude Code as an opportunity to clarify and ask questions around the specification - **do not treat its first attempt as final**.
+It's important to use the interaction with OpenCode as an opportunity to clarify and ask questions around the specification - **do not treat its first attempt as final**.
 
-### **STEP 4:** Generate a plan
+### **STEP 4:** Explore design options
 
-You can now be specific about the tech stack and other technical requirements. You can use the `/speckit.plan` command that is built into the project template with a prompt like this:
+Before finalizing a technical plan, use `/speckit-design` to rubber-duck options, risks, missing requirements, and tradeoffs:
 
 ```text
+/speckit-design Compare the simplest local implementation against a shared-package implementation. Identify blockers, risks, testing implications, and questions I need to answer before final planning.
+```
+
+This step may create or update `design.md` in the active feature directory. It should not finalize `plan.md`, create `tasks.md`, or modify implementation code.
+
+### **STEP 5:** Generate a plan
+
+You can now be specific about the tech stack and other technical requirements. Use `/speckit-plan` with the selected design direction:
+
+```text
+/speckit-plan
+
 We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use
 Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API,
 tasks API, and a notifications API.
@@ -637,35 +754,47 @@ The output of this step will include a number of implementation detail documents
 
 ```text
 .
-├── CLAUDE.md
-├── memory
-│  └── constitution.md
-├── scripts
-│  ├── check-prerequisites.sh
-│  ├── common.sh
-│  ├── create-new-feature.sh
-│  ├── setup-plan.sh
-│  └── update-claude-md.sh
+├── AGENTS.md
+├── .opencode
+│   └── skills
+│       └── ...
+├── .specify
+│   ├── feature.json
+│   ├── init-options.json
+│   ├── integration.json
+│   ├── memory
+│   │   └── constitution.md
+│   ├── scripts
+│   │   └── bash
+│   │       ├── check-prerequisites.sh
+│   │       ├── common.sh
+│   │       ├── create-new-feature.sh
+│   │       ├── setup-plan.sh
+│   │       └── setup-tasks.sh
+│   └── templates
+│       ├── checklist-template.md
+│       ├── constitution-template.md
+│       ├── plan-template.md
+│       ├── spec-template.md
+│       └── tasks-template.md
 ├── specs
-│  └── 001-create-taskify
+│  └── GDEV-1234-create-taskify
 │      ├── contracts
 │      │  ├── api-spec.json
 │      │  └── signalr-spec.md
+│      ├── checklists
+│      │  └── requirements.md
 │      ├── data-model.md
+│      ├── design.md
 │      ├── plan.md
 │      ├── quickstart.md
 │      ├── research.md
 │      └── spec.md
-└── templates
-    ├── CLAUDE-template.md
-    ├── plan-template.md
-    ├── spec-template.md
-    └── tasks-template.md
 ```
 
-Check the `research.md` document to ensure that the right tech stack is used, based on your instructions. You can ask Claude Code to refine it if any of the components stand out, or even have it check the locally-installed version of the platform/framework you want to use (e.g., .NET).
+Check the `research.md` document to ensure that the right tech stack is used, based on your instructions. You can ask OpenCode to refine it if any of the components stand out, or even have it check the locally-installed version of the platform/framework you want to use (e.g., .NET).
 
-Additionally, you might want to ask Claude Code to research details about the chosen tech stack if it's something that is rapidly changing (e.g., .NET Aspire, JS frameworks), with a prompt like this:
+Additionally, you might want to ask OpenCode to research details about the chosen tech stack if it's something that is rapidly changing (e.g., .NET Aspire, JS frameworks), with a prompt like this:
 
 ```text
 I want you to go through the implementation plan and implementation details, looking for areas that could
@@ -675,7 +804,7 @@ versions that we are going to be using in this Taskify application and spawn par
 any details using research from the web.
 ```
 
-During this process, you might find that Claude Code gets stuck researching the wrong thing - you can help nudge it in the right direction with a prompt like this:
+During this process, you might find that OpenCode gets stuck researching the wrong thing - you can help nudge it in the right direction with a prompt like this:
 
 ```text
 I think we need to break this down into a series of steps. First, identify a list of tasks
@@ -688,11 +817,11 @@ That's way too untargeted research. The research needs to help you solve a speci
 ```
 
 > [!NOTE]
-> Claude Code might be over-eager and add components that you did not ask for. Ask it to clarify the rationale and the source of the change.
+> OpenCode might be over-eager and add components that you did not ask for. Ask it to clarify the rationale and the source of the change.
 
-### **STEP 5:** Have Claude Code validate the plan
+### **STEP 6:** Have OpenCode validate the plan
 
-With the plan in place, you should have Claude Code run through it to make sure that there are no missing pieces. You can use a prompt like this:
+With the plan in place, have OpenCode run through it to make sure that there are no missing pieces. You can use a prompt like this:
 
 ```text
 Now I want you to go and audit the implementation plan and the implementation detail files.
@@ -702,19 +831,19 @@ when I look at the core implementation, it would be useful to reference the appr
 details where it can find the information as it walks through each step in the core implementation or in the refinement.
 ```
 
-This helps refine the implementation plan and helps you avoid potential blind spots that Claude Code missed in its planning cycle. Once the initial refinement pass is complete, ask Claude Code to go through the checklist once more before you can get to the implementation.
+This helps refine the implementation plan and helps you avoid potential blind spots missed in the planning cycle. Once the initial refinement pass is complete, ask OpenCode to go through the checklist once more before implementation.
 
-You can also ask Claude Code (if you have the [GitHub CLI](https://docs.github.com/en/github-cli/github-cli) installed) to go ahead and create a pull request from your current branch to `main` with a detailed description, to make sure that the effort is properly tracked.
+You can also ask OpenCode (if you have the [GitHub CLI](https://docs.github.com/en/github-cli/github-cli) installed) to create a pull request from your current ticket branch to the repository's default branch with a detailed description.
 
 > [!NOTE]
-> Before you have the agent implement it, it's also worth prompting Claude Code to cross-check the details to see if there are any over-engineered pieces (remember - it can be over-eager). If over-engineered components or decisions exist, you can ask Claude Code to resolve them. Ensure that Claude Code follows the [constitution](base/memory/constitution.md) as the foundational piece that it must adhere to when establishing the plan.
+> Before you have the agent implement it, it's also worth prompting OpenCode to cross-check the details to see if there are any over-engineered pieces. If over-engineered components or decisions exist, ask OpenCode to resolve them. Ensure that OpenCode follows `.specify/memory/constitution.md` as the foundational project guidance.
 
-### **STEP 6:** Generate task breakdown with /speckit.tasks
+### **STEP 7:** Generate task breakdown with /speckit-tasks
 
-With the implementation plan validated, you can now break down the plan into specific, actionable tasks that can be executed in the correct order. Use the `/speckit.tasks` command to automatically generate a detailed task breakdown from your implementation plan:
+With the implementation plan validated, you can now break down the plan into specific, actionable tasks that can be executed in the correct order. Use the `/speckit-tasks` command to automatically generate a detailed task breakdown from your implementation plan:
 
 ```text
-/speckit.tasks
+/speckit-tasks
 ```
 
 This step creates a `tasks.md` file in your feature specification directory that contains:
@@ -726,17 +855,17 @@ This step creates a `tasks.md` file in your feature specification directory that
 - **Test-driven development structure** - If tests are requested, test tasks are included and ordered to be written before implementation
 - **Checkpoint validation** - Each user story phase includes checkpoints to validate independent functionality
 
-The generated tasks.md provides a clear roadmap for the `/speckit.implement` command, ensuring systematic implementation that maintains code quality and allows for incremental delivery of user stories.
+The generated tasks.md provides a clear roadmap for the `/speckit-implement` command, ensuring systematic implementation that maintains code quality and allows for incremental delivery of user stories.
 
-### **STEP 7:** Implementation
+### **STEP 8:** Implementation
 
-Once ready, use the `/speckit.implement` command to execute your implementation plan:
+Once ready, use the `/speckit-implement` command to execute your implementation plan:
 
 ```text
-/speckit.implement
+/speckit-implement
 ```
 
-The `/speckit.implement` command will:
+The `/speckit-implement` command will:
 
 - Validate that all prerequisites are in place (constitution, spec, plan, and tasks)
 - Parse the task breakdown from `tasks.md`
