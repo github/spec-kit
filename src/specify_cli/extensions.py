@@ -2482,8 +2482,18 @@ class HookExecutor:
 
         try:
             result = yaml.safe_load(self.config_file.read_text(encoding="utf-8"))
-            # Coerce non-dict results (scalars, lists) to {} so all callers are safe (Feedback)
-            return result if isinstance(result, dict) else {}
+            # Coerce non-dict root to {} so all callers are safe (Feedback)
+            if not isinstance(result, dict):
+                return {}
+            # Normalize nested fields so read-only callers like get_hooks_for_event()
+            # never see non-dict hooks or non-list installed (Feedback)
+            if not isinstance(result.get("hooks"), dict):
+                result["hooks"] = {}
+            if not isinstance(result.get("installed"), list):
+                result["installed"] = []
+            if not isinstance(result.get("settings"), dict):
+                result["settings"] = {"auto_execute_hooks": True}
+            return result
         except (yaml.YAMLError, OSError, UnicodeError):
             return {
                 "installed": [],
