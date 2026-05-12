@@ -4855,8 +4855,8 @@ def extension_update(
             backup_config_dir = backup_base / "config"
 
             # Store backup state
-            backup_hooks = None  # None means no hooks key in config; {} means hooks key existed
             backup_installed = UNSET  # Original installed list from extensions.yml
+            backup_hooks = None  # None means no hooks key in config; {} means hooks key existed
             backed_up_command_files = {}
 
             try:
@@ -4882,7 +4882,7 @@ def extension_update(
 
                 # 3. Backup command files for all agents
                 from .agents import CommandRegistrar as _AgentReg
-                registered_commands = backup_registry_entry.get("registered_commands", {})
+                registered_commands = backup_registry_entry.get("registered_commands", {}) if isinstance(backup_registry_entry, dict) else {}
                 for agent_name, cmd_names in registered_commands.items():
                     if agent_name not in registrar.AGENT_CONFIGS:
                         continue
@@ -4913,19 +4913,20 @@ def extension_update(
                 config = hook_executor.get_project_config()
                 
                 # Defensive: ensure config is a dict (Review Feedback)
-                if not isinstance(config, dict):
-                    config = {}
-                
-                backup_installed = config.get("installed", MISSING)
-                
-                if "hooks" in config:
-                    backup_hooks = {}  # Config has hooks key - preserve this fact
-                    for hook_name, hook_list in config["hooks"].items():
-                        if not isinstance(hook_list, list):
-                            continue
-                        ext_hooks = [h for h in hook_list if isinstance(h, dict) and h.get("extension") == extension_id]
-                        if ext_hooks:
-                            backup_hooks[hook_name] = ext_hooks
+                if isinstance(config, dict):
+                    backup_installed = config.get("installed", MISSING)
+                    
+                    hooks = config.get("hooks")
+                    if isinstance(hooks, dict):
+                        backup_hooks = {}  # Config has hooks key - preserve this fact
+                        for hook_name, hook_list in hooks.items():
+                            if not isinstance(hook_list, list):
+                                continue
+                            ext_hooks = [h for h in hook_list if isinstance(h, dict) and h.get("extension") == extension_id]
+                            if ext_hooks:
+                                backup_hooks[hook_name] = ext_hooks
+                else:
+                    backup_installed = MISSING
 
                 # 5. Download new version
                 zip_path = catalog.download_extension(extension_id)
@@ -5080,6 +5081,9 @@ def extension_update(
                     # - backup_hooks=None means original config had no "hooks" key
                     # - backup_hooks={} or {...} means config had hooks key
                     config = hook_executor.get_project_config()
+                    # Defensive: coerce non-dict config (Feedback from review)
+                    if not isinstance(config, dict):
+                        config = {}
                     if "hooks" in config:
                         modified = False
 
@@ -5088,23 +5092,28 @@ def extension_update(
                             del config["hooks"]
                             modified = True
                         else:
-                            # Remove any hooks for this extension added by failed install
-                            for hook_name, hooks_list in config["hooks"].items():
-                                original_len = len(hooks_list)
-                                config["hooks"][hook_name] = [
-                                    h for h in hooks_list
-                                    if h.get("extension") != extension_id
-                                ]
-                                if len(config["hooks"][hook_name]) != original_len:
-                                    modified = True
+                            # Guard: skip if hooks is not a dict (corrupted config)
+                            if isinstance(config["hooks"], dict):
+                                # Remove any hooks for this extension added by failed install
+                                for hook_name in list(config["hooks"].keys()):
+                                    hooks_list = config["hooks"][hook_name]
+                                    if not isinstance(hooks_list, list):
+                                        continue
+                                    original_len = len(hooks_list)
+                                    config["hooks"][hook_name] = [
+                                        h for h in hooks_list
+                                        if isinstance(h, dict) and h.get("extension") != extension_id
+                                    ]
+                                    if len(config["hooks"][hook_name]) != original_len:
+                                        modified = True
 
-                            # Add back the backed up hooks if any
-                            if backup_hooks:
-                                for hook_name, hooks in backup_hooks.items():
-                                    if hook_name not in config["hooks"]:
-                                        config["hooks"][hook_name] = []
-                                    config["hooks"][hook_name].extend(hooks)
-                                    modified = True
+                                # Add back the backed up hooks if any
+                                if backup_hooks:
+                                    for hook_name, hooks in backup_hooks.items():
+                                        if hook_name not in config["hooks"] or not isinstance(config["hooks"][hook_name], list):
+                                            config["hooks"][hook_name] = []
+                                        config["hooks"][hook_name].extend(hooks)
+                                        modified = True
 
                         if modified:
                             hook_executor.save_project_config(config)

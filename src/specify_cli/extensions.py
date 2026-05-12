@@ -2637,21 +2637,19 @@ class HookExecutor:
                 "condition": hook_config.get("condition"),
             }
 
-            # Check if already registered
-            existing_idx = -1
-            for i, h in enumerate(config["hooks"][hook_name]):
-                if isinstance(h, dict) and h.get("extension") == manifest.id:
-                    existing_idx = i
-                    break
-
-            if existing_idx == -1:
-                config["hooks"][hook_name].append(hook_entry)
+            # Deduplicate: remove all existing entries for this extension on this
+            # hook event, then append the single canonical entry. This prevents
+            # multiple hooks firing when hand-edited or older versions leave
+            # duplicate entries behind. (Feedback from review)
+            original_list = config["hooks"][hook_name]
+            deduped = [
+                h for h in original_list
+                if not (isinstance(h, dict) and h.get("extension") == manifest.id)
+            ]
+            deduped.append(hook_entry)
+            if deduped != original_list:
+                config["hooks"][hook_name] = deduped
                 changed = True
-            else:
-                # Update existing if changed
-                if config["hooks"][hook_name][existing_idx] != hook_entry:
-                    config["hooks"][hook_name][existing_idx] = hook_entry
-                    changed = True
 
         if changed:
             self.save_project_config(config)
