@@ -2482,9 +2482,14 @@ class HookExecutor:
 
         try:
             result = yaml.safe_load(self.config_file.read_text(encoding="utf-8"))
-            # Coerce non-dict root to {} so all callers are safe (Feedback)
+            # Coerce non-dict root (including None for an empty file) to the
+            # fully-normalized default so callers always get guaranteed fields.
             if not isinstance(result, dict):
-                return {}
+                return {
+                    "installed": [],
+                    "hooks": {},
+                    "settings": {"auto_execute_hooks": True},
+                }
             # Normalize nested fields so read-only callers like get_hooks_for_event()
             # never see non-dict hooks or non-list installed (Feedback)
             if not isinstance(result.get("hooks"), dict):
@@ -2551,7 +2556,8 @@ class HookExecutor:
             if eid not in seen or isinstance(x, dict):
                 seen[eid] = x
 
-        # Ensure the target extension id is registered (as a plain string)
+        # Ensure the target extension id is present in the registry; if not
+        # already tracked (as a dict or string), add it as a plain string.
         if extension_id not in seen:
             seen[extension_id] = extension_id
 
