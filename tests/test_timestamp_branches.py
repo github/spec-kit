@@ -1,20 +1,20 @@
 """
 Pytest tests for timestamp-based branch naming in create-new-feature.sh and common.sh.
- 
+
 Converted from tests/test_timestamp_branches.sh so they are discovered by `uv run pytest`.
 """
- 
+
 import json
 import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
- 
+
 import pytest
- 
+
 from tests.conftest import requires_bash
- 
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CREATE_FEATURE = PROJECT_ROOT / "scripts" / "bash" / "create-new-feature.sh"
 CREATE_FEATURE_PS = PROJECT_ROOT / "scripts" / "powershell" / "create-new-feature.ps1"
@@ -27,15 +27,15 @@ EXT_CREATE_FEATURE_PS = (
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
 EXT_CREATE_FEATURE = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
 EXT_CREATE_FEATURE_PS = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
- 
+
 HAS_PWSH = shutil.which("pwsh") is not None
- 
- 
+
+
 def _has_pwsh() -> bool:
     """Check if pwsh is available."""
     return HAS_PWSH
- 
- 
+
+
 @pytest.fixture
 def git_repo(tmp_path: Path) -> Path:
     """Create a temp git repo with scripts and .specify dir."""
@@ -57,8 +57,8 @@ def git_repo(tmp_path: Path) -> Path:
     shutil.copy(COMMON_SH, scripts_dir / "common.sh")
     (tmp_path / ".specify" / "templates").mkdir(parents=True)
     return tmp_path
- 
- 
+
+
 @pytest.fixture
 def ext_git_repo(tmp_path: Path) -> Path:
     """Create a temp git repo with extension scripts (for GIT_BRANCH_NAME tests)."""
@@ -85,8 +85,8 @@ def ext_git_repo(tmp_path: Path) -> Path:
     (tmp_path / ".specify" / "templates").mkdir(parents=True, exist_ok=True)
     (tmp_path / "specs").mkdir(exist_ok=True)
     return tmp_path
- 
- 
+
+
 @pytest.fixture
 def ext_ps_git_repo(tmp_path: Path) -> Path:
     """Create a temp git repo with PowerShell extension scripts."""
@@ -113,8 +113,8 @@ def ext_ps_git_repo(tmp_path: Path) -> Path:
     (tmp_path / ".specify" / "templates").mkdir(parents=True, exist_ok=True)
     (tmp_path / "specs").mkdir(exist_ok=True)
     return tmp_path
- 
- 
+
+
 @pytest.fixture
 def no_git_dir(tmp_path: Path) -> Path:
     """Create a temp directory without git, but with scripts."""
@@ -124,8 +124,8 @@ def no_git_dir(tmp_path: Path) -> Path:
     shutil.copy(COMMON_SH, scripts_dir / "common.sh")
     (tmp_path / ".specify" / "templates").mkdir(parents=True)
     return tmp_path
- 
- 
+
+
 def run_script(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     """Run create-new-feature.sh with given args."""
     cmd = ["bash", "scripts/bash/create-new-feature.sh", *args]
@@ -135,8 +135,8 @@ def run_script(cwd: Path, *args: str) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
     )
- 
- 
+
+
 def source_and_call(func_call: str, env: dict | None = None) -> subprocess.CompletedProcess:
     """Source common.sh and call a function."""
     cmd = f'source "{COMMON_SH}" && {func_call}'
@@ -146,11 +146,11 @@ def source_and_call(func_call: str, env: dict | None = None) -> subprocess.Compl
         text=True,
         env={**os.environ, **(env or {})},
     )
- 
- 
+
+
 # ── Timestamp Branch Tests ───────────────────────────────────────────────────
- 
- 
+
+
 @requires_bash
 class TestTimestampBranch:
     def test_timestamp_creates_branch(self, git_repo: Path):
@@ -163,13 +163,13 @@ class TestTimestampBranch:
                 branch = line.split(":", 1)[1].strip()
         assert branch is not None
         assert re.match(r"^\d{8}-\d{6}-user-auth$", branch), f"unexpected branch: {branch}"
- 
+
     def test_number_and_timestamp_warns(self, git_repo: Path):
         """Test 3: --number + --timestamp warns and uses timestamp."""
         result = run_script(git_repo, "--timestamp", "--number", "42", "--short-name", "feat", "Feature")
         assert result.returncode == 0, result.stderr
         assert "Warning" in result.stderr and "--number" in result.stderr
- 
+
     def test_json_output_keys(self, git_repo: Path):
         """Test 4: JSON output contains expected keys."""
         import json
@@ -179,7 +179,7 @@ class TestTimestampBranch:
         for key in ("BRANCH_NAME", "SPEC_FILE", "FEATURE_NUM"):
             assert key in data, f"missing {key} in JSON: {data}"
         assert re.match(r"^\d{8}-\d{6}$", data["FEATURE_NUM"])
- 
+
     def test_long_name_truncation(self, git_repo: Path):
         """Test 5: Long branch name is truncated to <= 244 chars."""
         long_name = "a-" * 150 + "end"
@@ -192,11 +192,11 @@ class TestTimestampBranch:
         assert branch is not None
         assert len(branch) <= 244
         assert re.match(r"^\d{8}-\d{6}-", branch)
- 
- 
+
+
 # ── Sequential Branch Tests ──────────────────────────────────────────────────
- 
- 
+
+
 @requires_bash
 class TestSequentialBranch:
     def test_sequential_default_with_existing_specs(self, git_repo: Path):
@@ -211,7 +211,7 @@ class TestSequentialBranch:
                 branch = line.split(":", 1)[1].strip()
         assert branch is not None
         assert re.match(r"^\d{3,}-new-feat$", branch), f"unexpected branch: {branch}"
- 
+
     def test_sequential_ignores_timestamp_dirs(self, git_repo: Path):
         """Sequential numbering skips timestamp dirs when computing next number."""
         (git_repo / "specs" / "002-first-feat").mkdir(parents=True)
@@ -223,7 +223,7 @@ class TestSequentialBranch:
             if line.startswith("BRANCH_NAME:"):
                 branch = line.split(":", 1)[1].strip()
         assert branch == "003-next-feat", f"expected 003-next-feat, got: {branch}"
- 
+
     def test_sequential_supports_four_digit_prefixes(self, git_repo: Path):
         """Sequential numbering should continue past 999 without truncation."""
         (git_repo / "specs" / "999-last-3digit").mkdir(parents=True)
@@ -235,84 +235,84 @@ class TestSequentialBranch:
             if line.startswith("BRANCH_NAME:"):
                 branch = line.split(":", 1)[1].strip()
         assert branch == "1001-next-feat", f"expected 1001-next-feat, got: {branch}"
- 
- 
+
+
 class TestSequentialBranchPowerShell:
     def test_powershell_scanner_uses_long_tryparse_for_large_prefixes(self):
         """PowerShell scanner should parse large prefixes without [int] casts."""
         content = CREATE_FEATURE_PS.read_text(encoding="utf-8")
         assert "[long]::TryParse($matches[1], [ref]$num)" in content
         assert "$num = [int]$matches[1]" not in content
- 
- 
+
+
 # ── check_feature_branch Tests ───────────────────────────────────────────────
- 
- 
+
+
 @requires_bash
 class TestCheckFeatureBranch:
     def test_accepts_timestamp_branch(self):
         """Test 6: check_feature_branch accepts timestamp branch."""
         result = source_and_call('check_feature_branch "20260319-143022-feat" "true"')
         assert result.returncode == 0
- 
+
     def test_accepts_sequential_branch(self):
         """Test 7: check_feature_branch accepts sequential branch."""
         result = source_and_call('check_feature_branch "004-feat" "true"')
         assert result.returncode == 0
- 
+
     def test_rejects_main(self):
         """Test 8: check_feature_branch rejects main."""
         result = source_and_call('check_feature_branch "main" "true"')
         assert result.returncode != 0
- 
+
     def test_accepts_four_digit_sequential_branch(self):
         """check_feature_branch accepts 4+ digit sequential branch."""
         result = source_and_call('check_feature_branch "1234-feat" "true"')
         assert result.returncode == 0
- 
+
     def test_rejects_partial_timestamp(self):
         """Test 9: check_feature_branch rejects 7-digit date."""
         result = source_and_call('check_feature_branch "2026031-143022-feat" "true"')
         assert result.returncode != 0
- 
+
     def test_rejects_timestamp_without_slug(self):
         """check_feature_branch rejects timestamp-like branch missing trailing slug."""
         result = source_and_call('check_feature_branch "20260319-143022" "true"')
         assert result.returncode != 0
- 
+
     def test_rejects_7digit_timestamp_without_slug(self):
         """check_feature_branch rejects 7-digit date + 6-digit time without slug."""
         result = source_and_call('check_feature_branch "2026031-143022" "true"')
         assert result.returncode != 0
- 
+
     def test_accepts_single_prefix_sequential(self):
         """Optional gitflow-style prefix: one segment + sequential feature name."""
         result = source_and_call('check_feature_branch "feat/004-my-feature" "true"')
         assert result.returncode == 0
- 
+
     def test_accepts_single_prefix_timestamp(self):
         """Optional prefix + timestamp-style feature name."""
         result = source_and_call('check_feature_branch "release/20260319-143022-feat" "true"')
         assert result.returncode == 0
- 
+
     def test_rejects_invalid_suffix_with_single_prefix(self):
         result = source_and_call('check_feature_branch "feat/main" "true"')
         assert result.returncode != 0
         assert "feat/main" in result.stderr
- 
+
     def test_rejects_two_level_prefix_before_feature(self):
         """More than one slash: no stripping; whole name must match (fails)."""
         result = source_and_call('check_feature_branch "feat/fix/004-feat" "true"')
         assert result.returncode != 0
- 
+
     def test_rejects_malformed_timestamp_with_prefix(self):
         result = source_and_call('check_feature_branch "feat/2026031-143022-feat" "true"')
         assert result.returncode != 0
- 
- 
+
+
 # ── find_feature_dir_by_prefix Tests ─────────────────────────────────────────
- 
- 
+
+
 @requires_bash
 class TestFindFeatureDirByPrefix:
     def test_timestamp_branch(self, tmp_path: Path):
@@ -323,7 +323,7 @@ class TestFindFeatureDirByPrefix:
         )
         assert result.returncode == 0
         assert result.stdout.strip() == f"{tmp_path}/specs/20260319-143022-user-auth"
- 
+
     def test_cross_branch_prefix(self, tmp_path: Path):
         """Test 11: find_feature_dir_by_prefix cross-branch (different suffix, same timestamp)."""
         (tmp_path / "specs" / "20260319-143022-original-feat").mkdir(parents=True)
@@ -332,7 +332,7 @@ class TestFindFeatureDirByPrefix:
         )
         assert result.returncode == 0
         assert result.stdout.strip() == f"{tmp_path}/specs/20260319-143022-original-feat"
- 
+
     def test_four_digit_sequential_prefix(self, tmp_path: Path):
         """find_feature_dir_by_prefix resolves 4+ digit sequential prefix."""
         (tmp_path / "specs" / "1000-original-feat").mkdir(parents=True)
@@ -341,7 +341,7 @@ class TestFindFeatureDirByPrefix:
         )
         assert result.returncode == 0
         assert result.stdout.strip() == f"{tmp_path}/specs/1000-original-feat"
- 
+
     def test_sequential_with_single_path_prefix(self, tmp_path: Path):
         """Strip one optional prefix segment before prefix directory lookup."""
         (tmp_path / "specs" / "004-only-dir").mkdir(parents=True)
@@ -350,7 +350,7 @@ class TestFindFeatureDirByPrefix:
         )
         assert result.returncode == 0
         assert result.stdout.strip() == f"{tmp_path}/specs/004-only-dir"
- 
+
     def test_timestamp_with_single_path_prefix_cross_branch(self, tmp_path: Path):
         (tmp_path / "specs" / "20260319-143022-canonical").mkdir(parents=True)
         result = source_and_call(
@@ -358,11 +358,11 @@ class TestFindFeatureDirByPrefix:
         )
         assert result.returncode == 0
         assert result.stdout.strip() == f"{tmp_path}/specs/20260319-143022-canonical"
- 
- 
+
+
 # ── get_feature_paths + single-prefix integration ───────────────────────────
- 
- 
+
+
 class TestGetFeaturePathsSinglePrefix:
     @requires_bash
     def test_bash_specify_feature_prefixed_resolves_by_prefix(self, tmp_path: Path):
@@ -380,22 +380,22 @@ class TestGetFeaturePathsSinglePrefix:
         )
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == str(tmp_path / "specs" / "001-target-spec")
- 
- 
+
+
 # ── get_current_branch Tests ─────────────────────────────────────────────────
- 
- 
+
+
 @requires_bash
 class TestGetCurrentBranch:
     def test_env_var(self):
         """Test 12: get_current_branch returns SPECIFY_FEATURE env var."""
         result = source_and_call("get_current_branch", env={"SPECIFY_FEATURE": "my-custom-branch"})
         assert result.stdout.strip() == "my-custom-branch"
- 
- 
+
+
 # ── No-git Tests ─────────────────────────────────────────────────────────────
- 
- 
+
+
 @requires_bash
 class TestNoGitTimestamp:
     def test_no_git_timestamp(self, no_git_dir: Path):
@@ -405,11 +405,11 @@ class TestNoGitTimestamp:
         spec_dirs = list((no_git_dir / "specs").iterdir()) if (no_git_dir / "specs").exists() else []
         assert len(spec_dirs) > 0, "spec dir not created"
         assert "git" in result.stderr.lower() or "warning" in result.stderr.lower()
- 
- 
+
+
 # ── E2E Flow Tests ───────────────────────────────────────────────────────────
- 
- 
+
+
 @requires_bash
 class TestE2EFlow:
     def test_e2e_timestamp(self, git_repo: Path):
@@ -425,7 +425,7 @@ class TestE2EFlow:
         assert (git_repo / "specs" / branch).is_dir()
         val = source_and_call(f'check_feature_branch "{branch}" "true"')
         assert val.returncode == 0
- 
+
     def test_e2e_sequential(self, git_repo: Path):
         """Test 15: E2E sequential flow (regression guard)."""
         run_script(git_repo, "--short-name", "seq-feat", "Sequential feature")
@@ -439,11 +439,11 @@ class TestE2EFlow:
         assert (git_repo / "specs" / branch).is_dir()
         val = source_and_call(f'check_feature_branch "{branch}" "true"')
         assert val.returncode == 0
- 
- 
+
+
 # ── Allow Existing Branch Tests ──────────────────────────────────────────────
- 
- 
+
+
 @requires_bash
 class TestAllowExistingBranch:
     def test_allow_existing_switches_to_branch(self, git_repo: Path):
@@ -466,7 +466,7 @@ class TestAllowExistingBranch:
             cwd=git_repo, capture_output=True, text=True,
         ).stdout.strip()
         assert current == "004-pre-exist", f"expected 004-pre-exist, got {current}"
- 
+
     def test_allow_existing_already_on_branch(self, git_repo: Path):
         """T007: Verify success when already on the target branch."""
         subprocess.run(
@@ -478,7 +478,7 @@ class TestAllowExistingBranch:
             "--number", "5", "Already on branch",
         )
         assert result.returncode == 0, result.stderr
- 
+
     def test_allow_existing_creates_spec_dir(self, git_repo: Path):
         """T008: Verify spec directory created on existing branch."""
         subprocess.run(
@@ -496,7 +496,7 @@ class TestAllowExistingBranch:
         assert result.returncode == 0, result.stderr
         assert (git_repo / "specs" / "006-spec-dir").is_dir()
         assert (git_repo / "specs" / "006-spec-dir" / "spec.md").exists()
- 
+
     def test_without_flag_still_errors(self, git_repo: Path):
         """T009: Verify backwards compatibility (error without flag)."""
         subprocess.run(
@@ -512,7 +512,7 @@ class TestAllowExistingBranch:
         )
         assert result.returncode != 0, "should fail without --allow-existing-branch"
         assert "already exists" in result.stderr
- 
+
     def test_allow_existing_no_overwrite_spec(self, git_repo: Path):
         """T010: Pre-create spec.md with content, verify it is preserved."""
         subprocess.run(
@@ -533,7 +533,7 @@ class TestAllowExistingBranch:
         )
         assert result.returncode == 0, result.stderr
         assert spec_file.read_text() == "# My custom spec content\n"
- 
+
     def test_allow_existing_creates_branch_if_not_exists(self, git_repo: Path):
         """T011: Verify normal creation when branch doesn't exist."""
         result = run_script(
@@ -546,11 +546,11 @@ class TestAllowExistingBranch:
             cwd=git_repo, capture_output=True, text=True,
         ).stdout.strip()
         assert "new-branch" in current
- 
+
     def test_allow_existing_with_json(self, git_repo: Path):
         """T012: Verify JSON output is correct."""
         import json
- 
+
         subprocess.run(
             ["git", "checkout", "-b", "009-json-test"],
             cwd=git_repo, check=True, capture_output=True,
@@ -566,7 +566,7 @@ class TestAllowExistingBranch:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "009-json-test"
- 
+
     def test_allow_existing_no_git(self, no_git_dir: Path):
         """T013: Verify flag is silently ignored in non-git repos."""
         result = run_script(
@@ -574,7 +574,7 @@ class TestAllowExistingBranch:
             "No git feature",
         )
         assert result.returncode == 0, result.stderr
- 
+
     def test_allow_existing_surfaces_checkout_error(self, git_repo: Path):
         """Checkout failures on an existing branch should include Git's stderr."""
         shared_file = git_repo / "shared.txt"
@@ -601,18 +601,18 @@ class TestAllowExistingBranch:
             cwd=git_repo, check=True, capture_output=True,
         )
         shared_file.write_text("uncommitted main change\n")
- 
+
         result = run_script(
             git_repo, "--allow-existing-branch", "--short-name", "checkout-failure",
             "--number", "10", "Checkout failure",
         )
- 
+
         assert result.returncode != 0, "checkout should fail with conflicting local changes"
         assert "Failed to switch to existing branch '010-checkout-failure'" in result.stderr
         assert "would be overwritten by checkout" in result.stderr
         assert "shared.txt" in result.stderr
- 
- 
+
+
 class TestAllowExistingBranchPowerShell:
     def test_powershell_supports_allow_existing_branch_flag(self):
         """Static guard: PS script exposes and uses -AllowExistingBranch."""
@@ -620,13 +620,13 @@ class TestAllowExistingBranchPowerShell:
         assert "-AllowExistingBranch" in contents
         # Ensure the flag is referenced in script logic, not just declared
         assert "AllowExistingBranch" in contents.replace("-AllowExistingBranch", "")
- 
+
     def test_powershell_surfaces_checkout_errors(self):
         """Static guard: PS script preserves checkout stderr on existing-branch failures."""
         contents = CREATE_FEATURE_PS.read_text(encoding="utf-8")
         assert "$switchBranchError = git checkout -q $branchName 2>&1 | Out-String" in contents
         assert "exists but could not be checked out.`n$($switchBranchError.Trim())" in contents
- 
+
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
     def test_ps_spec_file_written_without_bom(self, ps_git_repo: Path):
         """spec.md generated by create-new-feature.ps1 must not contain a UTF-8 BOM."""
@@ -634,36 +634,36 @@ class TestAllowExistingBranchPowerShell:
             ps_git_repo, "-ShortName", "bom-check", "BOM check feature"
         )
         assert result.returncode == 0, result.stderr
- 
+
         spec_file = next((ps_git_repo / "specs").rglob("spec.md"), None)
         assert spec_file is not None, (
             f"spec.md was not created.\nstdout: {result.stdout}\nstderr: {result.stderr}"
         )
- 
+
         with open(spec_file, "rb") as f:
             raw_bytes = f.read(3)
         assert raw_bytes != b"\xef\xbb\xbf", (
             f"spec.md must not start with a UTF-8 BOM — got first 3 bytes: {raw_bytes!r}"
         )
- 
- 
+
+
 class TestGitExtensionParity:
     def test_bash_extension_surfaces_checkout_errors(self):
         """Static guard: git extension bash script preserves checkout stderr."""
         contents = EXT_CREATE_FEATURE.read_text(encoding="utf-8")
         assert 'switch_branch_error=$(git checkout -q "$BRANCH_NAME" 2>&1)' in contents
         assert "Failed to switch to existing branch '$BRANCH_NAME'" in contents
- 
+
     def test_powershell_extension_surfaces_checkout_errors(self):
         """Static guard: git extension PowerShell script preserves checkout stderr."""
         contents = EXT_CREATE_FEATURE_PS.read_text(encoding="utf-8")
         assert "$switchBranchError = git checkout -q $branchName 2>&1 | Out-String" in contents
         assert "exists but could not be checked out.`n$($switchBranchError.Trim())" in contents
- 
- 
+
+
 # ── Dry-Run Tests ────────────────────────────────────────────────────────────
- 
- 
+
+
 @requires_bash
 class TestDryRun:
     def test_dry_run_sequential_outputs_name(self, git_repo: Path):
@@ -679,7 +679,7 @@ class TestDryRun:
             if line.startswith("BRANCH_NAME:"):
                 branch = line.split(":", 1)[1].strip()
         assert branch == "003-new-feat", f"expected 003-new-feat, got: {branch}"
- 
+
     def test_dry_run_no_branch_created(self, git_repo: Path):
         """T010: Dry-run does not create a git branch."""
         result = run_script(
@@ -694,20 +694,20 @@ class TestDryRun:
         )
         assert branches.returncode == 0, f"'git branch --list' failed: {branches.stderr}"
         assert branches.stdout.strip() == "", "branch should not exist after dry-run"
- 
+
     def test_dry_run_no_spec_dir_created(self, git_repo: Path):
         """T011: Dry-run does not create any directories (including root specs/)."""
         specs_root = git_repo / "specs"
         if specs_root.exists():
             shutil.rmtree(specs_root)
         assert not specs_root.exists(), "specs/ should not exist before dry-run"
- 
+
         result = run_script(
             git_repo, "--dry-run", "--short-name", "no-dir", "No dir feature"
         )
         assert result.returncode == 0, result.stderr
         assert not specs_root.exists(), "specs/ should not be created during dry-run"
- 
+
     def test_dry_run_empty_repo(self, git_repo: Path):
         """T012: Dry-run returns 001 prefix when no existing specs or branches."""
         result = run_script(
@@ -719,7 +719,7 @@ class TestDryRun:
             if line.startswith("BRANCH_NAME:"):
                 branch = line.split(":", 1)[1].strip()
         assert branch == "001-first", f"expected 001-first, got: {branch}"
- 
+
     def test_dry_run_with_short_name(self, git_repo: Path):
         """T013: Dry-run with --short-name produces expected name."""
         (git_repo / "specs" / "001-existing").mkdir(parents=True)
@@ -734,7 +734,7 @@ class TestDryRun:
             if line.startswith("BRANCH_NAME:"):
                 branch = line.split(":", 1)[1].strip()
         assert branch == "004-user-auth", f"expected 004-user-auth, got: {branch}"
- 
+
     def test_dry_run_then_real_run_match(self, git_repo: Path):
         """T014: Dry-run name matches subsequent real creation."""
         (git_repo / "specs" / "001-existing").mkdir(parents=True)
@@ -757,11 +757,11 @@ class TestDryRun:
             if line.startswith("BRANCH_NAME:"):
                 real_branch = line.split(":", 1)[1].strip()
         assert dry_branch == real_branch, f"dry={dry_branch} != real={real_branch}"
- 
+
     def test_dry_run_accounts_for_remote_branches(self, git_repo: Path):
         """Dry-run queries remote refs via ls-remote (no fetch) for accurate numbering."""
         (git_repo / "specs" / "001-existing").mkdir(parents=True)
- 
+
         # Set up a bare remote and push (use subdirs of git_repo for isolation)
         remote_dir = git_repo / "test-remote.git"
         subprocess.run(
@@ -776,7 +776,7 @@ class TestDryRun:
             ["git", "push", "-u", "origin", "HEAD"],
             check=True, cwd=git_repo, capture_output=True,
         )
- 
+
         # Clone into a second copy, create a higher-numbered branch, push it
         second_clone = git_repo / "test-second-clone"
         subprocess.run(
@@ -800,7 +800,7 @@ class TestDryRun:
             ["git", "push", "origin", "005-remote-only"],
             cwd=second_clone, check=True, capture_output=True,
         )
- 
+
         # Primary repo: dry-run should see 005 via ls-remote and return 006
         dry_result = run_script(
             git_repo, "--dry-run", "--short-name", "remote-test", "Remote test"
@@ -811,11 +811,11 @@ class TestDryRun:
             if line.startswith("BRANCH_NAME:"):
                 dry_branch = line.split(":", 1)[1].strip()
         assert dry_branch == "006-remote-test", f"expected 006-remote-test, got: {dry_branch}"
- 
+
     def test_dry_run_json_includes_field(self, git_repo: Path):
         """T015: JSON output includes DRY_RUN field when --dry-run is active."""
         import json
- 
+
         result = run_script(
             git_repo, "--dry-run", "--json", "--short-name", "json-test", "JSON test"
         )
@@ -823,18 +823,18 @@ class TestDryRun:
         data = json.loads(result.stdout)
         assert "DRY_RUN" in data, f"DRY_RUN missing from JSON: {data}"
         assert data["DRY_RUN"] is True
- 
+
     def test_dry_run_json_absent_without_flag(self, git_repo: Path):
         """T016: Normal JSON output does NOT include DRY_RUN field."""
         import json
- 
+
         result = run_script(
             git_repo, "--json", "--short-name", "no-dry", "No dry run"
         )
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert "DRY_RUN" not in data, f"DRY_RUN should not be in normal JSON: {data}"
- 
+
     def test_dry_run_with_timestamp(self, git_repo: Path):
         """T017: Dry-run works with --timestamp flag."""
         result = run_script(
@@ -856,7 +856,7 @@ class TestDryRun:
         )
         assert branches.returncode == 0, f"'git branch --list' failed: {branches.stderr}"
         assert branches.stdout.strip() == ""
- 
+
     def test_dry_run_with_number(self, git_repo: Path):
         """T018: Dry-run works with --number flag."""
         result = run_script(
@@ -868,7 +868,7 @@ class TestDryRun:
             if line.startswith("BRANCH_NAME:"):
                 branch = line.split(":", 1)[1].strip()
         assert branch == "042-num-feat", f"expected 042-num-feat, got: {branch}"
- 
+
     def test_dry_run_no_git(self, no_git_dir: Path):
         """T019: Dry-run works in non-git directory."""
         (no_git_dir / "specs" / "001-existing").mkdir(parents=True)
@@ -888,18 +888,18 @@ class TestDryRun:
             if d.is_dir() and "no-git-dry" in d.name
         ]
         assert len(spec_dirs) == 0
- 
- 
+
+
 # ── PowerShell Dry-Run Tests ─────────────────────────────────────────────────
- 
- 
+
+
 def run_ps_script(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     """Run create-new-feature.ps1 from the temp repo's scripts directory."""
     script = cwd / "scripts" / "powershell" / "create-new-feature.ps1"
     cmd = ["pwsh", "-NoProfile", "-File", str(script), *args]
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
- 
- 
+
+
 @pytest.fixture
 def ps_git_repo(tmp_path: Path) -> Path:
     """Create a temp git repo with PowerShell scripts and .specify dir."""
@@ -922,8 +922,8 @@ def ps_git_repo(tmp_path: Path) -> Path:
     shutil.copy(common_ps, ps_dir / "common.ps1")
     (tmp_path / ".specify" / "templates").mkdir(parents=True)
     return tmp_path
- 
- 
+
+
 @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not available")
 class TestPowerShellDryRun:
     def test_ps_dry_run_outputs_name(self, ps_git_repo: Path):
@@ -938,7 +938,7 @@ class TestPowerShellDryRun:
             if line.startswith("BRANCH_NAME:"):
                 branch = line.split(":", 1)[1].strip()
         assert branch == "002-ps-feat", f"expected 002-ps-feat, got: {branch}"
- 
+
     def test_ps_dry_run_no_branch_created(self, ps_git_repo: Path):
         """PowerShell -DryRun does not create a git branch."""
         result = run_ps_script(
@@ -953,24 +953,24 @@ class TestPowerShellDryRun:
         )
         assert branches.returncode == 0, f"'git branch --list' failed: {branches.stderr}"
         assert branches.stdout.strip() == "", "branch should not exist after dry-run"
- 
+
     def test_ps_dry_run_no_spec_dir_created(self, ps_git_repo: Path):
         """PowerShell -DryRun does not create specs/ directory."""
         specs_root = ps_git_repo / "specs"
         if specs_root.exists():
             shutil.rmtree(specs_root)
         assert not specs_root.exists()
- 
+
         result = run_ps_script(
             ps_git_repo, "-DryRun", "-ShortName", "no-ps-dir", "No dir"
         )
         assert result.returncode == 0, result.stderr
         assert not specs_root.exists(), "specs/ should not be created during dry-run"
- 
+
     def test_ps_dry_run_json_includes_field(self, ps_git_repo: Path):
         """PowerShell -DryRun JSON output includes DRY_RUN field."""
         import json
- 
+
         result = run_ps_script(
             ps_git_repo, "-DryRun", "-Json", "-ShortName", "ps-json", "JSON test"
         )
@@ -978,32 +978,32 @@ class TestPowerShellDryRun:
         data = json.loads(result.stdout)
         assert "DRY_RUN" in data, f"DRY_RUN missing from JSON: {data}"
         assert data["DRY_RUN"] is True
- 
+
     def test_ps_dry_run_json_absent_without_flag(self, ps_git_repo: Path):
         """PowerShell normal JSON output does NOT include DRY_RUN field."""
         import json
- 
+
         result = run_ps_script(
             ps_git_repo, "-Json", "-ShortName", "ps-no-dry", "No dry run"
         )
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert "DRY_RUN" not in data, f"DRY_RUN should not be in normal JSON: {data}"
- 
- 
+
+
 # ── GIT_BRANCH_NAME Override Tests ──────────────────────────────────────────
- 
- 
+
+
 @requires_bash
 class TestGitBranchNameOverrideBash:
     """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature.sh."""
- 
+
     def _run_ext(self, ext_git_repo: Path, env_extras: dict, *extra_args: str):
         script = ext_git_repo / ".specify" / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
         cmd = ["bash", str(script), "--json", *extra_args, "ignored"]
         return subprocess.run(cmd, cwd=ext_git_repo, capture_output=True, text=True,
                               env={**os.environ, **env_extras})
- 
+
     def test_exact_name_no_prefix(self, ext_git_repo: Path):
         """GIT_BRANCH_NAME is used verbatim with no numeric prefix added."""
         result = self._run_ext(ext_git_repo, {"GIT_BRANCH_NAME": "my-exact-branch"})
@@ -1011,7 +1011,7 @@ class TestGitBranchNameOverrideBash:
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "my-exact-branch"
         assert data["FEATURE_NUM"] == "my-exact-branch"
- 
+
     def test_sequential_prefix_extraction(self, ext_git_repo: Path):
         """FEATURE_NUM extracted from sequential-style prefix (digits before dash)."""
         result = self._run_ext(ext_git_repo, {"GIT_BRANCH_NAME": "042-custom-branch"})
@@ -1019,7 +1019,7 @@ class TestGitBranchNameOverrideBash:
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "042-custom-branch"
         assert data["FEATURE_NUM"] == "042"
- 
+
     def test_timestamp_prefix_extraction(self, ext_git_repo: Path):
         """FEATURE_NUM extracted as full YYYYMMDD-HHMMSS for timestamp-style names."""
         result = self._run_ext(ext_git_repo, {"GIT_BRANCH_NAME": "20260407-143022-my-feature"})
@@ -1027,14 +1027,14 @@ class TestGitBranchNameOverrideBash:
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "20260407-143022-my-feature"
         assert data["FEATURE_NUM"] == "20260407-143022"
- 
+
     def test_overlong_name_rejected(self, ext_git_repo: Path):
         """GIT_BRANCH_NAME exceeding 244 bytes is rejected with an error."""
         long_name = "a" * 245
         result = self._run_ext(ext_git_repo, {"GIT_BRANCH_NAME": long_name})
         assert result.returncode != 0
         assert "244" in result.stderr
- 
+
     def test_dry_run_with_override(self, ext_git_repo: Path):
         """GIT_BRANCH_NAME works with --dry-run (no branch created)."""
         result = self._run_ext(ext_git_repo, {"GIT_BRANCH_NAME": "dry-run-override"}, "--dry-run")
@@ -1047,12 +1047,12 @@ class TestGitBranchNameOverrideBash:
             cwd=ext_git_repo, capture_output=True, text=True,
         )
         assert "dry-run-override" not in branches.stdout
- 
- 
+
+
 @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
 class TestGitBranchNameOverridePowerShell:
     """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature.ps1."""
- 
+
     def _run_ext(self, ext_ps_git_repo: Path, env_extras: dict):
         script = ext_ps_git_repo / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
         return subprocess.run(
@@ -1060,7 +1060,7 @@ class TestGitBranchNameOverridePowerShell:
             cwd=ext_ps_git_repo, capture_output=True, text=True,
             env={**os.environ, **env_extras},
         )
- 
+
     def test_exact_name_no_prefix(self, ext_ps_git_repo: Path):
         """GIT_BRANCH_NAME is used verbatim with no numeric prefix added."""
         result = self._run_ext(ext_ps_git_repo, {"GIT_BRANCH_NAME": "ps-exact-branch"})
@@ -1068,7 +1068,7 @@ class TestGitBranchNameOverridePowerShell:
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "ps-exact-branch"
         assert data["FEATURE_NUM"] == "ps-exact-branch"
- 
+
     def test_sequential_prefix_extraction(self, ext_ps_git_repo: Path):
         """FEATURE_NUM extracted from sequential-style prefix."""
         result = self._run_ext(ext_ps_git_repo, {"GIT_BRANCH_NAME": "099-ps-numbered"})
@@ -1076,7 +1076,7 @@ class TestGitBranchNameOverridePowerShell:
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "099-ps-numbered"
         assert data["FEATURE_NUM"] == "099"
- 
+
     def test_timestamp_prefix_extraction(self, ext_ps_git_repo: Path):
         """FEATURE_NUM extracted as full YYYYMMDD-HHMMSS for timestamp-style names."""
         result = self._run_ext(ext_ps_git_repo, {"GIT_BRANCH_NAME": "20260407-143022-ps-feature"})
@@ -1084,27 +1084,27 @@ class TestGitBranchNameOverridePowerShell:
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "20260407-143022-ps-feature"
         assert data["FEATURE_NUM"] == "20260407-143022"
- 
+
     def test_overlong_name_rejected(self, ext_ps_git_repo: Path):
         """GIT_BRANCH_NAME exceeding 244 bytes is rejected."""
         long_name = "a" * 245
         result = self._run_ext(ext_ps_git_repo, {"GIT_BRANCH_NAME": long_name})
         assert result.returncode != 0
         assert "244" in result.stderr
- 
- 
+
+
 # ── Feature Directory Resolution Tests ───────────────────────────────────────
- 
- 
+
+
 class TestFeatureDirectoryResolution:
     """Tests for SPECIFY_FEATURE_DIRECTORY and .specify/feature.json resolution."""
- 
+
     @requires_bash
     def test_env_var_overrides_branch_lookup(self, git_repo: Path):
         """SPECIFY_FEATURE_DIRECTORY env var takes priority over branch-based lookup."""
         custom_dir = git_repo / "my-custom-specs" / "my-feature"
         custom_dir.mkdir(parents=True)
- 
+
         result = subprocess.run(
             ["bash", "-c", f'source "{COMMON_SH}" && get_feature_paths'],
             cwd=git_repo,
@@ -1121,19 +1121,19 @@ class TestFeatureDirectoryResolution:
                 break
         else:
             pytest.fail("FEATURE_DIR not found in output")
- 
+
     @requires_bash
     def test_feature_json_overrides_branch_lookup(self, git_repo: Path):
         """feature.json feature_directory takes priority over branch-based lookup."""
         custom_dir = git_repo / "specs" / "custom-feature"
         custom_dir.mkdir(parents=True)
- 
+
         feature_json = git_repo / ".specify" / "feature.json"
         feature_json.write_text(
             json.dumps({"feature_directory": str(custom_dir)}) + "\n",
             encoding="utf-8",
         )
- 
+
         result = subprocess.run(
             ["bash", "-c", f'source "{COMMON_SH}" && get_feature_paths'],
             cwd=git_repo,
@@ -1148,7 +1148,7 @@ class TestFeatureDirectoryResolution:
                 break
         else:
             pytest.fail("FEATURE_DIR not found in output")
- 
+
     @requires_bash
     def test_env_var_takes_priority_over_feature_json(self, git_repo: Path):
         """Env var wins over feature.json."""
@@ -1156,13 +1156,13 @@ class TestFeatureDirectoryResolution:
         env_dir.mkdir(parents=True)
         json_dir = git_repo / "specs" / "json-feature"
         json_dir.mkdir(parents=True)
- 
+
         feature_json = git_repo / ".specify" / "feature.json"
         feature_json.write_text(
             json.dumps({"feature_directory": str(json_dir)}) + "\n",
             encoding="utf-8",
         )
- 
+
         result = subprocess.run(
             ["bash", "-c", f'source "{COMMON_SH}" && get_feature_paths'],
             cwd=git_repo,
@@ -1178,14 +1178,14 @@ class TestFeatureDirectoryResolution:
                 break
         else:
             pytest.fail("FEATURE_DIR not found in output")
- 
+
     @requires_bash
     def test_fallback_to_branch_lookup(self, git_repo: Path):
         """Without env var or feature.json, falls back to branch-based lookup."""
         subprocess.run(["git", "checkout", "-q", "-b", "001-test-feat"], cwd=git_repo, check=True)
         spec_dir = git_repo / "specs" / "001-test-feat"
         spec_dir.mkdir(parents=True)
- 
+
         result = subprocess.run(
             ["bash", "-c", f'source "{COMMON_SH}" && get_feature_paths'],
             cwd=git_repo,
@@ -1200,14 +1200,14 @@ class TestFeatureDirectoryResolution:
                 break
         else:
             pytest.fail("FEATURE_DIR not found in output")
- 
+
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
     def test_ps_env_var_overrides_branch_lookup(self, git_repo: Path):
         """PowerShell: SPECIFY_FEATURE_DIRECTORY env var takes priority."""
         common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
         custom_dir = git_repo / "my-custom-specs" / "ps-feature"
         custom_dir.mkdir(parents=True)
- 
+
         ps_cmd = f'. "{common_ps}"; $r = Get-FeaturePathsEnv; Write-Output "FEATURE_DIR=$($r.FEATURE_DIR)"'
         result = subprocess.run(
             ["pwsh", "-NoProfile", "-Command", ps_cmd],
@@ -1224,20 +1224,20 @@ class TestFeatureDirectoryResolution:
                 break
         else:
             pytest.fail("FEATURE_DIR not found in PowerShell output")
- 
+
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
     def test_ps_feature_json_overrides_branch_lookup(self, git_repo: Path):
         """PowerShell: feature.json takes priority over branch-based lookup."""
         common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
         custom_dir = git_repo / "specs" / "ps-json-feature"
         custom_dir.mkdir(parents=True)
- 
+
         feature_json = git_repo / ".specify" / "feature.json"
         feature_json.write_text(
             json.dumps({"feature_directory": str(custom_dir)}) + "\n",
             encoding="utf-8",
         )
- 
+
         ps_cmd = f'. "{common_ps}"; $r = Get-FeaturePathsEnv; Write-Output "FEATURE_DIR=$($r.FEATURE_DIR)"'
         result = subprocess.run(
             ["pwsh", "-NoProfile", "-Command", ps_cmd],
@@ -1256,14 +1256,14 @@ class TestFeatureDirectoryResolution:
 
 
 # ── Description Quoting Tests (issue #2339) ──────────────────────────────────
- 
- 
+
+
 @requires_bash
 class TestDescriptionQuoting:
     """Descriptions with quotes, apostrophes, and backslashes must not break the script.
     Regression tests for https://github.com/github/spec-kit/issues/2339
     """
- 
+
     @pytest.mark.parametrize(
         "description",
         [
@@ -1280,7 +1280,7 @@ class TestDescriptionQuoting:
         assert result.returncode == 0, (
             f"Script failed for description {description!r}: {result.stderr}"
         )
- 
+
     @pytest.mark.parametrize(
         "description",
         [
@@ -1311,13 +1311,13 @@ class TestDescriptionQuoting:
         assert result.returncode == 0, (
             f"Script failed for description {description!r}: {result.stderr}"
         )
- 
+
     def test_whitespace_only_still_rejected(self, git_repo: Path):
         """Whitespace-only descriptions must still be rejected after trimming."""
         result = run_script(git_repo, "--dry-run", "--short-name", "feat", "   ")
         assert result.returncode != 0
         assert "empty" in result.stderr.lower() or "whitespace" in result.stderr.lower()
- 
+
     def test_plain_description_still_works(self, git_repo: Path):
         """Plain description without special characters continues to work."""
         result = run_script(git_repo, "--dry-run", "--short-name", "feat", "Add login feature")
