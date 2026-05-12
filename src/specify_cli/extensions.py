@@ -2493,11 +2493,14 @@ class HookExecutor:
                 result["installed"] = []
             if not isinstance(result.get("settings"), dict):
                 result["settings"] = {"auto_execute_hooks": True}
-            # Sanitize hook event values: coerce non-list event values to []
-            # so get_hooks_for_event() and other callers never see non-list values (Feedback)
+            # Sanitize hook event values: coerce non-list values to [] and filter
+            # non-dict items so get_hooks_for_event() can safely call .get() (Feedback)
             for event_key in list(result["hooks"]):
-                if not isinstance(result["hooks"][event_key], list):
+                event_val = result["hooks"][event_key]
+                if not isinstance(event_val, list):
                     result["hooks"][event_key] = []
+                else:
+                    result["hooks"][event_key] = [h for h in event_val if isinstance(h, dict)]
             return result
         except (yaml.YAMLError, OSError, UnicodeError):
             return {
