@@ -1,5 +1,6 @@
 import pytest
 import yaml
+from pathlib import Path
 from typer.testing import CliRunner
 from specify_cli import app
 
@@ -31,8 +32,9 @@ def test_extension_update_corrupted_config_root(project_dir, monkeypatch):
     monkeypatch.setattr(ExtensionRegistry, "get", lambda self, ext_id: {"version": "1.0.0", "enabled": True})
     monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda self, ext_id: {"id": "test-ext", "name": "Test Ext", "version": "1.1.0", "download_url": "https://example.com/ext.zip"})
     
-    # Mock download_extension to avoid network calls
-    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: "/tmp/mock.zip")
+    # Mock download_extension to avoid network calls; return Path so zip_path.exists()
+    # / zip_path.unlink() in the finally block work without AttributeError
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: Path("/tmp/mock.zip"))
     
     # Mock confirmation to true
     monkeypatch.setattr("typer.confirm", lambda _: True)
@@ -58,7 +60,8 @@ def test_extension_update_corrupted_hooks_value(project_dir, monkeypatch):
     monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [{"id": "test-ext", "name": "Test Ext", "version": "1.0.0"}])
     monkeypatch.setattr(ExtensionRegistry, "get", lambda self, ext_id: {"version": "1.0.0", "enabled": True})
     monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda self, ext_id: {"id": "test-ext", "name": "Test Ext", "version": "1.1.0", "download_url": "https://example.com/ext.zip"})
-    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: "/tmp/mock.zip")
+    # Return Path so zip_path.exists() / zip_path.unlink() in the finally block work correctly
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: Path("/tmp/mock.zip"))
     monkeypatch.setattr("typer.confirm", lambda _: True)
     
     result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
