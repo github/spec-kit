@@ -4855,6 +4855,7 @@ def extension_update(
             backup_config_dir = backup_base / "config"
 
             # Store backup state
+            backup_registry_entry = None  # None means registry entry not yet captured
             backup_installed = UNSET  # Original installed list from extensions.yml
             backup_hooks = None  # None means no hooks key in config; {} means hooks key existed
             backed_up_command_files = {}
