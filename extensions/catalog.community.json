@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-10T00:00:00Z",
+  "updated_at": "2026-05-12T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -498,6 +498,38 @@
       "stars": 0,
       "created_at": "2026-04-16T00:00:00Z",
       "updated_at": "2026-04-16T00:00:00Z"
+    },
+    "changelog": {
+      "name": "Spec Changelog",
+      "id": "changelog",
+      "description": "Auto-generate changelogs and release notes from spec git history and requirement diffs.",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-changelog/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-changelog",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-changelog",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-changelog/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-changelog/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 1
+      },
+      "tags": [
+        "changelog",
+        "release-notes",
+        "documentation",
+        "git-history",
+        "notifications"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-11T18:00:00Z",
+      "updated_at": "2026-04-11T18:00:00Z"
     },
     "ci-guard": {
       "name": "CI Guard",
