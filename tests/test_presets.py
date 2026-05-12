@@ -1949,7 +1949,16 @@ def install_self_test_preset(manager: PresetManager, speckit_version: str = "0.1
 
 
 class TestSelfTestPreset:
-    """Tests using the self-test preset that ships with the repo."""
+    """Tests using the self-test preset that ships with the repo.
+
+    The self-test preset ships a wrap-strategy command (``speckit.wrap-test``)
+    without a corresponding core base layer; reconciliation deliberately
+    surfaces a UserWarning in that case. Tests install via
+    ``install_self_test_preset`` (defined above), which scopes a narrow
+    ``warnings.filterwarnings`` block to that specific message and
+    ``UserWarning`` category — so the expected warning stays quiet without
+    masking unrelated warnings or real reconciliation failures.
+    """
 
     def test_self_test_preset_exists(self):
         """Verify the self-test preset directory and manifest exist."""
@@ -2237,7 +2246,12 @@ class TestInitOptions:
 
 
 class TestPresetSkills:
-    """Tests for preset skill registration and unregistration."""
+    """Tests for preset skill registration and unregistration.
+
+    Tests that install the self-test preset use ``install_self_test_preset``
+    which scopes a narrow filter to the expected wrap-strategy warning.
+    Reconciliation failures remain audible so real regressions surface.
+    """
 
     def _write_init_options(self, project_dir, ai="claude", ai_skills=True, script="sh"):
         from specify_cli import save_init_options

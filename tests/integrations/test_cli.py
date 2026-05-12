@@ -320,8 +320,8 @@ class TestInitIntegrationFlag:
         assert "A new shared manifest will be created" in captured.out
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_shared_infra_refuses_symlinked_script_destination(self, tmp_path):
-        """Shared script refreshes must not follow destination symlinks."""
+    def test_shared_infra_buckets_symlinked_script_destination(self, tmp_path, capsys):
+        """Symlinked script destinations are bucketed with a warning; the symlink target is preserved."""
         from specify_cli import _install_shared_infra
 
         project = tmp_path / "symlink-script-test"
@@ -334,14 +334,15 @@ class TestInitIntegrationFlag:
         scripts_dir.mkdir(parents=True)
         os.symlink(outside, scripts_dir / "common.sh")
 
-        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
-            _install_shared_infra(project, "sh", force=True)
+        _install_shared_infra(project, "sh", force=True)
 
+        captured = capsys.readouterr()
+        assert "symlinked shared infrastructure" in captured.out
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_shared_infra_refuses_symlinked_template_destination(self, tmp_path):
-        """Shared template installs must not follow destination symlinks."""
+    def test_shared_infra_buckets_symlinked_template_destination(self, tmp_path, capsys):
+        """Symlinked template destinations are bucketed with a warning; the symlink target is preserved."""
         from specify_cli import _install_shared_infra
 
         project = tmp_path / "symlink-template-test"
@@ -354,9 +355,10 @@ class TestInitIntegrationFlag:
         templates_dir.mkdir(parents=True)
         os.symlink(outside, templates_dir / "plan-template.md")
 
-        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
-            _install_shared_infra(project, "sh", force=True)
+        _install_shared_infra(project, "sh", force=True)
 
+        captured = capsys.readouterr()
+        assert "symlinked shared infrastructure" in captured.out
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
@@ -381,7 +383,7 @@ class TestInitIntegrationFlag:
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_shared_infra_refuses_symlinked_specify_directory_before_mkdir(self, tmp_path):
-        """Shared infra directory creation must not follow a symlinked .specify."""
+        """Shared infra installs must not follow a symlinked .specify directory."""
         from specify_cli import _install_shared_infra
 
         project = tmp_path / "symlink-dir-test"
@@ -390,8 +392,10 @@ class TestInitIntegrationFlag:
         outside.mkdir()
         os.symlink(outside, project / ".specify")
 
-        with pytest.raises(ValueError, match="symlinked shared infrastructure directory"):
+        with pytest.raises(ValueError, match="symlinked"):
             _install_shared_infra(project, "sh", force=True)
+        # Nothing should have been written under the symlinked .specify target.
+        assert list(outside.iterdir()) == []
 
         assert not (outside / "scripts").exists()
         assert not (outside / "templates").exists()
@@ -465,8 +469,8 @@ class TestInitIntegrationFlag:
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_shared_infra_install_preflights_before_writing(self, tmp_path):
-        """Full shared infra installs validate destinations before writing any file."""
+    def test_shared_infra_install_buckets_unsafe_destinations_and_continues(self, tmp_path):
+        """Symlinked destinations are bucketed with a warning; safe destinations in the same install still complete."""
         from specify_cli.shared_infra import install_shared_infra
 
         project = tmp_path / "preflight-install-test"
@@ -486,19 +490,19 @@ class TestInitIntegrationFlag:
         outside.write_text("# outside\n", encoding="utf-8")
         os.symlink(outside, scripts_dir / "z.sh")
 
-        with pytest.raises(ValueError, match="Refusing to overwrite symlinked"):
-            install_shared_infra(
-                project,
-                "sh",
-                version="test",
-                core_pack=core_pack,
-                repo_root=tmp_path / "unused",
-                console=_NoopConsole(),
-                force=True,
-            )
+        install_shared_infra(
+            project,
+            "sh",
+            version="test",
+            core_pack=core_pack,
+            repo_root=tmp_path / "unused",
+            console=_NoopConsole(),
+            force=True,
+        )
 
-        assert existing.read_text(encoding="utf-8") == "# old a\n"
+        # Symlinked z.sh is preserved (bucketed); regular a.sh is overwritten.
         assert outside.read_text(encoding="utf-8") == "# outside\n"
+        assert existing.read_text(encoding="utf-8") == "# new a\n"
 
     def test_shared_infra_install_supports_nested_script_sources(self, tmp_path):
         """Nested script source files create safe destination parents at write time."""
