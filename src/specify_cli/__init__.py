@@ -3665,7 +3665,6 @@ def extension_add(
                 # the original URL as a last hint.
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
                 download_dir.mkdir(parents=True, exist_ok=True)
-                final_url = from_url
                 archive_fmt = ""
                 archive_path = None
 
