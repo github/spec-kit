@@ -1,9 +1,7 @@
 import pytest
 import yaml
-from pathlib import Path
 from typer.testing import CliRunner
 from specify_cli import app
-from specify_cli.extensions import HookExecutor
 
 runner = CliRunner()
 
@@ -19,6 +17,9 @@ def project_dir(tmp_path):
 
 def test_extension_update_corrupted_config_root(project_dir, monkeypatch):
     """Regression: extension update must handle corrupted extensions.yml (root is scalar)."""
+    # chdir into project_dir so _require_specify_project() succeeds
+    monkeypatch.chdir(project_dir)
+    
     # Corrupt extensions.yml
     config_path = project_dir / ".specify" / "extensions.yml"
     config_path.write_text(yaml.dump(123))
@@ -26,18 +27,12 @@ def test_extension_update_corrupted_config_root(project_dir, monkeypatch):
     # Mock ExtensionManager to return an installed extension for resolution
     from specify_cli.extensions import ExtensionManager, ExtensionCatalog, ExtensionRegistry
     
-    def mock_list_installed(self):
-        return [{"id": "test-ext", "name": "Test Ext", "version": "1.0.0"}]
+    monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [{"id": "test-ext", "name": "Test Ext", "version": "1.0.0"}])
+    monkeypatch.setattr(ExtensionRegistry, "get", lambda self, ext_id: {"version": "1.0.0", "enabled": True})
+    monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda self, ext_id: {"id": "test-ext", "name": "Test Ext", "version": "1.1.0", "download_url": "https://example.com/ext.zip"})
     
-    def mock_get(self, ext_id):
-        return {"version": "1.0.0", "enabled": True}
-        
-    def mock_get_extension_info(self, ext_id):
-        return {"id": "test-ext", "name": "Test Ext", "version": "1.1.0", "download_url": "https://example.com/ext.zip"}
-
-    monkeypatch.setattr(ExtensionManager, "list_installed", mock_list_installed)
-    monkeypatch.setattr(ExtensionRegistry, "get", mock_get)
-    monkeypatch.setattr(ExtensionCatalog, "get_extension_info", mock_get_extension_info)
+    # Mock download_extension to avoid network calls
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: "/tmp/mock.zip")
     
     # Mock confirmation to true
     monkeypatch.setattr("typer.confirm", lambda _: True)
@@ -50,6 +45,8 @@ def test_extension_update_corrupted_config_root(project_dir, monkeypatch):
 
 def test_extension_update_corrupted_hooks_value(project_dir, monkeypatch):
     """Regression: extension update must handle non-dict 'hooks' in extensions.yml."""
+    monkeypatch.chdir(project_dir)
+    
     config_path = project_dir / ".specify" / "extensions.yml"
     config_path.write_text(yaml.dump({
         "installed": ["test-ext"],
@@ -61,6 +58,7 @@ def test_extension_update_corrupted_hooks_value(project_dir, monkeypatch):
     monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [{"id": "test-ext", "name": "Test Ext", "version": "1.0.0"}])
     monkeypatch.setattr(ExtensionRegistry, "get", lambda self, ext_id: {"version": "1.0.0", "enabled": True})
     monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda self, ext_id: {"id": "test-ext", "name": "Test Ext", "version": "1.1.0", "download_url": "https://example.com/ext.zip"})
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda self, ext_id: "/tmp/mock.zip")
     monkeypatch.setattr("typer.confirm", lambda _: True)
     
     result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
@@ -69,8 +67,11 @@ def test_extension_update_corrupted_hooks_value(project_dir, monkeypatch):
 
 def test_extension_update_rollback_corrupted_config(project_dir, monkeypatch):
     """Regression: extension update rollback must handle corrupted extensions.yml."""
+    monkeypatch.chdir(project_dir)
+    
     config_path = project_dir / ".specify" / "extensions.yml"
-    config_path.write_text(yaml.dump({"installed": ["test-ext"]}))
+    # hooks: null should be preserved even after a failed update attempt
+    config_path.write_text(yaml.dump({"installed": ["test-ext"], "hooks": None}))
     
     from specify_cli.extensions import ExtensionManager, ExtensionCatalog, ExtensionRegistry
     
@@ -93,3 +94,9 @@ def test_extension_update_rollback_corrupted_config(project_dir, monkeypatch):
     # Should handle Exception and NOT crash with AttributeError during rollback
     assert "Download failed" in result.output
     assert "AttributeError" not in result.output
+    
+    # Verify hooks key was preserved (normalized to {} if it was null/corrupted)
+    restored_config = yaml.safe_load(config_path.read_text())
+    assert isinstance(restored_config, dict)
+    assert "hooks" in restored_config
+    assert restored_config["hooks"] == {}
