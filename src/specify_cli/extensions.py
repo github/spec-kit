@@ -2517,27 +2517,29 @@ class HookExecutor:
         raw_installed = config.get("installed")
         installed = raw_installed if isinstance(raw_installed, list) else []
         
-        # Sanitize: keep strings and mappings with an 'id' (Feedback from review)
-        sanitized = [
-            x for x in installed 
+        # Sanitize: keep strings and mappings with a valid 'id'
+        valid = [
+            x for x in installed
             if isinstance(x, str) or (isinstance(x, dict) and isinstance(x.get("id"), str))
         ]
-        
-        # Check if already present (as string or in a mapping)
-        already_present = False
-        for x in sanitized:
-            if x == extension_id or (isinstance(x, dict) and x.get("id") == extension_id):
-                already_present = True
-                break
-                
-        if not already_present:
-            sanitized.append(extension_id)
-        
+
+        # Deduplicate by id: prefer dict (richer metadata) over plain string for
+        # the same id; keep only one canonical entry per id. (Feedback)
+        seen: dict = {}  # id -> entry (dict preferred over str)
+        for x in valid:
+            eid = x if isinstance(x, str) else x.get("id", "")
+            if eid not in seen or isinstance(x, dict):
+                seen[eid] = x
+
+        # Ensure the target extension id is registered (as a plain string)
+        if extension_id not in seen:
+            seen[extension_id] = extension_id
+
         # Maintain alphabetical order by ID for readability and diff stability
         def _get_sort_id(x):
             return x if isinstance(x, str) else x.get("id", "")
-            
-        sanitized.sort(key=_get_sort_id)
+
+        sanitized = sorted(seen.values(), key=_get_sort_id)
         
         # Always persist if sanitized state differs from raw config (ensures normalization)
         if sanitized != raw_installed:
