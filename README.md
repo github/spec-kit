@@ -1,5 +1,4 @@
 <div align="center">
-    <img src="./media/logo.svg" alt="InfraKit Logo" width="200" height="200"/>
     <h1>🧱 InfraKit</h1>
     <h3><em>Spec it. Plan it. Ship it.</em></h3>
 </div>
