@@ -100,7 +100,7 @@ class SkillsIntegrationTests:
         skill_files = [f for f in created if "scripts" not in f.parts]
 
         expected_commands = {
-            "analyze", "checklist", "clarify", "constitution",
+            "governance", "analyze", "checklist", "clarify", "constitution",
             "implement", "plan", "specify", "tasks", "taskstoissues",
         }
 
@@ -114,7 +114,7 @@ class SkillsIntegrationTests:
         assert actual_commands == expected_commands
 
     def test_skill_frontmatter_structure(self, tmp_path):
-        """SKILL.md must have name, description, compatibility, metadata."""
+        """SKILL.md must have governance contract frontmatter."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
@@ -127,8 +127,23 @@ class SkillsIntegrationTests:
             fm = yaml.safe_load(parts[1])
             assert "name" in fm, f"{f} frontmatter missing 'name'"
             assert "description" in fm, f"{f} frontmatter missing 'description'"
+            assert "purpose" in fm, f"{f} frontmatter missing 'purpose'"
+            assert "trigger" in fm, f"{f} frontmatter missing 'trigger'"
+            assert "allowed-read-paths" in fm, f"{f} frontmatter missing 'allowed-read-paths'"
+            assert "allowed-write-paths" in fm, f"{f} frontmatter missing 'allowed-write-paths'"
+            assert "forbidden-paths" in fm, f"{f} frontmatter missing 'forbidden-paths'"
+            assert "outputs" in fm, f"{f} frontmatter missing 'outputs'"
+            assert "validation-command" in fm, f"{f} frontmatter missing 'validation-command'"
             assert "compatibility" in fm, f"{f} frontmatter missing 'compatibility'"
             assert "metadata" in fm, f"{f} frontmatter missing 'metadata'"
+            assert ".specify/**" in fm["allowed-read-paths"]
+            assert ".git/**" in fm["forbidden-paths"]
+            if fm["name"] == "speckit-implement":
+                assert "**" in fm["allowed-write-paths"]
+                assert "Implementation files, completed tasks.md checkboxes, validation results, and handoff summary" in fm["outputs"]
+            else:
+                assert fm["allowed-write-paths"] == [".specify/**", "specs/**"]
+                assert "Workflow-specific spec artifacts and handoff summary" in fm["outputs"]
             assert fm["metadata"]["author"] == "github-spec-kit"
             assert "source" in fm["metadata"]
 
@@ -359,7 +374,7 @@ class SkillsIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     _SKILL_COMMANDS = [
-        "analyze", "checklist", "clarify", "constitution",
+        "governance", "analyze", "checklist", "clarify", "constitution",
         "implement", "plan", "specify", "tasks", "taskstoissues",
     ]
 
@@ -378,6 +393,7 @@ class SkillsIntegrationTests:
             ".specify/integration.json",
             f".specify/integrations/{self.KEY}.manifest.json",
             ".specify/integrations/speckit.manifest.json",
+            ".specify/memory/agent-governance.md",
             ".specify/memory/constitution.md",
         ]
         # Script variant
@@ -399,6 +415,7 @@ class SkillsIntegrationTests:
             ]
         # Templates
         files += [
+            ".specify/templates/agent-governance-template.md",
             ".specify/templates/checklist-template.md",
             ".specify/templates/constitution-template.md",
             ".specify/templates/plan-template.md",
@@ -413,7 +430,8 @@ class SkillsIntegrationTests:
         # Agent context file (if set)
         if i.context_file:
             files.append(i.context_file)
-        return sorted(files)
+        files.append("AGENTS.md")
+        return sorted(set(files))
 
     def test_complete_file_inventory_sh(self, tmp_path):
         """Every file produced by specify init --integration <key> --script sh."""

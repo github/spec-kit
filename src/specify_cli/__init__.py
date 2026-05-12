@@ -74,6 +74,10 @@ from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
 )
+from .agent_projection import (
+    ensure_agent_governance_from_template as _ensure_agent_governance_from_template,
+    refresh_agent_projection as _refresh_agent_projection,
+)
 
 # For cross-platform keyboard input
 import readchar
@@ -906,6 +910,46 @@ def ensure_constitution_from_template(project_path: Path, tracker: StepTracker |
             console.print(f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]")
 
 
+def ensure_agent_governance_from_template(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Copy agent-governance template to memory if it doesn't exist."""
+    try:
+        result = _ensure_agent_governance_from_template(project_path)
+    except Exception as e:
+        if tracker:
+            tracker.add("agent-governance", "Agent governance setup")
+            tracker.error("agent-governance", str(e))
+        else:
+            console.print(f"[yellow]Warning: Could not initialize agent governance: {e}[/yellow]")
+        return
+
+    if tracker:
+        tracker.add("agent-governance", "Agent governance setup")
+        if result is None:
+            tracker.error("agent-governance", "template not found")
+        else:
+            tracker.complete("agent-governance", "available")
+
+
+def refresh_agent_projection(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Refresh generated agent governance projections."""
+    try:
+        result = _refresh_agent_projection(project_path)
+    except Exception as e:
+        if tracker:
+            tracker.add("agent-projection", "Agent governance projection")
+            tracker.error("agent-projection", str(e))
+        else:
+            console.print(f"[yellow]Warning: Could not refresh agent projection: {e}[/yellow]")
+        return
+
+    if tracker:
+        tracker.add("agent-projection", "Agent governance projection")
+        if result.memory_path is None:
+            tracker.skip("agent-projection", "agent-governance template missing")
+        else:
+            tracker.complete("agent-projection", f"{len(result.projection_paths)} file(s) refreshed")
+
+
 INIT_OPTIONS_FILE = ".specify/init-options.json"
 
 
@@ -951,6 +995,7 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
 # Constants kept for backward compatibility with presets and extensions.
 DEFAULT_SKILLS_DIR = ".agents/skills"
 SKILL_DESCRIPTIONS = {
+    "governance": "Create or update agent governance and refresh agent instruction projections.",
     "specify": "Create or update feature specifications from natural language descriptions.",
     "plan": "Generate technical implementation plans from feature specifications.",
     "tasks": "Break down implementation plans into actionable task lists.",
@@ -1339,6 +1384,8 @@ def init(
             tracker.complete("shared-infra", f"scripts ({selected_script}) + templates")
 
             ensure_constitution_from_template(project_path, tracker=tracker)
+            ensure_agent_governance_from_template(project_path, tracker=tracker)
+            refresh_agent_projection(project_path, tracker=tracker)
 
             if not no_git:
                 tracker.start("git")
@@ -1975,6 +2022,7 @@ def _write_integration_json(
         installed_integrations=installed_integrations,
         settings=integration_settings,
     )
+    refresh_agent_projection(project_root)
 
 
 def _clear_init_options_for_integration(project_root: Path, integration_key: str) -> None:
@@ -1993,6 +2041,7 @@ def _remove_integration_json(project_root: Path) -> None:
     path = project_root / INTEGRATION_JSON
     if path.exists():
         path.unlink()
+    refresh_agent_projection(project_root)
 
 
 _MANIFEST_READ_ERRORS = (ValueError, FileNotFoundError, OSError, UnicodeDecodeError)

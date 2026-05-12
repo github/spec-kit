@@ -483,6 +483,7 @@ class TomlIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     COMMAND_STEMS = [
+        "governance",
         "analyze",
         "checklist",
         "clarify",
@@ -530,6 +531,7 @@ class TomlIntegrationTests:
                 files.append(f".specify/scripts/powershell/{name}")
 
         for name in [
+            "agent-governance-template.md",
             "checklist-template.md",
             "constitution-template.md",
             "plan-template.md",
@@ -538,6 +540,8 @@ class TomlIntegrationTests:
         ]:
             files.append(f".specify/templates/{name}")
 
+        files.append("AGENTS.md")
+        files.append(".specify/memory/agent-governance.md")
         files.append(".specify/memory/constitution.md")
         # Bundled workflow
         files.append(".specify/workflows/speckit/workflow.yml")
