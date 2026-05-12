@@ -2165,6 +2165,22 @@ class ExtensionCatalog:
         try:
             with self._open_url(download_url, timeout=60) as response:
                 final_url = response.geturl()
+                # Re-validate scheme after any redirect to guard against
+                # scheme-downgrade. Validate BEFORE reading the body so a
+                # malicious redirect cannot cause us to fetch the payload
+                # over an insecure scheme.
+                _final_parsed = urlparse(final_url)
+                _final_is_localhost = _final_parsed.hostname in (
+                    "localhost",
+                    "127.0.0.1",
+                    "::1",
+                )
+                if _final_parsed.scheme != "https" and not (
+                    _final_parsed.scheme == "http" and _final_is_localhost
+                ):
+                    raise ExtensionError(
+                        f"Extension download URL was redirected to a non-HTTPS URL: {final_url}"
+                    )
                 content_type = response.headers.get("Content-Type", "")
                 archive_fmt = detect_archive_format(final_url, content_type)
                 if not archive_fmt:
@@ -2175,16 +2191,6 @@ class ExtensionCatalog:
             raise ExtensionError(f"Failed to download extension from {download_url}: {e}")
         except IOError as e:
             raise ExtensionError(f"Failed to read extension archive from {download_url}: {e}")
-
-        # Re-validate scheme after any redirect to guard against scheme-downgrade.
-        _final_parsed = urlparse(final_url)
-        _final_is_localhost = _final_parsed.hostname in ("localhost", "127.0.0.1", "::1")
-        if _final_parsed.scheme != "https" and not (
-            _final_parsed.scheme == "http" and _final_is_localhost
-        ):
-            raise ExtensionError(
-                f"Extension download URL was redirected to a non-HTTPS URL: {final_url}"
-            )
 
         # Choose file extension based on detected format.
         if not archive_fmt:

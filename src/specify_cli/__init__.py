@@ -2637,6 +2637,14 @@ def preset_add(
                 try:
                     with urllib.request.urlopen(from_url, timeout=60) as response:
                         final_url = response.geturl()
+                        # Re-validate scheme after any redirect (scheme-downgrade
+                        # guard). Check BEFORE reading the body so an insecure
+                        # redirect cannot cause us to fetch the payload.
+                        _fp = _urlparse(final_url)
+                        _fl = _fp.hostname in ("localhost", "127.0.0.1", "::1")
+                        if _fp.scheme != "https" and not (_fp.scheme == "http" and _fl):
+                            console.print(f"[red]Error:[/red] URL was redirected to a non-HTTPS URL: {final_url}")
+                            raise typer.Exit(1)
                         content_type = response.headers.get("Content-Type", "")
                         # Prefer the post-redirect URL for format detection;
                         # fall back to the original URL only as a last hint.
@@ -2646,13 +2654,6 @@ def preset_add(
                         archive_data = response.read()
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
-                    raise typer.Exit(1)
-
-                # Re-validate scheme after any redirect (scheme-downgrade guard).
-                _fp = _urlparse(final_url)
-                _fl = _fp.hostname in ("localhost", "127.0.0.1", "::1")
-                if _fp.scheme != "https" and not (_fp.scheme == "http" and _fl):
-                    console.print(f"[red]Error:[/red] URL was redirected to a non-HTTPS URL: {final_url}")
                     raise typer.Exit(1)
 
                 if not archive_fmt:
@@ -3671,18 +3672,19 @@ def extension_add(
                 try:
                     with urllib.request.urlopen(from_url, timeout=60) as response:
                         final_url = response.geturl()
+                        # Re-validate scheme after any redirect (scheme-downgrade
+                        # guard). Check BEFORE reading the body so an insecure
+                        # redirect cannot cause us to fetch the payload.
+                        _fp = urlparse(final_url)
+                        _fl = _fp.hostname in ("localhost", "127.0.0.1", "::1")
+                        if _fp.scheme != "https" and not (_fp.scheme == "http" and _fl):
+                            console.print(f"[red]Error:[/red] URL was redirected to a non-HTTPS URL: {final_url}")
+                            raise typer.Exit(1)
                         content_type = response.headers.get("Content-Type", "")
                         archive_fmt = detect_archive_format(final_url, content_type)
                         if not archive_fmt:
                             archive_fmt = detect_archive_format(from_url)
                         archive_data = response.read()
-
-                    # Re-validate scheme after any redirect (scheme-downgrade guard).
-                    _fp = urlparse(final_url)
-                    _fl = _fp.hostname in ("localhost", "127.0.0.1", "::1")
-                    if _fp.scheme != "https" and not (_fp.scheme == "http" and _fl):
-                        console.print(f"[red]Error:[/red] URL was redirected to a non-HTTPS URL: {final_url}")
-                        raise typer.Exit(1)
 
                     if not archive_fmt:
                         console.print("[red]Error:[/red] Could not determine archive format from URL or Content-Type.")
