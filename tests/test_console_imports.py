@@ -16,6 +16,23 @@ def test_console_symbols_importable():
     assert isinstance(console, Console)
 
 
+def test_console_symbols_available_from_star_import():
+    namespace = {}
+    exec("from specify_cli import *", namespace)
+
+    for symbol in (
+        "console",
+        "StepTracker",
+        "get_key",
+        "select_with_arrows",
+        "BannerGroup",
+        "show_banner",
+        "BANNER",
+        "TAGLINE",
+    ):
+        assert symbol in namespace
+
+
 def test_step_tracker_instantiable():
     tracker = StepTracker("test")
     tracker.add("step1", "Step One")

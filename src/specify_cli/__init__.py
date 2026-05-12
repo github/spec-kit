@@ -29,8 +29,13 @@ Or install globally:
 # Public API - intentional re-exports for backward compatibility.
 __all__ = [
     "BANNER",
+    "BannerGroup",
+    "StepTracker",
     "TAGLINE",
+    "console",
     "get_key",
+    "select_with_arrows",
+    "show_banner",
 ]
 
 import os
