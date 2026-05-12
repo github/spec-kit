@@ -2605,6 +2605,18 @@ class HookExecutor:
         if "hooks" not in config or not isinstance(config["hooks"], dict):
             config["hooks"] = {}
             changed = True
+        else:
+            # Sanitize existing hook lists to prevent crashes in downstream code (Feedback)
+            for h_name in list(config["hooks"].keys()):
+                h_list = config["hooks"][h_name]
+                if not isinstance(h_list, list):
+                    config["hooks"][h_name] = []
+                    changed = True
+                else:
+                    sanitized_h_list = [h for h in h_list if isinstance(h, dict)]
+                    if len(sanitized_h_list) != len(h_list):
+                        config["hooks"][h_name] = sanitized_h_list
+                        changed = True
 
         # Register each hook
         for hook_name, hook_config in manifest.hooks.items():

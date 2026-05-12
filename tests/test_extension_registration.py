@@ -423,6 +423,48 @@ class TestExtensionRegistration:
         
         config = executor.get_project_config()
         assert config["installed"] == []
+    def test_register_hooks_mixed_type_hook_list(self, project_dir, tmp_path):
+        """Regression: register_hooks() must sanitize hook event lists by dropping non-dicts."""
+        executor = HookExecutor(project_dir)
+
+        config_path = project_dir / ".specify" / "extensions.yml"
+        config_path.write_text(yaml.dump({
+            "installed": ["some-ext"],
+            "hooks": {"after_tasks": [1, "corrupted", {"extension": "other", "command": "cmd"}]}
+        }))
+
+        manifest_path = tmp_path / "extension.yml"
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "new-ext",
+                "name": "New Ext",
+                "version": "1.0.0",
+                "description": "Test",
+                "author": "Test author"
+            },
+            "requires": {
+                "speckit_version": ">=0.1.0",
+                "commands": []
+            },
+            "provides": {"commands": []},
+            "hooks": {
+                "after_tasks": {"command": "new-cmd"}
+            }
+        }
+        manifest_path.write_text(yaml.dump(manifest_data))
+        manifest = ExtensionManifest(manifest_path)
+
+        executor.register_hooks(manifest)
+
+        config = executor.get_project_config()
+        hooks = config["hooks"]["after_tasks"]
+        
+        # Should have 2 valid dict hooks, and 0 non-dict items
+        assert len(hooks) == 2
+        assert all(isinstance(h, dict) for h in hooks)
+        assert any(h.get("extension") == "other" for h in hooks)
+        assert any(h.get("extension") == "new-ext" for h in hooks)
 
     def test_unregister_extension_scalar_root(self, project_dir):
         """Hardening: unregister_extension should handle scalar root config."""
