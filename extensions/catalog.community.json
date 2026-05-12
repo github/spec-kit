@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-07T15:37:14Z",
+  "updated_at": "2026-05-07T20:05:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1416,6 +1416,35 @@
       "created_at": "2026-04-28T00:00:00Z",
       "updated_at": "2026-04-28T00:00:00Z"
     },
+    "mde": {
+      "name": "MDE",
+      "id": "mde",
+      "description": "A Spec Kit extension that exposes a minimal model-driven engineering workflow with setup, next, and status commands.",
+      "author": "AI-MDE",
+      "version": "0.5.1",
+      "download_url": "https://github.com/AI-MDE/spec-kit-mde/archive/refs/tags/v0.5.1.zip",
+      "repository": "https://github.com/AI-MDE/spec-kit-mde",
+      "homepage": "https://github.com/AI-MDE/spec-kit-mde",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 1
+      },
+      "tags": [
+        "mde",
+        "model-driven-engineering",
+        "workflow",
+        "process"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-08T00:00:00Z",
+      "updated_at": "2026-05-08T00:00:00Z"
+    },
     "memory-loader": {
       "name": "Memory Loader",
       "id": "memory-loader",
@@ -2115,6 +2144,38 @@
       "stars": 0,
       "created_at": "2026-04-20T00:00:00Z",
       "updated_at": "2026-04-20T00:00:00Z"
+    },
+    "schedule": {
+      "name": "Spec Kit Schedule — CP-SAT Agent Orchestrator",
+      "id": "schedule",
+      "description": "Optimal multi-agent task scheduling via CP-SAT solver with DAG precedence, hallucination-aware caps, file-conflict avoidance, stochastic durations, replanning, and interactive HTML output",
+      "author": "Julio César Franco Ardila",
+      "version": "0.6.2",
+      "download_url": "https://github.com/jfranc38/spec-kit-schedule/archive/refs/tags/v0.6.2.zip",
+      "repository": "https://github.com/jfranc38/spec-kit-schedule",
+      "homepage": "https://github.com/jfranc38/spec-kit-schedule",
+      "documentation": "https://github.com/jfranc38/spec-kit-schedule/blob/main/README.md",
+      "changelog": "https://github.com/jfranc38/spec-kit-schedule/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 1
+      },
+      "tags": [
+        "scheduling",
+        "optimization",
+        "multi-agent",
+        "cp-sat",
+        "operations-research"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-06T22:35:00Z",
+      "updated_at": "2026-05-07T17:25:00Z"
     },
     "scope": {
       "name": "Spec Scope",

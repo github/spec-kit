@@ -1,6 +1,6 @@
 [project]
 name = "specify-cli"
-version = "0.8.8.dev0"
+version = "0.8.9.dev0"
 description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
 requires-python = ">=3.11"
 dependencies = [
@@ -29,6 +29,13 @@ packages = ["src/specify_cli"]
 # Bundle core assets so `specify init` works without network access (air-gapped / enterprise)
 # Page templates (exclude commands/ — bundled separately below to avoid duplication)
 "templates/checklist-template.md" = "specify_cli/core_pack/templates/checklist-template.md"
+"templates/architecture-development-template.md" = "specify_cli/core_pack/templates/architecture-development-template.md"
+"templates/architecture-logical-template.md" = "specify_cli/core_pack/templates/architecture-logical-template.md"
+"templates/architecture-physical-template.md" = "specify_cli/core_pack/templates/architecture-physical-template.md"
+"templates/architecture-process-template.md" = "specify_cli/core_pack/templates/architecture-process-template.md"
+"templates/architecture-scenario-template.md" = "specify_cli/core_pack/templates/architecture-scenario-template.md"
+"templates/architecture-template.md" = "specify_cli/core_pack/templates/architecture-template.md"
+"templates/agent-governance-template.md" = "specify_cli/core_pack/templates/agent-governance-template.md"
 "templates/constitution-template.md" = "specify_cli/core_pack/templates/constitution-template.md"
 "templates/plan-template.md" = "specify_cli/core_pack/templates/plan-template.md"
 "templates/spec-template.md" = "specify_cli/core_pack/templates/spec-template.md"
@@ -70,4 +77,3 @@ omit = ["*/tests/*", "*/__pycache__/*"]
 precision = 2
 show_missing = true
 skip_covered = false
-

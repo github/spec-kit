@@ -311,6 +311,37 @@
       "created_at": "2026-04-15T00:00:00Z",
       "updated_at": "2026-04-15T00:00:00Z"
     },
+    "mde": {
+      "name": "Model Driven Engineering",
+      "id": "mde",
+      "version": "0.5.1",
+      "description": "Focuses on streamlined commands, app repository support, cross-spec support, and capability-aware project memory for model-driven engineering workflows.",
+      "author": "Ralph Hanna",
+      "repository": "https://github.com/AI-MDE/spec-kit-preset-mde",
+      "download_url": "https://github.com/AI-MDE/spec-kit-preset-mde/archive/refs/tags/v0.5.1.zip",
+      "homepage": "https://github.com/AI-MDE/spec-kit-preset-mde",
+      "documentation": "https://github.com/AI-MDE/spec-kit-preset-mde/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "extensions": [
+          "mde"
+        ]
+      },
+      "provides": {
+        "templates": 6,
+        "commands": 11
+      },
+      "tags": [
+        "model-driven-engineering",
+        "software-lifecycle",
+        "business-analysis",
+        "business-application",
+        "multi-layered-architecture"
+      ],
+      "created_at": "2026-05-08T00:00:00Z",
+      "updated_at": "2026-05-08T00:00:00Z"
+    },
     "multi-repo-branching": {
       "name": "Multi-Repo Branching",
       "id": "multi-repo-branching",

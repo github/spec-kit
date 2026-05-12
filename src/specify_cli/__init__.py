@@ -74,6 +74,10 @@ from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
 )
+from .agent_projection import (
+    ensure_agent_governance_from_template as _ensure_agent_governance_from_template,
+    refresh_agent_projection as _refresh_agent_projection,
+)
 
 # For cross-platform keyboard input
 import readchar
@@ -769,6 +773,8 @@ def _install_shared_infra(
     tracker: StepTracker | None = None,
     force: bool = False,
     invoke_separator: str = ".",
+    refresh_managed: bool = False,
+    refresh_hint: str | None = None,
 ) -> bool:
     """Install shared infrastructure files into *project_path*.
 
@@ -780,9 +786,23 @@ def _install_shared_infra(
     placeholders using *invoke_separator* (``"."`` for markdown agents,
     ``"-"`` for skills agents).
 
-    When *force* is ``True``, existing files are overwritten with the
-    latest bundled versions.  When ``False`` (default), only missing
-    files are added and existing ones are skipped.
+    Overwrite policy:
+
+    * ``force=True``  — overwrite every existing file (still skips symlinks
+      to avoid following links outside the project root).
+    * ``refresh_managed=True`` — overwrite only files whose on-disk hash
+      still matches the previously recorded manifest hash (i.e. unmodified
+      files installed by spec-kit). Files with diverging hashes are
+      treated as user customizations and preserved with a warning.
+    * Default — only add missing files; existing ones are skipped.
+
+    *refresh_hint* — caller-supplied rich-text fragment shown after the
+    "Preserved customized files" warning to tell the user which flag/command
+    they should re-run with to overwrite their customizations. Each caller
+    passes the flag that's actually valid in its CLI surface (e.g.
+    ``--refresh-shared-infra`` for ``integration switch``,
+    ``--force`` for ``init``/``integration upgrade``). When ``None``, no
+    remediation hint is printed for customizations.
 
     Returns ``True`` on success.
     """
@@ -795,6 +815,8 @@ def _install_shared_infra(
         console=console,
         force=force,
         invoke_separator=invoke_separator,
+        refresh_managed=refresh_managed,
+        refresh_hint=refresh_hint,
     )
 
 
@@ -804,6 +826,8 @@ def _install_shared_infra_or_exit(
     tracker: StepTracker | None = None,
     force: bool = False,
     invoke_separator: str = ".",
+    refresh_managed: bool = False,
+    refresh_hint: str | None = None,
 ) -> bool:
     try:
         return _install_shared_infra(
@@ -812,6 +836,8 @@ def _install_shared_infra_or_exit(
             tracker=tracker,
             force=force,
             invoke_separator=invoke_separator,
+            refresh_managed=refresh_managed,
+            refresh_hint=refresh_hint,
         )
     except (ValueError, OSError) as exc:
         console.print(f"[red]Error:[/red] Failed to install shared infrastructure: {exc}")
@@ -906,6 +932,46 @@ def ensure_constitution_from_template(project_path: Path, tracker: StepTracker |
             console.print(f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]")
 
 
+def ensure_agent_governance_from_template(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Copy agent-governance template to memory if it doesn't exist."""
+    try:
+        result = _ensure_agent_governance_from_template(project_path)
+    except Exception as e:
+        if tracker:
+            tracker.add("agent-governance", "Agent governance setup")
+            tracker.error("agent-governance", str(e))
+        else:
+            console.print(f"[yellow]Warning: Could not initialize agent governance: {e}[/yellow]")
+        return
+
+    if tracker:
+        tracker.add("agent-governance", "Agent governance setup")
+        if result is None:
+            tracker.error("agent-governance", "template not found")
+        else:
+            tracker.complete("agent-governance", "available")
+
+
+def refresh_agent_projection(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Refresh generated agent governance projections."""
+    try:
+        result = _refresh_agent_projection(project_path)
+    except Exception as e:
+        if tracker:
+            tracker.add("agent-projection", "Agent governance projection")
+            tracker.error("agent-projection", str(e))
+        else:
+            console.print(f"[yellow]Warning: Could not refresh agent projection: {e}[/yellow]")
+        return
+
+    if tracker:
+        tracker.add("agent-projection", "Agent governance projection")
+        if result.memory_path is None:
+            tracker.skip("agent-projection", "agent-governance template missing")
+        else:
+            tracker.complete("agent-projection", f"{len(result.projection_paths)} file(s) refreshed")
+
+
 INIT_OPTIONS_FILE = ".specify/init-options.json"
 
 
@@ -951,6 +1017,8 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
 # Constants kept for backward compatibility with presets and extensions.
 DEFAULT_SKILLS_DIR = ".agents/skills"
 SKILL_DESCRIPTIONS = {
+    "arch": "Generate project-level 4+1 architecture view artifacts and synthesis.",
+    "agent": "Create or update agent governance and refresh agent instruction projections.",
     "specify": "Create or update feature specifications from natural language descriptions.",
     "plan": "Generate technical implementation plans from feature specifications.",
     "tasks": "Break down implementation plans into actionable task lists.",
@@ -1339,6 +1407,8 @@ def init(
             tracker.complete("shared-infra", f"scripts ({selected_script}) + templates")
 
             ensure_constitution_from_template(project_path, tracker=tracker)
+            ensure_agent_governance_from_template(project_path, tracker=tracker)
+            refresh_agent_projection(project_path, tracker=tracker)
 
             if not no_git:
                 tracker.start("git")
@@ -1607,11 +1677,12 @@ def init(
 
     steps_lines.append(f"{step_num}. Start using {usage_label} with your coding agent:")
 
-    steps_lines.append(f"   {step_num}.1 [cyan]{_display_cmd('constitution')}[/] - Establish project principles")
-    steps_lines.append(f"   {step_num}.2 [cyan]{_display_cmd('specify')}[/] - Create baseline specification")
-    steps_lines.append(f"   {step_num}.3 [cyan]{_display_cmd('plan')}[/] - Create implementation plan")
-    steps_lines.append(f"   {step_num}.4 [cyan]{_display_cmd('tasks')}[/] - Generate actionable tasks")
-    steps_lines.append(f"   {step_num}.5 [cyan]{_display_cmd('implement')}[/] - Execute implementation")
+    steps_lines.append(f"   {step_num}.1 [cyan]{_display_cmd('arch')}[/] - Shape 4+1 architecture views")
+    steps_lines.append(f"   {step_num}.2 [cyan]{_display_cmd('constitution')}[/] - Establish project principles")
+    steps_lines.append(f"   {step_num}.3 [cyan]{_display_cmd('specify')}[/] - Create baseline specification")
+    steps_lines.append(f"   {step_num}.4 [cyan]{_display_cmd('plan')}[/] - Create implementation plan")
+    steps_lines.append(f"   {step_num}.5 [cyan]{_display_cmd('tasks')}[/] - Generate actionable tasks")
+    steps_lines.append(f"   {step_num}.6 [cyan]{_display_cmd('implement')}[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
@@ -1975,6 +2046,7 @@ def _write_integration_json(
         installed_integrations=installed_integrations,
         settings=integration_settings,
     )
+    refresh_agent_projection(project_root)
 
 
 def _clear_init_options_for_integration(project_root: Path, integration_key: str) -> None:
@@ -1993,6 +2065,7 @@ def _remove_integration_json(project_root: Path) -> None:
     path = project_root / INTEGRATION_JSON
     if path.exists():
         path.unlink()
+    refresh_agent_projection(project_root)
 
 
 _MANIFEST_READ_ERRORS = (ValueError, FileNotFoundError, OSError, UnicodeDecodeError)
@@ -2583,7 +2656,8 @@ def integration_uninstall(
 def integration_switch(
     target: str = typer.Argument(help="Integration key to switch to"),
     script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
-    force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall"),
+    force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall of the previous integration"),
+    refresh_shared_infra: bool = typer.Option(False, "--refresh-shared-infra", help="Also overwrite shared infrastructure files even if you customized them (otherwise customizations are preserved)"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the target integration'),
 ):
     """Switch from the current integration to a different one."""
@@ -2754,13 +2828,26 @@ def integration_switch(
         target_integration, current, target, integration_options
     )
 
-    # Ensure shared infrastructure is present (safe to run unconditionally;
-    # _install_shared_infra merges missing files without overwriting).
+    # Refresh shared infrastructure to the current CLI version. Switching
+    # integrations is exactly when stale vendored shared scripts (e.g.
+    # update-agent-context.sh that pre-dates the target integration's
+    # supported-agent list) would silently break the new integration.
+    #
+    # Use refresh_managed=True so only files that match their previously
+    # recorded hash are overwritten — user customizations are detected via
+    # hash divergence and preserved with a warning. Pass
+    # --refresh-shared-infra to overwrite customizations as well. See #2293.
     _install_shared_infra_or_exit(
         project_root,
         selected_script,
+        force=refresh_shared_infra,
+        refresh_managed=True,
         invoke_separator=_invoke_separator_for_integration(
             target_integration, current, target, parsed_options
+        ),
+        refresh_hint=(
+            "To overwrite customizations, re-run with "
+            "[cyan]specify integration switch ... --refresh-shared-infra[/cyan]."
         ),
     )
     if os.name != "nt":

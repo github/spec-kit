@@ -484,6 +484,7 @@ class TomlIntegrationTests:
 
     COMMAND_STEMS = [
         "analyze",
+        "arch",
         "checklist",
         "clarify",
         "constitution",
@@ -515,6 +516,7 @@ class TomlIntegrationTests:
                 "check-prerequisites.sh",
                 "common.sh",
                 "create-new-feature.sh",
+                "setup-arch.sh",
                 "setup-plan.sh",
                 "setup-tasks.sh",
             ]:
@@ -524,12 +526,19 @@ class TomlIntegrationTests:
                 "check-prerequisites.ps1",
                 "common.ps1",
                 "create-new-feature.ps1",
+                "setup-arch.ps1",
                 "setup-plan.ps1",
                 "setup-tasks.ps1",
             ]:
                 files.append(f".specify/scripts/powershell/{name}")
 
         for name in [
+            "architecture-development-template.md",
+            "architecture-logical-template.md",
+            "architecture-physical-template.md",
+            "architecture-process-template.md",
+            "architecture-scenario-template.md",
+            "architecture-template.md",
             "checklist-template.md",
             "constitution-template.md",
             "plan-template.md",

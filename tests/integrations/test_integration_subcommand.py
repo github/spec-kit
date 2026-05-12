@@ -901,6 +901,152 @@ class TestIntegrationSwitch:
         assert shared_script.exists()
         assert shared_script.read_text(encoding="utf-8") == shared_content
 
+    def test_switch_refreshes_stale_managed_shared_infra(self, tmp_path):
+        """Regression for #2293: stale managed shared scripts get refreshed on switch."""
+        import hashlib
+
+        project = _init_project(tmp_path, "claude")
+        shared_script = project / ".specify" / "scripts" / "bash" / "common.sh"
+        bundled_bytes = shared_script.read_bytes()
+
+        # Simulate a stale vendored script: write truncated content as bytes
+        # (write_text would translate \n→\r\n on Windows and break the hash)
+        # and update the speckit manifest hash so the stale copy is treated
+        # as "managed" (installed by spec-kit, not a user customization).
+        stale_bytes = b"#!/usr/bin/env bash\n# stale vendored copy\n"
+        shared_script.write_bytes(stale_bytes)
+
+        manifest_path = project / ".specify" / "integrations" / "speckit.manifest.json"
+        manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_data["files"][".specify/scripts/bash/common.sh"] = (
+            hashlib.sha256(stale_bytes).hexdigest()
+        )
+        manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "copilot",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+
+        # Stale managed file should be replaced by the bundled version
+        assert shared_script.read_bytes() == bundled_bytes
+
+    def test_switch_preserves_user_customized_shared_infra(self, tmp_path):
+        """User customizations (hash divergence from manifest) survive switch without --refresh-shared-infra."""
+        project = _init_project(tmp_path, "claude")
+        shared_script = project / ".specify" / "scripts" / "bash" / "common.sh"
+
+        # User customization: append bytes but do NOT update manifest hash,
+        # so on-disk hash diverges from the recorded one.
+        original = shared_script.read_bytes()
+        custom_bytes = original + b"\n# user customization\n"
+        shared_script.write_bytes(custom_bytes)
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "copilot",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        assert shared_script.read_bytes() == custom_bytes
+        assert "Preserved" in result.output
+
+    def test_switch_refresh_shared_infra_overwrites_customizations(self, tmp_path):
+        """--refresh-shared-infra explicitly overwrites user customizations on switch."""
+        project = _init_project(tmp_path, "claude")
+        shared_script = project / ".specify" / "scripts" / "bash" / "common.sh"
+        bundled_bytes = shared_script.read_bytes()
+
+        # User customization (hash diverges from manifest)
+        custom_bytes = bundled_bytes + b"\n# user customization\n"
+        shared_script.write_bytes(custom_bytes)
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "copilot",
+                "--script", "sh",
+                "--refresh-shared-infra",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        # Customization is overwritten with the bundled version
+        assert shared_script.read_bytes() == bundled_bytes
+
+    def test_switch_skips_symlinked_parent_directory(self, tmp_path):
+        """Regression: if .specify/scripts/bash is a symlink, switch must not write through it.
+
+        Copilot follow-up on #2375: leaf-only symlink check let writes escape
+        when an *ancestor* directory was symlinked outside the project root.
+        """
+        import sys
+        if sys.platform.startswith("win"):
+            import pytest as _pytest
+            _pytest.skip("Symlink creation typically requires admin on Windows")
+
+        project = _init_project(tmp_path, "claude")
+        bash_dir = project / ".specify" / "scripts" / "bash"
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        for child in bash_dir.iterdir():
+            child.rename(outside / child.name)
+        bash_dir.rmdir()
+        bash_dir.symlink_to(outside, target_is_directory=True)
+        sentinel = (outside / "common.sh").read_bytes()
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "copilot",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        # Symlinked tree reported, not written through.
+        assert "symlink" in result.output.lower()
+        # Outside dir contents unchanged.
+        assert (outside / "common.sh").read_bytes() == sentinel
+
+    def test_switch_force_alone_does_not_overwrite_shared_customizations(self, tmp_path):
+        """--force (uninstall semantics) must NOT overwrite shared-infra customizations.
+
+        Regression: ensures the decoupling of --force and --refresh-shared-infra.
+        """
+        project = _init_project(tmp_path, "claude")
+        shared_script = project / ".specify" / "scripts" / "bash" / "common.sh"
+        bundled_bytes = shared_script.read_bytes()
+
+        custom_bytes = bundled_bytes + b"\n# user customization\n"
+        shared_script.write_bytes(custom_bytes)
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "copilot",
+                "--script", "sh",
+                "--force",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        # --force alone preserves the customization
+        assert shared_script.read_bytes() == custom_bytes
+
     def test_switch_from_nothing(self, tmp_path):
         """Switch when no integration is installed should just install the target."""
         project = tmp_path / "bare"
