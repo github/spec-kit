@@ -89,21 +89,23 @@ Check for required Terraform files:
 
 ---
 
-## Phase 3: Validate and Generate Module Contract Files
+## Phase 3: Validate and Generate Module Context Files
 
 ### 3.1 Check for Required Module Files
 
-Check for all three module artifact files in `<module_directory>`:
+Check for these module artifact files in `<module_directory>`:
 
 | File | Purpose |
 |------|---------|
-| `.infrakit_context.md` | Original spec, variables, and design decisions |
-| `.infrakit_changelog.md` | History of all changes applied to this module |
-| `.infrakit_terraform_contract.md` | Stable module interface and guarantees for callers |
+| `.infrakit_context.md` | Module interface summary — variables, outputs, resources, providers |
+| `.infrakit_changelog.md` | Append-only history of all changes applied to this module |
+| `README.md` | User-facing usage docs (module example, inputs, outputs) |
 
-**If ALL three exist**: Read them all and proceed to Phase 4.
+**If all exist**: Read them all and proceed to Phase 4.
 
-**If ANY are missing**: Scan the existing `.tf` files to generate the missing ones (Phases 3.2–3.4).
+**If any are missing**: Scan the existing `.tf` files to generate the missing ones (Phases 3.2–3.3).
+
+> **Note**: The previous `.infrakit_terraform_contract.md` is no longer produced. `variables.tf`, `outputs.tf`, and `versions.tf` are the machine-readable interface contract — every variable type, output source, and version constraint lives there. The README adds the human-readable usage layer on top. Together they cover what the dropped contract file used to.
 
 ### 3.2 Scan Existing Module Files
 
@@ -201,61 +203,9 @@ For each file that does not exist, generate it now:
 
 ---
 
-**`.infrakit_terraform_contract.md`** (if missing):
+**`README.md`** (if missing):
 
-```markdown
-# Module Contract: <module-name>
-
-<!-- This contract defines the stable interface and guarantees for callers of this module. -->
-
-## Interface
-
-| Aspect | Value |
-|--------|-------|
-| Provider | `<provider>` |
-| Terraform Version | `>= <version>` |
-| Provider Version | `~> <version>` |
-| Stability | <Stable/Beta/Alpha — inferred from module maturity> |
-
-## Required Variables
-
-| Variable | Type | Description |
-|----------|------|-------------|
-| <required vars — no default> | | |
-
-## Optional Variables (with defaults)
-
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| <optional vars> | | | |
-
-## Outputs
-
-| Output | Type | Description |
-|--------|------|-------------|
-| <output name> | `<type>` | <desc> |
-
-## Resources Managed
-
-| Resource Type | Count | Notes |
-|---------------|-------|-------|
-| `<resource_type>` | <N> | <purpose or note> |
-
-## State Considerations
-- <Notes about Terraform state that callers should be aware of>
-- <Any resources that require careful state handling on changes>
-
-## Stability Guarantees
-- Required variables will not be removed without a documented breaking change notice
-- Output names and types will not change without a documented breaking change notice
-- Resources will not be renamed (causing destroy/recreate) without a migration guide
-
-## Breaking Change Policy
-- Breaking changes are documented in `.infrakit_changelog.md` with a migration guide
-- Callers must review the migration guide before re-applying after a breaking update
-
-<!-- Reconstructed by `/infrakit:update_terraform_code` from code analysis. -->
-```
+If the module has no `README.md` yet, the IaC Engineer regenerates one from `variables.tf` / `outputs.tf` / `versions.tf` / `main.tf` during Phase 9 (Implementation). For Phase 3 (validation), absence of README.md is not blocking — it will be produced/refreshed at the end of `/infrakit:implement` anyway.
 
 ### 3.4 Present Generated Files for Review
 
@@ -510,7 +460,7 @@ Invoke the `Task` tool with:
 
 - `subagent_type`: `cloud-architect` (registered at `.claude/agents/cloud-architect.md`)
 - `description`: `"Cloud Architect design options for <track-name>"`
-- `prompt`: `"For the update spec at .infrakit_tracks/tracks/<track-name>/spec.md, identify backward-compatibility constraints and state impact by reading the resource's existing .infrakit_context.md and .infrakit_terraform_contract.md. Then produce 2–3 distinct, named architecture options (Option A/B/C) following the format in Phase 6.2 of /infrakit:update_terraform_code. Do NOT pick one; return all options for the user to choose from. Do not modify any files."`
+- `prompt`: `"For the update spec at .infrakit_tracks/tracks/<track-name>/spec.md, identify backward-compatibility constraints and state impact by reading the existing variables.tf, outputs.tf, versions.tf, main.tf, and .infrakit_context.md in the module directory. Then produce 2–3 distinct, named architecture options (Option A/B/C) following the format in Phase 6.2 of /infrakit:update_terraform_code. Do NOT pick one; return all options for the user to choose from. Do not modify any files."`
 
 Paste the returned options into your reply and proceed to Phase 6.2 (user selection).
 
@@ -523,7 +473,7 @@ Read `.infrakit/agent_personas/cloud_architect.md` and adopt that persona inline
 
 ### 6.1 Architecture Analysis
 
-Review the spec alongside `.infrakit_context.md` and `.infrakit_terraform_contract.md`. Identify:
+Review the spec alongside `.infrakit_context.md`, `variables.tf`, `outputs.tf`, `versions.tf`, and `main.tf` (the existing module — your machine-readable contract). Identify:
 - Backward compatibility constraints from the current contract
 - State impact of each possible approach (in-place vs. destroy/recreate)
 - Whether `moved` blocks are needed for resource renames

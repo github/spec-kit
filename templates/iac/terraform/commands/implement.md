@@ -242,30 +242,11 @@ Then append:
 
 ---
 
-## Step 9c: Update .infrakit_terraform_contract.md
-
-Re-read the freshly-written HCL files (`variables.tf`, `outputs.tf`, `main.tf`, `versions.tf`) and regenerate `.infrakit_terraform_contract.md` in the module directory to reflect the actual implemented state.
-
-Use the same template structure as `update_terraform_code.md` Phase 3.3 for the contract file, but source all values from the implemented HCL files rather than the spec.
-
-Present the regenerated contract to the user:
-
-> "I've updated `.infrakit_terraform_contract.md` to reflect the implementation. Please review:
->
-> <summary of key interface changes — variables added/removed/changed, outputs added/removed>
->
-> A) **Accept** — Contract looks correct
-> B) **Edit manually** — Say 'done' when you've finished editing"
-
-**WAIT** for response before proceeding to Step 9d.
-
----
-
-## Step 9d: Update README.md
+## Step 9c: Update README.md
 
 Re-read the freshly-written HCL files and regenerate `<module_directory>/README.md` to reflect the actual implemented state.
 
-The module's `README.md` is the user-facing contract. It must include:
+The module's `README.md` is both the user-facing usage doc and the human-readable interface contract. It must include:
 
 - A one-paragraph description of what the module provisions.
 - A **Usage** section with a complete `module "<name>" { source = "..." ... }` example showing the minimum required variables.
@@ -287,6 +268,8 @@ Present the regenerated README to the user:
 
 **WAIT** for response before proceeding to Step 10.
 
+> **Note**: InfraKit no longer generates a separate `.infrakit_terraform_contract.md` — `variables.tf`, `outputs.tf`, and `versions.tf` are the machine-readable interface contract, and `README.md` is the human-readable one. Together they cover what the dropped contract file used to.
+
 ---
 
 ## Step 10: Update Track Registry
@@ -301,7 +284,6 @@ Update `.infrakit_tracks/tracks.md` — change the track's status to `✅ done`.
 > **Module files updated:**
 > - `<module_directory>/.infrakit_context.md`
 > - `<module_directory>/.infrakit_changelog.md`
-> - `<module_directory>/.infrakit_terraform_contract.md`
 > - `<module_directory>/README.md`
 >
 > Run `/infrakit:status` to see all track statuses."
