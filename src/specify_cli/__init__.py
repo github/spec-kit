@@ -4948,8 +4948,10 @@ def extension_update(
                 # so no sentinel is needed to distinguish key-absent from key-empty.
                 config = hook_executor.get_project_config()
                 if isinstance(config, dict):
-                    # Copy so mutations during update don't affect the backup
-                    backup_installed = list(config.get("installed", []))
+                    import copy
+                    # Deep-copy so nested mapping entries (e.g. version-pin dicts)
+                    # are not affected by in-place mutations during the update.
+                    backup_installed = copy.deepcopy(config.get("installed", []))
                     backup_hooks = {}
                     for hook_name, hook_list in config.get("hooks", {}).items():
                         if not isinstance(hook_list, list):

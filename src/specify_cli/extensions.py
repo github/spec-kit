@@ -2487,8 +2487,8 @@ class HookExecutor:
             if not isinstance(result, dict):
                 return {
                     "installed": [],
-                    "hooks": {},
                     "settings": {"auto_execute_hooks": True},
+                    "hooks": {},
                 }
             # Normalize nested fields so read-only callers like get_hooks_for_event()
             # never see non-dict hooks or non-list installed (Feedback)
