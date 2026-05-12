@@ -100,7 +100,7 @@ class SkillsIntegrationTests:
         skill_files = [f for f in created if "scripts" not in f.parts]
 
         expected_commands = {
-            "governance", "analyze", "checklist", "clarify", "constitution",
+            "agent", "arch", "governance", "analyze", "checklist", "clarify", "constitution",
             "implement", "plan", "specify", "tasks", "taskstoissues",
         }
 
@@ -374,7 +374,7 @@ class SkillsIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     _SKILL_COMMANDS = [
-        "governance", "analyze", "checklist", "clarify", "constitution",
+        "agent", "arch", "governance", "analyze", "checklist", "clarify", "constitution",
         "implement", "plan", "specify", "tasks", "taskstoissues",
     ]
 
@@ -402,6 +402,7 @@ class SkillsIntegrationTests:
                 ".specify/scripts/bash/check-prerequisites.sh",
                 ".specify/scripts/bash/common.sh",
                 ".specify/scripts/bash/create-new-feature.sh",
+                ".specify/scripts/bash/setup-arch.sh",
                 ".specify/scripts/bash/setup-plan.sh",
                 ".specify/scripts/bash/setup-tasks.sh",
             ]
@@ -410,12 +411,19 @@ class SkillsIntegrationTests:
                 ".specify/scripts/powershell/check-prerequisites.ps1",
                 ".specify/scripts/powershell/common.ps1",
                 ".specify/scripts/powershell/create-new-feature.ps1",
+                ".specify/scripts/powershell/setup-arch.ps1",
                 ".specify/scripts/powershell/setup-plan.ps1",
                 ".specify/scripts/powershell/setup-tasks.ps1",
             ]
         # Templates
         files += [
             ".specify/templates/agent-governance-template.md",
+            ".specify/templates/architecture-development-template.md",
+            ".specify/templates/architecture-logical-template.md",
+            ".specify/templates/architecture-physical-template.md",
+            ".specify/templates/architecture-process-template.md",
+            ".specify/templates/architecture-scenario-template.md",
+            ".specify/templates/architecture-template.md",
             ".specify/templates/checklist-template.md",
             ".specify/templates/constitution-template.md",
             ".specify/templates/plan-template.md",

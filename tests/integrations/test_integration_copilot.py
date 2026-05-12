@@ -29,7 +29,7 @@ class TestCopilotIntegration:
         m = IntegrationManifest("copilot", tmp_path)
         created = copilot.setup(tmp_path, m)
         assert len(created) > 0
-        agent_files = [f for f in created if ".agent." in f.name]
+        agent_files = [f for f in created if f.name.endswith(".agent.md")]
         assert len(agent_files) > 0
         for f in agent_files:
             assert f.parent == tmp_path / ".github" / "agents"
@@ -125,11 +125,11 @@ class TestCopilotIntegration:
         agents_dir = tmp_path / ".github" / "agents"
         assert agents_dir.is_dir()
         agent_files = sorted(agents_dir.glob("speckit.*.agent.md"))
-        assert len(agent_files) == 10
         expected_commands = {
-            "governance", "analyze", "checklist", "clarify", "constitution",
+            "agent", "arch", "governance", "analyze", "checklist", "clarify", "constitution",
             "implement", "plan", "specify", "tasks", "taskstoissues",
         }
+        assert len(agent_files) == len(expected_commands)
         actual_commands = {f.name.removeprefix("speckit.").removesuffix(".agent.md") for f in agent_files}
         assert actual_commands == expected_commands
 
@@ -179,7 +179,9 @@ class TestCopilotIntegration:
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file())
         expected = sorted([
             "AGENTS.md",
+            ".github/agents/speckit.agent.agent.md",
             ".github/agents/speckit.analyze.agent.md",
+            ".github/agents/speckit.arch.agent.md",
             ".github/agents/speckit.governance.agent.md",
             ".github/agents/speckit.checklist.agent.md",
             ".github/agents/speckit.clarify.agent.md",
@@ -189,7 +191,9 @@ class TestCopilotIntegration:
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
             ".github/agents/speckit.taskstoissues.agent.md",
+            ".github/prompts/speckit.agent.prompt.md",
             ".github/prompts/speckit.analyze.prompt.md",
+            ".github/prompts/speckit.arch.prompt.md",
             ".github/prompts/speckit.governance.prompt.md",
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
@@ -208,9 +212,16 @@ class TestCopilotIntegration:
             ".specify/scripts/bash/check-prerequisites.sh",
             ".specify/scripts/bash/common.sh",
             ".specify/scripts/bash/create-new-feature.sh",
+            ".specify/scripts/bash/setup-arch.sh",
             ".specify/scripts/bash/setup-plan.sh",
             ".specify/scripts/bash/setup-tasks.sh",
             ".specify/templates/agent-governance-template.md",
+            ".specify/templates/architecture-development-template.md",
+            ".specify/templates/architecture-logical-template.md",
+            ".specify/templates/architecture-physical-template.md",
+            ".specify/templates/architecture-process-template.md",
+            ".specify/templates/architecture-scenario-template.md",
+            ".specify/templates/architecture-template.md",
             ".specify/templates/checklist-template.md",
             ".specify/templates/constitution-template.md",
             ".specify/templates/plan-template.md",
@@ -244,7 +255,9 @@ class TestCopilotIntegration:
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file())
         expected = sorted([
             "AGENTS.md",
+            ".github/agents/speckit.agent.agent.md",
             ".github/agents/speckit.analyze.agent.md",
+            ".github/agents/speckit.arch.agent.md",
             ".github/agents/speckit.governance.agent.md",
             ".github/agents/speckit.checklist.agent.md",
             ".github/agents/speckit.clarify.agent.md",
@@ -254,7 +267,9 @@ class TestCopilotIntegration:
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
             ".github/agents/speckit.taskstoissues.agent.md",
+            ".github/prompts/speckit.agent.prompt.md",
             ".github/prompts/speckit.analyze.prompt.md",
+            ".github/prompts/speckit.arch.prompt.md",
             ".github/prompts/speckit.governance.prompt.md",
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
@@ -273,9 +288,16 @@ class TestCopilotIntegration:
             ".specify/scripts/powershell/check-prerequisites.ps1",
             ".specify/scripts/powershell/common.ps1",
             ".specify/scripts/powershell/create-new-feature.ps1",
+            ".specify/scripts/powershell/setup-arch.ps1",
             ".specify/scripts/powershell/setup-plan.ps1",
             ".specify/scripts/powershell/setup-tasks.ps1",
             ".specify/templates/agent-governance-template.md",
+            ".specify/templates/architecture-development-template.md",
+            ".specify/templates/architecture-logical-template.md",
+            ".specify/templates/architecture-physical-template.md",
+            ".specify/templates/architecture-process-template.md",
+            ".specify/templates/architecture-scenario-template.md",
+            ".specify/templates/architecture-template.md",
             ".specify/templates/checklist-template.md",
             ".specify/templates/constitution-template.md",
             ".specify/templates/plan-template.md",
@@ -296,7 +318,7 @@ class TestCopilotSkillsMode:
     """Tests for Copilot integration in --skills mode."""
 
     _SKILL_COMMANDS = [
-        "governance", "analyze", "checklist", "clarify", "constitution",
+        "agent", "arch", "governance", "analyze", "checklist", "clarify", "constitution",
         "implement", "plan", "specify", "tasks", "taskstoissues",
     ]
 
@@ -626,10 +648,17 @@ class TestCopilotSkillsMode:
             ".specify/scripts/bash/check-prerequisites.sh",
             ".specify/scripts/bash/common.sh",
             ".specify/scripts/bash/create-new-feature.sh",
+            ".specify/scripts/bash/setup-arch.sh",
             ".specify/scripts/bash/setup-plan.sh",
             ".specify/scripts/bash/setup-tasks.sh",
             # Templates
             ".specify/templates/agent-governance-template.md",
+            ".specify/templates/architecture-development-template.md",
+            ".specify/templates/architecture-logical-template.md",
+            ".specify/templates/architecture-physical-template.md",
+            ".specify/templates/architecture-process-template.md",
+            ".specify/templates/architecture-scenario-template.md",
+            ".specify/templates/architecture-template.md",
             ".specify/templates/checklist-template.md",
             ".specify/templates/constitution-template.md",
             ".specify/templates/plan-template.md",

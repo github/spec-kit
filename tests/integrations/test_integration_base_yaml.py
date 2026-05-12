@@ -362,6 +362,8 @@ class YamlIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     COMMAND_STEMS = [
+        "agent",
+        "arch",
         "governance",
         "analyze",
         "checklist",
@@ -395,6 +397,7 @@ class YamlIntegrationTests:
                 "check-prerequisites.sh",
                 "common.sh",
                 "create-new-feature.sh",
+                "setup-arch.sh",
                 "setup-plan.sh",
                 "setup-tasks.sh",
             ]:
@@ -404,6 +407,7 @@ class YamlIntegrationTests:
                 "check-prerequisites.ps1",
                 "common.ps1",
                 "create-new-feature.ps1",
+                "setup-arch.ps1",
                 "setup-plan.ps1",
                 "setup-tasks.ps1",
             ]:
@@ -411,6 +415,12 @@ class YamlIntegrationTests:
 
         for name in [
             "agent-governance-template.md",
+            "architecture-development-template.md",
+            "architecture-logical-template.md",
+            "architecture-physical-template.md",
+            "architecture-process-template.md",
+            "architecture-scenario-template.md",
+            "architecture-template.md",
             "checklist-template.md",
             "constitution-template.md",
             "plan-template.md",
