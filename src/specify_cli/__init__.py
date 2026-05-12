@@ -5103,6 +5103,7 @@ def extension_update(
                             hooks_list = config["hooks"][hook_name]
                             if not isinstance(hooks_list, list):
                                 config["hooks"][hook_name] = []
+                                modified = True
                                 continue
                             
                             original_len = len(hooks_list)

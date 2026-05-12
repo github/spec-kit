@@ -1,6 +1,5 @@
 import pytest
 import yaml
-from pathlib import Path
 from typer.testing import CliRunner
 from specify_cli import app
 
@@ -43,8 +42,8 @@ def test_extension_update_corrupted_config_root(project_dir, monkeypatch):
     # Run update
     result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
     
-    # It might fail because of the mock zip, but it should NOT be an AttributeError from config.get()
-    assert "AttributeError" not in result.output
+    # It might fail because of the mock zip, but must NOT raise AttributeError from config handling
+    assert not isinstance(result.exception, AttributeError)
 
 def test_extension_update_corrupted_hooks_value(project_dir, monkeypatch):
     """Regression: extension update must handle non-dict 'hooks' in extensions.yml."""
@@ -68,7 +67,7 @@ def test_extension_update_corrupted_hooks_value(project_dir, monkeypatch):
     
     result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
     
-    assert "AttributeError" not in result.output
+    assert not isinstance(result.exception, AttributeError)
 
 def test_extension_update_rollback_corrupted_config(project_dir, monkeypatch):
     """Regression: extension update rollback must handle corrupted extensions.yml."""
@@ -98,7 +97,7 @@ def test_extension_update_rollback_corrupted_config(project_dir, monkeypatch):
     
     # Should handle Exception and NOT crash with AttributeError during rollback
     assert "Download failed" in result.output
-    assert "AttributeError" not in result.output
+    assert not isinstance(result.exception, AttributeError)
     
     # Verify hooks key was preserved (normalized to {} if it was null/corrupted)
     restored_config = yaml.safe_load(config_path.read_text())
