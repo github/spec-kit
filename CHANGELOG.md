@@ -2,6 +2,24 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.8] - 2026-05-11
+
+### Changed
+
+- chore(deps): bump actions/checkout from 4.3.1 to 6.0.2 (#2486)
+- feat(catalog): add Spec Kit Schedule (schedule) community extension (#2473)
+- fix(integration): refresh shared infra on `integration switch` (#2375)
+- Add MDE preset to community catalog (#2513)
+- Add MDE extension to community catalog (#2512)
+- chore: update community catalog with latest extension versions (#2490)
+- chore(deps): bump actions/setup-dotnet from 4.3.1 to 5.2.0 (#2489)
+- chore(deps): bump actions/github-script from 7 to 9 (#2488)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action (#2487)
+- chore(deps): bump github/codeql-action from 4.35.3 to 4.35.4 (#2485)
+- feat(catalog): add API Evolve (api-evolve) community extension (#2479)
+- feat: Config-driven opt-in authentication registry with multi-platform support (#2393)
+- chore: release 0.8.7, begin 0.8.8.dev0 development (#2480)
+
 ## [0.8.7] - 2026-05-07
 
 ### Changed
