@@ -2481,7 +2481,9 @@ class HookExecutor:
             }
 
         try:
-            return yaml.safe_load(self.config_file.read_text(encoding="utf-8")) or {}
+            result = yaml.safe_load(self.config_file.read_text(encoding="utf-8"))
+            # Coerce non-dict results (scalars, lists) to {} so all callers are safe (Feedback)
+            return result if isinstance(result, dict) else {}
         except (yaml.YAMLError, OSError, UnicodeError):
             return {
                 "installed": [],
@@ -2561,22 +2563,27 @@ class HookExecutor:
         raw_installed = config.get("installed")
         installed = raw_installed if isinstance(raw_installed, list) else []
 
-        # Sanitize and remove (Feedback from review: support mappings)
-        sanitized = [
-            x for x in installed 
+        # Sanitize, deduplicate by id, and remove the target extension.
+        # Mirrors register_extension(): one canonical entry per id, dict preferred over str.
+        valid = [
+            x for x in installed
             if isinstance(x, str) or (isinstance(x, dict) and isinstance(x.get("id"), str))
         ]
-        
-        sanitized = [
-            x for x in sanitized
-            if not (x == extension_id or (isinstance(x, dict) and x.get("id") == extension_id))
-        ]
-            
+
+        seen: dict = {}  # id -> entry (dict preferred over str)
+        for x in valid:
+            eid = x if isinstance(x, str) else x.get("id", "")
+            if eid not in seen or isinstance(x, dict):
+                seen[eid] = x
+
+        # Remove the target extension
+        seen.pop(extension_id, None)
+
         # Maintain alphabetical order for consistency
         def _get_sort_id(x):
             return x if isinstance(x, str) else x.get("id", "")
-            
-        sanitized.sort(key=_get_sort_id)
+
+        sanitized = sorted(seen.values(), key=_get_sort_id)
             
         # Always persist if sanitized state differs from raw config (ensures normalization)
         if sanitized != raw_installed:
