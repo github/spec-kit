@@ -152,13 +152,18 @@ function Test-FeatureBranch {
     $raw = $Branch
     $Branch = Get-SpecKitEffectiveBranchName $raw
     
+    # Accept ticket-only branches used by team workflows (GDEV-1234 or feature/GDEV-1234).
+    if ($Branch -match '^[A-Z]+-[0-9]+$') {
+        return $true
+    }
+
     # Accept sequential prefix (3+ digits) but exclude malformed timestamps
     # Malformed: 7-or-8 digit date + 6-digit time with no trailing slug (e.g. "2026031-143022" or "20260319-143022")
     $hasMalformedTimestamp = ($Branch -match '^[0-9]{7}-[0-9]{6}-') -or ($Branch -match '^(?:\d{7}|\d{8})-\d{6}$')
     $isSequential = ($Branch -match '^[0-9]{3,}-') -and (-not $hasMalformedTimestamp)
     if (-not $isSequential -and $Branch -notmatch '^\d{8}-\d{6}-') {
         [Console]::Error.WriteLine("ERROR: Not on a feature branch. Current branch: $raw")
-        [Console]::Error.WriteLine("Feature branches should be named like: 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name")
+        [Console]::Error.WriteLine("Feature branches should be named like: GDEV-1234, feature/GDEV-1234, 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name")
         return $false
     }
     return $true
@@ -242,7 +247,9 @@ function Find-FeatureDirByPrefix {
     $branchName = Get-SpecKitEffectiveBranchName $Branch
 
     $prefix = $null
-    if ($branchName -match '^(\d{8}-\d{6})-') {
+    if ($branchName -match '^([A-Z]+-[0-9]+)$') {
+        $prefix = $Matches[1]
+    } elseif ($branchName -match '^(\d{8}-\d{6})-') {
         $prefix = $Matches[1]
     } elseif ($branchName -match '^(\d{3,})-') {
         $prefix = $Matches[1]

@@ -100,7 +100,7 @@ class SkillsIntegrationTests:
         skill_files = [f for f in created if "scripts" not in f.parts]
 
         expected_commands = {
-            "analyze", "checklist", "clarify", "constitution",
+            "analyze", "checklist", "clarify", "constitution", "context", "design",
             "implement", "plan", "specify", "tasks", "taskstoissues",
         }
 
@@ -205,6 +205,19 @@ class SkillsIntegrationTests:
         assert "__CONTEXT_FILE__" not in content, (
             "Plan skill has unprocessed __CONTEXT_FILE__ placeholder"
         )
+
+    def test_context_skill_exists_and_references_context_file(self, tmp_path):
+        """The context workflow is generated as speckit-context/SKILL.md."""
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        i.setup(tmp_path, m)
+        context_file = i.skills_dest(tmp_path) / "speckit-context" / "SKILL.md"
+        assert context_file.exists(), f"Context skill {context_file} not created"
+        content = context_file.read_text(encoding="utf-8")
+        if i.context_file:
+            assert i.context_file in content
+        assert "__CONTEXT_FILE__" not in content
+        assert ".specify/memory/constitution.md" in content
 
     def test_all_files_tracked_in_manifest(self, tmp_path):
         i = get_integration(self.KEY)
@@ -359,7 +372,7 @@ class SkillsIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     _SKILL_COMMANDS = [
-        "analyze", "checklist", "clarify", "constitution",
+        "analyze", "checklist", "clarify", "constitution", "context", "design",
         "implement", "plan", "specify", "tasks", "taskstoissues",
     ]
 

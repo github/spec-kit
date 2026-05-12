@@ -24,6 +24,9 @@ EXT_CREATE_FEATURE = (
 EXT_CREATE_FEATURE_PS = (
     PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
 )
+EXT_VALIDATE_TICKET = (
+    PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "validate-ticket-branch.sh"
+)
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
 EXT_CREATE_FEATURE = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
 EXT_CREATE_FEATURE_PS = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
@@ -78,6 +81,7 @@ def ext_git_repo(tmp_path: Path) -> Path:
     ext_dir = tmp_path / ".specify" / "extensions" / "git" / "scripts" / "bash"
     ext_dir.mkdir(parents=True)
     shutil.copy(EXT_CREATE_FEATURE, ext_dir / "create-new-feature.sh")
+    shutil.copy(EXT_VALIDATE_TICKET, ext_dir / "validate-ticket-branch.sh")
     # Also copy git-common.sh if it exists
     git_common = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
     if git_common.exists():
@@ -1205,6 +1209,28 @@ class TestFeatureDirectoryResolution:
         else:
             pytest.fail("FEATURE_DIR not found in output")
 
+    @requires_bash
+    def test_ticket_branch_fallback_finds_ticket_prefixed_spec_dir(self, git_repo: Path):
+        """Ticket-only branches resolve specs/<ticket>-* directories."""
+        subprocess.run(["git", "checkout", "-q", "-b", "feature/GDEV-1234"], cwd=git_repo, check=True)
+        spec_dir = git_repo / "specs" / "GDEV-1234-add-login"
+        spec_dir.mkdir(parents=True)
+
+        result = subprocess.run(
+            ["bash", "-c", f'source "{COMMON_SH}" && get_feature_paths'],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        for line in result.stdout.splitlines():
+            if line.startswith("FEATURE_DIR="):
+                val = line.split("=", 1)[1].strip("'\"")
+                assert val == str(spec_dir)
+                break
+        else:
+            pytest.fail("FEATURE_DIR not found in output")
+
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
     def test_ps_env_var_overrides_branch_lookup(self, git_repo: Path):
         """PowerShell: SPECIFY_FEATURE_DIRECTORY env var takes priority."""
@@ -1257,6 +1283,41 @@ class TestFeatureDirectoryResolution:
                 break
         else:
             pytest.fail("FEATURE_DIR not found in PowerShell output")
+
+
+@requires_bash
+class TestTicketBranchValidation:
+    """Tests for explicit existing-ticket branch workflow."""
+
+    def test_validate_ticket_branch_accepts_prefixed_ticket(self, ext_git_repo: Path):
+        subprocess.run(["git", "checkout", "-q", "-b", "feature/GDEV-1234"], cwd=ext_git_repo, check=True)
+
+        result = subprocess.run(
+            ["bash", ".specify/extensions/git/scripts/bash/validate-ticket-branch.sh", "--json"],
+            cwd=ext_git_repo,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["BRANCH_NAME"] == "feature/GDEV-1234"
+        assert payload["TICKET_KEY"] == "GDEV-1234"
+        assert payload["BRANCH_PREFIX"] == "feature"
+        assert payload["BRANCH_STRATEGY"] == "existing-ticket"
+
+    def test_validate_ticket_branch_rejects_slugged_branch(self, ext_git_repo: Path):
+        subprocess.run(["git", "checkout", "-q", "-b", "feature/GDEV-1234-add-login"], cwd=ext_git_repo, check=True)
+
+        result = subprocess.run(
+            ["bash", ".specify/extensions/git/scripts/bash/validate-ticket-branch.sh", "--json"],
+            cwd=ext_git_repo,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode != 0
+        assert "not a valid ticket branch" in result.stderr
 
 
 # ── Description Quoting Tests (issue #2339) ──────────────────────────────────

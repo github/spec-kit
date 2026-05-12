@@ -366,6 +366,8 @@ class YamlIntegrationTests:
         "checklist",
         "clarify",
         "constitution",
+        "context",
+        "design",
         "implement",
         "plan",
         "specify",

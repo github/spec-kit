@@ -1,24 +1,37 @@
-"""opencode integration."""
+"""opencode integration — skills-based agent."""
 
-from ..base import MarkdownIntegration
+from __future__ import annotations
+
+from ..base import IntegrationOption, SkillsIntegration
 
 
-class OpencodeIntegration(MarkdownIntegration):
+class OpencodeIntegration(SkillsIntegration):
     key = "opencode"
     config = {
         "name": "opencode",
         "folder": ".opencode/",
-        "commands_subdir": "command",
+        "commands_subdir": "skills",
         "install_url": "https://opencode.ai",
         "requires_cli": True,
     }
     registrar_config = {
-        "dir": ".opencode/command",
+        "dir": ".opencode/skills",
         "format": "markdown",
         "args": "$ARGUMENTS",
-        "extension": ".md",
+        "extension": "/SKILL.md",
     }
     context_file = "AGENTS.md"
+
+    @classmethod
+    def options(cls) -> list[IntegrationOption]:
+        return [
+            IntegrationOption(
+                "--skills",
+                is_flag=True,
+                default=True,
+                help="Install as agent skills (default for opencode)",
+            ),
+        ]
 
     def build_exec_args(
         self,

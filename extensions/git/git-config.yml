@@ -1,7 +1,29 @@
 # Git Branching Workflow Extension Configuration
 # Copied to .specify/extensions/git/git-config.yml on install
 
-# Branch numbering strategy: "sequential" (001, 002, ...) or "timestamp" (YYYYMMDD-HHMMSS)
+# Branch workflow strategy.
+# "existing-ticket" requires developers to create/switch to a ticket branch before
+# running /speckit-specify. Spec Kit validates the branch and derives spec paths
+# from the ticket key plus generated spec slug.
+branch_strategy: existing-ticket
+
+# Ticket branch policy for the existing-ticket strategy.
+# Branches may be either the bare ticket key (GDEV-1234) or prefixed with one
+# allowed branch category (feature/GDEV-1234, fix/MSPS-1234, etc.).
+ticket_pattern: "^[A-Z]+-[0-9]+$"
+allowed_branch_prefixes:
+  - feature
+  - fix
+  - hotfix
+  - chore
+spec_directory_format: "{ticket}-{slug}"
+
+# Spec Kit must not create branches automatically. Branch creation is explicit only
+# via dedicated Git commands or normal git CLI usage.
+auto_create_branch: false
+
+# Legacy branch numbering strategy for explicit branch-creation commands only:
+# "sequential" (001, 002, ...) or "timestamp" (YYYYMMDD-HHMMSS)
 branch_numbering: sequential
 
 # Commit message used by `git commit` during repository initialization

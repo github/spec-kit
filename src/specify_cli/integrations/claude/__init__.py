@@ -30,6 +30,8 @@ ARGUMENT_HINTS: dict[str, str] = {
     "analyze": "Optional focus areas for analysis",
     "clarify": "Optional areas to clarify in the spec",
     "constitution": "Principles or values for the project constitution",
+    "context": "Optional documentation paths or context ingestion scope",
+    "design": "Optional design questions, constraints, or options to explore",
     "checklist": "Domain or focus area for the checklist",
     "taskstoissues": "Optional filter or label for GitHub issues",
 }

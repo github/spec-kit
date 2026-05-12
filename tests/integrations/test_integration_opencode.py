@@ -2,21 +2,21 @@
 
 from specify_cli.integrations import get_integration
 
-from .test_integration_base_markdown import MarkdownIntegrationTests
+from .test_integration_base_skills import SkillsIntegrationTests
 
 
-class TestOpencodeIntegration(MarkdownIntegrationTests):
+class TestOpencodeIntegration(SkillsIntegrationTests):
     KEY = "opencode"
     FOLDER = ".opencode/"
-    COMMANDS_SUBDIR = "command"
-    REGISTRAR_DIR = ".opencode/command"
+    COMMANDS_SUBDIR = "skills"
+    REGISTRAR_DIR = ".opencode/skills"
     CONTEXT_FILE = "AGENTS.md"
 
     def test_build_exec_args_uses_run_command_dispatch(self):
         integration = get_integration(self.KEY)
 
         args = integration.build_exec_args(
-            "/speckit.specify build a login page",
+            "/speckit-specify build a login page",
             output_json=False,
         )
 
@@ -24,7 +24,7 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             "opencode",
             "run",
             "--command",
-            "speckit.specify",
+            "speckit-specify",
             "build a login page",
         ]
         assert "-p" not in args
@@ -34,7 +34,7 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         integration = get_integration(self.KEY)
 
         args = integration.build_exec_args(
-            "/speckit.plan add OAuth",
+            "/speckit-plan add OAuth",
             model="anthropic/claude-sonnet-4",
             output_json=True,
         )
@@ -43,7 +43,7 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             "opencode",
             "run",
             "--command",
-            "speckit.plan",
+            "speckit-plan",
             "-m",
             "anthropic/claude-sonnet-4",
             "--format",
@@ -57,3 +57,16 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         args = integration.build_exec_args("explain this repository", output_json=False)
 
         assert args == ["opencode", "run", "explain this repository"]
+
+    def test_context_skill_installs_to_opencode_skills(self, tmp_path):
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        integration = get_integration(self.KEY)
+        manifest = IntegrationManifest(self.KEY, tmp_path)
+        integration.setup(tmp_path, manifest)
+
+        context_skill = tmp_path / ".opencode" / "skills" / "speckit-context" / "SKILL.md"
+        assert context_skill.exists()
+        content = context_skill.read_text(encoding="utf-8")
+        assert "AGENTS.md" in content
+        assert "__CONTEXT_FILE__" not in content

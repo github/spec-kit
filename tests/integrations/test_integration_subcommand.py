@@ -761,9 +761,9 @@ class TestIntegrationSwitch:
         ])
         assert result.exit_code == 0, result.output
 
-        # Git extension commands should exist for opencode
-        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
-        assert opencode_git_feature.exists(), "Git extension command should exist for opencode"
+        # Git extension skills should exist for opencode
+        opencode_git_feature = project / ".opencode" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert opencode_git_feature.exists(), "Git extension skill should exist for opencode"
 
         # Old kimi extension skills should be removed
         assert not kimi_git_feature.exists(), "Old kimi extension skill should be removed"
@@ -787,8 +787,8 @@ class TestIntegrationSwitch:
         claude_git_feature = project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md"
         assert claude_git_feature.exists(), "Git extension skill should exist for claude"
 
-        # Old opencode extension commands should be removed
-        assert not opencode_git_feature.exists(), "Old opencode extension command should be removed"
+        # Old opencode extension skills should be removed
+        assert not opencode_git_feature.exists(), "Old opencode extension skill should be removed"
 
         # Extension registry should be updated
         registry = json.loads(
@@ -837,8 +837,8 @@ class TestIntegrationSwitch:
         ])
         assert result.exit_code == 0, result.output
 
-        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
-        assert opencode_git_feature.exists(), "Git extension command should exist for opencode"
+        opencode_git_feature = project / ".opencode" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert opencode_git_feature.exists(), "Git extension skill should exist for opencode"
         assert not copilot_git_feature.exists(), "Old Copilot extension skill should be removed"
 
         registry = json.loads(
@@ -858,8 +858,8 @@ class TestIntegrationSwitch:
         result = _run_in_project(project, ["extension", "disable", "git"])
         assert result.exit_code == 0, result.output
 
-        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
-        assert opencode_git_feature.exists(), "Disabled extension command remains until integration switch"
+        opencode_git_feature = project / ".opencode" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert opencode_git_feature.exists(), "Disabled extension skill remains until integration switch"
 
         result = _run_in_project(project, [
             "integration", "switch", "claude",
@@ -869,7 +869,7 @@ class TestIntegrationSwitch:
 
         claude_git_feature = project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md"
         assert not claude_git_feature.exists(), "Disabled extension should not be registered for new agent"
-        assert not opencode_git_feature.exists(), "Old disabled extension command should be removed on switch"
+        assert not opencode_git_feature.exists(), "Old disabled extension skill should be removed on switch"
 
         registry = json.loads(
             (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")

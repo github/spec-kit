@@ -25,3 +25,4 @@ class TestCodexAutoPromote:
 
         assert result.exit_code == 0, f"init --ai codex failed: {result.output}"
         assert (target / ".agents" / "skills" / "speckit-plan" / "SKILL.md").exists()
+        assert (target / ".agents" / "skills" / "speckit-context" / "SKILL.md").exists()

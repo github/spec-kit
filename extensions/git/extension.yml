@@ -23,6 +23,9 @@ provides:
     - name: speckit.git.validate
       file: commands/speckit.git.validate.md
       description: "Validate current branch follows feature branch naming conventions"
+    - name: speckit.git.ticket
+      file: commands/speckit.git.ticket.md
+      description: "Validate current ticket branch and expose ticket context"
     - name: speckit.git.remote
       file: commands/speckit.git.remote.md
       description: "Detect Git remote URL for GitHub integration"
@@ -45,9 +48,9 @@ hooks:
     optional: false
     description: "Initialize Git repository before constitution setup"
   before_specify:
-    command: speckit.git.feature
+    command: speckit.git.ticket
     optional: false
-    description: "Create feature branch before specification"
+    description: "Validate existing ticket branch before specification"
   before_clarify:
     command: speckit.git.commit
     optional: true

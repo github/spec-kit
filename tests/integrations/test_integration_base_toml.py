@@ -487,6 +487,8 @@ class TomlIntegrationTests:
         "checklist",
         "clarify",
         "constitution",
+        "context",
+        "design",
         "implement",
         "plan",
         "specify",

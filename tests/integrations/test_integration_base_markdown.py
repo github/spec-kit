@@ -249,10 +249,23 @@ class MarkdownIntegrationTests:
             f"Expected context_file={i.context_file!r}, got {opts.get('context_file')!r}"
         )
 
+    def test_context_command_exists_and_references_context_file(self, tmp_path):
+        """The context workflow is generated as speckit.context.md."""
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        i.setup(tmp_path, m)
+        context_command = i.commands_dest(tmp_path) / "speckit.context.md"
+        assert context_command.exists(), f"Context command {context_command} not created"
+        content = context_command.read_text(encoding="utf-8")
+        if i.context_file:
+            assert i.context_file in content
+        assert "__CONTEXT_FILE__" not in content
+        assert ".specify/memory/constitution.md" in content
+
     # -- Complete file inventory ------------------------------------------
 
     COMMAND_STEMS = [
-        "analyze", "checklist", "clarify", "constitution",
+        "analyze", "checklist", "clarify", "constitution", "context", "design",
         "implement", "plan", "specify", "tasks", "taskstoissues",
     ]
 

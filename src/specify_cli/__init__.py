@@ -980,6 +980,8 @@ SKILL_DESCRIPTIONS = {
     "analyze": "Perform cross-artifact consistency analysis across spec.md, plan.md, and tasks.md.",
     "clarify": "Structured clarification workflow for underspecified requirements.",
     "constitution": "Create or update project governing principles and development guidelines.",
+    "context": "Ingest existing project documentation into operational Spec Kit guidance.",
+    "design": "Explore implementation options, risks, and gaps before finalizing the technical plan.",
     "checklist": "Generate custom quality checklists for validating requirements completeness and clarity.",
     "taskstoissues": "Convert tasks from tasks.md into GitHub issues.",
 }

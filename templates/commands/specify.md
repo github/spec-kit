@@ -70,22 +70,29 @@ Given that feature description, do this:
      - "Create a dashboard for analytics" → "analytics-dashboard"
      - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-2. **Branch creation** (optional, via hook):
+2. **Ticket branch validation** (via hook when Git extension is installed):
 
-   If a `before_specify` hook ran successfully in the Pre-Execution Checks above, it will have created/switched to a git branch and output JSON containing `BRANCH_NAME` and `FEATURE_NUM`. Note these values for reference, but the branch name does **not** dictate the spec directory name.
+   If a `before_specify` hook ran successfully in the Pre-Execution Checks above, it validates the existing Git branch and outputs JSON containing `BRANCH_NAME`, `TICKET_KEY`, `BRANCH_PREFIX`, and `BRANCH_STRATEGY`.
 
-   If the user explicitly provided `GIT_BRANCH_NAME`, pass it through to the hook so the branch script uses the exact value as the branch name (bypassing all prefix/suffix generation).
+   - The Git extension does **not** create branches automatically.
+   - Developers must create or switch to a ticket branch explicitly before running this command.
+   - Accepted branch examples: `GDEV-1234`, `MSPS-1234`, `feature/GDEV-1234`, `fix/MSPS-1234`, `hotfix/GDEV-1234`, `chore/MSPS-1234`.
+   - If the hook fails, stop and tell the user to switch to a valid ticket branch.
+   - Capture `TICKET_KEY` from the hook result for spec directory generation.
 
 3. **Create the spec feature directory**:
 
    Specs live under the default `specs/` directory unless the user explicitly provides `SPECIFY_FEATURE_DIRECTORY`.
 
    **Resolution order for `SPECIFY_FEATURE_DIRECTORY`**:
-   1. If the user explicitly provided `SPECIFY_FEATURE_DIRECTORY` (e.g., via environment variable, argument, or configuration), use it as-is
-   2. Otherwise, auto-generate it under `specs/`:
-      - Check `.specify/init-options.json` for `branch_numbering`
-      - If `"timestamp"`: prefix is `YYYYMMDD-HHMMSS` (current timestamp)
-      - If `"sequential"` or absent: prefix is `NNN` (next available 3-digit number after scanning existing directories in `specs/`)
+    1. If the user explicitly provided `SPECIFY_FEATURE_DIRECTORY` (e.g., via environment variable, argument, or configuration), use it as-is
+    2. If the Git ticket hook provided `TICKET_KEY`, auto-generate it under `specs/` using the ticket plus short name:
+       - Construct the directory name: `<TICKET_KEY>-<short-name>` (e.g., `GDEV-1234-add-login`)
+       - Set `SPECIFY_FEATURE_DIRECTORY` to `specs/<TICKET_KEY>-<short-name>`
+    3. Otherwise, auto-generate it under `specs/` using legacy numbering:
+       - Check `.specify/init-options.json` for `branch_numbering`
+       - If `"timestamp"`: prefix is `YYYYMMDD-HHMMSS` (current timestamp)
+       - If `"sequential"` or absent: prefix is `NNN` (next available 3-digit number after scanning existing directories in `specs/`)
       - Construct the directory name: `<prefix>-<short-name>` (e.g., `003-user-auth` or `20260319-143022-user-auth`)
       - Set `SPECIFY_FEATURE_DIRECTORY` to `specs/<directory-name>`
 
@@ -95,16 +102,18 @@ Given that feature description, do this:
    - Set `SPEC_FILE` to `SPECIFY_FEATURE_DIRECTORY/spec.md`
    - Persist the resolved path to `.specify/feature.json`:
      ```json
-     {
-       "feature_directory": "<resolved feature dir>"
-     }
-     ```
-     Write the actual resolved directory path value (for example, `specs/003-user-auth`), not the literal string `SPECIFY_FEATURE_DIRECTORY`.
-     This allows downstream commands (`__SPECKIT_COMMAND_PLAN__`, `__SPECKIT_COMMAND_TASKS__`, etc.) to locate the feature directory without relying on git branch name conventions.
+      {
+        "feature_directory": "<resolved feature dir>",
+        "ticket_key": "<TICKET_KEY if available>",
+        "branch_name": "<BRANCH_NAME if available>"
+      }
+      ```
+      Write the actual resolved directory path value (for example, `specs/GDEV-1234-add-login`), not the literal string `SPECIFY_FEATURE_DIRECTORY`.
+      This allows downstream commands (`__SPECKIT_COMMAND_PLAN__`, `__SPECKIT_COMMAND_TASKS__`, etc.) to locate the feature directory without relying on git branch name conventions.
 
    **IMPORTANT**:
    - You must only create one feature per `__SPECKIT_COMMAND_SPECIFY__` invocation
-   - The spec directory name and the git branch name are independent — they may be the same but that is the user's choice
+   - The spec directory name and the git branch name are independent. In ticket-branch workflow, branches contain only the ticket key while specs use `<ticket>-<short-name>`.
    - The spec directory and file are always created by this command, never by the hook
 
 4. Load `templates/spec-template.md` to understand required sections.

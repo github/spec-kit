@@ -38,6 +38,11 @@ check_feature_branch() {
     local branch
     branch=$(spec_kit_effective_branch_name "$raw")
 
+    # Accept ticket-only branches used by team workflows (GDEV-1234 or feature/GDEV-1234).
+    if [[ "$branch" =~ ^[A-Z]+-[0-9]+$ ]]; then
+        return 0
+    fi
+
     # Accept sequential prefix (3+ digits) but exclude malformed timestamps
     # Malformed: 7-or-8 digit date + 6-digit time with no trailing slug (e.g. "2026031-143022" or "20260319-143022")
     local is_sequential=false
@@ -46,7 +51,7 @@ check_feature_branch() {
     fi
     if [[ "$is_sequential" != "true" ]] && [[ ! "$branch" =~ ^[0-9]{8}-[0-9]{6}- ]]; then
         echo "ERROR: Not on a feature branch. Current branch: $raw" >&2
-        echo "Feature branches should be named like: 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name" >&2
+        echo "Feature branches should be named like: GDEV-1234, feature/GDEV-1234, 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name" >&2
         return 1
     fi
 

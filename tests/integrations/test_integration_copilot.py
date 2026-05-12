@@ -125,9 +125,9 @@ class TestCopilotIntegration:
         agents_dir = tmp_path / ".github" / "agents"
         assert agents_dir.is_dir()
         agent_files = sorted(agents_dir.glob("speckit.*.agent.md"))
-        assert len(agent_files) == 9
+        assert len(agent_files) == 11
         expected_commands = {
-            "analyze", "checklist", "clarify", "constitution",
+            "analyze", "checklist", "clarify", "constitution", "context", "design",
             "implement", "plan", "specify", "tasks", "taskstoissues",
         }
         actual_commands = {f.name.removeprefix("speckit.").removesuffix(".agent.md") for f in agent_files}
@@ -182,6 +182,8 @@ class TestCopilotIntegration:
             ".github/agents/speckit.checklist.agent.md",
             ".github/agents/speckit.clarify.agent.md",
             ".github/agents/speckit.constitution.agent.md",
+            ".github/agents/speckit.context.agent.md",
+            ".github/agents/speckit.design.agent.md",
             ".github/agents/speckit.implement.agent.md",
             ".github/agents/speckit.plan.agent.md",
             ".github/agents/speckit.specify.agent.md",
@@ -191,6 +193,8 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
             ".github/prompts/speckit.constitution.prompt.md",
+            ".github/prompts/speckit.context.prompt.md",
+            ".github/prompts/speckit.design.prompt.md",
             ".github/prompts/speckit.implement.prompt.md",
             ".github/prompts/speckit.plan.prompt.md",
             ".github/prompts/speckit.specify.prompt.md",
@@ -242,6 +246,8 @@ class TestCopilotIntegration:
             ".github/agents/speckit.checklist.agent.md",
             ".github/agents/speckit.clarify.agent.md",
             ".github/agents/speckit.constitution.agent.md",
+            ".github/agents/speckit.context.agent.md",
+            ".github/agents/speckit.design.agent.md",
             ".github/agents/speckit.implement.agent.md",
             ".github/agents/speckit.plan.agent.md",
             ".github/agents/speckit.specify.agent.md",
@@ -251,6 +257,8 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
             ".github/prompts/speckit.constitution.prompt.md",
+            ".github/prompts/speckit.context.prompt.md",
+            ".github/prompts/speckit.design.prompt.md",
             ".github/prompts/speckit.implement.prompt.md",
             ".github/prompts/speckit.plan.prompt.md",
             ".github/prompts/speckit.specify.prompt.md",
@@ -286,7 +294,7 @@ class TestCopilotSkillsMode:
     """Tests for Copilot integration in --skills mode."""
 
     _SKILL_COMMANDS = [
-        "analyze", "checklist", "clarify", "constitution",
+        "analyze", "checklist", "clarify", "constitution", "context", "design",
         "implement", "plan", "specify", "tasks", "taskstoissues",
     ]
 
