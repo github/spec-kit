@@ -256,8 +256,10 @@ class TestGenericIntegration:
         )
         expected = sorted([
             "AGENTS.md",
+            ".myagent/commands/speckit.agent.md",
             ".myagent/commands/speckit.analyze.md",
             ".myagent/commands/speckit.arch.md",
+            ".myagent/commands/speckit.governance.md",
             ".myagent/commands/speckit.checklist.md",
             ".myagent/commands/speckit.clarify.md",
             ".myagent/commands/speckit.constitution.md",
@@ -270,6 +272,7 @@ class TestGenericIntegration:
             ".specify/integration.json",
             ".specify/integrations/generic.manifest.json",
             ".specify/integrations/speckit.manifest.json",
+            ".specify/memory/agent-governance.md",
             ".specify/memory/constitution.md",
             ".specify/scripts/bash/check-prerequisites.sh",
             ".specify/scripts/bash/common.sh",
@@ -277,6 +280,7 @@ class TestGenericIntegration:
             ".specify/scripts/bash/setup-arch.sh",
             ".specify/scripts/bash/setup-plan.sh",
             ".specify/scripts/bash/setup-tasks.sh",
+            ".specify/templates/agent-governance-template.md",
             ".specify/templates/architecture-development-template.md",
             ".specify/templates/architecture-logical-template.md",
             ".specify/templates/architecture-physical-template.md",
@@ -320,8 +324,10 @@ class TestGenericIntegration:
         )
         expected = sorted([
             "AGENTS.md",
+            ".myagent/commands/speckit.agent.md",
             ".myagent/commands/speckit.analyze.md",
             ".myagent/commands/speckit.arch.md",
+            ".myagent/commands/speckit.governance.md",
             ".myagent/commands/speckit.checklist.md",
             ".myagent/commands/speckit.clarify.md",
             ".myagent/commands/speckit.constitution.md",
@@ -334,6 +340,7 @@ class TestGenericIntegration:
             ".specify/integration.json",
             ".specify/integrations/generic.manifest.json",
             ".specify/integrations/speckit.manifest.json",
+            ".specify/memory/agent-governance.md",
             ".specify/memory/constitution.md",
             ".specify/scripts/powershell/check-prerequisites.ps1",
             ".specify/scripts/powershell/common.ps1",
@@ -341,6 +348,7 @@ class TestGenericIntegration:
             ".specify/scripts/powershell/setup-arch.ps1",
             ".specify/scripts/powershell/setup-plan.ps1",
             ".specify/scripts/powershell/setup-tasks.ps1",
+            ".specify/templates/agent-governance-template.md",
             ".specify/templates/architecture-development-template.md",
             ".specify/templates/architecture-logical-template.md",
             ".specify/templates/architecture-physical-template.md",

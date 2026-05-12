@@ -1483,24 +1483,18 @@ class SkillsIntegration(IntegrationBase):
             if not description:
                 description = f"Spec Kit: {command_name} workflow"
 
-            # Build SKILL.md with manually formatted frontmatter to match
-            # the release packaging script output exactly (double-quoted
-            # values, no yaml.safe_dump quoting differences).
-            def _quote(v: str) -> str:
-                escaped = v.replace("\\", "\\\\").replace('"', '\\"')
-                return f'"{escaped}"'
+            from specify_cli.agents import CommandRegistrar
 
-            skill_content = (
-                f"---\n"
-                f"name: {_quote(skill_name)}\n"
-                f"description: {_quote(description)}\n"
-                f"compatibility: {_quote('Requires spec-kit project structure with .specify/ directory')}\n"
-                f"metadata:\n"
-                f"  author: {_quote('github-spec-kit')}\n"
-                f"  source: {_quote('templates/commands/' + src_file.name)}\n"
-                f"---\n"
-                f"{processed_body}"
+            skill_frontmatter = CommandRegistrar.build_skill_frontmatter(
+                self.key,
+                skill_name,
+                description,
+                f"templates/commands/{src_file.name}",
             )
+            frontmatter_text = yaml.safe_dump(
+                skill_frontmatter, sort_keys=False, width=1000
+            ).strip()
+            skill_content = f"---\n{frontmatter_text}\n---\n{processed_body}"
 
             # Write speckit-<name>/SKILL.md
             skill_dir = skills_dir / skill_name

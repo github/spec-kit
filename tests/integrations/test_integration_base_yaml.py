@@ -362,8 +362,10 @@ class YamlIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     COMMAND_STEMS = [
-        "analyze",
+        "agent",
         "arch",
+        "governance",
+        "analyze",
         "checklist",
         "clarify",
         "constitution",
@@ -412,6 +414,7 @@ class YamlIntegrationTests:
                 files.append(f".specify/scripts/powershell/{name}")
 
         for name in [
+            "agent-governance-template.md",
             "architecture-development-template.md",
             "architecture-logical-template.md",
             "architecture-physical-template.md",
@@ -426,6 +429,8 @@ class YamlIntegrationTests:
         ]:
             files.append(f".specify/templates/{name}")
 
+        files.append("AGENTS.md")
+        files.append(".specify/memory/agent-governance.md")
         files.append(".specify/memory/constitution.md")
         # Bundled workflow
         files.append(".specify/workflows/speckit/workflow.yml")

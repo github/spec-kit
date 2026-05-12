@@ -112,7 +112,7 @@ class CommandRegistrar:
             return ""
 
         yaml_str = yaml.dump(
-            fm, default_flow_style=False, sort_keys=False, allow_unicode=True
+            fm, default_flow_style=False, sort_keys=False, allow_unicode=True, width=1000
         )
         return f"---\n{yaml_str}---\n"
 
@@ -285,8 +285,8 @@ class CommandRegistrar:
         Technical debt note:
         Spec-kit currently has multiple SKILL.md generators (template packaging,
         init-time conversion, and extension/preset overrides). Keep the skill
-        frontmatter keys aligned (name/description/compatibility/metadata, with
-        metadata.author and metadata.source subkeys) to avoid drift across agents.
+        frontmatter keys aligned (name/description/purpose/trigger/boundaries/
+        outputs/validation/compatibility/metadata) to avoid drift across agents.
         """
         if not isinstance(frontmatter, dict):
             frontmatter = {}
@@ -316,9 +316,42 @@ class CommandRegistrar:
         source: str,
     ) -> dict:
         """Build consistent SKILL.md frontmatter across all skill generators."""
+        is_implement_skill = skill_name == "speckit-implement"
+        allowed_write_paths = [
+            ".specify/**",
+            "specs/**",
+        ]
+        if is_implement_skill:
+            allowed_write_paths.extend([
+                "**",
+            ])
         skill_frontmatter = {
             "name": skill_name,
             "description": description,
+            "purpose": description,
+            "trigger": f"Invoke this skill for the `{skill_name}` Spec Kit workflow.",
+            "allowed-read-paths": [
+                ".specify/**",
+                "specs/**",
+                "templates/**",
+                "scripts/**",
+            ],
+            "allowed-write-paths": allowed_write_paths,
+            "forbidden-paths": [
+                ".git/**",
+                "**/.env*",
+                "**/secrets/**",
+                "**/*secret*",
+                "**/*token*",
+            ],
+            "outputs": [
+                (
+                    "Implementation files, completed tasks.md checkboxes, validation results, and handoff summary"
+                    if is_implement_skill
+                    else "Workflow-specific spec artifacts and handoff summary"
+                ),
+            ],
+            "validation-command": "Run the validation commands required by the active Spec Kit workflow.",
             "compatibility": "Requires spec-kit project structure with .specify/ directory",
             "metadata": {
                 "author": "github-spec-kit",

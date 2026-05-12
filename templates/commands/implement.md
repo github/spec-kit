@@ -13,6 +13,16 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Code-Write Authority
+
+This command is the only Spec Kit workflow that may write implementation files.
+Implementation files include source code, tests, build configuration, migrations, runtime assets, and other files that change repository behavior.
+
+- Do not write implementation files unless this command is active.
+- Bug fixes, refactors, and one-line changes must still enter through this command before implementation files are changed.
+- Before writing implementation files, confirm the active feature directory contains `spec.md`, `plan.md`, and `tasks.md`. If any are missing, stop and instruct the user to run the required Spec Kit workflow commands first.
+- Writes to `.specify/`, `specs/<feature>/`, and generated agent command/context files remain governed by their owning Spec Kit workflows.
+
 ## Pre-Execution Checks
 
 **Check for extension hooks (before implementation)**:

@@ -1019,6 +1019,7 @@ DEFAULT_SKILLS_DIR = ".agents/skills"
 SKILL_DESCRIPTIONS = {
     "arch": "Generate project-level 4+1 architecture view artifacts and synthesis.",
     "agent": "Create or update agent governance and refresh agent instruction projections.",
+    "governance": "Create or update agent governance and refresh agent instruction projections.",
     "specify": "Create or update feature specifications from natural language descriptions.",
     "plan": "Generate technical implementation plans from feature specifications.",
     "tasks": "Break down implementation plans into actionable task lists.",

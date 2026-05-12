@@ -26,8 +26,15 @@ def test_ensure_agent_governance_from_template(tmp_path):
 
     assert result == tmp_path / AGENT_GOVERNANCE_MEMORY
     content = result.read_text(encoding="utf-8")
-    assert "# Agent Governance" in content
+    assert "# Repository Agent Governance" in content
     assert "## Authority Order" in content
+    assert "Agent code writes are allowed only while executing the generated Spec Kit implement command" in content
+    assert "/speckit.implement" in content
+    assert "/speckit-implement" in content
+    assert "Bug fixes, refactors, and small code changes are not exceptions" in content
+    assert content.index("2. This repository agent governance file") < content.index(
+        "3. User-authored repository instructions preserved outside generated projection markers"
+    )
 
 
 def test_refresh_agent_projection_creates_repo_and_agent_adapters(tmp_path):
@@ -63,6 +70,12 @@ def test_refresh_agent_projection_creates_repo_and_agent_adapters(tmp_path):
     agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
     assert PROJECTION_MARKER_START in agents
     assert "Default integration: `gemini`" in agents
+    assert "Feature work SSOT: `specs/<feature>/`" in agents
+    assert "Agent code writes are allowed only while executing the generated Spec Kit implement command" in agents
+    assert "verify the active change has `spec.md`, `plan.md`, and `tasks.md`" in agents
+    assert "Architecture SSOT: artifacts produced by `/speckit.arch`" not in agents
+    assert "Scenario semantics: `/speckit.arch` scenario view" not in agents
+    assert "Business semantics SSOT: `.specify/memory/uc.md`" not in agents
     assert "`.gemini/commands/speckit-test/SKILL.md`" in agents
     assert "`.mcp.json`" in agents
 
@@ -79,3 +92,21 @@ def test_refresh_agent_projection_preserves_user_content(tmp_path):
     assert "Keep this." in content
     assert PROJECTION_MARKER_START in content
 
+
+def test_refresh_agent_projection_projects_governance_memory_rules(tmp_path):
+    _copy_template(tmp_path, "agent-governance-template.md")
+    memory = ensure_agent_governance_from_template(tmp_path)
+    assert memory is not None
+    content = memory.read_text(encoding="utf-8")
+    memory.write_text(
+        content + "\n## Repository-Specific Rules\n\n- Always report MCP writes before execution.\n",
+        encoding="utf-8",
+    )
+
+    refresh_agent_projection(tmp_path)
+
+    agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "## Repository Agent Governance" in agents
+    assert "## Repository-Specific Rules" in agents
+    assert "- Always report MCP writes before execution." in agents
+    assert "Sync Impact Report" not in agents

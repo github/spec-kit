@@ -140,19 +140,22 @@ def _render_projection(
     skills = _scan_skills(project_root)
     mcp_configs = _scan_mcp_configs(project_root)
     extensions = _scan_extensions(project_root)
+    governance_body = _read_governance_body(memory_path)
 
     lines = [
         PROJECTION_MARKER_START,
-        "# Agent Governance Projection",
+        "# Repository Agent Governance Projection",
         "",
         "Generated from repository state. Do not edit this section directly; update",
         f"`{AGENT_GOVERNANCE_MEMORY}`, integrations, skills, MCP config, or extensions instead.",
         "",
         "## Governing Source",
-        f"- Agent governance SSOT: `{AGENT_GOVERNANCE_MEMORY}`",
-        "- Project principles: `.specify/memory/constitution.md`",
-        "- Business semantics: `.specify/memory/uc.md`",
-        "- Architecture boundaries: `.specify/memory/architecture.md`",
+        f"- Repository-level agent governance SSOT: `{AGENT_GOVERNANCE_MEMORY}`",
+        "- Project principles SSOT: `.specify/memory/constitution.md`",
+        "- Feature work SSOT: `specs/<feature>/`",
+        "",
+        "## Repository Agent Governance",
+        governance_body or "- No repository-level agent governance rules found.",
         "",
         "## Active Integrations",
         f"- Default integration: `{default_key or 'none'}`",
@@ -185,8 +188,12 @@ def _render_projection(
         "",
         "## Required Operating Rules",
         "- Follow current user instructions first.",
-        "- Treat `.specify/memory/agent-governance.md` as the source of truth for agent, skill, and MCP behavior.",
-        "- Treat `.specify/memory/constitution.md` as the source of truth for project principles and quality gates.",
+        "- Treat `.specify/memory/agent-governance.md` as the source of truth for repository-level agent, skill, MCP, and integration behavior.",
+        "- Treat `.specify/memory/constitution.md` as the source of truth for Specify project principles and quality gates.",
+        "- Keep governance domains separate: agent governance, constitution, and feature artifacts keep their own authority.",
+        "- Agent code writes are allowed only while executing the generated Spec Kit implement command or integration-equivalent implement skill/alias.",
+        "- Before writing code, tests, build configuration, migrations, runtime assets, or other implementation files, verify the active change has `spec.md`, `plan.md`, and `tasks.md` under `specs/<feature>/`.",
+        "- For bug fixes, refactors, and small code changes, create or update the required spec artifacts first; do not bypass the code-write gate.",
         "- Do not edit governance, CI, MCP config, secrets, permissions, or tool settings unless explicitly requested.",
         "- Do not overwrite user edits or modify files outside the active task scope.",
         "- Report changed files, commands run, validation results, and unresolved risks before handoff.",
@@ -196,6 +203,33 @@ def _render_projection(
         "",
     ])
     return "\n".join(lines)
+
+
+def _read_governance_body(memory_path: Path) -> str:
+    """Return the user-governed content from agent-governance memory."""
+    try:
+        content = memory_path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+    lines = content.replace("\r\n", "\n").replace("\r", "\n").splitlines()
+    filtered: list[str] = []
+    in_sync_report = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "<!--":
+            in_sync_report = True
+            continue
+        if in_sync_report:
+            if stripped == "-->":
+                in_sync_report = False
+            continue
+        filtered.append(line)
+
+    body = "\n".join(filtered).strip()
+    if body.startswith("# "):
+        body = body.split("\n", 1)[1].strip() if "\n" in body else ""
+    return body
 
 
 def _upsert_marked_section(content: str, projection: str) -> str:
@@ -217,17 +251,17 @@ def _upsert_marked_section(content: str, projection: str) -> str:
 def _adapter_prelude(path: Path, default_key: str | None, installed: list[str]) -> str:
     name = path.name
     if name == "AGENTS.md":
-        return "# Repo Agent Governance\n\nThis file is the repository-level agent governance projection."
+        return "# Repository Agent Governance\n\nThis file is governed by the Spec Kit governance command. Preserve user-authored instructions outside the generated Spec Kit projection markers."
     if name == "CLAUDE.md":
-        return "# Claude Instructions\n\nRead `AGENTS.md` first; it is the repository-level agent governance projection."
+        return "# Claude Instructions\n\nRead `AGENTS.md` first; it is the repository-level agent governance projection governed by the Spec Kit governance command."
     if name == "GEMINI.md":
-        return "# Gemini Instructions\n\nRead `AGENTS.md` first; it is the repository-level agent governance projection."
+        return "# Gemini Instructions\n\nRead `AGENTS.md` first; it is the repository-level agent governance projection governed by the Spec Kit governance command."
     if name == "copilot-instructions.md":
-        return "# GitHub Copilot Instructions\n\nRead `AGENTS.md` first; it is the repository-level agent governance projection."
+        return "# GitHub Copilot Instructions\n\nRead `AGENTS.md` first; it is the repository-level agent governance projection governed by the Spec Kit governance command."
     installed_text = ", ".join(installed) if installed else "none"
     return (
         "# Agent Instructions\n\n"
-        "Read `AGENTS.md` first; it is the repository-level agent governance projection.\n\n"
+        "Read `AGENTS.md` first; it is the repository-level agent governance projection governed by the Spec Kit governance command.\n\n"
         f"Default integration: `{default_key or 'none'}`. Installed integrations: `{installed_text}`."
     )
 

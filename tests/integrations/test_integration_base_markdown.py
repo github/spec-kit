@@ -252,7 +252,7 @@ class MarkdownIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     COMMAND_STEMS = [
-        "analyze", "arch", "checklist", "clarify", "constitution",
+        "agent", "arch", "governance", "analyze", "checklist", "clarify", "constitution",
         "implement", "plan", "specify", "tasks", "taskstoissues",
     ]
 
@@ -281,7 +281,8 @@ class MarkdownIntegrationTests:
                          "setup-arch.ps1", "setup-plan.ps1", "setup-tasks.ps1"]:
                 files.append(f".specify/scripts/powershell/{name}")
 
-        for name in ["architecture-development-template.md",
+        for name in ["agent-governance-template.md",
+                     "architecture-development-template.md",
                      "architecture-logical-template.md",
                      "architecture-physical-template.md",
                      "architecture-process-template.md",
@@ -292,6 +293,8 @@ class MarkdownIntegrationTests:
                      "spec-template.md", "tasks-template.md"]:
             files.append(f".specify/templates/{name}")
 
+        files.append("AGENTS.md")
+        files.append(".specify/memory/agent-governance.md")
         files.append(".specify/memory/constitution.md")
         # Bundled workflow
         files.append(".specify/workflows/speckit/workflow.yml")
