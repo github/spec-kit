@@ -288,9 +288,19 @@ In either case, **DO NOT modify `spec.md` automatically. Present findings first.
 
 Same shape as Phase 4: read-only audit against a finalised spec, so it benefits from subagent isolation when available. The one nuance is the **framework-selection question** — that has to happen *before* the subagent is invoked, because subagents can't wait for user input.
 
-### 5.1 Select compliance frameworks (inline, with user)
+### 5.1 Resolve compliance frameworks (context.md first; ask only if missing)
 
-> "Which security compliance frameworks apply to this resource? Select all that apply: SOC 2, HIPAA, ISO 27001, CIS, NIST, PCI-DSS, or 'None'."
+**Read `.infrakit/context.md` first.** Look for a `## Compliance` (or `## Security & Compliance` → `### Compliance Frameworks`) section that names the project's frameworks. Recognised names: SOC 2, ISO 27001, HIPAA, PCI-DSS, NIST 800-53, FedRAMP, CIS Benchmarks.
+
+**If context.md declares frameworks**, announce what you found and proceed:
+
+> "Using compliance frameworks declared in `.infrakit/context.md`: **<frameworks>**."
+
+**If context.md is silent on compliance**, only then ask:
+
+> "`.infrakit/context.md` does not declare a compliance scope. Which security compliance frameworks apply to this resource? Select all that apply: SOC 2, HIPAA, ISO 27001, CIS, NIST, PCI-DSS, or 'None'.
+>
+> *(Tip: add a `## Compliance` section to `.infrakit/context.md` so this question doesn't appear on future tracks.)*"
 
 **WAIT** for response.
 

@@ -33,24 +33,30 @@ You audit a finalised `spec.md` against one or more compliance frameworks. Outpu
 
 ---
 
-## First action: framework selection
+## First action: resolve frameworks (context.md first; ask only if missing)
 
-The orchestrator usually asks before invoking you. If not, you ask:
+The orchestrator usually passes the framework list. If it didn't:
 
-> Which security compliance frameworks apply to this resource? Select all that apply:
->
-> | # | Framework | Common use case |
-> |---|-----------|-----------------|
-> | 1 | **SOC 2 Type II** | SaaS, cloud services |
-> | 2 | **ISO 27001** | International standard, enterprise |
-> | 3 | **HIPAA** | US healthcare (ePHI) |
-> | 4 | **PCI-DSS v4.0** | Payment card data |
-> | 5 | **NIST 800-53** | US federal systems |
-> | 6 | **FedRAMP** | US gov cloud |
-> | 7 | **CIS Benchmarks** | General hardening |
-> | 8 | **None / Custom** | Describe your requirements |
+1. **Read `.infrakit/context.md` first.** Look for a `## Compliance` (or `## Security & Compliance` → `### Compliance Frameworks`) section. Recognised framework names: SOC 2 (or SOC 2 Type II), ISO 27001, HIPAA, PCI-DSS (v4.0), NIST 800-53, FedRAMP, CIS Benchmarks.
+2. If found, use that list. Announce: "Using compliance frameworks declared in `.infrakit/context.md`: <frameworks>".
+3. If context.md is silent on compliance, only then ask the user:
 
-Wait for the answer. If "None / Custom", ask for the specific controls in plain text.
+   > Which security compliance frameworks apply to this resource? Select all that apply:
+   >
+   > | # | Framework | Common use case |
+   > |---|-----------|-----------------|
+   > | 1 | **SOC 2 Type II** | SaaS, cloud services |
+   > | 2 | **ISO 27001** | International standard, enterprise |
+   > | 3 | **HIPAA** | US healthcare (ePHI) |
+   > | 4 | **PCI-DSS v4.0** | Payment card data |
+   > | 5 | **NIST 800-53** | US federal systems |
+   > | 6 | **FedRAMP** | US gov cloud |
+   > | 7 | **CIS Benchmarks** | General hardening |
+   > | 8 | **None / Custom** | Describe your requirements |
+   >
+   > *(Tip: add a `## Compliance` section to `.infrakit/context.md` so this question doesn't appear on future tracks.)*
+
+   Wait for the answer. If "None / Custom", ask for the specific controls in plain text.
 
 ---
 

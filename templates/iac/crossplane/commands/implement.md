@@ -239,22 +239,34 @@ Then append:
 
 ---
 
-## Step 9c: Update infrakit_composition_contract.md
+## Step 9c: Update README.md
 
-Re-read the freshly-written YAML files (`definition.yaml`, `composition.yaml`) and regenerate `infrakit_composition_contract.md` in the resource directory to reflect the actual implemented state.
+Re-read the freshly-written YAML files (`definition.yaml`, `composition.yaml`, `examples/*.yaml`) and regenerate `<resource_directory>/README.md` to reflect the actual implemented state.
 
-Use the same template structure as `update_composition.md` Phase 3.3 for the contract file, but source all values from the implemented YAML files rather than the spec.
+The composition's `README.md` is the user-facing contract. It must include:
 
-Present the regenerated contract to the user:
+- A one-paragraph description of what the composition provisions.
+- A **Usage** section with a complete example claim showing the minimum required parameters.
+- A **Parameters** table — name, type, required, default, description — sourced from the XRD (`definition.yaml` → `spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.parameters.properties`).
+- A **Status** table — field, source, description — sourced from the XRD status schema.
+- A **Connection Secret Keys** table — key, description — sourced from the XRD's `connectionSecretKeys` and the Composition's `connectionDetails`.
+- A **Constraints** section listing non-overridable defaults (e.g. `publiclyAccessible: false`, encryption mandatory).
+- A **Validation** section with the exact commands a reviewer can run locally (`python3 -c 'import yaml ...'`, optionally `crossplane render`).
 
-> "I've updated `infrakit_composition_contract.md` to reflect the implementation. Please review:
+If `README.md` already exists, **regenerate** it rather than patching — the implementation is the source of truth, the README must match.
+
+Present the regenerated README to the user:
+
+> "I've regenerated `README.md` to match the implementation. Please review:
 >
-> <summary of key interface changes>
+> <summary of key changes: parameters added/removed, output fields added/removed, examples updated>
 >
-> A) **Accept** — Contract looks correct
+> A) **Accept** — README looks correct
 > B) **Edit manually** — Say 'done' when you've finished editing"
 
 **WAIT** for response before proceeding to Step 10.
+
+> **Note**: InfraKit no longer generates a separate `infrakit_composition_contract.md` — the XRD (`definition.yaml`) is the API contract, and the `README.md` is the human-readable contract. Together they cover what the dropped contract file used to.
 
 ---
 
@@ -270,7 +282,7 @@ Update `.infrakit_tracks/tracks.md` — change the track's status to `✅ done`.
 > **Resource files updated:**
 > - `<resource_directory>/.infrakit_context.md`
 > - `<resource_directory>/.infrakit_changelog.md`
-> - `<resource_directory>/infrakit_composition_contract.md`
+> - `<resource_directory>/README.md`
 >
 > Run `/infrakit:status` to see all track statuses."
 

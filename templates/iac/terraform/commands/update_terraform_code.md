@@ -628,7 +628,10 @@ Update `.infrakit_tracks/tracks/<track-name>/spec.md` — append an **Architectu
 **Announce:**
 > "Reviewing the update specification as the **Cloud Security Engineer**."
 
-Ask which compliance frameworks apply. **WAIT** for response.
+**Resolve compliance frameworks from `.infrakit/context.md` first.** Look for a `## Compliance` (or `## Security & Compliance` → `### Compliance Frameworks`) section listing frameworks (SOC 2, ISO 27001, HIPAA, PCI-DSS, NIST 800-53, FedRAMP, CIS Benchmarks).
+
+- If context.md declares frameworks, announce: `"Using compliance frameworks declared in .infrakit/context.md: <frameworks>"` and use that list.
+- If context.md is silent on compliance, only then ask the user which frameworks apply. **WAIT** for response.
 
 **On Claude Code (`Task` tool with custom subagent type):**
 

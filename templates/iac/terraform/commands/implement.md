@@ -257,6 +257,34 @@ Present the regenerated contract to the user:
 > A) **Accept** — Contract looks correct
 > B) **Edit manually** — Say 'done' when you've finished editing"
 
+**WAIT** for response before proceeding to Step 9d.
+
+---
+
+## Step 9d: Update README.md
+
+Re-read the freshly-written HCL files and regenerate `<module_directory>/README.md` to reflect the actual implemented state.
+
+The module's `README.md` is the user-facing contract. It must include:
+
+- A one-paragraph description of what the module provisions.
+- A **Usage** section with a complete `module "<name>" { source = "..." ... }` example showing the minimum required variables.
+- An **Inputs** table — variable, type, required, default, description — sourced from `variables.tf`.
+- An **Outputs** table — output, description — sourced from `outputs.tf`.
+- A **Requirements** section — Terraform + provider version constraints from `versions.tf`.
+- (Optional but recommended) A **Validation** section with the commands a reviewer can run locally (`tofu fmt -check`, `tofu init -backend=false`, `tofu validate`).
+
+If `README.md` already exists, **regenerate** it rather than patching — the implementation is the source of truth, the README must match.
+
+Present the regenerated README to the user:
+
+> "I've regenerated `README.md` to match the implementation. Please review:
+>
+> <summary of key changes: inputs added/removed, outputs added/removed, examples updated>
+>
+> A) **Accept** — README looks correct
+> B) **Edit manually** — Say 'done' when you've finished editing"
+
 **WAIT** for response before proceeding to Step 10.
 
 ---
@@ -274,6 +302,7 @@ Update `.infrakit_tracks/tracks.md` — change the track's status to `✅ done`.
 > - `<module_directory>/.infrakit_context.md`
 > - `<module_directory>/.infrakit_changelog.md`
 > - `<module_directory>/.infrakit_terraform_contract.md`
+> - `<module_directory>/README.md`
 >
 > Run `/infrakit:status` to see all track statuses."
 
