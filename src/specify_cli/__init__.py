@@ -34,6 +34,7 @@ import tempfile
 import shutil
 import json
 import json5
+import math
 import stat
 import shlex
 import urllib.error
@@ -5302,11 +5303,172 @@ workflow_catalog_app = typer.Typer(
 workflow_app.add_typer(workflow_catalog_app, name="catalog")
 
 
+def _resolve_workflow_cli_path(raw_path: str) -> Path:
+    """Resolve workflow CLI file paths from the current working directory."""
+    path = Path(raw_path).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return path
+
+
+def _read_workflow_cli_file(raw_path: str, description: str) -> tuple[Path, str]:
+    """Read a text file referenced by a workflow CLI input option."""
+    cleaned_path = raw_path.strip()
+    if not cleaned_path:
+        raise ValueError(f"Missing file path for {description}.")
+
+    path = _resolve_workflow_cli_path(cleaned_path)
+    if not path.exists():
+        raise ValueError(f"File for {description} not found: {path}")
+    if not path.is_file():
+        raise ValueError(f"Path for {description} is not a file: {path}")
+
+    try:
+        return path, path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"Unable to read file for {description} as UTF-8 text: {path}"
+        ) from exc
+    except OSError as exc:
+        raise ValueError(
+            f"Unable to read file for {description}: {path} ({exc})"
+        ) from exc
+
+
+def _json_type_name(value: Any) -> str:
+    """Return a user-facing JSON type name for validation errors."""
+    if value is None:
+        return "null"
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    return type(value).__name__
+
+
+def _validate_workflow_input_file_value(key: str, value: Any) -> None:
+    """Ensure --input-file values match the supported workflow input scalars."""
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(
+            f"--input-file value for {key!r} must be a finite number."
+        )
+    if not isinstance(value, (str, int, float, bool)):
+        raise ValueError(
+            f"--input-file value for {key!r} must be a string, number, "
+            f"or boolean, got {_json_type_name(value)}."
+        )
+
+
+def _workflow_cli_scalar_to_string(value: Any) -> str:
+    """Render JSON scalars the same way repeated --input key=value does."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _load_workflow_input_file(input_file: str) -> dict[str, Any]:
+    """Load workflow inputs from a JSON object file."""
+    path, raw_json = _read_workflow_cli_file(input_file, "--input-file")
+    try:
+        data = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Invalid JSON in --input-file {path}: "
+            f"{exc.msg} at line {exc.lineno}, column {exc.colno}"
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"--input-file must contain a JSON object, got {_json_type_name(data)}."
+        )
+    for key, value in data.items():
+        _validate_workflow_input_file_value(str(key), value)
+    return data
+
+
+def _normalize_workflow_cli_scalar(
+    value: Any,
+    input_def: dict[str, Any] | None,
+) -> Any:
+    """Normalize file-backed scalars when workflow coercion expects scalars."""
+    if not isinstance(value, str) or not isinstance(input_def, dict):
+        return value
+
+    input_type = input_def.get("type", "string")
+    if input_type in ("number", "boolean") or input_def.get("enum") is not None:
+        return value.strip()
+    return value
+
+
+def _parse_workflow_inputs(
+    input_values: list[str] | None,
+    input_file: str | None,
+    input_definitions: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Normalize workflow CLI input options into the engine input dict."""
+    inputs: dict[str, Any] = {}
+    input_definitions = input_definitions or {}
+
+    if input_file is not None:
+        for key, value in _load_workflow_input_file(input_file).items():
+            inputs[key] = _normalize_workflow_cli_scalar(
+                _workflow_cli_scalar_to_string(value),
+                input_definitions.get(key),
+            )
+
+    if input_values:
+        for kv in input_values:
+            if "=" not in kv:
+                raise ValueError(
+                    f"Invalid input format: {kv!r} (expected key=value)"
+                )
+            key, _, raw_value = kv.partition("=")
+            key = key.strip()
+            if not key:
+                raise ValueError(
+                    f"Invalid input format: {kv!r} (key cannot be empty)"
+                )
+
+            value = raw_value.strip()
+            if value.startswith("@@"):
+                value = value[1:]
+            elif value.startswith("@"):
+                file_ref = value[1:].strip()
+                if file_ref:
+                    candidate_path = _resolve_workflow_cli_path(file_ref)
+                    if candidate_path.exists() and candidate_path.is_file():
+                        _, value = _read_workflow_cli_file(
+                            file_ref, f"input {key!r}"
+                        )
+                        value = _normalize_workflow_cli_scalar(
+                            value,
+                            input_definitions.get(key),
+                        )
+            inputs[key] = value
+
+    return inputs
+
+
 @workflow_app.command("run")
 def workflow_run(
     source: str = typer.Argument(..., help="Workflow ID or YAML file path"),
     input_values: list[str] | None = typer.Option(
-        None, "--input", "-i", help="Input values as key=value pairs"
+        None,
+        "--input",
+        "-i",
+        help=(
+            "Input values as key=value pairs; key=@path reads an existing text "
+            "file, key=@@value passes a literal @value"
+        ),
+    ),
+    input_file: str | None = typer.Option(
+        None, "--input-file", help="Load input values from a JSON object file"
     ),
 ):
     """Run a workflow from an installed ID or local YAML path."""
@@ -5333,15 +5495,11 @@ def workflow_run(
             console.print(f"  • {err}")
         raise typer.Exit(1)
 
-    # Parse inputs
-    inputs: dict[str, Any] = {}
-    if input_values:
-        for kv in input_values:
-            if "=" not in kv:
-                console.print(f"[red]Error:[/red] Invalid input format: {kv!r} (expected key=value)")
-                raise typer.Exit(1)
-            key, _, value = kv.partition("=")
-            inputs[key.strip()] = value.strip()
+    try:
+        inputs = _parse_workflow_inputs(input_values, input_file, definition.inputs)
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
 
     console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
     console.print(f"[dim]Version: {definition.version}[/dim]\n")
