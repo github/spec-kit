@@ -20,10 +20,8 @@ from typing import Any
 import yaml
 
 from ..integration_state import (
-    INTEGRATION_JSON,
-    INTEGRATION_STATE_SCHEMA,
     default_integration_key,
-    normalize_integration_state,
+    try_read_integration_json,
 )
 from .base import RunStatus, StepContext, StepResult, StepStatus
 
@@ -792,31 +790,16 @@ class WorkflowEngine:
     def _load_project_integration(self) -> str | None:
         """Read the default integration key from ``.specify/integration.json``.
 
-        Honors the same schema guard as ``_read_integration_json`` (rejects
-        files whose ``integration_state_schema`` is newer than this CLI
-        supports) and reads the canonical normalized state, so modern
-        installs that record ``default_integration`` / ``installed_integrations``
-        resolve correctly under ``integration: auto``. Returns None when the
-        file is missing, malformed, or written by a newer CLI; callers are
-        expected to fall back to a literal default.
+        Delegates parsing and schema validation to
+        :func:`try_read_integration_json` — the same low-level helper used by
+        the CLI — so the engine cannot drift from CLI behavior on the parse
+        path. Returns ``None`` when the file is missing, malformed, or
+        written by a newer CLI; callers fall back to the literal default.
         """
-        path = self.project_root / INTEGRATION_JSON
-        if not path.is_file():
+        state, error = try_read_integration_json(self.project_root)
+        if state is None or error is not None:
             return None
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-            return None
-        if not isinstance(data, dict):
-            return None
-        schema = data.get("integration_state_schema")
-        if (
-            isinstance(schema, int)
-            and not isinstance(schema, bool)
-            and schema > INTEGRATION_STATE_SCHEMA
-        ):
-            return None
-        return default_integration_key(normalize_integration_state(data))
+        return default_integration_key(state)
 
     @staticmethod
     def _coerce_input(
