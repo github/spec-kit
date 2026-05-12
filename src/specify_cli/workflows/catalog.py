@@ -616,10 +616,20 @@ class StepRegistry:
         return default_registry
 
     def save(self) -> None:
-        """Persist registry to disk."""
-        self.steps_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.registry_path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+        """Persist registry to disk.
+
+        Raises ``StepValidationError`` with a clear message on filesystem
+        errors (read-only fs, permission denied, ...) so callers can surface
+        a clean error to the user rather than an unhandled ``OSError``.
+        """
+        try:
+            self.steps_dir.mkdir(parents=True, exist_ok=True)
+            with open(self.registry_path, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=2)
+        except OSError as exc:
+            raise StepValidationError(
+                f"Failed to write step registry at {self.registry_path}: {exc}"
+            ) from exc
 
     def add(self, step_id: str, metadata: dict[str, Any]) -> None:
         """Add or update an installed step entry."""

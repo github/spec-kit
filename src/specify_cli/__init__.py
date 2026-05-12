@@ -5938,6 +5938,27 @@ def workflow_step_list():
 _RESERVED_STEP_IDS: frozenset[str] = frozenset({".cache", "step-registry.json"})
 
 
+def _validate_step_id_or_exit(step_id: str) -> None:
+    """Validate that ``step_id`` is a single safe path component.
+
+    Rejects empty strings, path separators, ``.``/``..`` components, dotfile
+    prefixes, and reserved names. Exits with code 1 on failure.
+    """
+    if (
+        not step_id
+        or "/" in step_id
+        or "\\" in step_id
+        or step_id in (".", "..")
+        or step_id.startswith(".")
+        or step_id in _RESERVED_STEP_IDS
+    ):
+        console.print(
+            f"[red]Error:[/red] Invalid step id '{step_id}': must be a single safe "
+            "path component (no separators, no leading dot, not a reserved name)"
+        )
+        raise typer.Exit(1)
+
+
 @workflow_step_app.command("add")
 def workflow_step_add(
     step_id: str = typer.Argument(..., help="Step type ID from catalog"),
@@ -6027,21 +6048,19 @@ def workflow_step_add(
                 raise ValueError(f"Redirect to URL with no hostname: {final_url}")
             return resp.read()
 
+    _validate_step_id_or_exit(step_id)
+
     steps_base_dir = (project_root / ".specify" / "workflows" / "steps").resolve()
     step_dir = (steps_base_dir / step_id).resolve()
+    # Defense-in-depth: ensure the resolved directory is a direct child of
+    # steps_base_dir even after symlink resolution.
     try:
-        step_dir.relative_to(steps_base_dir)
+        rel_parts = step_dir.relative_to(steps_base_dir).parts
     except ValueError:
         console.print(f"[red]Error:[/red] Invalid step id '{step_id}'")
         raise typer.Exit(1)
-
-    # Reject IDs that collide with internal names used under steps_base_dir
-    # (dotfiles, the cache dir, and the registry filename) to prevent
-    # corrupting caching or registry persistence.
-    if step_id.startswith(".") or step_id in _RESERVED_STEP_IDS:
-        console.print(
-            f"[red]Error:[/red] '{step_id}' is a reserved name and cannot be used as a step ID"
-        )
+    if rel_parts != (step_id,):
+        console.print(f"[red]Error:[/red] Invalid step id '{step_id}'")
         raise typer.Exit(1)
 
     import shutil
@@ -6183,14 +6202,22 @@ def workflow_step_remove(
         console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
         raise typer.Exit(1)
 
+    _validate_step_id_or_exit(step_id)
+
     registry = StepRegistry(project_root)
     in_registry = registry.is_installed(step_id)
 
     steps_base_dir = (project_root / ".specify" / "workflows" / "steps").resolve()
     step_dir = (steps_base_dir / step_id).resolve()
+    # Defense-in-depth: even though _validate_step_id_or_exit rejects path
+    # separators, ensure that the resolved directory is a single child of
+    # steps_base_dir and is not steps_base_dir itself.
     try:
-        step_dir.relative_to(steps_base_dir)
+        rel_parts = step_dir.relative_to(steps_base_dir).parts
     except ValueError:
+        console.print(f"[red]Error:[/red] Invalid step id '{step_id}'")
+        raise typer.Exit(1)
+    if rel_parts != (step_id,):
         console.print(f"[red]Error:[/red] Invalid step id '{step_id}'")
         raise typer.Exit(1)
 
