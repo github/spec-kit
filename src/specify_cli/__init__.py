@@ -5897,7 +5897,7 @@ def workflow_step_list():
     from .workflows import STEP_REGISTRY
     from .workflows.catalog import StepRegistry
 
-    project_root = Path.cwd()
+    project_root = _require_specify_project()
     specify_dir = project_root / ".specify"
 
     # Read installed custom steps from registry only — no dynamic imports
@@ -5966,11 +5966,7 @@ def workflow_step_add(
     """Install a custom step type from the step catalog."""
     from .workflows.catalog import StepCatalog, StepCatalogError, StepRegistry, StepValidationError
 
-    project_root = Path.cwd()
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
+    project_root = _require_specify_project()
 
     catalog = StepCatalog(project_root)
     try:
@@ -6204,11 +6200,7 @@ def workflow_step_remove(
     """Uninstall a custom step type."""
     from .workflows.catalog import StepRegistry, StepValidationError
 
-    project_root = Path.cwd()
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
+    project_root = _require_specify_project()
 
     _validate_step_id_or_exit(step_id)
 
@@ -6244,16 +6236,22 @@ def workflow_step_remove(
             "(registry may have been reset). Removing the orphaned directory."
         )
 
-    if dir_exists:
+    if dir_exists and not in_registry:
+        # No registry write needed; just delete the orphaned directory.
         import shutil
         shutil.rmtree(step_dir)
-
-    if in_registry:
+    elif in_registry:
+        # Remove the registry entry FIRST so that, if the registry write fails
+        # (read-only filesystem, permission denied), the on-disk step directory
+        # is left intact and the registry/filesystem state remains consistent.
         try:
             registry.remove(step_id)
         except StepValidationError as exc:
             console.print(f"[red]Error:[/red] {exc}")
             raise typer.Exit(1)
+        if dir_exists:
+            import shutil
+            shutil.rmtree(step_dir)
     console.print(f"[green]✓[/green] Step type '{step_id}' uninstalled")
 
 
@@ -6264,10 +6262,7 @@ def workflow_step_search(
     """Search the step type catalog."""
     from .workflows.catalog import StepCatalog, StepCatalogError
 
-    project_root = Path.cwd()
-    if not (project_root / ".specify").exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
+    project_root = _require_specify_project()
 
     catalog = StepCatalog(project_root)
 
@@ -6307,10 +6302,7 @@ def workflow_step_info(
     from .workflows import STEP_REGISTRY
     from .workflows.catalog import StepCatalog, StepCatalogError, StepRegistry
 
-    project_root = Path.cwd()
-    if not (project_root / ".specify").exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
+    project_root = _require_specify_project()
 
     registry = StepRegistry(project_root)
     installed_meta = registry.get(step_id)
@@ -6367,7 +6359,7 @@ def workflow_step_catalog_list():
     """List configured step catalog sources."""
     from .workflows.catalog import StepCatalog, StepCatalogError
 
-    project_root = Path.cwd()
+    project_root = _require_specify_project()
     catalog = StepCatalog(project_root)
 
     try:
@@ -6398,11 +6390,7 @@ def workflow_step_catalog_add(
     """Add a step catalog source."""
     from .workflows.catalog import StepCatalog, StepValidationError
 
-    project_root = Path.cwd()
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
+    project_root = _require_specify_project()
 
     catalog = StepCatalog(project_root)
     try:
@@ -6423,11 +6411,7 @@ def workflow_step_catalog_remove(
     """Remove a step catalog source by index."""
     from .workflows.catalog import StepCatalog, StepValidationError
 
-    project_root = Path.cwd()
-    specify_dir = project_root / ".specify"
-    if not specify_dir.exists():
-        console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-        raise typer.Exit(1)
+    project_root = _require_specify_project()
 
     catalog = StepCatalog(project_root)
     try:

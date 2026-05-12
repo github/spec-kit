@@ -168,10 +168,17 @@ def load_custom_steps(project_root: Path) -> list[str]:
             finally:
                 # If the step wasn't successfully registered (failed import,
                 # no matching StepBase subclass, or registration error), remove
-                # the synthetic module from sys.modules so a broken/skipped
-                # step package leaves no lingering import state behind.
+                # the synthetic module — and any submodules loaded via relative
+                # imports (e.g. ``from .helpers import …``) — from sys.modules so
+                # a broken/skipped step package leaves no lingering import state
+                # behind.
                 if not registered:
                     _sys.modules.pop(module_name, None)
+                    submodule_prefix = module_name + "."
+                    for _mod_key in [
+                        k for k in _sys.modules if k.startswith(submodule_prefix)
+                    ]:
+                        _sys.modules.pop(_mod_key, None)
         except Exception:  # noqa: BLE001
             # Silently skip broken step packages at load time
             continue

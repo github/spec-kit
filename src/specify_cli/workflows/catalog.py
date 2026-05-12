@@ -495,9 +495,21 @@ class WorkflowCatalog:
                     f"Catalog URL already configured: {url}"
                 )
 
-        # Derive priority from the highest existing priority + 1
+        # Derive priority from the highest existing priority + 1.
+        # Coerce existing priorities to int with a safe fallback so a user-edited
+        # workflow-catalogs.yml with a non-integer priority (e.g. "1") doesn't blow up.
+        def _coerce_priority(value: Any) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return 0
+
         max_priority = max(
-            (cat.get("priority", 0) for cat in catalogs if isinstance(cat, dict)),
+            (
+                _coerce_priority(cat.get("priority", 0))
+                for cat in catalogs
+                if isinstance(cat, dict)
+            ),
             default=0,
         )
         catalogs.append(
@@ -1030,8 +1042,20 @@ class StepCatalog:
                     f"Catalog URL already configured: {url}"
                 )
 
+        # Coerce existing priorities to int with a safe fallback so a user-edited
+        # step-catalogs.yml with a non-integer priority (e.g. "1") doesn't blow up.
+        def _coerce_priority(value: Any) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return 0
+
         max_priority = max(
-            (cat.get("priority", 0) for cat in catalogs if isinstance(cat, dict)),
+            (
+                _coerce_priority(cat.get("priority", 0))
+                for cat in catalogs
+                if isinstance(cat, dict)
+            ),
             default=0,
         )
         catalogs.append(
