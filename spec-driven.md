@@ -320,15 +320,15 @@ This completely inverts traditional AI code generation. Instead of generating co
 
 #### Articles IV, V & VI: Project-Specific Standards
 
-Articles IV, V, and VI are the primary customization points in the constitution. Teams define these articles to address their own integration, operational, and lifecycle concerns by running `/speckit.constitution`. The principles are stored in `.specify/memory/constitution.md` and `/speckit.analyze` validates spec, plan, and task artifacts against every principle in the project constitution.
+Articles IV, V, and VI are the primary customization points in the constitution. In the constitution file (`.specify/memory/constitution.md`), these slots are expressed as named principles—not as fixed numbered headings. Teams use `/speckit.constitution` to define them, and `/speckit.analyze` validates spec, plan, and task artifacts against every principle in the project constitution.
 
-Common choices for these articles include:
+Common areas that projects define for these principles include:
 
-- **Integration concerns** (Article IV): requirement quality and coverage standards—for example, rules about testability, unambiguity, and traceability that specifications must satisfy before planning begins for that project.
-- **Operational concerns** (Article V): non-functional standards—for example, explicit thresholds for performance, security, observability, and accessibility that the project requires.
-- **Lifecycle concerns** (Article VI): governance and versioning practices—for example, how the constitution and specifications are versioned, how derived artifacts stay consistent with their source, and how implementation gaps are resolved.
+- **Requirement quality and coverage** (Article IV): for example, rules about testability, unambiguity, and traceability that specifications must satisfy for that project.
+- **Operational concerns** (Article V): for example, explicit thresholds for performance, security, observability, and accessibility that the project requires.
+- **Lifecycle concerns** (Article VI): for example, how the constitution and specifications are versioned, how derived artifacts stay consistent with their source, and how implementation gaps are resolved.
 
-Teams are free to name and scope these articles in whatever way best fits their project. The number of principles is also flexible—`/speckit.constitution` supports fewer or more than the template default.
+Teams are free to name and scope these principles in whatever way best fits their project. The number of principles is also flexible—`/speckit.constitution` supports fewer or more than the template default.
 
 #### Articles VII & VIII: Simplicity and Anti-Abstraction
 
