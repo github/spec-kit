@@ -2313,16 +2313,18 @@ class PresetCatalog:
 
         version = pack_info.get("version", "unknown")
 
-        # Detect archive format from URL; resolve via Content-Type when needed.
-        # `final_url` may differ from `download_url` if the server redirects.
-        archive_fmt = detect_archive_format(download_url)
-
+        # Determine the archive format from the post-redirect URL first
+        # (with Content-Type fallback); only use the original `download_url`
+        # as a last hint if the final URL gives no signal.
+        final_url = download_url
+        archive_fmt = ""
         try:
             with self._open_url(download_url, timeout=60) as response:
                 final_url = response.geturl()
+                content_type = response.headers.get("Content-Type", "")
+                archive_fmt = detect_archive_format(final_url, content_type)
                 if not archive_fmt:
-                    content_type = response.headers.get("Content-Type", "")
-                    archive_fmt = detect_archive_format(final_url, content_type)
+                    archive_fmt = detect_archive_format(download_url)
                 archive_data = response.read()
 
         except urllib.error.URLError as e:

@@ -2632,14 +2632,17 @@ def preset_add(
             from .extensions import detect_archive_format as _det_fmt
 
             with tempfile.TemporaryDirectory() as tmpdir:
-                archive_fmt = _det_fmt(from_url)
                 final_url = from_url
+                archive_fmt = ""
                 try:
                     with urllib.request.urlopen(from_url, timeout=60) as response:
                         final_url = response.geturl()
+                        content_type = response.headers.get("Content-Type", "")
+                        # Prefer the post-redirect URL for format detection;
+                        # fall back to the original URL only as a last hint.
+                        archive_fmt = _det_fmt(final_url, content_type)
                         if not archive_fmt:
-                            content_type = response.headers.get("Content-Type", "")
-                            archive_fmt = _det_fmt(final_url, content_type)
+                            archive_fmt = _det_fmt(from_url)
                         archive_data = response.read()
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
@@ -3657,18 +3660,22 @@ def extension_add(
                 console.print("Only install extensions from sources you trust.\n")
                 console.print(f"Downloading from {from_url}...")
 
-                # Download archive to temp location; detect format from URL or Content-Type.
+                # Download archive to temp location; detect format from the
+                # post-redirect URL (with Content-Type fallback), only using
+                # the original URL as a last hint.
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
                 download_dir.mkdir(parents=True, exist_ok=True)
-                archive_fmt = detect_archive_format(from_url)
+                final_url = from_url
+                archive_fmt = ""
                 archive_path = None
 
                 try:
                     with urllib.request.urlopen(from_url, timeout=60) as response:
                         final_url = response.geturl()
+                        content_type = response.headers.get("Content-Type", "")
+                        archive_fmt = detect_archive_format(final_url, content_type)
                         if not archive_fmt:
-                            content_type = response.headers.get("Content-Type", "")
-                            archive_fmt = detect_archive_format(final_url, content_type)
+                            archive_fmt = detect_archive_format(from_url)
                         archive_data = response.read()
 
                     # Re-validate scheme after any redirect (scheme-downgrade guard).
