@@ -780,6 +780,101 @@ class TestExtensionManager:
         with pytest.raises(ExtensionError, match="already installed"):
             manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
 
+    def test_install_force_reinstall(self, extension_dir, project_dir):
+        """Test force-reinstalling an already-installed extension."""
+        manager = ExtensionManager(project_dir)
+
+        # Install once
+        manifest1 = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+        assert manager.registry.is_installed("test-ext")
+
+        # Force-reinstall
+        manifest2 = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False, force=True
+        )
+
+        assert manifest2.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+        # Check extension directory was recreated
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        assert ext_dir.exists()
+        assert (ext_dir / "extension.yml").exists()
+        assert (ext_dir / "commands" / "hello.md").exists()
+
+    def test_install_force_config_preserved(self, extension_dir, project_dir):
+        """Test that config files are preserved when force-reinstalling."""
+        manager = ExtensionManager(project_dir)
+
+        # Install once
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        # Create a config file in the installed extension directory
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("test: config")
+
+        # Force-reinstall
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False, force=True
+        )
+
+        # Config file should still exist after reinstall
+        new_config = ext_dir / "test-ext-config.yml"
+        assert new_config.exists()
+        assert new_config.read_text() == "test: config"
+
+    def test_install_force_without_existing(self, extension_dir, project_dir):
+        """Test force-install when extension is NOT already installed (works normally)."""
+        manager = ExtensionManager(project_dir)
+
+        manifest = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False, force=True
+        )
+
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+
+    def test_install_zip_force_reinstall(self, extension_dir, project_dir):
+        """Test force-reinstalling from ZIP when already installed."""
+        import zipfile
+        import tempfile
+
+        manager = ExtensionManager(project_dir)
+
+        # Install once from directory
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        # Create a ZIP of the extension
+        with tempfile.NamedTemporaryFile(suffix=".zip") as tmp:
+            zip_path = Path(tmp.name)
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                for f in extension_dir.rglob("*"):
+                    if f.is_file():
+                        zf.write(f, f.relative_to(extension_dir))
+
+            # Force-reinstall from ZIP
+            manifest = manager.install_from_zip(
+                zip_path, "0.1.0", force=True
+            )
+
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        assert ext_dir.exists()
+
+    def test_install_duplicate_error_mentions_force(self, extension_dir, project_dir):
+        """Test that duplicate install error message suggests --force."""
+        manager = ExtensionManager(project_dir)
+
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        with pytest.raises(ExtensionError, match="--force"):
+            manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
     def test_install_rejects_extension_id_in_core_namespace(self, temp_dir, project_dir):
         """Install should reject extension IDs that shadow core commands."""
         import yaml
@@ -4321,3 +4416,69 @@ class TestExtensionRemoveCLI:
             )
 
         assert "2 commands" in result.output
+
+
+class TestExtensionForceCLI:
+    """CLI tests for `specify extension add --dev --force`."""
+
+    def _create_minimal_extension(self, base_dir: str | Path, ext_id: str = "test-ext") -> Path:
+        """Create a minimal extension directory with manifest."""
+        import yaml
+
+        ext_dir = Path(base_dir) / ext_id
+        ext_dir.mkdir(parents=True, exist_ok=True)
+        (ext_dir / "commands").mkdir()
+
+        manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": ext_id,
+                "name": "Test Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": f"speckit.{ext_id}.hello",
+                        "file": "commands/hello.md",
+                        "description": "Test command",
+                    }
+                ]
+            },
+        }
+
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest))
+        (ext_dir / "commands" / "hello.md").write_text(
+            "---\ndescription: Test\n---\n\nHello $ARGUMENTS\n"
+        )
+        return ext_dir
+
+    def test_add_dev_force_reinstall(self, tmp_path):
+        """extension add --dev --force should reinstall without error."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        ext_src = self._create_minimal_extension(tmp_path)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            # First install
+            result1 = runner.invoke(
+                app, ["extension", "add", str(ext_src), "--dev"], catch_exceptions=False
+            )
+            assert result1.exit_code == 0, strip_ansi(result1.output)
+            assert "installed" in strip_ansi(result1.output)
+
+            # Force reinstall
+            result2 = runner.invoke(
+                app, ["extension", "add", str(ext_src), "--dev", "--force"], catch_exceptions=False
+            )
+            assert result2.exit_code == 0, strip_ansi(result2.output)
+            assert "installed" in strip_ansi(result2.output)
