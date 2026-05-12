@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-07T20:05:00Z",
+  "updated_at": "2026-05-12T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2809,6 +2809,38 @@
       "stars": 0,
       "created_at": "2026-05-01T00:00:00Z",
       "updated_at": "2026-05-01T00:00:00Z"
+    },
+    "trace": {
+      "name": "Spec Trace",
+      "id": "trace",
+      "description": "Build a requirement \u2192 test traceability matrix from spec.md and the test suite \u2014 surface untested requirements and orphan tests",
+      "author": "Quratulain-bilal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/Quratulain-bilal/spec-kit-trace/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/Quratulain-bilal/spec-kit-trace",
+      "homepage": "https://github.com/Quratulain-bilal/spec-kit-trace",
+      "documentation": "https://github.com/Quratulain-bilal/spec-kit-trace/blob/main/README.md",
+      "changelog": "https://github.com/Quratulain-bilal/spec-kit-trace/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.4.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "traceability",
+        "testing",
+        "coverage",
+        "compliance",
+        "requirements"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-12T00:00:00Z",
+      "updated_at": "2026-05-12T00:00:00Z"
     },
     "v-model": {
       "name": "V-Model Extension Pack",
