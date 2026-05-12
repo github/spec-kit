@@ -134,35 +134,44 @@ def load_custom_steps(project_root: Path) -> list[str]:
             module.__package__ = module_name
             # Register before exec so relative imports resolve correctly.
             _sys.modules[module_name] = module
+            registered = False
             try:
-                spec.loader.exec_module(module)  # type: ignore[union-attr]
-            except Exception:
-                _sys.modules.pop(module_name, None)
-                raise
-
-            # Find the StepBase subclass in the module
-            from .base import StepBase as _StepBase
-
-            step_class = None
-            for attr_name in dir(module):
-                attr = getattr(module, attr_name)
                 try:
-                    if (
-                        isinstance(attr, type)
-                        and issubclass(attr, _StepBase)
-                        and attr is not _StepBase
-                        and getattr(attr, "type_key", "") == type_key
-                    ):
-                        step_class = attr
-                        break
-                except TypeError:
+                    spec.loader.exec_module(module)  # type: ignore[union-attr]
+                except Exception:
+                    raise
+
+                # Find the StepBase subclass in the module
+                from .base import StepBase as _StepBase
+
+                step_class = None
+                for attr_name in dir(module):
+                    attr = getattr(module, attr_name)
+                    try:
+                        if (
+                            isinstance(attr, type)
+                            and issubclass(attr, _StepBase)
+                            and attr is not _StepBase
+                            and getattr(attr, "type_key", "") == type_key
+                        ):
+                            step_class = attr
+                            break
+                    except TypeError:
+                        continue
+
+                if step_class is None:
                     continue
 
-            if step_class is None:
-                continue
-
-            _register_step(step_class())
-            loaded.append(type_key)
+                _register_step(step_class())
+                loaded.append(type_key)
+                registered = True
+            finally:
+                # If the step wasn't successfully registered (failed import,
+                # no matching StepBase subclass, or registration error), remove
+                # the synthetic module from sys.modules so a broken/skipped
+                # step package leaves no lingering import state behind.
+                if not registered:
+                    _sys.modules.pop(module_name, None)
         except Exception:  # noqa: BLE001
             # Silently skip broken step packages at load time
             continue

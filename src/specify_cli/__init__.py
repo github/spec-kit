@@ -5964,7 +5964,7 @@ def workflow_step_add(
     step_id: str = typer.Argument(..., help="Step type ID from catalog"),
 ):
     """Install a custom step type from the step catalog."""
-    from .workflows.catalog import StepCatalog, StepCatalogError, StepRegistry
+    from .workflows.catalog import StepCatalog, StepCatalogError, StepRegistry, StepValidationError
 
     project_root = Path.cwd()
     specify_dir = project_root / ".specify"
@@ -6168,18 +6168,26 @@ def workflow_step_add(
 
     # Register in step registry
     registry = StepRegistry(project_root)
-    registry.add(
-        step_id,
-        {
-            "name": info.get("name", step_id),
-            "version": info.get("version", step_meta.get("version", "0.0.0")),
-            "description": info.get("description", step_meta.get("description", "")),
-            "author": info.get("author", step_meta.get("author", "")),
-            "source": "catalog",
-            "catalog_name": info.get("_catalog_name", ""),
-            "type_key": type_key,
-        },
-    )
+    try:
+        registry.add(
+            step_id,
+            {
+                "name": info.get("name", step_id),
+                "version": info.get("version", step_meta.get("version", "0.0.0")),
+                "description": info.get("description", step_meta.get("description", "")),
+                "author": info.get("author", step_meta.get("author", "")),
+                "source": "catalog",
+                "catalog_name": info.get("_catalog_name", ""),
+                "type_key": type_key,
+            },
+        )
+    except StepValidationError as exc:
+        # Roll back the just-installed directory so the system isn't left with
+        # an unregistered step package on disk after a registry write failure
+        # (e.g. read-only filesystem, permission denied).
+        shutil.rmtree(step_dir, ignore_errors=True)
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
 
     console.print(
         f"[green]✓[/green] Step type '{info.get('name', step_id)}' ({step_id}) installed"
@@ -6194,7 +6202,7 @@ def workflow_step_remove(
     step_id: str = typer.Argument(..., help="Step type ID to uninstall"),
 ):
     """Uninstall a custom step type."""
-    from .workflows.catalog import StepRegistry
+    from .workflows.catalog import StepRegistry, StepValidationError
 
     project_root = Path.cwd()
     specify_dir = project_root / ".specify"
@@ -6241,7 +6249,11 @@ def workflow_step_remove(
         shutil.rmtree(step_dir)
 
     if in_registry:
-        registry.remove(step_id)
+        try:
+            registry.remove(step_id)
+        except StepValidationError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(1)
     console.print(f"[green]✓[/green] Step type '{step_id}' uninstalled")
 
 
