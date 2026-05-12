@@ -492,17 +492,6 @@ For brownfield work (updating an existing resource), use `/infrakit:update_compo
 
 ## 🔍 Troubleshooting
 
-### Git Credential Manager on Linux
-
-If you're having issues with Git authentication on Linux, you can install Git Credential Manager:
-
-```bash
-wget https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.6.1/gcm-linux_amd64.2.6.1.deb
-sudo dpkg -i gcm-linux_amd64.2.6.1.deb
-git config --global credential.helper manager
-rm gcm-linux_amd64.2.6.1.deb
-```
-
 ### Corporate proxy / self-signed certificates
 
 Templates ship inside the InfraKit wheel, so `infrakit init` does **not** call any network. The only network call is the optional version check in `infrakit version`, which uses the system trust store via `truststore`. If you cannot reach `api.github.com` for the version check, the rest of the CLI still works — just skip `infrakit version`.
