@@ -71,12 +71,12 @@ from .shared_infra import (
 )
 
 from ._console import (
-    BANNER,
-    TAGLINE,
+    BANNER as BANNER,
+    TAGLINE as TAGLINE,
     BannerGroup,
     StepTracker,
     console,
-    get_key,
+    get_key as get_key,
     select_with_arrows,
     show_banner,
 )
