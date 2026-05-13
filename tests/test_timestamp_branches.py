@@ -1,3 +1,4 @@
+
 """
 Pytest tests for timestamp-based branch naming in create-new-feature.sh and common.sh.
 
@@ -88,8 +89,36 @@ def ext_git_repo(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def ext_ps_git_repo(tmp_path: Path) -> Path:
+    """Create a temp git repo with PowerShell extension scripts."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "--allow-empty", "-m", "init", "-q"], cwd=tmp_path, check=True)
+    # Install core PS scripts
+    ps_dir = tmp_path / "scripts" / "powershell"
+    ps_dir.mkdir(parents=True)
+    common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
+    shutil.copy(common_ps, ps_dir / "common.ps1")
+    # Also install at .specify/scripts/powershell/ for extension resolution
+    specify_ps = tmp_path / ".specify" / "scripts" / "powershell"
+    specify_ps.mkdir(parents=True)
+    shutil.copy(common_ps, specify_ps / "common.ps1")
+    # Copy extension script
+    ext_ps = tmp_path / ".specify" / "extensions" / "git" / "scripts" / "powershell"
+    ext_ps.mkdir(parents=True)
+    shutil.copy(EXT_CREATE_FEATURE_PS, ext_ps / "create-new-feature.ps1")
+    git_common_ps = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "git-common.ps1"
+    if git_common_ps.exists():
+        shutil.copy(git_common_ps, ext_ps / "git-common.ps1")
+    (tmp_path / ".specify" / "templates").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "specs").mkdir(exist_ok=True)
+    return tmp_path
+
+
+@pytest.fixture
 def ps_git_repo(tmp_path: Path) -> Path:
-    """Create a temp git repo with PowerShell scripts and .specify dir."""
+    """Create a temp git repo with PowerShell scripts and a BOM-prefixed template."""
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(
         ["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True
@@ -109,7 +138,7 @@ def ps_git_repo(tmp_path: Path) -> Path:
     shutil.copy(common_ps, ps_dir / "common.ps1")
     templates_dir = tmp_path / ".specify" / "templates"
     templates_dir.mkdir(parents=True)
-    # Write a BOM-prefixed template to ensure the fix is actually exercised.
+    # Write a BOM-prefixed template to ensure the WriteAllText fix is actually exercised.
     # If WriteAllText regresses, the output file will contain the BOM.
     bom = b"\xef\xbb\xbf"
     template_content = "# Feature Spec\n\nDescribe the feature here.\n"
@@ -668,6 +697,7 @@ class TestAllowExistingBranchPowerShell:
             "spec.md does not contain template content — WriteAllText path was not exercised"
         )
 
+
 class TestGitExtensionParity:
     def test_bash_extension_surfaces_checkout_errors(self):
         """Static guard: git extension bash script preserves checkout stderr."""
@@ -919,30 +949,6 @@ def run_ps_script(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     script = cwd / "scripts" / "powershell" / "create-new-feature.ps1"
     cmd = ["pwsh", "-NoProfile", "-File", str(script), *args]
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
-
-
-@pytest.fixture
-def ps_git_repo(tmp_path: Path) -> Path:
-    """Create a temp git repo with PowerShell scripts and .specify dir."""
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True
-    )
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "init", "-q"],
-        cwd=tmp_path,
-        check=True,
-    )
-    ps_dir = tmp_path / "scripts" / "powershell"
-    ps_dir.mkdir(parents=True)
-    shutil.copy(CREATE_FEATURE_PS, ps_dir / "create-new-feature.ps1")
-    common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
-    shutil.copy(common_ps, ps_dir / "common.ps1")
-    (tmp_path / ".specify" / "templates").mkdir(parents=True)
-    return tmp_path
 
 
 @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not available")
