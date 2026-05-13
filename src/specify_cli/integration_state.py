@@ -38,8 +38,13 @@ def try_read_integration_json(
     logic cannot drift between them.
     """
     path = project_root / INTEGRATION_JSON
-    if not path.is_file():
+    if not path.exists():
         return None, None
+    if not path.is_file():
+        return None, IntegrationReadError(
+            kind="os",
+            detail=f"{path} exists but is not a regular file",
+        )
     try:
         raw = path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
