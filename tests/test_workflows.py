@@ -1832,6 +1832,57 @@ steps:
         errors = validate_workflow(definition)
         assert any("invalid default" in e for e in errors), errors
 
+    def test_validate_workflow_rejects_bool_default_for_number_type(self):
+        """``type: number`` paired with a bool default must fail — bool is a
+        subclass of int so ``float(True)`` would otherwise silently coerce
+        ``true`` to ``1``.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "bool-as-number"
+  name: "Bool As Number"
+  version: "1.0.0"
+inputs:
+  count:
+    type: number
+    default: true
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        assert any("invalid default" in e for e in errors), errors
+
+    def test_validate_workflow_rejects_non_string_default_for_string_type(self):
+        """``type: string`` must require an actual string — a numeric YAML
+        default like ``5`` would otherwise slip through unvalidated.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "number-as-string"
+  name: "Number As String"
+  version: "1.0.0"
+inputs:
+  label:
+    type: string
+    default: 5
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        assert any("invalid default" in e for e in errors), errors
+
 
 # ===== State Persistence Tests =====
 

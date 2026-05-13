@@ -765,8 +765,10 @@ class WorkflowEngine:
             # coercion so a workflow that lists specific integrations in
             # ``enum`` does not crash at runtime on the sentinel value.
             # NOTE: only enum-membership is skipped; ``_coerce_input``
-            # still enforces the declared ``type`` (e.g. ``string``) via
-            # the filtered definition, so ill-typed values still fail.
+            # still enforces the declared ``type`` against the filtered
+            # definition (``string`` rejects non-strings, ``number`` rejects
+            # bools and uncoercible values, ``boolean`` rejects non-bools),
+            # so ill-typed values still fail fast here.
             coerce_input_def = input_def
             if (
                 name == "integration"
@@ -818,6 +820,13 @@ class WorkflowEngine:
         enum_values = input_def.get("enum")
 
         if input_type == "number":
+            # Reject bools explicitly: ``bool`` is a subclass of ``int`` so
+            # ``float(True)`` succeeds and would silently coerce a YAML
+            # authoring mistake like ``type: number`` + ``default: true``
+            # into ``1``. Fail fast instead.
+            if isinstance(value, bool):
+                msg = f"Input {name!r} expected a number, got {value!r}."
+                raise ValueError(msg)
             try:
                 value = float(value)
                 if value == int(value):
@@ -834,6 +843,17 @@ class WorkflowEngine:
                 else:
                     msg = f"Input {name!r} expected a boolean, got {value!r}."
                     raise ValueError(msg)
+            elif not isinstance(value, bool):
+                msg = f"Input {name!r} expected a boolean, got {value!r}."
+                raise ValueError(msg)
+        elif input_type == "string":
+            # Without this, ``type: string`` accepts any Python value
+            # (numbers, lists, dicts) because nothing else rejects it —
+            # YAML ``default: 5`` would slip through. Require an actual
+            # string so authoring mistakes fail at resolve time.
+            if not isinstance(value, str):
+                msg = f"Input {name!r} expected a string, got {value!r}."
+                raise ValueError(msg)
 
         if enum_values is not None and value not in enum_values:
             msg = (
