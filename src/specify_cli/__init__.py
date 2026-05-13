@@ -95,7 +95,9 @@ def _build_agent_config() -> dict[str, dict[str, Any]]:
 
 AGENT_CONFIG = _build_agent_config()
 DEFAULT_INIT_INTEGRATION = "copilot"
-DEFAULT_BUNDLED_WORKFLOWS = ("speckit", "speckit-orchestrated-implement")
+DEFAULT_BUNDLED_WORKFLOWS = ("speckit", "speckit-implement")
+DEFAULT_BUNDLED_PRESETS = ("implement",)
+DEFAULT_BUNDLED_PRESET_PRIORITY = 20
 
 AI_ASSISTANT_ALIASES = {
     "kiro": "kiro-cli",
@@ -778,6 +780,43 @@ def _install_bundled_extension(project_path: Path, extension_id: str) -> str:
     return "extension installed"
 
 
+def _install_default_bundled_presets(
+    project_path: Path,
+    *,
+    skip: set[str] | None = None,
+) -> str:
+    """Install default bundled presets and return a tracker summary."""
+    from .presets import PresetManager
+
+    manager = PresetManager(project_path)
+    speckit_ver = get_speckit_version()
+    skip = skip or set()
+    messages: list[str] = []
+
+    for preset_id in DEFAULT_BUNDLED_PRESETS:
+        if preset_id in skip:
+            messages.append(f"{preset_id} skipped")
+            continue
+        bundled_path = _locate_bundled_preset(preset_id)
+        if not bundled_path:
+            messages.append(f"{preset_id} not found")
+            continue
+        if manager.registry.is_installed(preset_id):
+            messages.append(f"{preset_id} already installed")
+            continue
+
+        manager.install_from_directory(
+            bundled_path,
+            speckit_ver,
+            priority=DEFAULT_BUNDLED_PRESET_PRIORITY,
+        )
+        messages.append(
+            f"{preset_id} installed (priority {DEFAULT_BUNDLED_PRESET_PRIORITY})"
+        )
+
+    return "; ".join(messages) if messages else "none"
+
+
 def _locate_bundled_preset(preset_id: str) -> Path | None:
     """Return the path to a bundled preset, or None.
 
@@ -1392,8 +1431,8 @@ def init(
         ("chmod", "Ensure scripts executable"),
         ("constitution", "Constitution setup"),
         ("git", "Install git extension"),
-        ("orchestrated", "Install orchestrated extension"),
         ("workflow", "Install bundled workflow"),
+        ("preset", "Install default preset"),
         ("final", "Finalize"),
     ]:
         tracker.add(key, label)
@@ -1508,25 +1547,6 @@ def init(
             else:
                 tracker.skip("git", "--no-git flag")
 
-            # Install bundled orchestrated extension. This is independent of
-            # --no-git because it provides a core workflow entry point.
-            tracker.start("orchestrated")
-            try:
-                orchestrated_message = _install_bundled_extension(
-                    project_path,
-                    "orchestrated",
-                )
-                if orchestrated_message == "bundled extension not found":
-                    tracker.error("orchestrated", orchestrated_message)
-                else:
-                    tracker.complete("orchestrated", orchestrated_message)
-            except Exception as ext_err:
-                sanitized_ext = str(ext_err).replace('\n', ' ').strip()
-                tracker.error(
-                    "orchestrated",
-                    f"extension install failed: {sanitized_ext[:120]}",
-                )
-
             # Install bundled workflows
             tracker.start("workflow")
             try:
@@ -1558,6 +1578,20 @@ def init(
             if isinstance(resolved_integration, _SkillsPersist) or getattr(resolved_integration, "_skills_mode", False):
                 init_opts["ai_skills"] = True
             save_init_options(project_path, init_opts)
+
+            tracker.start("preset")
+            explicit_default_preset = preset in DEFAULT_BUNDLED_PRESETS
+            try:
+                tracker.complete(
+                    "preset",
+                    _install_default_bundled_presets(
+                        project_path,
+                        skip={preset} if explicit_default_preset else set(),
+                    ),
+                )
+            except Exception as preset_err:
+                sanitized_preset = str(preset_err).replace('\n', ' ').strip()
+                tracker.error("preset", f"install failed: {sanitized_preset[:120]}")
 
             # Install preset if specified
             if preset:

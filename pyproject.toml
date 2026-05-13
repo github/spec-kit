@@ -47,11 +47,11 @@ packages = ["src/specify_cli"]
 "scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
 # Bundled extensions (installable via `specify extension add <name>`)
 "extensions/git" = "specify_cli/core_pack/extensions/git"
-"extensions/orchestrated" = "specify_cli/core_pack/extensions/orchestrated"
 # Bundled workflows (auto-installed during `specify init`)
 "workflows/speckit" = "specify_cli/core_pack/workflows/speckit"
-"workflows/speckit-orchestrated-implement" = "specify_cli/core_pack/workflows/speckit-orchestrated-implement"
+"workflows/speckit-implement" = "specify_cli/core_pack/workflows/speckit-implement"
 # Bundled presets (installable via `specify preset add <name>` or `specify init --preset <name>`)
+"presets/implement" = "specify_cli/core_pack/presets/implement"
 "presets/lean" = "specify_cli/core_pack/presets/lean"
 
 [project.optional-dependencies]

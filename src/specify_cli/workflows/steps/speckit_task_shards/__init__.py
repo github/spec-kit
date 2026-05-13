@@ -360,7 +360,7 @@ class SpeckitTaskShardsStep(StepBase):
         original_args: str,
         run_id: str,
     ) -> list[dict[str, Any]]:
-        handoff_dir = feature_dir / "handoffs" / "orchestrated" / run_id
+        handoff_dir = feature_dir / "handoffs" / "implement" / run_id
         handoff_dir.mkdir(parents=True, exist_ok=True)
 
         items: list[dict[str, Any]] = []
@@ -403,7 +403,7 @@ class SpeckitTaskShardsStep(StepBase):
             context_refs.append(cls._display_path(project_root, contracts_dir))
 
         return {
-            "contract_type": "speckit.orchestrated.implement.handoff.v1",
+            "contract_type": "speckit.implement.handoff.v1",
             "shard_id": shard.shard_id,
             "feature_dir": feature_ref,
             "task_ids": shard.task_ids,
@@ -424,7 +424,7 @@ class SpeckitTaskShardsStep(StepBase):
         prefix = f"{original_args.strip()} " if original_args.strip() else ""
         task_ids = ", ".join(shard.task_ids)
         return (
-            f"{prefix}Use orchestrated handoff JSON {handoff_path}. "
+            f"{prefix}Use handoff JSON {handoff_path}. "
             f"Execute only task IDs: {task_ids}."
         )
 

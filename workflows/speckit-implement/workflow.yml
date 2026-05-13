@@ -1,7 +1,7 @@
 schema_version: "1.0"
 workflow:
-  id: "speckit-orchestrated-implement"
-  name: "Orchestrated Implementation"
+  id: "speckit-implement"
+  name: "Implementation"
   version: "1.0.0"
   author: "GitHub"
   description: "Builds task handoff shards, then runs speckit.implement once per shard"

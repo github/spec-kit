@@ -1133,11 +1133,11 @@ class TestSpeckitTaskShardsStep:
         first = result.output["items"][0]
         assert first["shard_id"] == "shard-01"
         assert first["task_ids"] == ["T001"]
-        assert "--fast Use orchestrated handoff JSON" in first["args"]
+        assert "--fast Use handoff JSON" in first["args"]
         handoff = Path(first["handoff_path"])
         assert handoff.exists()
         data = json.loads(handoff.read_text(encoding="utf-8"))
-        assert data["contract_type"] == "speckit.orchestrated.implement.handoff.v1"
+        assert data["contract_type"] == "speckit.implement.handoff.v1"
         assert data["task_ids"] == ["T001"]
         assert "specs/001-demo/spec.md" in data["required_context_refs"]
 
@@ -1398,19 +1398,19 @@ steps:
         errors = validate_workflow(definition)
         assert any("invalid type" in e.lower() for e in errors)
 
-    def test_bundled_orchestrated_workflow_validates(self):
+    def test_bundled_implement_workflow_validates(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 
         workflow_path = (
             Path(__file__).resolve().parent.parent
             / "workflows"
-            / "speckit-orchestrated-implement"
+            / "speckit-implement"
             / "workflow.yml"
         )
         definition = WorkflowDefinition.from_yaml(workflow_path)
         errors = validate_workflow(definition)
         assert errors == []
-        assert definition.id == "speckit-orchestrated-implement"
+        assert definition.id == "speckit-implement"
 
     def test_nested_step_validation(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
@@ -1878,14 +1878,14 @@ class TestWorkflowCatalog:
         assert configs[0]["name"] == "default"
         assert isinstance(configs[0]["install_allowed"], bool)
 
-    def test_bundled_catalog_contains_orchestrated_workflow(self):
+    def test_bundled_catalog_contains_implement_workflow(self):
         catalog_path = Path(__file__).resolve().parent.parent / "workflows" / "catalog.json"
         data = json.loads(catalog_path.read_text(encoding="utf-8"))
 
-        workflow = data["workflows"]["speckit-orchestrated-implement"]
-        assert workflow["name"] == "Orchestrated Implementation"
+        workflow = data["workflows"]["speckit-implement"]
+        assert workflow["name"] == "Implementation"
         assert workflow["url"].endswith(
-            "/workflows/speckit-orchestrated-implement/workflow.yml"
+            "/workflows/speckit-implement/workflow.yml"
         )
 
 
@@ -1942,7 +1942,7 @@ steps:
         assert "echo-partial" not in state.step_results
         assert "plan" in state.step_results
 
-    def test_orchestrated_workflow_fans_out_to_implement(self, project_dir, monkeypatch):
+    def test_implement_workflow_fans_out_to_implement(self, project_dir, monkeypatch):
         """The bundled workflow dispatches speckit.implement once per shard."""
         from specify_cli.workflows.base import RunStatus
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
@@ -1986,7 +1986,7 @@ steps:
         workflow_path = (
             Path(__file__).resolve().parent.parent
             / "workflows"
-            / "speckit-orchestrated-implement"
+            / "speckit-implement"
             / "workflow.yml"
         )
         definition = WorkflowDefinition.from_yaml(workflow_path)
@@ -2001,7 +2001,7 @@ steps:
             "speckit.implement",
         ]
         assert all(call["integration"] == "claude" for call in calls)
-        assert all("Use orchestrated handoff JSON" in call["args"] for call in calls)
+        assert all("Use handoff JSON" in call["args"] for call in calls)
         assert all("--fast" in call["args"] for call in calls)
 
     def test_switch_workflow(self, project_dir):
