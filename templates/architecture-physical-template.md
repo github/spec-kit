@@ -4,6 +4,40 @@
 
 **Purpose**: Derive deployment, hosting, external system, fact-source, observability, and operational boundaries from process and development views.
 
+## Architecture Intent
+
+[State what deployment, fact-source, operational, or external-boundary meaning this view must preserve.]
+
+## Core Tensions
+
+| Tension | Current Tradeoff Direction | Physical Consequence |
+|---------|----------------------------|----------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Stable Boundaries
+
+| Boundary | Must Remain Stable Because | Explicitly Does Not Carry |
+|----------|----------------------------|---------------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Change Axes
+
+| Expected Change | Isolated By | Physical Impact |
+|-----------------|-------------|-----------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Invariants
+
+| Invariant | Source Deployment / External / Fact Boundary | Risk If Violated |
+|-----------|----------------------------------------------|------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Non-goals / Anti-patterns
+
+| Non-goal / Anti-pattern | Why It Is Out of Scope or Harmful |
+|-------------------------|-----------------------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
 ## Deployment and Hosting Boundaries
 
 | Runtime / Hosting Unit | Carries | Boundary | Depends On | Release / Migration Impact |

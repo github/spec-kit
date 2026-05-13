@@ -4,6 +4,40 @@
 
 **Purpose**: Derive capability boundaries, domain objects, states, relationships, and invariants from the scenario view.
 
+## Architecture Intent
+
+[State what logical separation, authority, or lifecycle meaning this view must preserve.]
+
+## Core Tensions
+
+| Tension | Current Tradeoff Direction | Logical Consequence |
+|---------|----------------------------|---------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Stable Boundaries
+
+| Boundary | Must Remain Stable Because | Explicitly Does Not Own |
+|----------|----------------------------|-------------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Change Axes
+
+| Expected Change | Isolated By | Logical Impact |
+|-----------------|-------------|----------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Invariants
+
+| Invariant | Source Scenario / Object / State | Risk If Violated |
+|-----------|----------------------------------|------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Non-goals / Anti-patterns
+
+| Non-goal / Anti-pattern | Why It Is Out of Scope or Harmful |
+|-------------------------|-----------------------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
 ## Capability Boundaries
 
 | Capability / Boundary | Responsibility | Input | Output | Explicitly Does Not Own | Scenario Source |

@@ -4,6 +4,40 @@
 
 **Purpose**: Derive architecture-level components, package boundary intent, contract/artifact semantics, and dependency rules from logical and process views.
 
+## Architecture Intent
+
+[State what component, package, contract, or dependency meaning this view must preserve.]
+
+## Core Tensions
+
+| Tension | Current Tradeoff Direction | Development Consequence |
+|---------|----------------------------|-------------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Stable Boundaries
+
+| Boundary | Must Remain Stable Because | Explicitly Must Not Own |
+|----------|----------------------------|-------------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Change Axes
+
+| Expected Change | Isolated By | Development Impact |
+|-----------------|-------------|--------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Invariants
+
+| Invariant | Source Boundary / Contract / Dependency Rule | Risk If Violated |
+|-----------|----------------------------------------------|------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Non-goals / Anti-patterns
+
+| Non-goal / Anti-pattern | Why It Is Out of Scope or Harmful |
+|-------------------------|-----------------------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
 ## Architecture-Level Components
 
 | Component / Capability Package | Responsibility | Input / Output Boundary | Collaborators | Explicitly Must Not Own | Source View Evidence |

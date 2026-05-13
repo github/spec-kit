@@ -4,6 +4,40 @@
 
 **Purpose**: Derive runtime collaboration, handoffs, approvals, receipts, state advancement, and failure closure from scenario paths and logical boundaries.
 
+## Architecture Intent
+
+[State what runtime collaboration, handoff, or failure-closure meaning this view must preserve.]
+
+## Core Tensions
+
+| Tension | Current Tradeoff Direction | Process Consequence |
+|---------|----------------------------|---------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Stable Boundaries
+
+| Boundary | Must Remain Stable Because | Explicitly Does Not Control |
+|----------|----------------------------|-----------------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Change Axes
+
+| Expected Change | Isolated By | Process Impact |
+|-----------------|-------------|----------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Invariants
+
+| Invariant | Source Scenario / Runtime Link | Risk If Violated |
+|-----------|--------------------------------|------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Non-goals / Anti-patterns
+
+| Non-goal / Anti-pattern | Why It Is Out of Scope or Harmful |
+|-------------------------|-----------------------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
 ## Main Runtime Links
 
 | Runtime Link | Trigger | Source | Target | Transferred Content / Fact | Completion Condition |

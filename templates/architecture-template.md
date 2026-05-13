@@ -19,14 +19,44 @@
 | Development | `.specify/memory/architecture-development-view.md` | Architecture-level components, package boundaries, contracts, dependencies | NEEDS ARCH UPDATE |
 | Physical | `.specify/memory/architecture-physical-view.md` | Deployment, external systems, fact sources, observability, operations | NEEDS ARCH UPDATE |
 
-## Architecture Axis
+## Architecture Intent
+
+[State what architecture intent the five views stabilize together.]
+
+## Central Design Forces
 
 [Summarize the central design forces that connect the five views: primary scenario flow, authority boundary, fact-source model, collaboration model, deployment constraint, or failure-closure model.]
 
-## Cross-View Mapping
+## Primary Tradeoffs
 
-| Stable Concept | Scenario View | Logical View | Process View | Development View | Physical View | Architecture Consequence |
-|----------------|---------------|--------------|--------------|------------------|---------------|--------------------------|
+| Tradeoff | Chosen Direction | Consequence | Revisit When |
+|----------|------------------|-------------|--------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Stable Boundaries
+
+| Boundary | Affected Views | Must Remain Stable Because | Forbidden Crossing |
+|----------|----------------|----------------------------|--------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Change Axes
+
+| Expected Change | Isolated By | Affected Views | Architecture Consequence |
+|-----------------|-------------|----------------|--------------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Anti-patterns
+
+| Anti-pattern | Why It Violates Intent | Affected Views |
+|--------------|------------------------|----------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Cross-View Architecture Model
+
+This section normalizes the 4+1 design results into the architecture SSOT for later `plan` reasoning. Record how concepts derive, constrain, depend on, or guard each other. This is architecture design synthesis, not tracking or audit. Do not treat view-specific concepts as equivalent or interchangeable.
+
+| Architecture Concept | Scenario Meaning | Logical Interpretation | Runtime Role | Development Boundary | Physical Constraint | Plan Reasoning Constraint |
+|----------------------|------------------|------------------------|--------------|----------------------|---------------------|---------------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
 ## Key Architecture Conclusions
