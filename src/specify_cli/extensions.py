@@ -2584,22 +2584,31 @@ class HookExecutor:
         Returns:
             A sanitized, deduplicated, alphabetically-sorted list.
         """
+        _VALID_ID = re.compile(r'^[a-z0-9-]+$')
+
         installed = raw if isinstance(raw, list) else []
 
-        # Keep only strings and dicts with a valid string 'id'
-        valid = [
-            x for x in installed
-            if isinstance(x, str) or (isinstance(x, dict) and isinstance(x.get("id"), str))
-        ]
+        # Keep only entries whose resolved id is a non-empty string matching
+        # the extension-id format (^[a-z0-9-]+$), same rule ExtensionManifest enforces.
+        def _valid_entry(x: object) -> bool:
+            if isinstance(x, str):
+                return bool(_VALID_ID.match(x.strip()))
+            if isinstance(x, dict):
+                eid = x.get("id")
+                return isinstance(eid, str) and bool(_VALID_ID.match(eid.strip()))
+            return False
+
+        valid = [x for x in installed if _valid_entry(x)]
 
         # Deduplicate by id: prefer dict (richer metadata) over plain string
         seen: dict = {}  # id -> entry (dict preferred over str)
         for x in valid:
-            eid = x if isinstance(x, str) else x.get("id", "")
+            eid = x.strip() if isinstance(x, str) else x.get("id", "").strip()
             if eid not in seen or isinstance(x, dict):
                 seen[eid] = x
 
-        if add_id and add_id not in seen:
+        # Validate add_id against the same regex before inserting
+        if add_id and _VALID_ID.match(add_id.strip()) and add_id not in seen:
             seen[add_id] = add_id
 
         if remove_id:
