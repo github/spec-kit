@@ -1,4 +1,4 @@
-"""Tests for setup-arch project-level architecture artifact initialization."""
+"""Tests for architecture extension artifact initialization."""
 
 import json
 import os
@@ -13,10 +13,9 @@ from tests.conftest import requires_bash
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
-SETUP_ARCH_SH = PROJECT_ROOT / "scripts" / "bash" / "setup-arch.sh"
-COMMON_PS = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
-SETUP_ARCH_PS = PROJECT_ROOT / "scripts" / "powershell" / "setup-arch.ps1"
+ARCHITECTURE_EXTENSION = PROJECT_ROOT / "extensions" / "arch"
+SETUP_ARCH_SH = ARCHITECTURE_EXTENSION / "scripts" / "bash" / "setup-arch.sh"
+SETUP_ARCH_PS = ARCHITECTURE_EXTENSION / "scripts" / "powershell" / "setup-arch.ps1"
 ARCH_TEMPLATES = [
     "architecture-template.md",
     "architecture-scenario-template.md",
@@ -31,24 +30,22 @@ _POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
 
 
 def _install_bash_scripts(repo: Path) -> None:
-    d = repo / ".specify" / "scripts" / "bash"
+    d = repo / ".specify" / "extensions" / "arch" / "scripts" / "bash"
     d.mkdir(parents=True, exist_ok=True)
-    shutil.copy(COMMON_SH, d / "common.sh")
     shutil.copy(SETUP_ARCH_SH, d / "setup-arch.sh")
 
 
 def _install_ps_scripts(repo: Path) -> None:
-    d = repo / ".specify" / "scripts" / "powershell"
+    d = repo / ".specify" / "extensions" / "arch" / "scripts" / "powershell"
     d.mkdir(parents=True, exist_ok=True)
-    shutil.copy(COMMON_PS, d / "common.ps1")
     shutil.copy(SETUP_ARCH_PS, d / "setup-arch.ps1")
 
 
 def _install_templates(repo: Path) -> None:
-    d = repo / ".specify" / "templates"
+    d = repo / ".specify" / "extensions" / "arch" / "templates"
     d.mkdir(parents=True, exist_ok=True)
     for name in ARCH_TEMPLATES:
-        shutil.copy(PROJECT_ROOT / "templates" / name, d / name)
+        shutil.copy(ARCHITECTURE_EXTENSION / "templates" / name, d / name)
 
 
 def _clean_env() -> dict[str, str]:
@@ -112,7 +109,7 @@ def _assert_arch_json(repo: Path, data: dict[str, str], *, exact_paths: bool = T
 
 @requires_bash
 def test_setup_arch_bash_creates_all_artifacts_and_json(arch_repo: Path) -> None:
-    script = arch_repo / ".specify" / "scripts" / "bash" / "setup-arch.sh"
+    script = arch_repo / ".specify" / "extensions" / "arch" / "scripts" / "bash" / "setup-arch.sh"
     result = subprocess.run(
         ["bash", str(script), "--json"],
         cwd=arch_repo,
@@ -134,7 +131,7 @@ def test_setup_arch_bash_preserves_existing_files(arch_repo: Path) -> None:
     existing.parent.mkdir(parents=True)
     existing.write_text("# Custom Scenario\n", encoding="utf-8")
 
-    script = arch_repo / ".specify" / "scripts" / "bash" / "setup-arch.sh"
+    script = arch_repo / ".specify" / "extensions" / "arch" / "scripts" / "bash" / "setup-arch.sh"
     result = subprocess.run(
         ["bash", str(script), "--json"],
         cwd=arch_repo,
@@ -150,7 +147,7 @@ def test_setup_arch_bash_preserves_existing_files(arch_repo: Path) -> None:
 
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
 def test_setup_arch_powershell_creates_all_artifacts_and_json(arch_repo: Path) -> None:
-    script = arch_repo / ".specify" / "scripts" / "powershell" / "setup-arch.ps1"
+    script = arch_repo / ".specify" / "extensions" / "arch" / "scripts" / "powershell" / "setup-arch.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
     result = subprocess.run(
         [exe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", _powershell_script_arg(exe, script), "-Json"],

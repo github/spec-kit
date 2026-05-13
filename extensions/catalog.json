@@ -1,8 +1,23 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-10T00:00:00Z",
+  "updated_at": "2026-05-13T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json",
   "extensions": {
+    "arch": {
+      "name": "Architecture Workflow",
+      "id": "arch",
+      "version": "1.0.0",
+      "description": "Generate project-level 4+1 architecture view artifacts and synthesis",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "bundled": true,
+      "tags": [
+        "architecture",
+        "4+1",
+        "workflow",
+        "core"
+      ]
+    },
     "git": {
       "name": "Git Branching Workflow",
       "id": "git",

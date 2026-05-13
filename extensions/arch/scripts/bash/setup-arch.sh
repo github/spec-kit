@@ -21,9 +21,78 @@ for arg in "$@"; do
     esac
 done
 
-# Get script directory and load common functions
-SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/common.sh"
+find_specify_root() {
+    local dir="${1:-$(pwd)}"
+    dir="$(cd -- "$dir" 2>/dev/null && pwd)" || return 1
+    local prev_dir=""
+    while true; do
+        if [ -d "$dir/.specify" ]; then
+            echo "$dir"
+            return 0
+        fi
+        if [ "$dir" = "/" ] || [ "$dir" = "$prev_dir" ]; then
+            break
+        fi
+        prev_dir="$dir"
+        dir="$(dirname "$dir")"
+    done
+    return 1
+}
+
+get_repo_root() {
+    local specify_root
+    if specify_root=$(find_specify_root); then
+        echo "$specify_root"
+        return
+    fi
+
+    if git rev-parse --show-toplevel >/dev/null 2>&1; then
+        git rev-parse --show-toplevel
+        return
+    fi
+
+    local script_dir
+    script_dir="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    (cd "$script_dir/../../../../.." && pwd)
+}
+
+has_jq() {
+    command -v jq >/dev/null 2>&1
+}
+
+json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\t'/\\t}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\b'/\\b}"
+    s="${s//$'\f'/\\f}"
+    local LC_ALL=C
+    local i char code
+    for (( i=0; i<${#s}; i++ )); do
+        char="${s:$i:1}"
+        printf -v code '%d' "'$char" 2>/dev/null || code=256
+        if (( code >= 1 && code <= 31 )); then
+            printf '\\u%04x' "$code"
+        else
+            printf '%s' "$char"
+        fi
+    done
+}
+
+resolve_architecture_template() {
+    local template_name="$1"
+    local repo_root="$2"
+    local ext_templates="$repo_root/.specify/extensions/arch/templates"
+    local override="$repo_root/.specify/templates/overrides/${template_name}.md"
+    local candidate="$ext_templates/${template_name}.md"
+
+    [ -f "$override" ] && echo "$override" && return 0
+    [ -f "$candidate" ] && echo "$candidate" && return 0
+    return 1
+}
 
 REPO_ROOT=$(get_repo_root)
 ARCH_DIR="$REPO_ROOT/.specify/memory"
@@ -45,7 +114,7 @@ copy_template_if_missing() {
     fi
 
     local template
-    template=$(resolve_template "$template_name" "$REPO_ROOT") || true
+    template=$(resolve_architecture_template "$template_name" "$REPO_ROOT") || true
     if [[ -n "$template" ]] && [[ -f "$template" ]]; then
         cp "$template" "$destination"
         echo "Copied $template_name template to $destination"

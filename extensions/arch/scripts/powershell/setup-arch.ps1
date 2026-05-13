@@ -16,7 +16,60 @@ if ($Help) {
     exit 0
 }
 
-. "$PSScriptRoot/common.ps1"
+function Find-SpecifyRoot {
+    param([string]$StartDir = (Get-Location).Path)
+
+    $resolved = Resolve-Path -LiteralPath $StartDir -ErrorAction SilentlyContinue
+    $current = if ($resolved) { $resolved.Path } else { $null }
+    if (-not $current) { return $null }
+
+    while ($true) {
+        if (Test-Path -LiteralPath (Join-Path $current ".specify") -PathType Container) {
+            return $current
+        }
+        $parent = Split-Path $current -Parent
+        if ([string]::IsNullOrEmpty($parent) -or $parent -eq $current) {
+            return $null
+        }
+        $current = $parent
+    }
+}
+
+function Get-RepoRoot {
+    $specifyRoot = Find-SpecifyRoot
+    if ($specifyRoot) {
+        return $specifyRoot
+    }
+
+    try {
+        $result = git rev-parse --show-toplevel 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            return $result
+        }
+    } catch {
+    }
+
+    return (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "../../../../..")).Path
+}
+
+function Resolve-ArchitectureTemplate {
+    param(
+        [Parameter(Mandatory = $true)][string]$TemplateName,
+        [Parameter(Mandatory = $true)][string]$RepoRoot
+    )
+
+    $override = Join-Path $RepoRoot ".specify/templates/overrides/$TemplateName.md"
+    if (Test-Path -LiteralPath $override -PathType Leaf) {
+        return $override
+    }
+
+    $candidate = Join-Path $RepoRoot ".specify/extensions/arch/templates/$TemplateName.md"
+    if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+        return $candidate
+    }
+
+    return $null
+}
 
 function Convert-ToPlainPath {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -48,7 +101,7 @@ function Copy-TemplateIfMissing {
         return
     }
 
-    $template = Resolve-Template -TemplateName $TemplateName -RepoRoot $repoRoot
+    $template = Resolve-ArchitectureTemplate -TemplateName $TemplateName -RepoRoot $repoRoot
     if ($template -and (Test-Path -LiteralPath $template -PathType Leaf)) {
         Copy-Item -LiteralPath $template -Destination $Destination -Force
         Write-Output "Copied $TemplateName template to $Destination"

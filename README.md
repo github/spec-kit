@@ -380,7 +380,7 @@ specify extension search
 specify extension add <extension-name>
 ```
 
-For example, extensions could add Jira integration, post-implementation code review, V-Model test traceability, or project health diagnostics.
+For example, extensions can add the official 4+1 architecture workflow (`specify extension add arch`, then `/speckit.arch.generate`), Jira integration, post-implementation code review, V-Model test traceability, or project health diagnostics.
 
 See the [Extensions reference](https://github.github.io/spec-kit/reference/extensions.html) for the full command guide. Browse the [community extensions](#-community-extensions) above for what's available.
 

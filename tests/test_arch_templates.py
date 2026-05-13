@@ -5,7 +5,9 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-TEMPLATES = PROJECT_ROOT / "templates"
+ARCHITECTURE_EXTENSION = PROJECT_ROOT / "extensions" / "arch"
+TEMPLATES = ARCHITECTURE_EXTENSION / "templates"
+COMMANDS = ARCHITECTURE_EXTENSION / "commands"
 
 
 def _read_template(name: str) -> str:
@@ -13,11 +15,11 @@ def _read_template(name: str) -> str:
 
 
 def test_arch_command_is_phase_based_and_does_not_require_uc_command():
-    content = _read_template("commands/arch.md")
+    content = (COMMANDS / "speckit.arch.generate.md").read_text(encoding="utf-8")
 
     assert "scripts:" in content
-    assert "setup-arch.sh --json" in content
-    assert "setup-arch.ps1 -Json" in content
+    assert ".specify/extensions/arch/scripts/bash/setup-arch.sh --json" in content
+    assert ".specify/extensions/arch/scripts/powershell/setup-arch.ps1 -Json" in content
     for phase in [
         "Phase -1: Architecture Framing",
         "Phase 0: Scenario View",
@@ -49,14 +51,14 @@ def test_arch_command_is_phase_based_and_does_not_require_uc_command():
     for term in ["C4", "UML", "Mermaid", "PlantUML"]:
         assert len(re.findall(rf"\b{re.escape(term)}\b", content)) == 1
     assert "Do not require `.specify/memory/uc.md`" in content
-    assert "Read the six architecture templates under `.specify/templates/`" in content
+    assert "Read the six architecture templates under `.specify/extensions/arch/templates/`" in content
     assert "__SPECKIT_COMMAND_UC__" not in content
     assert "Read `.specify/memory/constitution.md`" not in content
     assert ".specify/memory/architecture/" not in content
 
 
 def test_arch_command_delegates_view_details_to_templates():
-    content = _read_template("commands/arch.md")
+    content = (COMMANDS / "speckit.arch.generate.md").read_text(encoding="utf-8")
 
     delegated_phrases = [
         "using its template",
@@ -113,13 +115,11 @@ def test_architecture_synthesis_references_five_view_files():
     assert ".specify/memory/architecture/" not in content
 
 
-def test_init_next_steps_place_arch_before_constitution():
+def test_init_next_steps_do_not_list_arch_as_core_workflow():
     init_source = (PROJECT_ROOT / "src" / "specify_cli" / "__init__.py").read_text(encoding="utf-8")
 
-    arch_index = init_source.index("_display_cmd('arch')")
-    constitution_index = init_source.index("_display_cmd('constitution')")
-
-    assert arch_index < constitution_index
+    assert "_display_cmd('arch')" not in init_source
+    assert "specify extension add arch" in init_source
 
 
 def test_view_templates_define_inputs_and_reject_implementation_detail():

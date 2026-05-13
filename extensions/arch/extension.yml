@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+extension:
+  id: arch
+  name: "Architecture Workflow"
+  version: "1.0.0"
+  description: "Generate project-level 4+1 architecture view artifacts and synthesis"
+  author: spec-kit-core
+  repository: https://github.com/github/spec-kit
+  license: MIT
+
+requires:
+  speckit_version: ">=0.8.10.dev0"
+
+provides:
+  commands:
+    - name: speckit.arch.generate
+      file: commands/speckit.arch.generate.md
+      description: "Execute the 4+1 architecture workflow and generate architecture view artifacts"
+
+tags:
+  - "architecture"
+  - "4+1"
+  - "workflow"
+  - "core"

@@ -1017,7 +1017,6 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
 # Constants kept for backward compatibility with presets and extensions.
 DEFAULT_SKILLS_DIR = ".agents/skills"
 SKILL_DESCRIPTIONS = {
-    "arch": "Generate project-level 4+1 architecture view artifacts and synthesis.",
     "agent": "Create or update agent governance and refresh agent instruction projections.",
     "governance": "Create or update agent governance and refresh agent instruction projections.",
     "specify": "Create or update feature specifications from natural language descriptions.",
@@ -1678,12 +1677,11 @@ def init(
 
     steps_lines.append(f"{step_num}. Start using {usage_label} with your coding agent:")
 
-    steps_lines.append(f"   {step_num}.1 [cyan]{_display_cmd('arch')}[/] - Shape 4+1 architecture views")
-    steps_lines.append(f"   {step_num}.2 [cyan]{_display_cmd('constitution')}[/] - Establish project principles")
-    steps_lines.append(f"   {step_num}.3 [cyan]{_display_cmd('specify')}[/] - Create baseline specification")
-    steps_lines.append(f"   {step_num}.4 [cyan]{_display_cmd('plan')}[/] - Create implementation plan")
-    steps_lines.append(f"   {step_num}.5 [cyan]{_display_cmd('tasks')}[/] - Generate actionable tasks")
-    steps_lines.append(f"   {step_num}.6 [cyan]{_display_cmd('implement')}[/] - Execute implementation")
+    steps_lines.append(f"   {step_num}.1 [cyan]{_display_cmd('constitution')}[/] - Establish project principles")
+    steps_lines.append(f"   {step_num}.2 [cyan]{_display_cmd('specify')}[/] - Create baseline specification")
+    steps_lines.append(f"   {step_num}.3 [cyan]{_display_cmd('plan')}[/] - Create implementation plan")
+    steps_lines.append(f"   {step_num}.4 [cyan]{_display_cmd('tasks')}[/] - Generate actionable tasks")
+    steps_lines.append(f"   {step_num}.5 [cyan]{_display_cmd('implement')}[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
@@ -1699,7 +1697,8 @@ def init(
         "",
         f"○ [cyan]{_display_cmd('clarify')}[/] [bright_black](optional)[/bright_black] - Ask structured questions to de-risk ambiguous areas before planning (run before [cyan]{_display_cmd('plan')}[/] if used)",
         f"○ [cyan]{_display_cmd('analyze')}[/] [bright_black](optional)[/bright_black] - Cross-artifact consistency & alignment report (after [cyan]{_display_cmd('tasks')}[/], before [cyan]{_display_cmd('implement')}[/])",
-        f"○ [cyan]{_display_cmd('checklist')}[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]{_display_cmd('plan')}[/])"
+        f"○ [cyan]{_display_cmd('checklist')}[/] [bright_black](optional)[/bright_black] - Generate quality checklists to validate requirements completeness, clarity, and consistency (after [cyan]{_display_cmd('plan')}[/])",
+        "○ [cyan]/speckit.arch.generate[/] [bright_black](extension)[/bright_black] - Install with [cyan]specify extension add arch[/cyan] to shape 4+1 architecture views",
     ]
     enhancements_title = "Enhancement Skills" if native_skill_mode else "Enhancement Commands"
     enhancements_panel = Panel("\n".join(enhancement_lines), title=enhancements_title, border_style="cyan", padding=(1,2))

@@ -1,8 +1,8 @@
 ---
 description: Execute the 4+1 architecture workflow and generate architecture view artifacts.
 scripts:
-  sh: scripts/bash/setup-arch.sh --json
-  ps: scripts/powershell/setup-arch.ps1 -Json
+  sh: .specify/extensions/arch/scripts/bash/setup-arch.sh --json
+  ps: .specify/extensions/arch/scripts/powershell/setup-arch.ps1 -Json
 ---
 
 ## User Input
@@ -59,7 +59,7 @@ Markdown tables are the default artifact structure. Optional diagrams are render
 2. **Load context**:
    - Read all six architecture artifacts created by setup.
    - Read `.specify/memory/uc.md` if present as optional scenario background.
-   - Read the six architecture templates under `.specify/templates/`.
+   - Read the six architecture templates under `.specify/extensions/arch/templates/`.
 
 3. **Execute architecture workflow**:
    - Phase -1: Establish architecture framing before writing any view.
