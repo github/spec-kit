@@ -1,5 +1,6 @@
 """System utilities: subprocess, tool detection, file operations."""
 from __future__ import annotations
+
 import json
 import json5
 import os
@@ -8,14 +9,14 @@ import stat
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from ._console import console
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".bin" / "claude"
 
 
-def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> Optional[str]:
+def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> str | None:
     """Run a shell command and optionally capture output."""
     try:
         if capture:
@@ -39,7 +40,7 @@ def check_tool(tool: str, tracker=None) -> bool:
 
     Args:
         tool: Name of the tool to check
-        tracker: Optional StepTracker to update with results
+        tracker: StepTracker | None to update with results
 
     Returns:
         True if tool is found, False otherwise
@@ -73,7 +74,7 @@ def check_tool(tool: str, tracker=None) -> bool:
     return found
 
 
-def is_git_repo(path: Path = None) -> bool:
+def is_git_repo(path: Path | None = None) -> bool:
     """Check if the specified path is inside a git repository."""
     if path is None:
         path = Path.cwd()
@@ -93,7 +94,7 @@ def is_git_repo(path: Path = None) -> bool:
         return False
 
 
-def init_git_repo(project_path: Path, quiet: bool = False) -> tuple[bool, Optional[str]]:
+def init_git_repo(project_path: Path, quiet: bool = False) -> tuple[bool, str | None]:
     """Initialize a git repository in the specified path."""
     try:
         original_cwd = Path.cwd()
@@ -131,7 +132,7 @@ def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker
 
     def atomic_write_json(target_file: Path, payload: dict[str, Any]) -> None:
         """Atomically write JSON while preserving existing mode bits when possible."""
-        temp_path: Optional[Path] = None
+        temp_path: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
                 mode='w',
@@ -188,7 +189,7 @@ def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker
             shutil.copy2(sub_item, dest_file)
 
 
-def merge_json_files(existing_path: Path, new_content: Any, verbose: bool = False) -> Optional[dict[str, Any]]:
+def merge_json_files(existing_path: Path, new_content: Any, verbose: bool = False) -> dict[str, Any] | None:
     """Merge new JSON content into existing JSON file.
 
     Performs a polite deep merge where:

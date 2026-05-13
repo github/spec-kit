@@ -27,10 +27,8 @@ Or install globally:
 """
 
 import os
-import subprocess
 import sys
 import zipfile
-import tempfile
 import shutil
 import json
 import shlex
@@ -84,18 +82,18 @@ from ._assets import (
     _locate_bundled_workflow,
     _locate_core_pack,
     _repo_root,
-    get_speckit_version,
+    get_speckit_version as get_speckit_version,
 )
 from ._utils import (
-    CLAUDE_LOCAL_PATH,
-    CLAUDE_NPM_LOCAL_PATH,
+    CLAUDE_LOCAL_PATH as CLAUDE_LOCAL_PATH,
+    CLAUDE_NPM_LOCAL_PATH as CLAUDE_NPM_LOCAL_PATH,
     _display_project_path,
-    check_tool,
-    handle_vscode_settings,
-    init_git_repo,
-    is_git_repo,
-    merge_json_files,
-    run_command,
+    check_tool as check_tool,
+    handle_vscode_settings as handle_vscode_settings,
+    init_git_repo as init_git_repo,
+    is_git_repo as is_git_repo,
+    merge_json_files as merge_json_files,
+    run_command as run_command,
 )
 
 GITHUB_API_LATEST = "https://api.github.com/repos/github/spec-kit/releases/latest"

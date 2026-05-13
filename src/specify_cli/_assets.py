@@ -1,4 +1,10 @@
+"""Bundle path resolution and version lookup for specify_cli.
+
+Stdlib-only; zero internal imports so it sits at the base of the dependency
+graph without risk of circular imports.
+"""
 from __future__ import annotations
+
 import importlib.metadata
 import re
 from pathlib import Path
