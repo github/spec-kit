@@ -462,6 +462,7 @@ class TestCommandStep:
         assert result.status == StepStatus.FAILED
         assert result.output["command"] == "speckit.specify"
         assert result.output["integration"] == "claude"
+        assert result.output["input"]["args"] == "login"
 
     def test_try_dispatch_resolves_rovodev_via_acli(self, tmp_path):
         """When acli is installed, rovodev dispatch succeeds via acli."""
