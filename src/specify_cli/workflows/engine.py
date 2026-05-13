@@ -749,11 +749,14 @@ class WorkflowEngine:
                 )
             elif "default" in input_def:
                 default_value = self._resolve_default(name, input_def["default"])
-                # If the integration default could not be resolved against
+                # When the ``integration`` default could not be resolved against
                 # project state and falls back to the literal ``"auto"``
-                # sentinel, exempt it from enum-membership coercion so a
-                # workflow that lists specific integrations in ``enum`` does
-                # not crash at runtime — declared type is still enforced.
+                # sentinel, strip ``enum`` from the input definition before
+                # coercion so a workflow that lists specific integrations in
+                # ``enum`` does not crash at runtime on the sentinel value.
+                # NOTE: only enum-membership is skipped; ``_coerce_input``
+                # still enforces the declared ``type`` (e.g. ``string``) via
+                # the filtered definition, so ill-typed defaults still fail.
                 coerce_input_def = input_def
                 if (
                     name == "integration"

@@ -7,17 +7,18 @@ workflow:
   description: "Runs specify → plan → tasks → implement with review gates"
 
 requires:
-  # 0.8.3 is the first release with engine-side resolution of the
+  # 0.8.5 is the first release with engine-side resolution of the
   # ``integration: "auto"`` default. Older versions would treat "auto"
   # as a literal integration key and fail at dispatch.
   speckit_version: ">=0.8.5"
   integrations:
     # The four commands below (specify, plan, tasks, implement) are core
     # spec-kit commands provided by every integration. The list here is an
-    # explicit non-exhaustive compatibility hint following the documented
-    # ``any: [...]`` schema; the workflow is intended to run against any
-    # integration the project was initialized with, including ones not
-    # listed below.
+    # advisory, non-exhaustive compatibility hint following the documented
+    # ``any: [...]`` schema -- it is NOT a closed set. The workflow runs
+    # against any integration the project was initialized with, including
+    # ones not listed below, as long as that integration provides the four
+    # core commands referenced in ``steps``.
     any:
       - "claude"
       - "copilot"
