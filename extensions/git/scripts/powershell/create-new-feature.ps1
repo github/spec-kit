@@ -9,7 +9,7 @@ param(
     [switch]$AllowExistingBranch,
     [switch]$DryRun,
     [string]$ShortName,
-    [string]$BranchPrefix = "",
+    [string]$Prefix = "",
     [Parameter()]
     [long]$Number = 0,
     [switch]$Timestamp,
@@ -20,14 +20,14 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if ($Help) {
-    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-BranchPrefix <prefix>] [-Number N] [-Timestamp] <feature description>"
+    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Prefix <prefix>] [-Number N] [-Timestamp] <feature description>"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Json               Output in JSON format"
     Write-Host "  -DryRun             Compute branch name without creating the branch"
     Write-Host "  -AllowExistingBranch  Switch to branch if it already exists instead of failing"
     Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the branch"
-    Write-Host "  -BranchPrefix <prefix>  Custom prefix for the branch name (e.g. 'feature/', 'bugfix/')"
+    Write-Host "  -Prefix <prefix>    Custom prefix for the branch name (e.g. 'feature', 'bugfix')"
     Write-Host "  -Number N           Specify branch number manually (overrides auto-detection)"
     Write-Host "  -Timestamp          Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
     Write-Host "  -Help               Show this help message"
@@ -46,8 +46,8 @@ if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
 $featureDesc = ($FeatureDescription -join ' ').Trim()
 
 # Auto-append '/' if branch prefix is non-empty and doesn't end with '/'
-if ($BranchPrefix -and -not $BranchPrefix.EndsWith('/')) {
-    $BranchPrefix = "$BranchPrefix/"
+if ($Prefix -and -not $Prefix.EndsWith('/')) {
+    $Prefix = "$Prefix/"
 }
 
 if ([string]::IsNullOrWhiteSpace($featureDesc)) {
@@ -300,7 +300,7 @@ if ($env:GIT_BRANCH_NAME) {
 
     if ($Timestamp) {
         $featureNum = Get-Date -Format 'yyyyMMdd-HHmmss'
-        $branchName = "$BranchPrefix$featureNum-$branchSuffix"
+        $branchName = "$Prefix$featureNum-$branchSuffix"
     } else {
         if ($Number -eq 0) {
             if ($DryRun -and $hasGit) {
@@ -315,20 +315,20 @@ if ($env:GIT_BRANCH_NAME) {
         }
 
         $featureNum = ('{0:000}' -f $Number)
-        $branchName = "$BranchPrefix$featureNum-$branchSuffix"
+        $branchName = "$Prefix$featureNum-$branchSuffix"
     }
 }
 
 $maxBranchLength = 244
 if ($branchName.Length -gt $maxBranchLength) {
-    $prefixLength = $BranchPrefix.Length + $featureNum.Length + 1
+    $prefixLength = $Prefix.Length + $featureNum.Length + 1
     $maxSuffixLength = $maxBranchLength - $prefixLength
 
     $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxSuffixLength))
     $truncatedSuffix = $truncatedSuffix -replace '-$', ''
 
     $originalBranchName = $branchName
-    $branchName = "$BranchPrefix$featureNum-$truncatedSuffix"
+    $branchName = "$Prefix$featureNum-$truncatedSuffix"
 
     Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
     Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"

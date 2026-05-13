@@ -67,13 +67,13 @@ auto_commit:
 
 ### Branch Prefix
 
-The `create-new-feature` scripts accept a `--branch-prefix` (Bash) / `-BranchPrefix` (PowerShell) option to prepend a custom prefix to branch names. Common prefixes:
+The `create-new-feature` scripts accept a `--prefix` (Bash) / `-Prefix` (PowerShell) option to prepend a custom prefix to branch names. Common prefixes:
 
 - `feature` — new features or enhancements
 - `bugfix` — bug fixes
 - `hotfix` — urgent production fixes
 
-The trailing `/` is optional — the script auto-appends it if missing. The final branch name format is `{prefix}/{number}-{short-name}` (e.g., `--branch-prefix "feature"` produces `feature/001-user-auth`).
+The trailing `/` is optional — the script auto-appends it if missing. The final branch name format is `{prefix}/{number}-{short-name}` (e.g., `--prefix "feature"` produces `feature/001-user-auth`).
 
 ## Installation
 

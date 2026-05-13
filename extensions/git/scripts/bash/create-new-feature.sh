@@ -60,21 +60,21 @@ while [ $i -le $# ]; do
         --timestamp)
             USE_TIMESTAMP=true
             ;;
-        --branch-prefix)
+        --prefix)
             if [ $((i + 1)) -gt $# ]; then
-                echo 'Error: --branch-prefix requires a value' >&2
+                echo 'Error: --prefix requires a value' >&2
                 exit 1
             fi
             i=$((i + 1))
             next_arg="${!i}"
             if [[ "$next_arg" == --* ]]; then
-                echo 'Error: --branch-prefix requires a value' >&2
+                echo 'Error: --prefix requires a value' >&2
                 exit 1
             fi
             BRANCH_PREFIX="$next_arg"
             ;;
         --help|-h)
-            echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] [--branch-prefix <prefix>] <feature_description>"
+            echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] [--prefix <prefix>] <feature_description>"
             echo ""
             echo "Options:"
             echo "  --json              Output in JSON format"
@@ -83,7 +83,7 @@ while [ $i -le $# ]; do
             echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
             echo "  --number N          Specify branch number manually (overrides auto-detection)"
             echo "  --timestamp         Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
-            echo "  --branch-prefix <prefix>  Custom prefix for the branch name (e.g. 'feature/', 'bugfix/')"
+            echo "  --prefix <prefix>   Custom prefix for the branch name (e.g. 'feature', 'bugfix')"
             echo "  --help, -h          Show this help message"
             echo ""
             echo "Environment variables:"

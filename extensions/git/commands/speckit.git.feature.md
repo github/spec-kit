@@ -41,9 +41,9 @@ Determine the branch prefix based on the nature of the work:
 - Use `feature` for new features or enhancements
 - Use `bugfix` for bug fixes
 - Use `hotfix` for urgent production fixes
-- Use no prefix (omit `--branch-prefix`) for the default flat naming
+- Use no prefix (omit `--prefix`) for the default flat naming
 
-Choose the most appropriate prefix based on the feature description and context. The trailing `/` is optional — the script auto-appends it if missing. The final branch name format is `{prefix}/{number}-{short-name}` (e.g., `--branch-prefix "feature"` produces `feature/001-user-auth`).
+Choose the most appropriate prefix based on the feature description and context. The trailing `/` is optional — the script auto-appends it if missing. The final branch name format is `{prefix}/{number}-{short-name}` (e.g., `--prefix "feature"` produces `feature/001-user-auth`).
 
 ## Execution
 
@@ -54,12 +54,12 @@ Generate a concise short name (2-4 words) for the branch:
 
 Run the appropriate script based on your platform:
 
-- **Bash**: `.specify/extensions/git/scripts/bash/create-new-feature.sh --json --branch-prefix "<prefix>" --short-name "<short-name>" "<feature description>"`
-- **Bash (timestamp)**: `.specify/extensions/git/scripts/bash/create-new-feature.sh --json --branch-prefix "<prefix>" --timestamp --short-name "<short-name>" "<feature description>"`
-- **PowerShell**: `.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json -BranchPrefix "<prefix>" -ShortName "<short-name>" "<feature description>"`
-- **PowerShell (timestamp)**: `.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json -BranchPrefix "<prefix>" -Timestamp -ShortName "<short-name>" "<feature description>"`
+- **Bash**: `.specify/extensions/git/scripts/bash/create-new-feature.sh --json --prefix "<prefix>" --short-name "<short-name>" "<feature description>"`
+- **Bash (timestamp)**: `.specify/extensions/git/scripts/bash/create-new-feature.sh --json --prefix "<prefix>" --timestamp --short-name "<short-name>" "<feature description>"`
+- **PowerShell**: `.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json -Prefix "<prefix>" -ShortName "<short-name>" "<feature description>"`
+- **PowerShell (timestamp)**: `.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json -Prefix "<prefix>" -Timestamp -ShortName "<short-name>" "<feature description>"`
 
-If no prefix is needed, omit `--branch-prefix` / `-BranchPrefix` entirely.
+If no prefix is needed, omit `--prefix` / `-Prefix` entirely.
 
 **IMPORTANT**:
 - Do NOT pass `--number` — the script determines the correct next number automatically
