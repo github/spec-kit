@@ -72,6 +72,7 @@ def _register_builtins() -> None:
     from .qodercli import QodercliIntegration
     from .qwen import QwenIntegration
     from .roo import RooIntegration
+    from .rovodev import RovodevIntegration
     from .shai import ShaiIntegration
     from .tabnine import TabnineIntegration
     from .trae import TraeIntegration
@@ -104,6 +105,7 @@ def _register_builtins() -> None:
     _register(QodercliIntegration())
     _register(QwenIntegration())
     _register(RooIntegration())
+    _register(RovodevIntegration())
     _register(ShaiIntegration())
     _register(TabnineIntegration())
     _register(TraeIntegration())

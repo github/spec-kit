@@ -127,11 +127,14 @@ class CommandStep(StepBase):
             return None
 
         # Check if the integration supports CLI dispatch
-        if impl.build_exec_args("test") is None:
+        exec_args = impl.build_exec_args("test")
+        if exec_args is None:
             return None
 
-        # Check if the CLI tool is actually installed
-        if not shutil.which(impl.key):
+        # Check if the CLI tool is actually installed.
+        # Try the integration key first (covers most agents), then fall back
+        # to exec_args[0] for agents whose executable differs (e.g. rovodev → acli).
+        if not (shutil.which(impl.key) or shutil.which(exec_args[0])):
             return None
 
         project_root = Path(context.project_root) if context.project_root else None

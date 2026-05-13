@@ -118,7 +118,10 @@ class PromptStep(StepBase):
         if exec_args is None:
             return None
 
-        if not shutil.which(impl.key):
+        # Check if the CLI tool is actually installed.
+        # Try the integration key first (covers most agents), then fall back
+        # to exec_args[0] for agents whose executable differs (e.g. rovodev → acli).
+        if not (shutil.which(impl.key) or shutil.which(exec_args[0])):
             return None
 
         import subprocess

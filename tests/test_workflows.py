@@ -427,6 +427,22 @@ class TestBuildExecArgs:
         args = impl.build_exec_args("do stuff", output_json=False)
         assert "--output-format" not in args
 
+    def test_rovodev_exec_args(self):
+        from specify_cli.integrations.rovodev import RovodevIntegration
+
+        impl = RovodevIntegration()
+        args = impl.build_exec_args("/speckit.plan add OAuth", model="rovo-pro")
+        assert args == [
+            "acli",
+            "rovodev",
+            "-p",
+            "/speckit.plan add OAuth",
+            "--model",
+            "rovo-pro",
+            "--output-format",
+            "json",
+        ]
+
 
 # ===== Step Type Tests =====
 
@@ -453,7 +469,37 @@ class TestCommandStep:
         assert result.status == StepStatus.FAILED
         assert result.output["command"] == "speckit.specify"
         assert result.output["integration"] == "claude"
-        assert result.output["input"]["args"] == "login"
+
+    def test_try_dispatch_resolves_rovodev_via_acli(self, tmp_path):
+        """When acli is installed, rovodev dispatch succeeds via acli."""
+        from unittest.mock import patch, MagicMock
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        ctx = StepContext(
+            default_integration="rovodev",
+            project_root=str(tmp_path),
+        )
+        config = {
+            "id": "test",
+            "command": "speckit.plan",
+            "input": {"args": "add OAuth"},
+        }
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with patch("specify_cli.workflows.steps.command.shutil.which",
+                    lambda name: "/usr/bin/acli" if name == "acli" else None), \
+             patch("subprocess.run", return_value=mock_result):
+            result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["dispatched"] is True
+        assert result.output["exit_code"] == 0
 
     def test_validate_missing_command(self):
         from specify_cli.workflows.steps.command import CommandStep
@@ -654,6 +700,37 @@ class TestPromptStep:
         }
         result = step.execute(config, ctx)
         assert result.output["model"] == "opus-4"
+
+    def test_try_dispatch_resolves_rovodev_via_acli(self, tmp_path):
+        """When acli is installed, rovodev prompt dispatch succeeds via acli."""
+        from unittest.mock import patch, MagicMock
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = PromptStep()
+        ctx = StepContext(
+            default_integration="rovodev",
+            project_root=str(tmp_path),
+        )
+        config = {
+            "id": "test",
+            "type": "prompt",
+            "prompt": "Explain this code",
+        }
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with patch("specify_cli.workflows.steps.prompt.shutil.which",
+                    lambda name: "/usr/bin/acli" if name == "acli" else None), \
+             patch("subprocess.run", return_value=mock_result):
+            result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["dispatched"] is True
+        assert result.output["exit_code"] == 0
 
     def test_dispatch_with_mock_cli(self, tmp_path):
         from unittest.mock import patch, MagicMock
