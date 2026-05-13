@@ -4295,6 +4295,10 @@ def extension_update(
         failed_updates = []
         registrar = CommandRegistrar()
         hook_executor = HookExecutor(project_root)
+        from .agents import CommandRegistrar as _AgentReg  # used in backup and rollback paths
+
+        # UNSET sentinel: backup not yet captured (exception before backup step)
+        UNSET = object()
 
         for update in updates_available:
             extension_id = update["id"]
@@ -4308,8 +4312,9 @@ def extension_update(
             backup_config_dir = backup_base / "config"
 
             # Store backup state
-            backup_registry_entry = None
-            backup_hooks = None  # None means no hooks key in config; {} means hooks key existed
+            backup_registry_entry = None  # None means registry entry not yet captured
+            backup_installed = UNSET  # Original installed list from extensions.yml
+            backup_hooks = None  # None means backup step 4 not yet reached; {} or {...} means backup was captured
             backed_up_command_files = {}
 
             try:
@@ -4334,8 +4339,7 @@ def extension_update(
                         shutil.copy2(cfg_file, backup_config_dir / cfg_file.name)
 
                 # 3. Backup command files for all agents
-                from .agents import CommandRegistrar as _AgentReg
-                registered_commands = backup_registry_entry.get("registered_commands", {})
+                registered_commands = backup_registry_entry.get("registered_commands", {}) if isinstance(backup_registry_entry, dict) else {}
                 for agent_name, cmd_names in registered_commands.items():
                     if agent_name not in registrar.AGENT_CONFIGS:
                         continue
@@ -4360,14 +4364,20 @@ def extension_update(
                                 shutil.copy2(prompt_file, backup_prompt_path)
                                 backed_up_command_files[str(prompt_file)] = str(backup_prompt_path)
 
-                # 4. Backup hooks from extensions.yml
-                # Use backup_hooks=None to indicate config had no "hooks" key (don't create on restore)
-                # Use backup_hooks={} to indicate config had "hooks" key with no hooks for this extension
+                # 4. Backup hooks and installed list from extensions.yml
+                # get_project_config() always normalizes installed->[] and hooks->{},
+                # so no sentinel is needed to distinguish key-absent from key-empty.
                 config = hook_executor.get_project_config()
-                if "hooks" in config:
-                    backup_hooks = {}  # Config has hooks key - preserve this fact
-                    for hook_name, hook_list in config["hooks"].items():
-                        ext_hooks = [h for h in hook_list if h.get("extension") == extension_id]
+                if isinstance(config, dict):
+                    import copy
+                    # Deep-copy so nested mapping entries (e.g. version-pin dicts)
+                    # are not affected by in-place mutations during the update.
+                    backup_installed = copy.deepcopy(config.get("installed", []))
+                    backup_hooks = {}
+                    for hook_name, hook_list in config.get("hooks", {}).items():
+                        if not isinstance(hook_list, list):
+                            continue
+                        ext_hooks = [h for h in hook_list if isinstance(h, dict) and h.get("extension") == extension_id]
                         if ext_hooks:
                             backup_hooks[hook_name] = ext_hooks
 
@@ -4520,35 +4530,51 @@ def extension_update(
                             original_file.parent.mkdir(parents=True, exist_ok=True)
                             shutil.copy2(backup_file, original_file)
 
-                    # Restore hooks in extensions.yml
-                    # - backup_hooks=None means original config had no "hooks" key
-                    # - backup_hooks={} or {...} means config had hooks key
-                    config = hook_executor.get_project_config()
-                    if "hooks" in config:
+                    # Restore metadata in extensions.yml (hooks and installed list).
+                    # Only run if backup step 4 was reached (backup_hooks is not None);
+                    # otherwise we have no safe baseline to restore from and could corrupt
+                    # the config by removing pre-existing hooks.
+                    if backup_hooks is not None:
+                        config = hook_executor.get_project_config()
+                        if not isinstance(config, dict):
+                            config = {}
+
                         modified = False
 
-                        if backup_hooks is None:
-                            # Original config had no "hooks" key; remove it entirely
-                            del config["hooks"]
+                        # 1. Restore hooks in extensions.yml
+                        if not isinstance(config.get("hooks"), dict):
+                            config["hooks"] = {}
                             modified = True
-                        else:
-                            # Remove any hooks for this extension added by failed install
-                            for hook_name, hooks_list in config["hooks"].items():
-                                original_len = len(hooks_list)
-                                config["hooks"][hook_name] = [
-                                    h for h in hooks_list
-                                    if h.get("extension") != extension_id
-                                ]
-                                if len(config["hooks"][hook_name]) != original_len:
-                                    modified = True
 
-                            # Add back the backed up hooks if any
-                            if backup_hooks:
-                                for hook_name, hooks in backup_hooks.items():
-                                    if hook_name not in config["hooks"]:
-                                        config["hooks"][hook_name] = []
-                                    config["hooks"][hook_name].extend(hooks)
-                                    modified = True
+                        # Remove any hooks for this extension added by the failed install
+                        for hook_name in list(config["hooks"].keys()):
+                            hooks_list = config["hooks"][hook_name]
+                            if not isinstance(hooks_list, list):
+                                config["hooks"][hook_name] = []
+                                modified = True
+                                continue
+
+                            original_len = len(hooks_list)
+                            config["hooks"][hook_name] = [
+                                h for h in hooks_list
+                                if isinstance(h, dict) and h.get("extension") != extension_id
+                            ]
+                            if len(config["hooks"][hook_name]) != original_len:
+                                modified = True
+
+                        # Add back the backed-up hooks
+                        if backup_hooks:
+                            for hook_name, hooks in backup_hooks.items():
+                                if not isinstance(config["hooks"].get(hook_name), list):
+                                    config["hooks"][hook_name] = []
+                                config["hooks"][hook_name].extend(hooks)
+                                modified = True
+
+                        # 2. Restore installed list in extensions.yml
+                        if backup_installed is not UNSET:
+                            if config.get("installed") != backup_installed:
+                                config["installed"] = backup_installed
+                                modified = True
 
                         if modified:
                             hook_executor.save_project_config(config)
