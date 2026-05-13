@@ -24,25 +24,18 @@ class TestRovodevIntegration:
         assert impl.registrar_config["extension"] == ".prompt.md"
         assert impl.context_file == "AGENTS.md"
 
-    def test_command_filename(self):
+    def test_inherited_command_filename_for_base_compatibility(self):
         impl = get_integration(self.KEY)
-        # SkillsIntegration uses speckit-<name>/SKILL.md layout
-        # command_filename is inherited from IntegrationBase
+        # RovoDev scaffolding does not use command_filename directly (skills +
+        # prompt wrappers), but this guards inherited IntegrationBase behavior.
         assert impl.command_filename("plan") == "speckit.plan.md"
 
     def test_build_exec_args(self):
         impl = get_integration(self.KEY)
-        args = impl.build_exec_args("/speckit.plan add OAuth", model="rovo-pro")
-        assert args == [
-            "acli",
-            "rovodev",
-            "-p",
-            "/speckit.plan add OAuth",
-            "--model",
-            "rovo-pro",
-            "--output-format",
-            "json",
-        ]
+        args = impl.build_exec_args("/speckit.plan add OAuth")
+        assert args[0:3] == ["acli", "rovodev", "run"]
+        assert args[3] == "/speckit.plan add OAuth"
+        assert "--output-schema" in args
 
     def test_setup_creates_skills_prompts_and_manifest(self, tmp_path):
         impl = get_integration(self.KEY)

@@ -50,11 +50,23 @@ class RovodevIntegration(SkillsIntegration):
         model: str | None = None,
         output_json: bool = True,
     ) -> list[str] | None:
-        args = ["acli", "rovodev", "-p", prompt]
-        if model:
-            args.extend(["--model", model])
+        """Build non-interactive ACLI args for RovoDev.
+
+        RovoDev supports a positional ``message`` for non-interactive runs.
+        ``output_json`` maps to ``--output-schema`` so dispatch callers can
+        request structured output.
+
+        The integration currently does not apply ``model`` overrides because
+        the expected config shape for ``--config-override`` is not yet wired
+        in this adapter.
+        """
+        _ = model
+        args = ["acli", "rovodev", "run", prompt]
         if output_json:
-            args.extend(["--output-format", "json"])
+            args.extend([
+                "--output-schema",
+                '{"type": "object", "properties": {"result": {"type": "string"}}}',
+            ])
         return args
 
 
@@ -66,11 +78,8 @@ class RovodevIntegration(SkillsIntegration):
 
     @staticmethod
     def _skill_name_to_dot_name(skill_name: str) -> str:
-        """Convert skill names like ``speckit-git-commit`` to ``speckit.git.commit``."""
-        if skill_name.startswith("speckit-"):
-            stem = skill_name[len("speckit-"):]
-            return "speckit." + stem.replace("-", ".")
-        return skill_name
+        """Convert ``speckit-git-commit`` to ``speckit.git.commit``."""
+        return skill_name.replace("-", ".")
 
     def _generate_prompt_files(
         self,
@@ -79,6 +88,9 @@ class RovodevIntegration(SkillsIntegration):
         skill_paths: list[Path],
     ) -> tuple[list[Path], list[dict[str, str]]]:
         """Create thin prompt wrappers for each SKILL.md.
+
+        Derives the skill name from the parent directory
+        (e.g. ``.rovodev/skills/speckit-plan/SKILL.md`` → ``speckit-plan``).
 
         Returns (created_files, prompt_entries) where prompt_entries are
         dicts suitable for inclusion in ``prompts.yml``.
@@ -93,30 +105,13 @@ class RovodevIntegration(SkillsIntegration):
             if skill_path.name != "SKILL.md":
                 continue
 
-            content = skill_path.read_text(encoding="utf-8")
-            if not content.startswith("---"):
-                continue
-            parts = content.split("---", 2)
-            if len(parts) < 3:
-                continue
-            try:
-                fm = yaml.safe_load(parts[1])
-                if not isinstance(fm, dict):
-                    continue
-            except yaml.YAMLError:
-                continue
-
-            skill_name = fm.get("name", "")
-            description = fm.get("description", "")
+            # Skill name is the parent directory name (e.g. speckit-plan)
+            skill_name = skill_path.parent.name
             if not skill_name:
                 continue
 
-            # Convert skill name (speckit-plan) to dot format (speckit.plan)
-            # for prompt wrappers and prompts.yml.
             dot_name = self._skill_name_to_dot_name(skill_name)
-
             prompt_filename = f"{dot_name}.prompt.md"
-            # Wrapper must call the concrete skill name (hyphenated), not dotted form.
             prompt_content = self._render_prompt_wrapper(skill_name)
             prompt_file = self.write_file_and_record(
                 prompt_content,
@@ -128,14 +123,14 @@ class RovodevIntegration(SkillsIntegration):
 
             prompt_entries.append({
                 "name": dot_name,
-                "description": description,
+                "description": f"Invoke {skill_name} skill",
                 "content_file": f"prompts/{prompt_filename}",
             })
 
         return created, prompt_entries
 
     @staticmethod
-    def _read_prompts_yml(path: Path) -> list[dict[str, str]]:
+    def _read_prompts_yml(path: Path) -> list[dict[str, Any]]:
         """Read prompt entries from an existing ``prompts.yml``.
 
         Returns an empty list if the file is missing, malformed, or
@@ -156,9 +151,9 @@ class RovodevIntegration(SkillsIntegration):
 
     @staticmethod
     def _merge_prompt_entries(
-        existing: list[dict[str, str]],
-        generated: list[dict[str, str]],
-    ) -> list[dict[str, str]]:
+        existing: list[dict[str, Any]],
+        generated: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Merge *generated* entries into *existing*, preserving user additions.
 
         - Existing entries whose ``name`` matches a generated entry are

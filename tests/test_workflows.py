@@ -431,17 +431,10 @@ class TestBuildExecArgs:
         from specify_cli.integrations.rovodev import RovodevIntegration
 
         impl = RovodevIntegration()
-        args = impl.build_exec_args("/speckit.plan add OAuth", model="rovo-pro")
-        assert args == [
-            "acli",
-            "rovodev",
-            "-p",
-            "/speckit.plan add OAuth",
-            "--model",
-            "rovo-pro",
-            "--output-format",
-            "json",
-        ]
+        args = impl.build_exec_args("/speckit.plan add OAuth")
+        assert args[0:3] == ["acli", "rovodev", "run"]
+        assert args[3] == "/speckit.plan add OAuth"
+        assert "--output-schema" in args
 
 
 # ===== Step Type Tests =====

@@ -169,7 +169,7 @@
       "id": "rovodev",
       "name": "RovoDev ACLI",
       "version": "1.0.0",
-      "description": "Atlassian RovoDev integration with prompt wrappers, subagents, and acli-based dispatch",
+      "description": "Atlassian RovoDev integration",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "atlassian"]
