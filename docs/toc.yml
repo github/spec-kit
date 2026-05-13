@@ -30,6 +30,12 @@
     - name: Workflows
       href: reference/workflows.md
 
+# Concepts
+- name: Concepts
+  items:
+    - name: What is SDD?
+      href: concepts/sdd.md
+
 # Development workflows
 - name: Development
   items:
