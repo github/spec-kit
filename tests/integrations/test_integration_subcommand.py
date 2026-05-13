@@ -163,7 +163,30 @@ class TestIntegrationInstall:
         assert "already installed" in result.output
         normalized = " ".join(result.output.split())
         assert "specify integration upgrade copilot" in normalized
-        assert "specify integration uninstall copilot" in normalized
+        assert "already the default integration" in normalized
+        assert "No files were changed" in normalized
+        assert "specify integration uninstall copilot" not in normalized
+
+    def test_install_already_installed_non_default_guides_use(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            install = runner.invoke(app, [
+                "integration", "install", "codex",
+                "--script", "sh",
+            ], catch_exceptions=False)
+            assert install.exit_code == 0, install.output
+
+            result = runner.invoke(app, ["integration", "install", "codex"])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        normalized = " ".join(result.output.split())
+        assert "already installed" in normalized
+        assert "specify integration use codex" in normalized
+        assert "specify integration upgrade codex" in normalized
+        assert "specify integration uninstall codex" not in normalized
 
     def test_install_different_when_one_exists(self, tmp_path):
         project = _init_project(tmp_path, "copilot")
@@ -176,7 +199,11 @@ class TestIntegrationInstall:
         assert result.exit_code != 0
         assert "Installed integrations: copilot" in result.output
         assert "Default integration: copilot" in result.output
-        assert "--force" in result.output
+        normalized = " ".join(result.output.split())
+        assert "To replace the default integration" in normalized
+        assert "specify integration switch claude" in normalized
+        assert "To install 'claude' alongside" in normalized
+        assert "retry the same install command with --force" in normalized
 
     def test_install_multi_safe_integration(self, tmp_path):
         project = _init_project(tmp_path, "claude")
@@ -261,7 +288,11 @@ class TestIntegrationInstall:
         assert result.exit_code != 0
         assert "Installed integrations: copilot" in result.output
         assert "multi-install safe" in result.output
-        assert "--force" in result.output
+        normalized = " ".join(result.output.split())
+        assert "To replace the default integration" in normalized
+        assert "specify integration switch claude" in normalized
+        assert "To install 'claude' alongside" in normalized
+        assert "retry the same install command with --force" in normalized
 
     def test_install_multi_unsafe_allowed_with_force(self, tmp_path):
         project = _init_project(tmp_path, "copilot")
