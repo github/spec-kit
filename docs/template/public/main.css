@@ -1,0 +1,264 @@
+/* Spec Kit landing page — GitHub Primer colors */
+
+:root {
+  /* GitHub Primer palette */
+  --gh-blue: #0969da;
+  --gh-green: #1a7f37;
+  --gh-purple: #8250df;
+  --gh-coral: #cf222e;
+  --gh-orange: #bf8700;
+  --gh-blue-subtle: #ddf4ff;
+  --gh-green-subtle: #dafbe1;
+  --gh-purple-subtle: #fbefff;
+  --gh-coral-subtle: #ffebe9;
+}
+
+[data-bs-theme="dark"] {
+  --gh-blue: #58a6ff;
+  --gh-green: #3fb950;
+  --gh-purple: #bc8cff;
+  --gh-coral: #f85149;
+  --gh-orange: #d29922;
+  --gh-blue-subtle: #0d1d30;
+  --gh-green-subtle: #0d1d14;
+  --gh-purple-subtle: #1c0d2e;
+  --gh-coral-subtle: #2d0f0d;
+}
+
+/* Override Bootstrap primary with GitHub blue */
+body[data-layout="landing"] {
+  --bs-primary: var(--gh-blue);
+  --bs-primary-rgb: 9, 105, 218;
+  --bs-link-color: var(--gh-blue);
+  --bs-link-hover-color: var(--gh-blue);
+}
+
+[data-bs-theme="dark"] body[data-layout="landing"],
+body[data-layout="landing"][data-bs-theme="dark"] {
+  --bs-primary-rgb: 88, 166, 255;
+}
+
+/* Hero section */
+.landing-hero {
+  text-align: center;
+  padding: 3rem 0 1.5rem;
+}
+
+.landing-hero h1 {
+  font-size: 2.6rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(135deg, var(--gh-blue), var(--gh-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.landing-hero p {
+  font-size: 1.15rem;
+  max-width: 640px;
+  margin: 0 auto 1.5rem;
+  opacity: 0.85;
+}
+
+.landing-hero .btn-primary {
+  background-color: var(--gh-blue);
+  border-color: var(--gh-blue);
+  color: #fff;
+}
+
+.landing-hero .btn-primary:hover {
+  background-color: #0860ca;
+  border-color: #0860ca;
+}
+
+.landing-hero .btn-outline-primary {
+  color: var(--gh-blue);
+  border-color: var(--gh-blue);
+}
+
+.landing-hero .btn-outline-primary:hover {
+  background-color: var(--gh-blue);
+  border-color: var(--gh-blue);
+  color: #fff;
+}
+
+/* Pillar cards grid */
+.pillar-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+
+@media (max-width: 768px) {
+  .pillar-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pillar-card {
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  background: var(--bs-body-bg);
+  transition: box-shadow 0.2s ease-in-out, border-color 0.2s ease-in-out;
+  border-top: 3px solid transparent;
+}
+
+/* Each pillar gets a distinct GitHub color accent */
+.pillar-card:nth-child(1) { border-top-color: var(--gh-green); }
+.pillar-card:nth-child(2) { border-top-color: var(--gh-blue); }
+.pillar-card:nth-child(3) { border-top-color: var(--gh-purple); }
+.pillar-card:nth-child(4) { border-top-color: var(--gh-coral); }
+
+.pillar-card:nth-child(1):hover { box-shadow: 0 4px 16px rgba(26, 127, 55, 0.12); }
+.pillar-card:nth-child(2):hover { box-shadow: 0 4px 16px rgba(9, 105, 218, 0.12); }
+.pillar-card:nth-child(3):hover { box-shadow: 0 4px 16px rgba(130, 80, 223, 0.12); }
+.pillar-card:nth-child(4):hover { box-shadow: 0 4px 16px rgba(207, 34, 46, 0.12); }
+
+[data-bs-theme="dark"] .pillar-card:nth-child(1):hover { box-shadow: 0 4px 16px rgba(63, 185, 80, 0.15); }
+[data-bs-theme="dark"] .pillar-card:nth-child(2):hover { box-shadow: 0 4px 16px rgba(88, 166, 255, 0.15); }
+[data-bs-theme="dark"] .pillar-card:nth-child(3):hover { box-shadow: 0 4px 16px rgba(188, 140, 255, 0.15); }
+[data-bs-theme="dark"] .pillar-card:nth-child(4):hover { box-shadow: 0 4px 16px rgba(248, 81, 73, 0.15); }
+
+.pillar-card h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+/* Pillar headings pick up their card's accent color */
+.pillar-card:nth-child(1) h3 { color: var(--gh-green); }
+.pillar-card:nth-child(2) h3 { color: var(--gh-blue); }
+.pillar-card:nth-child(3) h3 { color: var(--gh-purple); }
+.pillar-card:nth-child(4) h3 { color: var(--gh-coral); }
+
+.pillar-card .pillar-stat {
+  font-weight: 600;
+  color: var(--gh-blue);
+}
+
+.pillar-card:nth-child(3) .pillar-stat {
+  color: var(--gh-purple);
+}
+
+.pillar-card p:last-child {
+  margin-bottom: 0;
+}
+
+.pillar-card ul {
+  padding-left: 1.2rem;
+  margin-bottom: 0.5rem;
+}
+
+.pillar-card .pillar-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.pillar-card:nth-child(1) .pillar-link { color: var(--gh-blue); }
+.pillar-card:nth-child(2) .pillar-link { color: var(--gh-green); }
+.pillar-card:nth-child(3) .pillar-link { color: var(--gh-purple); }
+.pillar-card:nth-child(4) .pillar-link { color: var(--gh-coral); }
+
+/* Community stats section */
+.community-section {
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 1.5rem auto;
+  max-width: 700px;
+}
+
+@media (max-width: 576px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.stat-item {
+  padding: 1rem;
+}
+
+.stat-item .stat-number {
+  display: block;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--gh-blue);
+  line-height: 1.2;
+}
+
+.stat-item .stat-label {
+  display: block;
+  font-size: 0.85rem;
+  opacity: 0.75;
+  margin-top: 0.25rem;
+}
+
+/* Nav cards */
+.nav-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+@media (max-width: 576px) {
+  .nav-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.nav-card {
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  text-decoration: none;
+  color: inherit;
+  transition: box-shadow 0.2s ease-in-out, border-color 0.2s ease-in-out;
+  display: block;
+  border-left: 3px solid var(--gh-blue);
+}
+
+.nav-card:hover {
+  border-color: var(--gh-blue);
+  border-left-color: var(--gh-blue);
+  box-shadow: 0 2px 8px rgba(9, 105, 218, 0.1);
+  text-decoration: none;
+  color: inherit;
+}
+
+[data-bs-theme="dark"] .nav-card:hover {
+  box-shadow: 0 2px 8px rgba(88, 166, 255, 0.12);
+}
+
+.nav-card strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--gh-blue);
+}
+
+.nav-card span {
+  font-size: 0.9rem;
+  opacity: 0.75;
+}
+
+/* Footer CTA */
+.footer-cta {
+  text-align: center;
+  padding: 2rem 0 1rem;
+}
+
+.footer-cta code {
+  font-size: 1.05rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+}

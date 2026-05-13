@@ -23,7 +23,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Junie](https://junie.jetbrains.com/)                                                | `junie`          |                                                                                                                                           |
 | [Kilo Code](https://github.com/Kilo-Org/kilocode)                                    | `kilocode`       |                                                                                                                                           |
 | [Kimi Code](https://code.kimi.com/)                                                  | `kimi`           | Skills-based integration; supports `--migrate-legacy` for dotted→hyphenated directory migration                                            |
-| [Kiro CLI](https://kiro.dev/docs/cli/)                                               | `kiro-cli`       | Alias: `--integration kiro`                                                                                                               |
+| [Kiro CLI](https://kiro.dev/docs/cli/)                                               | `kiro-cli`       | Kiro CLI does not substitute `$ARGUMENTS` in file-based prompts, so Spec Kit ships a prose fallback at render time (see [Manage prompts](https://kiro.dev/docs/cli/chat/manage-prompts/) and issue [#1926](https://github.com/github/spec-kit/issues/1926)). Alias: `--integration kiro` |
 | [Lingma](https://lingma.aliyun.com/)                                                 | `lingma`         | Skills-based integration; skills are installed automatically                                                                               |
 | [Mistral Vibe](https://github.com/mistralai/mistral-vibe)                            | `vibe`           |                                                                                                                                           |
 | [opencode](https://opencode.ai/)                                                     | `opencode`       |                                                                                                                                           |
@@ -64,6 +64,8 @@ Installs the specified integration into the current project. If another integrat
 Installing an additional integration does not change the default integration. Use `specify integration use <key>` to change the default.
 
 > **Note:** All integration management commands require a project already initialized with `specify init`. To start a new project with a specific agent, use `specify init <project> --integration <key>` instead.
+
+**Version note:** Controlled multi-install support was introduced in Spec Kit 0.8.5. If `specify integration install <key>` says another integration is already installed and only suggests `switch` or `uninstall`, check your local CLI with `specify version` and upgrade it. Running a one-shot command such as `uvx --from git+https://github.com/github/spec-kit.git specify ...` uses a temporary copy for that command only; it does not update the persistent `specify` executable on your `PATH`.
 
 ## Uninstall an Integration
 

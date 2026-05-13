@@ -27,14 +27,10 @@ Or install globally:
 """
 
 import os
-import subprocess
 import sys
 import zipfile
-import tempfile
 import shutil
 import json
-import json5
-import stat
 import shlex
 import urllib.error
 import urllib.request
@@ -45,15 +41,10 @@ from packaging.version import InvalidVersion, Version
 from typing import Any, Optional
 
 import typer
-from rich.console import Console
 from rich.panel import Panel
-from rich.text import Text
 from rich.live import Live
 from rich.align import Align
 from rich.table import Table
-from rich.tree import Tree
-from typer.core import TyperGroup
-
 from ._download_security import read_response_limited
 from .integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
@@ -76,8 +67,35 @@ from .shared_infra import (
     refresh_shared_templates as _refresh_shared_templates_impl,
 )
 
-# For cross-platform keyboard input
-import readchar
+from ._console import (
+    BANNER as BANNER,
+    TAGLINE as TAGLINE,
+    BannerGroup,
+    StepTracker,
+    console,
+    get_key as get_key,
+    select_with_arrows,
+    show_banner,
+)
+from ._assets import (
+    _locate_bundled_extension,
+    _locate_bundled_preset,
+    _locate_bundled_workflow,
+    _locate_core_pack,
+    _repo_root,
+    get_speckit_version as get_speckit_version,
+)
+from ._utils import (
+    CLAUDE_LOCAL_PATH as CLAUDE_LOCAL_PATH,
+    CLAUDE_NPM_LOCAL_PATH as CLAUDE_NPM_LOCAL_PATH,
+    _display_project_path,
+    check_tool as check_tool,
+    handle_vscode_settings as handle_vscode_settings,
+    init_git_repo as init_git_repo,
+    is_git_repo as is_git_repo,
+    merge_json_files as merge_json_files,
+    run_command as run_command,
+)
 
 GITHUB_API_LATEST = "https://api.github.com/repos/github/spec-kit/releases/latest"
 
@@ -159,210 +177,6 @@ def _stdin_is_interactive() -> bool:
 
 SCRIPT_TYPE_CHOICES = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
 
-CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
-CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".bin" / "claude"
-
-BANNER = """
-███████╗██████╗ ███████╗ ██████╗██╗███████╗██╗   ██╗
-██╔════╝██╔══██╗██╔════╝██╔════╝██║██╔════╝╚██╗ ██╔╝
-███████╗██████╔╝█████╗  ██║     ██║█████╗   ╚████╔╝
-╚════██║██╔═══╝ ██╔══╝  ██║     ██║██╔══╝    ╚██╔╝
-███████║██║     ███████╗╚██████╗██║██║        ██║
-╚══════╝╚═╝     ╚══════╝ ╚═════╝╚═╝╚═╝        ╚═╝
-"""
-
-TAGLINE = "GitHub Spec Kit - Spec-Driven Development Toolkit"
-class StepTracker:
-    """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
-    Supports live auto-refresh via an attached refresh callback.
-    """
-    def __init__(self, title: str):
-        self.title = title
-        self.steps = []  # list of dicts: {key, label, status, detail}
-        self.status_order = {"pending": 0, "running": 1, "done": 2, "error": 3, "skipped": 4}
-        self._refresh_cb = None  # callable to trigger UI refresh
-
-    def attach_refresh(self, cb):
-        self._refresh_cb = cb
-
-    def add(self, key: str, label: str):
-        if key not in [s["key"] for s in self.steps]:
-            self.steps.append({"key": key, "label": label, "status": "pending", "detail": ""})
-            self._maybe_refresh()
-
-    def start(self, key: str, detail: str = ""):
-        self._update(key, status="running", detail=detail)
-
-    def complete(self, key: str, detail: str = ""):
-        self._update(key, status="done", detail=detail)
-
-    def error(self, key: str, detail: str = ""):
-        self._update(key, status="error", detail=detail)
-
-    def skip(self, key: str, detail: str = ""):
-        self._update(key, status="skipped", detail=detail)
-
-    def _update(self, key: str, status: str, detail: str):
-        for s in self.steps:
-            if s["key"] == key:
-                s["status"] = status
-                if detail:
-                    s["detail"] = detail
-                self._maybe_refresh()
-                return
-
-        self.steps.append({"key": key, "label": key, "status": status, "detail": detail})
-        self._maybe_refresh()
-
-    def _maybe_refresh(self):
-        if self._refresh_cb:
-            try:
-                self._refresh_cb()
-            except Exception:
-                pass
-
-    def render(self):
-        tree = Tree(f"[cyan]{self.title}[/cyan]", guide_style="grey50")
-        for step in self.steps:
-            label = step["label"]
-            detail_text = step["detail"].strip() if step["detail"] else ""
-
-            status = step["status"]
-            if status == "done":
-                symbol = "[green]●[/green]"
-            elif status == "pending":
-                symbol = "[green dim]○[/green dim]"
-            elif status == "running":
-                symbol = "[cyan]○[/cyan]"
-            elif status == "error":
-                symbol = "[red]●[/red]"
-            elif status == "skipped":
-                symbol = "[yellow]○[/yellow]"
-            else:
-                symbol = " "
-
-            if status == "pending":
-                # Entire line light gray (pending)
-                if detail_text:
-                    line = f"{symbol} [bright_black]{label} ({detail_text})[/bright_black]"
-                else:
-                    line = f"{symbol} [bright_black]{label}[/bright_black]"
-            else:
-                # Label white, detail (if any) light gray in parentheses
-                if detail_text:
-                    line = f"{symbol} [white]{label}[/white] [bright_black]({detail_text})[/bright_black]"
-                else:
-                    line = f"{symbol} [white]{label}[/white]"
-
-            tree.add(line)
-        return tree
-
-def get_key():
-    """Get a single keypress in a cross-platform way using readchar."""
-    key = readchar.readkey()
-
-    if key == readchar.key.UP or key == readchar.key.CTRL_P:
-        return 'up'
-    if key == readchar.key.DOWN or key == readchar.key.CTRL_N:
-        return 'down'
-
-    if key == readchar.key.ENTER:
-        return 'enter'
-
-    if key == readchar.key.ESC:
-        return 'escape'
-
-    if key == readchar.key.CTRL_C:
-        raise KeyboardInterrupt
-
-    return key
-
-def select_with_arrows(options: dict, prompt_text: str = "Select an option", default_key: str = None) -> str:
-    """
-    Interactive selection using arrow keys with Rich Live display.
-
-    Args:
-        options: Dict with keys as option keys and values as descriptions
-        prompt_text: Text to show above the options
-        default_key: Default option key to start with
-
-    Returns:
-        Selected option key
-    """
-    option_keys = list(options.keys())
-    if default_key and default_key in option_keys:
-        selected_index = option_keys.index(default_key)
-    else:
-        selected_index = 0
-
-    selected_key = None
-
-    def create_selection_panel():
-        """Create the selection panel with current selection highlighted."""
-        table = Table.grid(padding=(0, 2))
-        table.add_column(style="cyan", justify="left", width=3)
-        table.add_column(style="white", justify="left")
-
-        for i, key in enumerate(option_keys):
-            if i == selected_index:
-                table.add_row("▶", f"[cyan]{key}[/cyan] [dim]({options[key]})[/dim]")
-            else:
-                table.add_row(" ", f"[cyan]{key}[/cyan] [dim]({options[key]})[/dim]")
-
-        table.add_row("", "")
-        table.add_row("", "[dim]Use ↑/↓ to navigate, Enter to select, Esc to cancel[/dim]")
-
-        return Panel(
-            table,
-            title=f"[bold]{prompt_text}[/bold]",
-            border_style="cyan",
-            padding=(1, 2)
-        )
-
-    console.print()
-
-    def run_selection_loop():
-        nonlocal selected_key, selected_index
-        with Live(create_selection_panel(), console=console, transient=True, auto_refresh=False) as live:
-            while True:
-                try:
-                    key = get_key()
-                    if key == 'up':
-                        selected_index = (selected_index - 1) % len(option_keys)
-                    elif key == 'down':
-                        selected_index = (selected_index + 1) % len(option_keys)
-                    elif key == 'enter':
-                        selected_key = option_keys[selected_index]
-                        break
-                    elif key == 'escape':
-                        console.print("\n[yellow]Selection cancelled[/yellow]")
-                        raise typer.Exit(1)
-
-                    live.update(create_selection_panel(), refresh=True)
-
-                except KeyboardInterrupt:
-                    console.print("\n[yellow]Selection cancelled[/yellow]")
-                    raise typer.Exit(1)
-
-    run_selection_loop()
-
-    if selected_key is None:
-        console.print("\n[red]Selection failed.[/red]")
-        raise typer.Exit(1)
-
-    return selected_key
-
-console = Console(highlight=False)
-
-class BannerGroup(TyperGroup):
-    """Custom group that shows banner before help."""
-
-    def format_help(self, ctx, formatter):
-        # Show banner before help
-        show_banner()
-        super().format_help(ctx, formatter)
-
-
 app = typer.Typer(
     name="specify",
     help="Setup tool for Specify spec-driven development projects",
@@ -370,20 +184,6 @@ app = typer.Typer(
     invoke_without_command=True,
     cls=BannerGroup,
 )
-
-def show_banner():
-    """Display the ASCII art banner."""
-    banner_lines = BANNER.strip().split('\n')
-    colors = ["bright_blue", "blue", "cyan", "bright_cyan", "white", "bright_white"]
-
-    styled_banner = Text()
-    for i, line in enumerate(banner_lines):
-        color = colors[i % len(colors)]
-        styled_banner.append(line + "\n", style=color)
-
-    console.print(Align.center(styled_banner))
-    console.print(Align.center(Text(TAGLINE, style="italic bright_yellow")))
-    console.print()
 
 def _version_callback(value: bool):
     if value:
@@ -400,356 +200,6 @@ def callback(
         show_banner()
         console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
         console.print()
-
-def run_command(cmd: list[str], check_return: bool = True, capture: bool = False) -> Optional[str]:
-    """Run a command without invoking a shell and optionally capture output."""
-    try:
-        if capture:
-            result = subprocess.run(
-                cmd,
-                check=check_return,
-                capture_output=True,
-                text=True,
-            )
-            return result.stdout.strip()
-        else:
-            subprocess.run(cmd, check=check_return)
-            return None
-    except subprocess.CalledProcessError as e:
-        if check_return:
-            console.print(f"[red]Error running command:[/red] {' '.join(cmd)}")
-            console.print(f"[red]Exit code:[/red] {e.returncode}")
-            if hasattr(e, 'stderr') and e.stderr:
-                console.print(f"[red]Error output:[/red] {e.stderr}")
-            raise
-        return None
-
-def check_tool(tool: str, tracker: StepTracker = None) -> bool:
-    """Check if a tool is installed. Optionally update tracker.
-
-    Args:
-        tool: Name of the tool to check
-        tracker: Optional StepTracker to update with results
-
-    Returns:
-        True if tool is found, False otherwise
-    """
-    # Special handling for Claude CLI local installs
-    # See: https://github.com/github/spec-kit/issues/123
-    # See: https://github.com/github/spec-kit/issues/550
-    # Claude Code can be installed in two local paths:
-    #   1. ~/.claude/local/claude          (after `claude migrate-installer`)
-    #   2. ~/.claude/local/node_modules/.bin/claude  (npm-local install, e.g. via nvm)
-    # Neither path may be on the system PATH, so we check them explicitly.
-    if tool == "claude":
-        if CLAUDE_LOCAL_PATH.is_file() or CLAUDE_NPM_LOCAL_PATH.is_file():
-            if tracker:
-                tracker.complete(tool, "available")
-            return True
-
-    if tool == "kiro-cli":
-        # Kiro currently supports both executable names. Prefer kiro-cli and
-        # accept kiro as a compatibility fallback.
-        found = shutil.which("kiro-cli") is not None or shutil.which("kiro") is not None
-    else:
-        found = shutil.which(tool) is not None
-
-    if tracker:
-        if found:
-            tracker.complete(tool, "available")
-        else:
-            tracker.error(tool, "not found")
-
-    return found
-
-
-def is_git_repo(path: Path = None) -> bool:
-    """Check if the specified path is inside a git repository."""
-    if path is None:
-        path = Path.cwd()
-
-    if not path.is_dir():
-        return False
-
-    try:
-        subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            check=True,
-            capture_output=True,
-            cwd=path,
-        )
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
-
-
-def init_git_repo(project_path: Path, quiet: bool = False) -> tuple[bool, Optional[str]]:
-    """Initialize a git repository in the specified path."""
-    try:
-        original_cwd = Path.cwd()
-        os.chdir(project_path)
-        if not quiet:
-            console.print("[cyan]Initializing git repository...[/cyan]")
-        subprocess.run(["git", "init"], check=True, capture_output=True, text=True)
-        subprocess.run(["git", "add", "."], check=True, capture_output=True, text=True)
-        subprocess.run(["git", "commit", "-m", "Initial commit from Specify template"], check=True, capture_output=True, text=True)
-        if not quiet:
-            console.print("[green]✓[/green] Git repository initialized")
-        return True, None
-    except subprocess.CalledProcessError as e:
-        error_msg = f"Command: {' '.join(e.cmd)}\nExit code: {e.returncode}"
-        if e.stderr:
-            error_msg += f"\nError: {e.stderr.strip()}"
-        elif e.stdout:
-            error_msg += f"\nOutput: {e.stdout.strip()}"
-        if not quiet:
-            console.print(f"[red]Error initializing git repository:[/red] {e}")
-        return False, error_msg
-    finally:
-        os.chdir(original_cwd)
-
-
-def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker=None) -> None:
-    """Handle merging or copying of .vscode/settings.json files.
-
-    Note: when merge produces changes, rewritten output is normalized JSON and
-    existing JSONC comments/trailing commas are not preserved.
-    """
-    def log(message, color="green"):
-        if verbose and not tracker:
-            console.print(f"[{color}]{message}[/] {rel_path}")
-
-    def atomic_write_json(target_file: Path, payload: dict[str, Any]) -> None:
-        """Atomically write JSON while preserving existing mode bits when possible."""
-        temp_path: Optional[Path] = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode='w',
-                encoding='utf-8',
-                dir=target_file.parent,
-                prefix=f"{target_file.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as f:
-                temp_path = Path(f.name)
-                json.dump(payload, f, indent=4)
-                f.write('\n')
-
-            if target_file.exists():
-                try:
-                    existing_stat = target_file.stat()
-                    os.chmod(temp_path, stat.S_IMODE(existing_stat.st_mode))
-                    if hasattr(os, "chown"):
-                        try:
-                            os.chown(temp_path, existing_stat.st_uid, existing_stat.st_gid)
-                        except PermissionError:
-                            # Best-effort owner/group preservation without requiring elevated privileges.
-                            pass
-                except OSError:
-                    # Best-effort metadata preservation; data safety is prioritized.
-                    pass
-
-            os.replace(temp_path, target_file)
-        except Exception:
-            if temp_path and temp_path.exists():
-                temp_path.unlink()
-            raise
-
-    try:
-        with open(sub_item, 'r', encoding='utf-8') as f:
-            # json5 natively supports comments and trailing commas (JSONC)
-            new_settings = json5.load(f)
-
-        if dest_file.exists():
-            merged = merge_json_files(dest_file, new_settings, verbose=verbose and not tracker)
-            if merged is not None:
-                atomic_write_json(dest_file, merged)
-                log("Merged:", "green")
-                log("Note: comments/trailing commas are normalized when rewritten", "yellow")
-            else:
-                log("Skipped merge (preserved existing settings)", "yellow")
-        else:
-            shutil.copy2(sub_item, dest_file)
-            log("Copied (no existing settings.json):", "blue")
-
-    except Exception as e:
-        log(f"Warning: Could not merge settings: {e}", "yellow")
-        if not dest_file.exists():
-            shutil.copy2(sub_item, dest_file)
-
-
-def merge_json_files(existing_path: Path, new_content: Any, verbose: bool = False) -> Optional[dict[str, Any]]:
-    """Merge new JSON content into existing JSON file.
-
-    Performs a polite deep merge where:
-    - New keys are added
-    - Existing keys are preserved (not overwritten) unless both values are dictionaries
-    - Nested dictionaries are merged recursively only when both sides are dictionaries
-    - Lists and other values are preserved from base if they exist
-
-    Args:
-        existing_path: Path to existing JSON file
-        new_content: New JSON content to merge in
-        verbose: Whether to print merge details
-
-    Returns:
-        Merged JSON content as dict, or None if the existing file should be left untouched.
-    """
-    # Load existing content first to have a safe fallback
-    existing_content = None
-    exists = existing_path.exists()
-
-    if exists:
-        try:
-            with open(existing_path, 'r', encoding='utf-8') as f:
-                # Handle comments (JSONC) natively with json5
-                # Note: json5 handles BOM automatically
-                existing_content = json5.load(f)
-        except FileNotFoundError:
-            # Handle race condition where file is deleted after exists() check
-            exists = False
-        except Exception as e:
-            if verbose:
-                console.print(f"[yellow]Warning: Could not read or parse existing JSON in {existing_path.name} ({e}).[/yellow]")
-            # Skip merge to preserve existing file if unparseable or inaccessible (e.g. PermissionError)
-            return None
-
-    # Validate template content
-    if not isinstance(new_content, dict):
-        if verbose:
-            console.print(f"[yellow]Warning: Template content for {existing_path.name} is not a dictionary. Preserving existing settings.[/yellow]")
-        return None
-
-    if not exists:
-        return new_content
-
-    # If existing content parsed but is not a dict, skip merge to avoid data loss
-    if not isinstance(existing_content, dict):
-        if verbose:
-            console.print(f"[yellow]Warning: Existing JSON in {existing_path.name} is not an object. Skipping merge to avoid data loss.[/yellow]")
-        return None
-
-    def deep_merge_polite(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
-        """Recursively merge update dict into base dict, preserving base values."""
-        result = base.copy()
-        for key, value in update.items():
-            if key not in result:
-                # Add new key
-                result[key] = value
-            elif isinstance(result[key], dict) and isinstance(value, dict):
-                # Recursively merge nested dictionaries
-                result[key] = deep_merge_polite(result[key], value)
-            else:
-                # Key already exists and values are not both dicts; preserve existing value.
-                # This ensures user settings aren't overwritten by template defaults.
-                pass
-        return result
-
-    merged = deep_merge_polite(existing_content, new_content)
-
-    # Detect if anything actually changed. If not, return None so the caller
-    # can skip rewriting the file (preserving user's comments/formatting).
-    if merged == existing_content:
-        return None
-
-    if verbose:
-        console.print(f"[cyan]Merged JSON file:[/cyan] {existing_path.name}")
-
-    return merged
-
-def _locate_core_pack() -> Path | None:
-    """Return the filesystem path to the bundled core_pack directory, or None.
-
-    Only present in wheel installs: hatchling's force-include copies
-    templates/, scripts/ etc. into specify_cli/core_pack/ at build time.
-
-    Source-checkout and editable installs do NOT have this directory.
-    Callers that need to work in both environments must check the repo-root
-    trees (templates/, scripts/) as a fallback when this returns None.
-    """
-    # Wheel install: core_pack is a sibling directory of this file
-    candidate = Path(__file__).parent / "core_pack"
-    if candidate.is_dir():
-        return candidate
-    return None
-
-
-def _repo_root() -> Path:
-    """Return the source checkout root used for editable installs."""
-    return Path(__file__).parent.parent.parent
-
-
-def _locate_bundled_extension(extension_id: str) -> Path | None:
-    """Return the path to a bundled extension, or None.
-
-    Checks the wheel's core_pack first, then falls back to the
-    source-checkout ``extensions/<id>/`` directory.
-    """
-    import re as _re
-    if not _re.match(r'^[a-z0-9-]+$', extension_id):
-        return None
-
-    core = _locate_core_pack()
-    if core is not None:
-        candidate = core / "extensions" / extension_id
-        if (candidate / "extension.yml").is_file():
-            return candidate
-
-    # Source-checkout / editable install: look relative to repo root
-    candidate = _repo_root() / "extensions" / extension_id
-    if (candidate / "extension.yml").is_file():
-        return candidate
-
-    return None
-
-
-def _locate_bundled_workflow(workflow_id: str) -> Path | None:
-    """Return the path to a bundled workflow directory, or None.
-
-    Checks the wheel's core_pack first, then falls back to the
-    source-checkout ``workflows/<id>/`` directory.
-    """
-    import re as _re
-    if not _re.match(r'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$', workflow_id):
-        return None
-
-    core = _locate_core_pack()
-    if core is not None:
-        candidate = core / "workflows" / workflow_id
-        if (candidate / "workflow.yml").is_file():
-            return candidate
-
-    # Source-checkout / editable install: look relative to repo root
-    candidate = _repo_root() / "workflows" / workflow_id
-    if (candidate / "workflow.yml").is_file():
-        return candidate
-
-    return None
-
-
-def _locate_bundled_preset(preset_id: str) -> Path | None:
-    """Return the path to a bundled preset, or None.
-
-    Checks the wheel's core_pack first, then falls back to the
-    source-checkout ``presets/<id>/`` directory.
-    """
-    import re as _re
-    if not _re.match(r'^[a-z0-9-]+$', preset_id):
-        return None
-
-    core = _locate_core_pack()
-    if core is not None:
-        candidate = core / "presets" / preset_id
-        if (candidate / "preset.yml").is_file():
-            return candidate
-
-    # Source-checkout / editable install: look relative to repo root
-    candidate = _repo_root() / "presets" / preset_id
-    if (candidate / "preset.yml").is_file():
-        return candidate
-
-    return None
-
 
 def _refresh_shared_templates(
     project_path: Path,
@@ -775,6 +225,8 @@ def _install_shared_infra(
     tracker: StepTracker | None = None,
     force: bool = False,
     invoke_separator: str = ".",
+    refresh_managed: bool = False,
+    refresh_hint: str | None = None,
 ) -> bool:
     """Install shared infrastructure files into *project_path*.
 
@@ -786,9 +238,23 @@ def _install_shared_infra(
     placeholders using *invoke_separator* (``"."`` for markdown agents,
     ``"-"`` for skills agents).
 
-    When *force* is ``True``, existing files are overwritten with the
-    latest bundled versions.  When ``False`` (default), only missing
-    files are added and existing ones are skipped.
+    Overwrite policy:
+
+    * ``force=True``  — overwrite every existing file (still skips symlinks
+      to avoid following links outside the project root).
+    * ``refresh_managed=True`` — overwrite only files whose on-disk hash
+      still matches the previously recorded manifest hash (i.e. unmodified
+      files installed by spec-kit). Files with diverging hashes are
+      treated as user customizations and preserved with a warning.
+    * Default — only add missing files; existing ones are skipped.
+
+    *refresh_hint* — caller-supplied rich-text fragment shown after the
+    "Preserved customized files" warning to tell the user which flag/command
+    they should re-run with to overwrite their customizations. Each caller
+    passes the flag that's actually valid in its CLI surface (e.g.
+    ``--refresh-shared-infra`` for ``integration switch``,
+    ``--force`` for ``init``/``integration upgrade``). When ``None``, no
+    remediation hint is printed for customizations.
 
     Returns ``True`` on success.
     """
@@ -801,6 +267,8 @@ def _install_shared_infra(
         console=console,
         force=force,
         invoke_separator=invoke_separator,
+        refresh_managed=refresh_managed,
+        refresh_hint=refresh_hint,
     )
 
 
@@ -810,6 +278,8 @@ def _install_shared_infra_or_exit(
     tracker: StepTracker | None = None,
     force: bool = False,
     invoke_separator: str = ".",
+    refresh_managed: bool = False,
+    refresh_hint: str | None = None,
 ) -> bool:
     try:
         return _install_shared_infra(
@@ -818,6 +288,8 @@ def _install_shared_infra_or_exit(
             tracker=tracker,
             force=force,
             invoke_separator=invoke_separator,
+            refresh_managed=refresh_managed,
+            refresh_hint=refresh_hint,
         )
     except (ValueError, OSError) as exc:
         console.print(f"[red]Error:[/red] Failed to install shared infrastructure: {exc}")
@@ -1903,27 +1375,6 @@ preset_catalog_app = typer.Typer(
 preset_app.add_typer(preset_catalog_app, name="catalog")
 
 
-def get_speckit_version() -> str:
-    """Get current spec-kit version."""
-    import importlib.metadata
-    try:
-        return importlib.metadata.version("specify-cli")
-    except Exception:
-        # Fallback: try reading from pyproject.toml
-        try:
-            import tomllib
-            pyproject_path = _repo_root() / "pyproject.toml"
-            if pyproject_path.exists():
-                with open(pyproject_path, "rb") as f:
-                    data = tomllib.load(f)
-                    return data.get("project", {}).get("version", "unknown")
-        except Exception:
-            # Intentionally ignore any errors while reading/parsing pyproject.toml.
-            # If this lookup fails for any reason, we fall back to returning "unknown" below.
-            pass
-    return "unknown"
-
-
 # ===== Integration Commands =====
 
 integration_app = typer.Typer(
@@ -2118,19 +1569,6 @@ def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:
     except _SharedTemplateRefreshError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
-
-
-def _display_project_path(project_root: Path, path: str | Path) -> str:
-    """Return a stable POSIX-style display path for paths under a project."""
-    path_obj = Path(path)
-    try:
-        rel_path = path_obj.relative_to(project_root) if path_obj.is_absolute() else path_obj
-    except ValueError:
-        try:
-            rel_path = path_obj.resolve().relative_to(project_root.resolve())
-        except (OSError, ValueError):
-            return path_obj.as_posix()
-    return rel_path.as_posix()
 
 
 def _require_specify_project() -> Path:
@@ -2595,7 +2033,8 @@ def integration_uninstall(
 def integration_switch(
     target: str = typer.Argument(help="Integration key to switch to"),
     script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
-    force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall"),
+    force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall of the previous integration"),
+    refresh_shared_infra: bool = typer.Option(False, "--refresh-shared-infra", help="Also overwrite shared infrastructure files even if you customized them (otherwise customizations are preserved)"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the target integration'),
 ):
     """Switch from the current integration to a different one."""
@@ -2766,13 +2205,26 @@ def integration_switch(
         target_integration, current, target, integration_options
     )
 
-    # Ensure shared infrastructure is present (safe to run unconditionally;
-    # _install_shared_infra merges missing files without overwriting).
+    # Refresh shared infrastructure to the current CLI version. Switching
+    # integrations is exactly when stale vendored shared scripts (e.g.
+    # update-agent-context.sh that pre-dates the target integration's
+    # supported-agent list) would silently break the new integration.
+    #
+    # Use refresh_managed=True so only files that match their previously
+    # recorded hash are overwritten — user customizations are detected via
+    # hash divergence and preserved with a warning. Pass
+    # --refresh-shared-infra to overwrite customizations as well. See #2293.
     _install_shared_infra_or_exit(
         project_root,
         selected_script,
+        force=refresh_shared_infra,
+        refresh_managed=True,
         invoke_separator=_invoke_separator_for_integration(
             target_integration, current, target, parsed_options
+        ),
+        refresh_hint=(
+            "To overwrite customizations, re-run with "
+            "[cyan]specify integration switch ... --refresh-shared-infra[/cyan]."
         ),
     )
     if os.name != "nt":
@@ -4866,6 +4318,10 @@ def extension_update(
         failed_updates = []
         registrar = CommandRegistrar()
         hook_executor = HookExecutor(project_root)
+        from .agents import CommandRegistrar as _AgentReg  # used in backup and rollback paths
+
+        # UNSET sentinel: backup not yet captured (exception before backup step)
+        UNSET = object()
 
         for update in updates_available:
             extension_id = update["id"]
@@ -4879,8 +4335,9 @@ def extension_update(
             backup_config_dir = backup_base / "config"
 
             # Store backup state
-            backup_registry_entry = None
-            backup_hooks = None  # None means no hooks key in config; {} means hooks key existed
+            backup_registry_entry = None  # None means registry entry not yet captured
+            backup_installed = UNSET  # Original installed list from extensions.yml
+            backup_hooks = None  # None means backup step 4 not yet reached; {} or {...} means backup was captured
             backed_up_command_files = {}
 
             try:
@@ -4905,8 +4362,7 @@ def extension_update(
                         shutil.copy2(cfg_file, backup_config_dir / cfg_file.name)
 
                 # 3. Backup command files for all agents
-                from .agents import CommandRegistrar as _AgentReg
-                registered_commands = backup_registry_entry.get("registered_commands", {})
+                registered_commands = backup_registry_entry.get("registered_commands", {}) if isinstance(backup_registry_entry, dict) else {}
                 for agent_name, cmd_names in registered_commands.items():
                     if agent_name not in registrar.AGENT_CONFIGS:
                         continue
@@ -4931,14 +4387,20 @@ def extension_update(
                                 shutil.copy2(prompt_file, backup_prompt_path)
                                 backed_up_command_files[str(prompt_file)] = str(backup_prompt_path)
 
-                # 4. Backup hooks from extensions.yml
-                # Use backup_hooks=None to indicate config had no "hooks" key (don't create on restore)
-                # Use backup_hooks={} to indicate config had "hooks" key with no hooks for this extension
+                # 4. Backup hooks and installed list from extensions.yml
+                # get_project_config() always normalizes installed->[] and hooks->{},
+                # so no sentinel is needed to distinguish key-absent from key-empty.
                 config = hook_executor.get_project_config()
-                if "hooks" in config:
-                    backup_hooks = {}  # Config has hooks key - preserve this fact
-                    for hook_name, hook_list in config["hooks"].items():
-                        ext_hooks = [h for h in hook_list if h.get("extension") == extension_id]
+                if isinstance(config, dict):
+                    import copy
+                    # Deep-copy so nested mapping entries (e.g. version-pin dicts)
+                    # are not affected by in-place mutations during the update.
+                    backup_installed = copy.deepcopy(config.get("installed", []))
+                    backup_hooks = {}
+                    for hook_name, hook_list in config.get("hooks", {}).items():
+                        if not isinstance(hook_list, list):
+                            continue
+                        ext_hooks = [h for h in hook_list if isinstance(h, dict) and h.get("extension") == extension_id]
                         if ext_hooks:
                             backup_hooks[hook_name] = ext_hooks
 
@@ -5091,35 +4553,51 @@ def extension_update(
                             original_file.parent.mkdir(parents=True, exist_ok=True)
                             shutil.copy2(backup_file, original_file)
 
-                    # Restore hooks in extensions.yml
-                    # - backup_hooks=None means original config had no "hooks" key
-                    # - backup_hooks={} or {...} means config had hooks key
-                    config = hook_executor.get_project_config()
-                    if "hooks" in config:
+                    # Restore metadata in extensions.yml (hooks and installed list).
+                    # Only run if backup step 4 was reached (backup_hooks is not None);
+                    # otherwise we have no safe baseline to restore from and could corrupt
+                    # the config by removing pre-existing hooks.
+                    if backup_hooks is not None:
+                        config = hook_executor.get_project_config()
+                        if not isinstance(config, dict):
+                            config = {}
+
                         modified = False
 
-                        if backup_hooks is None:
-                            # Original config had no "hooks" key; remove it entirely
-                            del config["hooks"]
+                        # 1. Restore hooks in extensions.yml
+                        if not isinstance(config.get("hooks"), dict):
+                            config["hooks"] = {}
                             modified = True
-                        else:
-                            # Remove any hooks for this extension added by failed install
-                            for hook_name, hooks_list in config["hooks"].items():
-                                original_len = len(hooks_list)
-                                config["hooks"][hook_name] = [
-                                    h for h in hooks_list
-                                    if h.get("extension") != extension_id
-                                ]
-                                if len(config["hooks"][hook_name]) != original_len:
-                                    modified = True
 
-                            # Add back the backed up hooks if any
-                            if backup_hooks:
-                                for hook_name, hooks in backup_hooks.items():
-                                    if hook_name not in config["hooks"]:
-                                        config["hooks"][hook_name] = []
-                                    config["hooks"][hook_name].extend(hooks)
-                                    modified = True
+                        # Remove any hooks for this extension added by the failed install
+                        for hook_name in list(config["hooks"].keys()):
+                            hooks_list = config["hooks"][hook_name]
+                            if not isinstance(hooks_list, list):
+                                config["hooks"][hook_name] = []
+                                modified = True
+                                continue
+
+                            original_len = len(hooks_list)
+                            config["hooks"][hook_name] = [
+                                h for h in hooks_list
+                                if isinstance(h, dict) and h.get("extension") != extension_id
+                            ]
+                            if len(config["hooks"][hook_name]) != original_len:
+                                modified = True
+
+                        # Add back the backed-up hooks
+                        if backup_hooks:
+                            for hook_name, hooks in backup_hooks.items():
+                                if not isinstance(config["hooks"].get(hook_name), list):
+                                    config["hooks"][hook_name] = []
+                                config["hooks"][hook_name].extend(hooks)
+                                modified = True
+
+                        # 2. Restore installed list in extensions.yml
+                        if backup_installed is not UNSET:
+                            if config.get("installed") != backup_installed:
+                                config["installed"] = backup_installed
+                                modified = True
 
                         if modified:
                             hook_executor.save_project_config(config)

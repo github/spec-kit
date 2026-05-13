@@ -19,6 +19,12 @@
 
 The CLI tool (`specify`) is separate from your project files. Upgrade it to get the latest features and bug fixes.
 
+Before upgrading, you can check whether a newer released version is available:
+
+```bash
+specify self check
+```
+
 ### If you installed with `uv tool install`
 
 Upgrade to a specific release (check [Releases](https://github.com/github/spec-kit/releases) for the latest tag):
@@ -35,6 +41,8 @@ Specify the desired release tag:
 uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here --integration copilot
 ```
 
+`uvx` runs a temporary copy of Spec Kit for that single command. It does not update a persistent `specify` installed with `uv tool install`, `pipx`, or another tool manager. If a newer feature works through `uvx` but your local `specify` still reports an older version, upgrade the persistent CLI with the command that matches your install method.
+
 ### If you installed with `pipx`
 
 Upgrade to a specific release:
@@ -49,7 +57,7 @@ pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z
 specify check
 ```
 
-This shows installed tools and confirms the CLI is working.
+This shows installed tools and confirms the CLI is working. Use `specify version` to confirm which persistent CLI version is currently on your `PATH`.
 
 ---
 

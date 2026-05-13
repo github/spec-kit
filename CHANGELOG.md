@@ -2,6 +2,41 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.9] - 2026-05-12
+
+### Changed
+
+- docs: revamp landing page with four-pillar card layout (#2531)
+- feat(extensions): update governance ecosystem extensions to latest versions (#2514)
+- Add changelog extension (#2177)
+- Add install directory to docfx.json file references (#2522)
+- feat(catalog): add BrownKit (brownkit) community extension (#2510) (#2520)
+- fix(kiro-cli): replace literal $ARGUMENTS with prose fallback (#2482)
+- Preset: Add game-narrative-writing  preset to community catalog (#2454)
+- docs: clarify CLI upgrade discovery (#2519)
+- fix: make template metadata line breaks markdownlint-safe (#2505)
+- refactor(catalogs): extract integration catalog config loading (#2497)
+- test(presets): silence expected UserWarnings in self-test composition… (#2373)
+- chore: release 0.8.8, begin 0.8.9.dev0 development (#2516)
+
+## [0.8.8] - 2026-05-11
+
+### Changed
+
+- chore(deps): bump actions/checkout from 4.3.1 to 6.0.2 (#2486)
+- feat(catalog): add Spec Kit Schedule (schedule) community extension (#2473)
+- fix(integration): refresh shared infra on `integration switch` (#2375)
+- Add MDE preset to community catalog (#2513)
+- Add MDE extension to community catalog (#2512)
+- chore: update community catalog with latest extension versions (#2490)
+- chore(deps): bump actions/setup-dotnet from 4.3.1 to 5.2.0 (#2489)
+- chore(deps): bump actions/github-script from 7 to 9 (#2488)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action (#2487)
+- chore(deps): bump github/codeql-action from 4.35.3 to 4.35.4 (#2485)
+- feat(catalog): add API Evolve (api-evolve) community extension (#2479)
+- feat: Config-driven opt-in authentication registry with multi-platform support (#2393)
+- chore: release 0.8.7, begin 0.8.8.dev0 development (#2480)
+
 ## [0.8.7] - 2026-05-07
 
 ### Changed

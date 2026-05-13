@@ -256,6 +256,43 @@
       "created_at": "2026-04-09T08:00:00Z",
       "updated_at": "2026-04-27T08:00:00Z"
     },
+    "game-narrative-writing": {
+      "name": "Game Narrative Writing",
+      "id": "game-narrative-writing",
+      "version": "1.0.0",
+      "description": "Spec-Driven Development for interactive game-narrative pre-production in video games. Authors write in a portable generic format, Twine/Sugarcube (.twee) or Ink (.ink). Covers choice-IF, visual novels, and branching dialogue. Supports Tier 1 mechanic hooks (flag, counter, inventory, timer, trust, currency, npc_state, ending_condition), multi-ending design, series carry-over variable registry, and NPC-focused character architecture.",
+      "author": "Andreas Daumann",
+      "repository": "https://github.com/adaumann/speckit-preset-game-narrative-writing",
+      "download_url": "https://github.com/adaumann/speckit-preset-game-narrative-writing/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/adaumann/speckit-preset-game-narrative-writing",
+      "documentation": "https://github.com/adaumann/speckit-preset-game-narrative-writing/blob/main/game-narrative-writing/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.5.0"
+      },
+      "provides": {
+        "templates": 22,
+        "commands": 36,
+        "scripts": 2
+      },
+      "tags": [
+        "game-writing",
+        "interactive-fiction",
+        "twine",
+        "ink",
+        "renpy",
+        "point-and-click",
+        "branching-narrative",
+        "choice-if",
+        "visual-novel",
+        "mechanic-hooks",
+        "game-narrative",
+        "export",
+        "series"
+      ],
+      "created_at": "2026-05-05T08:00:00Z",
+      "updated_at": "2026-05-05T08:00:00Z"
+    },
     "isaqb-architecture-governance": {
       "name": "iSAQB Architecture Governance",
       "id": "isaqb-architecture-governance",
@@ -310,6 +347,37 @@
       ],
       "created_at": "2026-04-15T00:00:00Z",
       "updated_at": "2026-04-15T00:00:00Z"
+    },
+    "mde": {
+      "name": "Model Driven Engineering",
+      "id": "mde",
+      "version": "0.5.1",
+      "description": "Focuses on streamlined commands, app repository support, cross-spec support, and capability-aware project memory for model-driven engineering workflows.",
+      "author": "Ralph Hanna",
+      "repository": "https://github.com/AI-MDE/spec-kit-preset-mde",
+      "download_url": "https://github.com/AI-MDE/spec-kit-preset-mde/archive/refs/tags/v0.5.1.zip",
+      "homepage": "https://github.com/AI-MDE/spec-kit-preset-mde",
+      "documentation": "https://github.com/AI-MDE/spec-kit-preset-mde/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "extensions": [
+          "mde"
+        ]
+      },
+      "provides": {
+        "templates": 6,
+        "commands": 11
+      },
+      "tags": [
+        "model-driven-engineering",
+        "software-lifecycle",
+        "business-analysis",
+        "business-application",
+        "multi-layered-architecture"
+      ],
+      "created_at": "2026-05-08T00:00:00Z",
+      "updated_at": "2026-05-08T00:00:00Z"
     },
     "multi-repo-branching": {
       "name": "Multi-Repo Branching",
