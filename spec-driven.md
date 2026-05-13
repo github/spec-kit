@@ -318,6 +318,22 @@ No implementation code shall be written before:
 
 This completely inverts traditional AI code generation. Instead of generating code and hoping it works, the LLM must first generate comprehensive tests that define behavior, get them approved, and only then generate implementation.
 
+#### Articles IV, V, and VI: Project-Defined Operational Guardrails
+
+The constitution still defines nine articles, but Articles IV, V, and VI are intentionally project-customizable rather than fixed by Spec Kit itself. In practice, these articles usually capture operational concerns that vary by team and domain, such as integration testing boundaries, observability requirements, and versioning or breaking-change policy.
+
+The default constitution template explicitly leaves these slots open for each project to define:
+
+```text
+### [PRINCIPLE_4_NAME]
+<!-- Example: IV. Integration Testing -->
+
+### [PRINCIPLE_5_NAME]
+<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
+```
+
+That flexibility is deliberate. When a project adopts Spec Kit, maintainers tailor these articles to the system's real constraints, and downstream commands validate against the constitution the project actually defines rather than assuming a single universal wording for IV-VI.
+
 #### Articles VII & VIII: Simplicity and Anti-Abstraction
 
 These paired articles combat over-engineering:
