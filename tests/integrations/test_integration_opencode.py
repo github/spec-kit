@@ -99,7 +99,9 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             w for w in caught
             if "legacy" in str(w.message) and "opencode" in str(w.message)
         ]
-        assert len(opencode_warnings) >= 1
+        assert len(opencode_warnings) == 1, (
+            f"Expected exactly 1 legacy-dir warning, got {len(opencode_warnings)}"
+        )
         assert "specify integration upgrade" in str(opencode_warnings[0].message)
 
     def test_legacy_dir_unregister(self, tmp_path):
@@ -118,6 +120,37 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             )
 
         assert not cmd_file.exists()
+
+    def test_unregister_cleans_legacy_when_both_dirs_exist(self, tmp_path):
+        """Unregister removes files from legacy dir even when canonical exists."""
+        # Set up both canonical and legacy dirs
+        canonical_dir = tmp_path / ".opencode" / "commands"
+        canonical_dir.mkdir(parents=True)
+        legacy_dir = tmp_path / ".opencode" / "command"
+        legacy_dir.mkdir(parents=True)
+
+        # Place a command file in the legacy dir (orphaned after upgrade)
+        legacy_cmd = legacy_dir / "speckit.myext.md"
+        legacy_cmd.write_text("# orphaned ext command", encoding="utf-8")
+        # Place the same command in the canonical dir (current)
+        canonical_cmd = canonical_dir / "speckit.myext.md"
+        canonical_cmd.write_text("# ext command", encoding="utf-8")
+
+        registrar = CommandRegistrar()
+
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter("always")
+            registrar.unregister_commands(
+                {"opencode": ["speckit.myext"]}, tmp_path,
+            )
+
+        # Both files should be removed
+        assert not canonical_cmd.exists(), (
+            "Command file in canonical dir should be removed"
+        )
+        assert not legacy_cmd.exists(), (
+            "Orphaned command file in legacy dir should also be removed"
+        )
 
     def test_canonical_dir_preferred_over_legacy(self, tmp_path):
         """When both dirs exist, canonical .opencode/commands/ is used."""
