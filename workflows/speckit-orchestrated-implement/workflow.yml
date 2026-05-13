@@ -1,0 +1,42 @@
+schema_version: "1.0"
+workflow:
+  id: "speckit-orchestrated-implement"
+  name: "Orchestrated Implementation"
+  version: "1.0.0"
+  author: "GitHub"
+  description: "Builds task handoff shards, then runs speckit.implement once per shard"
+
+requires:
+  speckit_version: ">=0.8.9"
+
+inputs:
+  integration:
+    type: string
+    default: "copilot"
+    prompt: "Integration to use for shard execution"
+  args:
+    type: string
+    default: ""
+    prompt: "Additional implementation arguments"
+  max_shards:
+    type: number
+    default: 8
+    prompt: "Maximum number of handoff shards"
+
+steps:
+  - id: build-shards
+    type: speckit-task-shards
+    input:
+      args: "{{ inputs.args }}"
+      max_shards: "{{ inputs.max_shards }}"
+
+  - id: implement-shards
+    type: fan-out
+    items: "{{ steps.build-shards.output.items }}"
+    max_concurrency: "{{ inputs.max_shards }}"
+    step:
+      id: implement
+      command: speckit.implement
+      integration: "{{ inputs.integration }}"
+      input:
+        args: "{{ item.args }}"

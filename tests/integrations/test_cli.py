@@ -785,6 +785,16 @@ class TestGitExtensionAutoInstall:
         ext_dir = project / ".specify" / "extensions" / "git"
         assert not ext_dir.exists(), "git extension should not be installed with --no-git"
 
+        # Orchestrated extension is core workflow plumbing and is still installed.
+        orchestrated_dir = project / ".specify" / "extensions" / "orchestrated"
+        assert orchestrated_dir.exists(), "orchestrated extension should be installed"
+
+        workflows_dir = project / ".specify" / "workflows"
+        assert (workflows_dir / "speckit" / "workflow.yml").exists()
+        assert (
+            workflows_dir / "speckit-orchestrated-implement" / "workflow.yml"
+        ).exists()
+
     def test_no_git_emits_deprecation_warning(self, tmp_path):
         """Using --no-git emits a visible deprecation warning."""
         from typer.testing import CliRunner
@@ -863,6 +873,37 @@ class TestGitExtensionAutoInstall:
         assert claude_skills.exists(), "Claude skills directory was not created"
         git_skills = [f for f in claude_skills.iterdir() if f.name.startswith("speckit-git-")]
         assert len(git_skills) > 0, "no git extension commands registered"
+
+    def test_orchestrated_extension_commands_registered(self, tmp_path):
+        """Orchestrated extension command is registered with the agent during init."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "orchestrated-cmds"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here", "--ai", "claude", "--script", "sh",
+                "--no-git", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        skill = (
+            project
+            / ".claude"
+            / "skills"
+            / "speckit-orchestrated-implement"
+            / "SKILL.md"
+        )
+        assert skill.exists(), "orchestrated command skill was not registered"
+        content = skill.read_text(encoding="utf-8")
+        assert "specify workflow run speckit-orchestrated-implement" in content
 
 
 class TestSharedInfraCommandRefs:
