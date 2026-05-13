@@ -744,36 +744,41 @@ class WorkflowEngine:
             if not isinstance(input_def, dict):
                 continue
             if name in provided:
-                resolved[name] = self._coerce_input(
-                    name, provided[name], input_def
-                )
+                # Resolve sentinels for explicitly-provided values too: a
+                # caller passing ``{"integration": "auto"}`` (which the
+                # workflow prompt advertises as a valid value) must be
+                # treated identically to omitting the input and letting the
+                # default flow through, so dispatch never sees the literal
+                # sentinel.
+                value = self._resolve_default(name, provided[name])
             elif "default" in input_def:
-                default_value = self._resolve_default(name, input_def["default"])
-                # When the ``integration`` default could not be resolved against
-                # project state and falls back to the literal ``"auto"``
-                # sentinel, strip ``enum`` from the input definition before
-                # coercion so a workflow that lists specific integrations in
-                # ``enum`` does not crash at runtime on the sentinel value.
-                # NOTE: only enum-membership is skipped; ``_coerce_input``
-                # still enforces the declared ``type`` (e.g. ``string``) via
-                # the filtered definition, so ill-typed defaults still fail.
-                coerce_input_def = input_def
-                if (
-                    name == "integration"
-                    and default_value == "auto"
-                    and "enum" in input_def
-                ):
-                    coerce_input_def = {
-                        key: value
-                        for key, value in input_def.items()
-                        if key != "enum"
-                    }
-                resolved[name] = self._coerce_input(
-                    name, default_value, coerce_input_def
-                )
+                value = self._resolve_default(name, input_def["default"])
             elif input_def.get("required", False):
                 msg = f"Required input {name!r} not provided."
                 raise ValueError(msg)
+            else:
+                continue
+
+            # When the ``integration`` default could not be resolved against
+            # project state and falls back to the literal ``"auto"``
+            # sentinel, strip ``enum`` from the input definition before
+            # coercion so a workflow that lists specific integrations in
+            # ``enum`` does not crash at runtime on the sentinel value.
+            # NOTE: only enum-membership is skipped; ``_coerce_input``
+            # still enforces the declared ``type`` (e.g. ``string``) via
+            # the filtered definition, so ill-typed values still fail.
+            coerce_input_def = input_def
+            if (
+                name == "integration"
+                and value == "auto"
+                and "enum" in input_def
+            ):
+                coerce_input_def = {
+                    key: val
+                    for key, val in input_def.items()
+                    if key != "enum"
+                }
+            resolved[name] = self._coerce_input(name, value, coerce_input_def)
         return resolved
 
     def _resolve_default(self, name: str, default: Any) -> Any:

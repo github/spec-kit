@@ -38,15 +38,21 @@ def try_read_integration_json(
     logic cannot drift between them.
     """
     path = project_root / INTEGRATION_JSON
-    if not path.exists():
-        return None, None
-    if not path.is_file():
-        return None, IntegrationReadError(
-            kind="os",
-            detail=f"{path} exists but is not a regular file",
-        )
+    # Avoid Path.exists() / Path.is_file() as a pre-check: both return False
+    # on some OSErrors (e.g. permission errors during stat), which would
+    # silently treat an unreadable-but-present file as missing. Attempt the
+    # read directly and distinguish FileNotFoundError (genuinely absent) from
+    # other OSErrors (which become loud errors via the IntegrationReadError
+    # path).
     try:
         raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None, None
+    except IsADirectoryError as exc:
+        return None, IntegrationReadError(
+            kind="os",
+            detail=f"{path} exists but is not a regular file: {exc}",
+        )
     except UnicodeDecodeError as exc:
         return None, IntegrationReadError(kind="decode", detail=str(exc))
     except OSError as exc:

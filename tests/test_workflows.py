@@ -1571,6 +1571,35 @@ inputs:
         resolved = engine._resolve_inputs(definition, {"integration": "claude"})
         assert resolved["integration"] == "claude"
 
+    def test_integration_explicit_auto_resolves_like_default(self, project_dir):
+        """Passing ``integration=auto`` explicitly must resolve the sentinel,
+        not pass it through as a literal — the workflow prompt advertises
+        ``auto`` as a valid value, so the dispatch path must never see it.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir(parents=True, exist_ok=True)
+        (specify_dir / "integration.json").write_text(
+            json.dumps({"integration": "opencode"}),
+            encoding="utf-8",
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "explicit-auto"
+  name: "Explicit Auto"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+""")
+        engine = WorkflowEngine(project_dir)
+        resolved = engine._resolve_inputs(definition, {"integration": "auto"})
+        assert resolved["integration"] == "opencode"
+
     def test_integration_auto_ignores_malformed_integration_json(self, project_dir):
         """A malformed integration.json must not crash — fall back to the literal default."""
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
