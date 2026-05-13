@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 from specify_cli import (
-    INIT_OPTIONS_FILE,
     load_init_options,
     save_init_options,
 )
