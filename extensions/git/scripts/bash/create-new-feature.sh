@@ -103,6 +103,11 @@ while [ $i -le $# ]; do
     i=$((i + 1))
 done
 
+# Auto-append '/' if branch prefix is non-empty and doesn't end with '/'
+if [ -n "$BRANCH_PREFIX" ] && [[ ! "$BRANCH_PREFIX" =~ /$ ]]; then
+    BRANCH_PREFIX="$BRANCH_PREFIX/"
+fi
+
 FEATURE_DESCRIPTION="${ARGS[*]}"
 if [ -z "$FEATURE_DESCRIPTION" ]; then
     echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] [--branch-prefix <prefix>] <feature_description>" >&2

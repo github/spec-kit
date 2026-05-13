@@ -45,6 +45,11 @@ if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
 
 $featureDesc = ($FeatureDescription -join ' ').Trim()
 
+# Auto-append '/' if branch prefix is non-empty and doesn't end with '/'
+if ($BranchPrefix -and -not $BranchPrefix.EndsWith('/')) {
+    $BranchPrefix = "$BranchPrefix/"
+}
+
 # Validate description is not empty after trimming (e.g., user passed only whitespace)
 if ([string]::IsNullOrWhiteSpace($featureDesc)) {
     Write-Error "Error: Feature description cannot be empty or contain only whitespace"
