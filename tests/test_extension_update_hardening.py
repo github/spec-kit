@@ -26,7 +26,6 @@ def test_extension_update_corrupted_config_root(project_dir, monkeypatch):
     config_path.write_text(yaml.dump(123))
     
     # Mock ExtensionManager to return an installed extension for resolution
-    from specify_cli.extensions import ExtensionManager, ExtensionRegistry, ExtensionCatalog, ExtensionCatalog, ExtensionRegistry
     
     monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [{"id": "test-ext", "name": "Test Ext", "version": "1.0.0"}])
     monkeypatch.setattr(ExtensionRegistry, "get", lambda self, ext_id: {"version": "1.0.0", "enabled": True})
@@ -57,8 +56,6 @@ def test_extension_update_corrupted_hooks_value(project_dir, monkeypatch):
         "installed": ["test-ext"],
         "hooks": ["not", "a", "dict"]
     }))
-    
-    from specify_cli.extensions import ExtensionManager, ExtensionRegistry, ExtensionCatalog, ExtensionCatalog, ExtensionRegistry
     
     monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [{"id": "test-ext", "name": "Test Ext", "version": "1.0.0"}])
     monkeypatch.setattr(ExtensionRegistry, "get", lambda self, ext_id: {"version": "1.0.0", "enabled": True})
