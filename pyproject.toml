@@ -39,6 +39,8 @@ packages = ["src/specify_cli"]
 "scripts/bash" = "specify_cli/core_pack/scripts/bash"
 "scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
 # Bundled extensions (installable via `specify extension add <name>`)
+"extensions/catalog.json" = "specify_cli/core_pack/extensions/catalog.json"
+"extensions/arch" = "specify_cli/core_pack/extensions/arch"
 "extensions/git" = "specify_cli/core_pack/extensions/git"
 # Bundled workflows (auto-installed during `specify init`)
 "workflows/speckit" = "specify_cli/core_pack/workflows/speckit"
@@ -70,4 +72,3 @@ omit = ["*/tests/*", "*/__pycache__/*"]
 precision = 2
 show_missing = true
 skip_covered = false
-

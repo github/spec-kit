@@ -205,6 +205,24 @@ class TestExtensionManifest:
         }
 
         assert CORE_COMMAND_NAMES == expected
+        assert "arch" not in CORE_COMMAND_NAMES
+
+    def test_bundled_architecture_manifest(self):
+        """The architecture workflow is provided as a bundled extension, not a core command."""
+        manifest_path = (
+            Path(__file__).resolve().parent.parent
+            / "extensions"
+            / "arch"
+            / "extension.yml"
+        )
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.id == "arch"
+        assert len(manifest.commands) == 1
+        command = manifest.commands[0]
+        assert command["name"] == "speckit.arch.generate"
+        assert command["file"] == "commands/speckit.arch.generate.md"
+        assert command.get("aliases") == []
 
     def test_missing_required_field(self, temp_dir):
         """Test manifest missing required field."""
@@ -768,6 +786,48 @@ class TestExtensionManager:
         assert ext_dir.exists()
         assert (ext_dir / "extension.yml").exists()
         assert (ext_dir / "commands" / "hello.md").exists()
+
+    def test_install_bundled_architecture_registers_markdown_command(self, project_dir):
+        """Architecture extension should register its namespaced command without the legacy alias."""
+        source_dir = Path(__file__).resolve().parent.parent / "extensions" / "arch"
+        commands_dir = project_dir / ".qwen" / "commands"
+        commands_dir.mkdir(parents=True)
+        (project_dir / ".specify" / "init-options.json").parent.mkdir(parents=True, exist_ok=True)
+        (project_dir / ".specify" / "init-options.json").write_text(
+            '{"ai":"qwen","script":"sh"}',
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(source_dir, "0.8.10", register_commands=True)
+
+        command_file = commands_dir / "speckit.arch.generate.md"
+        assert command_file.exists()
+        assert not (commands_dir / "speckit.arch.md").exists()
+        content = command_file.read_text(encoding="utf-8")
+        assert "{SCRIPT}" not in content
+        assert ".specify/extensions/arch/scripts/bash/setup-arch.sh --json" in content
+
+    def test_install_bundled_architecture_registers_skill_command(self, project_dir):
+        """Architecture extension should register as speckit-arch-generate for skill agents."""
+        source_dir = Path(__file__).resolve().parent.parent / "extensions" / "arch"
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+        (project_dir / ".specify" / "init-options.json").parent.mkdir(parents=True, exist_ok=True)
+        (project_dir / ".specify" / "init-options.json").write_text(
+            '{"ai":"codex","ai_skills":true,"script":"sh"}',
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(source_dir, "0.8.10", register_commands=True)
+
+        skill_file = skills_dir / "speckit-arch-generate" / "SKILL.md"
+        assert skill_file.exists()
+        assert not (skills_dir / "speckit-arch" / "SKILL.md").exists()
+        content = skill_file.read_text(encoding="utf-8")
+        assert "{SCRIPT}" not in content
+        assert ".specify/extensions/arch/scripts/bash/setup-arch.sh --json" in content
 
     def test_install_duplicate(self, extension_dir, project_dir):
         """Test installing already installed extension."""
@@ -2679,21 +2739,46 @@ class TestCatalogStack:
     # --- get_active_catalogs ---
 
     def test_default_stack(self, temp_dir):
-        """Default stack includes default and community catalogs."""
+        """Default stack includes bundled, default, and community catalogs."""
         project_dir = self._make_project(temp_dir)
         catalog = ExtensionCatalog(project_dir)
 
         entries = catalog.get_active_catalogs()
 
-        assert len(entries) == 2
-        assert entries[0].url == ExtensionCatalog.DEFAULT_CATALOG_URL
-        assert entries[0].name == "default"
+        assert len(entries) == 3
+        assert entries[0].url == ExtensionCatalog.BUNDLED_CATALOG_URL
+        assert entries[0].name == "bundled"
         assert entries[0].priority == 1
         assert entries[0].install_allowed is True
-        assert entries[1].url == ExtensionCatalog.COMMUNITY_CATALOG_URL
-        assert entries[1].name == "community"
+        assert entries[1].url == ExtensionCatalog.DEFAULT_CATALOG_URL
+        assert entries[1].name == "default"
         assert entries[1].priority == 2
-        assert entries[1].install_allowed is False
+        assert entries[1].install_allowed is True
+        assert entries[2].url == ExtensionCatalog.COMMUNITY_CATALOG_URL
+        assert entries[2].name == "community"
+        assert entries[2].priority == 3
+        assert entries[2].install_allowed is False
+
+    def test_bundled_catalog_discovers_arch(self, temp_dir, monkeypatch):
+        """Bundled official extensions should be searchable before remote catalog publication."""
+        project_dir = self._make_project(temp_dir)
+        catalog = ExtensionCatalog(project_dir)
+
+        def fake_fetch(entry, force_refresh=False):
+            if entry.url == ExtensionCatalog.BUNDLED_CATALOG_URL:
+                return ExtensionCatalog._fetch_single_catalog(catalog, entry, force_refresh)
+            return {"schema_version": "1.0", "extensions": {}}
+
+        monkeypatch.setattr(catalog, "_fetch_single_catalog", fake_fetch)
+
+        results = catalog.search(query="arch")
+
+        assert any(
+            result["id"] == "arch"
+            and result["_catalog_name"] == "bundled"
+            and result["_install_allowed"] is True
+            for result in results
+        )
 
     def test_env_var_overrides_default_stack(self, temp_dir, monkeypatch):
         """SPECKIT_CATALOG_URL replaces the entire default stack."""
