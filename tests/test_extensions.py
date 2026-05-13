@@ -848,9 +848,10 @@ class TestExtensionManager:
         # Install once from directory
         manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
 
-        # Create a ZIP of the extension
-        with tempfile.NamedTemporaryFile(suffix=".zip") as tmp:
-            zip_path = Path(tmp.name)
+        # Create a ZIP of the extension in a temp directory (not NamedTemporaryFile,
+        # which can fail on Windows due to file locking).
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = Path(tmpdir) / "test-ext.zip"
             with zipfile.ZipFile(zip_path, "w") as zf:
                 for f in extension_dir.rglob("*"):
                     if f.is_file():

@@ -1164,12 +1164,7 @@ class ExtensionManager:
 
         # Check if already installed
         if self.registry.is_installed(manifest.id):
-            if force:
-                # Remove existing extension first (handles command/skill/hook
-                # cleanup, config backup, and registry removal).
-                backup_config_dir = self.extensions_dir / ".backup" / manifest.id
-                self.remove(manifest.id)
-            else:
+            if not force:
                 raise ExtensionError(
                     f"Extension '{manifest.id}' is already installed. "
                     f"Use 'specify extension remove {manifest.id}' first, "
@@ -1178,6 +1173,12 @@ class ExtensionManager:
 
         # Reject manifests that would shadow core commands or installed extensions.
         self._validate_install_conflicts(manifest)
+
+        # Remove existing installation AFTER all validations pass so that a
+        # validation failure doesn't leave the user with a half-uninstalled
+        # extension (configs stranded in .backup/).
+        if force and self.registry.is_installed(manifest.id):
+            self.remove(manifest.id)
 
         # Install extension
         dest_dir = self.extensions_dir / manifest.id
