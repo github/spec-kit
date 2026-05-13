@@ -1155,14 +1155,58 @@ def check():
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install a coding agent for the best experience[/dim]")
 
+
+def _feature_capabilities() -> dict[str, bool]:
+    """Return stable local CLI capability flags for humans and agents."""
+    return {
+        "controlled_multi_install_integrations": True,
+        "integration_use_command": True,
+        "multi_install_safe_registry_metadata": True,
+        "integration_upgrade_command": True,
+        "self_check_command": True,
+        "workflow_catalog": True,
+        "bundled_templates": True,
+    }
+
+
 @app.command()
-def version():
+def version(
+    features: bool = typer.Option(
+        False,
+        "--features",
+        help="Show local CLI feature capabilities.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit feature capabilities as JSON. Requires --features.",
+    ),
+):
     """Display version and system information."""
     import platform
 
-    show_banner()
-
     cli_version = get_speckit_version()
+
+    if json_output and not features:
+        console.print("[red]Error:[/red] --json requires --features.")
+        raise typer.Exit(1)
+
+    if features:
+        capabilities = _feature_capabilities()
+        if json_output:
+            payload = {"version": cli_version, "features": capabilities}
+            console.print(json.dumps(payload, indent=2))
+            return
+
+        console.print(f"Spec Kit CLI: {cli_version}")
+        console.print()
+        console.print("Features:")
+        for key, enabled in capabilities.items():
+            label = key.replace("_", " ")
+            console.print(f"- {label}: {'yes' if enabled else 'no'}")
+        return
+
+    show_banner()
 
     info_table = Table(show_header=False, box=None, padding=(0, 2))
     info_table.add_column("Key", style="cyan", justify="right")
