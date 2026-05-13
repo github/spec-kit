@@ -747,6 +747,7 @@ def init(
         ("chmod", "Ensure scripts executable"),
         ("constitution", "Constitution setup"),
         ("git", "Install git extension"),
+        ("agent-context", "Install agent-context extension"),
         ("workflow", "Install bundled workflow"),
         ("final", "Finalize"),
     ]:
@@ -869,6 +870,31 @@ def init(
             else:
                 tracker.skip("git", "--no-git flag")
 
+            # Install bundled agent-context extension (opt-out via
+            # `specify extension disable agent-context`). Owns the managed
+            # section in coding agent context files (CLAUDE.md, etc.).
+            tracker.start("agent-context")
+            try:
+                from .extensions import ExtensionManager as _AgentCtxMgr
+                bundled_ac = _locate_bundled_extension("agent-context")
+                if bundled_ac:
+                    ac_manager = _AgentCtxMgr(project_path)
+                    if ac_manager.registry.is_installed("agent-context"):
+                        tracker.complete("agent-context", "already installed")
+                    else:
+                        ac_manager.install_from_directory(
+                            bundled_ac, get_speckit_version()
+                        )
+                        tracker.complete("agent-context", "installed")
+                else:
+                    tracker.skip("agent-context", "bundled extension not found")
+            except Exception as ac_err:
+                sanitized_ac = str(ac_err).replace('\n', ' ').strip()
+                tracker.error(
+                    "agent-context",
+                    f"install failed: {sanitized_ac[:120]}",
+                )
+
             # Install bundled speckit workflow
             try:
                 bundled_wf = _locate_bundled_workflow("speckit")
@@ -906,11 +932,16 @@ def init(
             # Persist the CLI options so later operations (e.g. preset add)
             # can adapt their behaviour without re-scanning the filesystem.
             # Must be saved BEFORE preset install so _get_skills_dir() works.
+            from .integrations.base import IntegrationBase
             init_opts = {
                 "ai": selected_ai,
                 "integration": resolved_integration.key,
                 "branch_numbering": branch_numbering or "sequential",
                 "context_file": resolved_integration.context_file,
+                "context_markers": {
+                    "start": IntegrationBase.CONTEXT_MARKER_START,
+                    "end": IntegrationBase.CONTEXT_MARKER_END,
+                },
                 "here": here,
                 "script": selected_script,
                 "speckit_version": get_speckit_version(),
@@ -1441,6 +1472,7 @@ def _clear_init_options_for_integration(project_root: Path, integration_key: str
         opts.pop("ai", None)
         opts.pop("ai_skills", None)
         opts.pop("context_file", None)
+        opts.pop("context_markers", None)
         save_init_options(project_root, opts)
 
 
@@ -1859,11 +1891,24 @@ def _update_init_options_for_integration(
     script_type: str | None = None,
 ) -> None:
     """Update ``init-options.json`` to reflect *integration* as the active one."""
-    from .integrations.base import SkillsIntegration
+    from .integrations.base import IntegrationBase, SkillsIntegration
     opts = load_init_options(project_root)
     opts["integration"] = integration.key
     opts["ai"] = integration.key
     opts["context_file"] = integration.context_file
+    # Preserve any user-customized markers; only seed defaults if absent or invalid.
+    existing_markers = opts.get("context_markers")
+    if not isinstance(existing_markers, dict):
+        opts["context_markers"] = {
+            "start": IntegrationBase.CONTEXT_MARKER_START,
+            "end": IntegrationBase.CONTEXT_MARKER_END,
+        }
+    else:
+        if not isinstance(existing_markers.get("start"), str) or not existing_markers.get("start"):
+            existing_markers["start"] = IntegrationBase.CONTEXT_MARKER_START
+        if not isinstance(existing_markers.get("end"), str) or not existing_markers.get("end"):
+            existing_markers["end"] = IntegrationBase.CONTEXT_MARKER_END
+        opts["context_markers"] = existing_markers
     if script_type:
         opts["script"] = script_type
     if isinstance(integration, SkillsIntegration) or getattr(integration, "_skills_mode", False):
