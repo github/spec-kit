@@ -7,7 +7,7 @@ Git repository initialization, feature branch creation, numbering (sequential/ti
 This extension provides Git operations as an optional, self-contained module. It manages:
 
 - **Repository initialization** with configurable commit messages
-- **Feature branch creation** with sequential (`001-feature-name`) or timestamp (`20260319-143022-feature-name`) numbering, with optional branch prefix (e.g., `feature/`, `bugfix/`)
+- **Feature branch creation** with sequential (`001-feature-name`) or timestamp (`20260319-143022-feature-name`) numbering, with optional branch prefix (e.g., `feature`, `bugfix`)
 - **Branch validation** to ensure branches follow naming conventions
 - **Git remote detection** for GitHub integration (e.g., issue creation)
 - **Auto-commit** after core commands (configurable per-command with custom messages)
@@ -69,11 +69,11 @@ auto_commit:
 
 The `create-new-feature` scripts accept a `--branch-prefix` (Bash) / `-BranchPrefix` (PowerShell) option to prepend a custom prefix to branch names. Common prefixes:
 
-- `feature/` — new features or enhancements
-- `bugfix/` — bug fixes
-- `hotfix/` — urgent production fixes
+- `feature` — new features or enhancements
+- `bugfix` — bug fixes
+- `hotfix` — urgent production fixes
 
-Example: `--branch-prefix "feature/"` produces `feature/001-user-auth` instead of `001-user-auth`.
+The trailing `/` is optional — the script auto-appends it if missing. The final branch name format is `{prefix}/{number}-{short-name}` (e.g., `--branch-prefix "feature"` produces `feature/001-user-auth`).
 
 ## Installation
 

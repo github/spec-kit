@@ -38,12 +38,12 @@ Determine the branch numbering strategy by checking configuration in this order:
 
 Determine the branch prefix based on the nature of the work:
 
-- Use `feature/` for new features or enhancements
-- Use `bugfix/` for bug fixes
-- Use `hotfix/` for urgent production fixes
+- Use `feature` for new features or enhancements
+- Use `bugfix` for bug fixes
+- Use `hotfix` for urgent production fixes
 - Use no prefix (omit `--branch-prefix`) for the default flat naming
 
-Choose the most appropriate prefix based on the feature description and context. The prefix is prepended to the generated branch name (e.g., `feature/001-user-auth`).
+Choose the most appropriate prefix based on the feature description and context. The trailing `/` is optional — the script auto-appends it if missing. The final branch name format is `{prefix}/{number}-{short-name}` (e.g., `--branch-prefix "feature"` produces `feature/001-user-auth`).
 
 ## Execution
 
