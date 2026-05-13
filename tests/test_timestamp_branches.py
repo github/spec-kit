@@ -1,4 +1,3 @@
-
 """
 Pytest tests for timestamp-based branch naming in create-new-feature.sh and common.sh.
 
@@ -411,6 +410,30 @@ class TestGetFeaturePathsSinglePrefix:
         )
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == str(tmp_path / "specs" / "001-target-spec")
+
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_ps_specify_feature_prefixed_resolves_by_prefix(self, git_repo: Path):
+        """PowerShell Get-FeaturePathsEnv: same prefix stripping as bash."""
+        common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
+        spec_dir = git_repo / "specs" / "001-ps-prefix-spec"
+        spec_dir.mkdir(parents=True)
+        ps_cmd = f'. "{common_ps}"; $r = Get-FeaturePathsEnv; Write-Output "FEATURE_DIR=$($r.FEATURE_DIR)"'
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-Command", ps_cmd],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "SPECIFY_FEATURE": "feat/001-other"},
+        )
+        assert result.returncode == 0, result.stderr
+        for line in result.stdout.splitlines():
+            if line.startswith("FEATURE_DIR="):
+                val = line.split("=", 1)[1].strip()
+                assert val == str(spec_dir)
+                break
+        else:
+            pytest.fail("FEATURE_DIR not found in PowerShell output")
 
 
 # ── get_current_branch Tests ─────────────────────────────────────────────────
@@ -1282,6 +1305,7 @@ class TestFeatureDirectoryResolution:
             pytest.fail("FEATURE_DIR not found in PowerShell output")
 
 
+
 # ── Description Quoting Tests (issue #2339) ──────────────────────────────────
 
 
@@ -1349,3 +1373,4 @@ class TestDescriptionQuoting:
         """Plain description without special characters continues to work."""
         result = run_script(git_repo, "--dry-run", "--short-name", "feat", "Add login feature")
         assert result.returncode == 0, result.stderr
+        
