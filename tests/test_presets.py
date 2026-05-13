@@ -1922,6 +1922,7 @@ class TestPresetCatalogMultiCatalog:
 
 
 SELF_TEST_PRESET_DIR = Path(__file__).parent.parent / "presets" / "self-test"
+IMPLEMENT_PRESET_DIR = Path(__file__).parent.parent / "presets" / "implement"
 SELF_TEST_WRAP_WARNING = (
     r"Cannot compose command 'speckit\.wrap-test': no base layer\. "
     r"Stale command files may remain\."
@@ -1934,6 +1935,49 @@ CORE_TEMPLATE_NAMES = [
     "checklist-template",
     "constitution-template",
 ]
+
+
+class TestImplementPreset:
+    """Tests for the bundled implement preset."""
+
+    def test_manifest_valid(self):
+        manifest = PresetManifest(IMPLEMENT_PRESET_DIR / "preset.yml")
+
+        assert manifest.id == "implement"
+        assert manifest.name == "Implement Workflow"
+        assert [t["name"] for t in manifest.templates] == ["speckit.implement"]
+        assert manifest.templates[0]["replaces"] == "speckit.implement"
+
+    def test_command_invokes_workflow(self):
+        command_path = IMPLEMENT_PRESET_DIR / "commands" / "speckit.implement.md"
+
+        content = command_path.read_text(encoding="utf-8")
+        assert "specify workflow run speckit-implement" in content
+        assert "-i integration=__AGENT__" in content
+        assert '-i args="$ARGUMENTS"' in content
+        assert "If the user input references a handoff JSON file" in content
+        assert "Do not run `specify workflow run` while executing a handoff JSON" in content
+
+    def test_catalog_contains_implement_preset(self):
+        catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
+        data = json.loads(catalog_path.read_text(encoding="utf-8"))
+
+        preset = data["presets"]["implement"]
+        assert preset["bundled"] is True
+        assert preset["provides"]["commands"] == 1
+
+    def test_install_resolves_implement_command(self, project_dir):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(IMPLEMENT_PRESET_DIR, "0.8.9.dev0")
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("speckit.implement", "command")
+
+        assert result is not None
+        assert "presets/implement" in result.as_posix()
+        assert "specify workflow run speckit-implement" in result.read_text(
+            encoding="utf-8"
+        )
 
 
 def install_self_test_preset(manager: PresetManager, speckit_version: str = "0.1.5") -> PresetManifest:

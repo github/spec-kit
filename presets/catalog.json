@@ -3,6 +3,27 @@
   "updated_at": "2026-04-24T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.json",
   "presets": {
+    "implement": {
+      "name": "Implement Workflow",
+      "id": "implement",
+      "version": "1.0.0",
+      "description": "Runs the implementation command through task handoff shards",
+      "author": "github",
+      "repository": "https://github.com/github/spec-kit",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.8.9.dev0"
+      },
+      "provides": {
+        "commands": 1,
+        "templates": 0
+      },
+      "tags": [
+        "implementation",
+        "workflow"
+      ]
+    },
     "lean": {
       "name": "Lean Workflow",
       "id": "lean",

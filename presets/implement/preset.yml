@@ -1,0 +1,25 @@
+schema_version: "1.0"
+
+preset:
+  id: "implement"
+  name: "Implement Workflow"
+  version: "1.0.0"
+  description: "Runs the implementation command through task handoff shards"
+  author: "github"
+  repository: "https://github.com/github/spec-kit"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.8.9.dev0"
+
+provides:
+  templates:
+    - type: "command"
+      name: "speckit.implement"
+      file: "commands/speckit.implement.md"
+      description: "Execute implementation through workflow-generated task handoffs"
+      replaces: "speckit.implement"
+
+tags:
+  - "implementation"
+  - "workflow"

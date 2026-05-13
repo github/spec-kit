@@ -74,6 +74,10 @@ from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
 )
+from .agent_projection import (
+    ensure_agent_governance_from_template as _ensure_agent_governance_from_template,
+    refresh_agent_projection as _refresh_agent_projection,
+)
 
 # For cross-platform keyboard input
 import readchar
@@ -91,6 +95,9 @@ def _build_agent_config() -> dict[str, dict[str, Any]]:
 
 AGENT_CONFIG = _build_agent_config()
 DEFAULT_INIT_INTEGRATION = "copilot"
+DEFAULT_BUNDLED_WORKFLOWS = ("speckit", "speckit-implement")
+DEFAULT_BUNDLED_PRESETS = ("implement",)
+DEFAULT_BUNDLED_PRESET_PRIORITY = 20
 
 AI_ASSISTANT_ALIASES = {
     "kiro": "kiro-cli",
@@ -721,6 +728,95 @@ def _locate_bundled_workflow(workflow_id: str) -> Path | None:
     return None
 
 
+def _install_bundled_workflows(project_path: Path) -> str:
+    """Install default bundled workflows and return a tracker summary."""
+    from .workflows.catalog import WorkflowRegistry
+    from .workflows.engine import WorkflowDefinition
+
+    wf_registry = WorkflowRegistry(project_path)
+    messages: list[str] = []
+
+    for workflow_id in DEFAULT_BUNDLED_WORKFLOWS:
+        bundled_wf = _locate_bundled_workflow(workflow_id)
+        if not bundled_wf:
+            messages.append(f"{workflow_id} not found")
+            continue
+        if wf_registry.is_installed(workflow_id):
+            messages.append(f"{workflow_id} already installed")
+            continue
+
+        dest_wf = project_path / ".specify" / "workflows" / workflow_id
+        dest_wf.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(bundled_wf / "workflow.yml", dest_wf / "workflow.yml")
+
+        definition = WorkflowDefinition.from_yaml(dest_wf / "workflow.yml")
+        wf_registry.add(
+            workflow_id,
+            {
+                "name": definition.name,
+                "version": definition.version,
+                "description": definition.description,
+                "source": "bundled",
+            },
+        )
+        messages.append(f"{workflow_id} installed")
+
+    return "; ".join(messages) if messages else "none"
+
+
+def _install_bundled_extension(project_path: Path, extension_id: str) -> str:
+    """Install a bundled extension if needed and return a tracker summary."""
+    from .extensions import ExtensionManager
+
+    bundled_path = _locate_bundled_extension(extension_id)
+    if not bundled_path:
+        return "bundled extension not found"
+
+    manager = ExtensionManager(project_path)
+    if manager.registry.is_installed(extension_id):
+        return "extension already installed"
+
+    manager.install_from_directory(bundled_path, get_speckit_version())
+    return "extension installed"
+
+
+def _install_default_bundled_presets(
+    project_path: Path,
+    *,
+    skip: set[str] | None = None,
+) -> str:
+    """Install default bundled presets and return a tracker summary."""
+    from .presets import PresetManager
+
+    manager = PresetManager(project_path)
+    speckit_ver = get_speckit_version()
+    skip = skip or set()
+    messages: list[str] = []
+
+    for preset_id in DEFAULT_BUNDLED_PRESETS:
+        if preset_id in skip:
+            messages.append(f"{preset_id} skipped")
+            continue
+        bundled_path = _locate_bundled_preset(preset_id)
+        if not bundled_path:
+            messages.append(f"{preset_id} not found")
+            continue
+        if manager.registry.is_installed(preset_id):
+            messages.append(f"{preset_id} already installed")
+            continue
+
+        manager.install_from_directory(
+            bundled_path,
+            speckit_ver,
+            priority=DEFAULT_BUNDLED_PRESET_PRIORITY,
+        )
+        messages.append(
+            f"{preset_id} installed (priority {DEFAULT_BUNDLED_PRESET_PRIORITY})"
+        )
+
+    return "; ".join(messages) if messages else "none"
+
+
 def _locate_bundled_preset(preset_id: str) -> Path | None:
     """Return the path to a bundled preset, or None.
 
@@ -928,6 +1024,46 @@ def ensure_constitution_from_template(project_path: Path, tracker: StepTracker |
             console.print(f"[yellow]Warning: Could not initialize constitution: {e}[/yellow]")
 
 
+def ensure_agent_governance_from_template(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Copy agent-governance template to memory if it doesn't exist."""
+    try:
+        result = _ensure_agent_governance_from_template(project_path)
+    except Exception as e:
+        if tracker:
+            tracker.add("agent-governance", "Agent governance setup")
+            tracker.error("agent-governance", str(e))
+        else:
+            console.print(f"[yellow]Warning: Could not initialize agent governance: {e}[/yellow]")
+        return
+
+    if tracker:
+        tracker.add("agent-governance", "Agent governance setup")
+        if result is None:
+            tracker.error("agent-governance", "template not found")
+        else:
+            tracker.complete("agent-governance", "available")
+
+
+def refresh_agent_projection(project_path: Path, tracker: StepTracker | None = None) -> None:
+    """Refresh generated agent governance projections."""
+    try:
+        result = _refresh_agent_projection(project_path)
+    except Exception as e:
+        if tracker:
+            tracker.add("agent-projection", "Agent governance projection")
+            tracker.error("agent-projection", str(e))
+        else:
+            console.print(f"[yellow]Warning: Could not refresh agent projection: {e}[/yellow]")
+        return
+
+    if tracker:
+        tracker.add("agent-projection", "Agent governance projection")
+        if result.memory_path is None:
+            tracker.skip("agent-projection", "agent-governance template missing")
+        else:
+            tracker.complete("agent-projection", f"{len(result.projection_paths)} file(s) refreshed")
+
+
 INIT_OPTIONS_FILE = ".specify/init-options.json"
 
 
@@ -973,6 +1109,9 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
 # Constants kept for backward compatibility with presets and extensions.
 DEFAULT_SKILLS_DIR = ".agents/skills"
 SKILL_DESCRIPTIONS = {
+    "arch": "Generate project-level 4+1 architecture view artifacts and synthesis.",
+    "agent": "Create or update agent governance and refresh agent instruction projections.",
+    "governance": "Create or update agent governance and refresh agent instruction projections.",
     "specify": "Create or update feature specifications from natural language descriptions.",
     "plan": "Generate technical implementation plans from feature specifications.",
     "tasks": "Break down implementation plans into actionable task lists.",
@@ -1293,6 +1432,7 @@ def init(
         ("constitution", "Constitution setup"),
         ("git", "Install git extension"),
         ("workflow", "Install bundled workflow"),
+        ("preset", "Install default preset"),
         ("final", "Finalize"),
     ]:
         tracker.add(key, label)
@@ -1361,6 +1501,8 @@ def init(
             tracker.complete("shared-infra", f"scripts ({selected_script}) + templates")
 
             ensure_constitution_from_template(project_path, tracker=tracker)
+            ensure_agent_governance_from_template(project_path, tracker=tracker)
+            refresh_agent_projection(project_path, tracker=tracker)
 
             if not no_git:
                 tracker.start("git")
@@ -1385,21 +1527,12 @@ def init(
                     git_messages.append("git not available")
                 # Step 2: Install bundled git extension
                 try:
-                    from .extensions import ExtensionManager
-                    bundled_path = _locate_bundled_extension("git")
-                    if bundled_path:
-                        manager = ExtensionManager(project_path)
-                        if manager.registry.is_installed("git"):
-                            git_messages.append("extension already installed")
-                        else:
-                            manager.install_from_directory(
-                                bundled_path, get_speckit_version()
-                            )
-                            git_default_notice = True
-                            git_messages.append("extension installed")
-                    else:
+                    git_ext_message = _install_bundled_extension(project_path, "git")
+                    if git_ext_message == "extension installed":
+                        git_default_notice = True
+                    if git_ext_message == "bundled extension not found":
                         git_has_error = True
-                        git_messages.append("bundled extension not found")
+                    git_messages.append(git_ext_message)
                 except Exception as ext_err:
                     git_has_error = True
                     sanitized_ext = str(ext_err).replace('\n', ' ').strip()
@@ -1414,33 +1547,10 @@ def init(
             else:
                 tracker.skip("git", "--no-git flag")
 
-            # Install bundled speckit workflow
+            # Install bundled workflows
+            tracker.start("workflow")
             try:
-                bundled_wf = _locate_bundled_workflow("speckit")
-                if bundled_wf:
-                    from .workflows.catalog import WorkflowRegistry
-                    from .workflows.engine import WorkflowDefinition
-                    wf_registry = WorkflowRegistry(project_path)
-                    if wf_registry.is_installed("speckit"):
-                        tracker.complete("workflow", "already installed")
-                    else:
-                        import shutil as _shutil
-                        dest_wf = project_path / ".specify" / "workflows" / "speckit"
-                        dest_wf.mkdir(parents=True, exist_ok=True)
-                        _shutil.copy2(
-                            bundled_wf / "workflow.yml",
-                            dest_wf / "workflow.yml",
-                        )
-                        definition = WorkflowDefinition.from_yaml(dest_wf / "workflow.yml")
-                        wf_registry.add("speckit", {
-                            "name": definition.name,
-                            "version": definition.version,
-                            "description": definition.description,
-                            "source": "bundled",
-                        })
-                        tracker.complete("workflow", "speckit installed")
-                else:
-                    tracker.skip("workflow", "bundled workflow not found")
+                tracker.complete("workflow", _install_bundled_workflows(project_path))
             except Exception as wf_err:
                 sanitized_wf = str(wf_err).replace('\n', ' ').strip()
                 tracker.error("workflow", f"install failed: {sanitized_wf[:120]}")
@@ -1468,6 +1578,20 @@ def init(
             if isinstance(resolved_integration, _SkillsPersist) or getattr(resolved_integration, "_skills_mode", False):
                 init_opts["ai_skills"] = True
             save_init_options(project_path, init_opts)
+
+            tracker.start("preset")
+            explicit_default_preset = preset in DEFAULT_BUNDLED_PRESETS
+            try:
+                tracker.complete(
+                    "preset",
+                    _install_default_bundled_presets(
+                        project_path,
+                        skip={preset} if explicit_default_preset else set(),
+                    ),
+                )
+            except Exception as preset_err:
+                sanitized_preset = str(preset_err).replace('\n', ' ').strip()
+                tracker.error("preset", f"install failed: {sanitized_preset[:120]}")
 
             # Install preset if specified
             if preset:
@@ -1629,11 +1753,12 @@ def init(
 
     steps_lines.append(f"{step_num}. Start using {usage_label} with your coding agent:")
 
-    steps_lines.append(f"   {step_num}.1 [cyan]{_display_cmd('constitution')}[/] - Establish project principles")
-    steps_lines.append(f"   {step_num}.2 [cyan]{_display_cmd('specify')}[/] - Create baseline specification")
-    steps_lines.append(f"   {step_num}.3 [cyan]{_display_cmd('plan')}[/] - Create implementation plan")
-    steps_lines.append(f"   {step_num}.4 [cyan]{_display_cmd('tasks')}[/] - Generate actionable tasks")
-    steps_lines.append(f"   {step_num}.5 [cyan]{_display_cmd('implement')}[/] - Execute implementation")
+    steps_lines.append(f"   {step_num}.1 [cyan]{_display_cmd('arch')}[/] - Shape 4+1 architecture views")
+    steps_lines.append(f"   {step_num}.2 [cyan]{_display_cmd('constitution')}[/] - Establish project principles")
+    steps_lines.append(f"   {step_num}.3 [cyan]{_display_cmd('specify')}[/] - Create baseline specification")
+    steps_lines.append(f"   {step_num}.4 [cyan]{_display_cmd('plan')}[/] - Create implementation plan")
+    steps_lines.append(f"   {step_num}.5 [cyan]{_display_cmd('tasks')}[/] - Generate actionable tasks")
+    steps_lines.append(f"   {step_num}.6 [cyan]{_display_cmd('implement')}[/] - Execute implementation")
 
     steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1,2))
     console.print()
@@ -1928,6 +2053,20 @@ def get_speckit_version() -> str:
                     data = tomllib.load(f)
                     return data.get("project", {}).get("version", "unknown")
         except Exception:
+            # Fall back to a small regex parser for environments where this
+            # module is invoked with Python < 3.11 and tomllib is unavailable.
+            pass
+        try:
+            import re
+            pyproject_path = _repo_root() / "pyproject.toml"
+            if pyproject_path.exists():
+                match = re.search(
+                    r'(?m)^version\s*=\s*"([^"]+)"',
+                    pyproject_path.read_text(encoding="utf-8"),
+                )
+                if match:
+                    return match.group(1)
+        except Exception:
             # Intentionally ignore any errors while reading/parsing pyproject.toml.
             # If this lookup fails for any reason, we fall back to returning "unknown" below.
             pass
@@ -1997,6 +2136,7 @@ def _write_integration_json(
         installed_integrations=installed_integrations,
         settings=integration_settings,
     )
+    refresh_agent_projection(project_root)
 
 
 def _clear_init_options_for_integration(project_root: Path, integration_key: str) -> None:
@@ -2015,6 +2155,7 @@ def _remove_integration_json(project_root: Path) -> None:
     path = project_root / INTEGRATION_JSON
     if path.exists():
         path.unlink()
+    refresh_agent_projection(project_root)
 
 
 _MANIFEST_READ_ERRORS = (ValueError, FileNotFoundError, OSError, UnicodeDecodeError)

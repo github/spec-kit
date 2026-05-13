@@ -1089,6 +1089,121 @@ class TestFanOutStep:
         assert any("'step' must be a mapping" in e for e in errors)
 
 
+class TestSpeckitTaskShardsStep:
+    """Test the Spec Kit task sharding step."""
+
+    def _write_feature(self, project_dir: Path, tasks: str, feature_name: str = "001-demo") -> Path:
+        feature_dir = project_dir / "specs" / feature_name
+        feature_dir.mkdir(parents=True, exist_ok=True)
+        (project_dir / ".specify" / "feature.json").write_text(
+            json.dumps({"feature_directory": f"specs/{feature_name}"}),
+            encoding="utf-8",
+        )
+        (feature_dir / "spec.md").write_text("# Spec\n", encoding="utf-8")
+        (feature_dir / "plan.md").write_text("# Plan\n", encoding="utf-8")
+        (feature_dir / "tasks.md").write_text(tasks, encoding="utf-8")
+        return feature_dir
+
+    def test_execute_generates_handoff_items(self, project_dir):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.speckit_task_shards import SpeckitTaskShardsStep
+
+        feature_dir = self._write_feature(
+            project_dir,
+            """
+# Tasks
+
+## Phase 1: Setup
+- [ ] T001 Create project scaffolding in `pyproject.toml`
+- [ ] T002 [P] Add model in `src/models/user.py`
+- [ ] T003 [P] Add tests in `tests/test_user.py`
+- [ ] T004 Wire service in `src/services/user_service.py`
+""",
+        )
+
+        step = SpeckitTaskShardsStep()
+        result = step.execute(
+            {"id": "build-shards", "input": {"args": "--fast", "max_shards": 4}},
+            StepContext(project_root=str(project_dir), run_id="testrun"),
+        )
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["feature_dir"] == str(feature_dir.resolve())
+        assert result.output["item_count"] == 4
+        first = result.output["items"][0]
+        assert first["shard_id"] == "shard-01"
+        assert first["task_ids"] == ["T001"]
+        assert "--fast Use handoff JSON" in first["args"]
+        handoff = Path(first["handoff_path"])
+        assert handoff.exists()
+        data = json.loads(handoff.read_text(encoding="utf-8"))
+        assert data["contract_type"] == "speckit.implement.handoff.v1"
+        assert data["task_ids"] == ["T001"]
+        assert "specs/001-demo/spec.md" in data["required_context_refs"]
+
+    def test_missing_tasks_fails(self, project_dir):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.speckit_task_shards import SpeckitTaskShardsStep
+
+        feature_dir = project_dir / "specs" / "001-demo"
+        feature_dir.mkdir(parents=True)
+        (project_dir / ".specify" / "feature.json").write_text(
+            json.dumps({"feature_directory": "specs/001-demo"}),
+            encoding="utf-8",
+        )
+        (feature_dir / "spec.md").write_text("# Spec\n", encoding="utf-8")
+        (feature_dir / "plan.md").write_text("# Plan\n", encoding="utf-8")
+
+        result = SpeckitTaskShardsStep().execute(
+            {"id": "build-shards", "input": {}},
+            StepContext(project_root=str(project_dir), run_id="testrun"),
+        )
+
+        assert result.status == StepStatus.FAILED
+        assert "tasks.md" in result.error
+
+    def test_parallel_task_without_path_fails(self, project_dir):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.speckit_task_shards import SpeckitTaskShardsStep
+
+        self._write_feature(
+            project_dir,
+            """
+# Tasks
+- [ ] T001 [P] Add isolated unit tests
+""",
+        )
+
+        result = SpeckitTaskShardsStep().execute(
+            {"id": "build-shards", "input": {}},
+            StepContext(project_root=str(project_dir), run_id="testrun"),
+        )
+
+        assert result.status == StepStatus.FAILED
+        assert "must declare at least one explicit path" in result.error
+
+    def test_parallel_write_conflict_fails(self, project_dir):
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.steps.speckit_task_shards import SpeckitTaskShardsStep
+
+        self._write_feature(
+            project_dir,
+            """
+# Tasks
+- [ ] T001 [P] Add repository in `src/app.py`
+- [ ] T002 [P] Add service in `src/app.py`
+""",
+        )
+
+        result = SpeckitTaskShardsStep().execute(
+            {"id": "build-shards", "input": {}},
+            StepContext(project_root=str(project_dir), run_id="testrun"),
+        )
+
+        assert result.status == StepStatus.FAILED
+        assert "write overlapping path" in result.error
+
+
 class TestFanInStep:
     """Test the fan-in step type."""
 
@@ -1282,6 +1397,20 @@ steps:
 """)
         errors = validate_workflow(definition)
         assert any("invalid type" in e.lower() for e in errors)
+
+    def test_bundled_implement_workflow_validates(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        workflow_path = (
+            Path(__file__).resolve().parent.parent
+            / "workflows"
+            / "speckit-implement"
+            / "workflow.yml"
+        )
+        definition = WorkflowDefinition.from_yaml(workflow_path)
+        errors = validate_workflow(definition)
+        assert errors == []
+        assert definition.id == "speckit-implement"
 
     def test_nested_step_validation(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
@@ -1749,6 +1878,16 @@ class TestWorkflowCatalog:
         assert configs[0]["name"] == "default"
         assert isinstance(configs[0]["install_allowed"], bool)
 
+    def test_bundled_catalog_contains_implement_workflow(self):
+        catalog_path = Path(__file__).resolve().parent.parent / "workflows" / "catalog.json"
+        data = json.loads(catalog_path.read_text(encoding="utf-8"))
+
+        workflow = data["workflows"]["speckit-implement"]
+        assert workflow["name"] == "Implementation"
+        assert workflow["url"].endswith(
+            "/workflows/speckit-implement/workflow.yml"
+        )
+
 
 # ===== Integration Test =====
 
@@ -1802,6 +1941,68 @@ steps:
         assert "echo-full" in state.step_results
         assert "echo-partial" not in state.step_results
         assert "plan" in state.step_results
+
+    def test_implement_workflow_fans_out_to_implement(self, project_dir, monkeypatch):
+        """The bundled workflow dispatches speckit.implement once per shard."""
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.steps.command import CommandStep
+
+        feature_dir = project_dir / "specs" / "001-demo"
+        feature_dir.mkdir(parents=True, exist_ok=True)
+        (project_dir / ".specify" / "feature.json").write_text(
+            json.dumps({"feature_directory": "specs/001-demo"}),
+            encoding="utf-8",
+        )
+        (feature_dir / "spec.md").write_text("# Spec\n", encoding="utf-8")
+        (feature_dir / "plan.md").write_text("# Plan\n", encoding="utf-8")
+        (feature_dir / "tasks.md").write_text(
+            """
+# Tasks
+- [ ] T001 [P] Add model in `src/model.py`
+- [ ] T002 [P] Add tests in `tests/test_model.py`
+""",
+            encoding="utf-8",
+        )
+
+        calls = []
+
+        def fake_dispatch(command, integration_key, model, args, context):
+            calls.append(
+                {
+                    "command": command,
+                    "integration": integration_key,
+                    "args": args,
+                }
+            )
+            return {"exit_code": 0, "stdout": "", "stderr": ""}
+
+        monkeypatch.setattr(
+            CommandStep,
+            "_try_dispatch",
+            staticmethod(fake_dispatch),
+        )
+
+        workflow_path = (
+            Path(__file__).resolve().parent.parent
+            / "workflows"
+            / "speckit-implement"
+            / "workflow.yml"
+        )
+        definition = WorkflowDefinition.from_yaml(workflow_path)
+        state = WorkflowEngine(project_dir).execute(
+            definition,
+            {"integration": "claude", "args": "--fast", "max_shards": "4"},
+        )
+
+        assert state.status == RunStatus.COMPLETED
+        assert [call["command"] for call in calls] == [
+            "speckit.implement",
+            "speckit.implement",
+        ]
+        assert all(call["integration"] == "claude" for call in calls)
+        assert all("Use handoff JSON" in call["args"] for call in calls)
+        assert all("--fast" in call["args"] for call in calls)
 
     def test_switch_workflow(self, project_dir):
         """Test switch step type in a workflow."""

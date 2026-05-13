@@ -572,7 +572,10 @@ class PresetManager:
 
         try:
             specifier = SpecifierSet(required)
-            if current not in specifier:
+            base_current = pkg_version.Version(current.base_version)
+            if current not in specifier and not (
+                current.is_prerelease and base_current in specifier
+            ):
                 raise PresetCompatibilityError(
                     f"Preset requires spec-kit {required}, "
                     f"but {speckit_version} is installed.\n"

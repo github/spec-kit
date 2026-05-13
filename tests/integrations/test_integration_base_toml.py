@@ -483,6 +483,9 @@ class TomlIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     COMMAND_STEMS = [
+        "agent",
+        "arch",
+        "governance",
         "analyze",
         "checklist",
         "clarify",
@@ -515,6 +518,7 @@ class TomlIntegrationTests:
                 "check-prerequisites.sh",
                 "common.sh",
                 "create-new-feature.sh",
+                "setup-arch.sh",
                 "setup-plan.sh",
                 "setup-tasks.sh",
             ]:
@@ -524,12 +528,20 @@ class TomlIntegrationTests:
                 "check-prerequisites.ps1",
                 "common.ps1",
                 "create-new-feature.ps1",
+                "setup-arch.ps1",
                 "setup-plan.ps1",
                 "setup-tasks.ps1",
             ]:
                 files.append(f".specify/scripts/powershell/{name}")
 
         for name in [
+            "agent-governance-template.md",
+            "architecture-development-template.md",
+            "architecture-logical-template.md",
+            "architecture-physical-template.md",
+            "architecture-process-template.md",
+            "architecture-scenario-template.md",
+            "architecture-template.md",
             "checklist-template.md",
             "constitution-template.md",
             "plan-template.md",
@@ -538,6 +550,8 @@ class TomlIntegrationTests:
         ]:
             files.append(f".specify/templates/{name}")
 
+        files.append("AGENTS.md")
+        files.append(".specify/memory/agent-governance.md")
         files.append(".specify/memory/constitution.md")
         # Bundled workflow
         files.append(".specify/workflows/speckit/workflow.yml")
