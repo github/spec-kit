@@ -151,9 +151,8 @@ class TestExtensionRegistration:
         
         config = executor.get_project_config()
         assert "hook-ext" not in config["installed"]
-        # Hook entry should be removed from hooks dict
-        if "after_tasks" in config["hooks"]:
-            assert len(config["hooks"]["after_tasks"]) == 0
+        # Hook entry should be removed entirely; key absent or empty list both accepted
+        assert "after_tasks" not in config["hooks"]
 
     def test_unregister_hooks_no_hooks_key(self, project_dir):
         """Resilience: unregister_hooks should work even if config has no 'hooks' key."""

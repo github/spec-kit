@@ -2538,36 +2538,9 @@ class HookExecutor:
         if not isinstance(config, dict):
             config = {}
 
-        # Load existing installed list, defaulting to [] if missing or corrupted
         raw_installed = config.get("installed")
-        installed = raw_installed if isinstance(raw_installed, list) else []
-        
-        # Sanitize: keep strings and mappings with a valid 'id'
-        valid = [
-            x for x in installed
-            if isinstance(x, str) or (isinstance(x, dict) and isinstance(x.get("id"), str))
-        ]
+        sanitized = self._sanitize_installed_list(raw_installed, add_id=extension_id)
 
-        # Deduplicate by id: prefer dict (richer metadata) over plain string for
-        # the same id; keep only one canonical entry per id. (Feedback)
-        seen: dict = {}  # id -> entry (dict preferred over str)
-        for x in valid:
-            eid = x if isinstance(x, str) else x.get("id", "")
-            if eid not in seen or isinstance(x, dict):
-                seen[eid] = x
-
-        # Ensure the target extension id is present in the registry; if not
-        # already tracked (as a dict or string), add it as a plain string.
-        if extension_id not in seen:
-            seen[extension_id] = extension_id
-
-        # Maintain alphabetical order by ID for readability and diff stability
-        def _get_sort_id(x):
-            return x if isinstance(x, str) else x.get("id", "")
-
-        sanitized = sorted(seen.values(), key=_get_sort_id)
-        
-        # Always persist if sanitized state differs from raw config (ensures normalization)
         if sanitized != raw_installed:
             config["installed"] = sanitized
             self.save_project_config(config)
@@ -2583,36 +2556,59 @@ class HookExecutor:
         if not isinstance(config, dict):
             config = {}
 
-        # Load existing installed list, defaulting to [] if missing or corrupted
         raw_installed = config.get("installed")
-        installed = raw_installed if isinstance(raw_installed, list) else []
+        sanitized = self._sanitize_installed_list(raw_installed, remove_id=extension_id)
 
-        # Sanitize, deduplicate by id, and remove the target extension.
-        # Mirrors register_extension(): one canonical entry per id, dict preferred over str.
+        # Always persist if sanitized state differs from raw config (ensures normalization)
+        if sanitized != raw_installed:
+            config["installed"] = sanitized
+            self.save_project_config(config)
+
+    @staticmethod
+    def _sanitize_installed_list(
+        raw: object,
+        *,
+        add_id: str = "",
+        remove_id: str = "",
+    ) -> list:
+        """Normalize, deduplicate, and optionally add/remove an extension id.
+
+        Shared by register_extension() and unregister_extension() to prevent
+        the two paths from drifting.
+
+        Args:
+            raw: The raw value from config["installed"] (may be non-list).
+            add_id: If non-empty, ensure this id is present (plain-string fallback).
+            remove_id: If non-empty, remove this id from the list.
+
+        Returns:
+            A sanitized, deduplicated, alphabetically-sorted list.
+        """
+        installed = raw if isinstance(raw, list) else []
+
+        # Keep only strings and dicts with a valid string 'id'
         valid = [
             x for x in installed
             if isinstance(x, str) or (isinstance(x, dict) and isinstance(x.get("id"), str))
         ]
 
+        # Deduplicate by id: prefer dict (richer metadata) over plain string
         seen: dict = {}  # id -> entry (dict preferred over str)
         for x in valid:
             eid = x if isinstance(x, str) else x.get("id", "")
             if eid not in seen or isinstance(x, dict):
                 seen[eid] = x
 
-        # Remove the target extension
-        seen.pop(extension_id, None)
+        if add_id and add_id not in seen:
+            seen[add_id] = add_id
 
-        # Maintain alphabetical order for consistency
-        def _get_sort_id(x):
-            return x if isinstance(x, str) else x.get("id", "")
+        if remove_id:
+            seen.pop(remove_id, None)
 
-        sanitized = sorted(seen.values(), key=_get_sort_id)
-            
-        # Always persist if sanitized state differs from raw config (ensures normalization)
-        if sanitized != raw_installed:
-            config["installed"] = sanitized
-            self.save_project_config(config)
+        def _sort_key(x: object) -> str:
+            return x if isinstance(x, str) else x.get("id", "")  # type: ignore[return-value]
+
+        return sorted(seen.values(), key=_sort_key)
 
     def register_hooks(self, manifest: ExtensionManifest):
         """Register extension hooks in project config.
