@@ -383,7 +383,7 @@ class CommandRegistrar:
             from . import _load_agent_context_config
             ac_cfg = _load_agent_context_config(project_root)
             context_file = ac_cfg.get("context_file") or ""
-        except (ImportError, OSError, yaml.YAMLError):
+        except ImportError:
             # Best-effort read: ignore extension config load/parse errors and
             # fall back to init-options.json context_file below.
             context_file = ""

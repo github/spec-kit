@@ -82,11 +82,14 @@ PY
   exit 0
 fi
 
-{
-  IFS= read -r CONTEXT_FILE
-  IFS= read -r MARKER_START
-  IFS= read -r MARKER_END
-} <<< "$_raw_opts"
+mapfile -t _opts_lines <<< "$_raw_opts"
+if (( ${#_opts_lines[@]} < 3 )); then
+  echo "agent-context: malformed config parser output; expected 3 lines, got ${#_opts_lines[@]}; skipping update." >&2
+  exit 0
+fi
+CONTEXT_FILE="${_opts_lines[0]}"
+MARKER_START="${_opts_lines[1]}"
+MARKER_END="${_opts_lines[2]}"
 
 if [[ -z "$CONTEXT_FILE" ]]; then
   echo "agent-context: context_file not set in extension config; nothing to do." >&2

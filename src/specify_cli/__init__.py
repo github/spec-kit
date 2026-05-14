@@ -990,26 +990,35 @@ def init(
             # Install bundled agent-context extension (opt-out via
             # `specify extension disable agent-context`). Owns the managed
             # section in coding agent context files (CLAUDE.md, etc.).
-            # Installed AFTER init-options are saved so hooks can read from
-            # the project. After install, the extension config is updated
-            # with the active integration's context_file.
+            # Installed after init-options are saved so project metadata
+            # reflects the selected integration before extension setup.
+            # The extension config is then updated (in finally) with the
+            # active integration's context_file.
             tracker.start("agent-context")
             _ac_bundled: Path | None = None
             _ac_err_msg: str | None = None
+            _ac_terminal: str | None = None
+            _ac_terminal_detail = ""
             try:
                 from .extensions import ExtensionManager as _AgentCtxMgr
                 _ac_bundled = _locate_bundled_extension("agent-context")
                 if _ac_bundled:
                     ac_manager = _AgentCtxMgr(project_path)
                     if ac_manager.registry.is_installed("agent-context"):
-                        tracker.complete("agent-context", "already installed")
+                        _ac_terminal = "complete"
+                        _ac_terminal_detail = "already installed"
+                        tracker.complete("agent-context", _ac_terminal_detail)
                     else:
                         ac_manager.install_from_directory(
                             _ac_bundled, get_speckit_version()
                         )
-                        tracker.complete("agent-context", "installed")
+                        _ac_terminal = "complete"
+                        _ac_terminal_detail = "installed"
+                        tracker.complete("agent-context", _ac_terminal_detail)
                 else:
-                    tracker.skip("agent-context", "bundled extension not found")
+                    _ac_terminal = "skip"
+                    _ac_terminal_detail = "bundled extension not found"
+                    tracker.skip("agent-context", _ac_terminal_detail)
             except Exception as ac_err:
                 sanitized_ac = str(ac_err).replace('\n', ' ').strip()
                 _ac_err_msg = f"install failed: {sanitized_ac[:120]}"
@@ -1037,7 +1046,22 @@ def init(
                         else:
                             _ac_err_msg = cfg_msg
                 if _ac_err_msg is not None:
-                    tracker.error("agent-context", _ac_err_msg)
+                    if _ac_terminal == "complete":
+                        tracker.complete(
+                            "agent-context",
+                            f"{_ac_terminal_detail}; {_ac_err_msg}"
+                            if _ac_terminal_detail
+                            else _ac_err_msg,
+                        )
+                    elif _ac_terminal == "skip":
+                        tracker.skip(
+                            "agent-context",
+                            f"{_ac_terminal_detail}; {_ac_err_msg}"
+                            if _ac_terminal_detail
+                            else _ac_err_msg,
+                        )
+                    else:
+                        tracker.error("agent-context", _ac_err_msg)
 
             # Fix permissions after all installs (scripts + extensions)
             ensure_executable_scripts(project_path, tracker=tracker)
@@ -1568,12 +1592,11 @@ def _clear_init_options_for_integration(project_root: Path, integration_key: str
         opts.pop("ai", None)
         opts.pop("ai_skills", None)
         save_init_options(project_root, opts)
-        # Clear context_file in the extension config too.
-        ext_cfg_path = project_root / _AGENT_CTX_EXT_CONFIG
-        if ext_cfg_path.exists():
-            _update_agent_context_config_file(
-                project_root, "", preserve_markers=True
-            )
+        # Clear context_file in the extension config too. If the config file
+        # does not exist yet, create it so no stale target can persist.
+        _update_agent_context_config_file(
+            project_root, "", preserve_markers=True
+        )
     elif has_legacy_context_keys:
         save_init_options(project_root, opts)
 

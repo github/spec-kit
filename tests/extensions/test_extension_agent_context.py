@@ -294,6 +294,17 @@ class TestExtensionConfigWriters:
         cfg = _load_agent_context_config(tmp_path)
         assert cfg.get("context_file") == ""
 
+    def test_clear_init_options_creates_ext_config_when_missing(self, tmp_path):
+        from specify_cli import _clear_init_options_for_integration
+
+        save_init_options(
+            tmp_path,
+            {"integration": "claude", "ai": "claude"},
+        )
+        _clear_init_options_for_integration(tmp_path, "claude")
+        cfg = _load_agent_context_config(tmp_path)
+        assert cfg.get("context_file") == ""
+
     def test_clear_init_options_removes_legacy_context_keys_even_when_not_active(
         self, tmp_path
     ):

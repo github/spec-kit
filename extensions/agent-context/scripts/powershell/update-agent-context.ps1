@@ -35,6 +35,23 @@ function Get-ConfigValue {
     return $null
 }
 
+function Test-ConfigObject {
+    param(
+        [AllowNull()][object]$Object
+    )
+
+    if ($null -eq $Object) {
+        return $false
+    }
+    if ($Object -is [System.Collections.IDictionary]) {
+        return $true
+    }
+    if ($Object -is [System.Management.Automation.PSCustomObject]) {
+        return $true
+    }
+    return $false
+}
+
 $ErrorActionPreference = 'Stop'
 $DefaultStart = '<!-- SPECKIT START -->'
 $DefaultEnd   = '<!-- SPECKIT END -->'
@@ -100,6 +117,11 @@ print(json.dumps(data))
         Write-Warning "agent-context: unable to parse $ExtConfig; skipping update."
         exit 0
     }
+}
+
+if (-not (Test-ConfigObject -Object $Options)) {
+    Write-Warning "agent-context: $ExtConfig must contain a YAML mapping; skipping update."
+    exit 0
 }
 
 $ContextFile = Get-ConfigValue -Object $Options -Key 'context_file'
