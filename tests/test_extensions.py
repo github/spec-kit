@@ -1799,6 +1799,33 @@ Run {SCRIPT}
             / "speckit.test-ext.hello.agent.md"
         ).exists()
 
+    def test_dev_register_commands_rejects_cache_path_traversal(self, temp_dir):
+        """Dev-mode cache writes must stay inside the agent cache root."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        source_dir = temp_dir / "extension"
+        source_dir.mkdir()
+        commands_dir = temp_dir / "commands"
+        commands_dir.mkdir()
+
+        with pytest.raises(ValueError, match="escapes directory"):
+            AgentCommandRegistrar._write_registered_output(
+                commands_dir / "safe.md",
+                "content",
+                source_dir,
+                "copilot",
+                "../escaped",
+                ".md",
+                True,
+            )
+
+        assert not (
+            source_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "escaped.md"
+        ).exists()
+
     def test_copilot_companion_prompt_created(self, extension_dir, project_dir):
         """Test that companion .prompt.md files are created in .github/prompts/."""
         agents_dir = project_dir / ".github" / "agents"

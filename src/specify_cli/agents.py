@@ -668,13 +668,9 @@ class CommandRegistrar:
             return
 
         rel_output = Path(f"{output_name}{extension}")
-        cache_file = (
-            source_dir
-            / ".specify-dev"
-            / "agent-commands"
-            / agent_name
-            / rel_output
-        )
+        cache_root = source_dir / ".specify-dev" / "agent-commands" / agent_name
+        cache_file = cache_root / rel_output
+        CommandRegistrar._ensure_inside(cache_file, cache_root)
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(content, encoding="utf-8")
 
