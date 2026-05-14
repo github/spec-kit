@@ -1,0 +1,45 @@
+schema_version: "1.0"
+
+extension:
+  id: "github-issues"
+  name: "GitHub Issues Integration"
+  version: "1.0.0"
+  description: "Generate spec artifacts from GitHub Issues - import issues, sync updates, and maintain bidirectional traceability"
+  author: "Fatima367"
+  repository: "https://github.com/Fatima367/spec-kit-github-issues"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.1.0"
+  tools:
+    - name: "gh"
+      required: true
+      version: ">=2.0.0"
+
+provides:
+  commands:
+    - name: "speckit.github-issues.import"
+      file: "commands/import.md"
+      description: "Import a GitHub Issue and generate spec.md with structured requirements"
+
+    - name: "speckit.github-issues.sync"
+      file: "commands/sync.md"
+      description: "Sync spec artifacts with updates from the source GitHub Issue"
+
+    - name: "speckit.github-issues.link"
+      file: "commands/link.md"
+      description: "Add bidirectional traceability between spec artifacts and source issue"
+
+  config:
+    - name: "github-issues-config.yml"
+      template: "github-issues-config.template.yml"
+      description: "GitHub Issues integration configuration"
+      required: false
+
+tags:
+  - "integration"
+  - "github"
+  - "issues"
+  - "import"
+  - "sync"
+  - "traceability"
