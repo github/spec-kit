@@ -762,7 +762,7 @@ class TestIntegrationSwitch:
         assert result.exit_code == 0, result.output
 
         # Git extension commands should exist for opencode
-        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
+        opencode_git_feature = project / ".opencode" / "commands" / "speckit.git.feature.md"
         assert opencode_git_feature.exists(), "Git extension command should exist for opencode"
 
         # Old kimi extension skills should be removed
@@ -837,7 +837,7 @@ class TestIntegrationSwitch:
         ])
         assert result.exit_code == 0, result.output
 
-        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
+        opencode_git_feature = project / ".opencode" / "commands" / "speckit.git.feature.md"
         assert opencode_git_feature.exists(), "Git extension command should exist for opencode"
         assert not copilot_git_feature.exists(), "Old Copilot extension skill should be removed"
 
@@ -858,7 +858,7 @@ class TestIntegrationSwitch:
         result = _run_in_project(project, ["extension", "disable", "git"])
         assert result.exit_code == 0, result.output
 
-        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
+        opencode_git_feature = project / ".opencode" / "commands" / "speckit.git.feature.md"
         assert opencode_git_feature.exists(), "Disabled extension command remains until integration switch"
 
         result = _run_in_project(project, [
@@ -1167,6 +1167,49 @@ class TestIntegrationUpgrade:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "gemini"
         assert "/speckit.plan" in template.read_text(encoding="utf-8")
+
+    def test_upgrade_migrates_opencode_legacy_dir(self, tmp_path):
+        """Upgrade moves OpenCode commands from .opencode/command/ to .opencode/commands/."""
+        project = _init_project(tmp_path, "opencode")
+
+        # Simulate a legacy project: rename commands/ back to command/
+        canonical = project / ".opencode" / "commands"
+        legacy = project / ".opencode" / "command"
+        assert canonical.is_dir(), "init should have created .opencode/commands/"
+        canonical.rename(legacy)
+        assert legacy.is_dir()
+        assert not canonical.exists()
+
+        # Patch the manifest to reflect old paths (command/ not commands/)
+        manifest_path = project / ".specify" / "integrations" / "opencode.manifest.json"
+        manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        patched_files = {}
+        for path, info in manifest_data.get("files", {}).items():
+            patched_files[path.replace(".opencode/commands/", ".opencode/command/")] = info
+        manifest_data["files"] = patched_files
+        manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+        old_commands = sorted(legacy.glob("speckit.*.md"))
+        assert len(old_commands) > 0, "Legacy dir should have speckit command files"
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "opencode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, f"upgrade failed: {result.output}"
+
+        # New commands in canonical dir
+        assert canonical.is_dir(), ".opencode/commands/ should exist after upgrade"
+        new_commands = sorted(canonical.glob("speckit.*.md"))
+        assert len(new_commands) > 0, "Commands should exist in .opencode/commands/"
+
+        # Stale files removed from legacy dir
+        remaining = list(legacy.glob("speckit.*.md"))
+        assert len(remaining) == 0, (
+            f"Legacy .opencode/command/ should have no speckit files after upgrade, "
+            f"found: {[f.name for f in remaining]}"
+        )
 
 
 # ── Full lifecycle ───────────────────────────────────────────────────

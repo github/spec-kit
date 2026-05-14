@@ -2,6 +2,38 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.10] - 2026-05-14
+
+### Changed
+
+- docs: streamline install section and add community overview (#2561)
+- Move community extensions table from README to docs site (#2560)
+- Add Agent Governance extension to community catalog (#2559)
+- Add Reqnroll BDD extension to community catalog (#2545)
+- fix(cli): harden extension registration and discovery workflows (#2499)
+- refactor: extract _assets.py and _utils.py from __init__.py (PR-2/8) (#2543)
+- fix(opencode): use commands/ directory (plural) to match OpenCode docs (#2453)
+- refactor: extract _console.py from __init__.py (PR-1/8) (#2474)
+- Fix constitution reference in README (#2491)
+- chore: release 0.8.9, begin 0.8.10.dev0 development (#2532)
+
+## [0.8.9] - 2026-05-12
+
+### Changed
+
+- docs: revamp landing page with four-pillar card layout (#2531)
+- feat(extensions): update governance ecosystem extensions to latest versions (#2514)
+- Add changelog extension (#2177)
+- Add install directory to docfx.json file references (#2522)
+- feat(catalog): add BrownKit (brownkit) community extension (#2510) (#2520)
+- fix(kiro-cli): replace literal $ARGUMENTS with prose fallback (#2482)
+- Preset: Add game-narrative-writing  preset to community catalog (#2454)
+- docs: clarify CLI upgrade discovery (#2519)
+- fix: make template metadata line breaks markdownlint-safe (#2505)
+- refactor(catalogs): extract integration catalog config loading (#2497)
+- test(presets): silence expected UserWarnings in self-test composition… (#2373)
+- chore: release 0.8.8, begin 0.8.9.dev0 development (#2516)
+
 ## [0.8.8] - 2026-05-11
 
 ### Changed
