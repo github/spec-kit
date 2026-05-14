@@ -4,9 +4,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 
 ## Supported AI Coding Agents
 
-This table is generated from [`integrations/catalog.json`](../../integrations/catalog.json). Update the catalog and rerun `python scripts/generate_integrations_reference.py --write` to refresh it.
-
-<!-- BEGIN GENERATED INTEGRATIONS TABLE -->
+Run `specify integration search --markdown` to print this table as markdown.
 
 | Agent                                                                    | Key            | Notes                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------------------------------------ | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -40,7 +38,6 @@ This table is generated from [`integrations/catalog.json`](../../integrations/ca
 | [Trae](https://www.trae.ai/)                                             | `trae`         | Skills-based integration; skills are installed automatically                                                                                                                                                                                                                             |
 | [Mistral Vibe](https://github.com/mistralai/mistral-vibe)                | `vibe`         |                                                                                                                                                                                                                                                                                          |
 | [Windsurf](https://windsurf.com/)                                        | `windsurf`     |                                                                                                                                                                                                                                                                                          |
-<!-- END GENERATED INTEGRATIONS TABLE -->
 
 ## List Available Integrations
 

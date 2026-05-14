@@ -2523,8 +2523,16 @@ def integration_search(
     query: Optional[str] = typer.Argument(None, help="Search query (optional)"),
     tag: Optional[str] = typer.Option(None, "--tag", help="Filter by tag"),
     author: Optional[str] = typer.Option(None, "--author", help="Filter by author"),
+    markdown: bool = typer.Option(
+        False, "--markdown", help="Output results as a markdown table"
+    ),
 ):
     """Search for integrations in the active catalog stack."""
+    if markdown:
+        from .catalog_docs import render_integrations_table
+        typer.echo(render_integrations_table())
+        return
+
     from .integrations import INTEGRATION_REGISTRY
     from .integrations.catalog import (
         IntegrationCatalog,
