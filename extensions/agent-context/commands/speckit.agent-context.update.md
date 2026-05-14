@@ -8,7 +8,8 @@ Refresh the managed Spec Kit section inside the active coding agent's context/in
 
 ## Behavior
 
-The script reads the project's `.specify/init-options.json` to discover:
+The script reads the agent-context extension config at
+`.specify/extensions/agent-context/agent-context-config.yml` to discover:
 
 - `context_file` — the path of the coding agent context file to manage.
 - `context_markers.start` / `.end` — the delimiters surrounding the managed section. Defaults to `<!-- SPECKIT START -->` and `<!-- SPECKIT END -->` when the field is missing.

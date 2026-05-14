@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import yaml
+
 from specify_cli import (
+    _load_agent_context_config,
+    _save_agent_context_config,
     load_init_options,
     save_init_options,
 )
@@ -15,6 +19,23 @@ from specify_cli.integrations.claude import ClaudeIntegration
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "agent-context"
+
+_EXT_CONFIG_REL = Path(".specify") / "extensions" / "agent-context" / "agent-context-config.yml"
+
+
+def _write_ext_config(project_root: Path, **overrides: object) -> None:
+    """Write a minimal agent-context extension config."""
+    cfg: dict = {
+        "context_file": overrides.get("context_file", ""),
+        "context_markers": overrides.get(
+            "context_markers",
+            {
+                "start": IntegrationBase.CONTEXT_MARKER_START,
+                "end": IntegrationBase.CONTEXT_MARKER_END,
+            },
+        ),
+    }
+    _save_agent_context_config(project_root, cfg)
 
 
 # ── Bundled extension layout ─────────────────────────────────────────────────
@@ -27,8 +48,6 @@ class TestExtensionLayout:
         assert (EXT_DIR / "extension.yml").is_file()
 
     def test_extension_yml_has_required_fields(self):
-        import yaml
-
         manifest = yaml.safe_load((EXT_DIR / "extension.yml").read_text())
         assert manifest["extension"]["id"] == "agent-context"
         assert manifest["extension"]["name"] == "Coding Agent Context"
@@ -43,21 +62,28 @@ class TestExtensionLayout:
         text = readme.read_text(encoding="utf-8")
         assert "Coding Agent Context Extension" in text
 
+    def test_config_template_exists(self):
+        cfg = EXT_DIR / "agent-context-config.yml"
+        assert cfg.is_file()
+        parsed = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+        assert "context_file" in parsed
+        assert "context_markers" in parsed
+
     def test_command_file_exists(self):
         cmd = EXT_DIR / "commands" / "speckit.agent-context.update.md"
         assert cmd.is_file()
-        assert "init-options.json" in cmd.read_text(encoding="utf-8")
+        assert "agent-context-config.yml" in cmd.read_text(encoding="utf-8")
 
     def test_bundled_scripts_exist(self):
         assert (EXT_DIR / "scripts" / "bash" / "update-agent-context.sh").is_file()
         assert (EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1").is_file()
 
-    def test_bash_script_reads_init_options(self):
+    def test_bash_script_reads_extension_config(self):
         text = (EXT_DIR / "scripts" / "bash" / "update-agent-context.sh").read_text(
             encoding="utf-8"
         )
-        # The script must consult init-options.json — no agent-specific logic
-        assert "init-options.json" in text
+        # The script must consult the extension config, not init-options.json
+        assert "agent-context-config.yml" in text
         assert "context_file" in text
         assert "context_markers" in text
 
@@ -76,7 +102,7 @@ class TestCatalogEntry:
         assert entry["author"] == "spec-kit-core"
 
 
-# ── Marker resolution from init-options.json ─────────────────────────────────
+# ── Marker resolution from extension config ──────────────────────────────────
 
 
 class _CtxIntegration(ClaudeIntegration):
@@ -84,24 +110,21 @@ class _CtxIntegration(ClaudeIntegration):
 
 
 class TestContextMarkerResolution:
-    def _seed_options(self, project_root: Path, **overrides):
-        save_init_options(project_root, overrides)
-
-    def test_defaults_when_init_options_missing(self, tmp_path):
+    def test_defaults_when_ext_config_missing(self, tmp_path):
         i = _CtxIntegration()
         start, end = i._resolve_context_markers(tmp_path)
         assert start == IntegrationBase.CONTEXT_MARKER_START
         assert end == IntegrationBase.CONTEXT_MARKER_END
 
-    def test_defaults_when_field_missing(self, tmp_path):
-        self._seed_options(tmp_path, context_file="CLAUDE.md")
+    def test_defaults_when_markers_field_missing(self, tmp_path):
+        _write_ext_config(tmp_path, context_file="CLAUDE.md")
         i = _CtxIntegration()
         start, end = i._resolve_context_markers(tmp_path)
         assert start == IntegrationBase.CONTEXT_MARKER_START
         assert end == IntegrationBase.CONTEXT_MARKER_END
 
     def test_custom_markers_respected(self, tmp_path):
-        self._seed_options(
+        _write_ext_config(
             tmp_path,
             context_markers={"start": "<!-- BEGIN -->", "end": "<!-- END -->"},
         )
@@ -111,14 +134,14 @@ class TestContextMarkerResolution:
         assert end == "<!-- END -->"
 
     def test_partial_override_falls_back_for_missing_side(self, tmp_path):
-        self._seed_options(tmp_path, context_markers={"start": "<!-- ONLY START -->"})
+        _write_ext_config(tmp_path, context_markers={"start": "<!-- ONLY START -->"})
         i = _CtxIntegration()
         start, end = i._resolve_context_markers(tmp_path)
         assert start == "<!-- ONLY START -->"
         assert end == IntegrationBase.CONTEXT_MARKER_END
 
     def test_invalid_markers_fall_back(self, tmp_path):
-        self._seed_options(tmp_path, context_markers={"start": 42, "end": ""})
+        _write_ext_config(tmp_path, context_markers={"start": 42, "end": ""})
         i = _CtxIntegration()
         start, end = i._resolve_context_markers(tmp_path)
         assert start == IntegrationBase.CONTEXT_MARKER_START
@@ -130,10 +153,11 @@ class TestContextMarkerResolution:
 
 class TestUpsertWithCustomMarkers:
     def _setup(self, tmp_path: Path, markers: dict | None = None) -> _CtxIntegration:
-        opts: dict = {"context_file": "CLAUDE.md"}
-        if markers is not None:
-            opts["context_markers"] = markers
-        save_init_options(tmp_path, opts)
+        _write_ext_config(
+            tmp_path,
+            context_file="CLAUDE.md",
+            **({"context_markers": markers} if markers is not None else {}),
+        )
         return _CtxIntegration()
 
     def test_upsert_uses_default_markers(self, tmp_path):
@@ -191,7 +215,7 @@ class TestUpsertWithCustomMarkers:
         assert "epilogue" in remaining
 
     def test_remove_with_default_markers_unchanged_when_custom_in_file(self, tmp_path):
-        # init-options.json absent → default markers used. File contains only
+        # Extension config absent → default markers used. File contains only
         # custom markers — nothing should be removed.
         i = _CtxIntegration()
         ctx = tmp_path / "CLAUDE.md"
@@ -256,51 +280,68 @@ class TestExtensionEnabledGate:
         assert ctx.read_text(encoding="utf-8") == original
 
 
-# ── init-options writers seed default markers ────────────────────────────────
+# ── Extension config writers ─────────────────────────────────────────────────
 
 
-class TestInitOptionsWriters:
-    def test_clear_init_options_pops_context_markers(self, tmp_path):
+class TestExtensionConfigWriters:
+    def test_clear_init_options_clears_ext_config_context_file(self, tmp_path):
         from specify_cli import _clear_init_options_for_integration
 
         save_init_options(
             tmp_path,
-            {
-                "integration": "claude",
-                "ai": "claude",
-                "context_file": "CLAUDE.md",
-                "context_markers": {
-                    "start": IntegrationBase.CONTEXT_MARKER_START,
-                    "end": IntegrationBase.CONTEXT_MARKER_END,
-                },
-            },
+            {"integration": "claude", "ai": "claude"},
         )
+        _write_ext_config(tmp_path, context_file="CLAUDE.md")
         _clear_init_options_for_integration(tmp_path, "claude")
+        cfg = _load_agent_context_config(tmp_path)
+        assert cfg.get("context_file") == ""
+
+    def test_update_init_options_writes_context_file_to_ext_config(self, tmp_path):
+        from specify_cli import _update_init_options_for_integration
+
+        # Pre-create the extension config so _update_init_options_for_integration
+        # updates it (rather than skipping it when ext config doesn't exist yet).
+        _write_ext_config(tmp_path, context_file="")
+        i = _CtxIntegration()
+        _update_init_options_for_integration(tmp_path, i, script_type="sh")
+        # init-options.json must NOT have context_file or context_markers
         opts = load_init_options(tmp_path)
         assert "context_file" not in opts
         assert "context_markers" not in opts
-
-    def test_update_init_options_seeds_default_markers(self, tmp_path):
-        from specify_cli import _update_init_options_for_integration
-
-        i = _CtxIntegration()
-        _update_init_options_for_integration(tmp_path, i, script_type="sh")
-        opts = load_init_options(tmp_path)
-        assert opts["integration"] == i.key
-        assert opts["context_file"] == i.context_file
-        assert opts["context_markers"] == {
-            "start": IntegrationBase.CONTEXT_MARKER_START,
-            "end": IntegrationBase.CONTEXT_MARKER_END,
-        }
+        # Extension config must have them
+        cfg = _load_agent_context_config(tmp_path)
+        assert cfg["context_file"] == i.context_file
+        assert "context_markers" in cfg
 
     def test_update_init_options_preserves_custom_markers(self, tmp_path):
         from specify_cli import _update_init_options_for_integration
 
-        save_init_options(
+        _write_ext_config(
             tmp_path,
-            {"context_markers": {"start": "<!-- B -->", "end": "<!-- E -->"}},
+            context_file="",
+            context_markers={"start": "<!-- B -->", "end": "<!-- E -->"},
         )
         i = _CtxIntegration()
         _update_init_options_for_integration(tmp_path, i)
-        opts = load_init_options(tmp_path)
-        assert opts["context_markers"] == {"start": "<!-- B -->", "end": "<!-- E -->"}
+        cfg = _load_agent_context_config(tmp_path)
+        assert cfg["context_markers"] == {"start": "<!-- B -->", "end": "<!-- E -->"}
+
+    def test_reinit_preserves_custom_markers(self, tmp_path):
+        """specify init (reinit) must not overwrite user-customised markers."""
+        from specify_cli import _update_agent_context_config_file
+
+        # Simulate existing project with custom markers
+        _write_ext_config(
+            tmp_path,
+            context_file="CLAUDE.md",
+            context_markers={"start": "<!-- CUSTOM -->", "end": "<!-- /CUSTOM -->"},
+        )
+        # Re-running init updates context_file but must preserve markers
+        _update_agent_context_config_file(
+            tmp_path, "CLAUDE.md", preserve_markers=True
+        )
+        cfg = _load_agent_context_config(tmp_path)
+        assert cfg["context_markers"] == {
+            "start": "<!-- CUSTOM -->",
+            "end": "<!-- /CUSTOM -->",
+        }

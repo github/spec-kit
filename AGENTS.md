@@ -177,22 +177,22 @@ def _register_builtins() -> None:
 
 Set `context_file` on the integration class. The base integration setup creates or updates the managed Spec Kit section in that file, and uninstall removes the managed section when appropriate.
 
-The managed section is owned by the bundled `agent-context` extension (`extensions/agent-context/`). All configuration flows through `.specify/init-options.json`:
+The managed section is owned by the bundled `agent-context` extension (`extensions/agent-context/`). All configuration flows through the extension's own config file at `.specify/extensions/agent-context/agent-context-config.yml`:
 
-```json
-{
-  "context_file": "CLAUDE.md",
-  "context_markers": {
-    "start": "<!-- SPECKIT START -->",
-    "end": "<!-- SPECKIT END -->"
-  }
-}
+```yaml
+# Path to the coding agent context file managed by this extension
+context_file: CLAUDE.md
+
+# Delimiters for the managed Spec Kit section
+context_markers:
+  start: "<!-- SPECKIT START -->"
+  end: "<!-- SPECKIT END -->"
 ```
 
-- `context_file` is written automatically from the integration's class attribute.
-- `context_markers.{start,end}` defaults to `IntegrationBase.CONTEXT_MARKER_START` / `CONTEXT_MARKER_END`. Users who want custom markers edit `init-options.json` directly — both the Python layer (`upsert_context_section()` / `remove_context_section()`) and the bundled scripts (`extensions/agent-context/scripts/bash/update-agent-context.sh` and `.ps1`) read from this single source of truth.
+- `context_file` is written automatically from the integration's class attribute when `specify init` or `specify integration use` is run.
+- `context_markers.{start,end}` defaults to `IntegrationBase.CONTEXT_MARKER_START` / `CONTEXT_MARKER_END`. Users who want custom markers edit `agent-context-config.yml` directly — both the Python layer (`upsert_context_section()` / `remove_context_section()`) and the bundled scripts (`extensions/agent-context/scripts/bash/update-agent-context.sh` and `.ps1`) read from this single source of truth.
 
-Users can opt out entirely with `specify extension disable agent-context`; while disabled, `setup()` and `teardown()` skip context-file creation, updates, and removal.
+Users can opt out entirely with `specify extension disable agent-context`; while disabled, Spec Kit skips context-file creation, updates, and removal (the gates are inside `upsert_context_section()` and `remove_context_section()`).
 
 Only add custom setup logic when the agent needs non-standard behavior. Integrations no longer require per-agent thin wrapper scripts or shared context-update dispatcher scripts — the `agent-context` extension is fully generic.
 

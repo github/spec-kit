@@ -4,9 +4,9 @@
 # Refresh the managed Spec Kit section in the coding agent's context file
 # (e.g. CLAUDE.md, .github/copilot-instructions.md, AGENTS.md).
 #
-# Reads `context_file` and `context_markers.{start,end}` from
-# `.specify/init-options.json`. Falls back to the default markers when
-# `context_markers` is absent.
+# Reads `context_file` and `context_markers.{start,end}` from the
+# agent-context extension config:
+#   .specify/extensions/agent-context/agent-context-config.yml
 #
 # Usage: update-agent-context.sh [plan_path]
 #
@@ -17,23 +17,42 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(pwd)"
-INIT_OPTIONS="$PROJECT_ROOT/.specify/init-options.json"
+EXT_CONFIG="$PROJECT_ROOT/.specify/extensions/agent-context/agent-context-config.yml"
 DEFAULT_START="<!-- SPECKIT START -->"
 DEFAULT_END="<!-- SPECKIT END -->"
 
-if [[ ! -f "$INIT_OPTIONS" ]]; then
-  echo "agent-context: $INIT_OPTIONS not found; nothing to do." >&2
+if [[ ! -f "$EXT_CONFIG" ]]; then
+  echo "agent-context: $EXT_CONFIG not found; nothing to do." >&2
   exit 0
 fi
 
-# Parse init-options.json once; emit three newline-separated fields:
+# Locate a suitable Python interpreter (python3, then python).
+_python=""
+if command -v python3 >/dev/null 2>&1; then
+  _python="python3"
+elif command -v python >/dev/null 2>&1 && python --version 2>&1 | grep -q "^Python 3"; then
+  _python="python"
+fi
+
+if [[ -z "$_python" ]]; then
+  echo "agent-context: Python 3 not found on PATH; cannot parse extension config." >&2
+  exit 1
+fi
+
+# Parse extension config once; emit three newline-separated fields:
 # context_file, context_markers.start, context_markers.end
-_raw_opts="$(python3 - "$INIT_OPTIONS" <<'PY'
-import json, sys
+_raw_opts="$("$_python" - "$EXT_CONFIG" <<'PY'
+import sys
+try:
+    import yaml
+except ImportError:
+    yaml = None
 try:
     with open(sys.argv[1], "r", encoding="utf-8") as fh:
-        data = json.load(fh)
+        data = yaml.safe_load(fh) if yaml else {}
 except Exception:
+    data = {}
+if not isinstance(data, dict):
     data = {}
 def get_str(obj, *keys):
     node = obj
@@ -56,7 +75,7 @@ PY
 } <<< "$_raw_opts"
 
 if [[ -z "$CONTEXT_FILE" ]]; then
-  echo "agent-context: context_file not set in init-options.json; nothing to do." >&2
+  echo "agent-context: context_file not set in extension config; nothing to do." >&2
   exit 0
 fi
 
@@ -65,9 +84,22 @@ fi
 
 PLAN_PATH="${1:-}"
 if [[ -z "$PLAN_PATH" ]]; then
-  if compgen -G "$PROJECT_ROOT/specs/*/plan.md" > /dev/null; then
-    # Pick the most recently modified plan.md (one level deep: specs/<feature>/plan.md)
-    _plan_abs="$(ls -1t "$PROJECT_ROOT"/specs/*/plan.md 2>/dev/null | head -1)"
+  # Pick the most recently modified plan.md one level deep (specs/<feature>/plan.md).
+  # Use find + sort by modification time to avoid ls/head fragility with
+  # spaces in paths or SIGPIPE from pipefail.
+  _plan_abs="$("$_python" - "$PROJECT_ROOT" <<'PY'
+import sys, os
+from pathlib import Path
+specs = Path(sys.argv[1]) / "specs"
+plans = sorted(
+    specs.glob("*/plan.md"),
+    key=lambda p: p.stat().st_mtime,
+    reverse=True,
+)
+print(plans[0] if plans else "")
+PY
+)"
+  if [[ -n "$_plan_abs" ]]; then
     PLAN_PATH="${_plan_abs#"$PROJECT_ROOT/"}"
   fi
 fi
@@ -88,7 +120,7 @@ trap 'rm -f "$TMP_SECTION"' EXIT
   echo "$MARKER_END"
 } > "$TMP_SECTION"
 
-python3 - "$CTX_PATH" "$MARKER_START" "$MARKER_END" "$TMP_SECTION" <<'PY'
+"$_python" - "$CTX_PATH" "$MARKER_START" "$MARKER_END" "$TMP_SECTION" <<'PY'
 import sys, os
 ctx_path, start, end, section_path = sys.argv[1:5]
 with open(section_path, "r", encoding="utf-8") as fh:

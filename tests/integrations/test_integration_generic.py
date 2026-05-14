@@ -211,8 +211,8 @@ class TestGenericIntegration:
         assert result.exit_code != 0
 
     def test_init_options_includes_context_file(self, tmp_path):
-        """init-options.json must include context_file for the generic integration."""
-        import json
+        """agent-context extension config must include context_file for the generic integration."""
+        import yaml
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -229,8 +229,9 @@ class TestGenericIntegration:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        opts = json.loads((project / ".specify" / "init-options.json").read_text())
-        assert opts.get("context_file") == "AGENTS.md"
+        ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
+        ext_cfg = yaml.safe_load(ext_cfg_path.read_text(encoding="utf-8")) if ext_cfg_path.exists() else {}
+        assert ext_cfg.get("context_file") == "AGENTS.md"
 
     def test_complete_file_inventory_sh(self, tmp_path):
         """Every file produced by specify init --integration generic --ai-commands-dir ... --script sh."""
@@ -265,6 +266,7 @@ class TestGenericIntegration:
             ".myagent/commands/speckit.specify.md",
             ".myagent/commands/speckit.tasks.md",
             ".myagent/commands/speckit.taskstoissues.md",
+            ".specify/extensions/agent-context/agent-context-config.yml",
             ".specify/init-options.json",
             ".specify/integration.json",
             ".specify/integrations/generic.manifest.json",
@@ -321,6 +323,7 @@ class TestGenericIntegration:
             ".myagent/commands/speckit.specify.md",
             ".myagent/commands/speckit.tasks.md",
             ".myagent/commands/speckit.taskstoissues.md",
+            ".specify/extensions/agent-context/agent-context-config.yml",
             ".specify/init-options.json",
             ".specify/integration.json",
             ".specify/integrations/generic.manifest.json",

@@ -13,6 +13,7 @@ Provides:
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 from abc import ABC
@@ -505,9 +506,7 @@ class IntegrationBase(ABC):
         if not registry_path.exists():
             return True
         try:
-            import json as _json
-
-            data = _json.loads(registry_path.read_text(encoding="utf-8"))
+            data = json.loads(registry_path.read_text(encoding="utf-8"))
         except (OSError, ValueError, UnicodeError):
             return True
         if not isinstance(data, dict):
@@ -523,30 +522,50 @@ class IntegrationBase(ABC):
     def _resolve_context_markers(self, project_root: Path) -> tuple[str, str]:
         """Return the (start, end) context markers to use for *project_root*.
 
-        Reads ``context_markers.start`` / ``context_markers.end`` from
-        ``.specify/init-options.json`` when present.  Falls back to the
-        class-level constants ``CONTEXT_MARKER_START`` /
-        ``CONTEXT_MARKER_END`` when the file is missing, the section is
-        absent, or the values are not non-empty strings.
+        Reads ``context_markers.start`` / ``context_markers.end`` from the
+        agent-context extension config
+        (``.specify/extensions/agent-context/agent-context-config.yml``)
+        when present.  Falls back to the class-level constants
+        ``CONTEXT_MARKER_START`` / ``CONTEXT_MARKER_END`` when the file is
+        missing, the section is absent, or the values are not non-empty
+        strings.
         """
+        from .._console import console  # local import to avoid cycles
+
         start = self.CONTEXT_MARKER_START
         end = self.CONTEXT_MARKER_END
+        config_path = (
+            project_root
+            / ".specify"
+            / "extensions"
+            / "agent-context"
+            / "agent-context-config.yml"
+        )
         try:
-            from .. import load_init_options  # local import to avoid cycles
-        except ImportError:
+            raw = config_path.read_text(encoding="utf-8")
+            cfg = yaml.safe_load(raw)
+        except (OSError, ValueError, yaml.YAMLError):
             return start, end
-        try:
-            opts = load_init_options(project_root)
-        except (OSError, ValueError):
-            return start, end
-        markers = opts.get("context_markers") if isinstance(opts, dict) else None
+        markers = cfg.get("context_markers") if isinstance(cfg, dict) else None
         if isinstance(markers, dict):
             cm_start = markers.get("start")
             cm_end = markers.get("end")
-            if isinstance(cm_start, str) and cm_start:
-                start = cm_start
-            if isinstance(cm_end, str) and cm_end:
-                end = cm_end
+            s_valid = isinstance(cm_start, str) and cm_start
+            e_valid = isinstance(cm_end, str) and cm_end
+            if not s_valid and cm_start is not None:
+                console.print(
+                    f"[yellow]agent-context: ignoring invalid context_markers.start "
+                    f"({cm_start!r}), using default[/yellow]"
+                )
+            if not e_valid and cm_end is not None:
+                console.print(
+                    f"[yellow]agent-context: ignoring invalid context_markers.end "
+                    f"({cm_end!r}), using default[/yellow]"
+                )
+            if s_valid:
+                start = cm_start  # type: ignore[assignment]
+            if e_valid:
+                end = cm_end  # type: ignore[assignment]
         return start, end
 
     def upsert_context_section(

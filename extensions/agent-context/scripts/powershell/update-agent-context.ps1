@@ -4,9 +4,9 @@
 # Refresh the managed Spec Kit section in the coding agent's context file
 # (e.g. CLAUDE.md, .github/copilot-instructions.md, AGENTS.md).
 #
-# Reads `context_file` and `context_markers.{start,end}` from
-# `.specify/init-options.json`. Falls back to the default markers when
-# `context_markers` is absent.
+# Reads `context_file` and `context_markers.{start,end}` from the
+# agent-context extension config:
+#   .specify/extensions/agent-context/agent-context-config.yml
 #
 # Usage: update-agent-context.ps1 [plan_path]
 
@@ -20,43 +20,68 @@ $ErrorActionPreference = 'Stop'
 $DefaultStart = '<!-- SPECKIT START -->'
 $DefaultEnd   = '<!-- SPECKIT END -->'
 $ProjectRoot  = (Get-Location).Path
-$InitOptions  = Join-Path $ProjectRoot '.specify/init-options.json'
+$ExtConfig    = Join-Path $ProjectRoot '.specify/extensions/agent-context/agent-context-config.yml'
 
-if (-not (Test-Path -LiteralPath $InitOptions)) {
-    Write-Host "agent-context: $InitOptions not found; nothing to do."
+if (-not (Test-Path -LiteralPath $ExtConfig)) {
+    Write-Host "agent-context: $ExtConfig not found; nothing to do."
     exit 0
 }
 
 try {
-    $Options = Get-Content -LiteralPath $InitOptions -Raw | ConvertFrom-Json
+    $Options = Get-Content -LiteralPath $ExtConfig -Raw | ConvertFrom-Yaml -ErrorAction Stop
 } catch {
-    Write-Host "agent-context: failed to parse init-options.json; nothing to do."
-    exit 0
+    # ConvertFrom-Yaml may not be available on all systems; fall back to a
+    # simple line-by-line YAML parser for the keys we need.
+    $Options = @{}
+    $inMarkers = $false
+    foreach ($line in Get-Content -LiteralPath $ExtConfig) {
+        if ($line -match '^context_file:\s*(.*)$') {
+            $Options['context_file'] = $Matches[1].Trim().Trim('"').Trim("'")
+        } elseif ($line -match '^context_markers:') {
+            $inMarkers = $true
+        } elseif ($inMarkers -and $line -match '^\s+start:\s*(.+)$') {
+            if (-not $Options.ContainsKey('context_markers')) { $Options['context_markers'] = @{} }
+            $Options['context_markers']['start'] = $Matches[1].Trim().Trim('"').Trim("'")
+        } elseif ($inMarkers -and $line -match '^\s+end:\s*(.+)$') {
+            if (-not $Options.ContainsKey('context_markers')) { $Options['context_markers'] = @{} }
+            $Options['context_markers']['end'] = $Matches[1].Trim().Trim('"').Trim("'")
+        } elseif ($inMarkers -and $line -match '^[a-z]') {
+            $inMarkers = $false
+        }
+    }
 }
 
-$ContextFile = $Options.context_file
+$ContextFile = $Options['context_file']
 if (-not $ContextFile) {
-    Write-Host 'agent-context: context_file not set in init-options.json; nothing to do.'
+    Write-Host 'agent-context: context_file not set in extension config; nothing to do.'
     exit 0
 }
 
 $MarkerStart = $DefaultStart
 $MarkerEnd   = $DefaultEnd
-if ($Options.context_markers) {
-    if ($Options.context_markers.start -is [string] -and $Options.context_markers.start) {
-        $MarkerStart = $Options.context_markers.start
+$cm = $Options['context_markers']
+if ($cm) {
+    if ($cm['start'] -is [string] -and $cm['start']) {
+        $MarkerStart = $cm['start']
     }
-    if ($Options.context_markers.end -is [string] -and $Options.context_markers.end) {
-        $MarkerEnd = $Options.context_markers.end
+    if ($cm['end'] -is [string] -and $cm['end']) {
+        $MarkerEnd = $cm['end']
     }
 }
 
 if (-not $PlanPath) {
-    $candidate = Get-ChildItem -Path (Join-Path $ProjectRoot 'specs') -Filter 'plan.md' -Recurse -Depth 1 -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-    if ($candidate) {
-        $PlanPath = [System.IO.Path]::GetRelativePath($ProjectRoot, $candidate.FullName).Replace('\','/')
+    # Discover plan.md one level deep (specs/<feature>/plan.md), matching the
+    # bash glob specs/*/plan.md. Wrap in try/catch so access errors under
+    # $ErrorActionPreference = 'Stop' don't abort the script.
+    try {
+        $candidate = Get-ChildItem -Path (Join-Path $ProjectRoot 'specs') -Filter 'plan.md' -Recurse -Depth 1 -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+        if ($candidate) {
+            $PlanPath = [System.IO.Path]::GetRelativePath($ProjectRoot, $candidate.FullName).Replace('\','/')
+        }
+    } catch {
+        # Non-fatal: continue without a plan path.
     }
 }
 
