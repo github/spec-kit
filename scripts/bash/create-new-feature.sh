@@ -93,9 +93,20 @@ while [ $i -le $# ]; do
     i=$((i + 1))
 done
 
-# Auto-append '/' if branch prefix is non-empty and doesn't end with '/'
-if [ -n "$BRANCH_PREFIX" ] && [[ ! "$BRANCH_PREFIX" =~ /$ ]]; then
-    BRANCH_PREFIX="$BRANCH_PREFIX/"
+# Validate and normalize branch prefix
+if [ -n "$BRANCH_PREFIX" ]; then
+    BRANCH_PREFIX=$(echo "$BRANCH_PREFIX" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [ -z "$BRANCH_PREFIX" ]; then
+        echo 'Error: --prefix cannot be empty or whitespace' >&2
+        exit 1
+    fi
+    # Strip optional trailing '/' before checking for embedded slashes
+    _check_prefix="${BRANCH_PREFIX%/}"
+    if [[ "$_check_prefix" == */* ]]; then
+        echo 'Error: --prefix must be a single segment (no embedded slashes); e.g. "feature", "bugfix"' >&2
+        exit 1
+    fi
+    BRANCH_PREFIX="$_check_prefix/"
 fi
 
 FEATURE_DESCRIPTION="${ARGS[*]}"
@@ -325,6 +336,9 @@ else
     BRANCH_NAME="${BRANCH_PREFIX}${FEATURE_NUM}-${BRANCH_SUFFIX}"
 fi
 
+# Directory-safe name (no prefix slash) for specs/ paths
+FEATURE_DIR_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+
 # GitHub enforces a 244-byte limit on branch names
 # Validate and truncate if necessary
 MAX_BRANCH_LENGTH=244
@@ -333,21 +347,22 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
     # Account for prefix length: timestamp (15) + hyphen (1) = 16, or sequential (3) + hyphen (1) = 4
     PREFIX_LENGTH=$(( ${#BRANCH_PREFIX} + ${#FEATURE_NUM} + 1 ))
     MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - PREFIX_LENGTH))
-    
+
     # Truncate suffix at word boundary if possible
     TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SUFFIX_LENGTH)
     # Remove trailing hyphen if truncation created one
     TRUNCATED_SUFFIX=$(echo "$TRUNCATED_SUFFIX" | sed 's/-$//')
-    
+
     ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
     BRANCH_NAME="${BRANCH_PREFIX}${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
-    
+    FEATURE_DIR_NAME="${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
+
     >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
     >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"
     >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
 fi
 
-FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
+FEATURE_DIR="$SPECS_DIR/$FEATURE_DIR_NAME"
 SPEC_FILE="$FEATURE_DIR/spec.md"
 
 if [ "$DRY_RUN" != true ]; then
@@ -403,7 +418,7 @@ if [ "$DRY_RUN" != true ]; then
     fi
 
     # Inform the user how to persist the feature variable in their own shell
-    printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
+    printf '# To persist: export SPECIFY_FEATURE=%q\n' "$FEATURE_DIR_NAME" >&2
 fi
 
 if $JSON_MODE; then
@@ -433,6 +448,6 @@ else
     echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
     if [ "$DRY_RUN" != true ]; then
-        printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"
+        printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$FEATURE_DIR_NAME"
     fi
 fi

@@ -45,9 +45,19 @@ if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
 
 $featureDesc = ($FeatureDescription -join ' ').Trim()
 
-# Auto-append '/' if branch prefix is non-empty and doesn't end with '/'
-if ($Prefix -and -not $Prefix.EndsWith('/')) {
-    $Prefix = "$Prefix/"
+# Validate and normalize branch prefix
+if ($Prefix) {
+    $Prefix = $Prefix.Trim()
+    if ([string]::IsNullOrWhiteSpace($Prefix)) {
+        Write-Error "Error: -Prefix cannot be empty or whitespace"
+        exit 1
+    }
+    $checkPrefix = $Prefix.TrimEnd('/')
+    if ($checkPrefix.Contains('/')) {
+        Write-Error "Error: -Prefix must be a single segment (no embedded slashes); e.g. 'feature', 'bugfix'"
+        exit 1
+    }
+    $Prefix = "$checkPrefix/"
 }
 
 if ([string]::IsNullOrWhiteSpace($featureDesc)) {

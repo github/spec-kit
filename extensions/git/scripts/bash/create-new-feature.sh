@@ -103,9 +103,20 @@ while [ $i -le $# ]; do
     i=$((i + 1))
 done
 
-# Auto-append '/' if branch prefix is non-empty and doesn't end with '/'
-if [ -n "$BRANCH_PREFIX" ] && [[ ! "$BRANCH_PREFIX" =~ /$ ]]; then
-    BRANCH_PREFIX="$BRANCH_PREFIX/"
+# Validate and normalize branch prefix
+if [ -n "$BRANCH_PREFIX" ]; then
+    BRANCH_PREFIX=$(echo "$BRANCH_PREFIX" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [ -z "$BRANCH_PREFIX" ]; then
+        echo 'Error: --prefix cannot be empty or whitespace' >&2
+        exit 1
+    fi
+    # Strip optional trailing '/' before checking for embedded slashes
+    _check_prefix="${BRANCH_PREFIX%/}"
+    if [[ "$_check_prefix" == */* ]]; then
+        echo 'Error: --prefix must be a single segment (no embedded slashes); e.g. "feature", "bugfix"' >&2
+        exit 1
+    fi
+    BRANCH_PREFIX="$_check_prefix/"
 fi
 
 FEATURE_DESCRIPTION="${ARGS[*]}"

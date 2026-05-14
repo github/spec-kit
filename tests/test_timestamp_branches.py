@@ -1321,3 +1321,368 @@ class TestDescriptionQuoting:
         """Plain description without special characters continues to work."""
         result = run_script(git_repo, "--dry-run", "--short-name", "feat", "Add login feature")
         assert result.returncode == 0, result.stderr
+
+
+# ── Prefix (--prefix / -Prefix) Tests ─────────────────────────────────────────
+
+
+def _parse_branch_from_stdout(stdout: str) -> str | None:
+    """Extract BRANCH_NAME value from plain-text script output."""
+    for line in stdout.splitlines():
+        if line.startswith("BRANCH_NAME:"):
+            return line.split(":", 1)[1].strip()
+    return None
+
+
+@requires_bash
+class TestPrefixBash:
+    """Tests for --prefix in core create-new-feature.sh."""
+
+    def test_prefix_creates_prefixed_branch(self, git_repo: Path):
+        """Branch name includes the prefix; git branch is created with it."""
+        result = run_script(git_repo, "--prefix", "feature", "--short-name", "auth", "Add auth")
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "feature/001-auth", f"expected feature/001-auth, got: {branch}"
+        current = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=git_repo, capture_output=True, text=True,
+        ).stdout.strip()
+        assert current == "feature/001-auth"
+
+    def test_prefix_spec_dir_has_no_prefix(self, git_repo: Path):
+        """Specs directory uses the flat name (no prefix slash)."""
+        result = run_script(git_repo, "--prefix", "feature", "--short-name", "auth", "Add auth")
+        assert result.returncode == 0, result.stderr
+        assert (git_repo / "specs" / "001-auth").is_dir()
+        assert (git_repo / "specs" / "001-auth" / "spec.md").exists()
+        # Nested dir must NOT exist
+        assert not (git_repo / "specs" / "feature").exists()
+
+    def test_prefix_json_output(self, git_repo: Path):
+        """JSON: BRANCH_NAME has prefix, SPEC_FILE uses flat dir name."""
+        result = run_script(git_repo, "--json", "--prefix", "bugfix", "--short-name", "fix", "Bug fix")
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "bugfix/001-fix"
+        assert "specs/001-fix/spec.md" in data["SPEC_FILE"]
+        assert "bugfix" not in data["SPEC_FILE"]
+
+    def test_prefix_specify_feature_is_dir_name(self, git_repo: Path):
+        """SPECIFY_FEATURE hint uses the flat directory name (no prefix)."""
+        result = run_script(git_repo, "--prefix", "hotfix", "--short-name", "urgent", "Urgent fix")
+        assert result.returncode == 0, result.stderr
+        assert "SPECIFY_FEATURE=001-urgent" in result.stderr
+        assert "hotfix" not in result.stderr.split("SPECIFY_FEATURE=")[1].split("\n")[0]
+
+    def test_prefix_with_timestamp(self, git_repo: Path):
+        """Timestamp mode: branch gets prefix, spec dir stays flat."""
+        result = run_script(
+            git_repo, "--prefix", "feature", "--timestamp", "--short-name", "ts-feat", "TS feature"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert re.match(r"^feature/\d{8}-\d{6}-ts-feat$", branch), f"unexpected: {branch}"
+        # Spec dir must be flat
+        spec_dirs = [d.name for d in (git_repo / "specs").iterdir() if d.is_dir()]
+        assert len(spec_dirs) == 1
+        assert re.match(r"^\d{8}-\d{6}-ts-feat$", spec_dirs[0]), f"unexpected spec dir: {spec_dirs[0]}"
+
+    def test_prefix_truncation(self, git_repo: Path):
+        """Long suffix is truncated; branch and spec dir names are both valid."""
+        long_name = "a-" * 150 + "end"
+        result = run_script(
+            git_repo, "--prefix", "feature", "--timestamp", "--short-name", long_name, "Long feature"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch is not None
+        assert len(branch) <= 244, f"branch too long: {len(branch)}"
+        assert branch.startswith("feature/")
+        # Spec dir must not contain slash
+        spec_dirs = [d.name for d in (git_repo / "specs").iterdir() if d.is_dir()]
+        assert len(spec_dirs) == 1
+        assert "/" not in spec_dirs[0]
+
+    def test_prefix_numbering_with_existing_prefixed_branches(self, git_repo: Path):
+        """Existing prefixed branches (e.g., feature/003-x) are counted for next number."""
+        subprocess.run(
+            ["git", "checkout", "-b", "feature/003-existing"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        result = run_script(git_repo, "--prefix", "bugfix", "--short-name", "new", "New bugfix")
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "bugfix/004-new", f"expected bugfix/004-new, got: {branch}"
+
+    def test_prefix_numbering_with_existing_unprefixed_specs(self, git_repo: Path):
+        """Existing flat spec dirs (e.g., 005-x) are counted when using prefix."""
+        (git_repo / "specs" / "005-existing-spec").mkdir(parents=True)
+        result = run_script(git_repo, "--prefix", "feature", "--short-name", "new", "New feature")
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "feature/006-new", f"expected feature/006-new, got: {branch}"
+
+    def test_prefix_numbering_with_existing_unprefixed_branches(self, git_repo: Path):
+        """Existing flat branches (e.g., 002-x) are counted when using prefix."""
+        subprocess.run(
+            ["git", "checkout", "-b", "002-existing"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        result = run_script(git_repo, "--prefix", "feature", "--short-name", "next", "Next feature")
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "feature/003-next", f"expected feature/003-next, got: {branch}"
+
+    def test_prefix_dry_run(self, git_repo: Path):
+        """Dry-run with prefix returns correct name without side effects."""
+        result = run_script(
+            git_repo, "--dry-run", "--prefix", "feature", "--short-name", "dry", "Dry run"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "feature/001-dry", f"expected feature/001-dry, got: {branch}"
+        branches = subprocess.run(
+            ["git", "branch", "--list"],
+            cwd=git_repo, capture_output=True, text=True,
+        )
+        assert "feature/001-dry" not in branches.stdout
+        assert not (git_repo / "specs").exists()
+
+    def test_prefix_allow_existing_branch(self, git_repo: Path):
+        """--allow-existing-branch works with prefixed branch names."""
+        subprocess.run(
+            ["git", "checkout", "-b", "feature/010-pre-exist"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-"],
+            cwd=git_repo, check=True, capture_output=True,
+        )
+        result = run_script(
+            git_repo, "--allow-existing-branch", "--prefix", "feature",
+            "--short-name", "pre-exist", "--number", "10", "Pre-existing",
+        )
+        assert result.returncode == 0, result.stderr
+        current = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=git_repo, capture_output=True, text=True,
+        ).stdout.strip()
+        assert current == "feature/010-pre-exist"
+
+    def test_prefix_trailing_slash_optional(self, git_repo: Path):
+        """Passing 'feature/' (with trailing slash) works identically to 'feature'."""
+        result = run_script(
+            git_repo, "--prefix", "feature/", "--short-name", "slash", "Trailing slash"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "feature/001-slash", f"expected feature/001-slash, got: {branch}"
+
+    def test_prefix_whitespace_trimmed(self, git_repo: Path):
+        """Whitespace around prefix value is trimmed."""
+        result = run_script(
+            git_repo, "--prefix", "  feature  ", "--short-name", "ws", "Whitespace prefix"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "feature/001-ws", f"expected feature/001-ws, got: {branch}"
+
+    def test_prefix_rejects_embedded_slash(self, git_repo: Path):
+        """Multi-segment prefix like 'feat/fix' is rejected."""
+        result = run_script(
+            git_repo, "--dry-run", "--prefix", "feat/fix", "--short-name", "bad", "Bad prefix"
+        )
+        assert result.returncode != 0
+        assert "single segment" in result.stderr
+
+    def test_prefix_rejects_whitespace_only(self, git_repo: Path):
+        """Whitespace-only prefix value is rejected."""
+        result = run_script(
+            git_repo, "--dry-run", "--prefix", "   ", "--short-name", "bad", "Bad prefix"
+        )
+        assert result.returncode != 0
+        assert "empty" in result.stderr.lower() or "whitespace" in result.stderr.lower()
+
+    def test_no_prefix_still_unprefixed(self, git_repo: Path):
+        """Without --prefix, branch and spec dir are both flat (regression guard)."""
+        result = run_script(git_repo, "--short-name", "plain", "Plain feature")
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "001-plain"
+        assert (git_repo / "specs" / "001-plain").is_dir()
+
+    def test_prefix_e2e_with_check_feature_branch(self, git_repo: Path):
+        """Full E2E: create prefixed branch, then validate with check_feature_branch."""
+        run_script(git_repo, "--prefix", "feature", "--short-name", "e2e", "E2E prefix test")
+        branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=git_repo, capture_output=True, text=True,
+        ).stdout.strip()
+        assert branch == "feature/001-e2e"
+        assert (git_repo / "specs" / "001-e2e").is_dir()
+        val = source_and_call(f'check_feature_branch "{branch}" "true"')
+        assert val.returncode == 0, f"check_feature_branch rejected {branch}: {val.stderr}"
+
+    def test_prefix_no_git(self, no_git_dir: Path):
+        """--prefix works without git (spec dir created, git warning emitted)."""
+        result = run_script(
+            no_git_dir, "--prefix", "feature", "--short-name", "no-git", "No git feature"
+        )
+        assert result.returncode == 0, result.stderr
+        assert (no_git_dir / "specs" / "001-no-git").is_dir()
+        assert not (no_git_dir / "specs" / "feature").exists()
+
+
+@pytest.mark.skipif(not _has_pwsh(), reason="pwsh not available")
+class TestPrefixPowerShell:
+    """Tests for -Prefix in core create-new-feature.ps1."""
+
+    def test_ps_prefix_creates_prefixed_branch(self, ps_git_repo: Path):
+        """PowerShell: branch name includes prefix."""
+        result = run_ps_script(
+            ps_git_repo, "-Prefix", "feature", "-ShortName", "auth", "Add auth"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "feature/001-auth", f"expected feature/001-auth, got: {branch}"
+
+    def test_ps_prefix_spec_dir_has_no_prefix(self, ps_git_repo: Path):
+        """PowerShell: spec dir uses flat name."""
+        result = run_ps_script(
+            ps_git_repo, "-Prefix", "feature", "-ShortName", "auth", "Add auth"
+        )
+        assert result.returncode == 0, result.stderr
+        assert (ps_git_repo / "specs" / "001-auth").is_dir()
+        assert not (ps_git_repo / "specs" / "feature").exists()
+
+    def test_ps_prefix_json_output(self, ps_git_repo: Path):
+        """PowerShell: JSON BRANCH_NAME has prefix, SPEC_FILE is flat."""
+        result = run_ps_script(
+            ps_git_repo, "-Json", "-Prefix", "bugfix", "-ShortName", "fix", "Bug fix"
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "bugfix/001-fix"
+        assert "specs/001-fix/spec.md" in data["SPEC_FILE"]
+        assert "bugfix" not in data["SPEC_FILE"]
+
+    def test_ps_prefix_with_timestamp(self, ps_git_repo: Path):
+        """PowerShell: timestamp + prefix produces prefixed branch, flat spec dir."""
+        result = run_ps_script(
+            ps_git_repo, "-Prefix", "feature", "-Timestamp", "-ShortName", "ts", "TS feat"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert re.match(r"^feature/\d{8}-\d{6}-ts$", branch), f"unexpected: {branch}"
+
+    def test_ps_prefix_numbering_with_existing_specs(self, ps_git_repo: Path):
+        """PowerShell: existing spec dirs counted for next number with prefix."""
+        (ps_git_repo / "specs" / "005-existing").mkdir(parents=True)
+        result = run_ps_script(
+            ps_git_repo, "-Prefix", "feature", "-ShortName", "new", "New feature"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "feature/006-new", f"expected feature/006-new, got: {branch}"
+
+    def test_ps_prefix_dry_run(self, ps_git_repo: Path):
+        """PowerShell: dry-run with prefix returns correct name."""
+        result = run_ps_script(
+            ps_git_repo, "-DryRun", "-Prefix", "feature", "-ShortName", "dry", "Dry run"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "feature/001-dry", f"expected feature/001-dry, got: {branch}"
+
+    def test_ps_prefix_rejects_embedded_slash(self, ps_git_repo: Path):
+        """PowerShell: multi-segment prefix is rejected."""
+        result = run_ps_script(
+            ps_git_repo, "-DryRun", "-Prefix", "feat/fix", "-ShortName", "bad", "Bad"
+        )
+        assert result.returncode != 0
+        assert "single segment" in result.stderr.lower() or "single segment" in result.stdout.lower()
+
+    def test_ps_prefix_trailing_slash_optional(self, ps_git_repo: Path):
+        """PowerShell: trailing slash is normalized."""
+        result = run_ps_script(
+            ps_git_repo, "-Prefix", "feature/", "-ShortName", "slash", "Trailing slash"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "feature/001-slash"
+
+
+@requires_bash
+class TestPrefixExtensionBash:
+    """Tests for --prefix in extension create-new-feature.sh (git-only, no spec dirs)."""
+
+    def _run_ext(self, ext_git_repo: Path, *args: str):
+        script = (
+            ext_git_repo
+            / ".specify" / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
+        )
+        return subprocess.run(
+            ["bash", str(script), *args],
+            cwd=ext_git_repo, capture_output=True, text=True,
+        )
+
+    def test_ext_prefix_creates_prefixed_branch(self, ext_git_repo: Path):
+        """Extension script creates prefixed branch."""
+        result = self._run_ext(ext_git_repo, "--prefix", "feature", "--short-name", "ext", "Ext feature")
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "feature/001-ext", f"expected feature/001-ext, got: {branch}"
+
+    def test_ext_prefix_numbering_strips_prefix_from_existing(self, ext_git_repo: Path):
+        """Extension numbering strips prefix from existing branches (e.g., feature/003-x -> 003)."""
+        subprocess.run(
+            ["git", "checkout", "-b", "feature/003-existing"],
+            cwd=ext_git_repo, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-"],
+            cwd=ext_git_repo, check=True, capture_output=True,
+        )
+        result = self._run_ext(ext_git_repo, "--prefix", "bugfix", "--short-name", "next", "Next")
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "bugfix/004-next", f"expected bugfix/004-next, got: {branch}"
+
+    def test_ext_prefix_json_no_spec_file(self, ext_git_repo: Path):
+        """Extension JSON does NOT include SPEC_FILE (git-only)."""
+        result = self._run_ext(ext_git_repo, "--json", "--prefix", "feature", "--short-name", "jsn", "JSON")
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "feature/001-jsn"
+        assert "SPEC_FILE" not in data
+
+    def test_ext_prefix_dry_run(self, ext_git_repo: Path):
+        """Extension dry-run with prefix returns correct name."""
+        result = self._run_ext(
+            ext_git_repo, "--dry-run", "--prefix", "feature", "--short-name", "dry", "Dry"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert branch == "feature/001-dry"
+        branches = subprocess.run(
+            ["git", "branch", "--list"],
+            cwd=ext_git_repo, capture_output=True, text=True,
+        )
+        assert "feature/001-dry" not in branches.stdout
+
+    def test_ext_prefix_rejects_embedded_slash(self, ext_git_repo: Path):
+        """Extension rejects multi-segment prefix."""
+        result = self._run_ext(
+            ext_git_repo, "--dry-run", "--prefix", "feat/fix", "--short-name", "bad", "Bad"
+        )
+        assert result.returncode != 0
+        assert "single segment" in result.stderr

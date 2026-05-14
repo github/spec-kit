@@ -45,9 +45,19 @@ if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
 
 $featureDesc = ($FeatureDescription -join ' ').Trim()
 
-# Auto-append '/' if branch prefix is non-empty and doesn't end with '/'
-if ($Prefix -and -not $Prefix.EndsWith('/')) {
-    $Prefix = "$Prefix/"
+# Validate and normalize branch prefix
+if ($Prefix) {
+    $Prefix = $Prefix.Trim()
+    if ([string]::IsNullOrWhiteSpace($Prefix)) {
+        Write-Error "Error: -Prefix cannot be empty or whitespace"
+        exit 1
+    }
+    $checkPrefix = $Prefix.TrimEnd('/')
+    if ($checkPrefix.Contains('/')) {
+        Write-Error "Error: -Prefix must be a single segment (no embedded slashes); e.g. 'feature', 'bugfix'"
+        exit 1
+    }
+    $Prefix = "$checkPrefix/"
 }
 
 # Validate description is not empty after trimming (e.g., user passed only whitespace)
@@ -276,6 +286,9 @@ if ($Timestamp) {
     $branchName = "$Prefix$featureNum-$branchSuffix"
 }
 
+# Directory-safe name (no prefix slash) for specs/ paths
+$featureDirName = "$featureNum-$branchSuffix"
+
 # GitHub enforces a 244-byte limit on branch names
 # Validate and truncate if necessary
 $maxBranchLength = 244
@@ -292,13 +305,14 @@ if ($branchName.Length -gt $maxBranchLength) {
 
     $originalBranchName = $branchName
     $branchName = "$Prefix$featureNum-$truncatedSuffix"
+    $featureDirName = "$featureNum-$truncatedSuffix"
 
     Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
     Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"
     Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
 }
 
-$featureDir = Join-Path $specsDir $branchName
+$featureDir = Join-Path $specsDir $featureDirName
 $specFile = Join-Path $featureDir 'spec.md'
 
 if (-not $DryRun) {
@@ -368,7 +382,7 @@ if (-not $DryRun) {
     }
 
     # Set the SPECIFY_FEATURE environment variable for the current session
-    $env:SPECIFY_FEATURE = $branchName
+    $env:SPECIFY_FEATURE = $featureDirName
 }
 
 if ($Json) {
@@ -388,6 +402,6 @@ if ($Json) {
     Write-Output "FEATURE_NUM: $featureNum"
     Write-Output "HAS_GIT: $hasGit"
     if (-not $DryRun) {
-        Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
+        Write-Output "SPECIFY_FEATURE environment variable set to: $featureDirName"
     }
 }
