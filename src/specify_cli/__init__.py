@@ -3710,7 +3710,12 @@ def extension_add(
                     console.print(f"[red]Error:[/red] No extension.yml found in {source_path}")
                     raise typer.Exit(1)
 
-                manifest = manager.install_from_directory(source_path, speckit_version, priority=priority)
+                manifest = manager.install_from_directory(
+                    source_path,
+                    speckit_version,
+                    priority=priority,
+                    link_commands=True,
+                )
 
             elif from_url:
                 # Install from URL (ZIP file)

@@ -840,6 +840,7 @@ class ExtensionManager:
         self,
         manifest: ExtensionManifest,
         extension_dir: Path,
+        link_outputs: bool = False,
     ) -> List[str]:
         """Generate SKILL.md files for extension commands as agent skills.
 
@@ -851,6 +852,8 @@ class ExtensionManager:
         Args:
             manifest: Extension manifest.
             extension_dir: Installed extension directory.
+            link_outputs: If True, create dev-mode symlinks for rendered
+                skill files when supported by the OS.
 
         Returns:
             List of skill names that were created (for registry storage).
@@ -957,7 +960,27 @@ class ExtensionManager:
                     skill_content
                 )
 
-            skill_file.write_text(skill_content, encoding="utf-8")
+            if link_outputs:
+                cache_file = (
+                    extension_dir
+                    / ".specify-dev"
+                    / "extension-skills"
+                    / skill_name
+                    / "SKILL.md"
+                )
+                cache_file.parent.mkdir(parents=True, exist_ok=True)
+                cache_file.write_text(skill_content, encoding="utf-8")
+                try:
+                    if skill_file.exists() or skill_file.is_symlink():
+                        skill_file.unlink()
+                    target = os.path.relpath(cache_file, skill_file.parent)
+                    os.symlink(target, skill_file)
+                except OSError:
+                    if skill_file.is_symlink():
+                        skill_file.unlink()
+                    skill_file.write_text(skill_content, encoding="utf-8")
+            else:
+                skill_file.write_text(skill_content, encoding="utf-8")
             written.append(skill_name)
 
         return written
@@ -1132,6 +1155,7 @@ class ExtensionManager:
         speckit_version: str,
         register_commands: bool = True,
         priority: int = 10,
+        link_commands: bool = False,
     ) -> ExtensionManifest:
         """Install extension from a local directory.
 
@@ -1140,6 +1164,8 @@ class ExtensionManager:
             speckit_version: Current spec-kit version
             register_commands: If True, register commands with AI agents
             priority: Resolution priority (lower = higher precedence, default 10)
+            link_commands: If True, register rendered agent artifacts as
+                symlinks to a dev cache when supported by the OS.
 
         Returns:
             Installed extension manifest
@@ -1183,12 +1209,14 @@ class ExtensionManager:
             registrar = CommandRegistrar()
             # Register for all detected agents
             registered_commands = registrar.register_commands_for_all_agents(
-                manifest, dest_dir, self.project_root
+                manifest, dest_dir, self.project_root, link_outputs=link_commands
             )
 
         # Auto-register extension commands as agent skills when --ai-skills
         # was used during project initialisation (feature parity).
-        registered_skills = self._register_extension_skills(manifest, dest_dir)
+        registered_skills = self._register_extension_skills(
+            manifest, dest_dir, link_outputs=link_commands
+        )
 
         # Register hooks and update installed list in extensions.yml
         hook_executor = HookExecutor(self.project_root)
@@ -1624,7 +1652,8 @@ class CommandRegistrar:
         agent_name: str,
         manifest: ExtensionManifest,
         extension_dir: Path,
-        project_root: Path
+        project_root: Path,
+        link_outputs: bool = False,
     ) -> List[str]:
         """Register extension commands for a specific agent."""
         if agent_name not in self.AGENT_CONFIGS:
@@ -1632,20 +1661,23 @@ class CommandRegistrar:
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
         return self._registrar.register_commands(
             agent_name, manifest.commands, manifest.id, extension_dir, project_root,
-            context_note=context_note
+            context_note=context_note,
+            link_outputs=link_outputs,
         )
 
     def register_commands_for_all_agents(
         self,
         manifest: ExtensionManifest,
         extension_dir: Path,
-        project_root: Path
+        project_root: Path,
+        link_outputs: bool = False,
     ) -> Dict[str, List[str]]:
         """Register extension commands for all detected agents."""
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
         return self._registrar.register_commands_for_all_agents(
             manifest.commands, manifest.id, extension_dir, project_root,
-            context_note=context_note
+            context_note=context_note,
+            link_outputs=link_outputs,
         )
 
     def unregister_commands(
@@ -1660,10 +1692,13 @@ class CommandRegistrar:
         self,
         manifest: ExtensionManifest,
         extension_dir: Path,
-        project_root: Path
+        project_root: Path,
+        link_outputs: bool = False,
     ) -> List[str]:
         """Register extension commands for Claude Code agent."""
-        return self.register_commands_for_agent("claude", manifest, extension_dir, project_root)
+        return self.register_commands_for_agent(
+            "claude", manifest, extension_dir, project_root, link_outputs=link_outputs
+        )
 
 
 class ExtensionCatalog:
