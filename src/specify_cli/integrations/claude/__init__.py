@@ -34,6 +34,15 @@ ARGUMENT_HINTS: dict[str, str] = {
     "taskstoissues": "Optional filter or label for GitHub issues",
 }
 
+# Per-command frontmatter overrides for skills that should run in a forked
+# subagent context. Read-only analysis commands are good candidates: the
+# heavy reads (spec/plan/tasks artefacts) collapse to a short summary,
+# so isolating them keeps the main conversation context clean.
+# See https://code.claude.com/docs/en/skills#run-skills-in-a-subagent
+FORK_CONTEXT_COMMANDS: dict[str, dict[str, str]] = {
+    "analyze": {"context": "fork", "agent": "general-purpose"},
+}
+
 
 class ClaudeIntegration(SkillsIntegration):
     """Integration for Claude Code skills."""
@@ -231,6 +240,11 @@ class ClaudeIntegration(SkillsIntegration):
             hint = ARGUMENT_HINTS.get(stem, "")
             if hint:
                 updated = self.inject_argument_hint(updated, hint)
+
+            fork_config = FORK_CONTEXT_COMMANDS.get(stem)
+            if fork_config:
+                for key, value in fork_config.items():
+                    updated = self._inject_frontmatter_flag(updated, key, value)
 
             if updated != content:
                 path.write_bytes(updated.encode("utf-8"))
