@@ -5,10 +5,18 @@ This guide will help you get started with Spec-Driven Development using Spec Kit
 > [!NOTE]
 > All automation scripts now provide both Bash (`.sh`) and PowerShell (`.ps1`) variants. The `specify` CLI auto-selects based on OS unless you pass `--script sh|ps`.
 
-## The 6-Step Process
+## Recommended Workflow
 
 > [!TIP]
 > **Context Awareness**: Spec Kit commands automatically detect the active feature based on your current Git branch (e.g., `001-feature-name`). To switch between different specifications, simply switch Git branches.
+
+After installing Spec Kit and defining your project constitution, quick experiments can use the lean feature path: `/speckit.specify` -> `/speckit.plan` -> `/speckit.tasks` -> `/speckit.implement`. For production features or any work with meaningful ambiguity, treat `/speckit.clarify`, `/speckit.checklist`, and `/speckit.analyze` as regular quality gates:
+
+```text
+/speckit.constitution -> /speckit.specify -> /speckit.clarify -> /speckit.checklist -> /speckit.plan -> /speckit.tasks -> /speckit.analyze -> /speckit.implement
+```
+
+Use `/speckit.clarify` to reduce requirement ambiguity before planning, `/speckit.checklist` to validate requirements quality before planning, and `/speckit.analyze` to check spec/plan/task consistency before implementation starts.
 
 ### Step 1: Install Specify
 
@@ -24,10 +32,13 @@ uvx --from git+https://github.com/github/spec-kit.git specify init .
 
 > [!NOTE]
 > You can also install the CLI persistently with `pipx`:
+>
 > ```bash
 > pipx install git+https://github.com/github/spec-kit.git
 > ```
+>
 > After installing with `pipx`, run `specify` directly instead of `uvx --from ... specify`, for example:
+>
 > ```bash
 > specify init <PROJECT_NAME>
 > specify init .
@@ -56,12 +67,18 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 /speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 ```
 
-### Step 4: Refine the Spec
+### Step 4: Refine and Validate the Spec
 
 **In the chat**, use the `/speckit.clarify` slash command to identify and resolve ambiguities in your specification. You can provide specific focus areas as arguments.
 
 ```bash
 /speckit.clarify Focus on security and performance requirements.
+```
+
+Then validate the requirements with `/speckit.checklist` before creating the technical plan:
+
+```bash
+/speckit.checklist
 ```
 
 ### Step 5: Create a Technical Implementation Plan
@@ -72,7 +89,7 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 /speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
-### Step 6: Break Down and Implement
+### Step 6: Break Down, Analyze, and Implement
 
 **In the chat**, use the `/speckit.tasks` slash command to create an actionable task list.
 
@@ -80,13 +97,13 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 /speckit.tasks
 ```
 
-Optionally, validate the plan with `/speckit.analyze`:
+Validate cross-artifact consistency with `/speckit.analyze` before implementation:
 
 ```markdown
 /speckit.analyze
 ```
 
-Then, use the `/speckit.implement` slash command to execute the plan.
+Use the `/speckit.implement` slash command to execute the plan.
 
 ```markdown
 /speckit.implement
@@ -159,7 +176,7 @@ Generate an actionable task list using the `/speckit.tasks` command:
 
 ### Step 7: Validate and Implement
 
-Have your coding agent audit the implementation plan using `/speckit.analyze`:
+Have your coding agent audit the spec, plan, and tasks with `/speckit.analyze` before implementation:
 
 ```bash
 /speckit.analyze
@@ -179,7 +196,7 @@ Finally, implement the solution:
 - **Be explicit** about what you're building and why
 - **Don't focus on tech stack** during specification phase
 - **Iterate and refine** your specifications before implementation
-- **Validate** the plan before coding begins
+- **Validate** requirements and plans before coding begins
 - **Let the coding agent handle** the implementation details
 
 ## Next Steps
