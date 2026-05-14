@@ -384,8 +384,8 @@ class CommandRegistrar:
             ac_cfg = _load_agent_context_config(project_root)
             context_file = ac_cfg.get("context_file") or ""
         except ImportError:
-            # Best-effort read: ignore extension config load/parse errors and
-            # fall back to init-options.json context_file below.
+            # Best-effort read: if the helper cannot be imported (e.g. during
+            # circular import setup), fall back to init-options.json below.
             context_file = ""
         if not context_file:
             context_file = init_opts.get("context_file") or ""
