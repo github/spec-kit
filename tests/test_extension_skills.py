@@ -11,6 +11,7 @@ Tests cover:
 """
 
 import json
+import os
 import pytest
 import tempfile
 import shutil
@@ -114,6 +115,18 @@ def _create_extension_dir(temp_dir: Path, ext_id: str = "test-ext") -> Path:
     )
 
     return ext_dir
+
+
+def _can_create_symlink(temp_dir: Path) -> bool:
+    """Return True when the current platform/user can create file symlinks."""
+    target = temp_dir / "symlink-target.txt"
+    link = temp_dir / "symlink-link.txt"
+    target.write_text("ok", encoding="utf-8")
+    try:
+        os.symlink(target, link)
+    except OSError:
+        return False
+    return link.is_symlink()
 
 
 # ===== Fixtures =====
@@ -315,6 +328,46 @@ class TestExtensionSkillRegistration:
         assert "speckit-test-ext-world" in metadata["registered_skills"]
         # The pre-existing one should NOT be in registered_skills (it was skipped)
         assert "speckit-test-ext-hello" not in metadata["registered_skills"]
+
+    def test_dev_skill_symlink_refreshes_existing_cache(
+        self, skills_project, extension_dir, temp_dir
+    ):
+        """Dev-mode skill symlinks should refresh rendered cache content."""
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        project_dir, skills_dir = skills_project
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        assert skill_file.is_symlink()
+        assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+
+        (extension_dir / "commands" / "hello.md").write_text(
+            "---\n"
+            "description: \"Updated test hello command\"\n"
+            "---\n"
+            "\n"
+            "# Hello Command\n"
+            "\n"
+            "Run this updated hello.\n"
+        )
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        assert "speckit-test-ext-hello" in written
+        assert "Run this updated hello." in skill_file.read_text(encoding="utf-8")
 
     def test_registered_skills_in_registry(self, skills_project, extension_dir):
         """Registry should contain registered_skills list."""

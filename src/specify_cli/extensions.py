@@ -906,9 +906,18 @@ class ExtensionManager:
             # Check if skill already exists before creating the directory
             skill_subdir = skills_dir / skill_name
             skill_file = skill_subdir / "SKILL.md"
-            if skill_file.exists():
-                # Do not overwrite user-customized skills
-                continue
+            cache_root = extension_dir / ".specify-dev" / "extension-skills"
+            cache_file = cache_root / skill_name / "SKILL.md"
+            CommandRegistrar._ensure_inside(cache_file, cache_root)
+            if skill_file.exists() or skill_file.is_symlink():
+                # Do not overwrite user-customized skills, but allow dev-mode
+                # symlinks that point back to this extension's generated cache
+                # to be refreshed on a subsequent dev install.
+                if not (
+                    link_outputs
+                    and self._is_expected_dev_symlink(skill_file, cache_file)
+                ):
+                    continue
 
             # Create skill directory; track whether we created it so we can clean
             # up safely if reading the source file subsequently fails.
@@ -961,13 +970,6 @@ class ExtensionManager:
                 )
 
             if link_outputs:
-                cache_file = (
-                    extension_dir
-                    / ".specify-dev"
-                    / "extension-skills"
-                    / skill_name
-                    / "SKILL.md"
-                )
                 cache_file.parent.mkdir(parents=True, exist_ok=True)
                 cache_file.write_text(skill_content, encoding="utf-8")
                 try:
@@ -984,6 +986,17 @@ class ExtensionManager:
             written.append(skill_name)
 
         return written
+
+    @staticmethod
+    def _is_expected_dev_symlink(skill_file: Path, cache_file: Path) -> bool:
+        """Return True when an existing skill file links to its dev cache."""
+        if not skill_file.is_symlink():
+            return False
+
+        try:
+            return skill_file.resolve(strict=False) == cache_file.resolve(strict=False)
+        except OSError:
+            return False
 
     def _unregister_extension_skills(
         self,
