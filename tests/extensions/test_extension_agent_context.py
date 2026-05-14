@@ -20,8 +20,6 @@ from specify_cli.integrations.claude import ClaudeIntegration
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "agent-context"
 
-_EXT_CONFIG_REL = Path(".specify") / "extensions" / "agent-context" / "agent-context-config.yml"
-
 
 def _write_ext_config(project_root: Path, **overrides: object) -> None:
     """Write a minimal agent-context extension config."""
