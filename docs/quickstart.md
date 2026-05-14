@@ -16,7 +16,7 @@ After installing Spec Kit and defining your project constitution, quick experime
 /speckit.constitution -> /speckit.specify -> /speckit.clarify -> /speckit.checklist -> /speckit.plan -> /speckit.tasks -> /speckit.analyze -> /speckit.implement
 ```
 
-Use `/speckit.clarify` to reduce requirement ambiguity before planning, `/speckit.checklist` to validate requirements quality before planning, and `/speckit.analyze` to check spec/plan/task consistency before implementation starts.
+Use `/speckit.clarify` to reduce requirement ambiguity before planning, `/speckit.checklist` to validate requirements quality before planning, and `/speckit.analyze` to check spec/plan/task consistency before implementation starts. You can repeat `/speckit.analyze` after implementation as an extra review, but keep the first analysis before `/speckit.implement` so gaps are caught while the plan and tasks can still be adjusted.
 
 ### Step 1: Install Specify
 
