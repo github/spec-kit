@@ -77,6 +77,16 @@ specify version
 
 Displays the Spec Kit CLI version, Python version, platform, and architecture.
 
+To inspect local CLI capabilities without checking the network:
+
+```bash
+specify version --features
+specify version --features --json
+```
+
+The JSON form is intended for scripts and coding agents that need to choose a
+workflow based on the installed CLI's supported features.
+
 A quick version check is also available via:
 
 ```bash
