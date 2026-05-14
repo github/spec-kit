@@ -47,7 +47,10 @@ try:
     import yaml
 except ImportError:
     print(
-        "agent-context: PyYAML is required to parse extension config; cannot update context.",
+        "agent-context: PyYAML is required to parse extension config but is not available "
+        "in the current Python environment.\n"
+        "  To resolve: pip install pyyaml  (or install it into the environment used by python3).\n"
+        "  Context file will not be updated until PyYAML is importable.",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -75,7 +78,7 @@ print(get_str(data, "context_markers", "start"))
 print(get_str(data, "context_markers", "end"))
 PY
 )"; then
-  echo "agent-context: failed to read extension config; skipping update." >&2
+  echo "agent-context: skipping update (see above for details)." >&2
   exit 0
 fi
 

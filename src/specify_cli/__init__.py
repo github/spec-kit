@@ -995,6 +995,7 @@ def init(
             # with the active integration's context_file.
             tracker.start("agent-context")
             _ac_bundled: Path | None = None
+            _ac_err_msg: str | None = None
             try:
                 from .extensions import ExtensionManager as _AgentCtxMgr
                 _ac_bundled = _locate_bundled_extension("agent-context")
@@ -1011,10 +1012,7 @@ def init(
                     tracker.skip("agent-context", "bundled extension not found")
             except Exception as ac_err:
                 sanitized_ac = str(ac_err).replace('\n', ' ').strip()
-                tracker.error(
-                    "agent-context",
-                    f"install failed: {sanitized_ac[:120]}",
-                )
+                _ac_err_msg = f"install failed: {sanitized_ac[:120]}"
             finally:
                 # Always write context_file into the extension config so the
                 # shell scripts work even if the extension install itself
@@ -1027,8 +1025,14 @@ def init(
                             resolved_integration.context_file,
                             preserve_markers=True,
                         )
+                        if _ac_err_msg is not None:
+                            # Config was written despite the failed install;
+                            # the Python context-section plumbing remains active.
+                            _ac_err_msg += "; config written, Python context plumbing active"
                     except Exception:
                         pass
+                if _ac_err_msg is not None:
+                    tracker.error("agent-context", _ac_err_msg)
 
             # Fix permissions after all installs (scripts + extensions)
             ensure_executable_scripts(project_path, tracker=tracker)
