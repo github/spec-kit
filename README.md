@@ -404,11 +404,12 @@ At this stage, your project folder contents should resemble the following:
     ├── memory
     │  └── constitution.md
     ├── scripts
-    │  ├── check-prerequisites.sh
-    │  ├── common.sh
-    │  ├── create-new-feature.sh
-    │  ├── setup-plan.sh
-    │  └── update-claude-md.sh
+    │  └── bash
+    │      ├── check-prerequisites.sh
+    │      ├── common.sh
+    │      ├── create-new-feature.sh
+    │      ├── setup-plan.sh
+    │      └── setup-tasks.sh
     ├── specs
     │  └── 001-create-taskify
     │      └── spec.md
@@ -465,11 +466,12 @@ The output of this step will include a number of implementation detail documents
 ├── memory
 │  └── constitution.md
 ├── scripts
-│  ├── check-prerequisites.sh
-│  ├── common.sh
-│  ├── create-new-feature.sh
-│  ├── setup-plan.sh
-│  └── update-claude-md.sh
+│  └── bash
+│      ├── check-prerequisites.sh
+│      ├── common.sh
+│      ├── create-new-feature.sh
+│      ├── setup-plan.sh
+│      └── setup-tasks.sh
 ├── specs
 │  └── 001-create-taskify
 │      ├── contracts

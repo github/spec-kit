@@ -229,9 +229,10 @@ def _install_shared_infra(
 ) -> bool:
     """Install shared infrastructure files into *project_path*.
 
-    Copies ``.specify/scripts/`` and ``.specify/templates/`` from the
-    bundled core_pack or source checkout.  Tracks all installed files
-    in ``speckit.manifest.json``.
+    Copies ``.specify/scripts/<variant>/`` and ``.specify/templates/`` from
+    the bundled core_pack or source checkout, where ``<variant>`` is
+    ``bash`` when *script_type* is ``"sh"`` and ``powershell`` when it is
+    ``"ps"``.  Tracks all installed files in ``speckit.manifest.json``.
 
     Page templates are processed to resolve ``__SPECKIT_COMMAND_<NAME>__``
     placeholders using *invoke_separator* (``"."`` for markdown agents,
