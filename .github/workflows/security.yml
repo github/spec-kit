@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - name: Checkout
@@ -61,6 +61,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # Need the PR base to compare baseline growth.
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -70,5 +73,59 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Run Bandit
+      # Blocking: HIGH severity only, with baseline. Real regressions fail CI.
+      - name: Run Bandit (HIGH, baseline-gated)
         run: uvx --from bandit==1.9.4 bandit -r src -lll --baseline .github/bandit-baseline.json
+
+      # Informative: MEDIUM severity, no baseline. Surfaces lower-severity
+      # findings in the job summary without breaking CI, so reviewers see
+      # them before they accumulate.
+      - name: Run Bandit (MEDIUM, informational)
+        continue-on-error: true
+        run: uvx --from bandit==1.9.4 bandit -r src -ll
+
+      # Prevent silent whitelisting: if the baseline grew, the PR must carry
+      # the 'security-baseline-change' label to acknowledge it.
+      - name: Check Bandit baseline growth
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BANDIT_BASELINE_BASE: ${{ github.event.pull_request.base.sha }}
+          BANDIT_BASELINE_HEAD: ${{ github.event.pull_request.head.sha }}
+          BANDIT_BASELINE_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: python .github/scripts/check_bandit_baseline.py
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.13"
+
+      # detect-secrets is a Python tool (consistent with bandit / pip-audit
+      # install pattern) and detects entropy-based and provider-specific
+      # secrets. Baseline at .secrets.baseline is honored as a whitelist;
+      # any drift fails the check.
+      - name: Run detect-secrets
+        run: |
+          uvx --from detect-secrets==1.5.0 detect-secrets scan \
+            --baseline .secrets.baseline \
+            --exclude-files '\.secrets\.baseline$' \
+            --exclude-files 'uv\.lock$' \
+            --exclude-files '\.github/security-audit-requirements\.txt$'
+
+      - name: Verify baseline is in sync
+        run: |
+          if ! git diff --exit-code .secrets.baseline; then
+            echo "::error::detect-secrets found new candidates. Audit them, then update .secrets.baseline with: uvx --from detect-secrets==1.5.0 detect-secrets scan --baseline .secrets.baseline" >&2
+            exit 1
+          fi
