@@ -1,18 +1,8 @@
-"""Helpers for generating catalog-backed reference docs."""
+"""Helpers for rendering the built-in integrations reference table."""
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
-
-
-ROOT_DIR = Path(__file__).resolve().parents[2]
-INTEGRATIONS_CATALOG_PATH = ROOT_DIR / "integrations" / "catalog.json"
-INTEGRATIONS_REFERENCE_PATH = ROOT_DIR / "docs" / "reference" / "integrations.md"
-
-GENERATED_START_MARKER = "<!-- BEGIN GENERATED INTEGRATIONS TABLE -->"
-GENERATED_END_MARKER = "<!-- END GENERATED INTEGRATIONS TABLE -->"
 
 
 INTEGRATION_DOC_URLS: dict[str, str | None] = {
@@ -71,19 +61,9 @@ INTEGRATION_NOTES: dict[str, str] = {
 }
 
 
-def load_integrations_catalog(path: Path = INTEGRATIONS_CATALOG_PATH) -> dict[str, Any]:
-    """Load and validate the integrations catalog JSON file."""
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError(f"Expected {path} to contain a JSON object")
-    integrations = data.get("integrations")
-    if not isinstance(integrations, dict):
-        raise ValueError(f"Expected {path} to contain an 'integrations' object")
-    return data
-
-
 def _render_cell(value: str) -> str:
-    return value.replace("\n", " ")
+    value = value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+    return value.replace("|", "\\|")
 
 
 def _get_integration_registry() -> dict[str, Any]:
@@ -92,7 +72,7 @@ def _get_integration_registry() -> dict[str, Any]:
     return INTEGRATION_REGISTRY
 
 
-def _iter_integrations_for_docs() -> list[tuple[str, str, str | None, str]]:
+def list_integrations_for_docs() -> list[tuple[str, str, str | None, str]]:
     registry = _get_integration_registry()
     rows: list[tuple[str, str, str | None, str]] = []
 
@@ -103,31 +83,14 @@ def _iter_integrations_for_docs() -> list[tuple[str, str, str | None, str]]:
         notes = INTEGRATION_NOTES.get(key, "")
         rows.append((key, label, url, notes))
 
-    return rows
+    return sorted(rows, key=lambda r: r[0])
 
 
-def render_integrations_table(catalog: dict[str, Any]) -> str:
-    """Render the integrations reference table from the catalog data."""
-    integrations = catalog.get("integrations", {})
+def render_integrations_table() -> str:
+    """Render the built-in integrations reference table as markdown."""
     rows: list[list[str]] = []
 
-    doc_rows = _iter_integrations_for_docs()
-    doc_keys = [key for key, _, _, _ in doc_rows]
-    extra_keys = [key for key in integrations if key not in doc_keys]
-    if extra_keys:
-        raise KeyError(
-            "No integrations reference metadata found for catalog entries: "
-            + ", ".join(repr(key) for key in extra_keys)
-        )
-
-    missing_keys = [key for key in doc_keys if key not in integrations]
-    if missing_keys:
-        raise KeyError(
-            "Catalog is missing integrations needed for the reference table: "
-            + ", ".join(repr(key) for key in missing_keys)
-        )
-
-    for key, label, url, notes in doc_rows:
+    for key, label, url, notes in list_integrations_for_docs():
         agent = f"[{label}]({url})" if url else label
         rows.append([agent, f"`{key}`", notes])
 
@@ -147,36 +110,3 @@ def render_integrations_table(catalog: dict[str, Any]) -> str:
     ]
     lines.extend(render_row(row) for row in rows)
     return "\n".join(lines)
-
-
-def render_integrations_reference(
-    catalog_path: Path = INTEGRATIONS_CATALOG_PATH,
-    doc_path: Path = INTEGRATIONS_REFERENCE_PATH,
-) -> str:
-    """Return the integrations reference markdown with the generated table updated."""
-    catalog = load_integrations_catalog(catalog_path)
-    table = render_integrations_table(catalog)
-
-    content = doc_path.read_text(encoding="utf-8")
-    start = content.find(GENERATED_START_MARKER)
-    end = content.find(GENERATED_END_MARKER)
-    if start == -1 or end == -1 or end < start:
-        raise ValueError(
-            f"Could not find generated table markers in {doc_path}"
-        )
-
-    start_end = start + len(GENERATED_START_MARKER)
-    before = content[:start_end]
-    after = content[end:]
-    generated_block = f"\n\n{table}\n"
-    return before + generated_block + after
-
-
-def update_integrations_reference(
-    catalog_path: Path = INTEGRATIONS_CATALOG_PATH,
-    doc_path: Path = INTEGRATIONS_REFERENCE_PATH,
-) -> str:
-    """Rewrite the integrations reference markdown file and return the new content."""
-    updated = render_integrations_reference(catalog_path, doc_path)
-    doc_path.write_text(updated, encoding="utf-8")
-    return updated

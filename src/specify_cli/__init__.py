@@ -604,7 +604,6 @@ def _require_specify_project() -> Path:
     raise typer.Exit(1)
 
 
-
 # ===== Preset Commands =====
 
 # Moved to presets/_commands.py — registered here to preserve CLI surface.
