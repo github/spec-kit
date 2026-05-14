@@ -12,8 +12,8 @@ def test_integrations_table_renders():
     assert "| Notes" in table
 
 
-def test_integrations_reference_rows_follow_registry_metadata():
-    rows = dict((key, (label, url)) for key, label, url, _notes in list_integrations_for_docs())
+def test_integrations_reference_label_derives_from_registry_url_from_doc_map():
+    rows = {key: (label, url) for key, label, url, _notes in list_integrations_for_docs()}
     assert rows["copilot"][0] == "GitHub Copilot"
     assert rows["copilot"][1] == "https://code.visualstudio.com/"
     assert rows["codex"][0] == "Codex CLI"
