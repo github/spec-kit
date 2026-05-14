@@ -870,31 +870,6 @@ def init(
             else:
                 tracker.skip("git", "--no-git flag")
 
-            # Install bundled agent-context extension (opt-out via
-            # `specify extension disable agent-context`). Owns the managed
-            # section in coding agent context files (CLAUDE.md, etc.).
-            tracker.start("agent-context")
-            try:
-                from .extensions import ExtensionManager as _AgentCtxMgr
-                bundled_ac = _locate_bundled_extension("agent-context")
-                if bundled_ac:
-                    ac_manager = _AgentCtxMgr(project_path)
-                    if ac_manager.registry.is_installed("agent-context"):
-                        tracker.complete("agent-context", "already installed")
-                    else:
-                        ac_manager.install_from_directory(
-                            bundled_ac, get_speckit_version()
-                        )
-                        tracker.complete("agent-context", "installed")
-                else:
-                    tracker.skip("agent-context", "bundled extension not found")
-            except Exception as ac_err:
-                sanitized_ac = str(ac_err).replace('\n', ' ').strip()
-                tracker.error(
-                    "agent-context",
-                    f"install failed: {sanitized_ac[:120]}",
-                )
-
             # Install bundled speckit workflow
             try:
                 bundled_wf = _locate_bundled_workflow("speckit")
@@ -926,26 +901,26 @@ def init(
                 sanitized_wf = str(wf_err).replace('\n', ' ').strip()
                 tracker.error("workflow", f"install failed: {sanitized_wf[:120]}")
 
-            # Fix permissions after all installs (scripts + extensions)
-            ensure_executable_scripts(project_path, tracker=tracker)
-
             # Persist the CLI options so later operations (e.g. preset add)
             # can adapt their behaviour without re-scanning the filesystem.
             # Must be saved BEFORE preset install so _get_skills_dir() works.
+            # Also saved BEFORE agent-context install so init-options.json is
+            # available when the extension's hooks run.
             from .integrations.base import IntegrationBase
             init_opts = {
                 "ai": selected_ai,
                 "integration": resolved_integration.key,
                 "branch_numbering": branch_numbering or "sequential",
                 "context_file": resolved_integration.context_file,
-                "context_markers": {
-                    "start": IntegrationBase.CONTEXT_MARKER_START,
-                    "end": IntegrationBase.CONTEXT_MARKER_END,
-                },
                 "here": here,
                 "script": selected_script,
                 "speckit_version": get_speckit_version(),
             }
+            if resolved_integration.context_file:
+                init_opts["context_markers"] = {
+                    "start": IntegrationBase.CONTEXT_MARKER_START,
+                    "end": IntegrationBase.CONTEXT_MARKER_END,
+                }
             # Ensure ai_skills is set for SkillsIntegration so downstream
             # tools (extensions, presets) emit SKILL.md overrides correctly.
             # Also set for integrations running in skills mode (e.g. Copilot
@@ -954,6 +929,36 @@ def init(
             if isinstance(resolved_integration, _SkillsPersist) or getattr(resolved_integration, "_skills_mode", False):
                 init_opts["ai_skills"] = True
             save_init_options(project_path, init_opts)
+
+            # Install bundled agent-context extension (opt-out via
+            # `specify extension disable agent-context`). Owns the managed
+            # section in coding agent context files (CLAUDE.md, etc.).
+            # Installed AFTER init-options are saved so hooks can read
+            # context_file / context_markers from init-options.json.
+            tracker.start("agent-context")
+            try:
+                from .extensions import ExtensionManager as _AgentCtxMgr
+                bundled_ac = _locate_bundled_extension("agent-context")
+                if bundled_ac:
+                    ac_manager = _AgentCtxMgr(project_path)
+                    if ac_manager.registry.is_installed("agent-context"):
+                        tracker.complete("agent-context", "already installed")
+                    else:
+                        ac_manager.install_from_directory(
+                            bundled_ac, get_speckit_version()
+                        )
+                        tracker.complete("agent-context", "installed")
+                else:
+                    tracker.skip("agent-context", "bundled extension not found")
+            except Exception as ac_err:
+                sanitized_ac = str(ac_err).replace('\n', ' ').strip()
+                tracker.error(
+                    "agent-context",
+                    f"install failed: {sanitized_ac[:120]}",
+                )
+
+            # Fix permissions after all installs (scripts + extensions)
+            ensure_executable_scripts(project_path, tracker=tracker)
 
             # Install preset if specified
             if preset:

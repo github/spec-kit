@@ -52,11 +52,11 @@ if ($Options.context_markers) {
 }
 
 if (-not $PlanPath) {
-    $candidate = Get-ChildItem -Path (Join-Path $ProjectRoot 'specs') -Filter 'plan.md' -Recurse -ErrorAction SilentlyContinue |
+    $candidate = Get-ChildItem -Path (Join-Path $ProjectRoot 'specs') -Filter 'plan.md' -Recurse -Depth 1 -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
     if ($candidate) {
-        $PlanPath = $candidate.FullName.Substring($ProjectRoot.Length).TrimStart('/', '\').Replace('\','/')
+        $PlanPath = [System.IO.Path]::GetRelativePath($ProjectRoot, $candidate.FullName).Replace('\','/')
     }
 }
 

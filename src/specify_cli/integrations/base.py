@@ -533,11 +533,11 @@ class IntegrationBase(ABC):
         end = self.CONTEXT_MARKER_END
         try:
             from .. import load_init_options  # local import to avoid cycles
-        except Exception:
+        except ImportError:
             return start, end
         try:
             opts = load_init_options(project_root)
-        except Exception:
+        except (OSError, ValueError):
             return start, end
         markers = opts.get("context_markers") if isinstance(opts, dict) else None
         if isinstance(markers, dict):

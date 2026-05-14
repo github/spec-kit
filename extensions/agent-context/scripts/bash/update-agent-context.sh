@@ -26,45 +26,49 @@ if [[ ! -f "$INIT_OPTIONS" ]]; then
   exit 0
 fi
 
-# Use python for JSON parsing (always available in spec-kit projects).
-read_json_field() {
-  # $1 = jq-style dotted path, e.g. "context_markers.start"
-  python3 - "$INIT_OPTIONS" "$1" <<'PY'
+# Parse init-options.json once; emit three newline-separated fields:
+# context_file, context_markers.start, context_markers.end
+_raw_opts="$(python3 - "$INIT_OPTIONS" <<'PY'
 import json, sys
-path = sys.argv[1]
-key = sys.argv[2]
 try:
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(sys.argv[1], "r", encoding="utf-8") as fh:
         data = json.load(fh)
 except Exception:
-    sys.exit(0)
-node = data
-for part in key.split("."):
-    if isinstance(node, dict) and part in node:
-        node = node[part]
-    else:
-        sys.exit(0)
-if isinstance(node, str):
-    sys.stdout.write(node)
+    data = {}
+def get_str(obj, *keys):
+    node = obj
+    for k in keys:
+        if isinstance(node, dict) and k in node:
+            node = node[k]
+        else:
+            return ""
+    return node if isinstance(node, str) else ""
+print(get_str(data, "context_file"))
+print(get_str(data, "context_markers", "start"))
+print(get_str(data, "context_markers", "end"))
 PY
-}
+)"
 
-CONTEXT_FILE="$(read_json_field 'context_file' || true)"
+{
+  IFS= read -r CONTEXT_FILE
+  IFS= read -r MARKER_START
+  IFS= read -r MARKER_END
+} <<< "$_raw_opts"
+
 if [[ -z "$CONTEXT_FILE" ]]; then
   echo "agent-context: context_file not set in init-options.json; nothing to do." >&2
   exit 0
 fi
 
-MARKER_START="$(read_json_field 'context_markers.start' || true)"
-MARKER_END="$(read_json_field 'context_markers.end' || true)"
 [[ -z "$MARKER_START" ]] && MARKER_START="$DEFAULT_START"
 [[ -z "$MARKER_END"   ]] && MARKER_END="$DEFAULT_END"
 
 PLAN_PATH="${1:-}"
 if [[ -z "$PLAN_PATH" ]]; then
   if compgen -G "$PROJECT_ROOT/specs/*/plan.md" > /dev/null; then
-    # Pick the most recently modified plan.md
-    PLAN_PATH="$(ls -1t "$PROJECT_ROOT"/specs/*/plan.md 2>/dev/null | head -1 | sed "s|$PROJECT_ROOT/||")"
+    # Pick the most recently modified plan.md (one level deep: specs/<feature>/plan.md)
+    _plan_abs="$(ls -1t "$PROJECT_ROOT"/specs/*/plan.md 2>/dev/null | head -1)"
+    PLAN_PATH="${_plan_abs#"$PROJECT_ROOT/"}"
   fi
 fi
 
