@@ -1740,10 +1740,18 @@ def integration_install(
 
     if key in installed_keys:
         console.print(f"[yellow]Integration '{key}' is already installed.[/yellow]")
+        if default_key == key:
+            console.print("It is already the default integration.")
+        else:
+            console.print(
+                f"To make it the default integration, run "
+                f"[cyan]specify integration use {key}[/cyan]."
+            )
         console.print(
-            f"Run [cyan]specify integration upgrade {key}[/cyan] to reinstall managed files, "
-            f"or [cyan]specify integration uninstall {key}[/cyan] first."
+            f"To refresh its managed files or options, run "
+            f"[cyan]specify integration upgrade {key}[/cyan]."
         )
+        console.print("No files were changed.")
         raise typer.Exit(0)
 
     if installed_keys and not force:
@@ -1763,8 +1771,12 @@ def integration_install(
                 "integrations are declared multi-install safe."
             )
             console.print(
-                f"Run [cyan]specify integration switch {key}[/cyan] to replace the default "
-                f"integration, or retry with [cyan]--force[/cyan] to opt in."
+                f"To replace the default integration, run "
+                f"[cyan]specify integration switch {key}[/cyan]."
+            )
+            console.print(
+                f"To install '{key}' alongside the existing integrations anyway, "
+                "retry the same install command with [cyan]--force[/cyan]."
             )
             raise typer.Exit(1)
 
