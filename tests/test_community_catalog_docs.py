@@ -1,7 +1,23 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
 from specify_cli.community_catalog_docs import list_community_extensions, render_community_extensions_table
 
+
+def _write_catalog(tmp_path: Path, extensions: dict) -> Path:
+    p = tmp_path / "catalog.community.json"
+    p.write_text(json.dumps({"extensions": extensions}), encoding="utf-8")
+    return p
+
+
+# ---------------------------------------------------------------------------
+# Happy-path tests against the real catalog
+# ---------------------------------------------------------------------------
 
 def test_community_extensions_table_renders() -> None:
     table = render_community_extensions_table()
@@ -16,3 +32,81 @@ def test_community_extensions_are_sorted_by_name() -> None:
     rows = list_community_extensions()
     names = [row["name"] for row in rows]
     assert names == sorted(names, key=str.casefold)
+
+
+# ---------------------------------------------------------------------------
+# Edge-case tests using synthetic catalogs
+# ---------------------------------------------------------------------------
+
+def test_missing_catalog_file(tmp_path: Path) -> None:
+    nonexistent = tmp_path / "missing.json"
+    with patch("specify_cli.community_catalog_docs.COMMUNITY_CATALOG_PATH", nonexistent):
+        with pytest.raises(FileNotFoundError, match="spec-kit source checkout"):
+            list_community_extensions()
+
+
+def test_malformed_json(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.json"
+    bad.write_text("not valid json", encoding="utf-8")
+    with patch("specify_cli.community_catalog_docs.COMMUNITY_CATALOG_PATH", bad):
+        with pytest.raises(Exception):
+            list_community_extensions()
+
+
+def test_non_dict_root(tmp_path: Path) -> None:
+    f = tmp_path / "catalog.json"
+    f.write_text(json.dumps([{"id": "foo"}]), encoding="utf-8")
+    with patch("specify_cli.community_catalog_docs.COMMUNITY_CATALOG_PATH", f):
+        with pytest.raises(ValueError, match="JSON object"):
+            list_community_extensions()
+
+
+def test_missing_extensions_key(tmp_path: Path) -> None:
+    f = tmp_path / "catalog.json"
+    f.write_text(json.dumps({"other": {}}), encoding="utf-8")
+    with patch("specify_cli.community_catalog_docs.COMMUNITY_CATALOG_PATH", f):
+        with pytest.raises(ValueError, match="'extensions' object"):
+            list_community_extensions()
+
+
+def test_non_dict_extension_value(tmp_path: Path) -> None:
+    f = _write_catalog(tmp_path, {"foo": "not-a-dict"})
+    with patch("specify_cli.community_catalog_docs.COMMUNITY_CATALOG_PATH", f):
+        with pytest.raises(ValueError, match="must be a mapping"):
+            list_community_extensions()
+
+
+def test_empty_catalog_raises(tmp_path: Path) -> None:
+    f = _write_catalog(tmp_path, {})
+    with patch("specify_cli.community_catalog_docs.COMMUNITY_CATALOG_PATH", f):
+        with pytest.raises(ValueError, match="no extensions"):
+            render_community_extensions_table()
+
+
+def test_extension_without_repository(tmp_path: Path) -> None:
+    f = _write_catalog(tmp_path, {
+        "foo": {"name": "Foo", "id": "foo", "description": "A foo tool", "tags": [], "verified": False, "repository": ""},
+    })
+    with patch("specify_cli.community_catalog_docs.COMMUNITY_CATALOG_PATH", f):
+        table = render_community_extensions_table()
+    assert "Foo" in table
+    assert "[Foo](" not in table  # plain name, no link
+
+
+def test_tags_containing_pipe_do_not_break_table(tmp_path: Path) -> None:
+    f = _write_catalog(tmp_path, {
+        "foo": {"name": "Foo", "description": "", "tags": ["foo|bar"], "verified": False, "repository": ""},
+    })
+    with patch("specify_cli.community_catalog_docs.COMMUNITY_CATALOG_PATH", f):
+        table = render_community_extensions_table()
+    # pipe stripped from tag — table should render cleanly
+    assert "`foobar`" in table
+
+
+def test_non_list_tags_renders_em_dash(tmp_path: Path) -> None:
+    f = _write_catalog(tmp_path, {
+        "foo": {"name": "Foo", "description": "", "tags": "not-a-list", "verified": False, "repository": ""},
+    })
+    with patch("specify_cli.community_catalog_docs.COMMUNITY_CATALOG_PATH", f):
+        table = render_community_extensions_table()
+    assert "—" in table

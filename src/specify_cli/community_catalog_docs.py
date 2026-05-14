@@ -18,16 +18,22 @@ def _render_cell(value: str) -> str:
 def _format_tags(tags: Any) -> str:
     if not isinstance(tags, list) or not tags:
         return "—"
-    cleaned = [f"`{str(tag)}`" for tag in tags if str(tag).strip()]
+    # Strip | from tag values so they don't break table syntax inside backtick spans
+    cleaned = [f"`{str(tag).replace('|', '').strip()}`" for tag in tags if str(tag).strip()]
     return ", ".join(cleaned) if cleaned else "—"
 
 
 def list_community_extensions() -> list[dict[str, Any]]:
     """Return community extensions sorted alphabetically by name then ID."""
+    if not COMMUNITY_CATALOG_PATH.exists():
+        raise FileNotFoundError(
+            f"Community catalog not found: {COMMUNITY_CATALOG_PATH}. "
+            "The --markdown flag requires a spec-kit source checkout."
+        )
     data = json.loads(COMMUNITY_CATALOG_PATH.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError(f"Expected {COMMUNITY_CATALOG_PATH} to contain a JSON object")
-    extensions = data.get("extensions", {})
+    extensions = data.get("extensions")
     if not isinstance(extensions, dict):
         raise ValueError(f"Expected {COMMUNITY_CATALOG_PATH} to contain an 'extensions' object")
 
@@ -73,19 +79,11 @@ def render_community_extensions_table() -> str:
         )
 
     headers = ("Extension", "ID", "Description", "Tags", "Verified")
-    widths = [
-        max(len(header), *(len(_render_cell(row[index])) for row in table_rows))
-        for index, header in enumerate(headers)
-    ]
 
     def render_row(values: list[str]) -> str:
-        return "| " + " | ".join(
-            _render_cell(value).ljust(widths[index]) for index, value in enumerate(values)
-        ) + " |"
+        return "| " + " | ".join(_render_cell(value) for value in values) + " |"
 
-    lines = [
-        render_row(list(headers)),
-        "| " + " | ".join("-" * width for width in widths) + " |",
-    ]
+    separator = "| " + " | ".join("---" for _ in headers) + " |"
+    lines = [render_row(list(headers)), separator]
     lines.extend(render_row(row) for row in table_rows)
     return "\n".join(lines)
