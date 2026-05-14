@@ -13,6 +13,12 @@
       href: upgrade.md
     - name: Install uv
       href: install/uv.md
+    - name: Install with pipx
+      href: install/pipx.md
+    - name: One-time Usage (uvx)
+      href: install/one-time.md
+    - name: Enterprise / Air-Gapped
+      href: install/air-gapped.md
 
 # Reference
 - name: Reference
@@ -44,7 +50,10 @@
 
 # Community
 - name: Community
+  href: community/overview.md
   items:
+    - name: Overview
+      href: community/overview.md
     - name: Extensions
       href: community/extensions.md
     - name: Presets
