@@ -68,6 +68,43 @@
       "created_at": "2026-03-31T00:00:00Z",
       "updated_at": "2026-03-31T00:00:00Z"
     },
+    "agent-governance": {
+      "name": "Agent Governance",
+      "id": "agent-governance",
+      "description": "Project-local agent governance memory and context projection.",
+      "author": "bigben",
+      "version": "1.0.0",
+      "download_url": "https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/bigsmartben/spec-kit-agent-governance",
+      "homepage": "https://github.com/bigsmartben/spec-kit-agent-governance",
+      "documentation": "https://github.com/bigsmartben/spec-kit-agent-governance/blob/main/README.md",
+      "changelog": "https://github.com/bigsmartben/spec-kit-agent-governance/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0",
+        "tools": [
+          {
+            "name": "python3",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 3
+      },
+      "tags": [
+        "governance",
+        "agents",
+        "memory",
+        "context"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-14T00:00:00Z",
+      "updated_at": "2026-05-14T00:00:00Z"
+    },
     "agent-orchestrator": {
       "name": "Intelligent Agent Orchestrator",
       "id": "agent-orchestrator",

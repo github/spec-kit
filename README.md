@@ -199,6 +199,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | Extension | Purpose | Category | Effect | URL |
 |-----------|---------|----------|--------|-----|
 | Agent Assign | Assign specialized Claude Code agents to spec-kit tasks for targeted execution | `process` | Read+Write | [spec-kit-agent-assign](https://github.com/xymelon/spec-kit-agent-assign) |
+| Agent Governance | Project-local agent governance memory and context projection | `process` | Read+Write | [spec-kit-agent-governance](https://github.com/bigsmartben/spec-kit-agent-governance) |
 | AI-Driven Engineering (AIDE) | A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation | `process` | Read+Write | [aide](https://github.com/mnriem/spec-kit-extensions/tree/main/aide) |
 | API Evolve | Managed API contract evolution — breaking-change detection, semver enforcement, deprecation orchestration, and lifecycle gates across REST, GraphQL, and gRPC | `process` | Read+Write | [spec-kit-api-evolve](https://github.com/Quratulain-bilal/spec-kit-api-evolve) |
 | Architect Impact Previewer | Predicts architectural impact, complexity, and risks of proposed changes before implementation. | `visibility` | Read-only | [spec-kit-architect-preview](https://github.com/UmmeHabiba1312/spec-kit-architect-preview) |
