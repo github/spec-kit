@@ -74,6 +74,14 @@ def _get_integration_registry() -> dict[str, Any]:
 
 def list_integrations_for_docs() -> list[tuple[str, str, str | None, str]]:
     registry = _get_integration_registry()
+
+    missing = [key for key in registry if key not in INTEGRATION_DOC_URLS]
+    if missing:
+        raise ValueError(
+            f"Integration(s) missing from INTEGRATION_DOC_URLS: {', '.join(sorted(missing))}. "
+            "Add each key to INTEGRATION_DOC_URLS in catalog_docs.py (use None if no URL applies)."
+        )
+
     rows: list[tuple[str, str, str | None, str]] = []
 
     for key, integration in registry.items():
