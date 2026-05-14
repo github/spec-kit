@@ -45,6 +45,8 @@
 # Community
 - name: Community
   items:
+    - name: Extensions
+      href: community/extensions.md
     - name: Presets
       href: community/presets.md
     - name: Walkthroughs
