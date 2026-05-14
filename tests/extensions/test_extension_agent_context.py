@@ -294,6 +294,27 @@ class TestExtensionConfigWriters:
         cfg = _load_agent_context_config(tmp_path)
         assert cfg.get("context_file") == ""
 
+    def test_clear_init_options_removes_legacy_context_keys_even_when_not_active(
+        self, tmp_path
+    ):
+        from specify_cli import _clear_init_options_for_integration
+
+        save_init_options(
+            tmp_path,
+            {
+                "integration": "copilot",
+                "ai": "copilot",
+                "context_file": "CLAUDE.md",
+                "context_markers": {"start": "<!-- X -->", "end": "<!-- Y -->"},
+            },
+        )
+        _clear_init_options_for_integration(tmp_path, "claude")
+        opts = load_init_options(tmp_path)
+        assert opts["integration"] == "copilot"
+        assert opts["ai"] == "copilot"
+        assert "context_file" not in opts
+        assert "context_markers" not in opts
+
     def test_update_init_options_writes_context_file_to_ext_config(self, tmp_path):
         from specify_cli import _update_init_options_for_integration
 

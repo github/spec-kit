@@ -16,6 +16,25 @@ param(
     [string]$PlanPath
 )
 
+function Get-ConfigValue {
+    param(
+        [AllowNull()][object]$Object,
+        [Parameter(Mandatory = $true)][string]$Key
+    )
+
+    if ($null -eq $Object) {
+        return $null
+    }
+    if ($Object -is [System.Collections.IDictionary]) {
+        return $Object[$Key]
+    }
+    $prop = $Object.PSObject.Properties[$Key]
+    if ($prop) {
+        return $prop.Value
+    }
+    return $null
+}
+
 $ErrorActionPreference = 'Stop'
 $DefaultStart = '<!-- SPECKIT START -->'
 $DefaultEnd   = '<!-- SPECKIT END -->'
@@ -47,14 +66,22 @@ import json
 import sys
 try:
     import yaml
-except Exception:
-    yaml = None
+except ImportError:
+    print(
+        "agent-context: PyYAML is required to parse extension config; cannot update context.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 try:
     with open(sys.argv[1], "r", encoding="utf-8") as fh:
-        data = yaml.safe_load(fh) if yaml else {}
-except Exception:
-    data = {}
+        data = yaml.safe_load(fh)
+except Exception as exc:
+    print(
+        f"agent-context: unable to parse {sys.argv[1]} ({exc}); cannot update context.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 if not isinstance(data, dict):
     data = {}
@@ -62,7 +89,7 @@ if not isinstance(data, dict):
 print(json.dumps(data))
 '@ $ExtConfig
             if ($LASTEXITCODE -eq 0 -and $jsonOut) {
-                $Options = $jsonOut | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+                $Options = $jsonOut | ConvertFrom-Json -ErrorAction Stop
             }
         } catch {
             $Options = $null
@@ -75,7 +102,7 @@ print(json.dumps(data))
     }
 }
 
-$ContextFile = $Options['context_file']
+$ContextFile = Get-ConfigValue -Object $Options -Key 'context_file'
 if (-not $ContextFile) {
     Write-Host 'agent-context: context_file not set in extension config; nothing to do.'
     exit 0
@@ -83,13 +110,15 @@ if (-not $ContextFile) {
 
 $MarkerStart = $DefaultStart
 $MarkerEnd   = $DefaultEnd
-$cm = $Options['context_markers']
+$cm = Get-ConfigValue -Object $Options -Key 'context_markers'
 if ($cm) {
-    if ($cm['start'] -is [string] -and $cm['start']) {
-        $MarkerStart = $cm['start']
+    $cmStart = Get-ConfigValue -Object $cm -Key 'start'
+    if ($cmStart -is [string] -and $cmStart) {
+        $MarkerStart = $cmStart
     }
-    if ($cm['end'] -is [string] -and $cm['end']) {
-        $MarkerEnd = $cm['end']
+    $cmEnd = Get-ConfigValue -Object $cm -Key 'end'
+    if ($cmEnd -is [string] -and $cmEnd) {
+        $MarkerEnd = $cmEnd
     }
 }
 

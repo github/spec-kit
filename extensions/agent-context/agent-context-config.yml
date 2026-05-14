@@ -5,7 +5,7 @@
 # Path (relative to the project root) to the coding agent context file
 # managed by this extension (e.g. CLAUDE.md, AGENTS.md,
 # .github/copilot-instructions.md). Set automatically from the active
-# integration; edit to override.
+# integration and regenerated during `specify init` or integration switches.
 context_file: ""
 
 # Delimiters for the managed Spec Kit section.

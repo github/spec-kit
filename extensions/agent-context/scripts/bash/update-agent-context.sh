@@ -41,17 +41,25 @@ fi
 
 # Parse extension config once; emit three newline-separated fields:
 # context_file, context_markers.start, context_markers.end
-_raw_opts="$("$_python" - "$EXT_CONFIG" <<'PY'
+if ! _raw_opts="$("$_python" - "$EXT_CONFIG" <<'PY'
 import sys
 try:
     import yaml
 except ImportError:
-    yaml = None
+    print(
+        "agent-context: PyYAML is required to parse extension config; cannot update context.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 try:
     with open(sys.argv[1], "r", encoding="utf-8") as fh:
-        data = yaml.safe_load(fh) if yaml else {}
-except Exception:
-    data = {}
+        data = yaml.safe_load(fh)
+except Exception as exc:
+    print(
+        f"agent-context: unable to parse {sys.argv[1]} ({exc}); cannot update context.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 if not isinstance(data, dict):
     data = {}
 def get_str(obj, *keys):
@@ -66,7 +74,10 @@ print(get_str(data, "context_file"))
 print(get_str(data, "context_markers", "start"))
 print(get_str(data, "context_markers", "end"))
 PY
-)"
+)"; then
+  echo "agent-context: failed to read extension config; skipping update." >&2
+  exit 0
+fi
 
 {
   IFS= read -r CONTEXT_FILE

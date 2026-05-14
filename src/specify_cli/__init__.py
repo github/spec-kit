@@ -1549,13 +1549,15 @@ def _clear_init_options_for_integration(project_root: Path, integration_key: str
     no stale path is left behind when the integration is uninstalled.
     """
     opts = load_init_options(project_root)
+    has_legacy_context_keys = ("context_file" in opts) or ("context_markers" in opts)
+    # Remove legacy fields that older versions may have written.
+    opts.pop("context_file", None)
+    opts.pop("context_markers", None)
+
     if opts.get("integration") == integration_key or opts.get("ai") == integration_key:
         opts.pop("integration", None)
         opts.pop("ai", None)
         opts.pop("ai_skills", None)
-        # Remove legacy fields that older versions may have written.
-        opts.pop("context_file", None)
-        opts.pop("context_markers", None)
         save_init_options(project_root, opts)
         # Clear context_file in the extension config too.
         ext_cfg_path = project_root / _AGENT_CTX_EXT_CONFIG
@@ -1563,6 +1565,8 @@ def _clear_init_options_for_integration(project_root: Path, integration_key: str
             _update_agent_context_config_file(
                 project_root, "", preserve_markers=True
             )
+    elif has_legacy_context_keys:
+        save_init_options(project_root, opts)
 
 
 def _remove_integration_json(project_root: Path) -> None:
