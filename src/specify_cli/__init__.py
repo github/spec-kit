@@ -1029,8 +1029,13 @@ def init(
                             # Config was written despite the failed install;
                             # the Python context-section plumbing remains active.
                             _ac_err_msg += "; config written, Python context plumbing active"
-                    except Exception:
-                        pass
+                    except Exception as cfg_err:
+                        sanitized_cfg = str(cfg_err).replace('\n', ' ').strip()
+                        cfg_msg = f"config update failed: {sanitized_cfg[:120]}"
+                        if _ac_err_msg is not None:
+                            _ac_err_msg += f"; {cfg_msg}"
+                        else:
+                            _ac_err_msg = cfg_msg
                 if _ac_err_msg is not None:
                     tracker.error("agent-context", _ac_err_msg)
 
