@@ -68,7 +68,7 @@ if (Get-Command ConvertFrom-Yaml -ErrorAction SilentlyContinue) {
     try {
         $Options = Get-Content -LiteralPath $ExtConfig -Raw | ConvertFrom-Yaml -ErrorAction Stop
     } catch {
-        $Options = $null  # fall through to Python fallback
+        # fall through to Python fallback
     }
 }
 
