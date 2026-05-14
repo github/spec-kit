@@ -30,7 +30,7 @@ class ShellStep(StepBase):
         # control commands; catalog-installed workflows should be reviewed
         # before use (see PUBLISHING.md for security guidance).
         try:
-            proc = subprocess.run(
+            proc = subprocess.run(  # noqa: S602 -- intentional shell=True (see NOTE above)
                 run_cmd,
                 shell=True,
                 capture_output=True,
