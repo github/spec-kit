@@ -1902,18 +1902,22 @@ def _update_init_options_for_integration(
     opts["ai"] = integration.key
     opts["context_file"] = integration.context_file
     # Preserve any user-customized markers; only seed defaults if absent or invalid.
-    existing_markers = opts.get("context_markers")
-    if not isinstance(existing_markers, dict):
-        opts["context_markers"] = {
-            "start": IntegrationBase.CONTEXT_MARKER_START,
-            "end": IntegrationBase.CONTEXT_MARKER_END,
-        }
+    # Only write context_markers when this integration actually has a context file.
+    if integration.context_file:
+        existing_markers = opts.get("context_markers")
+        if not isinstance(existing_markers, dict):
+            opts["context_markers"] = {
+                "start": IntegrationBase.CONTEXT_MARKER_START,
+                "end": IntegrationBase.CONTEXT_MARKER_END,
+            }
+        else:
+            if not isinstance(existing_markers.get("start"), str) or not existing_markers.get("start"):
+                existing_markers["start"] = IntegrationBase.CONTEXT_MARKER_START
+            if not isinstance(existing_markers.get("end"), str) or not existing_markers.get("end"):
+                existing_markers["end"] = IntegrationBase.CONTEXT_MARKER_END
+            opts["context_markers"] = existing_markers
     else:
-        if not isinstance(existing_markers.get("start"), str) or not existing_markers.get("start"):
-            existing_markers["start"] = IntegrationBase.CONTEXT_MARKER_START
-        if not isinstance(existing_markers.get("end"), str) or not existing_markers.get("end"):
-            existing_markers["end"] = IntegrationBase.CONTEXT_MARKER_END
-        opts["context_markers"] = existing_markers
+        opts.pop("context_markers", None)
     if script_type:
         opts["script"] = script_type
     if isinstance(integration, SkillsIntegration) or getattr(integration, "_skills_mode", False):
