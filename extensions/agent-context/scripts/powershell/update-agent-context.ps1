@@ -59,15 +59,21 @@ $ProjectRoot  = (Get-Location).Path
 $ExtConfig    = Join-Path $ProjectRoot '.specify/extensions/agent-context/agent-context-config.yml'
 
 if (-not (Test-Path -LiteralPath $ExtConfig)) {
-    Write-Host "agent-context: $ExtConfig not found; nothing to do."
+    Write-Warning "agent-context: $ExtConfig not found; nothing to do."
     exit 0
 }
 
-try {
-    $Options = Get-Content -LiteralPath $ExtConfig -Raw | ConvertFrom-Yaml -ErrorAction Stop
-} catch {
-    # ConvertFrom-Yaml may not be available on all systems.
-    # Fall back to Python+PyYAML for consistent parsing semantics.
+$Options = $null
+if (Get-Command ConvertFrom-Yaml -ErrorAction SilentlyContinue) {
+    try {
+        $Options = Get-Content -LiteralPath $ExtConfig -Raw | ConvertFrom-Yaml -ErrorAction Stop
+    } catch {
+        $Options = $null  # fall through to Python fallback
+    }
+}
+
+if ($null -eq $Options) {
+    # ConvertFrom-Yaml unavailable or failed; fall back to Python+PyYAML.
     $pythonCmd = $null
     foreach ($candidate in @('python3', 'python')) {
         if (Get-Command $candidate -ErrorAction SilentlyContinue) {
@@ -126,7 +132,7 @@ if (-not (Test-ConfigObject -Object $Options)) {
 
 $ContextFile = Get-ConfigValue -Object $Options -Key 'context_file'
 if (-not $ContextFile) {
-    Write-Host 'agent-context: context_file not set in extension config; nothing to do.'
+    Write-Warning 'agent-context: context_file not set in extension config; nothing to do.'
     exit 0
 }
 

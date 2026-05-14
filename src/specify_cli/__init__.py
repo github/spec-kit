@@ -1592,11 +1592,14 @@ def _clear_init_options_for_integration(project_root: Path, integration_key: str
         opts.pop("ai", None)
         opts.pop("ai_skills", None)
         save_init_options(project_root, opts)
-        # Clear context_file in the extension config too. If the config file
-        # does not exist yet, create it so no stale target can persist.
-        _update_agent_context_config_file(
-            project_root, "", preserve_markers=True
-        )
+        # Clear context_file in the extension config if it already exists.
+        # Avoid creating the config (and parent dirs) in projects where the
+        # agent-context extension was never installed.
+        ext_cfg_path = project_root / _AGENT_CTX_EXT_CONFIG
+        if ext_cfg_path.exists():
+            _update_agent_context_config_file(
+                project_root, "", preserve_markers=True
+            )
     elif has_legacy_context_keys:
         save_init_options(project_root, opts)
 

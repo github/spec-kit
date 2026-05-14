@@ -376,17 +376,11 @@ class CommandRegistrar:
 
         # Resolve __CONTEXT_FILE__ from the agent-context extension config.
         # Fall back to init-options.json for projects that haven't migrated.
-        context_file = ""
-        try:
-            # Local import: _load_agent_context_config lives in __init__.py
-            # which imports agents.py, so a top-level import would be circular.
-            from . import _load_agent_context_config
-            ac_cfg = _load_agent_context_config(project_root)
-            context_file = ac_cfg.get("context_file") or ""
-        except ImportError:
-            # Best-effort read: if the helper cannot be imported (e.g. during
-            # circular import setup), fall back to init-options.json below.
-            context_file = ""
+        # Local import: _load_agent_context_config lives in __init__.py which
+        # imports agents.py, so a top-level import would be circular.
+        from . import _load_agent_context_config
+        ac_cfg = _load_agent_context_config(project_root)
+        context_file = ac_cfg.get("context_file") or ""
         if not context_file:
             context_file = init_opts.get("context_file") or ""
         body = body.replace("__CONTEXT_FILE__", context_file)
