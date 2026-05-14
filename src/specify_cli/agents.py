@@ -378,6 +378,8 @@ class CommandRegistrar:
         # Fall back to init-options.json for projects that haven't migrated.
         context_file = ""
         try:
+            # Local import: _load_agent_context_config lives in __init__.py
+            # which imports agents.py, so a top-level import would be circular.
             from . import _load_agent_context_config
             ac_cfg = _load_agent_context_config(project_root)
             context_file = ac_cfg.get("context_file") or ""
