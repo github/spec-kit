@@ -1,4 +1,4 @@
-"""Helpers for generating community extension reference docs."""
+"""Helpers for rendering the community extensions reference table."""
 
 from __future__ import annotations
 
@@ -9,25 +9,10 @@ from typing import Any
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 COMMUNITY_CATALOG_PATH = ROOT_DIR / "extensions" / "catalog.community.json"
-COMMUNITY_INDEX_PATH = ROOT_DIR / "docs" / "community" / "extensions.md"
-
-GENERATED_START_MARKER = "<!-- BEGIN GENERATED COMMUNITY EXTENSIONS TABLE -->"
-GENERATED_END_MARKER = "<!-- END GENERATED COMMUNITY EXTENSIONS TABLE -->"
-
-
-def load_community_catalog(path: Path = COMMUNITY_CATALOG_PATH) -> dict[str, Any]:
-    """Load and validate the community catalog JSON file."""
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError(f"Expected {path} to contain a JSON object")
-    extensions = data.get("extensions")
-    if not isinstance(extensions, dict):
-        raise ValueError(f"Expected {path} to contain an 'extensions' object")
-    return data
 
 
 def _render_cell(value: str) -> str:
-    return value.replace("\n", " ")
+    return value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("|", "\\|")
 
 
 def _format_tags(tags: Any) -> str:
@@ -37,11 +22,14 @@ def _format_tags(tags: Any) -> str:
     return ", ".join(cleaned) if cleaned else "—"
 
 
-def iter_community_extensions(catalog: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return community extensions ordered for the generated index."""
-    extensions = catalog.get("extensions", {})
+def list_community_extensions() -> list[dict[str, Any]]:
+    """Return community extensions sorted alphabetically by name then ID."""
+    data = json.loads(COMMUNITY_CATALOG_PATH.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected {COMMUNITY_CATALOG_PATH} to contain a JSON object")
+    extensions = data.get("extensions", {})
     if not isinstance(extensions, dict):
-        raise ValueError("Community catalog must contain an 'extensions' object")
+        raise ValueError(f"Expected {COMMUNITY_CATALOG_PATH} to contain an 'extensions' object")
 
     rows: list[dict[str, Any]] = []
     for ext_id, ext in extensions.items():
@@ -61,9 +49,9 @@ def iter_community_extensions(catalog: dict[str, Any]) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: (row["name"].casefold(), row["id"].casefold()))
 
 
-def render_community_extensions_table(catalog: dict[str, Any]) -> str:
-    """Render the community extensions index table from catalog data."""
-    rows = iter_community_extensions(catalog)
+def render_community_extensions_table() -> str:
+    """Render the community extensions table from catalog.community.json."""
+    rows = list_community_extensions()
     if not rows:
         raise ValueError("Community catalog has no extensions")
 
@@ -84,9 +72,10 @@ def render_community_extensions_table(catalog: dict[str, Any]) -> str:
             ]
         )
 
+    headers = ("Extension", "ID", "Description", "Tags", "Verified")
     widths = [
         max(len(header), *(len(_render_cell(row[index])) for row in table_rows))
-        for index, header in enumerate(("Extension", "ID", "Description", "Tags", "Verified"))
+        for index, header in enumerate(headers)
     ]
 
     def render_row(values: list[str]) -> str:
@@ -95,39 +84,8 @@ def render_community_extensions_table(catalog: dict[str, Any]) -> str:
         ) + " |"
 
     lines = [
-        render_row(["Extension", "ID", "Description", "Tags", "Verified"]),
+        render_row(list(headers)),
         "| " + " | ".join("-" * width for width in widths) + " |",
     ]
     lines.extend(render_row(row) for row in table_rows)
     return "\n".join(lines)
-
-
-def render_community_extensions_index(
-    catalog_path: Path = COMMUNITY_CATALOG_PATH,
-    doc_path: Path = COMMUNITY_INDEX_PATH,
-) -> str:
-    """Return the community extensions index markdown with the generated table updated."""
-    catalog = load_community_catalog(catalog_path)
-    table = render_community_extensions_table(catalog)
-
-    content = doc_path.read_text(encoding="utf-8")
-    start = content.find(GENERATED_START_MARKER)
-    end = content.find(GENERATED_END_MARKER)
-    if start == -1 or end == -1 or end < start:
-        raise ValueError(f"Could not find generated table markers in {doc_path}")
-
-    start_end = start + len(GENERATED_START_MARKER)
-    before = content[:start_end]
-    after = content[end:]
-    generated_block = f"\n\n{table}\n"
-    return before + generated_block + after
-
-
-def update_community_extensions_index(
-    catalog_path: Path = COMMUNITY_CATALOG_PATH,
-    doc_path: Path = COMMUNITY_INDEX_PATH,
-) -> str:
-    """Rewrite the community extensions index markdown file and return the new content."""
-    updated = render_community_extensions_index(catalog_path, doc_path)
-    doc_path.write_text(updated, encoding="utf-8")
-    return updated

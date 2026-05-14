@@ -3985,8 +3985,14 @@ def extension_search(
     tag: Optional[str] = typer.Option(None, "--tag", help="Filter by tag"),
     author: Optional[str] = typer.Option(None, "--author", help="Filter by author"),
     verified: bool = typer.Option(False, "--verified", help="Show only verified extensions"),
+    markdown: bool = typer.Option(False, "--markdown", help="Output results as a markdown table"),
 ):
     """Search for available extensions in catalog."""
+    if markdown:
+        from .community_catalog_docs import render_community_extensions_table
+        typer.echo(render_community_extensions_table())
+        return
+
     from .extensions import ExtensionCatalog, ExtensionError
 
     project_root = _require_specify_project()
