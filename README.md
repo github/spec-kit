@@ -35,8 +35,7 @@
 - [🔧 Prerequisites](#-prerequisites)
 - [📖 Learn More](#-learn-more)
 - [📋 Detailed Process](#-detailed-process)
-- [🔍 Troubleshooting](#-troubleshooting)
-- [💬 Support](#-support)
+- [ Support](#-support)
 - [🙏 Acknowledgements](#-acknowledgements)
 - [📄 License](#-license)
 
@@ -48,83 +47,22 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ### 1. Install Specify CLI
 
-Choose your preferred installation method:
-
-> **Important:** The only official, maintained packages for Spec Kit are published from this GitHub repository. Any packages with the same name on PyPI are **not** affiliated with this project and are not maintained by the Spec Kit maintainers. Always install directly from GitHub as shown below.
-
-#### Option 1: Persistent Installation (Recommended)
-
-Install once and use everywhere. Pin a specific release tag for stability (check [Releases](https://github.com/github/spec-kit/releases) for the latest):
-
-> [!NOTE]
-> The `uv tool install` commands below require **[uv](https://docs.astral.sh/uv/)** — a fast Python package manager. If you see `command not found: uv`, [install uv first](./docs/install/uv.md). The `pipx` alternative does not require uv.
+Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](./docs/install/uv.md)). Replace `vX.Y.Z` with the latest tag from [Releases](https://github.com/github/spec-kit/releases):
 
 ```bash
-# Install a specific stable release (recommended — replace vX.Y.Z with the latest tag)
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
-
-# Or install latest from main (may include unreleased changes)
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
-
-# Alternative: using pipx (also works)
-pipx install git+https://github.com/github/spec-kit.git@vX.Y.Z
-pipx install git+https://github.com/github/spec-kit.git
 ```
 
-Then verify the correct version is installed:
+See the [Installation Guide](./docs/installation.md) for alternative methods, verification, upgrade, and troubleshooting.
+
+### 2. Initialize a project
 
 ```bash
-specify version
+specify init my-project --integration copilot
+cd my-project
 ```
 
-And use the tool directly:
-
-```bash
-# Create new project
-specify init <PROJECT_NAME>
-
-# Or initialize in existing project
-specify init . --integration copilot
-# or
-specify init --here --integration copilot
-
-# Check installed tools
-specify check
-```
-
-To upgrade Specify, see the [Upgrade Guide](./docs/upgrade.md) for detailed instructions. Quick upgrade:
-
-```bash
-uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@vX.Y.Z
-# pipx users: pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z
-```
-
-#### Option 2: One-time Usage
-
-Run directly without installing:
-
-```bash
-# Create new project (pinned to a stable release — replace vX.Y.Z with the latest tag)
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <PROJECT_NAME>
-
-# Or initialize in existing project
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init . --integration copilot
-# or
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here --integration copilot
-```
-
-**Benefits of persistent installation:**
-
-- Tool stays installed and available in PATH
-- No need to create shell aliases
-- Better tool management with `uv tool list`, `uv tool upgrade`, `uv tool uninstall`
-- Cleaner shell configuration
-
-#### Option 3: Enterprise / Air-Gapped Installation
-
-If your environment blocks access to PyPI or GitHub, see the [Enterprise / Air-Gapped Installation](./docs/installation.md#enterprise--air-gapped-installation) guide for step-by-step instructions on using `pip download` to create portable, OS-specific wheel bundles on a connected machine.
-
-### 2. Establish project principles
+### 3. Establish project principles
 
 Launch your coding agent in the project directory. Most agents expose spec-kit as `/speckit.*` slash commands; Codex CLI in skills mode uses `$speckit-*` instead.
 
@@ -134,7 +72,7 @@ Use the **`/speckit.constitution`** command to create your project's governing p
 /speckit.constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements
 ```
 
-### 3. Create the spec
+### 4. Create the spec
 
 Use the **`/speckit.specify`** command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
 
@@ -142,7 +80,7 @@ Use the **`/speckit.specify`** command to describe what you want to build. Focus
 /speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
 ```
 
-### 4. Create a technical implementation plan
+### 5. Create a technical implementation plan
 
 Use the **`/speckit.plan`** command to provide your tech stack and architecture choices.
 
@@ -150,7 +88,7 @@ Use the **`/speckit.plan`** command to provide your tech stack and architecture 
 /speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
 ```
 
-### 5. Break down into tasks
+### 6. Break down into tasks
 
 Use **`/speckit.tasks`** to create an actionable task list from your implementation plan.
 
@@ -158,7 +96,7 @@ Use **`/speckit.tasks`** to create an actionable task list from your implementat
 /speckit.tasks
 ```
 
-### 6. Execute implementation
+### 7. Execute implementation
 
 Use **`/speckit.implement`** to execute all tasks and build your feature according to the plan.
 
@@ -639,26 +577,7 @@ Once the implementation is complete, test the application and resolve any runtim
 
 ---
 
-## 🔍 Troubleshooting
-
-### Git Credential Manager on Linux
-
-If you're having issues with Git authentication on Linux, you can install Git Credential Manager:
-
-```bash
-#!/usr/bin/env bash
-set -e
-echo "Downloading Git Credential Manager v2.6.1..."
-wget https://github.com/git-ecosystem/git-credential-manager/releases/download/v2.6.1/gcm-linux_amd64.2.6.1.deb
-echo "Installing Git Credential Manager..."
-sudo dpkg -i gcm-linux_amd64.2.6.1.deb
-echo "Configuring Git to use GCM..."
-git config --global credential.helper manager
-echo "Cleaning up..."
-rm gcm-linux_amd64.2.6.1.deb
-```
-
-## 💬 Support
+##  Support
 
 For support, please open a [GitHub issue](https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
 
