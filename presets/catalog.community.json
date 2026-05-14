@@ -293,6 +293,33 @@
       "created_at": "2026-05-05T08:00:00Z",
       "updated_at": "2026-05-05T08:00:00Z"
     },
+    "implement-shards": {
+      "name": "Implement Shards",
+      "id": "implement-shards",
+      "version": "1.0.0",
+      "description": "Overrides /speckit.implement with conservative task-sharded implementation guidance and handoff JSON records for large tasks.md files.",
+      "author": "bigsmartben",
+      "repository": "https://github.com/bigsmartben/spec-kit-preset-implement-shards",
+      "download_url": "https://github.com/bigsmartben/spec-kit-preset-implement-shards/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/bigsmartben/spec-kit-preset-implement-shards",
+      "documentation": "https://github.com/bigsmartben/spec-kit-preset-implement-shards/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 1
+      },
+      "tags": [
+        "implementation",
+        "tasks",
+        "handoffs",
+        "workflow"
+      ],
+      "created_at": "2026-05-14T00:00:00Z",
+      "updated_at": "2026-05-14T00:00:00Z"
+    },
     "isaqb-architecture-governance": {
       "name": "iSAQB Architecture Governance",
       "id": "isaqb-architecture-governance",
