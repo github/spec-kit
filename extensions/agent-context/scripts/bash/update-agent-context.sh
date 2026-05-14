@@ -35,8 +35,8 @@ elif command -v python >/dev/null 2>&1 && python --version 2>&1 | grep -q "^Pyth
 fi
 
 if [[ -z "$_python" ]]; then
-  echo "agent-context: Python 3 not found on PATH; cannot parse extension config." >&2
-  exit 1
+  echo "agent-context: Python 3 not found on PATH; skipping update." >&2
+  exit 0
 fi
 
 # Parse extension config once; emit three newline-separated fields:

@@ -30,24 +30,48 @@ if (-not (Test-Path -LiteralPath $ExtConfig)) {
 try {
     $Options = Get-Content -LiteralPath $ExtConfig -Raw | ConvertFrom-Yaml -ErrorAction Stop
 } catch {
-    # ConvertFrom-Yaml may not be available on all systems; fall back to a
-    # simple line-by-line YAML parser for the keys we need.
-    $Options = @{}
-    $inMarkers = $false
-    foreach ($line in Get-Content -LiteralPath $ExtConfig) {
-        if ($line -match '^context_file:\s*(.*)$') {
-            $Options['context_file'] = $Matches[1].Trim().Trim('"').Trim("'")
-        } elseif ($line -match '^context_markers:') {
-            $inMarkers = $true
-        } elseif ($inMarkers -and $line -match '^\s+start:\s*(.+)$') {
-            if (-not $Options.ContainsKey('context_markers')) { $Options['context_markers'] = @{} }
-            $Options['context_markers']['start'] = $Matches[1].Trim().Trim('"').Trim("'")
-        } elseif ($inMarkers -and $line -match '^\s+end:\s*(.+)$') {
-            if (-not $Options.ContainsKey('context_markers')) { $Options['context_markers'] = @{} }
-            $Options['context_markers']['end'] = $Matches[1].Trim().Trim('"').Trim("'")
-        } elseif ($inMarkers -and $line -match '^[a-z]') {
-            $inMarkers = $false
+    # ConvertFrom-Yaml may not be available on all systems.
+    # Fall back to Python+PyYAML for consistent parsing semantics.
+    $pythonCmd = $null
+    foreach ($candidate in @('python3', 'python')) {
+        if (Get-Command $candidate -ErrorAction SilentlyContinue) {
+            $pythonCmd = $candidate
+            break
         }
+    }
+
+    if ($pythonCmd) {
+        try {
+            $jsonOut = & $pythonCmd -c @'
+import json
+import sys
+try:
+    import yaml
+except Exception:
+    yaml = None
+
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as fh:
+        data = yaml.safe_load(fh) if yaml else {}
+except Exception:
+    data = {}
+
+if not isinstance(data, dict):
+    data = {}
+
+print(json.dumps(data))
+'@ $ExtConfig
+            if ($LASTEXITCODE -eq 0 -and $jsonOut) {
+                $Options = $jsonOut | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+            }
+        } catch {
+            $Options = $null
+        }
+    }
+
+    if (-not $Options) {
+        Write-Warning "agent-context: unable to parse $ExtConfig; skipping update."
+        exit 0
     }
 }
 
@@ -70,11 +94,14 @@ if ($cm) {
 }
 
 if (-not $PlanPath) {
-    # Discover plan.md one level deep (specs/<feature>/plan.md), matching the
-    # bash glob specs/*/plan.md. Wrap in try/catch so access errors under
+    # Discover plan.md exactly one level deep (specs/<feature>/plan.md),
+    # matching the bash glob specs/*/plan.md. Wrap in try/catch so access errors under
     # $ErrorActionPreference = 'Stop' don't abort the script.
     try {
-        $candidate = Get-ChildItem -Path (Join-Path $ProjectRoot 'specs') -Filter 'plan.md' -Recurse -Depth 1 -ErrorAction SilentlyContinue |
+        $specsDir = Join-Path $ProjectRoot 'specs'
+        $candidate = Get-ChildItem -Path $specsDir -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { Get-Item -LiteralPath (Join-Path $_.FullName 'plan.md') -ErrorAction SilentlyContinue } |
+            Where-Object { $_ } |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
         if ($candidate) {

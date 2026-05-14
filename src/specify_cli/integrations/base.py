@@ -579,7 +579,8 @@ class IntegrationBase(ABC):
         managed section.  If it exists, the content between the configured
         start/end markers (default ``<!-- SPECKIT START -->`` /
         ``<!-- SPECKIT END -->``) is replaced, or appended when no markers
-        are found.  Markers are read from ``.specify/init-options.json``
+        are found. Markers are read from the agent-context extension config
+        (``.specify/extensions/agent-context/agent-context-config.yml``)
         when present, falling back to the class-level constants.
 
         Returns the path to the context file, or ``None`` when
@@ -656,8 +657,9 @@ class IntegrationBase(ABC):
         """Remove the managed section from the agent context file.
 
         Returns ``True`` if the section was found and removed.  If the
-        file becomes empty (or whitespace-only) after removal it is
-        deleted.  Markers are read from ``.specify/init-options.json``
+        file becomes empty (or whitespace-only) after removal it is deleted.
+        Markers are read from the agent-context extension config
+        (``.specify/extensions/agent-context/agent-context-config.yml``)
         when present, falling back to the class-level constants.
         """
         if not self.context_file:

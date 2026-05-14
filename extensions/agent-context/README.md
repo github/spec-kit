@@ -35,6 +35,7 @@ context_markers:
 
 - `context_file` — the project-relative path to the coding agent context file, written by `specify init` and `specify integration install`.
 - `context_markers.start` / `.end` — the delimiters around the managed section. Edit these to use custom markers.
+- Runtime note: the bundled update scripts require Python 3 for YAML/upsert processing (PowerShell can also use `ConvertFrom-Yaml` when available).
 
 ## Disable
 

@@ -399,7 +399,7 @@ Implementation: Extends `YamlIntegration` (parallel to `TomlIntegration`):
 ## Common Pitfalls
 
 1. **Using shorthand keys for CLI-based integrations**: For CLI-based integrations (`requires_cli: True`), the `key` must match the executable name (e.g., `"cursor-agent"` not `"cursor"`). `shutil.which(key)` is used for CLI tool checks — mismatches require special-case mappings. IDE-based integrations (`requires_cli: False`) are not subject to this constraint.
-2. **Forgetting context configuration**: The bundled `agent-context` extension reads from `.specify/init-options.json`. New integrations only need to set `context_file` on the class — markers and dispatcher scripts are managed centrally.
+2. **Forgetting context configuration**: The bundled `agent-context` extension reads from `.specify/extensions/agent-context/agent-context-config.yml`. New integrations only need to set `context_file` on the class — markers and dispatcher scripts are managed centrally.
 3. **Incorrect `requires_cli` value**: Set to `True` only for agents that have a CLI tool; set to `False` for IDE-based agents.
 4. **Wrong argument format**: Use `$ARGUMENTS` for Markdown agents, `{{args}}` for TOML agents.
 5. **Skipping registration**: The import and `_register()` call in `_register_builtins()` must both be added.
