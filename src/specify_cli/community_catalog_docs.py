@@ -40,7 +40,7 @@ def list_community_extensions() -> list[dict[str, Any]]:
                 "name": str(ext.get("name") or ext_id),
                 "id": str(ext.get("id") or ext_id),
                 "description": str(ext.get("description") or ""),
-                "tags": _format_tags(ext.get("tags")),
+                "tags": ext.get("tags") or [],
                 "verified": "Yes" if bool(ext.get("verified")) else "No",
                 "repository": str(ext.get("repository") or ""),
             }
@@ -67,7 +67,7 @@ def render_community_extensions_table() -> str:
                 name,
                 f"`{row['id']}`",
                 row["description"],
-                row["tags"],
+                _format_tags(row["tags"]),
                 row["verified"],
             ]
         )
