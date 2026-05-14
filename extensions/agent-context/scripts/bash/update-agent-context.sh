@@ -49,7 +49,7 @@ except ImportError:
     print(
         "agent-context: PyYAML is required to parse extension config but is not available "
         "in the current Python environment.\n"
-        "  To resolve: pip install pyyaml  (or install it into the environment used by python3).\n"
+        "  To resolve: pip install pyyaml (or install it into the environment used by python3).\n"
         "  Context file will not be updated until PyYAML is importable.",
         file=sys.stderr,
     )
