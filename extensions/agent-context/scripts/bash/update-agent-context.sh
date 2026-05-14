@@ -82,9 +82,12 @@ PY
   exit 0
 fi
 
-mapfile -t _opts_lines <<< "$_raw_opts"
+_opts_lines=()
+while IFS= read -r _line || [[ -n "$_line" ]]; do
+  _opts_lines+=("$_line")
+done < <(printf '%s\n' "$_raw_opts")
 if (( ${#_opts_lines[@]} < 3 )); then
-  echo "agent-context: malformed config parser output; expected 3 lines, got ${#_opts_lines[@]}; skipping update." >&2
+  echo "agent-context: malformed config parser output; expected 3 lines (context_file, marker_start, marker_end), got ${#_opts_lines[@]}; skipping update." >&2
   exit 0
 fi
 CONTEXT_FILE="${_opts_lines[0]}"
