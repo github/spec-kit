@@ -67,7 +67,6 @@ from .integration_state import (
     installed_integration_keys as _installed_integration_keys,
     integration_setting as _integration_setting,
     integration_settings as _integration_settings,
-    normalize_integration_state as _normalize_integration_state,
     try_read_integration_json as _try_read_integration_json,
     write_integration_json as _write_integration_json_file,
 )
