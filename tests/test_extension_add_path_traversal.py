@@ -5,7 +5,7 @@ Without sanitisation, absolute paths or ``../`` segments in the argument can
 escape the intended cache directory, causing arbitrary file writes and deletes.
 """
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -55,9 +55,10 @@ class TestExtensionAddFromPathTraversal:
                 app,
                 ["extension", "add", bad_name, "--from", "https://example.com/ext.zip"],
             )
-        if mock_install.called:
-            zip_arg = mock_install.call_args[0][0]  # positional arg: zip_path
-            zip_arg.resolve().relative_to(cache_dir.resolve())  # raises ValueError if outside
+        assert result.exit_code == 0, result.output
+        mock_install.assert_called_once()
+        zip_arg = mock_install.call_args[0][0]  # positional arg: zip_path
+        zip_arg.resolve().relative_to(cache_dir.resolve())  # raises ValueError if outside
 
     @pytest.mark.parametrize("bad_name", TRAVERSAL_PAYLOADS)
     def test_traversal_payload_cannot_delete_outside_cache(self, project_dir, bad_name):
@@ -79,8 +80,8 @@ class TestExtensionAddFromPathTraversal:
                 app,
                 ["extension", "add", bad_name, "--from", "https://example.com/ext.zip"],
             )
-        if pre_fix_path is not None and pre_fix_path.exists():
-            # Sentinel survived — the fix didn't touch the pre-fix path
+        if pre_fix_path is not None:
+            assert pre_fix_path.exists(), f"Sentinel deleted by cleanup: {pre_fix_path}"
             assert pre_fix_path.read_text() == "sentinel"
 
     def test_clean_name_is_unaffected(self, project_dir):

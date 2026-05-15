@@ -3646,10 +3646,13 @@ def extension_add(
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
                 download_dir.mkdir(parents=True, exist_ok=True)
 
-                # Reject symlinked cache directory (consistent with shared_infra.py)
-                if download_dir.is_symlink():
-                    console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
-                    raise typer.Exit(1)
+                # Reject symlinked ancestors (consistent with shared_infra.py)
+                _check = project_root
+                for _part in download_dir.relative_to(project_root).parts:
+                    _check = _check / _part
+                    if _check.is_symlink():
+                        console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
+                        raise typer.Exit(1)
 
                 safe_name = Path(extension).name.replace("/", "_").replace("\\", "_") or "download"
                 safe_name = safe_name[:64]  # cap length to avoid filesystem errors
