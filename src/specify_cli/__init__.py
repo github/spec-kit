@@ -55,7 +55,7 @@ from .integration_state import (
     installed_integration_keys as _installed_integration_keys,
     integration_setting as _integration_setting,
     integration_settings as _integration_settings,
-    normalize_integration_state as _normalize_integration_state,
+    try_read_integration_json as _try_read_integration_json,
     write_integration_json as _write_integration_json_file,
 )
 from .shared_infra import (
@@ -1283,35 +1283,37 @@ integration_app.add_typer(integration_catalog_app, name="catalog")
 
 
 def _read_integration_json(project_root: Path) -> dict[str, Any]:
-    """Load ``.specify/integration.json``. Returns normalized state when present."""
+    """Load ``.specify/integration.json``. Returns normalized state when present.
+
+    Delegates the parse / schema-guard logic to the shared
+    :func:`_try_read_integration_json` helper so the CLI and workflow engine
+    cannot drift on validation rules. Each error variant is translated into
+    the existing loud-fail UX (console message + ``typer.Exit(1)``).
+    """
     path = project_root / INTEGRATION_JSON
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        console.print(f"[red]Error:[/red] {path} contains invalid JSON.")
+    state, error = _try_read_integration_json(project_root)
+    if error is None:
+        return state or {}
+    if error.kind == "decode":
+        console.print(f"[red]Error:[/red] {path} contains invalid JSON or is not valid UTF-8.")
         console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
-        console.print(f"[dim]Details:[/dim] {exc}")
-        raise typer.Exit(1)
-    except OSError as exc:
+        console.print(f"[dim]Details:[/dim] {error.detail}")
+    elif error.kind == "os":
         console.print(f"[red]Error:[/red] Could not read {path}.")
         console.print(f"Please fix file permissions or delete {INTEGRATION_JSON} and retry.")
-        console.print(f"[dim]Details:[/dim] {exc}")
-        raise typer.Exit(1)
-    if not isinstance(data, dict):
-        console.print(f"[red]Error:[/red] {path} must contain a JSON object, got {type(data).__name__}.")
-        console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
-        raise typer.Exit(1)
-    schema = data.get("integration_state_schema")
-    if isinstance(schema, int) and not isinstance(schema, bool) and schema > INTEGRATION_STATE_SCHEMA:
+        console.print(f"[dim]Details:[/dim] {error.detail}")
+    elif error.kind == "not_object":
         console.print(
-            f"[red]Error:[/red] {path} uses integration state schema {schema}, "
+            f"[red]Error:[/red] {path} must contain a JSON object, got {error.detail}."
+        )
+        console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
+    elif error.kind == "schema_too_new":
+        console.print(
+            f"[red]Error:[/red] {path} uses integration state schema {error.schema}, "
             f"but this CLI only supports schema {INTEGRATION_STATE_SCHEMA}."
         )
         console.print("Please upgrade Spec Kit before modifying integrations.")
-        raise typer.Exit(1)
-    return _normalize_integration_state(data)
+    raise typer.Exit(1)
 
 
 def _write_integration_json(
