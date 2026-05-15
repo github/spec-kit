@@ -1157,6 +1157,8 @@ def check():
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install a coding agent for the best experience[/dim]")
 
+    console.print("[dim]Tip: Run 'specify self check' to verify you have the latest CLI version.[/dim]")
+
 
 def _feature_capabilities() -> dict[str, bool]:
     """Return stable local CLI capability flags for humans and agents."""
