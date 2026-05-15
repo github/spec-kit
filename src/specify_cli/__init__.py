@@ -2527,7 +2527,7 @@ def integration_search(
         False, "--markdown", help="Output the full built-in integrations table as markdown (ignores filters)"
     ),
 ):
-    """Search for integrations in the active catalog stack."""
+    """Search for integrations in the active catalog stack, or output the built-in reference table with --markdown."""
     if markdown:
         if query or tag or author:
             console.print(
@@ -2537,7 +2537,7 @@ def integration_search(
         from .catalog_docs import render_integrations_table
         try:
             typer.echo(render_integrations_table())
-        except (ValueError, FileNotFoundError) as exc:
+        except ValueError as exc:
             console.print(f"[red]Error:[/red] {exc}")
             raise typer.Exit(1)
         return

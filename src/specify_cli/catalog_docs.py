@@ -2,13 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-
-INTEGRATIONS_REFERENCE_PATH = (
-    Path(__file__).parent.parent.parent / "docs" / "reference" / "integrations.md"
-)
 
 
 INTEGRATION_DOC_URLS: dict[str, str | None] = {
@@ -108,19 +103,12 @@ def render_integrations_table() -> str:
         agent = f"[{label}]({url})" if url else label
         rows.append([agent, f"`{key}`", notes])
 
-    widths = [
-        max(len(header), *(len(_render_cell(row[index])) for row in rows))
-        for index, header in enumerate(("Agent", "Key", "Notes"))
-    ]
-
     def render_row(values: list[str]) -> str:
-        return "| " + " | ".join(
-            _render_cell(value).ljust(widths[index]) for index, value in enumerate(values)
-        ) + " |"
+        return "| " + " | ".join(_render_cell(value) for value in values) + " |"
 
     lines = [
         render_row(["Agent", "Key", "Notes"]),
-        "| " + " | ".join("-" * width for width in widths) + " |",
+        "| " + " | ".join(["---", "---", "---"]) + " |",
     ]
     lines.extend(render_row(row) for row in rows)
     return "\n".join(lines)
