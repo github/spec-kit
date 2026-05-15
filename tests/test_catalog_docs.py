@@ -12,7 +12,7 @@ def test_integrations_table_renders():
     assert "| Notes" in table
 
 
-def test_integrations_reference_label_derives_from_registry_url_from_doc_map():
+def test_integrations_docs_label_and_url_sources():
     rows = {key: (label, url) for key, label, url, _notes in list_integrations_for_docs()}
     assert rows["copilot"][0] == "GitHub Copilot"
     assert rows["copilot"][1] == "https://code.visualstudio.com/"
