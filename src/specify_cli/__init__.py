@@ -3687,41 +3687,69 @@ def extension_add(
                 # (consistent with shared_infra._ensure_safe_shared_directory):
                 # `mkdir(parents=True)` would silently traverse a symlinked ancestor,
                 # so each component is checked and created individually instead.
-                # Each existing component is also re-resolved and required to land
-                # under project_root, which catches non-symlink directory aliases
-                # (e.g. Windows junctions / mount points) that resolve outside.
+                # Each component (existing or newly created) is also re-resolved
+                # and required to land under project_root, which catches
+                # non-symlink directory aliases (e.g. Windows junctions / mount
+                # points) that resolve outside, including ones that may appear
+                # mid-creation via a parent swap.
                 import uuid as _uuid
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
                 project_root_resolved = project_root.resolve()
-                _current = project_root
-                for _part in download_dir.relative_to(project_root).parts:
-                    _current = _current / _part
-                    if _current.is_symlink():
-                        console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
-                        raise typer.Exit(1)
-                    if _current.exists():
-                        if not _current.is_dir():
-                            console.print(
-                                f"[red]Error:[/red] Download cache path is not a directory: {_current}"
-                            )
+                try:
+                    _current = project_root
+                    for _part in download_dir.relative_to(project_root).parts:
+                        _current = _current / _part
+                        if _current.is_symlink():
+                            console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
                             raise typer.Exit(1)
+                        if _current.exists():
+                            if not _current.is_dir():
+                                console.print(
+                                    f"[red]Error:[/red] Download cache path is not a directory: {_current}"
+                                )
+                                raise typer.Exit(1)
+                            try:
+                                _current.resolve().relative_to(project_root_resolved)
+                            except (OSError, ValueError):
+                                console.print("[red]Error:[/red] Download cache directory escapes project root")
+                                raise typer.Exit(1)
+                            continue
+                        _current.mkdir()
+                        if _current.is_symlink():
+                            console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
+                            raise typer.Exit(1)
+                        # Post-create containment check: a parent swapped to a
+                        # junction / mount / symlink during creation could land
+                        # the new directory outside project_root even though
+                        # this component itself is not a symlink.
                         try:
                             _current.resolve().relative_to(project_root_resolved)
                         except (OSError, ValueError):
                             console.print("[red]Error:[/red] Download cache directory escapes project root")
                             raise typer.Exit(1)
-                        continue
-                    _current.mkdir()
-                    if _current.is_symlink():
-                        console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
-                        raise typer.Exit(1)
+                except OSError as _mkdir_err:
+                    console.print(
+                        f"[red]Error:[/red] Could not prepare download cache directory: {_mkdir_err}"
+                    )
+                    raise typer.Exit(1)
 
                 safe_name = Path(extension).name.replace("/", "_").replace("\\", "_") or "download"
                 safe_name = safe_name[:64]  # cap length to avoid filesystem errors
                 zip_filename = f"{safe_name}-{_uuid.uuid4().hex[:8]}.zip"
                 zip_path = download_dir / zip_filename
 
-                # Guard: resolved path must stay inside download_dir (CWE-22)
+                # Guard: resolved zip_path must stay inside the validated cache
+                # directory *and* the cache directory must still resolve under
+                # project_root. The second check defends the Windows fallback
+                # path of `_safe_open_download_zip` (no `dir_fd`/`O_NOFOLLOW`)
+                # against an ancestor swapped to a junction/symlink between the
+                # validation loop above and this point: comparing only against
+                # `download_dir.resolve()` would silently follow the redirect.
+                try:
+                    download_dir.resolve().relative_to(project_root_resolved)
+                except (OSError, ValueError):
+                    console.print("[red]Error:[/red] Download cache directory escapes project root")
+                    raise typer.Exit(1)
                 try:
                     zip_path.resolve().relative_to(download_dir.resolve())
                 except ValueError:

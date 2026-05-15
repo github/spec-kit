@@ -39,6 +39,23 @@ def _require_symlinks(tmp_path) -> None:
             except OSError:
                 pass
 
+def _is_absolute_like(payload: str) -> bool:
+    """Detect payloads that may be treated as an absolute path on any supported OS.
+
+    Used to skip the delete-side regression test for those payloads, since
+    constructing a sentinel relative to ``cache_dir`` for an absolute-like
+    payload would land outside the pytest sandbox (especially on Windows
+    where ``Path('C:\\\\...')`` and ``\\\\\\\\server\\\\share`` are roots).
+    The write-side test still covers containment for these cases.
+    """
+    if payload.startswith(("/", "\\")):
+        return True
+    # Drive letter forms: C:\..., C:/...
+    if len(payload) >= 2 and payload[1] == ":" and payload[0].isalpha():
+        return True
+    return False
+
+
 TRAVERSAL_PAYLOADS = [
     "../pwned",
     "../../etc/passwd",
@@ -46,6 +63,16 @@ TRAVERSAL_PAYLOADS = [
     "..\\pwned",
     "..\\..\\etc\\passwd",
     "/tmp/evil",
+    # Deep relative traversal long enough to escape from
+    # `.specify/extensions/.cache/downloads` (4 segments) all the way out
+    # of project_root and beyond.
+    "../../../../../etc/shadow",
+    # Windows absolute path forms. The CI matrix runs these tests on
+    # windows-latest, so the sanitiser must reject drive-letter and UNC
+    # roots in addition to POSIX absolute paths.
+    "C:\\tmp\\evil",
+    "C:/tmp/evil",
+    "\\\\server\\share\\evil",
 ]
 
 
@@ -85,13 +112,14 @@ class TestExtensionAddFromPathTraversal:
         zip_arg = mock_install.call_args[0][0]  # positional arg: zip_path
         zip_arg.resolve().relative_to(cache_dir.resolve())  # raises ValueError if outside
 
-    @pytest.mark.parametrize("bad_name", [p for p in TRAVERSAL_PAYLOADS if not p.startswith(("/", "\\"))])
+    @pytest.mark.parametrize("bad_name", [p for p in TRAVERSAL_PAYLOADS if not _is_absolute_like(p)])
     def test_traversal_payload_cannot_delete_outside_cache(self, project_dir, bad_name):
         """The finally-block cleanup must not delete files outside the cache dir.
 
-        Absolute-path payloads are excluded here to avoid writing sentinels
-        outside the pytest sandbox (e.g. ``/tmp``); the write-side test above
-        already proves the production guard contains absolute payloads.
+        Absolute-like payloads (POSIX absolute, Windows drive letter, UNC) are
+        excluded here to avoid writing sentinels outside the pytest sandbox;
+        the write-side test above already proves the production guard contains
+        absolute payloads.
         """
         # Place a sentinel at the path the pre-fix code would have constructed
         cache_dir = project_dir / ".specify" / "extensions" / ".cache" / "downloads"
