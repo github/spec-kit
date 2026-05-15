@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.11] - 2026-05-15
+
+### Changed
+
+- refactor: extract _version.py from __init__.py (PR-3/8) (#2550)
+- Add Time Machine extension to community catalog (#2580)
+- fix(powershell): ensure UTF-8 templates are written without BOM (#2280)
+- docs: document high-assurance spec workflow (#2518)
+- docs: fix script name in directory tree examples (#2555)
+- Fix preset skill description precedence (#2538)
+- fix(integration): clarify multi-install guidance (#2549)
+- feat: add version feature reporting (#2548)
+- Add Architecture Workflow extension to community catalog (#2565)
+- chore: release 0.8.10, begin 0.8.11.dev0 development (#2562)
+
 ## [0.8.10] - 2026-05-14
 
 ### Changed
