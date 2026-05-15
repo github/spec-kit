@@ -3641,18 +3641,24 @@ def extension_add(
                 console.print("Only install extensions from sources you trust.\n")
                 console.print(f"Downloading from {from_url}...")
 
-                # Download ZIP to temp location
+                # Download ZIP to temp location.
+                # Validate and create each ancestor without following symlinks
+                # (consistent with shared_infra._ensure_safe_shared_directory):
+                # `mkdir(parents=True)` would silently traverse a symlinked ancestor,
+                # so each component is checked and created individually instead.
                 import uuid as _uuid
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
-                download_dir.mkdir(parents=True, exist_ok=True)
-
-                # Reject symlinked ancestors (consistent with shared_infra.py)
-                _check = project_root
+                _current = project_root
                 for _part in download_dir.relative_to(project_root).parts:
-                    _check = _check / _part
-                    if _check.is_symlink():
+                    _current = _current / _part
+                    if _current.is_symlink():
                         console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
                         raise typer.Exit(1)
+                    if not _current.exists():
+                        _current.mkdir()
+                        if _current.is_symlink():
+                            console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
+                            raise typer.Exit(1)
 
                 safe_name = Path(extension).name.replace("/", "_").replace("\\", "_") or "download"
                 safe_name = safe_name[:64]  # cap length to avoid filesystem errors
