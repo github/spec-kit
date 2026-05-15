@@ -8,7 +8,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
-USES_RE = re.compile(r"^\s*uses:\s*(?P<ref>\S+)", re.MULTILINE)
+# Match both the dedicated-step form (`        uses: x@sha`) and the
+# inline shorthand (`      - uses: x@sha`) used in catalog-assign.yml.
+USES_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*(?P<ref>\S+)", re.MULTILINE)
 
 
 def test_github_actions_are_pinned_to_full_commit_shas():

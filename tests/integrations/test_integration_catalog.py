@@ -166,7 +166,12 @@ class TestCatalogFetch:
     """Tests that use a local HTTP server stub via monkeypatch."""
 
     def _patch_urlopen(self, monkeypatch, catalog_data):
-        """Patch authentication.http.urllib.request.urlopen to return *catalog_data*."""
+        """Patch authentication.http urlopen + OpenerDirector to return *catalog_data*.
+
+        Covers both code paths in ``open_url``:
+        - default: ``urllib.request.urlopen`` (unauthenticated, no strict redirects)
+        - hardened: ``OpenerDirector.open`` (strict_redirects=True path).
+        """
 
         class FakeResponse:
             def __init__(self, data, url=""):
@@ -189,8 +194,14 @@ class TestCatalogFetch:
             url = req if isinstance(req, str) else req.full_url
             return FakeResponse(catalog_data, url)
 
+        def fake_opener_open(_self, req, data=None, timeout=10):
+            return fake_urlopen(req, timeout)
+
         import specify_cli.authentication.http as _auth_http
         monkeypatch.setattr(_auth_http.urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(
+            _auth_http.urllib.request.OpenerDirector, "open", fake_opener_open
+        )
 
     def test_fetch_and_search_all(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HOME", str(tmp_path))
@@ -331,6 +342,11 @@ class TestCatalogFetch:
         import urllib.request
 
         monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(
+            urllib.request.OpenerDirector,
+            "open",
+            lambda _self, req, data=None, timeout=10: fake_urlopen(req, timeout),
+        )
         monkeypatch.setattr(
             "specify_cli.integrations.catalog.read_response_limited",
             fake_read_response_limited,
@@ -550,8 +566,15 @@ class TestIntegrationListCatalog:
             def __exit__(self, *a):
                 pass
 
-        monkeypatch.setattr(_auth_http.urllib.request, "urlopen",
-                            lambda req, timeout=10: FakeResponse(catalog, req if isinstance(req, str) else req.full_url))
+        def _fake_urlopen(req, timeout=10):
+            return FakeResponse(catalog, req if isinstance(req, str) else req.full_url)
+
+        monkeypatch.setattr(_auth_http.urllib.request, "urlopen", _fake_urlopen)
+        monkeypatch.setattr(
+            _auth_http.urllib.request.OpenerDirector,
+            "open",
+            lambda _self, req, data=None, timeout=10: _fake_urlopen(req, timeout),
+        )
 
         old = os.getcwd()
         try:

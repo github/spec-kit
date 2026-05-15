@@ -5021,7 +5021,7 @@ def workflow_add(
 
         import tempfile
         try:
-            with _open_url(source, timeout=30) as resp:
+            with _open_url(source, timeout=30, strict_redirects=True) as resp:
                 final_url = resp.geturl()
                 final_parsed = urlparse(final_url)
                 final_host = final_parsed.hostname or ""
@@ -5120,7 +5120,7 @@ def workflow_add(
         from specify_cli.authentication.http import open_url as _open_url
 
         workflow_dir.mkdir(parents=True, exist_ok=True)
-        with _open_url(workflow_url, timeout=30) as response:
+        with _open_url(workflow_url, timeout=30, strict_redirects=True) as response:
             # Validate final URL after redirects
             final_url = response.geturl()
             final_parsed = urlparse(final_url)
