@@ -18,24 +18,25 @@ def _render_cell(value: str) -> str:
 def _format_tags(tags: Any) -> str:
     if not isinstance(tags, list) or not tags:
         return "—"
-    # Strip | from tag values so they don't break table syntax inside backtick spans
-    cleaned = [f"`{str(tag).replace('|', '').strip()}`" for tag in tags if str(tag).strip()]
+    # Clean first, then filter: a tag of "  |  " would pass str(tag).strip() but produce
+    # an empty backtick span after pipe removal, so filter on the cleaned value.
+    cleaned = [f"`{c}`" for tag in tags if (c := str(tag).replace("|", "").strip())]
     return ", ".join(cleaned) if cleaned else "—"
 
 
-def list_community_extensions() -> list[dict[str, Any]]:
+def list_community_extensions(path: Path = COMMUNITY_CATALOG_PATH) -> list[dict[str, Any]]:
     """Return community extensions sorted alphabetically by name then ID."""
-    if not COMMUNITY_CATALOG_PATH.exists():
+    if not path.exists():
         raise FileNotFoundError(
-            f"Community catalog not found: {COMMUNITY_CATALOG_PATH}. "
+            f"Community catalog not found: {path}. "
             "The --markdown flag requires a spec-kit source checkout."
         )
-    data = json.loads(COMMUNITY_CATALOG_PATH.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        raise ValueError(f"Expected {COMMUNITY_CATALOG_PATH} to contain a JSON object")
+        raise ValueError(f"Expected {path} to contain a JSON object")
     extensions = data.get("extensions")
     if not isinstance(extensions, dict):
-        raise ValueError(f"Expected {COMMUNITY_CATALOG_PATH} to contain an 'extensions' object")
+        raise ValueError(f"Expected {path} to contain an 'extensions' object")
 
     rows: list[dict[str, Any]] = []
     for ext_id, ext in extensions.items():
@@ -55,24 +56,27 @@ def list_community_extensions() -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: (row["name"].casefold(), row["id"].casefold()))
 
 
-def render_community_extensions_table() -> str:
+def render_community_extensions_table(path: Path = COMMUNITY_CATALOG_PATH) -> str:
     """Render the community extensions table from catalog.community.json."""
-    rows = list_community_extensions()
+    rows = list_community_extensions(path=path)
     if not rows:
         raise ValueError("Community catalog has no extensions")
 
     table_rows: list[list[str]] = []
     for row in rows:
-        name = (
-            f"[{row['name']}]({row['repository']})"
+        # Escape raw field values *before* composing Markdown syntax so that
+        # a pipe inside a name or description doesn't break a link target.
+        safe_name = _render_cell(row["name"])
+        link = (
+            f"[{safe_name}]({row['repository']})"
             if row["repository"]
-            else row["name"]
+            else safe_name
         )
         table_rows.append(
             [
-                name,
+                link,
                 f"`{row['id']}`",
-                row["description"],
+                _render_cell(row["description"]),
                 _format_tags(row["tags"]),
                 row["verified"],
             ]
@@ -81,9 +85,10 @@ def render_community_extensions_table() -> str:
     headers = ("Extension", "ID", "Description", "Tags", "Verified")
 
     def render_row(values: list[str]) -> str:
-        return "| " + " | ".join(_render_cell(value) for value in values) + " |"
+        # Values are already escaped; do not re-apply _render_cell here.
+        return "| " + " | ".join(values) + " |"
 
     separator = "| " + " | ".join("---" for _ in headers) + " |"
     lines = [render_row(list(headers)), separator]
     lines.extend(render_row(row) for row in table_rows)
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n"

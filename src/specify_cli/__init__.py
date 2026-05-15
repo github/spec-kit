@@ -3985,7 +3985,7 @@ def extension_search(
     tag: Optional[str] = typer.Option(None, "--tag", help="Filter by tag"),
     author: Optional[str] = typer.Option(None, "--author", help="Filter by author"),
     verified: bool = typer.Option(False, "--verified", help="Show only verified extensions"),
-    markdown: bool = typer.Option(False, "--markdown", help="Output results as a markdown table"),
+    markdown: bool = typer.Option(False, "--markdown", help="Output the full community catalog as a markdown table (ignores query/tag/author/verified filters)"),
 ):
     """Search for available extensions in catalog."""
     if markdown:

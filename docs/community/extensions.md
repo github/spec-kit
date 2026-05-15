@@ -109,4 +109,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | [Wireframe Visual Feedback Loop](https://github.com/TortoiseWolfe/spec-kit-extension-wireframe) | `wireframe` | SVG wireframe generation, review, and sign-off for spec-driven development. Approved wireframes become spec constraints honored by /speckit.plan, /speckit.tasks, and /speckit.implement. | `wireframe`, `visual`, `design`, `ui`, `mockup`, `svg`, `feedback-loop`, `sign-off` | No |
 | [Work IQ](https://github.com/sakitA/spec-kit-workiq) | `workiq` | Integrate Microsoft 365 organizational knowledge into spec-driven development workflows | `microsoft-365`, `work-iq`, `context`, `integration`, `productivity` | No |
 | [Worktree Isolation](https://github.com/Quratulain-bilal/spec-kit-worktree) | `worktree` | Spawn isolated git worktrees for parallel feature development without checkout switching. | `worktree`, `git`, `parallel`, `isolation`, `workflow` | No |
-| [Worktrees](https://github.com/dango85/spec-kit-worktree-parallel) | `worktrees` | Default-on worktree isolation for parallel agents — sibling or nested layout | `worktree`, `git`, `parallel`, `isolation`, `agents` | No |To submit your own extension, see the [Extension Publishing Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md).
+| [Worktrees](https://github.com/dango85/spec-kit-worktree-parallel) | `worktrees` | Default-on worktree isolation for parallel agents — sibling or nested layout | `worktree`, `git`, `parallel`, `isolation`, `agents` | No |
+
+
+To submit your own extension, see the [Extension Publishing Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md).
