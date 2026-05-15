@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from specify_cli.catalog_docs import list_integrations_for_docs, render_integrations_table
+from specify_cli.catalog_docs import _render_cell, list_integrations_for_docs, render_integrations_table
 
 
 def test_integrations_table_renders():
     table = render_integrations_table()
-    assert "| Agent" in table
-    assert "| Key" in table
-    assert "| Notes" in table
+    lines = table.splitlines()
+    assert lines[0] == "| Agent | Key | Notes |"
+    assert lines[1] == "| --- | --- | --- |"
+
+
+def test_render_cell_escapes_pipes_and_normalizes_newlines():
+    assert _render_cell("a|b") == "a\\|b"
+    assert _render_cell("a\nb") == "a b"
+    assert _render_cell("a\r\nb") == "a b"
+    assert _render_cell("a\rb") == "a b"
+    assert _render_cell("a|b\nc") == "a\\|b c"
 
 
 def test_integrations_docs_label_and_url_sources():

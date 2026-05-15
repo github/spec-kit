@@ -75,12 +75,24 @@ def _get_integration_registry() -> dict[str, Any]:
 
 def list_integrations_for_docs() -> list[tuple[str, str, str | None, str]]:
     registry = _get_integration_registry()
+    registry_keys = set(registry)
 
     missing = [key for key in registry if key not in INTEGRATION_DOC_URLS]
     if missing:
         raise ValueError(
             f"Integration(s) missing from INTEGRATION_DOC_URLS: {', '.join(sorted(missing))}. "
             "Add each key to INTEGRATION_DOC_URLS in catalog_docs.py (use None if no URL applies)."
+        )
+
+    stale: set[str] = (
+        (set(INTEGRATION_DOC_URLS) - registry_keys)
+        | (set(INTEGRATION_LABEL_OVERRIDES) - registry_keys)
+        | (set(INTEGRATION_NOTES) - registry_keys)
+    )
+    if stale:
+        raise ValueError(
+            f"Stale key(s) in doc maps no longer present in registry: {', '.join(sorted(stale))}. "
+            "Remove them from INTEGRATION_DOC_URLS / INTEGRATION_LABEL_OVERRIDES / INTEGRATION_NOTES."
         )
 
     rows: list[tuple[str, str, str | None, str]] = []
