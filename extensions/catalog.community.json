@@ -1914,6 +1914,37 @@
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-03-18T00:00:00Z"
     },
+    "preview": {
+      "name": "Interactive HTML Preview",
+      "id": "preview",
+      "description": "Generate self-contained interactive HTML prototypes from Spec Kit artifacts",
+      "author": "bigsmartben",
+      "version": "1.0.0",
+      "download_url": "https://github.com/bigsmartben/spec-kit-preview/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/bigsmartben/spec-kit-preview",
+      "homepage": "https://github.com/bigsmartben/spec-kit-preview",
+      "documentation": "https://github.com/bigsmartben/spec-kit-preview/blob/main/README.md",
+      "changelog": "https://github.com/bigsmartben/spec-kit-preview/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.10.dev0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "preview",
+        "prototype",
+        "html",
+        "ux"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-15T00:00:00Z",
+      "updated_at": "2026-05-15T00:00:00Z"
+    },
     "product-forge": {
       "name": "Product Forge",
       "id": "product-forge",
