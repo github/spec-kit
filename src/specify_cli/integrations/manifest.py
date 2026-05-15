@@ -157,6 +157,15 @@ class IntegrationManifest:
                 treat the entry as permanently broken.
         """
         rel = Path(rel_path)
+        # Cheap lexical pre-check first so absolute / parent-traversal paths
+        # don't trigger a filesystem stat outside the project root before
+        # ``_validate_rel_path`` raises. ``_validate_rel_path`` produces the
+        # canonical error messages used elsewhere.
+        if rel.is_absolute() or ".." in rel.parts:
+            _validate_rel_path(rel, self.project_root)
+            # Defensive: _validate_rel_path always raises on these inputs,
+            # but make the contract explicit if it is ever loosened.
+            raise ValueError(f"Manifest path escapes project root: {rel}")
         # Check ``is_symlink()`` on the un-resolved path because
         # ``_validate_rel_path`` resolves the path (which would follow
         # the symlink and silently record the target instead).

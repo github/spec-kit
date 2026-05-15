@@ -34,6 +34,57 @@ class TestManifestRecordFile:
         assert m.files["existing.txt"] == _sha256(f)
 
 
+class TestManifestRecordExistingErrors:
+    """Error-case coverage for ``record_existing`` symlink + non-file guards.
+
+    Added in #2483 — Copilot review flagged these as un-tested regressions
+    after the ``is_symlink``/``is_file`` guards were introduced.
+    """
+
+    def test_rejects_symlink_target(self, tmp_path):
+        target = tmp_path / "target.txt"
+        target.write_text("target content", encoding="utf-8")
+        link = tmp_path / "link.txt"
+        link.symlink_to(target)
+        m = IntegrationManifest("test", tmp_path)
+        with pytest.raises(ValueError, match="symlinked"):
+            m.record_existing("link.txt")
+
+    def test_rejects_dangling_symlink(self, tmp_path):
+        # A symlink pointing nowhere should still be rejected before the
+        # ``is_file()`` check (which would itself be False on a dangler).
+        link = tmp_path / "dangler.txt"
+        link.symlink_to(tmp_path / "no-such-target.txt")
+        m = IntegrationManifest("test", tmp_path)
+        with pytest.raises(ValueError, match="symlinked"):
+            m.record_existing("dangler.txt")
+
+    def test_rejects_directory_path(self, tmp_path):
+        (tmp_path / "a_dir").mkdir()
+        m = IntegrationManifest("test", tmp_path)
+        with pytest.raises(ValueError, match="not a regular file"):
+            m.record_existing("a_dir")
+
+    def test_rejects_missing_path(self, tmp_path):
+        # ``is_file()`` is False for non-existent paths too; the same error
+        # surface keeps callers from having to distinguish "missing" from
+        # "wrong kind" — both mean "cannot hash this".
+        m = IntegrationManifest("test", tmp_path)
+        with pytest.raises(ValueError, match="not a regular file"):
+            m.record_existing("never-existed.txt")
+
+    def test_lexical_prevalidation_for_absolute_path(self, tmp_path):
+        # ``record_existing`` must reject absolute paths via the lexical
+        # pre-check, NOT via the filesystem-touching ``is_symlink()`` call.
+        # Verified by passing an absolute path that points to a directory
+        # outside the project root — the canonical "Absolute paths" error
+        # must surface before any stat on the absolute path.
+        m = IntegrationManifest("test", tmp_path)
+        abs_path = "C:\\tmp\\escape.txt" if sys.platform == "win32" else "/tmp/escape.txt"
+        with pytest.raises(ValueError, match="Absolute paths"):
+            m.record_existing(abs_path)
+
+
 class TestManifestPathTraversal:
     def test_record_file_rejects_parent_traversal(self, tmp_path):
         m = IntegrationManifest("test", tmp_path)
