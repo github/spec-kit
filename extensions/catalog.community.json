@@ -2885,6 +2885,43 @@
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
     },
+    "time-machine": {
+      "name": "Time Machine",
+      "id": "time-machine",
+      "description": "Retroactively apply the full SDD workflow to existing codebases — analyse, spec, and ship feature-by-feature",
+      "author": "te3yo",
+      "version": "1.1.0",
+      "download_url": "https://github.com/teeyo/spec-kit-time-machine/archive/refs/tags/v1.1.0.zip",
+      "repository": "https://github.com/teeyo/spec-kit-time-machine",
+      "homepage": "https://github.com/teeyo/spec-kit-time-machine",
+      "documentation": "https://github.com/teeyo/spec-kit-time-machine",
+      "changelog": "https://github.com/teeyo/spec-kit-time-machine/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "brownfield",
+        "automation",
+        "workflow",
+        "process"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-15T00:00:00Z",
+      "updated_at": "2026-05-15T00:00:00Z"
+    },
     "tinyspec": {
       "name": "TinySpec",
       "id": "tinyspec",
@@ -2948,43 +2985,6 @@
       "stars": 0,
       "created_at": "2026-04-25T00:00:00Z",
       "updated_at": "2026-04-25T00:00:00Z"
-    },
-    "time-machine": {
-      "name": "Time Machine",
-      "id": "time-machine",
-      "description": "Retroactively apply the full SDD workflow to existing codebases — analyse, spec, and ship feature-by-feature",
-      "author": "te3yo",
-      "version": "1.1.0",
-      "download_url": "https://github.com/teeyo/spec-kit-time-machine/archive/refs/tags/v1.1.0.zip",
-      "repository": "https://github.com/teeyo/spec-kit-time-machine",
-      "homepage": "https://github.com/teeyo/spec-kit-time-machine",
-      "documentation": "https://github.com/teeyo/spec-kit-time-machine",
-      "changelog": "https://github.com/teeyo/spec-kit-time-machine/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0",
-        "tools": [
-          {
-            "name": "git",
-            "required": true
-          }
-        ]
-      },
-      "provides": {
-        "commands": 3,
-        "hooks": 1
-      },
-      "tags": [
-        "brownfield",
-        "automation",
-        "workflow",
-        "process"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-05-15T00:00:00Z",
-      "updated_at": "2026-05-15T00:00:00Z"
     },
     "token-analyzer": {
       "name": "Token Consumption Analyzer",
