@@ -3363,7 +3363,20 @@ def _validate_safe_cache_dir(project_root: Path) -> Path:
                     console.print("[red]Error:[/red] Download cache directory escapes project root")
                     raise typer.Exit(1)
                 continue
-            current.mkdir()
+            # Race-tolerant create: a concurrent `extension add --from`
+            # process may have created the same component between the
+            # `current.exists()` check above and this line. Treat
+            # `FileExistsError` as success and re-run the symlink /
+            # containment / is_dir checks against whatever is now there.
+            try:
+                current.mkdir()
+            except FileExistsError:
+                pass
+            if not current.is_dir():
+                console.print(
+                    f"[red]Error:[/red] Download cache path is not a directory: {current}"
+                )
+                raise typer.Exit(1)
             if current.is_symlink():
                 console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
                 raise typer.Exit(1)
@@ -3385,45 +3398,39 @@ def _safe_open_download_zip(project_root: Path, download_dir: Path, zip_filename
 
     Closes the TOCTOU window between cache-ancestor validation and the actual
     file write. On POSIX, walks each component of ``download_dir`` using
-    ``dir_fd`` + ``O_NOFOLLOW`` so a symlink swap of *any* component (including
-    ancestors) after validation is rejected. The leaf is created with
-    ``O_EXCL`` so the unique UUID filename cannot collide with anything an
-    attacker pre-staged.
+    ``dir_fd`` + ``O_NOFOLLOW`` so a symlink swap of *any* component
+    (including ancestors) after validation is rejected. The leaf is created
+    with ``O_EXCL`` so the unique UUID filename cannot collide with anything
+    an attacker pre-staged.
 
-    On platforms without ``dir_fd``/``O_NOFOLLOW`` support (Windows), the
-    function performs an immediate per-component ancestor walk (re-checking
-    ``is_symlink`` and re-resolving each component under ``project_root``)
-    *just before* the leaf open. This narrows the TOCTOU window between the
-    earlier caller-side validation and the actual write so a swap performed in
-    that window is still caught. Symlink creation on Windows additionally
-    requires elevated privileges.
+    On platforms without ``dir_fd``/``O_NOFOLLOW`` support (notably Windows),
+    no atomic primitive exists in the standard library to bind the leaf open
+    to a previously-validated ancestor chain. A path-based open after a
+    separate validation walk is racy: an attacker who can write inside the
+    project (junction creation on Windows does not require elevation) can
+    swap a cache ancestor to a junction between the validation loop and the
+    leaf open, redirecting the write outside the project root. To avoid that
+    silent escape, this helper fails closed on such platforms instead.
+    Callers should surface a clear error and direct users to ``--dev`` or
+    catalog-based installs as alternatives.
 
     Returns an open file descriptor; the caller owns and must close it.
     Raises ``OSError`` (e.g. ``ELOOP``, ``EEXIST``, ``EACCES``) if any
-    component is a symlink or the leaf already exists.
+    component is a symlink or the leaf already exists, or
+    ``NotImplementedError`` on platforms lacking ``dir_fd`` support.
     """
     o_nofollow = getattr(os, "O_NOFOLLOW", 0)
     o_directory = getattr(os, "O_DIRECTORY", 0)
     leaf_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | o_nofollow
 
-    # Windows / no openat support: re-validate ancestors immediately before
-    # opening so a swap in the (caller-validation -> open) window is caught.
     if os.open not in os.supports_dir_fd:
-        project_root_resolved = project_root.resolve()
-        current = project_root
-        for part in download_dir.relative_to(project_root).parts:
-            current = current / part
-            if current.is_symlink():
-                raise OSError(
-                    f"Refusing to follow symlinked cache component: {current}"
-                )
-            try:
-                current.resolve().relative_to(project_root_resolved)
-            except (OSError, ValueError):
-                raise OSError(
-                    f"Cache component escapes project root: {current}"
-                )
-        return os.open(download_dir / zip_filename, leaf_flags, 0o600)
+        # Fail closed: see docstring. No safe primitive available here.
+        raise NotImplementedError(
+            "URL-based extension installs require POSIX-style "
+            "dir_fd + O_NOFOLLOW support, which is not available on this "
+            "platform. Use --dev for a local directory, or install from "
+            "the bundled catalog instead."
+        )
 
     rel_parts = download_dir.relative_to(project_root).parts
     parent_fd = os.open(project_root, os.O_RDONLY | o_directory)
@@ -3444,13 +3451,21 @@ def _safe_unlink_download_zip(
 ) -> None:
     """Best-effort unlink of the downloaded ZIP without following symlinks.
 
-    Mirrors ``_safe_open_download_zip``: on POSIX walks each cache ancestor
-    with ``dir_fd`` + ``O_NOFOLLOW`` and unlinks via
-    ``os.unlink(zip_filename, dir_fd=parent_fd)`` so an attacker who swaps a
-    cache ancestor between the write and the cleanup cannot redirect the
-    unlink onto a same-named file outside the project. On Windows (no
-    ``dir_fd``/``O_NOFOLLOW``), re-validates the cache ancestor chain via
-    :func:`_validate_safe_cache_dir`-equivalent checks before unlinking.
+    On POSIX, walks each cache ancestor with ``dir_fd`` + ``O_NOFOLLOW`` and
+    unlinks via ``os.unlink(zip_filename, dir_fd=parent_fd)`` so an attacker
+    who swaps a cache ancestor between the write and the cleanup cannot
+    redirect the unlink onto a same-named file outside the project.
+
+    On platforms without ``dir_fd``/``O_NOFOLLOW`` support, this function is
+    a no-op for the same reason :func:`_safe_open_download_zip` fails closed
+    there: a path-based ``unlink`` after a separate validation walk is racy
+    and could be redirected through a swapped ancestor onto a same-named
+    file outside the project. Skipping cleanup leaves a stale ZIP in the
+    cache directory but does not leak deletes; subsequent installs use
+    fresh UUID filenames so the stale file is harmless. (In practice this
+    branch is unreachable in the normal install flow because
+    :func:`_safe_open_download_zip` already fails closed before any ZIP is
+    written.)
 
     Errors are swallowed; this is best-effort cleanup.
     """
@@ -3458,27 +3473,7 @@ def _safe_unlink_download_zip(
     o_directory = getattr(os, "O_DIRECTORY", 0)
 
     if os.open not in os.supports_dir_fd:
-        # Windows / no openat support: re-validate immediately before unlink.
-        project_root_resolved = project_root.resolve()
-        current = project_root
-        for part in download_dir.relative_to(project_root).parts:
-            current = current / part
-            if current.is_symlink():
-                return
-            if not current.exists():
-                return
-            try:
-                current.resolve().relative_to(project_root_resolved)
-            except (OSError, ValueError):
-                return
-        zip_path = download_dir / zip_filename
-        try:
-            if zip_path.is_symlink():
-                return
-            if zip_path.exists():
-                zip_path.unlink()
-        except OSError:
-            pass
+        # Fail closed: see docstring.
         return
 
     rel_parts = download_dir.relative_to(project_root).parts
@@ -3860,58 +3855,76 @@ def extension_add(
                     raise typer.Exit(1)
 
                 # Re-validate cache containment immediately before opening the
-                # write fd. This narrows the (validation -> write) TOCTOU
-                # window for the Windows fallback path of
-                # `_safe_open_download_zip` (which has no `dir_fd`/
-                # `O_NOFOLLOW`); on POSIX, the helper also re-walks ancestors
-                # with `dir_fd + O_NOFOLLOW` so any swap is rejected at open
-                # time as well.
+                # write fd. On POSIX, `_safe_open_download_zip` additionally
+                # re-walks ancestors with `dir_fd + O_NOFOLLOW` so any swap is
+                # rejected at open time as well; on platforms without that
+                # support the helper fails closed (see its docstring).
                 try:
                     download_dir.resolve().relative_to(project_root_resolved)
                 except (OSError, ValueError):
                     console.print("[red]Error:[/red] Download cache directory escapes project root")
                     raise typer.Exit(1)
 
+                # Outer try/finally guarantees the symlink-safe cleanup runs
+                # regardless of where in the (open -> write -> install)
+                # pipeline a failure occurs, including a partial write that
+                # raises OSError after the fd has been opened. The narrower
+                # try/except blocks below classify *which* phase failed so
+                # error messages remain accurate.
                 try:
-                    # Open the ZIP file for writing without following any
-                    # symlink in the path. On POSIX, the helper walks each
-                    # ancestor of `download_dir` using dir_fd + O_NOFOLLOW so
-                    # a symlink swap of *any* component (including ancestors)
-                    # between validation and this write is rejected. On
-                    # Windows the helper re-walks the ancestor chain
-                    # immediately before opening to narrow the same window.
                     try:
-                        _fd = _safe_open_download_zip(
-                            project_root, download_dir, zip_filename
-                        )
-                    except OSError as _open_err:
+                        # Open the ZIP file for writing without following any
+                        # symlink in the path. On POSIX, the helper walks
+                        # each ancestor of `download_dir` using
+                        # dir_fd + O_NOFOLLOW so a symlink swap of *any*
+                        # component (including ancestors) between validation
+                        # and this write is rejected. On platforms without
+                        # dir_fd / O_NOFOLLOW (Windows), the helper raises
+                        # NotImplementedError; URL installs require the
+                        # POSIX-style atomic primitives to be safe against
+                        # ancestor swaps.
+                        try:
+                            _fd = _safe_open_download_zip(
+                                project_root, download_dir, zip_filename
+                            )
+                        except NotImplementedError as _ni:
+                            console.print(f"[red]Error:[/red] {_ni}")
+                            raise typer.Exit(1)
+                        except OSError as _open_err:
+                            console.print(
+                                f"[red]Error:[/red] Could not safely create download file: {_open_err}"
+                            )
+                            raise typer.Exit(1)
+                        try:
+                            with os.fdopen(_fd, "wb") as _zf:
+                                _zf.write(zip_data)
+                        except OSError as _write_err:
+                            # Write failed (e.g. ENOSPC, EIO). os.fdopen took
+                            # ownership of the fd; the with-block close will
+                            # have already run on the way out.
+                            console.print(
+                                f"[red]Error:[/red] Failed to write download cache: {_write_err}"
+                            )
+                            raise typer.Exit(1)
+                        except BaseException:
+                            # Non-OSError failure before/inside the
+                            # with-block: defensively close the fd in case
+                            # os.fdopen never took ownership, then re-raise
+                            # so the outer finally still cleans up.
+                            try:
+                                os.close(_fd)
+                            except OSError:
+                                pass
+                            raise
+                    except OSError as e:
+                        # Catches OSError raised from `_safe_open_download_zip`
+                        # below the typed handlers above; preserves the
+                        # narrow "cache write" framing.
                         console.print(
-                            f"[red]Error:[/red] Could not safely create download file: {_open_err}"
+                            f"[red]Error:[/red] Failed to write download cache: {e}"
                         )
                         raise typer.Exit(1)
-                    try:
-                        with os.fdopen(_fd, "wb") as _zf:
-                            _zf.write(zip_data)
-                    except BaseException:
-                        # os.fdopen took ownership only on success; on failure
-                        # before the with-block, the fd may still be open.
-                        try:
-                            os.close(_fd)
-                        except OSError:
-                            pass
-                        raise
-                except OSError as e:
-                    # Narrow handler: only covers the cache-write fd
-                    # acquisition + write. Errors from `install_from_zip`
-                    # (e.g. corrupted archive, manifest validation) are
-                    # surfaced separately below so they aren't misreported as
-                    # "Failed to write download cache".
-                    console.print(
-                        f"[red]Error:[/red] Failed to write download cache: {e}"
-                    )
-                    raise typer.Exit(1)
 
-                try:
                     # Install from downloaded ZIP. Errors from the manager
                     # (ValidationError / CompatibilityError / ExtensionError)
                     # are caught by the outer handler so users see the
@@ -3921,11 +3934,15 @@ def extension_add(
                         zip_path, speckit_version, priority=priority
                     )
                 finally:
-                    # Best-effort cleanup of the downloaded ZIP. Uses a
-                    # symlink-safe walk so an attacker who swaps a cache
-                    # ancestor between the write and the unlink cannot
-                    # redirect the delete onto a same-named file outside the
-                    # project root.
+                    # Symlink-safe cleanup of the downloaded ZIP. Runs on
+                    # every exit path (success, write failure, install
+                    # failure) so a partial ZIP from an interrupted write is
+                    # not left behind. On platforms without dir_fd /
+                    # O_NOFOLLOW the helper is a no-op (fails closed) since
+                    # a path-based unlink there could be redirected through
+                    # a swapped ancestor onto a same-named file outside the
+                    # project; in that case `_safe_open_download_zip` has
+                    # already failed closed, so no ZIP exists to clean up.
                     _safe_unlink_download_zip(
                         project_root, download_dir, zip_filename
                     )
