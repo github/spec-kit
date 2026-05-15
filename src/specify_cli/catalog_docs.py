@@ -81,7 +81,7 @@ def _get_integration_registry() -> dict[str, Any]:
 def list_integrations_for_docs() -> list[tuple[str, str, str | None, str]]:
     """List integrations with their documentation URLs and notes.
 
-    Skips any integrations not in INTEGRATION_DOC_URLS (logs warning if any are missing).
+    Skips any integrations not in INTEGRATION_DOC_URLS (emits a Python warning if any are missing).
     Gracefully handles missing URL or notes entries by defaulting to None/empty string.
     """
     registry = _get_integration_registry()

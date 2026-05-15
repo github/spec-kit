@@ -2538,7 +2538,7 @@ def integration_search(
         from .catalog_docs import render_integrations_table
         try:
             typer.echo(render_integrations_table())
-        except ValueError as exc:
+        except Exception as exc:
             typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(1)
         return
