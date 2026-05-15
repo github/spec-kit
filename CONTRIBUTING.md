@@ -94,6 +94,39 @@ Run these before changing dependency metadata, workflow execution code, subproce
 uv pip compile pyproject.toml --extra test --universal --generate-hashes --quiet --no-header --output-file .github/security-audit-requirements.txt
 ```
 
+Upstream package releases drift over time, so even an unrelated PR touching `pyproject.toml` can fail the `dependency-audit` check until the committed file is regenerated with the command above and re-committed.
+
+#### Secret scanning
+
+```bash
+git ls-files -z -- ':!:.secrets.baseline' ':!:uv.lock' ':!:.github/security-audit-requirements.txt' \
+  | xargs -0 uvx --from detect-secrets==1.5.0 detect-secrets-hook --baseline .secrets.baseline
+```
+
+The CI `secret-scan` job runs this against tracked files. It reports any high-entropy strings or provider tokens that aren't already whitelisted in `.secrets.baseline`. If you hit a known false positive (SHA pin, docs example, test fixture), regenerate the baseline:
+
+```bash
+uvx --from detect-secrets==1.5.0 detect-secrets scan \
+  --exclude-files '\.secrets\.baseline$' \
+  --exclude-files 'uv\.lock$' \
+  --exclude-files '\.github/security-audit-requirements\.txt$' \
+  > .secrets.baseline
+```
+
+Audit the new entries before committing — a leaked credential must never be merged into the baseline.
+
+#### Bandit baseline
+
+The CI `static-analysis` job runs Bandit with `--baseline .github/bandit-baseline.json` (HIGH severity, blocking) plus a second informational pass at MEDIUM severity (`continue-on-error`, surfaced in the job summary). If a HIGH finding is intentional, audit it carefully, add an explicit `# nosec` with justification, and only then add it to the baseline. Growing the baseline is gated: the `check_bandit_baseline.py` script fails the PR unless it carries the `security-baseline-change` label, so reviewers see the whitelist expansion.
+
+#### Shell scripts
+
+```bash
+shellcheck --severity=error scripts/bash/*.sh
+```
+
+The CI `lint.yml` `shellcheck` job blocks at `--severity=error` to catch real bugs while leaving stylistic warnings (SC2155 etc.) advisory.
+
 ### Manual testing
 
 #### Testing setup

@@ -81,8 +81,31 @@ jobs:
       # findings in the job summary without breaking CI, so reviewers see
       # them before they accumulate.
       - name: Run Bandit medium-severity informational pass
+        id: bandit-medium
         continue-on-error: true
         run: uvx --from bandit==1.9.4 bandit -r src -ll
+
+      # Surface the medium-severity outcome in the job summary so reviewers
+      # see it without expanding the log; continue-on-error swallows the
+      # non-zero exit otherwise.
+      - name: Surface medium-severity findings in job summary
+        if: always()
+        run: |
+          if [ "${{ steps.bandit-medium.outcome }}" = "failure" ]; then
+            {
+              echo "## ⚠️ Bandit medium-severity informational pass"
+              echo ""
+              echo "Findings surfaced at MEDIUM severity (no baseline). These do not"
+              echo "fail CI but should be audited — either fix the issue, suppress"
+              echo "with an explicit \`# nosec\` carrying a justification, or escalate"
+              echo "the severity threshold once they are triaged."
+              echo ""
+              echo "See the **Run Bandit medium-severity informational pass** step"
+              echo "above for the file/line list."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## ✅ Bandit medium-severity informational pass — clean" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       # Prevent silent whitelisting: if the baseline grew, the PR must carry
       # the 'security-baseline-change' label to acknowledge it.
@@ -100,8 +123,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
