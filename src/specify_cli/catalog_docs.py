@@ -62,7 +62,12 @@ INTEGRATION_NOTES: dict[str, str] = {
 }
 
 
-def _render_cell(value: str) -> str:
+def render_cell(value: str) -> str:
+    r"""Escape markdown special characters (pipes) and normalize newlines to spaces.
+    
+    This ensures table cells remain valid markdown even if they contain
+    pipes (escaped as \|) or carriage returns (normalized to spaces).
+    """
     value = value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
     return value.replace("|", "\\|")
 
@@ -116,7 +121,7 @@ def render_integrations_table() -> str:
         rows.append([agent, f"`{key}`", notes])
 
     def render_row(values: list[str]) -> str:
-        return "| " + " | ".join(_render_cell(value) for value in values) + " |"
+        return "| " + " | ".join(render_cell(value) for value in values) + " |"
 
     lines = [
         render_row(["Agent", "Key", "Notes"]),
