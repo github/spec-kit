@@ -487,13 +487,15 @@ class TestClaudeDisableModelInvocation:
         assert "disable-model-invocation" not in fm
         assert "user-invocable" not in fm
 
-    def test_non_claude_post_process_is_identity(self, tmp_path):
-        """Non-Claude integrations should not modify skill content."""
-        codex = get_integration("codex")
-        if codex is None:
-            return  # codex not registered in this build
+    def test_skills_default_post_process_is_identity(self, tmp_path):
+        """SkillsIntegration agents without an override leave content unchanged."""
+        # ``agy`` is a plain SkillsIntegration with no post-process override,
+        # so it stands in for the base-class default behavior.
+        agy = get_integration("agy")
+        if agy is None:
+            return  # agy not registered in this build
         content = "---\nname: test\n---\nBody"
-        assert codex.post_process_skill_content(content) == content
+        assert agy.post_process_skill_content(content) == content
 
 
 class TestClaudeHookCommandNote:
