@@ -8,12 +8,36 @@ escape the intended cache directory, causing arbitrary file writes and deletes.
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import os
+
 import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
 
 runner = CliRunner()
+
+
+def _require_symlinks(tmp_path) -> None:
+    """Skip the calling test when symlink creation is not permitted.
+
+    On Windows, symlink creation requires elevated privileges or developer
+    mode and may raise ``OSError`` (``EPERM``/``EACCES``/``WinError 1314``).
+    The shared-infra test suite uses the same pattern.
+    """
+    probe_target = tmp_path / "_symlink_probe_target"
+    probe_target.mkdir(exist_ok=True)
+    probe_link = tmp_path / "_symlink_probe_link"
+    try:
+        probe_link.symlink_to(probe_target, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"Symlink creation not supported in this environment: {exc}")
+    finally:
+        if probe_link.exists() or probe_link.is_symlink():
+            try:
+                probe_link.unlink()
+            except OSError:
+                pass
 
 TRAVERSAL_PAYLOADS = [
     "../pwned",
@@ -118,6 +142,7 @@ class TestExtensionAddFromSymlinkedCache:
     )
     def test_symlinked_ancestor_is_refused(self, tmp_path, monkeypatch, ancestor_parts):
         """Symlinking any cache ancestor outside the project must abort the command."""
+        _require_symlinks(tmp_path)
         project_dir = tmp_path / "project"
         project_dir.mkdir()
         outside = tmp_path / "outside"
@@ -192,41 +217,121 @@ class TestExtensionAddFromAncestorEscape:
 
 
 class TestExtensionAddFromTOCTOUWrite:
-    """The download write must not follow a symlink swapped in after validation."""
+    """The download write must not follow a symlink swapped in after validation.
 
-    def test_swapped_zip_path_symlink_is_refused(self, project_dir):
+    These tests rely on POSIX ``O_NOFOLLOW`` + ``dir_fd``-relative open and on
+    the runner being able to create symlinks. Skipped on platforms where either
+    is unavailable (notably Windows without elevated privileges).
+    """
+
+    def test_swapped_zip_path_symlink_is_refused(self, tmp_path, monkeypatch):
         """If zip_path is replaced by a symlink between validation and write, refuse."""
-        cache_dir = project_dir / ".specify" / "extensions" / ".cache" / "downloads"
-        outside = project_dir.parent / "outside"
-        outside.mkdir(exist_ok=True)
+        if not getattr(os, "O_NOFOLLOW", 0) or os.open not in os.supports_dir_fd:
+            pytest.skip("Requires POSIX O_NOFOLLOW + dir_fd support")
+        _require_symlinks(tmp_path)
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
         target = outside / "stolen.bin"
+        monkeypatch.chdir(project_dir)
 
-        # Patch os.open to simulate the TOCTOU window: just before the real
-        # os.open runs, replace the target path with a symlink pointing outside.
-        # With O_NOFOLLOW the os.open call must raise instead of writing through.
-        import os as _os
-        real_open = _os.open
+        from specify_cli import _safe_open_download_zip as _orig_safe_open
 
-        def racing_open(path, flags, mode=0o777):
+        def swap_then_open(project_root, download_dir, zip_filename):
+            # Race: pre-stage a symlink at the leaf inside the validated cache.
+            leaf = download_dir / zip_filename
             try:
-                p = Path(path)
-                if p.parent == cache_dir and not p.exists():
-                    p.symlink_to(target)
-            except OSError:
-                pass
-            return real_open(path, flags, mode)
+                leaf.symlink_to(target)
+            except (OSError, NotImplementedError):
+                pytest.skip("Cannot create symlink for leaf-swap race")
+            return _orig_safe_open(project_root, download_dir, zip_filename)
 
         with patch("specify_cli.authentication.http.open_url", return_value=_mock_open_url()), \
              patch("specify_cli.extensions.ExtensionManager.install_from_zip") as mock_install, \
-             patch("os.open", side_effect=racing_open):
+             patch("specify_cli._safe_open_download_zip", side_effect=swap_then_open):
             result = runner.invoke(
                 app,
                 ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
             )
 
-        # Either O_NOFOLLOW (POSIX) or O_EXCL (all platforms) must reject the
-        # swapped symlink. The command must fail and nothing must be written
-        # through the symlink to `outside`.
         assert result.exit_code != 0
         mock_install.assert_not_called()
-        assert not target.exists(), "write followed swapped symlink"
+        # The write must not have followed the symlink to `outside`.
+        assert not target.exists(), "write followed swapped leaf symlink"
+
+    def test_swapped_ancestor_symlink_is_refused(self, tmp_path, monkeypatch):
+        """If a *cache ancestor* is replaced by a symlink between validation and write, refuse.
+
+        Covers the case `O_NOFOLLOW` alone misses: it only protects the final
+        component, but the per-ancestor walk in ``_safe_open_download_zip``
+        (using ``dir_fd`` + ``O_NOFOLLOW`` on each component) catches this.
+        """
+        if not getattr(os, "O_NOFOLLOW", 0) or os.open not in os.supports_dir_fd:
+            pytest.skip("Requires POSIX O_NOFOLLOW + dir_fd support")
+        _require_symlinks(tmp_path)
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        monkeypatch.chdir(project_dir)
+
+        # Pre-create the cache ancestors so the production validation walk
+        # passes (the swap happens *after* validation, before the write).
+        cache_dir = project_dir / ".specify" / "extensions" / ".cache" / "downloads"
+        cache_dir.mkdir(parents=True)
+        ancestor_to_swap = project_dir / ".specify" / "extensions" / ".cache"
+
+        from specify_cli import _safe_open_download_zip as _orig_safe_open
+
+        def swap_then_open(project_root, download_dir, zip_filename):
+            # Race: replace `.cache` with a symlink to `outside` after the
+            # caller's per-ancestor validation finished.
+            import shutil
+            shutil.rmtree(ancestor_to_swap)
+            try:
+                ancestor_to_swap.symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                pytest.skip("Cannot create symlink for ancestor-swap race")
+            return _orig_safe_open(project_root, download_dir, zip_filename)
+
+        with patch("specify_cli.authentication.http.open_url", return_value=_mock_open_url()), \
+             patch("specify_cli.extensions.ExtensionManager.install_from_zip") as mock_install, \
+             patch("specify_cli._safe_open_download_zip", side_effect=swap_then_open):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
+            )
+
+        assert result.exit_code != 0
+        # Clean CLI error from the OSError handler, not a raw traceback.
+        assert "could not safely create download file" in (result.output or "").lower() \
+            or "failed to write download cache" in (result.output or "").lower()
+        mock_install.assert_not_called()
+        # No download leaked through the swapped ancestor symlink.
+        assert list(outside.iterdir()) == []
+
+
+class TestExtensionAddFromCacheAncestorIsFile:
+    """A non-directory file at a cache-ancestor path must be refused with a clean error."""
+
+    def test_file_at_extensions_path_is_rejected_cleanly(self, tmp_path, monkeypatch):
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        # Place a regular file where `.specify/extensions/` would be created.
+        (project_dir / ".specify" / "extensions").write_text("i am a file")
+        monkeypatch.chdir(project_dir)
+
+        with patch("specify_cli.authentication.http.open_url", return_value=_mock_open_url()), \
+             patch("specify_cli.extensions.ExtensionManager.install_from_zip") as mock_install:
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
+            )
+
+        assert result.exit_code != 0
+        assert "not a directory" in (result.output or "").lower()
+        mock_install.assert_not_called()
