@@ -278,7 +278,7 @@ Workflow `shell` steps execute their `run` field through `/bin/sh` (POSIX) or th
 
 Catalog-listed workflows are reviewed at submission time (see [Verification Process](#verification-process)), but you should still treat every install as code-execution from an untrusted source until you have read the `workflow.yml`:
 
-- **Before installing a workflow**, run `specify workflow inspect <name>` (or read the YAML directly) and audit every `shell` step's `run` field.
+- **Before installing a workflow**, fetch the raw YAML and audit every `shell` step's `run` field directly. `specify workflow info <name>` only shows metadata (name, version, inputs, step IDs/types) — not the shell content that would actually execute.
 - **Prefer explicit commands over interpolation** in `run` blocks: `{{ inputs.something }}` substitutions should be quoted and constrained via `enum` so a malicious input can't inject shell syntax.
 - **Limit privilege**: shell steps inherit the user's environment. Workflows that need elevated access (sudo, secrets, GitHub tokens) should call them out explicitly in the README so reviewers can spot the requirement.
 - **Authors**: if your workflow has shell steps that look risky out of context (deletions, network calls, credential reads), document the rationale in your README. Maintainers will reject submissions whose shell steps can't be justified at review time.
