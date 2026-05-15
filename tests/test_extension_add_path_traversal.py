@@ -6,6 +6,7 @@ escape the intended cache directory, causing arbitrary file writes and deletes.
 """
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -18,6 +19,8 @@ TRAVERSAL_PAYLOADS = [
     "../pwned",
     "../../etc/passwd",
     "subdir/../../escape",
+    "..\\pwned",
+    "..\\..\\etc\\passwd",
     "/tmp/evil",
 ]
 
@@ -31,37 +34,57 @@ def project_dir(tmp_path, monkeypatch):
     return proj
 
 
+def _mock_open_url():
+    """Return a mock open_url that yields fake ZIP bytes."""
+    mock_response = MagicMock()
+    mock_response.read.return_value = b"PK\x03\x04fake"
+    mock_response.__enter__ = MagicMock(return_value=mock_response)
+    mock_response.__exit__ = MagicMock(return_value=False)
+    return mock_response
+
+
 class TestExtensionAddFromPathTraversal:
     """Path traversal payloads in the extension name must not escape the download cache."""
 
     @pytest.mark.parametrize("bad_name", TRAVERSAL_PAYLOADS)
     def test_traversal_payload_cannot_write_outside_cache(self, project_dir, bad_name):
         """The download zip path must stay inside .specify/extensions/.cache/downloads/."""
-        result = runner.invoke(
-            app,
-            ["extension", "add", bad_name, "--from", "https://example.com/ext.zip"],
-        )
-        # The command should either reject early (path traversal guard) or
-        # the sanitised name means the file would land inside the cache dir.
-        # In no case should files appear outside the project tree.
+        with patch("specify_cli.authentication.http.open_url", return_value=_mock_open_url()), \
+             patch("specify_cli.extensions.ExtensionManager.install_from_zip", return_value=MagicMock(id="x", name="X", version="1.0.0")):
+            result = runner.invoke(
+                app,
+                ["extension", "add", bad_name, "--from", "https://example.com/ext.zip"],
+            )
         cache_dir = project_dir / ".specify" / "extensions" / ".cache" / "downloads"
-        stray = [
-            p
-            for p in project_dir.parent.rglob("*")
-            if p.is_file() and "url-download.zip" in p.name and not str(p).startswith(str(cache_dir))
-        ]
+        cache_resolved = cache_dir.resolve()
+        stray = []
+        for p in project_dir.parent.rglob("*"):
+            if not p.is_file() or ".zip" not in p.name:
+                continue
+            try:
+                p.resolve().relative_to(cache_resolved)
+            except ValueError:
+                stray.append(p)
         assert stray == [], f"Traversal payload leaked files: {stray}"
 
-    def test_clean_name_is_unaffected(self, project_dir, monkeypatch):
+    @pytest.mark.parametrize("bad_name", TRAVERSAL_PAYLOADS)
+    def test_traversal_payload_cannot_delete_outside_cache(self, project_dir, bad_name):
+        """The finally-block cleanup must not delete files outside the cache dir."""
+        # Place a sentinel where the pre-fix code would have written/deleted
+        sentinel = project_dir.parent / "sentinel.txt"
+        sentinel.write_text("must survive")
+
+        with patch("specify_cli.authentication.http.open_url", return_value=_mock_open_url()), \
+             patch("specify_cli.extensions.ExtensionManager.install_from_zip", return_value=MagicMock(id="x", name="X", version="1.0.0")):
+            runner.invoke(
+                app,
+                ["extension", "add", bad_name, "--from", "https://example.com/ext.zip"],
+            )
+        assert sentinel.exists(), "Sentinel file was deleted by cleanup — traversal not blocked"
+
+    def test_clean_name_is_unaffected(self, project_dir):
         """A normal extension name should not trigger the guard."""
-        from unittest.mock import patch, MagicMock
-
-        mock_response = MagicMock()
-        mock_response.read.return_value = b"PK\x03\x04fake"
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
-
-        with patch("specify_cli.authentication.http.open_url", return_value=mock_response), \
+        with patch("specify_cli.authentication.http.open_url", return_value=_mock_open_url()), \
              patch("specify_cli.extensions.ExtensionManager.install_from_zip") as mock_install:
             mock_install.return_value = MagicMock(id="my-ext", name="My Ext", version="1.0.0")
             result = runner.invoke(
@@ -69,5 +92,6 @@ class TestExtensionAddFromPathTraversal:
                 ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
             )
 
-        # Should reach the install call, not be rejected as traversal
+        assert result.exit_code == 0, result.output
+        mock_install.assert_called_once()
         assert "path traversal" not in (result.output or "").lower()

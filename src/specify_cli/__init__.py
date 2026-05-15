@@ -3642,10 +3642,11 @@ def extension_add(
                 console.print(f"Downloading from {from_url}...")
 
                 # Download ZIP to temp location
+                import uuid as _uuid
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
                 download_dir.mkdir(parents=True, exist_ok=True)
                 safe_name = Path(extension).name.replace("/", "_").replace("\\", "_") or "download"
-                zip_path = download_dir / f"{safe_name}-url-download.zip"
+                zip_path = download_dir / f"{safe_name}-{_uuid.uuid4().hex[:8]}.zip"
 
                 # Guard: resolved path must stay inside download_dir (CWE-22)
                 try:
