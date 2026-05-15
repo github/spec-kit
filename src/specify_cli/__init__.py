@@ -2530,15 +2530,16 @@ def integration_search(
     """Search for integrations in the active catalog stack, or output the built-in reference table with --markdown."""
     if markdown:
         if query or tag or author:
-            console.print(
-                "[yellow]Warning:[/yellow] --markdown outputs the full built-in integrations table "
-                "and ignores query/--tag/--author filters."
+            typer.echo(
+                "Warning: --markdown outputs the full built-in integrations table "
+                "and ignores query/--tag/--author filters.",
+                err=True,
             )
         from .catalog_docs import render_integrations_table
         try:
             typer.echo(render_integrations_table())
         except ValueError as exc:
-            console.print(f"[red]Error:[/red] {exc}")
+            typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(1)
         return
 
