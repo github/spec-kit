@@ -2854,6 +2854,33 @@ class TestCatalogStack:
         assert len(entries) == 1
         assert entries[0].url == "http://localhost:8000/catalog.json"
 
+    def test_load_catalog_config_rejects_boolean_priority(self, temp_dir):
+        """A YAML ``priority: true`` is a typo, not a request for priority 1.
+
+        ``bool`` is a subclass of ``int`` in Python, so ``int(True)`` silently
+        returns ``1``. Without an explicit guard a malformed config like
+        ``priority: yes`` would be accepted as a valid priority of 1 and
+        silently change catalog ordering. The sibling integration-catalog
+        reader rejects this case (see ``catalogs.py``); the extension catalog
+        reader must stay consistent.
+        """
+        project_dir = self._make_project(temp_dir)
+        self._write_catalog_config(
+            project_dir,
+            [
+                {
+                    "name": "bool-priority",
+                    "url": "https://example.com/catalog.json",
+                    "priority": True,
+                    "install_allowed": True,
+                }
+            ],
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+        with pytest.raises(ValidationError, match="Invalid priority|expected integer"):
+            catalog.get_active_catalogs()
+
     # --- Merge conflict resolution ---
 
     def test_merge_conflict_higher_priority_wins(self, temp_dir):
