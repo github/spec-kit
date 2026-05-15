@@ -198,6 +198,7 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.taskstoissues.prompt.md",
             ".vscode/settings.json",
             ".github/copilot-instructions.md",
+            ".specify/extensions/agent-context/agent-context-config.yml",
             ".specify/integration.json",
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
@@ -258,6 +259,7 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.taskstoissues.prompt.md",
             ".vscode/settings.json",
             ".github/copilot-instructions.md",
+            ".specify/extensions/agent-context/agent-context-config.yml",
             ".specify/integration.json",
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
@@ -606,6 +608,8 @@ class TestCopilotSkillsMode:
             *[f".github/skills/speckit-{cmd}/SKILL.md" for cmd in self._SKILL_COMMANDS],
             # Context file
             ".github/copilot-instructions.md",
+            # Agent context extension config
+            ".specify/extensions/agent-context/agent-context-config.yml",
             # Integration metadata
             ".specify/init-options.json",
             ".specify/integration.json",

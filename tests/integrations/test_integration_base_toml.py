@@ -457,8 +457,8 @@ class TomlIntegrationTests:
         assert len(commands) > 0, f"No command files in {cmd_dir}"
 
     def test_init_options_includes_context_file(self, tmp_path):
-        """init-options.json must include context_file for the active integration."""
-        import json
+        """agent-context extension config must include context_file for the active integration."""
+        import yaml
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -474,10 +474,11 @@ class TomlIntegrationTests:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        opts = json.loads((project / ".specify" / "init-options.json").read_text())
+        ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
+        ext_cfg = yaml.safe_load(ext_cfg_path.read_text(encoding="utf-8")) if ext_cfg_path.exists() else {}
         i = get_integration(self.KEY)
-        assert opts.get("context_file") == i.context_file, (
-            f"Expected context_file={i.context_file!r}, got {opts.get('context_file')!r}"
+        assert ext_cfg.get("context_file") == i.context_file, (
+            f"Expected context_file={i.context_file!r}, got {ext_cfg.get('context_file')!r}"
         )
 
     # -- Complete file inventory ------------------------------------------
@@ -542,6 +543,9 @@ class TomlIntegrationTests:
         # Bundled workflow
         files.append(".specify/workflows/speckit/workflow.yml")
         files.append(".specify/workflows/workflow-registry.json")
+
+        # Agent context extension config
+        files.append(".specify/extensions/agent-context/agent-context-config.yml")
 
         # Agent context file (if set)
         if i.context_file:

@@ -374,8 +374,15 @@ class CommandRegistrar:
 
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
 
-        # Resolve __CONTEXT_FILE__ from init-options
-        context_file = init_opts.get("context_file") or ""
+        # Resolve __CONTEXT_FILE__ from the agent-context extension config.
+        # Fall back to init-options.json for projects that haven't migrated.
+        # Local import: _load_agent_context_config lives in __init__.py which
+        # imports agents.py, so a top-level import would be circular.
+        from . import _load_agent_context_config
+        ac_cfg = _load_agent_context_config(project_root)
+        context_file = ac_cfg.get("context_file") or ""
+        if not context_file:
+            context_file = init_opts.get("context_file") or ""
         body = body.replace("__CONTEXT_FILE__", context_file)
 
         return CommandRegistrar.rewrite_project_relative_paths(body)
