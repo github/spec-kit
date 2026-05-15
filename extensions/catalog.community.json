@@ -2612,6 +2612,55 @@
       "created_at": "2026-04-30T00:00:00Z",
       "updated_at": "2026-04-30T00:00:00Z"
     },
+    "speckit-superpowers-bridge": {
+      "name": "Superpowers Implementation Bridge",
+      "id": "speckit-superpowers-bridge",
+      "description": "Thin orchestrator between Spec Kit (design) and Superpowers (implementation). Cross-agent.",
+      "author": "lihan3238",
+      "version": "0.4.1",
+      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v0.4.1/speckit-superpowers-bridge-v0.4.1.zip",
+      "repository": "https://github.com/lihan3238/speckit-superpowers-bridge",
+      "homepage": "https://github.com/lihan3238/speckit-superpowers-bridge",
+      "documentation": "https://github.com/lihan3238/speckit-superpowers-bridge#readme",
+      "changelog": "https://github.com/lihan3238/speckit-superpowers-bridge/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.10",
+        "tools": [
+          {
+            "name": "powershell",
+            "version": ">=5.1",
+            "required": false
+          },
+          {
+            "name": "bash",
+            "version": ">=4.0",
+            "required": false
+          },
+          {
+            "name": "jq",
+            "version": ">=1.6",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 5
+      },
+      "tags": [
+        "bridge",
+        "superpowers",
+        "cross-agent",
+        "tdd",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-15T00:00:00Z",
+      "updated_at": "2026-05-15T00:00:00Z"
+    },
     "speckit-utils": {
       "name": "SDD Utilities",
       "id": "speckit-utils",
