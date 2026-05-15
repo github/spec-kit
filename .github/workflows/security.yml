@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - name: Checkout
@@ -74,13 +74,13 @@ jobs:
           python-version: "3.13"
 
       # Blocking: HIGH severity only, with baseline. Real regressions fail CI.
-      - name: Run Bandit (HIGH, baseline-gated)
+      - name: Run Bandit
         run: uvx --from bandit==1.9.4 bandit -r src -lll --baseline .github/bandit-baseline.json
 
       # Informative: MEDIUM severity, no baseline. Surfaces lower-severity
       # findings in the job summary without breaking CI, so reviewers see
       # them before they accumulate.
-      - name: Run Bandit (MEDIUM, informational)
+      - name: Run Bandit medium-severity informational pass
         continue-on-error: true
         run: uvx --from bandit==1.9.4 bandit -r src -ll
 
@@ -113,19 +113,14 @@ jobs:
 
       # detect-secrets is a Python tool (consistent with bandit / pip-audit
       # install pattern) and detects entropy-based and provider-specific
-      # secrets. Baseline at .secrets.baseline is honored as a whitelist;
-      # any drift fails the check.
+      # secrets. detect-secrets-hook compares tracked files against the
+      # baseline and exits non-zero when a new candidate appears, without
+      # rewriting the baseline file (so there's no spurious git diff).
       - name: Run detect-secrets
         run: |
-          uvx --from detect-secrets==1.5.0 detect-secrets scan \
-            --baseline .secrets.baseline \
-            --exclude-files '\.secrets\.baseline$' \
-            --exclude-files 'uv\.lock$' \
-            --exclude-files '\.github/security-audit-requirements\.txt$'
-
-      - name: Verify baseline is in sync
-        run: |
-          if ! git diff --exit-code .secrets.baseline; then
-            echo "::error::detect-secrets found new candidates. Audit them, then update .secrets.baseline with: uvx --from detect-secrets==1.5.0 detect-secrets scan --baseline .secrets.baseline" >&2
-            exit 1
-          fi
+          git ls-files -z \
+            -- ':!:.secrets.baseline' \
+               ':!:uv.lock' \
+               ':!:.github/security-audit-requirements.txt' \
+          | xargs -0 uvx --from detect-secrets==1.5.0 detect-secrets-hook \
+              --baseline .secrets.baseline

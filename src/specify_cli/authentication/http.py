@@ -14,6 +14,7 @@ from __future__ import annotations
 import urllib.error
 import urllib.request
 from fnmatch import fnmatch
+from ipaddress import ip_address
 from typing import Callable
 from urllib.parse import urlparse
 
@@ -58,6 +59,30 @@ def _hostname_in_hosts(hostname: str, hosts: tuple[str, ...]) -> bool:
 
 
 RedirectValidator = Callable[[str, str], None]
+
+
+def _is_secure_or_loopback_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if not parsed.hostname:
+        return False
+    if parsed.scheme == "https":
+        return True
+    if parsed.scheme != "http":
+        return False
+    if parsed.hostname == "localhost":
+        return True
+    try:
+        return ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_strict_redirect(_old_url: str, new_url: str) -> None:
+    if not _is_secure_or_loopback_url(new_url):
+        raise urllib.error.URLError(
+            "redirect target must use HTTPS with a hostname, "
+            "or HTTP for localhost/loopback"
+        )
 
 
 class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
@@ -123,6 +148,7 @@ def open_url(
     timeout: int = 10,
     extra_headers: dict[str, str] | None = None,
     redirect_validator: RedirectValidator | None = None,
+    strict_redirects: bool = False,
 ):
     """Open *url* with config-driven auth, redirect stripping, and fallthrough.
 
@@ -135,8 +161,17 @@ def open_url(
     *extra_headers* (e.g. ``Accept``) are merged into every attempt.
     *redirect_validator*, when provided, is called with ``(old_url, new_url)``
     before following each redirect and may raise to reject the redirect.
+    *strict_redirects* rejects redirect targets that are not HTTPS with a
+    hostname, except HTTP localhost/loopback URLs.
     """
     entries = find_entries_for_url(url, _load_config())
+
+    effective_redirect_validator = redirect_validator
+    if strict_redirects:
+        def effective_redirect_validator(old_url: str, new_url: str) -> None:
+            _validate_strict_redirect(old_url, new_url)
+            if redirect_validator is not None:
+                redirect_validator(old_url, new_url)
 
     def _make_req(auth_headers: dict[str, str]) -> urllib.request.Request:
         merged = {}
@@ -157,7 +192,7 @@ def open_url(
             continue
 
         req = _make_req(provider.auth_headers(token, entry.auth))
-        opener = urllib.request.build_opener(_StripAuthOnRedirect(entry.hosts, redirect_validator))
+        opener = urllib.request.build_opener(_StripAuthOnRedirect(entry.hosts, effective_redirect_validator))
         try:
             return opener.open(req, timeout=timeout)
         except urllib.error.HTTPError as exc:
@@ -168,7 +203,7 @@ def open_url(
 
     # No entry worked (or none matched) — unauthenticated fallback
     req = _make_req({})
-    if redirect_validator is not None:
-        opener = urllib.request.build_opener(_StripAuthOnRedirect((), redirect_validator))
+    if effective_redirect_validator is not None:
+        opener = urllib.request.build_opener(_StripAuthOnRedirect((), effective_redirect_validator))
         return opener.open(req, timeout=timeout)
     return urllib.request.urlopen(req, timeout=timeout)  # noqa: S310
