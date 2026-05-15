@@ -1061,9 +1061,9 @@ class PresetManager:
                     short_name = cmd_name
                     if short_name.startswith("speckit."):
                         short_name = short_name[len("speckit."):]
-                    desc = SKILL_DESCRIPTIONS.get(
+                    desc = fm.get("description", "") or SKILL_DESCRIPTIONS.get(
                         short_name.replace(".", "-"),
-                        fm.get("description", f"Command: {short_name}"),
+                        f"Command: {short_name}",
                     )
                     init_opts = load_init_options(self.project_root)
                     selected_ai = init_opts.get("ai") if isinstance(init_opts, dict) else ""
@@ -1327,9 +1327,9 @@ class PresetManager:
                         frontmatter[key] = core_frontmatter[key]
 
             original_desc = frontmatter.get("description", "")
-            enhanced_desc = SKILL_DESCRIPTIONS.get(
+            enhanced_desc = original_desc or SKILL_DESCRIPTIONS.get(
                 short_name,
-                original_desc or f"Spec-kit workflow command: {short_name}",
+                f"Spec-kit workflow command: {short_name}",
             )
             frontmatter = dict(frontmatter)
             frontmatter["description"] = enhanced_desc
@@ -1430,9 +1430,9 @@ class PresetManager:
                     )
 
                 original_desc = frontmatter.get("description", "")
-                enhanced_desc = SKILL_DESCRIPTIONS.get(
+                enhanced_desc = original_desc or SKILL_DESCRIPTIONS.get(
                     short_name,
-                    original_desc or f"Spec-kit workflow command: {short_name}",
+                    f"Spec-kit workflow command: {short_name}",
                 )
 
                 frontmatter_data = registrar.build_skill_frontmatter(
