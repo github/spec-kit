@@ -1669,6 +1669,7 @@ class CommandRegistrar:
 class ExtensionCatalog:
     """Manages extension catalog fetching, caching, and searching."""
 
+    BUNDLED_CATALOG_URL = "bundled://extensions/catalog.json"
     DEFAULT_CATALOG_URL = "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json"
     COMMUNITY_CATALOG_URL = "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json"
     CACHE_DURATION = 3600  # 1 hour in seconds
@@ -1842,8 +1843,9 @@ class ExtensionCatalog:
 
         # 4. Built-in default stack
         return [
-            CatalogEntry(url=self.DEFAULT_CATALOG_URL, name="default", priority=1, install_allowed=True, description="Built-in catalog of installable extensions"),
-            CatalogEntry(url=self.COMMUNITY_CATALOG_URL, name="community", priority=2, install_allowed=False, description="Community-contributed extensions (discovery only)"),
+            CatalogEntry(url=self.BUNDLED_CATALOG_URL, name="bundled", priority=1, install_allowed=True, description="Bundled official extensions shipped with this install"),
+            CatalogEntry(url=self.DEFAULT_CATALOG_URL, name="default", priority=2, install_allowed=True, description="Built-in catalog of installable extensions"),
+            CatalogEntry(url=self.COMMUNITY_CATALOG_URL, name="community", priority=3, install_allowed=False, description="Community-contributed extensions (discovery only)"),
         ]
 
     def get_catalog_url(self) -> str:
@@ -1879,6 +1881,23 @@ class ExtensionCatalog:
             ExtensionError: If catalog cannot be fetched or has invalid format
         """
         import urllib.error
+
+        if entry.url == self.BUNDLED_CATALOG_URL:
+            candidate_paths = [
+                Path(__file__).parent / "core_pack" / "extensions" / "catalog.json",
+                Path(__file__).resolve().parent.parent.parent / "extensions" / "catalog.json",
+            ]
+            for candidate in candidate_paths:
+                if not candidate.is_file():
+                    continue
+                try:
+                    catalog_data = json.loads(candidate.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as e:
+                    raise ExtensionError(f"Invalid JSON in bundled catalog {candidate}: {e}")
+                if "schema_version" not in catalog_data or "extensions" not in catalog_data:
+                    raise ExtensionError(f"Invalid bundled catalog format from {candidate}")
+                return catalog_data
+            raise ExtensionError("Bundled extension catalog not found")
 
         # Determine cache file paths (backward compat for default catalog)
         if entry.url == self.DEFAULT_CATALOG_URL:
