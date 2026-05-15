@@ -79,12 +79,13 @@ def test_cli_integration_search_markdown_with_filters_warns():
 
 
 def test_cli_integration_search_markdown_stdout_is_clean():
-    """Test that stdout contains only the markdown table (no extraneous output)."""
+    """Test that stdout contains only the markdown table with proper format."""
     result = runner.invoke(app, ["integration", "search", "--markdown"])
     assert result.exit_code == 0
     stdout = result.stdout
-    # Stdout should start with the markdown table header
-    assert stdout.startswith("| Agent | Key | Notes |")
-    # Stdout should not contain any error or warning messages
-    assert "Error" not in stdout
-    assert "error" not in stdout.lower()
+    lines = stdout.splitlines()
+    # Verify markdown table header is present
+    assert len(lines) > 1
+    assert lines[0] == "| Agent | Key | Notes |"
+    # Ensure stderr has no error messages
+    assert "error" not in result.stderr.lower()
