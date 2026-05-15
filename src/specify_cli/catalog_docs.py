@@ -1,8 +1,14 @@
-"""Helpers for rendering the built-in integrations reference table."""
+"""Helpers for rendering the built-in integrations reference table from the integration registry."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+
+INTEGRATIONS_REFERENCE_PATH = (
+    Path(__file__).parent.parent.parent / "docs" / "reference" / "integrations.md"
+)
 
 
 INTEGRATION_DOC_URLS: dict[str, str | None] = {
