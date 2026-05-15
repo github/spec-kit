@@ -130,10 +130,14 @@ class TestExtensionAddFromPathTraversal:
 
         with patch("specify_cli.authentication.http.open_url", return_value=_mock_open_url()), \
              patch("specify_cli.extensions.ExtensionManager.install_from_zip", return_value=MagicMock(id="x", name="X", version="1.0.0")):
-            runner.invoke(
+            result = runner.invoke(
                 app,
                 ["extension", "add", bad_name, "--from", "https://example.com/ext.zip"],
             )
+        # The command must succeed: a non-zero exit would mean the install
+        # failed before reaching cleanup, which would leave the sentinel
+        # untouched for the wrong reason and mask any cleanup-side regression.
+        assert result.exit_code == 0, result.output
         assert pre_fix_path.exists(), f"Sentinel deleted by cleanup: {pre_fix_path}"
         assert pre_fix_path.read_text() == "sentinel"
 

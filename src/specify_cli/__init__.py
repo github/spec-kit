@@ -3329,6 +3329,57 @@ def _resolve_installed_extension(
         raise typer.Exit(1)
 
 
+def _validate_safe_cache_dir(project_root: Path) -> Path:
+    """Validate (and create) the per-project download cache directory safely.
+
+    Walks ``.specify/extensions/.cache/downloads`` one component at a time,
+    refusing symlinked components and re-resolving each existing/new component
+    under ``project_root`` to catch non-symlink directory aliases (Windows
+    junctions / mount points) and mid-creation parent swaps. ``mkdir(parents=
+    True)`` would silently traverse a symlinked ancestor, so each component is
+    checked and created individually instead.
+
+    Returns the validated download directory. Raises ``typer.Exit`` on any
+    safety violation (after printing a user-facing error).
+    """
+    download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+    project_root_resolved = project_root.resolve()
+    try:
+        current = project_root
+        for part in download_dir.relative_to(project_root).parts:
+            current = current / part
+            if current.is_symlink():
+                console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
+                raise typer.Exit(1)
+            if current.exists():
+                if not current.is_dir():
+                    console.print(
+                        f"[red]Error:[/red] Download cache path is not a directory: {current}"
+                    )
+                    raise typer.Exit(1)
+                try:
+                    current.resolve().relative_to(project_root_resolved)
+                except (OSError, ValueError):
+                    console.print("[red]Error:[/red] Download cache directory escapes project root")
+                    raise typer.Exit(1)
+                continue
+            current.mkdir()
+            if current.is_symlink():
+                console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
+                raise typer.Exit(1)
+            try:
+                current.resolve().relative_to(project_root_resolved)
+            except (OSError, ValueError):
+                console.print("[red]Error:[/red] Download cache directory escapes project root")
+                raise typer.Exit(1)
+    except OSError as exc:
+        console.print(
+            f"[red]Error:[/red] Could not prepare download cache directory: {exc}"
+        )
+        raise typer.Exit(1)
+    return download_dir
+
+
 def _safe_open_download_zip(project_root: Path, download_dir: Path, zip_filename: str) -> int:
     """Open ``download_dir / zip_filename`` for writing without following any symlink.
 
@@ -3339,10 +3390,13 @@ def _safe_open_download_zip(project_root: Path, download_dir: Path, zip_filename
     ``O_EXCL`` so the unique UUID filename cannot collide with anything an
     attacker pre-staged.
 
-    On platforms without ``dir_fd``/``O_NOFOLLOW`` support (Windows), falls
-    back to a plain ``O_EXCL`` open. Symlink creation on Windows requires
-    elevated privileges, and the per-component ancestor walk performed by the
-    caller already covers the realistic threat surface there.
+    On platforms without ``dir_fd``/``O_NOFOLLOW`` support (Windows), the
+    function performs an immediate per-component ancestor walk (re-checking
+    ``is_symlink`` and re-resolving each component under ``project_root``)
+    *just before* the leaf open. This narrows the TOCTOU window between the
+    earlier caller-side validation and the actual write so a swap performed in
+    that window is still caught. Symlink creation on Windows additionally
+    requires elevated privileges.
 
     Returns an open file descriptor; the caller owns and must close it.
     Raises ``OSError`` (e.g. ``ELOOP``, ``EEXIST``, ``EACCES``) if any
@@ -3352,8 +3406,23 @@ def _safe_open_download_zip(project_root: Path, download_dir: Path, zip_filename
     o_directory = getattr(os, "O_DIRECTORY", 0)
     leaf_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | o_nofollow
 
-    # Windows / no openat support: best-effort O_EXCL open.
+    # Windows / no openat support: re-validate ancestors immediately before
+    # opening so a swap in the (caller-validation -> open) window is caught.
     if os.open not in os.supports_dir_fd:
+        project_root_resolved = project_root.resolve()
+        current = project_root
+        for part in download_dir.relative_to(project_root).parts:
+            current = current / part
+            if current.is_symlink():
+                raise OSError(
+                    f"Refusing to follow symlinked cache component: {current}"
+                )
+            try:
+                current.resolve().relative_to(project_root_resolved)
+            except (OSError, ValueError):
+                raise OSError(
+                    f"Cache component escapes project root: {current}"
+                )
         return os.open(download_dir / zip_filename, leaf_flags, 0o600)
 
     rel_parts = download_dir.relative_to(project_root).parts
@@ -3368,6 +3437,74 @@ def _safe_open_download_zip(project_root: Path, download_dir: Path, zip_filename
         return os.open(zip_filename, leaf_flags, 0o600, dir_fd=parent_fd)
     finally:
         os.close(parent_fd)
+
+
+def _safe_unlink_download_zip(
+    project_root: Path, download_dir: Path, zip_filename: str
+) -> None:
+    """Best-effort unlink of the downloaded ZIP without following symlinks.
+
+    Mirrors ``_safe_open_download_zip``: on POSIX walks each cache ancestor
+    with ``dir_fd`` + ``O_NOFOLLOW`` and unlinks via
+    ``os.unlink(zip_filename, dir_fd=parent_fd)`` so an attacker who swaps a
+    cache ancestor between the write and the cleanup cannot redirect the
+    unlink onto a same-named file outside the project. On Windows (no
+    ``dir_fd``/``O_NOFOLLOW``), re-validates the cache ancestor chain via
+    :func:`_validate_safe_cache_dir`-equivalent checks before unlinking.
+
+    Errors are swallowed; this is best-effort cleanup.
+    """
+    o_nofollow = getattr(os, "O_NOFOLLOW", 0)
+    o_directory = getattr(os, "O_DIRECTORY", 0)
+
+    if os.open not in os.supports_dir_fd:
+        # Windows / no openat support: re-validate immediately before unlink.
+        project_root_resolved = project_root.resolve()
+        current = project_root
+        for part in download_dir.relative_to(project_root).parts:
+            current = current / part
+            if current.is_symlink():
+                return
+            if not current.exists():
+                return
+            try:
+                current.resolve().relative_to(project_root_resolved)
+            except (OSError, ValueError):
+                return
+        zip_path = download_dir / zip_filename
+        try:
+            if zip_path.is_symlink():
+                return
+            if zip_path.exists():
+                zip_path.unlink()
+        except OSError:
+            pass
+        return
+
+    rel_parts = download_dir.relative_to(project_root).parts
+    try:
+        parent_fd = os.open(project_root, os.O_RDONLY | o_directory)
+    except OSError:
+        return
+    try:
+        for part in rel_parts:
+            try:
+                new_fd = os.open(
+                    part, os.O_RDONLY | o_directory | o_nofollow, dir_fd=parent_fd
+                )
+            except OSError:
+                return
+            os.close(parent_fd)
+            parent_fd = new_fd
+        try:
+            os.unlink(zip_filename, dir_fd=parent_fd)
+        except OSError:
+            pass
+    finally:
+        try:
+            os.close(parent_fd)
+        except OSError:
+            pass
 
 
 def _resolve_catalog_extension(
@@ -3644,6 +3781,16 @@ def extension_add(
         console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
         raise typer.Exit(1)
 
+    # For URL installs, validate (and create) the download cache *before*
+    # constructing ExtensionManager. The manager's constructor reads
+    # ``.specify/extensions/.registry`` via ``ExtensionRegistry``; if a
+    # ``.specify/extensions`` ancestor is symlinked, that read would follow
+    # the symlink before any guard ran. Performing the safe per-component
+    # walk first ensures the manager only ever opens registry files inside a
+    # validated, project-contained tree.
+    if from_url:
+        _download_dir = _validate_safe_cache_dir(project_root)
+
     manager = ExtensionManager(project_root)
     speckit_version = get_speckit_version()
 
@@ -3682,74 +3829,21 @@ def extension_add(
                 console.print("Only install extensions from sources you trust.\n")
                 console.print(f"Downloading from {from_url}...")
 
-                # Download ZIP to temp location.
-                # Validate and create each ancestor without following symlinks
-                # (consistent with shared_infra._ensure_safe_shared_directory):
-                # `mkdir(parents=True)` would silently traverse a symlinked ancestor,
-                # so each component is checked and created individually instead.
-                # Each component (existing or newly created) is also re-resolved
-                # and required to land under project_root, which catches
-                # non-symlink directory aliases (e.g. Windows junctions / mount
-                # points) that resolve outside, including ones that may appear
-                # mid-creation via a parent swap.
+                # The download cache directory has already been safely
+                # validated/created above (before ExtensionManager construction)
+                # via `_validate_safe_cache_dir(project_root)`. Reuse the same
+                # validated `download_dir` here.
                 import uuid as _uuid
-                download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+                download_dir = _download_dir
                 project_root_resolved = project_root.resolve()
-                try:
-                    _current = project_root
-                    for _part in download_dir.relative_to(project_root).parts:
-                        _current = _current / _part
-                        if _current.is_symlink():
-                            console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
-                            raise typer.Exit(1)
-                        if _current.exists():
-                            if not _current.is_dir():
-                                console.print(
-                                    f"[red]Error:[/red] Download cache path is not a directory: {_current}"
-                                )
-                                raise typer.Exit(1)
-                            try:
-                                _current.resolve().relative_to(project_root_resolved)
-                            except (OSError, ValueError):
-                                console.print("[red]Error:[/red] Download cache directory escapes project root")
-                                raise typer.Exit(1)
-                            continue
-                        _current.mkdir()
-                        if _current.is_symlink():
-                            console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
-                            raise typer.Exit(1)
-                        # Post-create containment check: a parent swapped to a
-                        # junction / mount / symlink during creation could land
-                        # the new directory outside project_root even though
-                        # this component itself is not a symlink.
-                        try:
-                            _current.resolve().relative_to(project_root_resolved)
-                        except (OSError, ValueError):
-                            console.print("[red]Error:[/red] Download cache directory escapes project root")
-                            raise typer.Exit(1)
-                except OSError as _mkdir_err:
-                    console.print(
-                        f"[red]Error:[/red] Could not prepare download cache directory: {_mkdir_err}"
-                    )
-                    raise typer.Exit(1)
 
                 safe_name = Path(extension).name.replace("/", "_").replace("\\", "_") or "download"
                 safe_name = safe_name[:64]  # cap length to avoid filesystem errors
                 zip_filename = f"{safe_name}-{_uuid.uuid4().hex[:8]}.zip"
                 zip_path = download_dir / zip_filename
 
-                # Guard: resolved zip_path must stay inside the validated cache
-                # directory *and* the cache directory must still resolve under
-                # project_root. The second check defends the Windows fallback
-                # path of `_safe_open_download_zip` (no `dir_fd`/`O_NOFOLLOW`)
-                # against an ancestor swapped to a junction/symlink between the
-                # validation loop above and this point: comparing only against
-                # `download_dir.resolve()` would silently follow the redirect.
-                try:
-                    download_dir.resolve().relative_to(project_root_resolved)
-                except (OSError, ValueError):
-                    console.print("[red]Error:[/red] Download cache directory escapes project root")
-                    raise typer.Exit(1)
+                # Containment guard: the resolved zip_path must stay inside the
+                # validated cache directory.
                 try:
                     zip_path.resolve().relative_to(download_dir.resolve())
                 except ValueError:
@@ -3761,15 +3855,31 @@ def extension_add(
 
                     with _open_url(from_url, timeout=60) as response:
                         zip_data = response.read()
+                except urllib.error.URLError as e:
+                    console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
+                    raise typer.Exit(1)
 
-                    # Open the ZIP file for writing without following any symlink
-                    # in the path. On POSIX, walk each ancestor of `download_dir`
-                    # using dir_fd + O_NOFOLLOW so a symlink swap of *any*
-                    # component (including ancestors) between validation above
-                    # and this write is rejected. On Windows there is no
-                    # `dir_fd` / `O_NOFOLLOW` support, so we fall back to a
-                    # plain O_EXCL open which still requires the unique UUID
-                    # filename to be freshly created.
+                # Re-validate cache containment immediately before opening the
+                # write fd. This narrows the (validation -> write) TOCTOU
+                # window for the Windows fallback path of
+                # `_safe_open_download_zip` (which has no `dir_fd`/
+                # `O_NOFOLLOW`); on POSIX, the helper also re-walks ancestors
+                # with `dir_fd + O_NOFOLLOW` so any swap is rejected at open
+                # time as well.
+                try:
+                    download_dir.resolve().relative_to(project_root_resolved)
+                except (OSError, ValueError):
+                    console.print("[red]Error:[/red] Download cache directory escapes project root")
+                    raise typer.Exit(1)
+
+                try:
+                    # Open the ZIP file for writing without following any
+                    # symlink in the path. On POSIX, the helper walks each
+                    # ancestor of `download_dir` using dir_fd + O_NOFOLLOW so
+                    # a symlink swap of *any* component (including ancestors)
+                    # between validation and this write is rejected. On
+                    # Windows the helper re-walks the ancestor chain
+                    # immediately before opening to narrow the same window.
                     try:
                         _fd = _safe_open_download_zip(
                             project_root, download_dir, zip_filename
@@ -3790,19 +3900,35 @@ def extension_add(
                         except OSError:
                             pass
                         raise
-
-                    # Install from downloaded ZIP
-                    manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
-                except urllib.error.URLError as e:
-                    console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
-                    raise typer.Exit(1)
                 except OSError as e:
-                    console.print(f"[red]Error:[/red] Failed to write download cache: {e}")
+                    # Narrow handler: only covers the cache-write fd
+                    # acquisition + write. Errors from `install_from_zip`
+                    # (e.g. corrupted archive, manifest validation) are
+                    # surfaced separately below so they aren't misreported as
+                    # "Failed to write download cache".
+                    console.print(
+                        f"[red]Error:[/red] Failed to write download cache: {e}"
+                    )
                     raise typer.Exit(1)
+
+                try:
+                    # Install from downloaded ZIP. Errors from the manager
+                    # (ValidationError / CompatibilityError / ExtensionError)
+                    # are caught by the outer handler so users see the
+                    # extension-specific message rather than a generic
+                    # "Failed to write download cache".
+                    manifest = manager.install_from_zip(
+                        zip_path, speckit_version, priority=priority
+                    )
                 finally:
-                    # Clean up downloaded ZIP
-                    if zip_path.exists():
-                        zip_path.unlink()
+                    # Best-effort cleanup of the downloaded ZIP. Uses a
+                    # symlink-safe walk so an attacker who swaps a cache
+                    # ancestor between the write and the unlink cannot
+                    # redirect the delete onto a same-named file outside the
+                    # project root.
+                    _safe_unlink_download_zip(
+                        project_root, download_dir, zip_filename
+                    )
 
             else:
                 # Try bundled extensions first (shipped with spec-kit)
