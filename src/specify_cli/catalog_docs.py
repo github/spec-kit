@@ -105,7 +105,9 @@ def list_integrations_for_docs(warn_on_missing: bool = False) -> list[tuple[str,
         if key not in INTEGRATION_DOC_URLS:
             continue
 
-        config = integration.config if isinstance(integration.config, dict) else {}
+        config = getattr(integration, "config", {})
+        if not isinstance(config, dict):
+            config = {}
         label = INTEGRATION_LABEL_OVERRIDES.get(key, str(config.get("name") or key))
         url = INTEGRATION_DOC_URLS.get(key)
         notes = INTEGRATION_NOTES.get(key, "")

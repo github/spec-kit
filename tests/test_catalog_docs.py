@@ -17,6 +17,25 @@ from specify_cli import app
 runner = CliRunner()
 
 
+def _get_mocked_cli_runner():
+    """Set up a context with mocked registry and doc maps for CLI tests."""
+    fake_registry = {
+        "copilot": MagicMock(config={"name": "GitHub Copilot"}),
+        "codex": MagicMock(config={"name": "Codex CLI"}),
+    }
+    fake_doc_urls = {"copilot": "https://code.visualstudio.com/", "codex": "https://github.com/openai/codex"}
+    fake_label_overrides = {}
+    fake_notes = {"copilot": "Test note"}
+    
+    patches = [
+        patch("specify_cli.catalog_docs._get_integration_registry", return_value=fake_registry),
+        patch("specify_cli.catalog_docs.INTEGRATION_DOC_URLS", fake_doc_urls),
+        patch("specify_cli.catalog_docs.INTEGRATION_LABEL_OVERRIDES", fake_label_overrides),
+        patch("specify_cli.catalog_docs.INTEGRATION_NOTES", fake_notes),
+    ]
+    return patches
+
+
 def test_integrations_table_renders():
     table = render_integrations_table()
     lines = table.splitlines()
@@ -60,32 +79,53 @@ def test_integrations_docs_label_and_url_sources():
 
 def test_cli_integration_search_markdown_success():
     """Test that `integration search --markdown` outputs the markdown table."""
-    result = runner.invoke(app, ["integration", "search", "--markdown"])
-    assert result.exit_code == 0
-    lines = result.stdout.splitlines()
-    assert len(lines) > 2  # At least header, separator, and one data row
-    assert lines[0] == "| Agent | Key | Notes |"
-    assert lines[1] == "| --- | --- | --- |"
+    patches = _get_mocked_cli_runner()
+    for p in patches:
+        p.start()
+    try:
+        result = runner.invoke(app, ["integration", "search", "--markdown"])
+        assert result.exit_code == 0
+        lines = result.stdout.splitlines()
+        assert len(lines) > 2  # At least header, separator, and one data row
+        assert lines[0] == "| Agent | Key | Notes |"
+        assert lines[1] == "| --- | --- | --- |"
+    finally:
+        for p in patches:
+            p.stop()
 
 
 def test_cli_integration_search_markdown_with_filters_warns():
     """Test that `integration search --markdown` with filters emits a warning to stderr."""
-    result = runner.invoke(app, ["integration", "search", "test-query", "--markdown", "--tag", "some-tag"])
-    assert result.exit_code == 0
-    # Check for the specific Typer warning message (not generic Python warnings)
-    assert "ignores query/--tag/--author filters" in result.stderr
-    lines = result.stdout.splitlines()
-    assert lines[0] == "| Agent | Key | Notes |"
+    patches = _get_mocked_cli_runner()
+    for p in patches:
+        p.start()
+    try:
+        result = runner.invoke(app, ["integration", "search", "test-query", "--markdown", "--tag", "some-tag"])
+        assert result.exit_code == 0
+        # Check for the specific Typer warning message (not generic Python warnings)
+        assert "ignores query/--tag/--author filters" in result.stderr
+        lines = result.stdout.splitlines()
+        assert lines[0] == "| Agent | Key | Notes |"
+    finally:
+        for p in patches:
+            p.stop()
 
 
 def test_cli_integration_search_markdown_stdout_is_clean():
     """Test that stdout contains only the markdown table with proper format."""
-    result = runner.invoke(app, ["integration", "search", "--markdown"])
-    assert result.exit_code == 0
-    stdout = result.stdout
-    lines = stdout.splitlines()
-    # Verify markdown table header is present
-    assert len(lines) > 1
-    assert lines[0] == "| Agent | Key | Notes |"
-    # Ensure stderr has no error messages
-    assert "error" not in result.stderr.lower()
+    patches = _get_mocked_cli_runner()
+    for p in patches:
+        p.start()
+    try:
+        result = runner.invoke(app, ["integration", "search", "--markdown"])
+        assert result.exit_code == 0
+        stdout = result.stdout
+        lines = stdout.splitlines()
+        # Verify markdown table header is present
+        assert len(lines) > 1
+        assert lines[0] == "| Agent | Key | Notes |"
+        # Ensure stderr has no error messages
+        assert "error" not in result.stderr.lower()
+    finally:
+        for p in patches:
+            p.stop()
