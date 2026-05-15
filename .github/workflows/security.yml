@@ -123,6 +123,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # Needed by check_secrets_baseline.py to read the baseline at base ref.
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -145,3 +148,14 @@ jobs:
                ':!:.github/security-audit-requirements.txt' \
           | xargs -0 uvx --from detect-secrets==1.5.0 detect-secrets-hook \
               --baseline .secrets.baseline
+
+      # Symmetric with the bandit baseline gate: if .secrets.baseline grew,
+      # the PR must carry the 'secrets-baseline-change' label so reviewers
+      # see the whitelist expansion explicitly.
+      - name: Check secrets baseline growth
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          SECRETS_BASELINE_BASE: ${{ github.event.pull_request.base.sha }}
+          SECRETS_BASELINE_HEAD: ${{ github.event.pull_request.head.sha }}
+          SECRETS_BASELINE_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: python .github/scripts/check_secrets_baseline.py
