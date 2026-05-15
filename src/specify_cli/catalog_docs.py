@@ -64,7 +64,7 @@ INTEGRATION_NOTES: dict[str, str] = {
 
 def render_cell(value: str) -> str:
     r"""Escape markdown special characters (pipes) and normalize newlines to spaces.
-    
+
     This ensures table cells remain valid markdown even if they contain
     pipes (escaped as \|) or carriage returns (normalized to spaces).
     """
@@ -82,7 +82,7 @@ def list_integrations_for_docs() -> list[tuple[str, str, str | None, str]]:
     registry = _get_integration_registry()
     registry_keys = set(registry)
 
-    missing = [key for key in registry if key not in INTEGRATION_DOC_URLS]
+    missing = [key for key in registry_keys if key not in INTEGRATION_DOC_URLS]
     if missing:
         raise ValueError(
             f"Integration(s) missing from INTEGRATION_DOC_URLS: {', '.join(sorted(missing))}. "
