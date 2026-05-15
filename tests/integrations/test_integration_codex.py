@@ -83,3 +83,34 @@ class TestCodexHookCommandNote:
         lines = result.splitlines()
         note_line = [l for l in lines if "replace dots" in l][0]
         assert note_line.startswith("   "), "Note should preserve indentation"
+
+    def test_hook_note_when_instruction_is_final_line_without_newline(self):
+        """Note must not collapse onto the instruction line when the file
+        ends without a trailing newline and the preceding line is not blank.
+        """
+        from specify_cli.integrations.codex import CodexIntegration
+
+        # No blank line before the instruction and no trailing newline:
+        # this is the case where the captured ``eol`` is empty and the
+        # captured indent is also empty, so a missing line separator would
+        # cause the note and instruction to collapse onto one line.
+        content = (
+            "---\nname: test\n---\n"
+            "Body line\n"
+            "- For each executable hook, output the following"
+        )
+        result = CodexIntegration._inject_hook_command_note(content)
+        lines = result.splitlines()
+        note_line_idx = next(
+            i for i, l in enumerate(lines) if "replace dots" in l
+        )
+        instruction_line_idx = next(
+            i for i, l in enumerate(lines)
+            if l.lstrip().startswith("- For each executable hook")
+        )
+        assert note_line_idx < instruction_line_idx, (
+            "Note must appear before the instruction"
+        )
+        assert "For each executable hook" not in lines[note_line_idx], (
+            "Note and instruction must not be on the same line"
+        )
