@@ -359,6 +359,23 @@ def install_shared_infra(
                                 preserved_user_files.append(rel)
                             else:
                                 skipped_files.append(rel)
+                                # Record the existing-on-disk file in the manifest so a
+                                # fresh manifest run against an already-populated
+                                # ``.specify/`` tree does not silently drop it (#2107).
+                                # ``prior_hashes`` is the function-scope snapshot taken
+                                # at entry, so this membership check is O(1) and avoids
+                                # the repeated ``dict(self._files)`` copy that
+                                # ``manifest.files`` performs on every access.
+                                if dst_path.is_file() and rel not in prior_hashes:
+                                    try:
+                                        manifest.record_existing(rel)
+                                    except (OSError, ValueError) as exc:
+                                        # Tolerate races / permission issues / non-file
+                                        # collisions so one weird path does not abort
+                                        # the whole install.
+                                        console.print(
+                                            f"[yellow]⚠[/yellow]  could not record {rel} in manifest: {exc}"
+                                        )
                             continue
 
                         if not _ensure_or_bucket_dir(dst_path.parent):
@@ -383,6 +400,23 @@ def install_shared_infra(
                         preserved_user_files.append(rel)
                     else:
                         skipped_files.append(rel)
+                        # Record the existing-on-disk template in the manifest so a
+                        # fresh manifest run against an already-populated
+                        # ``.specify/`` tree does not silently drop it (#2107).
+                        # ``prior_hashes`` is the function-scope snapshot taken at
+                        # entry, so this membership check is O(1) and avoids the
+                        # repeated ``dict(self._files)`` copy that ``manifest.files``
+                        # performs on every access.
+                        if dst.is_file() and rel not in prior_hashes:
+                            try:
+                                manifest.record_existing(rel)
+                            except (OSError, ValueError) as exc:
+                                # Tolerate races / permission issues / non-file
+                                # collisions so one weird path does not abort
+                                # the whole install.
+                                console.print(
+                                    f"[yellow]⚠[/yellow]  could not record {rel} in manifest: {exc}"
+                                )
                     continue
 
                 content = src.read_text(encoding="utf-8")
@@ -401,7 +435,7 @@ def install_shared_infra(
 
     if skipped_files:
         console.print(
-            f"[yellow]⚠[/yellow]  {len(skipped_files)} shared infrastructure file(s) already exist and were not updated:"
+            f"[yellow]⚠[/yellow]  {len(skipped_files)} shared infrastructure path(s) already exist and were not updated:"
         )
         for path in skipped_files:
             console.print(f"    {path}")
