@@ -3644,7 +3644,15 @@ def extension_add(
                 # Download ZIP to temp location
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
                 download_dir.mkdir(parents=True, exist_ok=True)
-                zip_path = download_dir / f"{extension}-url-download.zip"
+                safe_name = Path(extension).name.replace("/", "_").replace("\\", "_") or "download"
+                zip_path = download_dir / f"{safe_name}-url-download.zip"
+
+                # Guard: resolved path must stay inside download_dir (CWE-22)
+                try:
+                    zip_path.resolve().relative_to(download_dir.resolve())
+                except ValueError:
+                    console.print("[red]Error:[/red] Invalid extension name (path traversal detected)")
+                    raise typer.Exit(1)
 
                 try:
                     from specify_cli.authentication.http import open_url as _open_url
