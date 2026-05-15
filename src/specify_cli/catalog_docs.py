@@ -78,18 +78,19 @@ def _get_integration_registry() -> dict[str, Any]:
     return INTEGRATION_REGISTRY
 
 
-def list_integrations_for_docs() -> list[tuple[str, str, str | None, str]]:
+def list_integrations_for_docs(warn_on_missing: bool = False) -> list[tuple[str, str, str | None, str]]:
     """List integrations with their documentation URLs and notes.
 
-    Skips any integrations not in INTEGRATION_DOC_URLS (emits a Python warning if any are missing).
+    Skips any integrations not in INTEGRATION_DOC_URLS. If `warn_on_missing` is True,
+    emits a Python warning for any missing entries. Otherwise, silently skips them.
     Gracefully handles missing URL or notes entries by defaulting to None/empty string.
     """
     registry = _get_integration_registry()
     registry_keys = set(registry)
 
-    # Warn if there are integrations missing from INTEGRATION_DOC_URLS, but don't fail
+    # Warn if there are integrations missing from INTEGRATION_DOC_URLS (when enabled)
     missing = sorted(registry_keys - set(INTEGRATION_DOC_URLS))
-    if missing:
+    if missing and warn_on_missing:
         import warnings
         warnings.warn(
             f"Integration(s) missing from INTEGRATION_DOC_URLS: {', '.join(missing)}. "

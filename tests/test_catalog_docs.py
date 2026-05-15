@@ -72,8 +72,8 @@ def test_cli_integration_search_markdown_with_filters_warns():
     """Test that `integration search --markdown` with filters emits a warning to stderr."""
     result = runner.invoke(app, ["integration", "search", "test-query", "--markdown", "--tag", "some-tag"])
     assert result.exit_code == 0
-    # Warning should be on stderr, table should be on stdout
-    assert "Warning" in result.stderr or "ignores" in result.stderr
+    # Check for the specific Typer warning message (not generic Python warnings)
+    assert "ignores query/--tag/--author filters" in result.stderr
     lines = result.stdout.splitlines()
     assert lines[0] == "| Agent | Key | Notes |"
 
