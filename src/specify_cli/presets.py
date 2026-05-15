@@ -200,6 +200,11 @@ class PresetManifest:
             raise PresetValidationError(
                 "Preset must provide at least one template"
             )
+        workflows = provides.get("workflows", [])
+        if "workflows" in provides and not isinstance(workflows, list):
+            raise PresetValidationError(
+                "Invalid provides.workflows: expected a list"
+            )
 
         # Validate templates
         for tmpl in provides["templates"]:
@@ -260,6 +265,33 @@ class PresetManifest:
                         "must be lowercase alphanumeric with hyphens only"
                     )
 
+        for workflow in workflows:
+            if not isinstance(workflow, dict):
+                raise PresetValidationError(
+                    "Each workflow entry in 'provides.workflows' must be a mapping"
+                )
+            if "id" not in workflow or "file" not in workflow:
+                raise PresetValidationError("Workflow missing 'id' or 'file'")
+            workflow_id = workflow["id"]
+            if not isinstance(workflow_id, str) or not re.match(
+                r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$", workflow_id
+            ):
+                raise PresetValidationError(
+                    f"Invalid workflow id '{workflow_id}': "
+                    "must be lowercase alphanumeric with hyphens"
+                )
+            file_path = workflow["file"]
+            if not isinstance(file_path, str):
+                raise PresetValidationError(
+                    f"Invalid workflow file for '{workflow_id}': expected a string"
+                )
+            normalized = os.path.normpath(file_path)
+            if os.path.isabs(normalized) or normalized.startswith(".."):
+                raise PresetValidationError(
+                    f"Invalid workflow file path '{file_path}': "
+                    "must be a relative path within the preset directory"
+                )
+
     @property
     def id(self) -> str:
         """Get preset ID."""
@@ -294,6 +326,11 @@ class PresetManifest:
     def templates(self) -> List[Dict[str, Any]]:
         """Get list of provided templates."""
         return self.data["provides"]["templates"]
+
+    @property
+    def workflows(self) -> List[Dict[str, Any]]:
+        """Get list of provided workflows."""
+        return self.data.get("provides", {}).get("workflows", [])
 
     @property
     def tags(self) -> List[str]:
@@ -1482,6 +1519,99 @@ class PresetManager:
                 # No core or extension template — remove the skill entirely
                 shutil.rmtree(skill_subdir)
 
+    def _register_preset_workflows(
+        self,
+        manifest: PresetManifest,
+        preset_dir: Path,
+    ) -> List[str]:
+        """Install workflow definitions provided by a preset."""
+        if not manifest.workflows:
+            return []
+
+        from .workflows.catalog import WorkflowRegistry
+        from .workflows.engine import WorkflowDefinition, validate_workflow
+
+        registry = WorkflowRegistry(self.project_root)
+        registered: List[str] = []
+        workflows_root = self.project_root / ".specify" / "workflows"
+        preset_root = preset_dir.resolve()
+
+        for wf_info in manifest.workflows:
+            workflow_id = wf_info["id"]
+            file_rel = wf_info["file"]
+            source_path = (preset_root / file_rel).resolve()
+            try:
+                source_path.relative_to(preset_root)
+            except ValueError as exc:
+                raise PresetValidationError(
+                    f"Workflow '{workflow_id}' file escapes preset directory"
+                ) from exc
+            if not source_path.is_file():
+                raise PresetValidationError(
+                    f"Workflow '{workflow_id}' file not found: {file_rel}"
+                )
+
+            definition = WorkflowDefinition.from_yaml(source_path)
+            errors = validate_workflow(definition)
+            if errors:
+                raise PresetValidationError(
+                    f"Workflow '{workflow_id}' is invalid:\n- "
+                    + "\n- ".join(errors)
+                )
+            if definition.id != workflow_id:
+                raise PresetValidationError(
+                    f"Workflow manifest id '{workflow_id}' does not match "
+                    f"workflow.yml id '{definition.id}'"
+                )
+
+            existing = registry.get(workflow_id)
+            if existing and existing.get("source") != f"preset:{manifest.id}":
+                raise PresetValidationError(
+                    f"Workflow '{workflow_id}' is already installed from "
+                    f"{existing.get('source', 'another source')}"
+                )
+
+            dest_dir = workflows_root / workflow_id
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, dest_dir / "workflow.yml")
+            registry.add(
+                workflow_id,
+                {
+                    "name": definition.name,
+                    "version": definition.version,
+                    "description": definition.description,
+                    "source": f"preset:{manifest.id}",
+                    "preset_id": manifest.id,
+                },
+            )
+            registered.append(workflow_id)
+
+        return registered
+
+    def _unregister_preset_workflows(
+        self,
+        preset_id: str,
+        workflow_ids: List[str],
+    ) -> None:
+        """Remove preset-owned workflow definitions from the project."""
+        if not workflow_ids:
+            return
+
+        from .workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(self.project_root)
+        workflows_root = self.project_root / ".specify" / "workflows"
+        source_tag = f"preset:{preset_id}"
+
+        for workflow_id in workflow_ids:
+            metadata = registry.get(workflow_id)
+            if not metadata or metadata.get("source") != source_tag:
+                continue
+            workflow_dir = workflows_root / workflow_id
+            if workflow_dir.exists():
+                shutil.rmtree(workflow_dir)
+            registry.remove(workflow_id)
+
     def install_from_directory(
         self,
         source_dir: Path,
@@ -1537,7 +1667,13 @@ class PresetManager:
 
         registered_commands: Dict[str, List[str]] = {}
         registered_skills: List[str] = []
+        registered_workflows: List[str] = []
         try:
+            registered_workflows = self._register_preset_workflows(manifest, dest_dir)
+            self.registry.update(manifest.id, {
+                "registered_workflows": registered_workflows,
+            })
+
             # Register command overrides with AI agents and persist the result
             # immediately so cleanup can recover even if installation stops
             # before later phases complete.
@@ -1563,6 +1699,8 @@ class PresetManager:
                 self._unregister_commands(registered_commands)
             if registered_skills:
                 self._unregister_skills(registered_skills, dest_dir)
+            if registered_workflows:
+                self._unregister_preset_workflows(manifest.id, registered_workflows)
             try:
                 if dest_dir.exists():
                     shutil.rmtree(dest_dir)
@@ -1673,6 +1811,11 @@ class PresetManager:
         # Restore original skills when preset is removed
         registered_skills = metadata.get("registered_skills", []) if metadata else []
         registered_commands = metadata.get("registered_commands", {}) if metadata else {}
+        raw_workflows = metadata.get("registered_workflows", []) if metadata else []
+        if isinstance(raw_workflows, list):
+            registered_workflows = [w for w in raw_workflows if isinstance(w, str)]
+        else:
+            registered_workflows = []
         pack_dir = self.presets_dir / pack_id
 
         # Collect ALL command names before filtering for reconciliation,
@@ -1712,6 +1855,8 @@ class PresetManager:
         # Unregister non-skill command files from AI agents.
         if registered_commands:
             self._unregister_commands(registered_commands)
+
+        self._unregister_preset_workflows(pack_id, registered_workflows)
 
         if pack_dir.exists():
             shutil.rmtree(pack_dir)

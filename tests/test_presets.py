@@ -1922,7 +1922,6 @@ class TestPresetCatalogMultiCatalog:
 
 
 SELF_TEST_PRESET_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-IMPLEMENT_PRESET_DIR = Path(__file__).parent.parent / "presets" / "implement"
 SELF_TEST_WRAP_WARNING = (
     r"Cannot compose command 'speckit\.wrap-test': no base layer\. "
     r"Stale command files may remain\."
@@ -1937,47 +1936,130 @@ CORE_TEMPLATE_NAMES = [
 ]
 
 
-class TestImplementPreset:
-    """Tests for the bundled implement preset."""
+def create_implement_preset_fixture(root: Path) -> Path:
+    """Create a minimal external implement preset with a workflow."""
+    preset_dir = root / "implement-preset"
+    (preset_dir / "commands").mkdir(parents=True)
+    (preset_dir / "workflows" / "speckit-orchestrated-implement").mkdir(
+        parents=True
+    )
+    (preset_dir / "commands" / "speckit.implement.md").write_text(
+        "---\ndescription: Orchestrated implement\n---\n\n"
+        "specify workflow run speckit-orchestrated-implement\n"
+        "Use handoff JSON when provided.\n",
+        encoding="utf-8",
+    )
+    (preset_dir / "workflows" / "speckit-orchestrated-implement" / "workflow.yml").write_text(
+        """
+schema_version: "1.0"
+workflow:
+  id: "speckit-orchestrated-implement"
+  name: "Orchestrated Implementation"
+  version: "1.0.0"
+steps:
+  - id: one
+    type: shell
+    run: "echo ok"
+""",
+        encoding="utf-8",
+    )
+    (preset_dir / "preset.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "implement",
+                    "name": "Orchestrated Implement",
+                    "version": "1.0.0",
+                    "description": "External implement preset",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [
+                        {
+                            "type": "command",
+                            "name": "speckit.implement",
+                            "file": "commands/speckit.implement.md",
+                            "strategy": "replace",
+                            "replaces": "speckit.implement",
+                        }
+                    ],
+                    "workflows": [
+                        {
+                            "id": "speckit-orchestrated-implement",
+                            "file": "workflows/speckit-orchestrated-implement/workflow.yml",
+                        }
+                    ],
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return preset_dir
 
-    def test_manifest_valid(self):
-        manifest = PresetManifest(IMPLEMENT_PRESET_DIR / "preset.yml")
+
+class TestImplementPresetWiring:
+    """Tests for external implement preset support in core."""
+
+    def test_core_has_no_bundled_implement_proxy(self):
+        assert not (Path(__file__).parent.parent / "presets" / "implement").exists()
+
+    def test_manifest_accepts_workflows(self, temp_dir):
+        preset_dir = create_implement_preset_fixture(temp_dir)
+        manifest = PresetManifest(preset_dir / "preset.yml")
 
         assert manifest.id == "implement"
-        assert manifest.name == "Implement Workflow"
-        assert [t["name"] for t in manifest.templates] == ["speckit.implement"]
-        assert manifest.templates[0]["replaces"] == "speckit.implement"
+        assert manifest.templates[0]["name"] == "speckit.implement"
+        assert manifest.templates[0]["strategy"] == "replace"
+        assert manifest.workflows[0]["id"] == "speckit-orchestrated-implement"
 
-    def test_command_invokes_workflow(self):
-        command_path = IMPLEMENT_PRESET_DIR / "commands" / "speckit.implement.md"
-
-        content = command_path.read_text(encoding="utf-8")
-        assert "specify workflow run speckit-implement" in content
-        assert "-i integration=__AGENT__" in content
-        assert '-i args="$ARGUMENTS"' in content
-        assert "If the user input references a handoff JSON file" in content
-        assert "Do not run `specify workflow run` while executing a handoff JSON" in content
-
-    def test_catalog_contains_implement_preset(self):
+    def test_catalog_does_not_bundle_implement_preset(self):
         catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
         data = json.loads(catalog_path.read_text(encoding="utf-8"))
 
-        preset = data["presets"]["implement"]
-        assert preset["bundled"] is True
-        assert preset["provides"]["commands"] == 1
+        assert "implement" not in data["presets"]
 
-    def test_install_resolves_implement_command(self, project_dir):
+    def test_install_resolves_command_and_registers_workflow(self, project_dir, temp_dir):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        preset_dir = create_implement_preset_fixture(temp_dir)
         manager = PresetManager(project_dir)
-        manager.install_from_directory(IMPLEMENT_PRESET_DIR, "0.8.9.dev0")
+        manager.install_from_directory(preset_dir, "0.8.9.dev0")
 
         resolver = PresetResolver(project_dir)
         result = resolver.resolve("speckit.implement", "command")
 
         assert result is not None
         assert "presets/implement" in result.as_posix()
-        assert "specify workflow run speckit-implement" in result.read_text(
-            encoding="utf-8"
-        )
+        assert "Use handoff JSON" in result.read_text(encoding="utf-8")
+
+        metadata = WorkflowRegistry(project_dir).get("speckit-orchestrated-implement")
+        assert metadata is not None
+        assert metadata["source"] == "preset:implement"
+        assert (
+            project_dir
+            / ".specify"
+            / "workflows"
+            / "speckit-orchestrated-implement"
+            / "workflow.yml"
+        ).exists()
+
+    def test_remove_unregisters_preset_workflow(self, project_dir, temp_dir):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        preset_dir = create_implement_preset_fixture(temp_dir)
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.8.9.dev0")
+
+        assert manager.remove("implement") is True
+        assert WorkflowRegistry(project_dir).get("speckit-orchestrated-implement") is None
+        assert not (
+            project_dir
+            / ".specify"
+            / "workflows"
+            / "speckit-orchestrated-implement"
+        ).exists()
 
 
 def install_self_test_preset(manager: PresetManager, speckit_version: str = "0.1.5") -> PresetManifest:

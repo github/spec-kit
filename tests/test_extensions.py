@@ -381,7 +381,10 @@ class TestExtensionManifest:
         with open(manifest_path, 'w') as f:
             yaml.dump(valid_manifest_data, f)
 
-        with pytest.raises(ValidationError, match="must provide at least one command or hook"):
+        with pytest.raises(
+            ValidationError,
+            match="must provide at least one command, workflow, or hook",
+        ):
             ExtensionManifest(manifest_path)
 
     def test_hooks_only_extension(self, temp_dir, valid_manifest_data):
@@ -851,6 +854,74 @@ class TestExtensionManager:
         assert manifest.commands[0]["aliases"] == ["speckit.shortcut"]
         assert manifest.warnings == []
 
+    def test_install_and_remove_extension_workflow(self, temp_dir, project_dir):
+        """Extensions can provide workflow definitions tracked by workflow registry."""
+        import yaml
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        ext_dir = temp_dir / "workflow-ext"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "workflows" / "demo-flow").mkdir(parents=True)
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "workflow-ext",
+                "name": "Workflow Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.workflow-ext.run",
+                        "file": "commands/run.md",
+                    }
+                ],
+                "workflows": [
+                    {
+                        "id": "demo-flow",
+                        "file": "workflows/demo-flow/workflow.yml",
+                    }
+                ],
+            },
+        }
+
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest_data), encoding="utf-8")
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\ndescription: Test\n---\n\nBody",
+            encoding="utf-8",
+        )
+        (ext_dir / "workflows" / "demo-flow" / "workflow.yml").write_text(
+            """
+schema_version: "1.0"
+workflow:
+  id: "demo-flow"
+  name: "Demo Flow"
+  version: "1.0.0"
+steps:
+  - id: one
+    type: shell
+    run: "echo ok"
+""",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        workflow_path = project_dir / ".specify" / "workflows" / "demo-flow" / "workflow.yml"
+        assert workflow_path.exists()
+        metadata = WorkflowRegistry(project_dir).get("demo-flow")
+        assert metadata["source"] == "extension:workflow-ext"
+        ext_metadata = manager.registry.get("workflow-ext")
+        assert ext_metadata["registered_workflows"] == ["demo-flow"]
+
+        assert manager.remove("workflow-ext")
+        assert not workflow_path.exists()
+        assert WorkflowRegistry(project_dir).get("demo-flow") is None
     def test_install_rejects_namespace_squatting(self, temp_dir, project_dir):
         """Install should reject commands and aliases outside the extension namespace."""
         import yaml

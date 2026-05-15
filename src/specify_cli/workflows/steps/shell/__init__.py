@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import json
 from typing import Any
 
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
@@ -49,6 +50,18 @@ class ShellStep(StepBase):
                     error=f"Shell command exited with code {proc.returncode}.",
                     output=output,
                 )
+            if config.get("json_output") or config.get("output_format") == "json":
+                try:
+                    parsed = json.loads(proc.stdout or "{}")
+                except json.JSONDecodeError as exc:
+                    return StepResult(
+                        status=StepStatus.FAILED,
+                        error=f"Shell command did not produce valid JSON: {exc}",
+                        output=output,
+                    )
+                output["json"] = parsed
+                if isinstance(parsed, dict):
+                    output.update(parsed)
             return StepResult(
                 status=StepStatus.COMPLETED,
                 output=output,

@@ -201,11 +201,16 @@ class ExtensionManifest:
         # Validate provides section
         provides = self.data["provides"]
         commands = provides.get("commands", [])
+        workflows = provides.get("workflows", [])
         hooks = self.data.get("hooks")
 
         if "commands" in provides and not isinstance(commands, list):
             raise ValidationError(
                 "Invalid provides.commands: expected a list"
+            )
+        if "workflows" in provides and not isinstance(workflows, list):
+            raise ValidationError(
+                "Invalid provides.workflows: expected a list"
             )
         if "hooks" in self.data and not isinstance(hooks, dict):
             raise ValidationError(
@@ -213,11 +218,12 @@ class ExtensionManifest:
             )
 
         has_commands = bool(commands)
+        has_workflows = bool(workflows)
         has_hooks = bool(hooks)
 
-        if not has_commands and not has_hooks:
+        if not has_commands and not has_workflows and not has_hooks:
             raise ValidationError(
-                "Extension must provide at least one command or hook"
+                "Extension must provide at least one command, workflow, or hook"
             )
 
         # Validate hook values (if present)
@@ -275,6 +281,33 @@ class ExtensionManifest:
                     raise ValidationError(
                         f"Aliases for command '{cmd['name']}' must be strings"
                     )
+
+        for workflow in workflows:
+            if not isinstance(workflow, dict):
+                raise ValidationError(
+                    "Each workflow entry in 'provides.workflows' must be a mapping"
+                )
+            if "id" not in workflow or "file" not in workflow:
+                raise ValidationError("Workflow missing 'id' or 'file'")
+            workflow_id = workflow["id"]
+            if not isinstance(workflow_id, str) or not re.match(
+                r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$", workflow_id
+            ):
+                raise ValidationError(
+                    f"Invalid workflow id '{workflow_id}': "
+                    "must be lowercase alphanumeric with hyphens"
+                )
+            file_path = workflow["file"]
+            if not isinstance(file_path, str):
+                raise ValidationError(
+                    f"Invalid workflow file for '{workflow_id}': expected a string"
+                )
+            normalized = os.path.normpath(file_path)
+            if os.path.isabs(normalized) or normalized.startswith(".."):
+                raise ValidationError(
+                    f"Invalid workflow file path '{file_path}': "
+                    "must be a relative path within the extension directory"
+                )
 
         # Rewrite any hook command references that pointed at a renamed command or
         # an alias-form ref (ext.cmd → speckit.ext.cmd).  Always emit a warning when
@@ -354,6 +387,11 @@ class ExtensionManifest:
     def commands(self) -> List[Dict[str, Any]]:
         """Get list of provided commands."""
         return self.data.get("provides", {}).get("commands", [])
+
+    @property
+    def workflows(self) -> List[Dict[str, Any]]:
+        """Get list of provided workflows."""
+        return self.data.get("provides", {}).get("workflows", [])
 
     @property
     def hooks(self) -> Dict[str, Any]:
@@ -1132,6 +1170,102 @@ class ExtensionManager:
 
         return True
 
+    def _register_extension_workflows(
+        self,
+        manifest: ExtensionManifest,
+        extension_dir: Path,
+    ) -> List[str]:
+        """Install workflow definitions provided by an extension."""
+        if not manifest.workflows:
+            return []
+
+        from .workflows.catalog import WorkflowRegistry
+        from .workflows.engine import (
+            WorkflowDefinition,
+            validate_workflow,
+        )
+
+        registry = WorkflowRegistry(self.project_root)
+        registered: List[str] = []
+        workflows_root = self.project_root / ".specify" / "workflows"
+        ext_root = extension_dir.resolve()
+
+        for wf_info in manifest.workflows:
+            workflow_id = wf_info["id"]
+            file_rel = wf_info["file"]
+            source_path = (ext_root / file_rel).resolve()
+            try:
+                source_path.relative_to(ext_root)
+            except ValueError as exc:
+                raise ValidationError(
+                    f"Workflow '{workflow_id}' file escapes extension directory"
+                ) from exc
+            if not source_path.is_file():
+                raise ValidationError(
+                    f"Workflow '{workflow_id}' file not found: {file_rel}"
+                )
+
+            definition = WorkflowDefinition.from_yaml(source_path)
+            errors = validate_workflow(definition)
+            if errors:
+                raise ValidationError(
+                    f"Workflow '{workflow_id}' is invalid:\n- "
+                    + "\n- ".join(errors)
+                )
+            if definition.id != workflow_id:
+                raise ValidationError(
+                    f"Workflow manifest id '{workflow_id}' does not match "
+                    f"workflow.yml id '{definition.id}'"
+                )
+
+            existing = registry.get(workflow_id)
+            if existing and existing.get("source") != f"extension:{manifest.id}":
+                raise ValidationError(
+                    f"Workflow '{workflow_id}' is already installed from "
+                    f"{existing.get('source', 'another source')}"
+                )
+
+            dest_dir = workflows_root / workflow_id
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, dest_dir / "workflow.yml")
+            registry.add(
+                workflow_id,
+                {
+                    "name": definition.name,
+                    "version": definition.version,
+                    "description": definition.description,
+                    "source": f"extension:{manifest.id}",
+                    "extension_id": manifest.id,
+                },
+            )
+            registered.append(workflow_id)
+
+        return registered
+
+    def _unregister_extension_workflows(
+        self,
+        extension_id: str,
+        workflow_ids: List[str],
+    ) -> None:
+        """Remove extension-owned workflow definitions from the project."""
+        if not workflow_ids:
+            return
+
+        from .workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(self.project_root)
+        workflows_root = self.project_root / ".specify" / "workflows"
+        source_tag = f"extension:{extension_id}"
+
+        for workflow_id in workflow_ids:
+            metadata = registry.get(workflow_id)
+            if metadata and metadata.get("source") != source_tag:
+                continue
+            workflow_dir = workflows_root / workflow_id
+            if workflow_dir.exists():
+                shutil.rmtree(workflow_dir)
+            registry.remove(workflow_id)
+
     def install_from_directory(
         self,
         source_dir: Path,
@@ -1196,6 +1330,9 @@ class ExtensionManager:
         # was used during project initialisation (feature parity).
         registered_skills = self._register_extension_skills(manifest, dest_dir)
 
+        # Install extension-provided workflow definitions.
+        registered_workflows = self._register_extension_workflows(manifest, dest_dir)
+
         # Register hooks
         hook_executor = HookExecutor(self.project_root)
         hook_executor.register_hooks(manifest)
@@ -1209,6 +1346,7 @@ class ExtensionManager:
             "priority": priority,
             "registered_commands": registered_commands,
             "registered_skills": registered_skills,
+            "registered_workflows": registered_workflows,
         })
 
         return manifest
@@ -1290,11 +1428,16 @@ class ExtensionManager:
         metadata = self.registry.get(extension_id)
         registered_commands = metadata.get("registered_commands", {}) if metadata else {}
         raw_skills = metadata.get("registered_skills", []) if metadata else []
+        raw_workflows = metadata.get("registered_workflows", []) if metadata else []
         # Normalize: must be a list of plain strings to avoid corrupted-registry errors
         if isinstance(raw_skills, list):
             registered_skills = [s for s in raw_skills if isinstance(s, str)]
         else:
             registered_skills = []
+        if isinstance(raw_workflows, list):
+            registered_workflows = [w for w in raw_workflows if isinstance(w, str)]
+        else:
+            registered_workflows = []
 
         extension_dir = self.extensions_dir / extension_id
 
@@ -1305,6 +1448,9 @@ class ExtensionManager:
 
         # Unregister agent skills
         self._unregister_extension_skills(registered_skills, extension_id)
+
+        # Unregister extension-owned workflows
+        self._unregister_extension_workflows(extension_id, registered_workflows)
 
         if keep_config:
             # Preserve config files, only remove non-config files

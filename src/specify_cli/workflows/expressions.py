@@ -102,6 +102,8 @@ def _build_namespace(context: Any) -> dict[str, Any]:
         ns["item"] = context.item
     if hasattr(context, "fan_in"):
         ns["fan_in"] = context.fan_in or {}
+    if hasattr(context, "run_id"):
+        ns["run_id"] = context.run_id
     return ns
 
 

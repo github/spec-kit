@@ -11,15 +11,6 @@
       "version": "1.0.0",
       "url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/speckit/workflow.yml",
       "tags": ["sdd", "full-cycle"]
-    },
-    "speckit-implement": {
-      "id": "speckit-implement",
-      "name": "Implementation",
-      "description": "Builds task handoff shards, then runs speckit.implement once per shard",
-      "author": "GitHub",
-      "version": "1.0.0",
-      "url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/speckit-implement/workflow.yml",
-      "tags": ["sdd", "implementation"]
     }
   }
 }

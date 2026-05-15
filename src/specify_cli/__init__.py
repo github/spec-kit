@@ -95,9 +95,15 @@ def _build_agent_config() -> dict[str, dict[str, Any]]:
 
 AGENT_CONFIG = _build_agent_config()
 DEFAULT_INIT_INTEGRATION = "copilot"
-DEFAULT_BUNDLED_WORKFLOWS = ("speckit", "speckit-implement")
-DEFAULT_BUNDLED_PRESETS = ("implement",)
+DEFAULT_BUNDLED_WORKFLOWS = ("speckit",)
+DEFAULT_BUNDLED_PRESETS: tuple[str, ...] = ()
 DEFAULT_BUNDLED_PRESET_PRIORITY = 20
+DEFAULT_IMPLEMENT_PRESET_ID = "implement"
+DEFAULT_IMPLEMENT_PRESET_URL = (
+    "https://github.com/bigsmartben/spec-kit-implement-preset/"
+    "archive/refs/tags/v1.0.0.zip"
+)
+DEFAULT_IMPLEMENT_PRESET_SOURCE_ENV = "SPECKIT_IMPLEMENT_PRESET_SOURCE"
 
 AI_ASSISTANT_ALIASES = {
     "kiro": "kiro-cli",
@@ -780,6 +786,75 @@ def _install_bundled_extension(project_path: Path, extension_id: str) -> str:
     return "extension installed"
 
 
+def _install_default_implement_preset(
+    project_path: Path,
+    *,
+    priority: int = DEFAULT_BUNDLED_PRESET_PRIORITY,
+) -> str:
+    """Install the default external implement preset."""
+    from .presets import PresetManager
+
+    manager = PresetManager(project_path)
+    if manager.registry.is_installed(DEFAULT_IMPLEMENT_PRESET_ID):
+        return "implement already installed"
+
+    source = os.environ.get(
+        DEFAULT_IMPLEMENT_PRESET_SOURCE_ENV,
+        DEFAULT_IMPLEMENT_PRESET_URL,
+    ).strip()
+    if not source:
+        raise RuntimeError(
+            f"{DEFAULT_IMPLEMENT_PRESET_SOURCE_ENV} is empty; "
+            "cannot install the default implement preset."
+        )
+
+    source_path = Path(source).expanduser()
+    if source_path.is_dir():
+        manager.install_from_directory(
+            source_path.resolve(),
+            get_speckit_version(),
+            priority=priority,
+        )
+        return (
+            "implement installed from local source "
+            f"(priority {priority})"
+        )
+    if source_path.is_file():
+        manager.install_from_zip(
+            source_path.resolve(),
+            get_speckit_version(),
+            priority=priority,
+        )
+        return (
+            "implement installed from local archive "
+            f"(priority {priority})"
+        )
+
+    download_dir = project_path / ".specify" / "presets" / ".cache" / "downloads"
+    download_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = download_dir / "implement-default.zip"
+
+    try:
+        from specify_cli.authentication.http import open_url as _open_url
+
+        with _open_url(source, timeout=60) as response:
+            zip_path.write_bytes(response.read())
+        manager.install_from_zip(
+            zip_path,
+            get_speckit_version(),
+            priority=priority,
+        )
+        return f"implement installed (priority {priority})"
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to install required default implement preset from "
+            f"{source}. Set {DEFAULT_IMPLEMENT_PRESET_SOURCE_ENV} to a "
+            "local preset directory for offline/dev installs."
+        ) from exc
+    finally:
+        zip_path.unlink(missing_ok=True)
+
+
 def _install_default_bundled_presets(
     project_path: Path,
     *,
@@ -943,6 +1018,7 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
     scan_roots = [
         project_path / ".specify" / "scripts",
         project_path / ".specify" / "extensions",
+        project_path / ".specify" / "presets",
     ]
     failures: list[str] = []
     updated = 0
@@ -1580,18 +1656,21 @@ def init(
             save_init_options(project_path, init_opts)
 
             tracker.start("preset")
-            explicit_default_preset = preset in DEFAULT_BUNDLED_PRESETS
+            explicit_default_preset = preset == DEFAULT_IMPLEMENT_PRESET_ID
             try:
-                tracker.complete(
-                    "preset",
-                    _install_default_bundled_presets(
-                        project_path,
-                        skip={preset} if explicit_default_preset else set(),
-                    ),
-                )
+                preset_messages: list[str] = []
+                if explicit_default_preset:
+                    preset_messages.append("implement skipped")
+                else:
+                    preset_messages.append(_install_default_implement_preset(project_path))
+                bundled_message = _install_default_bundled_presets(project_path)
+                if bundled_message != "none":
+                    preset_messages.append(bundled_message)
+                tracker.complete("preset", "; ".join(preset_messages))
             except Exception as preset_err:
                 sanitized_preset = str(preset_err).replace('\n', ' ').strip()
                 tracker.error("preset", f"install failed: {sanitized_preset[:120]}")
+                raise
 
             # Install preset if specified
             if preset:
@@ -1603,11 +1682,13 @@ def init(
                     # Try local directory first, then bundled, then catalog
                     local_path = Path(preset).resolve()
                     if local_path.is_dir() and (local_path / "preset.yml").exists():
-                        preset_manager.install_from_directory(local_path, speckit_ver)
+                        preset_manager.install_from_directory(local_path, speckit_ver, priority=10)
+                    elif preset == DEFAULT_IMPLEMENT_PRESET_ID:
+                        _install_default_implement_preset(project_path, priority=10)
                     else:
                         bundled_path = _locate_bundled_preset(preset)
                         if bundled_path:
-                            preset_manager.install_from_directory(bundled_path, speckit_ver)
+                            preset_manager.install_from_directory(bundled_path, speckit_ver, priority=10)
                         else:
                             preset_catalog = PresetCatalog(project_path)
                             pack_info = preset_catalog.get_pack_info(preset)
@@ -1627,7 +1708,7 @@ def init(
                                 zip_path = None
                                 try:
                                     zip_path = preset_catalog.download_pack(preset)
-                                    preset_manager.install_from_zip(zip_path, speckit_ver)
+                                    preset_manager.install_from_zip(zip_path, speckit_ver, priority=10)
                                 except PresetError as preset_err:
                                     console.print(f"[yellow]Warning:[/yellow] Failed to install preset '{preset}': {preset_err}")
                                 finally:

@@ -432,6 +432,11 @@ class SkillsIntegrationTests:
         ]
         # Bundled workflow
         files += [
+            ".specify/presets/.registry",
+            ".specify/presets/implement/commands/speckit.implement.md",
+            ".specify/presets/implement/preset.yml",
+            ".specify/presets/implement/workflows/speckit-orchestrated-implement/workflow.yml",
+            ".specify/workflows/speckit-orchestrated-implement/workflow.yml",
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
         ]

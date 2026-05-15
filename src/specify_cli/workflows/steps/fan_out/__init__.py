@@ -12,9 +12,8 @@ class FanOutStep(StepBase):
     """Dispatch a step template for each item in a collection.
 
     The engine executes the nested ``step:`` template once per item,
-    setting ``context.item`` for each iteration.  Execution is
-    currently sequential; ``max_concurrency`` is accepted but not
-    enforced.
+    setting ``context.item`` for each iteration. ``max_concurrency`` is
+    evaluated here and enforced by the workflow engine.
     """
 
     type_key = "fan-out"
@@ -26,6 +25,14 @@ class FanOutStep(StepBase):
             items = []
 
         max_concurrency = config.get("max_concurrency", 1)
+        if isinstance(max_concurrency, str) and "{{" in max_concurrency:
+            max_concurrency = evaluate_expression(max_concurrency, context)
+        try:
+            max_concurrency = int(max_concurrency)
+        except (TypeError, ValueError):
+            max_concurrency = 1
+        if max_concurrency < 1:
+            max_concurrency = 1
         step_template = config.get("step", {})
 
         return StepResult(

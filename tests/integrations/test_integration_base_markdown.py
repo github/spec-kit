@@ -297,6 +297,11 @@ class MarkdownIntegrationTests:
         files.append(".specify/memory/agent-governance.md")
         files.append(".specify/memory/constitution.md")
         # Bundled workflow
+        files.append(".specify/presets/.registry")
+        files.append(".specify/presets/implement/commands/speckit.implement.md")
+        files.append(".specify/presets/implement/preset.yml")
+        files.append(".specify/presets/implement/workflows/speckit-orchestrated-implement/workflow.yml")
+        files.append(".specify/workflows/speckit-orchestrated-implement/workflow.yml")
         files.append(".specify/workflows/speckit/workflow.yml")
         files.append(".specify/workflows/workflow-registry.json")
 

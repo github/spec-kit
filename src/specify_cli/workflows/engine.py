@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import re
 import uuid
+import copy
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -662,43 +664,118 @@ class WorkflowEngine:
                 items = result.output.get("items", [])
                 template = result.output.get("step_template", {})
                 if template and items:
-                    fan_out_results = []
-                    for item_idx, item_val in enumerate(result.output["items"]):
-                        context.item = item_val
-                        # Per-item ID: parentId:templateId:index
-                        item_step = dict(template)
-                        base_id = item_step.get("id", "item")
-                        item_step["id"] = f"{step_id}:{base_id}:{item_idx}"
-                        self._execute_steps(
-                            [item_step], context, state, registry,
-                            step_offset=-1,
-                        )
-                        # Collect per-item result for fan-in
-                        item_result = context.steps.get(item_step["id"], {})
-                        fan_out_results.append(item_result.get("output", {}))
-                        if state.status in (
-                            RunStatus.PAUSED,
-                            RunStatus.FAILED,
-                            RunStatus.ABORTED,
-                        ):
-                            break
-                    context.item = None
+                    fan_out_results, fan_out_step_results = self._execute_fan_out(
+                        step_id,
+                        template,
+                        items,
+                        int(result.output.get("max_concurrency", 1) or 1),
+                        context,
+                        registry,
+                    )
                     # Preserve original output and add collected results
                     fan_out_output = dict(result.output)
                     fan_out_output["results"] = fan_out_results
+                    fan_out_output["failed_count"] = sum(
+                        1
+                        for _item_step_id, item_result in fan_out_step_results
+                        if item_result.get("status") == StepStatus.FAILED.value
+                    )
                     context.steps[step_id]["output"] = fan_out_output
                     state.step_results[step_id]["output"] = fan_out_output
-                    if state.status in (
-                        RunStatus.PAUSED,
-                        RunStatus.FAILED,
-                        RunStatus.ABORTED,
-                    ):
+
+                    for item_step_id, item_step_result in fan_out_step_results:
+                        context.steps[item_step_id] = item_step_result
+                        state.step_results[item_step_id] = item_step_result
+
+                    if fan_out_output["failed_count"]:
+                        state.status = RunStatus.FAILED
+                        state.append_log(
+                            {
+                                "event": "step_failed",
+                                "step_id": step_id,
+                                "error": (
+                                    f"{fan_out_output['failed_count']} fan-out "
+                                    "item(s) failed."
+                                ),
+                            }
+                        )
+                        state.save()
                         return
                 else:
                     # Empty items or no template — normalize output
                     result.output["results"] = []
                     context.steps[step_id]["output"] = result.output
                     state.step_results[step_id]["output"] = result.output
+
+    def _execute_fan_out(
+        self,
+        parent_step_id: str,
+        template: dict[str, Any],
+        items: list[Any],
+        max_concurrency: int,
+        context: StepContext,
+        registry: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], list[tuple[str, dict[str, Any]]]]:
+        """Execute a fan-out nested step template with bounded concurrency."""
+        max_workers = max(1, min(max_concurrency, len(items)))
+
+        def run_item(item_idx: int, item_val: Any) -> tuple[int, str, dict[str, Any]]:
+            item_step = copy.deepcopy(template)
+            base_id = item_step.get("id", "item")
+            item_step["id"] = f"{parent_step_id}:{base_id}:{item_idx}"
+            item_context = StepContext(
+                inputs=copy.deepcopy(context.inputs),
+                steps=copy.deepcopy(context.steps),
+                item=copy.deepcopy(item_val),
+                fan_in=copy.deepcopy(context.fan_in),
+                default_integration=context.default_integration,
+                default_model=context.default_model,
+                default_options=copy.deepcopy(context.default_options),
+                project_root=context.project_root,
+                run_id=context.run_id,
+            )
+            item_state = RunState(
+                run_id=f"{context.run_id or 'run'}-{parent_step_id}-{item_idx}",
+                workflow_id=f"{parent_step_id}:fan-out",
+                project_root=self.project_root,
+            )
+            item_state.status = RunStatus.RUNNING
+            self._execute_steps(
+                [item_step],
+                item_context,
+                item_state,
+                registry,
+                step_offset=-1,
+            )
+            item_result = item_context.steps.get(item_step["id"], {})
+            return item_idx, item_step["id"], item_result
+
+        ordered: list[tuple[str, dict[str, Any]] | None] = [None] * len(items)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(run_item, item_idx, item_val): item_idx
+                for item_idx, item_val in enumerate(items)
+            }
+            for future in as_completed(futures):
+                item_idx = futures[future]
+                try:
+                    item_idx, item_step_id, item_result = future.result()
+                except Exception as exc:
+                    base_id = template.get("id", "item")
+                    item_step_id = f"{parent_step_id}:{base_id}:{item_idx}"
+                    item_result = {
+                        "integration": context.default_integration,
+                        "model": context.default_model,
+                        "options": copy.deepcopy(context.default_options),
+                        "input": {"item": copy.deepcopy(items[item_idx])},
+                        "output": {"error": str(exc)},
+                        "status": StepStatus.FAILED.value,
+                    }
+                ordered[item_idx] = (item_step_id, item_result)
+
+        step_results = [item for item in ordered if item is not None]
+        outputs = [item_result.get("output", {}) for _step_id, item_result in step_results]
+        return outputs, step_results
 
     def _resolve_inputs(
         self,

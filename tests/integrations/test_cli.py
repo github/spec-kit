@@ -23,6 +23,7 @@ def _normalize_cli_output(output: str) -> str:
 
 
 class TestInitIntegrationFlag:
+
     def test_integration_and_ai_mutually_exclusive(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
@@ -791,8 +792,9 @@ class TestGitExtensionAutoInstall:
         workflows_dir = project / ".specify" / "workflows"
         assert (workflows_dir / "speckit" / "workflow.yml").exists()
         assert (
-            workflows_dir / "speckit-implement" / "workflow.yml"
+            workflows_dir / "speckit-orchestrated-implement" / "workflow.yml"
         ).exists()
+        assert not (project / ".specify" / "extensions" / "orchestrated").exists()
 
     def test_no_git_emits_deprecation_warning(self, tmp_path):
         """Using --no-git emits a visible deprecation warning."""
@@ -902,13 +904,15 @@ class TestGitExtensionAutoInstall:
         )
         assert skill.exists(), "implement command skill was not registered"
         content = skill.read_text(encoding="utf-8")
-        assert "specify workflow run speckit-implement" in content
+        assert "Run workflow or handoff shard" in content
+        assert "Use handoff JSON" in content
         generated_implement_skills = sorted(
             path.name
             for path in (project / ".claude" / "skills").iterdir()
-            if path.name.endswith("implement")
+            if path.name == "speckit-implement"
         )
         assert generated_implement_skills == ["speckit-implement"]
+        assert not (project / ".claude" / "skills" / "speckit-orchestrated-implement").exists()
 
     def test_default_implement_preset_updates_markdown_command(self, tmp_path):
         """Default implement preset updates markdown command integrations."""
@@ -933,12 +937,12 @@ class TestGitExtensionAutoInstall:
         command = project / ".windsurf" / "workflows" / "speckit.implement.md"
         assert command.exists(), "implement command was not registered"
         content = command.read_text(encoding="utf-8")
-        assert "specify workflow run speckit-implement" in content
-        assert "-i integration=windsurf" in content
+        assert "Run workflow or handoff shard" in content
+        assert "Use handoff JSON" in content
         generated_implement_commands = sorted(
             path.name
             for path in (project / ".windsurf" / "workflows").iterdir()
-            if path.name.endswith("implement.md")
+            if path.name == "speckit.implement.md"
         )
         assert generated_implement_commands == ["speckit.implement.md"]
 
@@ -968,6 +972,7 @@ class TestGitExtensionAutoInstall:
         content = skill.read_text(encoding="utf-8")
         assert "## Outline" in content
         assert "specify workflow run speckit-implement" not in content
+        assert "orchestrated.implement" not in content
 
 
 class TestSharedInfraCommandRefs:

@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 import pytest
+import yaml
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
@@ -81,3 +82,70 @@ def _isolate_auth_config(monkeypatch):
     # Also clear the per-process cache so tests that unset _config_override
     # won't see a previously cached real-file result.
     monkeypatch.setattr(_auth_http, "_config_cache", None)
+
+
+@pytest.fixture(autouse=True)
+def _default_implement_preset_source(tmp_path, monkeypatch):
+    """Use a local external implement preset for tests that run init."""
+    if os.environ.get("SPECKIT_IMPLEMENT_PRESET_SOURCE"):
+        return
+
+    preset_dir = tmp_path / "default-implement-preset"
+    (preset_dir / "commands").mkdir(parents=True, exist_ok=True)
+    (preset_dir / "workflows" / "speckit-orchestrated-implement").mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    (preset_dir / "preset.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "implement",
+                    "name": "Orchestrated Implement",
+                    "version": "1.0.0",
+                    "description": "Test orchestrated implement preset",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [
+                        {
+                            "type": "command",
+                            "name": "speckit.implement",
+                            "file": "commands/speckit.implement.md",
+                            "strategy": "replace",
+                            "replaces": "speckit.implement",
+                        }
+                    ],
+                    "workflows": [
+                        {
+                            "id": "speckit-orchestrated-implement",
+                            "file": "workflows/speckit-orchestrated-implement/workflow.yml",
+                        }
+                    ],
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (preset_dir / "commands" / "speckit.implement.md").write_text(
+        "---\ndescription: Test orchestrated implement\n---\n\n"
+        "Run workflow or handoff shard. Use handoff JSON when provided.\n",
+        encoding="utf-8",
+    )
+    (preset_dir / "workflows" / "speckit-orchestrated-implement" / "workflow.yml").write_text(
+        """
+schema_version: "1.0"
+workflow:
+  id: "speckit-orchestrated-implement"
+  name: "Orchestrated Implementation"
+  version: "1.0.0"
+steps:
+  - id: one
+    type: shell
+    run: "echo ok"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SPECKIT_IMPLEMENT_PRESET_SOURCE", str(preset_dir))
