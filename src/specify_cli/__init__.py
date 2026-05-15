@@ -3646,19 +3646,29 @@ def extension_add(
                 # (consistent with shared_infra._ensure_safe_shared_directory):
                 # `mkdir(parents=True)` would silently traverse a symlinked ancestor,
                 # so each component is checked and created individually instead.
+                # Each existing component is also re-resolved and required to land
+                # under project_root, which catches non-symlink directory aliases
+                # (e.g. Windows junctions / mount points) that resolve outside.
                 import uuid as _uuid
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+                project_root_resolved = project_root.resolve()
                 _current = project_root
                 for _part in download_dir.relative_to(project_root).parts:
                     _current = _current / _part
                     if _current.is_symlink():
                         console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
                         raise typer.Exit(1)
-                    if not _current.exists():
-                        _current.mkdir()
-                        if _current.is_symlink():
-                            console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
+                    if _current.exists():
+                        try:
+                            _current.resolve().relative_to(project_root_resolved)
+                        except (OSError, ValueError):
+                            console.print("[red]Error:[/red] Download cache directory escapes project root")
                             raise typer.Exit(1)
+                        continue
+                    _current.mkdir()
+                    if _current.is_symlink():
+                        console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
+                        raise typer.Exit(1)
 
                 safe_name = Path(extension).name.replace("/", "_").replace("\\", "_") or "download"
                 safe_name = safe_name[:64]  # cap length to avoid filesystem errors
@@ -3676,7 +3686,24 @@ def extension_add(
 
                     with _open_url(from_url, timeout=60) as response:
                         zip_data = response.read()
-                    zip_path.write_bytes(zip_data)
+                    # Open with O_NOFOLLOW | O_EXCL to defeat any TOCTOU symlink
+                    # swap that may have happened between the cache validation
+                    # above and this write. O_EXCL also guarantees the unique
+                    # UUID filename is freshly created, never reused. O_NOFOLLOW
+                    # is a no-op on Windows where the constant is absent.
+                    _flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+                    _fd = os.open(zip_path, _flags, 0o600)
+                    try:
+                        with os.fdopen(_fd, "wb") as _zf:
+                            _zf.write(zip_data)
+                    except BaseException:
+                        # os.fdopen took ownership only on success; on failure
+                        # before the with-block, the fd may still be open.
+                        try:
+                            os.close(_fd)
+                        except OSError:
+                            pass
+                        raise
 
                     # Install from downloaded ZIP
                     manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)

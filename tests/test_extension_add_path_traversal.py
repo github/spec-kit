@@ -5,6 +5,7 @@ Without sanitisation, absolute paths or ``../`` segments in the argument can
 escape the intended cache directory, causing arbitrary file writes and deletes.
 """
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -145,3 +146,87 @@ class TestExtensionAddFromSymlinkedCache:
         mock_install.assert_not_called()
         # No download was written through the symlink
         assert list(outside.iterdir()) == []
+
+
+class TestExtensionAddFromAncestorEscape:
+    """A non-symlink ancestor whose ``.resolve()`` lands outside the project must be refused.
+
+    Simulates the Windows junction / mount-point case using a manually-pre-resolved
+    directory swap: we cannot create real junctions on POSIX, but we can patch the
+    ``.resolve()`` of an existing ancestor to land outside the project root. The
+    production guard must reject it before any download happens.
+    """
+
+    def test_ancestor_resolves_outside_project_is_refused(self, tmp_path, monkeypatch):
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        monkeypatch.chdir(project_dir)
+
+        # Pre-create the cache ancestors as real directories so the per-component
+        # walk reaches the resolve()/relative_to() check on each existing one.
+        cache_root = project_dir / ".specify" / "extensions" / ".cache"
+        cache_root.mkdir(parents=True)
+
+        real_resolve = Path.resolve
+
+        def fake_resolve(self, *a, **kw):
+            # Pretend the .cache ancestor resolves outside the project.
+            if self == cache_root:
+                return real_resolve(outside, *a, **kw)
+            return real_resolve(self, *a, **kw)
+
+        with patch.object(Path, "resolve", fake_resolve), \
+             patch("specify_cli.authentication.http.open_url", return_value=_mock_open_url()), \
+             patch("specify_cli.extensions.ExtensionManager.install_from_zip") as mock_install:
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
+            )
+
+        assert result.exit_code != 0
+        assert "escapes project root" in (result.output or "").lower()
+        mock_install.assert_not_called()
+        assert list(outside.iterdir()) == []
+
+
+class TestExtensionAddFromTOCTOUWrite:
+    """The download write must not follow a symlink swapped in after validation."""
+
+    def test_swapped_zip_path_symlink_is_refused(self, project_dir):
+        """If zip_path is replaced by a symlink between validation and write, refuse."""
+        cache_dir = project_dir / ".specify" / "extensions" / ".cache" / "downloads"
+        outside = project_dir.parent / "outside"
+        outside.mkdir(exist_ok=True)
+        target = outside / "stolen.bin"
+
+        # Patch os.open to simulate the TOCTOU window: just before the real
+        # os.open runs, replace the target path with a symlink pointing outside.
+        # With O_NOFOLLOW the os.open call must raise instead of writing through.
+        import os as _os
+        real_open = _os.open
+
+        def racing_open(path, flags, mode=0o777):
+            try:
+                p = Path(path)
+                if p.parent == cache_dir and not p.exists():
+                    p.symlink_to(target)
+            except OSError:
+                pass
+            return real_open(path, flags, mode)
+
+        with patch("specify_cli.authentication.http.open_url", return_value=_mock_open_url()), \
+             patch("specify_cli.extensions.ExtensionManager.install_from_zip") as mock_install, \
+             patch("os.open", side_effect=racing_open):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
+            )
+
+        # Either O_NOFOLLOW (POSIX) or O_EXCL (all platforms) must reject the
+        # swapped symlink. The command must fail and nothing must be written
+        # through the symlink to `outside`.
+        assert result.exit_code != 0
+        mock_install.assert_not_called()
+        assert not target.exists(), "write followed swapped symlink"
