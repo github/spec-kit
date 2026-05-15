@@ -3645,7 +3645,14 @@ def extension_add(
                 import uuid as _uuid
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
                 download_dir.mkdir(parents=True, exist_ok=True)
+
+                # Reject symlinked cache directory (consistent with shared_infra.py)
+                if download_dir.is_symlink():
+                    console.print("[red]Error:[/red] Refusing to use symlinked download cache directory")
+                    raise typer.Exit(1)
+
                 safe_name = Path(extension).name.replace("/", "_").replace("\\", "_") or "download"
+                safe_name = safe_name[:64]  # cap length to avoid filesystem errors
                 zip_path = download_dir / f"{safe_name}-{_uuid.uuid4().hex[:8]}.zip"
 
                 # Guard: resolved path must stay inside download_dir (CWE-22)
