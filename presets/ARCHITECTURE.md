@@ -159,7 +159,6 @@ presets/
         ├── tasks-template.md
         ├── checklist-template.md
         ├── constitution-template.md
-        └── agent-file-template.md
 ```
 
 ## Module Structure
