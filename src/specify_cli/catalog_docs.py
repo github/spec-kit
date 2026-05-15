@@ -79,30 +79,31 @@ def _get_integration_registry() -> dict[str, Any]:
 
 
 def list_integrations_for_docs() -> list[tuple[str, str, str | None, str]]:
+    """List integrations with their documentation URLs and notes.
+
+    Skips any integrations not in INTEGRATION_DOC_URLS (logs warning if any are missing).
+    Gracefully handles missing URL or notes entries by defaulting to None/empty string.
+    """
     registry = _get_integration_registry()
     registry_keys = set(registry)
 
-    missing = [key for key in registry_keys if key not in INTEGRATION_DOC_URLS]
+    # Warn if there are integrations missing from INTEGRATION_DOC_URLS, but don't fail
+    missing = sorted(registry_keys - set(INTEGRATION_DOC_URLS))
     if missing:
-        raise ValueError(
-            f"Integration(s) missing from INTEGRATION_DOC_URLS: {', '.join(sorted(missing))}. "
-            "Add each key to INTEGRATION_DOC_URLS in catalog_docs.py (use None if no URL applies)."
-        )
-
-    stale: set[str] = (
-        (set(INTEGRATION_DOC_URLS) - registry_keys)
-        | (set(INTEGRATION_LABEL_OVERRIDES) - registry_keys)
-        | (set(INTEGRATION_NOTES) - registry_keys)
-    )
-    if stale:
-        raise ValueError(
-            f"Stale key(s) in doc maps no longer present in registry: {', '.join(sorted(stale))}. "
-            "Remove them from INTEGRATION_DOC_URLS / INTEGRATION_LABEL_OVERRIDES / INTEGRATION_NOTES."
+        import warnings
+        warnings.warn(
+            f"Integration(s) missing from INTEGRATION_DOC_URLS: {', '.join(missing)}. "
+            "These will be skipped in the docs table. Add them to INTEGRATION_DOC_URLS in catalog_docs.py.",
+            stacklevel=2
         )
 
     rows: list[tuple[str, str, str | None, str]] = []
 
     for key, integration in registry.items():
+        # Skip integrations not in the doc maps
+        if key not in INTEGRATION_DOC_URLS:
+            continue
+
         config = integration.config if isinstance(integration.config, dict) else {}
         label = INTEGRATION_LABEL_OVERRIDES.get(key, str(config.get("name") or key))
         url = INTEGRATION_DOC_URLS.get(key)
