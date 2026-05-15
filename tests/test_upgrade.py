@@ -257,6 +257,43 @@ class TestFailureCategorization:
                 _fetch_latest_release_tag()
 
 
+class TestBoundedRead:
+    """Regression test for the read_response_limited hardening.
+
+    A future refactor could silently revert `_fetch_latest_release_tag` to
+    `resp.read()` (the unbounded form) — this test pins the contract that
+    the response body is read through ``read_response_limited`` with a
+    bounded ``max_bytes``.
+    """
+
+    def test_response_body_is_bounded(self):
+        recorded: dict = {}
+        real_read = __import__(
+            "specify_cli._download_security", fromlist=["read_response_limited"]
+        ).read_response_limited
+
+        def _spy(response, *, max_bytes=None, label=None, **kwargs):
+            recorded["max_bytes"] = max_bytes
+            recorded["label"] = label
+            # Forward to the real implementation so the function under test
+            # still gets a parseable body.
+            return real_read(response, max_bytes=max_bytes, label=label, **kwargs)
+
+        with patch(
+            "specify_cli.authentication.http.urllib.request.urlopen",
+            return_value=_mock_urlopen_response({"tag_name": "v9.9.9"}),
+        ), patch("specify_cli._version.read_response_limited", side_effect=_spy):
+            tag, reason = _fetch_latest_release_tag()
+
+        assert tag == "v9.9.9"
+        assert reason is None
+        # max_bytes is set by the caller; the exact value is a deliberate
+        # cap (1 MiB) for the GitHub release JSON. Don't accept None or
+        # the default — the caller must pass an explicit upper bound.
+        assert recorded["max_bytes"] == 1024 * 1024
+        assert "github" in (recorded["label"] or "").lower()
+
+
 _FAILURE_CASES = [
     ("offline or timeout", urllib.error.URLError("down")),
     (_RATE_LIMITED_REASON, _http_error(403)),
