@@ -72,6 +72,31 @@ def _step_run(job_name: str, step_name: str) -> str:
     return _step(job_name, step_name)["run"]
 
 
+def _find_step_by_run_signature(job_name: str, marker: str) -> dict:
+    """Locate a step in *job_name* whose ``run`` command contains *marker*.
+
+    Step naming is incidental to behavior; tests that assert on what a
+    step *does* should look it up by what it runs, not by its label, so
+    renames don't silently make the assertion skip.
+    """
+    workflow = _load_security_workflow()
+    matches = [
+        step
+        for step in workflow["jobs"][job_name]["steps"]
+        if marker in (step.get("run") or "")
+    ]
+    if not matches:
+        raise AssertionError(
+            f"No step in job {job_name!r} runs a command containing {marker!r}."
+        )
+    if len(matches) > 1:
+        raise AssertionError(
+            f"Marker {marker!r} matched {len(matches)} steps in job "
+            f"{job_name!r}; expected exactly one."
+        )
+    return matches[0]
+
+
 def _load_sync_script():
     spec = importlib.util.spec_from_file_location(
         "check_security_requirements",
@@ -185,13 +210,17 @@ class TestSecurityWorkflow:
             assert re.search(r"@v\d+", uses_ref) is None
 
     def test_bandit_does_not_globally_skip_b602(self):
-        run = _step_run("static-analysis", "Run Bandit")
+        # Identify the blocking bandit step by its baseline-arg rather than
+        # by exact step name — name is incidental, behavior is what matters.
+        bandit_step = _find_step_by_run_signature(
+            "static-analysis", "--baseline .github/bandit-baseline.json"
+        )
+        run = bandit_step["run"]
         workflow_text = SECURITY_WORKFLOW.read_text(encoding="utf-8")
 
         assert run == BANDIT
         assert "--skip" not in run
         assert "--skip B602" not in workflow_text
-        assert "--baseline .github/bandit-baseline.json" in run
 
     def test_bandit_baseline_only_ignores_shell_step_b602(self):
         baseline = json.loads(BANDIT_BASELINE.read_text(encoding="utf-8"))

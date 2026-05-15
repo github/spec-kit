@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -60,16 +61,20 @@ def _read_baseline_at(ref: str) -> tuple[dict, bool]:
         return {"results": []}, True
 
 
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
 def _identity(result: dict) -> str:
     """Stable identity for a baseline entry.
 
     Combines location, test, severity, confidence, and a hash of the
-    pinned code snippet so reordering or formatting changes don't
-    register as new findings, but a different finding at the same line
-    does.
+    pinned code snippet (whitespace-normalized) so reformatting changes
+    or upstream bandit-output tweaks don't register as new findings,
+    but a different finding at the same line does.
     """
     code = result.get("code", "") or ""
-    code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()[:16]
+    normalized = _WHITESPACE_RE.sub(" ", code).strip()
+    code_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
     return "|".join(
         [
             str(result.get("filename", "")),
