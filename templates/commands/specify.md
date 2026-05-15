@@ -74,7 +74,7 @@ Given that feature description, do this:
 
 2. **Branch creation** (optional, via hook):
 
-   If a `before_specify` hook ran successfully in the Pre-Execution Checks above, it will have created/switched to a git branch and output JSON containing `BRANCH_NAME` and `FEATURE_NUM`. Note these values for reference, but the branch name does **not** dictate the spec directory name.
+   If a `before_specify` hook ran successfully in the Pre-Execution Checks above, it will have created/switched to a git branch and output JSON containing `BRANCH_NAME` and `FEATURE_NUM`. Record these values — `FEATURE_NUM` is used in step 3 to keep the spec directory number aligned with the branch number.
 
    If the user explicitly provided `GIT_BRANCH_NAME`, pass it through to the hook so the branch script uses the exact value as the branch name (bypassing all prefix/suffix generation).
 
@@ -84,7 +84,8 @@ Given that feature description, do this:
 
    **Resolution order for `SPECIFY_FEATURE_DIRECTORY`**:
    1. If the user explicitly provided `SPECIFY_FEATURE_DIRECTORY` (e.g., via environment variable, argument, or configuration), use it as-is
-   2. Otherwise, auto-generate it under `specs/`:
+   2. If the `before_specify` hook ran successfully and returned `FEATURE_NUM`, AND `branch_numbering` is `"sequential"` or absent (i.e., not `"timestamp"`): construct `SPECIFY_FEATURE_DIRECTORY` as `specs/{FEATURE_NUM}-{short-name}`. This keeps the spec directory number identical to the branch number and prevents mismatches caused by the hook scanning git branches while `speckit.specify` would independently scan only `specs/`.
+   3. Otherwise, auto-generate it under `specs/`:
       - Check `.specify/init-options.json` for `branch_numbering`
       - If `"timestamp"`: prefix is `YYYYMMDD-HHMMSS` (current timestamp)
       - If `"sequential"` or absent: prefix is `NNN` (next available 3-digit number after scanning existing directories in `specs/`)
