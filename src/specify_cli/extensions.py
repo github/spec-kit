@@ -1177,8 +1177,9 @@ class ExtensionManager:
         # Remove existing installation AFTER all validations pass so that a
         # validation failure doesn't leave the user with a half-uninstalled
         # extension (configs stranded in .backup/).
+        did_remove = False
         if force and self.registry.is_installed(manifest.id):
-            self.remove(manifest.id)
+            did_remove = self.remove(manifest.id)
 
         # Install extension
         dest_dir = self.extensions_dir / manifest.id
@@ -1205,8 +1206,11 @@ class ExtensionManager:
         hook_executor = HookExecutor(self.project_root)
         hook_executor.register_hooks(manifest)
 
-        # Restore config files from backup when reinstalling with --force
-        if force:
+        # Restore config files from backup when --force triggered a removal
+        # Only restore when a remove was actually performed, so that stale
+        # backup files from a previous removal don't get resurrected when the
+        # extension wasn't already installed.
+        if did_remove:
             backup_config_dir = self.extensions_dir / ".backup" / manifest.id
             if backup_config_dir.exists():
                 for cfg_file in backup_config_dir.iterdir():
