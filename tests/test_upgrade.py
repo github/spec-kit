@@ -17,6 +17,7 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli._download_security import read_response_limited as _real_read_response_limited
 from specify_cli._version import (
     _fetch_latest_release_tag,
     _get_installed_version,
@@ -267,17 +268,19 @@ class TestBoundedRead:
     """
 
     def test_response_body_is_bounded(self):
-        recorded: dict = {}
-        real_read = __import__(
-            "specify_cli._download_security", fromlist=["read_response_limited"]
-        ).read_response_limited
+        recorded: dict[str, int | str] = {}
 
-        def _spy(response, *, max_bytes=None, label=None, **kwargs):
+        def _spy(response, *, max_bytes: int, label: str, **kwargs):
+            # max_bytes and label are keyword-only with no defaults: if the
+            # caller forgets to pass either, the call raises TypeError here
+            # (instead of recording a misleading None).
             recorded["max_bytes"] = max_bytes
             recorded["label"] = label
             # Forward to the real implementation so the function under test
             # still gets a parseable body.
-            return real_read(response, max_bytes=max_bytes, label=label, **kwargs)
+            return _real_read_response_limited(
+                response, max_bytes=max_bytes, label=label, **kwargs
+            )
 
         with patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
@@ -287,11 +290,12 @@ class TestBoundedRead:
 
         assert tag == "v9.9.9"
         assert reason is None
-        # max_bytes is set by the caller; the exact value is a deliberate
-        # cap (1 MiB) for the GitHub release JSON. Don't accept None or
-        # the default — the caller must pass an explicit upper bound.
+        # The cap (1 MiB) is a deliberate ceiling for the GitHub release
+        # JSON — keep it explicit so a future refactor that drops the
+        # `max_bytes=` argument fails this test instead of regressing
+        # silently to the default.
         assert recorded["max_bytes"] == 1024 * 1024
-        assert "github" in (recorded["label"] or "").lower()
+        assert recorded["label"] == "GitHub latest release"
 
 
 _FAILURE_CASES = [
