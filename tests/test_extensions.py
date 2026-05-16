@@ -11,6 +11,7 @@ Tests cover:
 
 import pytest
 import json
+import os
 import platform
 import tempfile
 import shutil
@@ -34,6 +35,18 @@ from specify_cli.extensions import (
     normalize_priority,
     version_satisfies,
 )
+
+
+def can_create_symlink(tmp_path: Path) -> bool:
+    """Return True when the current platform/user can create file symlinks."""
+    target = tmp_path / "symlink-target.txt"
+    link = tmp_path / "symlink-link.txt"
+    target.write_text("ok", encoding="utf-8")
+    try:
+        os.symlink(target, link)
+    except OSError:
+        return False
+    return link.is_symlink()
 
 
 # ===== Fixtures =====
@@ -1722,6 +1735,97 @@ Run {SCRIPT}
         assert "description: Test hello command" in content
         assert "test-ext" in content
 
+    def test_dev_register_commands_symlinks_rendered_copilot_agent(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        """Dev-mode registration should symlink agent files to rendered outputs."""
+        if not can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registered = registrar.register_commands_for_agent(
+            "copilot",
+            manifest,
+            extension_dir,
+            project_dir,
+            link_outputs=True,
+        )
+
+        assert registered == ["speckit.test-ext.hello"]
+
+        cmd_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        assert cmd_file.is_symlink()
+
+        target = cmd_file.resolve()
+        assert ".specify-dev" in target.parts
+        assert target.is_file()
+        assert "Extension: test-ext" in cmd_file.read_text(encoding="utf-8")
+
+    def test_dev_register_commands_falls_back_to_copy_when_symlink_fails(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Dev-mode registration stays functional when symlinks are unavailable."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        def raise_symlink_error(target, link):
+            raise OSError("symlink unavailable")
+
+        monkeypatch.setattr("specify_cli.agents.os.symlink", raise_symlink_error)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "copilot",
+            manifest,
+            extension_dir,
+            project_dir,
+            link_outputs=True,
+        )
+
+        cmd_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        assert cmd_file.exists()
+        assert not cmd_file.is_symlink()
+        assert "Extension: test-ext" in cmd_file.read_text(encoding="utf-8")
+        assert (
+            extension_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "copilot"
+            / "speckit.test-ext.hello.agent.md"
+        ).exists()
+
+    def test_dev_register_commands_rejects_cache_path_traversal(self, temp_dir):
+        """Dev-mode cache writes must stay inside the agent cache root."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        source_dir = temp_dir / "extension"
+        source_dir.mkdir()
+        commands_dir = temp_dir / "commands"
+        commands_dir.mkdir()
+
+        with pytest.raises(ValueError, match="escapes directory"):
+            AgentCommandRegistrar._write_registered_output(
+                commands_dir / "safe.md",
+                "content",
+                source_dir,
+                "copilot",
+                "../escaped",
+                ".md",
+                True,
+            )
+
+        assert not (
+            source_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "escaped.md"
+        ).exists()
+
     def test_copilot_companion_prompt_created(self, extension_dir, project_dir):
         """Test that companion .prompt.md files are created in .github/prompts/."""
         agents_dir = project_dir / ".github" / "agents"
@@ -3352,6 +3456,39 @@ class TestExtensionIgnore:
 
 class TestExtensionAddCLI:
     """CLI integration tests for extension add command."""
+
+    def test_add_dev_links_copilot_agent_when_supported(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        """extension add --dev should link generated agent files when possible."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+
+        agent_file = (
+            project_dir
+            / ".github"
+            / "agents"
+            / "speckit.test-ext.hello.agent.md"
+        )
+        assert agent_file.exists()
+        if can_create_symlink(temp_dir):
+            assert agent_file.is_symlink()
+            assert ".specify-dev" in agent_file.resolve().parts
+        else:
+            assert not agent_file.is_symlink()
 
     def test_add_by_display_name_uses_resolved_id_for_download(self, tmp_path):
         """extension add by display name should use resolved ID for download_extension()."""
