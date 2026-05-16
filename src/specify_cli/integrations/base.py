@@ -13,7 +13,9 @@ Provides:
 
 from __future__ import annotations
 
+import os
 import re
+import shlex
 import shutil
 from abc import ABC
 from dataclasses import dataclass
@@ -137,6 +139,31 @@ class IntegrationBase(ABC):
         Subclasses for CLI-based integrations should override this.
         """
         return None
+
+    def _apply_extra_args_env_var(self, args: list[str]) -> None:
+        """Append `SPECIFY_<KEY>_EXTRA_ARGS` env-var value to *args*.
+
+        Operators can inject extra CLI flags into the spawned agent
+        subprocess by setting an env var named for the integration key,
+        e.g. `SPECIFY_CLAUDE_EXTRA_ARGS="--dangerously-skip-permissions"`.
+        Hyphens in the integration key are replaced with underscores
+        and the key is uppercased
+        (e.g. `kiro-cli` → `SPECIFY_KIRO_CLI_EXTRA_ARGS`).
+
+        Useful in CI / non-interactive contexts where the spawned agent
+        needs flags that change its prompt-handling behaviour.
+        Default behaviour (env var unset or whitespace-only) is a no-op
+        — *args* is unchanged. Multi-token values are parsed via
+        `shlex.split`.
+
+        See issue #2595.
+        """
+        env_name = (
+            f"SPECIFY_{self.key.upper().replace('-', '_')}_EXTRA_ARGS"
+        )
+        extra = os.environ.get(env_name, "").strip()
+        if extra:
+            args.extend(shlex.split(extra))
 
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
         """Build the native slash-command invocation for a Spec Kit command.
@@ -851,6 +878,7 @@ class MarkdownIntegration(IntegrationBase):
         if not self.config or not self.config.get("requires_cli"):
             return None
         args = [self.key, "-p", prompt]
+        self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])
         if output_json:
@@ -938,6 +966,7 @@ class TomlIntegration(IntegrationBase):
         if not self.config or not self.config.get("requires_cli"):
             return None
         args = [self.key, "-p", prompt]
+        self._apply_extra_args_env_var(args)
         if model:
             args.extend(["-m", model])
         if output_json:
@@ -1356,6 +1385,7 @@ class SkillsIntegration(IntegrationBase):
         if not self.config or not self.config.get("requires_cli"):
             return None
         args = [self.key, "-p", prompt]
+        self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])
         if output_json:
