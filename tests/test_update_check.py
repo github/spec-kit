@@ -77,6 +77,14 @@ class TestCache:
         assert data["latest"] == "v0.9.9"
         assert float(data["checked_at"]) <= time.time()
 
+    def test_write_round_trips_negative_entry(self, tmp_path):
+        cache_file = tmp_path / "nested" / "version_check.json"
+        _write_update_check_cache(cache_file, None)
+        assert cache_file.exists()
+        data = json.loads(cache_file.read_text())
+        assert data["latest"] is None
+        assert float(data["checked_at"]) <= time.time()
+
 
 class TestFetchLatestVersion:
     def test_returns_tag_on_success(self):
@@ -199,6 +207,39 @@ class TestCheckForUpdates:
 
         out = self._run_and_capture(monkeypatch)
 
+        assert out == ""
+
+    def test_network_failure_writes_negative_cache(self, monkeypatch, tmp_path):
+        cache_file = tmp_path / "vc.json"
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.2")
+        monkeypatch.setattr("specify_cli._update_check_cache_path", lambda: cache_file)
+        monkeypatch.setattr("specify_cli._fetch_latest_version", lambda: None)
+
+        self._run_and_capture(monkeypatch)
+
+        assert cache_file.exists()
+        data = json.loads(cache_file.read_text())
+        assert data["latest"] is None
+        assert time.time() - float(data["checked_at"]) < 5
+
+    def test_negative_cache_skips_fetch_within_ttl(self, monkeypatch, tmp_path):
+        cache_file = tmp_path / "vc.json"
+        cache_file.write_text(json.dumps({"checked_at": time.time(), "latest": None}))
+
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.2")
+        monkeypatch.setattr("specify_cli._update_check_cache_path", lambda: cache_file)
+
+        call_counter = {"n": 0}
+
+        def _should_not_be_called() -> str | None:
+            call_counter["n"] += 1
+            return None
+
+        monkeypatch.setattr("specify_cli._fetch_latest_version", _should_not_be_called)
+
+        out = self._run_and_capture(monkeypatch)
+
+        assert call_counter["n"] == 0
         assert out == ""
 
     def test_opt_in_default_off_short_circuits(self, monkeypatch, tmp_path):

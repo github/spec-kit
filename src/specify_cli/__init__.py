@@ -1895,6 +1895,8 @@ def get_speckit_version() -> str:
 # top-level callback. Best-effort: every failure path swallows the exception so
 # the check never fails the command, though cache misses may add a small startup
 # delay (bounded by the fetch timeout) while contacting GitHub.
+# Fetch failures are cached too (with `latest=null`) so a transient outage
+# doesn't cause a retry on every CLI invocation until the TTL expires.
 
 _UPDATE_CHECK_URL = "https://api.github.com/repos/github/spec-kit/releases/latest"
 _UPDATE_CHECK_CACHE_TTL_SECONDS = 24 * 60 * 60
@@ -1941,7 +1943,7 @@ def _read_update_check_cache(path: Path) -> dict | None:
         return None
 
 
-def _write_update_check_cache(path: Path, latest: str) -> None:
+def _write_update_check_cache(path: Path, latest: str | None) -> None:
     try:
         import time
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -2005,15 +2007,16 @@ def _check_for_updates() -> None:
             return
 
         cache_path = _update_check_cache_path()
-        latest_str: str | None = None
-        if cache_path is not None:
-            cached = _read_update_check_cache(cache_path)
-            if cached:
-                latest_str = cached.get("latest")
-
-        if latest_str is None:
+        cached = _read_update_check_cache(cache_path) if cache_path is not None else None
+        if cached is not None:
+            # Fresh cache hit — may be a positive (`latest=v…`) or
+            # negative (`latest=null`) entry; either way, no fetch.
+            latest_str = cached.get("latest")
+        else:
             latest_str = _fetch_latest_version()
-            if latest_str and cache_path is not None:
+            if cache_path is not None:
+                # Cache the attempt even on failure so transient outages
+                # don't trigger a network call on every CLI invocation.
                 _write_update_check_cache(cache_path, latest_str)
 
         latest = _parse_version_tuple(latest_str) if latest_str else None

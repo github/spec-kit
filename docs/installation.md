@@ -109,7 +109,7 @@ Even when enabled, the check stays silent when:
 - stdout is not a TTY (piped output, redirected to a file, etc.)
 - the `CI` environment variable is set
 
-Network failures and rate-limit responses are swallowed — the check never fails the command you ran, though a cache miss may add a small startup delay (bounded by a 2-second fetch timeout) while contacting GitHub.
+Network failures and rate-limit responses are swallowed — the check never fails the command you ran, though a cache miss may add a small startup delay (bounded by a 2-second fetch timeout) while contacting GitHub. Failures are also cached for the same 24h window, so a transient outage or block won't cause the CLI to retry on every invocation.
 
 ## Troubleshooting
 

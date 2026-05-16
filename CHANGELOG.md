@@ -7,6 +7,7 @@
 ### Added
 
 - feat(cli): opt-in launch warning when a newer spec-kit release is available; enable with `SPECIFY_ENABLE_UPDATE_CHECK=1` (or `true`/`yes`/`on`), cached for 24h, and suppressed in non-interactive shells and `CI=1` (#1320)
+- fix(cli): cache update-check failures so transient outages don't trigger a network call on every CLI invocation (#1320)
 
 ## [0.8.1] - 2026-04-24
 
