@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 
-
 INTEGRATION_DOC_URLS: dict[str, str | None] = {
     "amp": "https://ampcode.com/",
     "agy": "https://antigravity.google/",
@@ -78,11 +77,12 @@ def _get_integration_registry() -> dict[str, Any]:
     return INTEGRATION_REGISTRY
 
 
-def list_integrations_for_docs(warn_on_missing: bool = False) -> list[tuple[str, str, str | None, str]]:
+def list_integrations_for_docs(warn_on_missing: bool = False, warn_on_extra: bool = False) -> list[tuple[str, str, str | None, str]]:
     """List integrations with their documentation URLs and notes.
 
     Skips any integrations not in INTEGRATION_DOC_URLS. If `warn_on_missing` is True,
-    emits a Python warning for any missing entries. Otherwise, silently skips them.
+    emits a Python warning for any missing entries. If `warn_on_extra` is True,
+    emits a warning for stale keys in the doc maps that are no longer in the registry.
     Gracefully handles missing URL or notes entries by defaulting to None/empty string.
     """
     registry = _get_integration_registry()
@@ -97,6 +97,20 @@ def list_integrations_for_docs(warn_on_missing: bool = False) -> list[tuple[str,
             "These will be skipped in the docs table. Add them to INTEGRATION_DOC_URLS in catalog_docs.py.",
             stacklevel=2
         )
+
+    # Warn if there are stale keys in doc maps not in the registry (when enabled)
+    if warn_on_extra:
+        extra_in_urls = sorted(set(INTEGRATION_DOC_URLS) - registry_keys)
+        extra_in_labels = sorted(set(INTEGRATION_LABEL_OVERRIDES) - registry_keys)
+        extra_in_notes = sorted(set(INTEGRATION_NOTES) - registry_keys)
+        extra_keys = extra_in_urls or extra_in_labels or extra_in_notes
+        if extra_keys:
+            import warnings
+            warnings.warn(
+                f"Stale key(s) found in doc maps (no longer in registry): {sorted(set(extra_in_urls + extra_in_labels + extra_in_notes))}. "
+                "Consider removing them from INTEGRATION_DOC_URLS, INTEGRATION_LABEL_OVERRIDES, and INTEGRATION_NOTES.",
+                stacklevel=2
+            )
 
     rows: list[tuple[str, str, str | None, str]] = []
 

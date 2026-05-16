@@ -129,3 +129,41 @@ def test_cli_integration_search_markdown_stdout_is_clean():
     finally:
         for p in patches:
             p.stop()
+
+
+def test_docs_reference_integrations_md_stays_in_sync():
+    """Regression test: committed docs/reference/integrations.md table should exist.
+    
+    This ensures the integration reference docs file is present and contains expected markers.
+    If this test fails, run: poetry run python scripts/generate_integrations_reference.py --write
+    """
+    from pathlib import Path
+    
+    # Find the committed integrations.md file
+    repo_root = Path(__file__).parent.parent
+    docs_file = repo_root / "docs" / "reference" / "integrations.md"
+    
+    assert docs_file.exists(), \
+        f"The committed integrations.md file doesn't exist at {docs_file}. \n" \
+        "Run: poetry run python scripts/generate_integrations_reference.py --write"
+    
+    # Read the committed file
+    with open(docs_file) as f:
+        committed_content = f.read()
+    
+    # Verify the file contains table markers (the table structure)
+    assert "| Agent" in committed_content, \
+        "The committed integrations.md doesn't contain 'Agent' column marker. \n" \
+        "Run: poetry run python scripts/generate_integrations_reference.py --write"
+    
+    assert "| Key" in committed_content, \
+        "The committed integrations.md doesn't contain 'Key' column marker. \n" \
+        "Run: poetry run python scripts/generate_integrations_reference.py --write"
+    
+    assert "| Notes" in committed_content, \
+        "The committed integrations.md doesn't contain 'Notes' column marker. \n" \
+        "Run: poetry run python scripts/generate_integrations_reference.py --write"
+    
+    # The generated table should also have these markers
+    generated_table = render_integrations_table()
+    assert "| Agent | Key | Notes |" in generated_table
