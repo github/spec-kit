@@ -74,6 +74,7 @@ def main() -> int:
             "--extra",
             "test",
             "--universal",
+            "--upgrade",
             "--generate-hashes",
             "--quiet",
             "--no-header",

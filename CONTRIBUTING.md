@@ -91,7 +91,7 @@ uvx --from bandit==1.9.4 bandit -r src -lll --baseline .github/bandit-baseline.j
 Run these before changing dependency metadata, workflow execution code, subprocess usage, or security-sensitive paths. Pull request, push, and manual CI audits use the committed hashed requirements file so they stay deterministic. The scheduled CI audit also resolves the runtime and `test` extra dependency set across the supported Python and OS matrix to catch newly published advisories. If dependency metadata changes, refresh the committed audit input before running pip-audit:
 
 ```bash
-uv pip compile pyproject.toml --extra test --universal --generate-hashes --quiet --no-header --output-file .github/security-audit-requirements.txt
+uv pip compile pyproject.toml --extra test --universal --upgrade --generate-hashes --quiet --no-header --output-file .github/security-audit-requirements.txt
 ```
 
 Upstream package releases drift over time, so even an unrelated PR touching `pyproject.toml` can fail the `dependency-audit` check until the committed file is regenerated with the command above and re-committed.
@@ -117,7 +117,7 @@ Audit the new entries before committing — a leaked credential must never be me
 
 #### Bandit baseline
 
-The CI `static-analysis` job runs Bandit with `--baseline .github/bandit-baseline.json` (HIGH severity, blocking) plus a second informational pass at MEDIUM severity sharing the same baseline (`continue-on-error`, surfaced in the job summary). If a HIGH finding is intentional, audit it carefully, document the rationale next to the code (regular comment — **not** `# nosec`; see below), and append the entry to `.github/bandit-baseline.json`. Growing the baseline is gated: the `check_bandit_baseline.py` script fails the PR unless it carries the `security-baseline-change` label, so reviewers see the whitelist expansion.
+The CI `static-analysis` job runs Bandit with `--baseline .github/bandit-baseline.json` (HIGH severity, blocking) plus a second informational pass at MEDIUM severity sharing the same baseline (`continue-on-error`, surfaced in the job summary). If a finding is intentional, audit it carefully, document the rationale next to the code (regular comment — **not** `# nosec`; see below), and append the entry to `.github/bandit-baseline.json`. Growing the baseline is gated: the `check_bandit_baseline.py` script fails the PR unless it carries the `security-baseline-change` label, so reviewers see the whitelist expansion.
 
 > **Do not use `# nosec` in `src/`.** The `test_bandit_nosec_is_not_suppressed_in_source` regression test fails any PR that adds one. The supported suppression paths are (a) the bandit baseline (covered above) for HIGH findings, and (b) `# noqa: S6xx` with an inline justification for ruff's subprocess-shell rules (`S602/S604/S605`). Both are visible in review; `# nosec` hides the finding without trace.
 
