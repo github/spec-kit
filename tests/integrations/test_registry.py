@@ -22,7 +22,7 @@ ALL_INTEGRATION_KEYS = [
     "copilot",
     # Stage 3 — standard markdown integrations
     "claude", "qwen", "opencode", "junie", "kilocode", "auggie",
-    "roo", "codebuddy", "qodercli", "amp", "shai", "bob", "trae",
+    "roo", "rovodev", "codebuddy", "qodercli", "amp", "shai", "bob", "trae",
     "pi", "iflow", "kiro-cli", "windsurf", "vibe", "cursor-agent",
     # Stage 4 — TOML integrations
     "gemini", "tabnine",
