@@ -425,6 +425,35 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
     return project_path / ".agents" / "skills"
 
 
+def _cli_error_detail(exc: BaseException) -> str:
+    """Return a compact one-line exception detail for CLI output."""
+    detail = str(exc).replace("\n", " ").strip()
+    return detail or exc.__class__.__name__
+
+
+def _cli_phase_label(phase: str, target_kind: str, target: str | None = None) -> str:
+    """Format a stable operation label for user-visible diagnostics."""
+    label = f"{phase} {target_kind}".strip()
+    if target:
+        label = f"{label} '{target}'"
+    return label
+
+
+def _print_cli_warning(
+    phase: str,
+    target_kind: str,
+    target: str | None,
+    exc: BaseException,
+    *,
+    continuing: str | None = None,
+) -> None:
+    """Print a warning that names the failed CLI phase and target."""
+    label = _cli_phase_label(phase, target_kind, target)
+    console.print(f"[yellow]Warning:[/yellow] Failed to {label}: {_cli_error_detail(exc)}")
+    if continuing:
+        console.print(f"[dim]{continuing}[/dim]")
+
+
 # Constants kept for backward compatibility with presets and extensions.
 DEFAULT_SKILLS_DIR = ".agents/skills"
 SKILL_DESCRIPTIONS = {
@@ -857,9 +886,8 @@ def init(
                         git_messages.append("bundled extension not found")
                 except Exception as ext_err:
                     git_has_error = True
-                    sanitized_ext = str(ext_err).replace('\n', ' ').strip()
                     git_messages.append(
-                        f"extension install failed: {sanitized_ext[:120]}"
+                        f"extension install failed during optional git setup: {_cli_error_detail(ext_err)[:120]}"
                     )
                 summary = "; ".join(git_messages)
                 if git_has_error:
@@ -897,8 +925,10 @@ def init(
                 else:
                     tracker.skip("workflow", "bundled workflow not found")
             except Exception as wf_err:
-                sanitized_wf = str(wf_err).replace('\n', ' ').strip()
-                tracker.error("workflow", f"install failed: {sanitized_wf[:120]}")
+                tracker.error(
+                    "workflow",
+                    f"install bundled workflow 'speckit' failed: {_cli_error_detail(wf_err)[:120]}",
+                )
 
             # Fix permissions after all installs (scripts + extensions)
             ensure_executable_scripts(project_path, tracker=tracker)
@@ -960,7 +990,13 @@ def init(
                                     zip_path = preset_catalog.download_pack(preset)
                                     preset_manager.install_from_zip(zip_path, speckit_ver)
                                 except PresetError as preset_err:
-                                    console.print(f"[yellow]Warning:[/yellow] Failed to install preset '{preset}': {preset_err}")
+                                    _print_cli_warning(
+                                        "install",
+                                        "preset",
+                                        preset,
+                                        preset_err,
+                                        continuing="Continuing without the optional preset.",
+                                    )
                                 finally:
                                     if zip_path is not None:
                                         # Clean up downloaded ZIP to avoid cache accumulation
@@ -970,7 +1006,14 @@ def init(
                                             # Best-effort cleanup; failure to delete is non-fatal
                                             pass
                 except Exception as preset_err:
-                    console.print(f"[yellow]Warning:[/yellow] Failed to install preset: {preset_err}")
+                    # Optional preset install must not abort project initialization.
+                    _print_cli_warning(
+                        "install",
+                        "preset",
+                        preset,
+                        preset_err,
+                        continuing="Continuing without the optional preset.",
+                    )
 
             tracker.complete("final", "project ready")
         except (typer.Exit, SystemExit):
@@ -1782,20 +1825,29 @@ def integration_install(
         if new_default == integration.key:
             _update_init_options_for_integration(project_root, integration, script_type=selected_script)
 
-    except Exception as e:
+    except Exception as exc:
         # Attempt rollback of any files written by setup
         try:
             integration.teardown(project_root, manifest, force=True)
         except Exception as rollback_err:
             # Suppress so the original setup error remains the primary failure
-            console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration changes: {rollback_err}")
+            _print_cli_warning(
+                "rollback",
+                "integration",
+                key,
+                rollback_err,
+                continuing="The original install failure is still the primary error.",
+            )
         if installed_keys:
             _write_integration_json(
                 project_root, default_key, installed_keys, _integration_settings(current)
             )
         else:
             _remove_integration_json(project_root)
-        console.print(f"[red]Error:[/red] Failed to install integration: {e}")
+        console.print(
+            f"[red]Error:[/red] Failed to {_cli_phase_label('install', 'integration', key)}: "
+            f"{_cli_error_detail(exc)}"
+        )
         raise typer.Exit(1)
 
     name = (integration.config or {}).get("name", key)
@@ -2159,9 +2211,12 @@ def integration_switch(
             ext_mgr = ExtensionManager(project_root)
             ext_mgr.unregister_agent_artifacts(installed_key)
         except Exception as ext_err:
-            console.print(
-                f"[yellow]Warning:[/yellow] Could not clean up extension artifacts "
-                f"(commands, skills, registry entries) for '{installed_key}': {ext_err}"
+            _print_cli_warning(
+                "clean up extension artifacts for",
+                "integration",
+                installed_key,
+                ext_err,
+                continuing="Continuing with integration switch; old extension artifacts may need manual cleanup.",
             )
 
         # Clear metadata so a failed Phase 2 doesn't leave stale references
@@ -2256,18 +2311,27 @@ def integration_switch(
             ext_mgr = ExtensionManager(project_root)
             ext_mgr.register_enabled_extensions_for_agent(target)
         except Exception as ext_err:
-            console.print(
-                f"[yellow]Warning:[/yellow] Could not register extension commands, skills, "
-                f"or related artifacts for '{target}': {ext_err}"
+            _print_cli_warning(
+                "register extension artifacts for",
+                "integration",
+                target,
+                ext_err,
+                continuing="The integration switch succeeded, but installed extensions may need re-registration.",
             )
 
-    except Exception as e:
+    except Exception as exc:
         # Attempt rollback of any files written by setup
         try:
             target_integration.teardown(project_root, manifest, force=True)
         except Exception as rollback_err:
             # Suppress so the original setup error remains the primary failure
-            console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration '{target}': {rollback_err}")
+            _print_cli_warning(
+                "rollback",
+                "integration",
+                target,
+                rollback_err,
+                continuing="The original switch failure is still the primary error.",
+            )
         if installed_keys:
             fallback_key = installed_keys[0]
             fallback_integration = get_integration(fallback_key)
@@ -2296,7 +2360,10 @@ def integration_switch(
                 )
         else:
             _remove_integration_json(project_root)
-        console.print(f"[red]Error:[/red] Failed to install integration '{target}': {e}")
+        console.print(
+            f"[red]Error:[/red] Failed to {_cli_phase_label('install', 'integration', target)} "
+            f"during switch: {_cli_error_detail(exc)}"
+        )
         raise typer.Exit(1)
 
     name = (target_integration.config or {}).get("name", target)
@@ -2431,7 +2498,8 @@ def integration_upgrade(
     except Exception as exc:
         # Don't teardown — setup overwrites in-place, so teardown would
         # delete files that were working before the upgrade.  Just report.
-        console.print(f"[red]Error:[/red] Failed to upgrade integration: {exc}")
+        console.print(f"[red]Error:[/red] Failed to {_cli_phase_label('upgrade', 'integration', key)}.")
+        console.print(f"[dim]Details:[/dim] {_cli_error_detail(exc)}")
         console.print("[yellow]The previous integration files may still be in place.[/yellow]")
         raise typer.Exit(1)
 
