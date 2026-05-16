@@ -27,6 +27,7 @@ from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 _FALLBACK_CORE_COMMAND_NAMES = frozenset({
     "analyze",
+    "arch",
     "checklist",
     "clarify",
     "constitution",
