@@ -1283,6 +1283,61 @@ steps:
         errors = validate_workflow(definition)
         assert any("invalid type" in e.lower() for e in errors)
 
+    def test_shell_step_requires_explicit_permission(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+steps:
+  - id: run-tests
+    type: shell
+    run: "pytest"
+""")
+        errors = validate_workflow(definition)
+        assert any("requires.permissions.shell: true" in e for e in errors)
+
+    def test_shell_step_with_permission_is_valid(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires:
+  permissions:
+    shell: true
+steps:
+  - id: run-tests
+    type: shell
+    run: "pytest"
+""")
+        errors = validate_workflow(definition)
+        assert errors == []
+
+    def test_nested_shell_step_requires_explicit_permission(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+steps:
+  - id: branch
+    type: if
+    condition: "{{ true }}"
+    then:
+      - id: run-tests
+        type: shell
+        run: "pytest"
+""")
+        errors = validate_workflow(definition)
+        assert any("requires.permissions.shell: true" in e for e in errors)
+
     def test_nested_step_validation(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 
@@ -1392,6 +1447,9 @@ workflow:
   id: "gated"
   name: "Gated"
   version: "1.0.0"
+requires:
+  permissions:
+    shell: true
 steps:
   - id: step-one
     type: shell
@@ -1423,6 +1481,9 @@ workflow:
   id: "shell-test"
   name: "Shell Test"
   version: "1.0.0"
+requires:
+  permissions:
+    shell: true
 steps:
   - id: echo
     type: shell
@@ -1435,6 +1496,26 @@ steps:
         assert state.status == RunStatus.COMPLETED
         assert "workflow-output" in state.step_results["echo"]["output"]["stdout"]
 
+    def test_execute_shell_without_permission_raises(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "shell-test"
+  name: "Shell Test"
+  version: "1.0.0"
+steps:
+  - id: echo
+    type: shell
+    run: "echo workflow-output"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+
+        with pytest.raises(ValueError, match="requires.permissions.shell: true"):
+            engine.execute(definition)
+
     def test_execute_with_if_then(self, project_dir):
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
         from specify_cli.workflows.base import RunStatus
@@ -1445,6 +1526,9 @@ workflow:
   id: "branching"
   name: "Branching"
   version: "1.0.0"
+requires:
+  permissions:
+    shell: true
 inputs:
   scope:
     type: string
@@ -1957,6 +2041,9 @@ workflow:
   id: "list-test"
   name: "List Test"
   version: "1.0.0"
+requires:
+  permissions:
+    shell: true
 steps:
   - id: step-one
     type: shell
@@ -2155,6 +2242,9 @@ workflow:
   name: "E2E Test"
   version: "1.0.0"
   integration: claude
+requires:
+  permissions:
+    shell: true
 inputs:
   feature:
     type: string
@@ -2202,6 +2292,9 @@ workflow:
   id: "switch-test"
   name: "Switch Test"
   version: "1.0.0"
+requires:
+  permissions:
+    shell: true
 inputs:
   action:
     type: string
