@@ -37,7 +37,7 @@ jobs:
       - name: Compile scheduled audit requirements
         if: ${{ github.event_name == 'schedule' }}
         run: |
-          uv pip compile pyproject.toml --extra test --python-version "${{ matrix.python-version }}" --generate-hashes --quiet --output-file "${{ runner.temp }}/spec-kit-audit-requirements.txt"
+          uv pip compile pyproject.toml --extra test --python-version "${{ matrix.python-version }}" --upgrade --generate-hashes --quiet --output-file "${{ runner.temp }}/spec-kit-audit-requirements.txt"
 
       - name: Run pip-audit (scheduled live resolution)
         if: ${{ github.event_name == 'schedule' }}
@@ -77,9 +77,9 @@ jobs:
       - name: Run Bandit
         run: uvx --from bandit==1.9.4 bandit -r src -lll --baseline .github/bandit-baseline.json
 
-      # Informative: MEDIUM severity, using the SAME baseline so the
-      # accepted HIGH finding doesn't re-fire here. Surfaces new MEDIUM-or-
-      # above findings in the job summary without breaking CI.
+      # Informative: MEDIUM severity, using the SAME baseline so accepted
+      # findings do not re-fire here. Surfaces new MEDIUM-or-above findings
+      # in the job summary without breaking CI.
       - name: Run Bandit medium-severity informational pass
         id: bandit-medium
         continue-on-error: true

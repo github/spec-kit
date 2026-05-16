@@ -25,15 +25,15 @@ WORKFLOW_LIVE_AUDIT_REQUIREMENTS = '"${{ runner.temp }}/spec-kit-audit-requireme
 COMMITTED_AUDIT_REQUIREMENTS = ".github/security-audit-requirements.txt"
 WORKFLOW_COMPILE_SCHEDULED_TEST_EXTRA_DEPS = (
     "uv pip compile pyproject.toml --extra test "
-    '--python-version "${{ matrix.python-version }}" --generate-hashes --quiet '
+    '--python-version "${{ matrix.python-version }}" --upgrade --generate-hashes --quiet '
     f"--output-file {WORKFLOW_LIVE_AUDIT_REQUIREMENTS}"
 )
 LOCAL_REFRESH_TEST_EXTRA_DEPS = (
-    "uv pip compile pyproject.toml --extra test --universal --generate-hashes "
+    "uv pip compile pyproject.toml --extra test --universal --upgrade --generate-hashes "
     f"--quiet --no-header --output-file {COMMITTED_AUDIT_REQUIREMENTS}"
 )
 WORKFLOW_SYNC_COMPILE_TEST_EXTRA_DEPS = (
-    "uv pip compile pyproject.toml --extra test --universal --generate-hashes "
+    "uv pip compile pyproject.toml --extra test --universal --upgrade --generate-hashes "
     "--quiet --no-header --output-file"
 )
 WORKFLOW_SYNC_SCRIPT = "python .github/scripts/check_security_requirements.py"
@@ -223,16 +223,20 @@ class TestSecurityWorkflow:
         assert "--skip" not in run
         assert "--skip B602" not in workflow_text
 
-    def test_bandit_baseline_only_ignores_shell_step_b602(self):
+    def test_bandit_baseline_tracks_only_accepted_findings(self):
         baseline = json.loads(BANDIT_BASELINE.read_text(encoding="utf-8"))
         results = baseline["results"]
 
-        assert len(results) == 1
-        assert results[0]["test_id"] == "B602"
-        assert (
-            results[0]["filename"]
-            == "src/specify_cli/workflows/steps/shell/__init__.py"
-        )
+        assert {
+            (result["filename"], result["line_number"], result["test_id"])
+            for result in results
+        } == {
+            ("src/specify_cli/_github_http.py", 104, "B310"),
+            ("src/specify_cli/authentication/azure_devops.py", 114, "B310"),
+            ("src/specify_cli/authentication/http.py", 171, "B310"),
+            ("src/specify_cli/workflows/steps/shell/__init__.py", 35, "B602"),
+        }
+        assert {result["issue_severity"] for result in results} == {"MEDIUM", "HIGH"}
 
     def test_bandit_nosec_is_not_suppressed_in_source(self):
         nosec_lines = []
