@@ -158,7 +158,7 @@ presets/
         ├── plan-template.md
         ├── tasks-template.md
         ├── checklist-template.md
-        ├── constitution-template.md
+        └── constitution-template.md
 ```
 
 ## Module Structure
