@@ -2540,7 +2540,7 @@ def integration_search(
             typer.echo(render_integrations_table())
         except Exception as exc:
             typer.echo(f"Error rendering integrations table: {exc}", err=True)
-            raise typer.Exit(code=1) from exc
+            raise typer.Exit(code=1)
         return
 
     from .integrations import INTEGRATION_REGISTRY
