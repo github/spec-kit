@@ -252,7 +252,7 @@ class MarkdownIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     COMMAND_STEMS = [
-        "analyze", "checklist", "clarify", "constitution",
+        "agent", "arch", "governance", "analyze", "checklist", "clarify", "constitution",
         "implement", "plan", "specify", "tasks", "taskstoissues",
     ]
 
@@ -274,18 +274,27 @@ class MarkdownIntegrationTests:
 
         if script_variant == "sh":
             for name in ["check-prerequisites.sh", "common.sh", "create-new-feature.sh",
-                         "setup-plan.sh", "setup-tasks.sh"]:
+                         "setup-arch.sh", "setup-plan.sh", "setup-tasks.sh"]:
                 files.append(f".specify/scripts/bash/{name}")
         else:
             for name in ["check-prerequisites.ps1", "common.ps1", "create-new-feature.ps1",
-                         "setup-plan.ps1", "setup-tasks.ps1"]:
+                         "setup-arch.ps1", "setup-plan.ps1", "setup-tasks.ps1"]:
                 files.append(f".specify/scripts/powershell/{name}")
 
-        for name in ["checklist-template.md",
+        for name in ["agent-governance-template.md",
+                     "architecture-development-template.md",
+                     "architecture-logical-template.md",
+                     "architecture-physical-template.md",
+                     "architecture-process-template.md",
+                     "architecture-scenario-template.md",
+                     "architecture-template.md",
+                     "checklist-template.md",
                      "constitution-template.md", "plan-template.md",
                      "spec-template.md", "tasks-template.md"]:
             files.append(f".specify/templates/{name}")
 
+        files.append("AGENTS.md")
+        files.append(".specify/memory/agent-governance.md")
         files.append(".specify/memory/constitution.md")
         # Bundled workflow
         files.append(".specify/workflows/speckit/workflow.yml")
