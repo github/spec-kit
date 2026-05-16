@@ -36,6 +36,7 @@ class KimiIntegration(SkillsIntegration):
         "extension": "/SKILL.md",
     }
     context_file = "KIMI.md"
+    multi_install_safe = True
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:

@@ -11,6 +11,14 @@
       href: quickstart.md
     - name: Upgrade
       href: upgrade.md
+    - name: Install uv
+      href: install/uv.md
+    - name: Install with pipx
+      href: install/pipx.md
+    - name: One-time Usage (uvx)
+      href: install/one-time.md
+    - name: Enterprise / Air-Gapped
+      href: install/air-gapped.md
 
 # Reference
 - name: Reference
@@ -28,6 +36,12 @@
     - name: Workflows
       href: reference/workflows.md
 
+# Concepts
+- name: Concepts
+  items:
+    - name: What is SDD?
+      href: concepts/sdd.md
+
 # Development workflows
 - name: Development
   items:
@@ -36,7 +50,12 @@
 
 # Community
 - name: Community
+  href: community/overview.md
   items:
+    - name: Overview
+      href: community/overview.md
+    - name: Extensions
+      href: community/extensions.md
     - name: Presets
       href: community/presets.md
     - name: Walkthroughs
