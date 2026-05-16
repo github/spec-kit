@@ -166,14 +166,19 @@ class TestCatalogFetch:
     """Tests that use a local HTTP server stub via monkeypatch."""
 
     def _patch_urlopen(self, monkeypatch, catalog_data):
-        """Patch authentication.http.urllib.request.urlopen to return *catalog_data*."""
+        """Patch authentication.http urlopen + OpenerDirector to return *catalog_data*.
+
+        Covers both code paths in ``open_url``:
+        - default: ``urllib.request.urlopen`` (unauthenticated, no strict redirects)
+        - hardened: ``OpenerDirector.open`` (strict_redirects=True path).
+        """
 
         class FakeResponse:
             def __init__(self, data, url=""):
                 self._data = json.dumps(data).encode()
                 self._url = url if isinstance(url, str) else url.full_url
 
-            def read(self):
+            def read(self, _size=-1):
                 return self._data
 
             def geturl(self):
@@ -189,8 +194,14 @@ class TestCatalogFetch:
             url = req if isinstance(req, str) else req.full_url
             return FakeResponse(catalog_data, url)
 
+        def fake_opener_open(_self, req, data=None, timeout=10):
+            return fake_urlopen(req, timeout)
+
         import specify_cli.authentication.http as _auth_http
         monkeypatch.setattr(_auth_http.urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(
+            _auth_http.urllib.request.OpenerDirector, "open", fake_opener_open
+        )
 
     def test_fetch_and_search_all(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HOME", str(tmp_path))
@@ -294,6 +305,55 @@ class TestCatalogFetch:
 
         with pytest.raises(IntegrationCatalogError, match="Failed to fetch any integration catalog"):
             cat.search()
+
+    def test_fetch_single_catalog_uses_bounded_read(self, tmp_path, monkeypatch):
+        cat = IntegrationCatalog(tmp_path)
+        entry = IntegrationCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+
+        class FakeResponse:
+            def read(self, _size=-1):
+                return b"{}"
+
+            def geturl(self):
+                return entry.url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                pass
+
+        def fake_urlopen(req, timeout=10):
+            assert (req if isinstance(req, str) else req.full_url) == entry.url
+            assert timeout == 10
+            return FakeResponse()
+
+        def fake_read_response_limited(response, **kwargs):
+            assert isinstance(response, FakeResponse)
+            assert kwargs["error_type"] is IntegrationCatalogError
+            assert kwargs["label"] == "integration catalog https://example.com/catalog.json"
+            raise IntegrationCatalogError("catalog too large")
+
+        import urllib.request
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(
+            urllib.request.OpenerDirector,
+            "open",
+            lambda _self, req, data=None, timeout=10: fake_urlopen(req, timeout),
+        )
+        monkeypatch.setattr(
+            "specify_cli.integrations.catalog.read_response_limited",
+            fake_read_response_limited,
+        )
+
+        with pytest.raises(IntegrationCatalogError, match="catalog too large"):
+            cat._fetch_single_catalog(entry, force_refresh=True)
 
     def test_clear_cache(self, tmp_path):
         (tmp_path / ".specify").mkdir()
@@ -493,17 +553,28 @@ class TestIntegrationListCatalog:
             def __init__(self, data, url=""):
                 self._data = json.dumps(data).encode()
                 self._url = url if isinstance(url, str) else url.full_url
-            def read(self):
+
+            def read(self, _size=-1):
                 return self._data
+
             def geturl(self):
                 return self._url
+
             def __enter__(self):
                 return self
+
             def __exit__(self, *a):
                 pass
 
-        monkeypatch.setattr(_auth_http.urllib.request, "urlopen",
-                            lambda req, timeout=10: FakeResponse(catalog, req if isinstance(req, str) else req.full_url))
+        def _fake_urlopen(req, timeout=10):
+            return FakeResponse(catalog, req if isinstance(req, str) else req.full_url)
+
+        monkeypatch.setattr(_auth_http.urllib.request, "urlopen", _fake_urlopen)
+        monkeypatch.setattr(
+            _auth_http.urllib.request.OpenerDirector,
+            "open",
+            lambda _self, req, data=None, timeout=10: _fake_urlopen(req, timeout),
+        )
 
         old = os.getcwd()
         try:

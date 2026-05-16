@@ -71,3 +71,13 @@ precision = 2
 show_missing = true
 skip_covered = false
 
+[tool.ruff.lint]
+# Lock in subprocess security posture: any reintroduction of shell=True
+# (or os.system / popen2) must be acknowledged with an explicit `# noqa`
+# pointing at the rule, making the deviation visible in review.
+extend-select = [
+    "S602",  # subprocess-popen-with-shell-equals-true
+    "S604",  # call-with-shell-equals-true
+    "S605",  # start-process-with-a-shell
+]
+

@@ -16,14 +16,19 @@ CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".bin" / "claude"
 
 
-def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> str | None:
-    """Run a shell command and optionally capture output."""
+def run_command(cmd: list[str], check_return: bool = True, capture: bool = False) -> str | None:
+    """Run a command without invoking a shell and optionally capture output."""
     try:
         if capture:
-            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True, shell=shell)
+            result = subprocess.run(
+                cmd,
+                check=check_return,
+                capture_output=True,
+                text=True,
+            )
             return result.stdout.strip()
         else:
-            subprocess.run(cmd, check=check_return, shell=shell)
+            subprocess.run(cmd, check=check_return)
             return None
     except subprocess.CalledProcessError as e:
         if check_return:

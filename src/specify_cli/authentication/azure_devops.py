@@ -109,9 +109,21 @@ class AzureDevOpsAuth(AuthProvider):
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         try:
+            from specify_cli._download_security import read_response_limited
+
             with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
-                payload = _json.loads(resp.read().decode("utf-8"))
+                payload = _json.loads(
+                    read_response_limited(
+                        resp,
+                        label="Azure DevOps token response",
+                    ).decode("utf-8")
+                )
                 token = payload.get("access_token", "").strip()
                 return token or None
-        except (urllib.error.URLError, OSError, _json.JSONDecodeError, KeyError):
+        except (
+            urllib.error.URLError,
+            OSError,
+            ValueError,
+            KeyError,
+        ):
             return None

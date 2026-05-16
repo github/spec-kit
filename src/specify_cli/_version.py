@@ -16,6 +16,7 @@ import typer
 from packaging.version import InvalidVersion, Version
 
 from ._console import console
+from ._download_security import read_response_limited
 
 GITHUB_API_LATEST = "https://api.github.com/repos/github/spec-kit/releases/latest"
 
@@ -83,7 +84,13 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
             timeout=5,
             extra_headers={"Accept": "application/vnd.github+json"},
         ) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
+            payload = json.loads(
+                read_response_limited(
+                    resp,
+                    max_bytes=1024 * 1024,
+                    label="GitHub latest release",
+                ).decode("utf-8")
+            )
             tag = payload.get("tag_name")
             if not isinstance(tag, str) or not tag:
                 raise ValueError("GitHub API response missing valid tag_name")

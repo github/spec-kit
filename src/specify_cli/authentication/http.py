@@ -56,6 +56,12 @@ def _hostname_in_hosts(hostname: str, hosts: tuple[str, ...]) -> bool:
     return any(p == hostname or fnmatch(hostname, p) for p in hosts)
 
 
+def _is_https_or_localhost_http(url: str) -> bool:
+    parsed = urlparse(url)
+    is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+    return parsed.scheme == "https" or (parsed.scheme == "http" and is_localhost)
+
+
 class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
     """Drop ``Authorization`` when a redirect leaves the entry's declared hosts."""
 
@@ -64,6 +70,11 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
         self._hosts = hosts
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _is_https_or_localhost_http(newurl):
+            raise urllib.error.URLError(
+                f"Refusing unsafe redirect to non-HTTPS URL: {newurl}"
+            )
+
         original_auth = (
             req.get_header("Authorization")
             or req.unredirected_hdrs.get("Authorization")
@@ -103,7 +114,13 @@ def build_request(url: str, extra_headers: dict[str, str] | None = None) -> urll
     return urllib.request.Request(url, headers=headers)
 
 
-def open_url(url: str, timeout: int = 10, extra_headers: dict[str, str] | None = None):
+def open_url(
+    url: str,
+    timeout: int = 10,
+    extra_headers: dict[str, str] | None = None,
+    *,
+    strict_redirects: bool = False,
+):
     """Open *url* with config-driven auth, redirect stripping, and fallthrough.
 
     1. Find ``auth.json`` entries whose hosts match the URL.
@@ -113,6 +130,8 @@ def open_url(url: str, timeout: int = 10, extra_headers: dict[str, str] | None =
     5. Non-auth errors (404, 500, network) raise immediately.
 
     *extra_headers* (e.g. ``Accept``) are merged into every attempt.
+    When *strict_redirects* is true, unauthenticated requests also reject
+    redirects to non-HTTPS URLs except localhost.
     """
     entries = find_entries_for_url(url, _load_config())
 
@@ -146,4 +165,7 @@ def open_url(url: str, timeout: int = 10, extra_headers: dict[str, str] | None =
 
     # No entry worked (or none matched) — unauthenticated fallback
     req = _make_req({})
+    if strict_redirects:
+        opener = urllib.request.build_opener(_StripAuthOnRedirect(()))
+        return opener.open(req, timeout=timeout)
     return urllib.request.urlopen(req, timeout=timeout)  # noqa: S310

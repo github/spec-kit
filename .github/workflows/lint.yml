@@ -20,3 +20,15 @@ jobs:
           globs: |
             '**/*.md'
             !extensions/**/*.md
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      # shellcheck is preinstalled on ubuntu-latest runners.
+      # Start at --severity=error to block real bugs without flagging style
+      # (notably SC2155). Tighten in a follow-up after cleanup.
+      - name: Run shellcheck on scripts/bash
+        run: shellcheck --severity=error scripts/bash/*.sh

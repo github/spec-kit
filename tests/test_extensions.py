@@ -11,6 +11,7 @@ Tests cover:
 
 import pytest
 import json
+import hashlib
 import platform
 import tempfile
 import shutil
@@ -292,6 +293,43 @@ class TestExtensionManifest:
 
         with pytest.raises(ValidationError, match="Invalid command name"):
             ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize(
+        "bad_file",
+        [
+            "../outside.md",
+            "/tmp/outside.md",
+            "commands/../../outside.md",
+            "C:\\Windows\\outside.md",
+            "C:outside.md",
+        ],
+    )
+    def test_invalid_command_file_path(self, temp_dir, valid_manifest_data, bad_file):
+        """Command files must stay inside the extension package."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["file"] = bad_file
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid command file path"):
+            ExtensionManifest(manifest_path)
+
+    def test_windows_command_file_path_is_normalized(self, temp_dir, valid_manifest_data):
+        """Windows-authored manifests keep compatibility without traversal."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["file"] = "commands\\hello.md"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["file"] == "commands/hello.md"
 
     def test_command_name_autocorrect_speckit_prefix(self, temp_dir, valid_manifest_data):
         """Test that 'speckit.command' is auto-corrected to 'speckit.{ext_id}.command'."""
@@ -1847,6 +1885,7 @@ Run {SCRIPT}
         from specify_cli.extensions import ExtensionManifest
         manifest = ExtensionManifest(ext_dir / "extension.yml")
         registered = registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+        assert registered == ["speckit.cleanup-ext.run"]
 
         skill_subdir = skills_dir / "speckit-cleanup-ext-run"
         assert skill_subdir.exists(), "Skill subdirectory should exist after registration"
@@ -2541,6 +2580,61 @@ class TestExtensionCatalog:
         req = catalog._make_request("https://codeload.github.com/org/repo/zip/refs/tags/v1.0.0")
         assert req.get_header("Authorization") == "Bearer ghp_testtoken"
 
+    def test_redirect_preserves_auth_for_github_to_codeload(self):
+        """Auth header is preserved when redirects stay within configured hosts."""
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+
+        handler = _StripAuthOnRedirect(("github.com", "codeload.github.com"))
+        original_url = "https://github.com/org/repo/archive/refs/tags/v1.zip"
+        redirect_url = "https://codeload.github.com/org/repo/zip/refs/tags/v1"
+        req = Request(original_url, headers={"Authorization": "Bearer ghp_test"})
+        fp = io.BytesIO(b"")
+        new_req = handler.redirect_request(req, fp, 302, "Found", {}, redirect_url)
+        assert new_req is not None
+        auth = new_req.get_header("Authorization") or new_req.unredirected_hdrs.get("Authorization")
+        assert auth == "Bearer ghp_test"
+
+    def test_redirect_strips_auth_for_github_to_external(self):
+        """Auth header is stripped when redirects leave configured hosts."""
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+
+        handler = _StripAuthOnRedirect(("github.com", "codeload.github.com"))
+        original_url = "https://github.com/org/repo/releases/download/v1/asset.zip"
+        redirect_url = "https://objects.githubusercontent.com/github-production-release-asset/12345"
+        req = Request(original_url, headers={"Authorization": "Bearer ghp_test"})
+        fp = io.BytesIO(b"")
+        new_req = handler.redirect_request(req, fp, 302, "Found", {}, redirect_url)
+        assert new_req is not None
+        auth_header = new_req.headers.get("Authorization")
+        auth_unredirected = new_req.unredirected_hdrs.get("Authorization")
+        assert auth_header is None
+        assert auth_unredirected is None
+
+    def test_redirect_rejects_https_downgrade(self):
+        """HTTPS downloads must not follow redirects to non-local HTTP URLs."""
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+        import urllib.error
+
+        handler = _StripAuthOnRedirect(("example.com",))
+        req = Request("https://example.com/archive.zip")
+        fp = io.BytesIO(b"")
+
+        with pytest.raises(urllib.error.URLError, match="unsafe redirect"):
+            handler.redirect_request(
+                req,
+                fp,
+                302,
+                "Found",
+                {},
+                "http://evil.example.com/archive.zip",
+            )
+
     def test_fetch_single_catalog_sends_auth_header(self, temp_dir, monkeypatch):
         """_fetch_single_catalog passes Authorization header when a provider is configured."""
         from unittest.mock import patch, MagicMock
@@ -2577,10 +2671,52 @@ class TestExtensionCatalog:
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
 
+    def test_fetch_single_catalog_uses_bounded_read(self, temp_dir):
+        """Catalog JSON responses must use the shared bounded-read helper."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        entry = CatalogEntry(
+            url="https://example.com/catalog.json",
+            name="custom",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch(
+                 "specify_cli.extensions.read_response_limited",
+                 side_effect=ExtensionError("catalog too large"),
+             ):
+            with pytest.raises(ExtensionError, match="catalog too large"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_fetch_catalog_uses_bounded_read(self, temp_dir):
+        """The legacy single-catalog path must also bound catalog JSON reads."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "get_catalog_url", return_value="https://example.com/catalog.json"), \
+             patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch(
+                 "specify_cli.extensions.read_response_limited",
+                 side_effect=ExtensionError("catalog too large"),
+             ):
+            with pytest.raises(ExtensionError, match="catalog too large"):
+                catalog.fetch_catalog(force_refresh=True)
+
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
         """download_extension passes Authorization header when a provider is configured."""
         from unittest.mock import patch, MagicMock
-        import zipfile, io
+        import io
+        import zipfile
 
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
         self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
@@ -2618,6 +2754,52 @@ class TestExtensionCatalog:
             catalog.download_extension("test-ext", target_dir=temp_dir)
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_download_extension_verifies_sha256(self, temp_dir):
+        """Catalog-provided checksums are enforced when present."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        zip_bytes = b"fake zip data"
+        mock_response = MagicMock()
+        mock_response.read.return_value = zip_bytes
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-ext.zip",
+            "sha256": hashlib.sha256(zip_bytes).hexdigest(),
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog.download_extension("test-ext", target_dir=temp_dir)
+
+        assert result.read_bytes() == zip_bytes
+
+    def test_download_extension_rejects_sha256_mismatch(self, temp_dir):
+        """A mismatched catalog checksum stops the downloaded ZIP being used."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"fake zip data"
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-ext.zip",
+            "sha256": "0" * 64,
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(ExtensionError, match="checksum mismatch"):
+                catalog.download_extension("test-ext", target_dir=temp_dir)
 
 
 
@@ -3476,7 +3658,6 @@ class TestDownloadExtensionBundled:
     def test_download_extension_allows_bundled_with_url(self, temp_dir):
         """download_extension should allow bundled extensions that have a download_url (newer version)."""
         from unittest.mock import patch, MagicMock
-        import urllib.request
 
         project_dir = temp_dir / "project"
         project_dir.mkdir()
@@ -3499,7 +3680,7 @@ class TestDownloadExtensionBundled:
         mock_response.__exit__ = MagicMock(return_value=False)
 
         with patch.object(catalog, "get_extension_info", return_value=bundled_with_url), \
-             patch.object(urllib.request, "urlopen", return_value=mock_response):
+             patch.object(catalog, "_open_url", return_value=mock_response):
             result = catalog.download_extension("git")
             assert result.name == "git-2.0.0.zip"
 

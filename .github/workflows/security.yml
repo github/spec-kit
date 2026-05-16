@@ -1,0 +1,180 @@
+name: Security Audit
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+jobs:
+  dependency-audit:
+    name: Dependency audit (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Compile scheduled audit requirements
+        if: ${{ github.event_name == 'schedule' }}
+        run: |
+          uv pip compile pyproject.toml --extra test --python-version "${{ matrix.python-version }}" --upgrade --generate-hashes --quiet --output-file "${{ runner.temp }}/spec-kit-audit-requirements.txt"
+
+      - name: Run pip-audit (scheduled live resolution)
+        if: ${{ github.event_name == 'schedule' }}
+        run: uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r "${{ runner.temp }}/spec-kit-audit-requirements.txt" --progress-spinner off
+
+      - name: Check committed audit requirements are current
+        if: ${{ github.event_name != 'schedule' }}
+        env:
+          DEPENDENCY_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          DEPENDENCY_DIFF_HEAD: ${{ github.sha }}
+          GENERATED_REQUIREMENTS: ${{ runner.temp }}/security-audit-requirements.txt
+        run: python .github/scripts/check_security_requirements.py
+
+      - name: Run pip-audit (committed requirements)
+        if: ${{ github.event_name != 'schedule' }}
+        run: uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r .github/security-audit-requirements.txt --progress-spinner off
+
+  static-analysis:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # Need the PR base to compare baseline growth.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.13"
+
+      # Blocking: HIGH severity only, with baseline. Real regressions fail CI.
+      - name: Run Bandit
+        run: uvx --from bandit==1.9.4 bandit -r src -lll --baseline .github/bandit-baseline.json
+
+      # Informative: MEDIUM severity, using the SAME baseline so accepted
+      # findings do not re-fire here. Surfaces new MEDIUM-or-above findings
+      # in the job summary without breaking CI.
+      - name: Run Bandit medium-severity informational pass
+        id: bandit-medium
+        continue-on-error: true
+        run: uvx --from bandit==1.9.4 bandit -r src -ll --baseline .github/bandit-baseline.json
+
+      # Surface the medium-severity outcome in the job summary so reviewers
+      # see it without expanding the log; continue-on-error swallows the
+      # non-zero exit otherwise. We branch on three outcomes:
+      # - failure → new findings (⚠️)
+      # - success → clean (✅)
+      # - skipped → the blocking HIGH bandit step failed, so the medium
+      #   pass never ran; don't claim "clean" in that case (⏭️).
+      - name: Surface medium-severity findings in job summary
+        if: always()
+        run: |
+          case "${{ steps.bandit-medium.outcome }}" in
+            failure)
+              {
+                echo "## ⚠️ Bandit medium-severity informational pass"
+                echo ""
+                echo "New MEDIUM-or-above findings detected (baseline-filtered). These"
+                echo "do not fail CI but should be audited. Resolution paths, in order"
+                echo "of preference:"
+                echo "  1. Fix the underlying issue."
+                echo "  2. If the finding is a documented intentional pattern, append"
+                echo "     it to \`.github/bandit-baseline.json\` and add the"
+                echo "     \`security-baseline-change\` label to acknowledge the growth."
+                echo "  3. For ruff S6xx false positives only, use \`# noqa: S6xx\`"
+                echo "     with an inline justification."
+                echo ""
+                echo "Do NOT use \`# nosec\` — it is forbidden in \`src/\` by the"
+                echo "\`test_bandit_nosec_is_not_suppressed_in_source\` regression test."
+                echo ""
+                echo "See the **Run Bandit medium-severity informational pass** step"
+                echo "above for the file/line list."
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            success)
+              echo "## ✅ Bandit medium-severity informational pass — clean" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "## ⏭️ Bandit medium-severity informational pass — skipped (the blocking HIGH pass failed; fix it first)" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+          esac
+
+      # Prevent silent whitelisting: if the baseline grew, the PR must carry
+      # the 'security-baseline-change' label to acknowledge it.
+      - name: Check Bandit baseline growth
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          # Base side via `git show` (needs full fetch-depth above).
+          # Head side reads the working tree — fail-closed.
+          BANDIT_BASELINE_BASE: ${{ github.event.pull_request.base.sha }}
+          BANDIT_BASELINE_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: python .github/scripts/check_bandit_baseline.py
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # Needed by check_secrets_baseline.py to read the baseline at base ref.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.13"
+
+      # detect-secrets is a Python tool (consistent with bandit / pip-audit
+      # install pattern) and detects entropy-based and provider-specific
+      # secrets. detect-secrets-hook compares tracked files against the
+      # baseline and exits non-zero when a new candidate appears, without
+      # rewriting the baseline file (so there's no spurious git diff).
+      - name: Run detect-secrets
+        run: |
+          git ls-files -z \
+            -- ':!:.secrets.baseline' \
+               ':!:uv.lock' \
+               ':!:.github/security-audit-requirements.txt' \
+          | xargs -0 uvx --from detect-secrets==1.5.0 detect-secrets-hook \
+              --baseline .secrets.baseline
+
+      # Symmetric with the bandit baseline gate: if .secrets.baseline grew,
+      # the PR must carry the 'secrets-baseline-change' label so reviewers
+      # see the whitelist expansion explicitly.
+      - name: Check secrets baseline growth
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          # Head side reads the working tree (see check_secrets_baseline.py).
+          SECRETS_BASELINE_BASE: ${{ github.event.pull_request.base.sha }}
+          SECRETS_BASELINE_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: python .github/scripts/check_secrets_baseline.py

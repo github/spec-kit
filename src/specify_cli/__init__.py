@@ -42,6 +42,7 @@ from rich.panel import Panel
 from rich.live import Live
 from rich.align import Align
 from rich.table import Table
+from ._download_security import read_response_limited
 from .integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
     resolve_integration_options as _resolve_integration_options_impl,
@@ -2745,9 +2746,18 @@ def preset_add(
                 try:
                     from specify_cli.authentication.http import open_url as _open_url
 
-                    with _open_url(from_url, timeout=60) as response:
-                        zip_path.write_bytes(response.read())
-                except urllib.error.URLError as e:
+                    with _open_url(
+                        from_url,
+                        timeout=60,
+                        strict_redirects=True,
+                    ) as response:
+                        zip_path.write_bytes(
+                            read_response_limited(
+                                response,
+                                label=f"preset {from_url}",
+                            )
+                        )
+                except (urllib.error.URLError, ValueError) as e:
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
                     raise typer.Exit(1)
 
@@ -3651,13 +3661,20 @@ def extension_add(
                 try:
                     from specify_cli.authentication.http import open_url as _open_url
 
-                    with _open_url(from_url, timeout=60) as response:
-                        zip_data = response.read()
+                    with _open_url(
+                        from_url,
+                        timeout=60,
+                        strict_redirects=True,
+                    ) as response:
+                        zip_data = read_response_limited(
+                            response,
+                            label=f"extension {from_url}",
+                        )
                     zip_path.write_bytes(zip_data)
 
                     # Install from downloaded ZIP
                     manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
-                except urllib.error.URLError as e:
+                except (urllib.error.URLError, ValueError) as e:
                     console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
                     raise typer.Exit(1)
                 finally:
@@ -4909,7 +4926,7 @@ def workflow_add(
 
         import tempfile
         try:
-            with _open_url(source, timeout=30) as resp:
+            with _open_url(source, timeout=30, strict_redirects=True) as resp:
                 final_url = resp.geturl()
                 final_parsed = urlparse(final_url)
                 final_host = final_parsed.hostname or ""
@@ -4924,7 +4941,7 @@ def workflow_add(
                     console.print(f"[red]Error:[/red] URL redirected to non-HTTPS: {final_url}")
                     raise typer.Exit(1)
                 with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
-                    tmp.write(resp.read())
+                    tmp.write(read_response_limited(resp, label=f"workflow {source}"))
                     tmp_path = Path(tmp.name)
         except typer.Exit:
             raise
@@ -5008,7 +5025,7 @@ def workflow_add(
         from specify_cli.authentication.http import open_url as _open_url
 
         workflow_dir.mkdir(parents=True, exist_ok=True)
-        with _open_url(workflow_url, timeout=30) as response:
+        with _open_url(workflow_url, timeout=30, strict_redirects=True) as response:
             # Validate final URL after redirects
             final_url = response.geturl()
             final_parsed = urlparse(final_url)
@@ -5028,7 +5045,9 @@ def workflow_add(
                     f"[red]Error:[/red] Workflow '{source}' redirected to non-HTTPS URL: {final_url}"
                 )
                 raise typer.Exit(1)
-            workflow_file.write_bytes(response.read())
+            workflow_file.write_bytes(
+                read_response_limited(response, label=f"workflow {source}")
+            )
     except Exception as exc:
         if workflow_dir.exists():
             import shutil
