@@ -88,11 +88,13 @@ specify version
 
 This helps verify you are running the official Spec Kit build from GitHub, not an unrelated package with the same name.
 
-After initialization, you should see the following commands available in your coding agent:
+After initialization, you should see some of the available commands in your AI agent:
 
-- `/speckit.specify` - Create specifications
-- `/speckit.plan` - Generate implementation plans  
-- `/speckit.tasks` - Break down into actionable tasks
+  - `/speckit.specify` - Create specifications
+  - `/speckit.clarify` - Clarify and refine specifications
+  - `/speckit.plan` - Generate implementation plans
+  - `/speckit.tasks` - Break down into actionable tasks
+  - `/speckit.implement` - Execute tasks and build the feature
 
 Scripts are installed into a variant subdirectory matching the chosen script type:
 
