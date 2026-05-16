@@ -24,6 +24,16 @@ from ..base import IntegrationBase, IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
 
 
+def _copilot_executable() -> str:
+    """Return the executable name for Copilot CLI on this platform.
+
+    On Windows, subprocess invocation is reliable with `copilot.cmd`.
+    """
+    if os.name == "nt":
+        return "copilot.cmd"
+    return "copilot"
+
+
 def _allow_all() -> bool:
     """Return True if the Copilot CLI should run with full permissions.
 
