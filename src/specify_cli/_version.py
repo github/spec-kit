@@ -171,3 +171,119 @@ def self_upgrade() -> None:
     console.print("specify self upgrade is not implemented yet.")
     console.print("Run 'specify self check' to see whether a newer release is available.")
     console.print("Actual self-upgrade is planned as follow-up work.")
+
+
+# ===== Opt-in startup update check (addresses #1320) =====
+#
+# Silent companion to `specify self check`: when SPECIFY_ENABLE_UPDATE_CHECK=1
+# is set in an interactive non-CI shell, the top-level Typer callback prints a
+# one-line upgrade hint if a newer release is available. Result is cached for
+# 24h in the platform user-cache dir; cache misses are written even on fetch
+# failure (`latest=null`) so a transient outage doesn't trigger a network call
+# on every CLI invocation. Best-effort: every error path swallows the exception
+# so the helper never blocks the command the user actually invoked.
+
+import os
+import sys
+import time
+from pathlib import Path
+
+_UPDATE_CHECK_CACHE_TTL_SECONDS = 24 * 60 * 60
+
+
+def _update_check_cache_path() -> Path | None:
+    try:
+        from platformdirs import user_cache_dir
+        return Path(user_cache_dir("specify-cli")) / "version_check.json"
+    except Exception:
+        return None
+
+
+def _read_update_check_cache(path: Path) -> dict | None:
+    try:
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        checked_at = float(data.get("checked_at", 0))
+        if time.time() - checked_at > _UPDATE_CHECK_CACHE_TTL_SECONDS:
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def _write_update_check_cache(path: Path, latest: str | None) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"checked_at": time.time(), "latest": latest}),
+            encoding="utf-8",
+        )
+    except Exception:
+        # Cache write failures are non-fatal.
+        pass
+
+
+def _should_skip_update_check() -> bool:
+    # Opt-in only: air-gapped / network-constrained environments cannot reach
+    # GitHub, so the check is off by default.
+    if os.environ.get("SPECIFY_ENABLE_UPDATE_CHECK", "").strip().lower() not in ("1", "true", "yes", "on"):
+        return True
+    # Belt-and-suspenders: even when opted in, suppress in CI and when the
+    # caller isn't a TTY so we don't dirty machine-readable output.
+    if os.environ.get("CI"):
+        return True
+    try:
+        if not sys.stdout.isatty():
+            return True
+    except Exception:
+        return True
+    return False
+
+
+def _check_for_updates() -> None:
+    """Print a one-line upgrade hint when a newer spec-kit release is available.
+
+    Fully best-effort — any error (offline, rate-limited, parse failure) is
+    swallowed so the command the user actually invoked is never blocked.
+    """
+    if _should_skip_update_check():
+        return
+    try:
+        current = _get_installed_version()
+        if current == "unknown":
+            return
+
+        cache_path = _update_check_cache_path()
+        cached = _read_update_check_cache(cache_path) if cache_path is not None else None
+        if cached is not None:
+            # Fresh cache hit — may be a positive (`latest=v…`) or
+            # negative (`latest=null`) entry; either way, no fetch.
+            latest_tag = cached.get("latest")
+        else:
+            latest_tag, _reason = _fetch_latest_release_tag()
+            if cache_path is not None:
+                # Cache the attempt even on failure so transient outages
+                # don't trigger a network call on every CLI invocation.
+                _write_update_check_cache(cache_path, latest_tag)
+
+        if not latest_tag:
+            return
+        latest_display = _normalize_tag(latest_tag)
+        if not _is_newer(latest_display, current):
+            return
+
+        console.print(
+            f"[yellow]⚠  A new spec-kit version is available: "
+            f"v{latest_display} (you have v{current})[/yellow]"
+        )
+        console.print(
+            f"[dim]   Upgrade: uv tool install specify-cli --force "
+            f"--from git+https://github.com/github/spec-kit.git@v{latest_display}[/dim]"
+        )
+        console.print(
+            "[dim]   (unset SPECIFY_ENABLE_UPDATE_CHECK to disable this check)[/dim]"
+        )
+    except Exception:
+        # Update check must never surface an error to the user.
+        return
