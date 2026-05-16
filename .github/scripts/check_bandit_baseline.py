@@ -16,9 +16,13 @@ When the baseline file does not exist at the base ref, this is the PR
 that introduces it; we treat all entries as the starting baseline and
 do not require the label.
 
+For the head side we read the working tree directly (the CI runner is
+checked out at the PR head, so the working-tree file IS the head state).
+Reading via ``git show <head_ref>:`` would fail-open on unfetched refs
+or detached checkouts — for a security gate we want fail-closed.
+
 Required environment variables:
 - ``BANDIT_BASELINE_BASE``: git ref of the PR base
-- ``BANDIT_BASELINE_HEAD``: git ref of the PR head
 - ``BANDIT_BASELINE_LABELS``: comma-separated PR labels
 
 Outside of PR events, all inputs may be empty and the script no-ops.
@@ -40,7 +44,11 @@ ACK_LABEL = "security-baseline-change"
 
 
 def _read_baseline_at(ref: str) -> tuple[dict, bool]:
-    """Return (baseline_json, file_existed_at_ref)."""
+    """Return (baseline_json, file_existed_at_ref).
+
+    Used for the base side. The head side reads the working tree to avoid
+    silently fail-opening on an unfetched/invalid head ref.
+    """
     if not ref:
         return {"results": []}, False
     try:
@@ -59,6 +67,30 @@ def _read_baseline_at(ref: str) -> tuple[dict, bool]:
     except json.JSONDecodeError:
         print(f"Could not parse baseline at {ref}; treating as empty.", file=sys.stderr)
         return {"results": []}, True
+
+
+def _read_baseline_from_worktree() -> tuple[dict, bool]:
+    """Return (baseline_json, file_exists_on_disk).
+
+    The CI runner is checked out at the PR head, so the working-tree
+    file IS the head state. Reading it directly sidesteps spurious
+    ``git show`` failures that would otherwise let an unreadable head
+    silently pass the gate.
+
+    Asymmetric with the base reader: a corrupt JSON on disk is the
+    proposed PR state — we fail-closed there rather than treating
+    it as an empty baseline (which would silently drop the gate).
+    """
+    path = REPO_ROOT / BASELINE_PATH
+    if not path.exists():
+        return {"results": []}, False
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), True
+    except json.JSONDecodeError as exc:
+        raise SystemExit(
+            f"Working-tree baseline at {BASELINE_PATH} is corrupt: {exc}. "
+            f"Refusing to fail-open on a security gate."
+        )
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -89,14 +121,13 @@ def _identity(result: dict) -> str:
 
 def main() -> int:
     base_ref = os.environ.get("BANDIT_BASELINE_BASE", "").strip()
-    head_ref = os.environ.get("BANDIT_BASELINE_HEAD", "").strip() or "HEAD"
 
     if not base_ref or set(base_ref) <= {"0"}:
         print("No PR base ref; baseline diff check skipped.")
         return 0
 
     base_baseline, base_existed = _read_baseline_at(base_ref)
-    head_baseline, _ = _read_baseline_at(head_ref)
+    head_baseline, head_existed = _read_baseline_from_worktree()
 
     if not base_existed:
         print(
@@ -104,6 +135,18 @@ def main() -> int:
             "introduction of the baseline. No acknowledgement required."
         )
         return 0
+
+    if not head_existed:
+        # Fail-closed: the file existed at base but is missing in the
+        # working tree. Either the PR deleted it (suspicious — the gate
+        # would no longer protect anything) or the workspace is incomplete.
+        print(
+            f"Baseline file {BASELINE_PATH} existed at the base ref but is "
+            f"missing in the working tree. Refusing to fail-open on a "
+            f"security gate.",
+            file=sys.stderr,
+        )
+        return 1
 
     base_ids = {_identity(r) for r in base_baseline.get("results", [])}
     head_ids = {_identity(r) for r in head_baseline.get("results", [])}

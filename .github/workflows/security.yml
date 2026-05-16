@@ -77,43 +77,62 @@ jobs:
       - name: Run Bandit
         run: uvx --from bandit==1.9.4 bandit -r src -lll --baseline .github/bandit-baseline.json
 
-      # Informative: MEDIUM severity, no baseline. Surfaces lower-severity
-      # findings in the job summary without breaking CI, so reviewers see
-      # them before they accumulate.
+      # Informative: MEDIUM severity, using the SAME baseline so the
+      # accepted HIGH finding doesn't re-fire here. Surfaces new MEDIUM-or-
+      # above findings in the job summary without breaking CI.
       - name: Run Bandit medium-severity informational pass
         id: bandit-medium
         continue-on-error: true
-        run: uvx --from bandit==1.9.4 bandit -r src -ll
+        run: uvx --from bandit==1.9.4 bandit -r src -ll --baseline .github/bandit-baseline.json
 
       # Surface the medium-severity outcome in the job summary so reviewers
       # see it without expanding the log; continue-on-error swallows the
-      # non-zero exit otherwise.
+      # non-zero exit otherwise. We branch on three outcomes:
+      # - failure → new findings (⚠️)
+      # - success → clean (✅)
+      # - skipped → the blocking HIGH bandit step failed, so the medium
+      #   pass never ran; don't claim "clean" in that case (⏭️).
       - name: Surface medium-severity findings in job summary
         if: always()
         run: |
-          if [ "${{ steps.bandit-medium.outcome }}" = "failure" ]; then
-            {
-              echo "## ⚠️ Bandit medium-severity informational pass"
-              echo ""
-              echo "Findings surfaced at MEDIUM severity (no baseline). These do not"
-              echo "fail CI but should be audited — either fix the issue, suppress"
-              echo "with an explicit \`# nosec\` carrying a justification, or escalate"
-              echo "the severity threshold once they are triaged."
-              echo ""
-              echo "See the **Run Bandit medium-severity informational pass** step"
-              echo "above for the file/line list."
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "## ✅ Bandit medium-severity informational pass — clean" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          case "${{ steps.bandit-medium.outcome }}" in
+            failure)
+              {
+                echo "## ⚠️ Bandit medium-severity informational pass"
+                echo ""
+                echo "New MEDIUM-or-above findings detected (baseline-filtered). These"
+                echo "do not fail CI but should be audited. Resolution paths, in order"
+                echo "of preference:"
+                echo "  1. Fix the underlying issue."
+                echo "  2. If the finding is a documented intentional pattern, append"
+                echo "     it to \`.github/bandit-baseline.json\` and add the"
+                echo "     \`security-baseline-change\` label to acknowledge the growth."
+                echo "  3. For ruff S6xx false positives only, use \`# noqa: S6xx\`"
+                echo "     with an inline justification."
+                echo ""
+                echo "Do NOT use \`# nosec\` — it is forbidden in \`src/\` by the"
+                echo "\`test_bandit_nosec_is_not_suppressed_in_source\` regression test."
+                echo ""
+                echo "See the **Run Bandit medium-severity informational pass** step"
+                echo "above for the file/line list."
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            success)
+              echo "## ✅ Bandit medium-severity informational pass — clean" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "## ⏭️ Bandit medium-severity informational pass — skipped (the blocking HIGH pass failed; fix it first)" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+          esac
 
       # Prevent silent whitelisting: if the baseline grew, the PR must carry
       # the 'security-baseline-change' label to acknowledge it.
       - name: Check Bandit baseline growth
         if: ${{ github.event_name == 'pull_request' }}
         env:
+          # Base side via `git show` (needs full fetch-depth above).
+          # Head side reads the working tree — fail-closed.
           BANDIT_BASELINE_BASE: ${{ github.event.pull_request.base.sha }}
-          BANDIT_BASELINE_HEAD: ${{ github.event.pull_request.head.sha }}
           BANDIT_BASELINE_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: python .github/scripts/check_bandit_baseline.py
 
@@ -155,7 +174,7 @@ jobs:
       - name: Check secrets baseline growth
         if: ${{ github.event_name == 'pull_request' }}
         env:
+          # Head side reads the working tree (see check_secrets_baseline.py).
           SECRETS_BASELINE_BASE: ${{ github.event.pull_request.base.sha }}
-          SECRETS_BASELINE_HEAD: ${{ github.event.pull_request.head.sha }}
           SECRETS_BASELINE_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: python .github/scripts/check_secrets_baseline.py

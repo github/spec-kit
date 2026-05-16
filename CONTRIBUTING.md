@@ -117,7 +117,9 @@ Audit the new entries before committing — a leaked credential must never be me
 
 #### Bandit baseline
 
-The CI `static-analysis` job runs Bandit with `--baseline .github/bandit-baseline.json` (HIGH severity, blocking) plus a second informational pass at MEDIUM severity (`continue-on-error`, surfaced in the job summary). If a HIGH finding is intentional, audit it carefully, add an explicit `# nosec` with justification, and only then add it to the baseline. Growing the baseline is gated: the `check_bandit_baseline.py` script fails the PR unless it carries the `security-baseline-change` label, so reviewers see the whitelist expansion.
+The CI `static-analysis` job runs Bandit with `--baseline .github/bandit-baseline.json` (HIGH severity, blocking) plus a second informational pass at MEDIUM severity sharing the same baseline (`continue-on-error`, surfaced in the job summary). If a HIGH finding is intentional, audit it carefully, document the rationale next to the code (regular comment — **not** `# nosec`; see below), and append the entry to `.github/bandit-baseline.json`. Growing the baseline is gated: the `check_bandit_baseline.py` script fails the PR unless it carries the `security-baseline-change` label, so reviewers see the whitelist expansion.
+
+> **Do not use `# nosec` in `src/`.** The `test_bandit_nosec_is_not_suppressed_in_source` regression test fails any PR that adds one. The supported suppression paths are (a) the bandit baseline (covered above) for HIGH findings, and (b) `# noqa: S6xx` with an inline justification for ruff's subprocess-shell rules (`S602/S604/S605`). Both are visible in review; `# nosec` hides the finding without trace.
 
 #### Shell scripts
 

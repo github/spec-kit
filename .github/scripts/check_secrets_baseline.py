@@ -11,9 +11,12 @@ swap (remove one, add another with the same count) is still caught.
 When the baseline file does not exist at the base ref, the PR is the one
 that introduces it; no acknowledgement is required.
 
+For the head side we read the working tree directly (the CI runner is
+checked out at the PR head); this avoids fail-opening when
+``git show <head_ref>:`` happens to fail.
+
 Required environment variables:
 - ``SECRETS_BASELINE_BASE``: git ref of the PR base
-- ``SECRETS_BASELINE_HEAD``: git ref of the PR head
 - ``SECRETS_BASELINE_LABELS``: comma-separated PR labels
 
 Outside of PR events, all inputs may be empty and the script no-ops.
@@ -33,7 +36,7 @@ ACK_LABEL = "secrets-baseline-change"
 
 
 def _read_baseline_at(ref: str) -> tuple[dict, bool]:
-    """Return (baseline_json, file_existed_at_ref)."""
+    """Return (baseline_json, file_existed_at_ref). Base side only."""
     if not ref:
         return {"results": {}}, False
     try:
@@ -52,6 +55,26 @@ def _read_baseline_at(ref: str) -> tuple[dict, bool]:
     except json.JSONDecodeError:
         print(f"Could not parse baseline at {ref}; treating as empty.", file=sys.stderr)
         return {"results": {}}, True
+
+
+def _read_baseline_from_worktree() -> tuple[dict, bool]:
+    """Return (baseline_json, file_exists_on_disk). Head side.
+
+    Reading the working tree (rather than ``git show <head>:``) makes the
+    head side fail-closed: a missing file blocks the gate, and a corrupt
+    file raises SystemExit rather than being treated as empty (which
+    would silently neutralize the gate).
+    """
+    path = REPO_ROOT / BASELINE_PATH
+    if not path.exists():
+        return {"results": {}}, False
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), True
+    except json.JSONDecodeError as exc:
+        raise SystemExit(
+            f"Working-tree baseline at {BASELINE_PATH} is corrupt: {exc}. "
+            f"Refusing to fail-open on a security gate."
+        )
 
 
 def _identities(baseline: dict) -> set[str]:
@@ -81,14 +104,13 @@ def _identities(baseline: dict) -> set[str]:
 
 def main() -> int:
     base_ref = os.environ.get("SECRETS_BASELINE_BASE", "").strip()
-    head_ref = os.environ.get("SECRETS_BASELINE_HEAD", "").strip() or "HEAD"
 
     if not base_ref or set(base_ref) <= {"0"}:
         print("No PR base ref; secrets baseline diff check skipped.")
         return 0
 
     base_baseline, base_existed = _read_baseline_at(base_ref)
-    head_baseline, _ = _read_baseline_at(head_ref)
+    head_baseline, head_existed = _read_baseline_from_worktree()
 
     if not base_existed:
         print(
@@ -96,6 +118,15 @@ def main() -> int:
             "introduction of the baseline. No acknowledgement required."
         )
         return 0
+
+    if not head_existed:
+        print(
+            f"Baseline file {BASELINE_PATH} existed at the base ref but is "
+            f"missing in the working tree. Refusing to fail-open on a "
+            f"security gate.",
+            file=sys.stderr,
+        )
+        return 1
 
     base_ids = _identities(base_baseline)
     head_ids = _identities(head_baseline)

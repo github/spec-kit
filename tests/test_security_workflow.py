@@ -210,11 +210,12 @@ class TestSecurityWorkflow:
             assert re.search(r"@v\d+", uses_ref) is None
 
     def test_bandit_does_not_globally_skip_b602(self):
-        # Identify the blocking bandit step by its baseline-arg rather than
-        # by exact step name — name is incidental, behavior is what matters.
-        bandit_step = _find_step_by_run_signature(
-            "static-analysis", "--baseline .github/bandit-baseline.json"
-        )
+        # Identify the blocking bandit step by its severity-level arg (-lll
+        # → HIGH only; the informational MEDIUM pass uses -ll). Doing this
+        # by behavior signature rather than step name keeps the test robust
+        # to renames while remaining unambiguous now that both passes share
+        # the baseline argument.
+        bandit_step = _find_step_by_run_signature("static-analysis", "-r src -lll")
         run = bandit_step["run"]
         workflow_text = SECURITY_WORKFLOW.read_text(encoding="utf-8")
 
@@ -405,3 +406,53 @@ class TestSecurityWorkflow:
             re.search(r"-r\s+spec-kit-audit-requirements\.txt\b", contributing_text)
             is None
         )
+
+    # -----------------------------------------------------------------
+    # secret-scan job (parity coverage with dependency-audit / bandit)
+    # -----------------------------------------------------------------
+
+    def test_secret_scan_job_uses_detect_secrets_hook(self):
+        workflow = _load_security_workflow()
+        scan_step = _find_step_by_run_signature("secret-scan", "detect-secrets-hook")
+        run = scan_step["run"]
+
+        # The hook is the right tool: it compares against the baseline
+        # and exits non-zero on new findings, without rewriting the file.
+        assert "uvx --from detect-secrets==1.5.0 detect-secrets-hook" in run
+        assert "--baseline .secrets.baseline" in run
+        # Auto-generated content must be excluded so it doesn't dominate the scan.
+        assert "':!:.secrets.baseline'" in run
+        assert "':!:uv.lock'" in run
+        assert "':!:.github/security-audit-requirements.txt'" in run
+        # Iteration over tracked files is via git ls-files (-z to handle weird names).
+        assert "git ls-files -z" in run
+        # secret-scan job is in fact wired into the workflow.
+        assert "secret-scan" in workflow["jobs"]
+
+    def test_secret_scan_job_has_baseline_growth_gate(self):
+        gate_step = _find_step_by_run_signature(
+            "secret-scan", "check_secrets_baseline.py"
+        )
+        # The gate runs only on pull_request events (label is meaningless otherwise).
+        assert gate_step["if"] == "${{ github.event_name == 'pull_request' }}"
+        env = gate_step["env"]
+        assert env["SECRETS_BASELINE_BASE"] == (
+            "${{ github.event.pull_request.base.sha }}"
+        )
+        assert env["SECRETS_BASELINE_LABELS"] == (
+            "${{ join(github.event.pull_request.labels.*.name, ',') }}"
+        )
+        # Head is read from the working tree (fail-closed); env var must NOT
+        # be passed (else a future caller might think the script honors it).
+        assert "SECRETS_BASELINE_HEAD" not in env
+
+    def test_secret_scan_checkout_has_full_history(self):
+        # The growth gate uses `git show <base>:` so it needs full history.
+        workflow = _load_security_workflow()
+        checkout_steps = [
+            step
+            for step in workflow["jobs"]["secret-scan"]["steps"]
+            if "actions/checkout" in (step.get("uses") or "")
+        ]
+        assert len(checkout_steps) == 1
+        assert checkout_steps[0]["with"]["fetch-depth"] == 0

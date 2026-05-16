@@ -2137,6 +2137,79 @@ class TestWorkflowCatalog:
         assert configs[0]["name"] == "default"
         assert isinstance(configs[0]["install_allowed"], bool)
 
+    def test_fetch_single_catalog_uses_bounded_read(self, project_dir, monkeypatch):
+        """Regression test for the read_response_limited hardening on
+        workflow catalog downloads. Mirrors TestBoundedRead for
+        _fetch_latest_release_tag and the equivalent test in
+        tests/integrations/test_integration_catalog.py for the
+        integration catalog. A future refactor that drops the bounded
+        read here would let a malicious server stream an unbounded
+        catalog into memory."""
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowCatalogEntry,
+            WorkflowCatalogError,
+        )
+        from specify_cli import _download_security as _download_security_module
+        import specify_cli.authentication.http as _auth_http
+
+        entry = WorkflowCatalogEntry(
+            url="https://example.com/workflow-catalog.json",
+            name="test",
+            priority=0,
+            install_allowed=False,
+        )
+
+        recorded: dict[str, object] = {}
+        real_read = _download_security_module.read_response_limited
+
+        def _spy(response, **kwargs):
+            # Capture exactly the kwargs the caller chose to pass, so the
+            # assertion below can distinguish "explicit" from "default".
+            recorded["kwargs"] = dict(kwargs)
+            return real_read(response, **kwargs)
+
+        class _FakeResponse:
+            def __init__(self):
+                self._data = json.dumps({"workflows": []}).encode()
+
+            def read(self, _size=-1):
+                return self._data
+
+            def geturl(self):
+                return entry.url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                pass
+
+        def _fake_urlopen(req, timeout=30):
+            return _FakeResponse()
+
+        monkeypatch.setattr(_auth_http.urllib.request, "urlopen", _fake_urlopen)
+        monkeypatch.setattr(
+            _auth_http.urllib.request.OpenerDirector,
+            "open",
+            lambda _self, req, data=None, timeout=30: _fake_urlopen(req, timeout),
+        )
+        monkeypatch.setattr(
+            "specify_cli.workflows.catalog.read_response_limited", _spy
+        )
+
+        cat = WorkflowCatalog(project_dir)
+        cat._fetch_single_catalog(entry, force_refresh=True)
+
+        # Bounded read was invoked (not raw resp.read()). error_type must
+        # be the WorkflowCatalogError so an oversized response surfaces
+        # as a workflow-catalog domain error, not a generic ValueError
+        # that callers might miss. The size cap itself relies on the
+        # module-level default in _download_security.MAX_DOWNLOAD_BYTES.
+        assert "kwargs" in recorded, "read_response_limited was not called"
+        assert recorded["kwargs"]["error_type"] is WorkflowCatalogError
+        assert recorded["kwargs"]["label"] == "workflow catalog"
+
 
 # ===== Integration Test =====
 

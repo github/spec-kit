@@ -175,13 +175,27 @@ class GateHandle:
     def commit_raw(self, raw_content: str, message: str) -> str:
         return _commit_file(self.repo, self.config.baseline_path, raw_content, message)
 
-    def run(self, *, base: str, head: str, labels: str = ""):
+    def delete_baseline(self, message: str) -> str:
+        """Remove the baseline file from the working tree and commit."""
+        (self.repo / self.config.baseline_path).unlink()
+        _git(self.repo, "add", "-A")
+        _git(self.repo, "commit", "-q", "-m", message)
+        return _git(self.repo, "rev-parse", "HEAD")
+
+    def overwrite_worktree(self, raw_content: str) -> None:
+        """Replace the working-tree baseline without committing.
+
+        Used to simulate a corrupt head state read from disk.
+        """
+        (self.repo / self.config.baseline_path).write_text(raw_content, encoding="utf-8")
+
+    def run(self, *, base: str, labels: str = ""):
+        # Head side reads the working tree directly — no env var needed.
         return _run_script(
             self.repo,
             self.repo / ".github" / "scripts" / self.config.script.name,
             {
                 f"{self.config.env_prefix}_BASE": base,
-                f"{self.config.env_prefix}_HEAD": head,
                 f"{self.config.env_prefix}_LABELS": labels,
             },
         )
@@ -207,33 +221,33 @@ class TestSharedBaselineGate:
         # Baseline file did not exist at base ref → no acknowledgement needed.
         _git(gate.repo, "commit", "--allow-empty", "-q", "-m", "before baseline")
         base_sha = _git(gate.repo, "rev-parse", "HEAD")
-        head_sha = gate.commit([("a.py", 10)], "introduce baseline")
+        gate.commit([("a.py", 10)], "introduce baseline")
 
-        result = gate.run(base=base_sha, head=head_sha)
+        result = gate.run(base=base_sha)
 
         assert result.returncode == 0, result.stderr
         assert "introduction of the baseline" in result.stdout
 
     def test_identical_baselines_pass(self, gate: GateHandle):
         base_sha = gate.commit([("a.py", 10)], "base")
-        result = gate.run(base=base_sha, head=base_sha)
+        result = gate.run(base=base_sha)
         assert result.returncode == 0
         assert "no new identities" in result.stdout
 
     def test_growth_without_label_fails(self, gate: GateHandle):
         base_sha = gate.commit([("a.py", 10)], "base")
-        head_sha = gate.commit([("a.py", 10), ("b.py", 20)], "grow")
+        gate.commit([("a.py", 10), ("b.py", 20)], "grow")
 
-        result = gate.run(base=base_sha, head=head_sha)
+        result = gate.run(base=base_sha)
 
         assert result.returncode == 1
         assert f"'{gate.config.label}'" in result.stderr
 
     def test_growth_with_label_passes(self, gate: GateHandle):
         base_sha = gate.commit([("a.py", 10)], "base")
-        head_sha = gate.commit([("a.py", 10), ("b.py", 20)], "grow")
+        gate.commit([("a.py", 10), ("b.py", 20)], "grow")
 
-        result = gate.run(base=base_sha, head=head_sha, labels=gate.config.label)
+        result = gate.run(base=base_sha, labels=gate.config.label)
 
         assert result.returncode == 0, result.stderr
         assert "acknowledged via label" in result.stdout
@@ -242,9 +256,9 @@ class TestSharedBaselineGate:
         """Remove one entry and add a different one → constant count, but
         a *new* identity appears. Gate must still fire."""
         base_sha = gate.commit([("a.py", 10)], "base")
-        head_sha = gate.commit([("b.py", 20)], "swap")  # same count, different ID
+        gate.commit([("b.py", 20)], "swap")  # same count, different ID
 
-        result = gate.run(base=base_sha, head=head_sha)
+        result = gate.run(base=base_sha)
 
         assert result.returncode == 1, "identity diff must catch swaps"
         assert "1 new identities" in result.stderr
@@ -254,13 +268,38 @@ class TestSharedBaselineGate:
         contents as empty so the script still completes (the head set
         becomes 'all new' and the label gate fires)."""
         base_sha = gate.commit_raw("{ invalid json", "corrupt base")
-        head_sha = gate.commit([("a.py", 10)], "valid head")
+        gate.commit([("a.py", 10)], "valid head")
 
-        result = gate.run(base=base_sha, head=head_sha)
+        result = gate.run(base=base_sha)
 
         assert result.returncode == 1, "corrupt base should not crash the script"
         assert f"'{gate.config.label}'" in result.stderr
         assert "Could not parse baseline" in result.stderr
+
+    def test_head_missing_fails_closed(self, gate: GateHandle):
+        """If the baseline existed at base but is missing in the working
+        tree (head), the gate must fail-closed — silently passing would
+        let a PR delete the whole baseline file and neutralize the gate."""
+        base_sha = gate.commit([("a.py", 10)], "base")
+        gate.delete_baseline("remove baseline at head")
+
+        result = gate.run(base=base_sha)
+
+        assert result.returncode == 1
+        assert "Refusing to fail-open" in result.stderr
+
+    def test_head_corrupt_in_worktree_fails_closed(self, gate: GateHandle):
+        """A corrupt JSON in the working tree must raise (not be silently
+        treated as empty, which would also drop the gate). Simulates a
+        flaky tool writing junk to the file just before the script runs."""
+        base_sha = gate.commit([("a.py", 10)], "base")
+        gate.overwrite_worktree("{ not json")
+
+        result = gate.run(base=base_sha)
+
+        assert result.returncode == 1
+        assert "is corrupt" in result.stderr
+        assert "fail-open" in result.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +318,7 @@ class TestBanditSpecific:
 
     def test_no_base_ref_is_skipped(self, gate: GateHandle):
         gate.commit([], "init")  # need at least one commit so HEAD resolves
-        result = gate.run(base="", head="HEAD")
+        result = gate.run(base="")
         assert result.returncode == 0
         assert "baseline diff check skipped" in result.stdout
 
@@ -304,7 +343,7 @@ class TestBanditSpecific:
             },
             "base",
         )
-        head_sha = _commit_baseline(
+        _commit_baseline(
             gate.repo,
             gate.config.baseline_path,
             {
@@ -322,6 +361,6 @@ class TestBanditSpecific:
             "reformatted snippet",
         )
 
-        result = gate.run(base=base_sha, head=head_sha)
+        result = gate.run(base=base_sha)
 
         assert result.returncode == 0, result.stderr
