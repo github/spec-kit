@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -2231,3 +2232,569 @@ steps:
         assert state.status == RunStatus.COMPLETED
         assert "do-plan" in state.step_results
         assert "do-specify" not in state.step_results
+
+
+# ===== Step Registry Tests =====
+
+class TestStepRegistryCustom:
+    """Test StepRegistry operations for custom step types."""
+
+    def test_add_and_get(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        registry.add("deploy", {"name": "Deploy", "version": "1.0.0", "type_key": "deploy"})
+
+        entry = registry.get("deploy")
+        assert entry is not None
+        assert entry["name"] == "Deploy"
+        assert "installed_at" in entry
+
+    def test_remove(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        registry.add("deploy", {"name": "Deploy", "type_key": "deploy"})
+        assert registry.is_installed("deploy")
+
+        registry.remove("deploy")
+        assert not registry.is_installed("deploy")
+
+    def test_remove_missing_returns_false(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        removed = registry.remove("nonexistent")
+        assert removed is False
+
+    def test_list(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        registry.add("step-a", {"name": "A", "type_key": "step-a"})
+        registry.add("step-b", {"name": "B", "type_key": "step-b"})
+
+        installed = registry.list()
+        assert "step-a" in installed
+        assert "step-b" in installed
+
+    def test_is_installed(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        assert not registry.is_installed("missing")
+
+        registry.add("exists", {"name": "Exists", "type_key": "exists"})
+        assert registry.is_installed("exists")
+
+    def test_persistence(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry1 = StepRegistry(project_dir)
+        registry1.add("deploy", {"name": "Deploy", "type_key": "deploy"})
+
+        registry2 = StepRegistry(project_dir)
+        assert registry2.is_installed("deploy")
+
+    def test_corrupted_registry_resets(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        registry.steps_dir.mkdir(parents=True, exist_ok=True)
+        registry.registry_path.write_text("not json", encoding="utf-8")
+
+        # Loading again should reset
+        registry2 = StepRegistry(project_dir)
+        assert registry2.list() == {}
+
+    def test_registry_missing_steps_key_resets(self, project_dir):
+        """Valid JSON but missing 'steps' key should not crash add/get."""
+        from specify_cli.workflows.catalog import StepRegistry
+        import json as _json
+
+        registry = StepRegistry(project_dir)
+        registry.steps_dir.mkdir(parents=True, exist_ok=True)
+        # Valid JSON but 'steps' is not a dict
+        registry.registry_path.write_text(
+            _json.dumps({"schema_version": "1.0", "steps": "bad"}),
+            encoding="utf-8",
+        )
+
+        registry2 = StepRegistry(project_dir)
+        # Should be safe to call add/get without KeyError
+        assert registry2.list() == {}
+        registry2.add("deploy", {"name": "Deploy", "type_key": "deploy"})
+        assert registry2.is_installed("deploy")
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="chmod not reliable on Windows")
+    def test_registry_unreadable_file_resets(self, project_dir):
+        """OSError reading the registry file should fall back to default."""
+        from specify_cli.workflows.catalog import StepRegistry
+        import json as _json
+
+        registry = StepRegistry(project_dir)
+        registry.steps_dir.mkdir(parents=True, exist_ok=True)
+        # Write valid registry first
+        registry.registry_path.write_text(
+            _json.dumps({"schema_version": "1.0", "steps": {"existing": {}}}),
+            encoding="utf-8",
+        )
+        # Make it unreadable
+        registry.registry_path.chmod(0o000)
+        try:
+            registry2 = StepRegistry(project_dir)
+            assert registry2.list() == {}
+        finally:
+            registry.registry_path.chmod(0o644)
+
+        # After restoring permissions the registry is fully functional
+        registry2.add("deploy", {"name": "Deploy", "type_key": "deploy"})
+        assert registry2.is_installed("deploy")
+
+
+# ===== Step Catalog Tests =====
+
+class TestStepCatalog:
+    """Test StepCatalog catalog resolution."""
+
+    def test_default_catalogs(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        entries = catalog.get_active_catalogs()
+        assert len(entries) == 2
+        assert entries[0].name == "default"
+        assert entries[1].name == "community"
+
+    def test_env_var_override(self, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        monkeypatch.setenv("SPECKIT_STEP_CATALOG_URL", "https://example.com/step-catalog.json")
+        catalog = StepCatalog(project_dir)
+        entries = catalog.get_active_catalogs()
+        assert len(entries) == 1
+        assert entries[0].name == "env-override"
+        assert entries[0].url == "https://example.com/step-catalog.json"
+
+    def test_project_level_config(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "custom",
+                "url": "https://example.com/step-catalog.json",
+                "priority": 1,
+                "install_allowed": True,
+            }]
+        }))
+
+        catalog = StepCatalog(project_dir)
+        entries = catalog.get_active_catalogs()
+        assert len(entries) == 1
+        assert entries[0].name == "custom"
+
+    def test_validate_url_http_rejected(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        catalog = StepCatalog(project_dir)
+        with pytest.raises(StepValidationError, match="HTTPS"):
+            catalog._validate_catalog_url("http://evil.com/step-catalog.json")
+
+    def test_validate_url_localhost_http_allowed(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        # Should not raise
+        catalog._validate_catalog_url("http://localhost:8080/step-catalog.json")
+
+    def test_add_catalog(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog("https://example.com/new-steps.json", "my-steps")
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        assert config_path.exists()
+        data = yaml.safe_load(config_path.read_text())
+        assert len(data["catalogs"]) == 1
+        assert data["catalogs"][0]["url"] == "https://example.com/new-steps.json"
+
+    def test_add_catalog_empty_yaml_file(self, project_dir):
+        """An empty YAML config file should be treated as empty, not corrupted."""
+        from specify_cli.workflows.catalog import StepCatalog
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text("", encoding="utf-8")
+
+        catalog = StepCatalog(project_dir)
+        # Should not raise StepValidationError "corrupted"
+        catalog.add_catalog("https://example.com/steps.json", "my-steps")
+
+        data = yaml.safe_load(config_path.read_text())
+        assert len(data["catalogs"]) == 1
+        assert data["catalogs"][0]["url"] == "https://example.com/steps.json"
+
+    def test_add_catalog_duplicate_rejected(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog("https://example.com/steps.json")
+
+        with pytest.raises(StepValidationError, match="already configured"):
+            catalog.add_catalog("https://example.com/steps.json")
+
+    def test_remove_catalog(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog("https://example.com/s1.json", "first")
+        catalog.add_catalog("https://example.com/s2.json", "second")
+
+        removed = catalog.remove_catalog(0)
+        assert removed == "first"
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        data = yaml.safe_load(config_path.read_text())
+        assert len(data["catalogs"]) == 1
+
+    def test_remove_catalog_invalid_index(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog("https://example.com/s1.json")
+
+        with pytest.raises(StepValidationError, match="out of range"):
+            catalog.remove_catalog(5)
+
+    def test_remove_catalog_no_config(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        catalog = StepCatalog(project_dir)
+        with pytest.raises(StepValidationError, match="No step catalog config file found"):
+            catalog.remove_catalog(0)
+
+    def test_get_catalog_configs(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        configs = catalog.get_catalog_configs()
+        assert len(configs) == 2
+        assert configs[0]["name"] == "default"
+        assert isinstance(configs[0]["install_allowed"], bool)
+
+    def test_search_with_mock_catalog(self, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        mock_data = {
+            "schema_version": "1.0",
+            "steps": {
+                "deploy": {
+                    "id": "deploy",
+                    "name": "Deploy Step",
+                    "description": "Deploy to production",
+                    "version": "1.0.0",
+                },
+                "notify": {
+                    "id": "notify",
+                    "name": "Notify Step",
+                    "description": "Send notifications",
+                    "version": "1.0.0",
+                },
+            },
+        }
+
+        catalog = StepCatalog(project_dir)
+        monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
+            "deploy": dict(mock_data["steps"]["deploy"], _catalog_name="test", _install_allowed=True),
+            "notify": dict(mock_data["steps"]["notify"], _catalog_name="test", _install_allowed=True),
+        })
+
+        results = catalog.search()
+        assert len(results) == 2
+
+        results = catalog.search(query="deploy")
+        assert len(results) == 1
+        assert results[0]["id"] == "deploy"
+
+    def test_get_step_info_with_mock_catalog(self, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
+            "deploy": {
+                "id": "deploy",
+                "name": "Deploy Step",
+                "version": "1.0.0",
+                "_catalog_name": "test",
+                "_install_allowed": True,
+            },
+        })
+
+        info = catalog.get_step_info("deploy")
+        assert info is not None
+        assert info["name"] == "Deploy Step"
+
+        missing = catalog.get_step_info("nonexistent")
+        assert missing is None
+
+
+# ===== Load Custom Steps Tests =====
+
+class TestLoadCustomSteps:
+    """Test dynamic loading of custom step types from the filesystem."""
+
+    def test_empty_steps_dir(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        loaded = load_custom_steps(project_dir)
+        assert loaded == []
+
+    def test_no_steps_dir(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        # .specify/workflows/steps does not exist
+        loaded = load_custom_steps(project_dir)
+        assert loaded == []
+
+    def test_load_valid_custom_step(self, project_dir):
+        from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "test-custom"
+        step_dir.mkdir(parents=True)
+
+        step_yml = """
+schema_version: "1.0"
+step:
+  type_key: "test-custom"
+  name: "Test Custom Step"
+  version: "1.0.0"
+  author: "test"
+  description: "A test custom step"
+"""
+        (step_dir / "step.yml").write_text(step_yml, encoding="utf-8")
+
+        init_py = """
+from specify_cli.workflows.base import StepBase, StepResult
+
+class TestCustomStep(StepBase):
+    type_key = "test-custom"
+
+    def execute(self, config, context):
+        return StepResult()
+"""
+        (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
+
+        loaded = load_custom_steps(project_dir)
+        assert "test-custom" in loaded
+        assert "test-custom" in STEP_REGISTRY
+
+    def test_skip_missing_step_yml(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "bad-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "__init__.py").write_text("# no step.yml", encoding="utf-8")
+
+        loaded = load_custom_steps(project_dir)
+        assert "bad-step" not in loaded
+
+    def test_skip_missing_init_py(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "bad-step2"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: bad-step2\n", encoding="utf-8"
+        )
+
+        loaded = load_custom_steps(project_dir)
+        assert "bad-step2" not in loaded
+
+    def test_skip_already_registered(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        # "command" is already registered as a built-in step
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "command"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: command\n", encoding="utf-8"
+        )
+        (step_dir / "__init__.py").write_text("", encoding="utf-8")
+
+        # Should not raise KeyError; just skip
+        loaded = load_custom_steps(project_dir)
+        assert "command" not in loaded
+
+    def test_skip_broken_init_py(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "broken-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: broken-step\n", encoding="utf-8"
+        )
+        (step_dir / "__init__.py").write_text(
+            "raise RuntimeError('broken')", encoding="utf-8"
+        )
+
+        # Should not propagate exception
+        loaded = load_custom_steps(project_dir)
+        assert "broken-step" not in loaded
+
+    def test_module_name_sanitized_for_hyphenated_type_key(self, project_dir):
+        """type_key values with hyphens produce valid Python module identifiers."""
+        import hashlib
+        import sys
+        from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "my-hyphen-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: my-hyphen-step\n  name: Hyphen Step\n",
+            encoding="utf-8",
+        )
+
+        init_py = """
+from specify_cli.workflows.base import StepBase, StepResult
+
+class HyphenStep(StepBase):
+    type_key = "my-hyphen-step"
+
+    def execute(self, config, context):
+        return StepResult()
+"""
+        (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
+
+        loaded = load_custom_steps(project_dir)
+        assert "my-hyphen-step" in loaded
+        assert "my-hyphen-step" in STEP_REGISTRY
+        # Synthetic module name must be a valid identifier (hyphens → underscores)
+        # and include a collision-resistant hash suffix.
+        key_hash = hashlib.sha256(b"my-hyphen-step").hexdigest()[:8]
+        module_name = f"_speckit_custom_step_my_hyphen_step_{key_hash}"
+        assert module_name in sys.modules
+
+    def test_package_relative_import(self, project_dir):
+        """Steps can use relative imports to access sibling modules."""
+        import hashlib
+        import sys
+        from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "pkg-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: pkg-step\n  name: Package Step\n",
+            encoding="utf-8",
+        )
+        # Helper module that the step will import relatively
+        (step_dir / "helpers.py").write_text(
+            "HELPER_VALUE = 'hello'\n", encoding="utf-8"
+        )
+        init_py = """
+from specify_cli.workflows.base import StepBase, StepResult
+from .helpers import HELPER_VALUE
+
+class PkgStep(StepBase):
+    type_key = "pkg-step"
+    helper = HELPER_VALUE
+
+    def execute(self, config, context):
+        return StepResult()
+"""
+        (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
+
+        loaded = load_custom_steps(project_dir)
+        assert "pkg-step" in loaded
+        assert "pkg-step" in STEP_REGISTRY
+        # Verify the relative import actually resolved; module name includes hash suffix.
+        key_hash = hashlib.sha256(b"pkg-step").hexdigest()[:8]
+        module_name = f"_speckit_custom_step_pkg_step_{key_hash}"
+        assert module_name in sys.modules
+        assert sys.modules[module_name].PkgStep.helper == "hello"
+
+    def test_module_name_collision_resistance(self, project_dir):
+        """'a-b' and 'a_b' produce different module names despite the same sanitized form."""
+        import hashlib
+
+        # Simulate the module name generation for two type_keys that sanitize the same way
+        def make_module_name(type_key: str) -> str:
+            import re
+            safe_key = re.sub(r"[^A-Za-z0-9_]", "_", type_key)
+            key_hash = hashlib.sha256(type_key.encode()).hexdigest()[:8]
+            return f"_speckit_custom_step_{safe_key}_{key_hash}"
+
+        name_a = make_module_name("a-b")
+        name_b = make_module_name("a_b")
+        assert name_a != name_b, "Module names for 'a-b' and 'a_b' must differ"
+
+
+# ===== CLI Step Remove Tests =====
+
+class TestWorkflowStepRemoveCLI:
+    """Test the 'specify workflow step remove' CLI command edge cases."""
+
+    def test_remove_orphaned_directory(self, project_dir, monkeypatch):
+        """step remove works when directory exists but registry entry is missing.
+
+        This covers the case where the registry was reset due to corruption.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+
+        # Create an orphaned step directory (no registry entry)
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "orphan-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: orphan-step\n", encoding="utf-8"
+        )
+        (step_dir / "__init__.py").write_text("", encoding="utf-8")
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "remove", "orphan-step"])
+
+        assert result.exit_code == 0, result.output
+        assert not step_dir.exists()
+        # Warning should be printed about missing registry entry
+        assert "Warning" in result.output or "warning" in result.output.lower()
+
+    def test_remove_not_installed(self, project_dir, monkeypatch):
+        """step remove fails cleanly when neither directory nor registry entry exist."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "remove", "ghost-step"])
+
+        assert result.exit_code != 0
+        assert "not installed" in result.output
+
+    def test_remove_registered_step(self, project_dir, monkeypatch):
+        """step remove works normally when both directory and registry entry exist."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepRegistry
+
+        monkeypatch.chdir(project_dir)
+
+        # Set up a registered step with a directory
+        registry = StepRegistry(project_dir)
+        registry.add("my-step", {"name": "My Step", "type_key": "my-step", "version": "1.0.0"})
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "my-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: my-step\n", encoding="utf-8"
+        )
+        (step_dir / "__init__.py").write_text("", encoding="utf-8")
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "remove", "my-step"])
+
+        assert result.exit_code == 0, result.output
+        assert not step_dir.exists()
+        registry2 = StepRegistry(project_dir)
+        assert not registry2.is_installed("my-step")
