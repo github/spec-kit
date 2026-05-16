@@ -558,6 +558,11 @@ def init(
                     "[dim]Note: --ai-skills is not needed; "
                     "skills are the default for this integration.[/dim]"
                 )
+            elif any(o.name == "--skills" for o in resolved_integration.options()):
+                console.print(
+                    f"[dim]Note: --ai-skills is deprecated for {resolved_integration.key}; use "
+                    f'[bold]--integration {resolved_integration.key} --integration-options="--skills"[/bold] instead.[/dim]'
+                )
             else:
                 console.print(
                     "[dim]Note: --ai-skills has no effect with "
@@ -819,6 +824,27 @@ def init(
 
             ensure_constitution_from_template(project_path, tracker=tracker)
 
+            # Persist the CLI options so later operations (e.g. extension install, preset add)
+            # can adapt their behaviour without re-scanning the filesystem.
+            # Must be saved BEFORE extension and preset install so _get_skills_dir() works.
+            init_opts = {
+                "ai": selected_ai,
+                "integration": resolved_integration.key,
+                "branch_numbering": branch_numbering or "sequential",
+                "context_file": resolved_integration.context_file,
+                "here": here,
+                "script": selected_script,
+                "speckit_version": get_speckit_version(),
+            }
+            # Ensure ai_skills is set for SkillsIntegration so downstream
+            # tools (extensions, presets) emit SKILL.md overrides correctly.
+            # Also set for integrations running in skills mode (e.g. Copilot
+            # with --skills or Opencode with --skills).
+            from .integrations.base import SkillsIntegration as _SkillsPersist
+            if isinstance(resolved_integration, _SkillsPersist) or getattr(resolved_integration, "_skills_mode", False):
+                init_opts["ai_skills"] = True
+            save_init_options(project_path, init_opts)
+
             if not no_git:
                 tracker.start("git")
                 git_messages = []
@@ -904,27 +930,6 @@ def init(
 
             # Fix permissions after all installs (scripts + extensions)
             ensure_executable_scripts(project_path, tracker=tracker)
-
-            # Persist the CLI options so later operations (e.g. preset add)
-            # can adapt their behaviour without re-scanning the filesystem.
-            # Must be saved BEFORE preset install so _get_skills_dir() works.
-            init_opts = {
-                "ai": selected_ai,
-                "integration": resolved_integration.key,
-                "branch_numbering": branch_numbering or "sequential",
-                "context_file": resolved_integration.context_file,
-                "here": here,
-                "script": selected_script,
-                "speckit_version": get_speckit_version(),
-            }
-            # Ensure ai_skills is set for SkillsIntegration so downstream
-            # tools (extensions, presets) emit SKILL.md overrides correctly.
-            # Also set for integrations running in skills mode (e.g. Copilot
-            # with --skills).
-            from .integrations.base import SkillsIntegration as _SkillsPersist
-            if isinstance(resolved_integration, _SkillsPersist) or getattr(resolved_integration, "_skills_mode", False):
-                init_opts["ai_skills"] = True
-            save_init_options(project_path, init_opts)
 
             # Install preset if specified
             if preset:
@@ -1044,7 +1049,7 @@ def init(
         step_num = 2
 
     # Determine skill display mode for the next-steps panel.
-    # Skills integrations (codex, claude, kimi, agy, trae, cursor-agent, copilot, devin) should show skill invocation syntax.
+    # Skills integrations (codex, claude, kimi, agy, trae, cursor-agent, copilot, devin, opencode --skills) should show skill invocation syntax.
     from .integrations.base import SkillsIntegration as _SkillsInt
     _is_skills_integration = isinstance(resolved_integration, _SkillsInt) or getattr(resolved_integration, "_skills_mode", False)
 
@@ -1056,7 +1061,8 @@ def init(
     cursor_agent_skill_mode = selected_ai == "cursor-agent" and (ai_skills or _is_skills_integration)
     copilot_skill_mode = selected_ai == "copilot" and _is_skills_integration
     devin_skill_mode = selected_ai == "devin"
-    native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode or trae_skill_mode or cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode
+    opencode_skill_mode = selected_ai == "opencode" and _is_skills_integration
+    native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode or trae_skill_mode or cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode or opencode_skill_mode
 
     if codex_skill_mode and not ai_skills:
         # Integration path installed skills; show the helpful notice
@@ -1071,6 +1077,9 @@ def init(
     if devin_skill_mode:
         steps_lines.append(f"{step_num}. Start Devin in this project directory; spec-kit skills were installed to [cyan].devin/skills[/cyan]")
         step_num += 1
+    if opencode_skill_mode:
+        steps_lines.append(f"{step_num}. Start opencode in this project directory; spec-kit skills were installed to [cyan].opencode/skills[/cyan]")
+        step_num += 1
     usage_label = "skills" if native_skill_mode else "slash commands"
 
     def _display_cmd(name: str) -> str:
@@ -1080,7 +1089,7 @@ def init(
             return f"/speckit-{name}"
         if kimi_skill_mode:
             return f"/skill:speckit-{name}"
-        if cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode:
+        if cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode or opencode_skill_mode:
             return f"/speckit-{name}"
         return f"/speckit.{name}"
 

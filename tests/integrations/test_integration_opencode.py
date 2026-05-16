@@ -1,5 +1,9 @@
 """Tests for OpencodeIntegration."""
 
+import os
+
+import yaml
+
 import warnings
 
 from specify_cli.agents import CommandRegistrar
@@ -198,3 +202,180 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         assert canonical.is_dir()
         assert not legacy.exists()
         assert any(canonical.glob("speckit.*.md"))
+
+
+class TestOpencodeSkillsMode:
+    KEY = "opencode"
+
+    def test_skills_option_declared(self):
+        integration = get_integration(self.KEY)
+        opts = integration.options()
+        names = [o.name for o in opts]
+        assert "--skills" in names
+        skills_opt = next(o for o in opts if o.name == "--skills")
+        assert skills_opt.is_flag is True
+        assert skills_opt.default is False
+
+    def test_skills_mode_creates_skill_md_files(self, tmp_path):
+        integration = get_integration(self.KEY)
+        manifest = IntegrationManifest(self.KEY, tmp_path)
+        created = integration.setup(tmp_path, manifest, parsed_options={"skills": True}, script_type="sh")
+
+        skill_files = [p for p in created if p.name == "SKILL.md"]
+        assert skill_files
+
+        skills_dir = tmp_path / ".opencode" / "skills"
+        assert skills_dir.is_dir()
+
+        specify_skill = skills_dir / "speckit-specify" / "SKILL.md"
+        assert specify_skill.exists()
+
+    def test_skills_mode_does_not_create_md_command_files(self, tmp_path):
+        integration = get_integration(self.KEY)
+        manifest = IntegrationManifest(self.KEY, tmp_path)
+        integration.setup(tmp_path, manifest, parsed_options={"skills": True}, script_type="sh")
+
+        command_dir = tmp_path / ".opencode" / "commands"
+        md_files = list(command_dir.glob("*.md")) if command_dir.exists() else []
+        assert md_files == []
+
+    def test_skills_mode_frontmatter(self, tmp_path):
+        integration = get_integration(self.KEY)
+        manifest = IntegrationManifest(self.KEY, tmp_path)
+        integration.setup(tmp_path, manifest, parsed_options={"skills": True}, script_type="sh")
+
+        skill_path = tmp_path / ".opencode" / "skills" / "speckit-plan" / "SKILL.md"
+        assert skill_path.exists()
+
+        content = skill_path.read_text(encoding="utf-8")
+        parts = content.split("---", 2)
+        parsed = yaml.safe_load(parts[1])
+
+        assert parsed["name"] == "speckit-plan"
+        assert "description" in parsed
+        assert "compatibility" in parsed
+        assert parsed["metadata"]["author"] == "github-spec-kit"
+
+    def test_default_mode_unchanged(self, tmp_path):
+        integration = get_integration(self.KEY)
+        manifest = IntegrationManifest(self.KEY, tmp_path)
+        integration.setup(tmp_path, manifest, script_type="sh")
+
+        command_dir = tmp_path / ".opencode" / "commands"
+        assert command_dir.is_dir()
+        md_files = list(command_dir.glob("speckit.*.md"))
+        assert md_files
+
+    def test_effective_invoke_separator_skills_mode(self):
+        integration = get_integration(self.KEY)
+        assert integration.effective_invoke_separator({"skills": True}) == "-"
+
+    def test_effective_invoke_separator_default_mode(self):
+        integration = get_integration(self.KEY)
+        assert integration.effective_invoke_separator({}) == "."
+
+    def test_skills_mode_flag_set_on_instance(self, tmp_path):
+        integration = get_integration(self.KEY)
+        manifest = IntegrationManifest(self.KEY, tmp_path)
+        integration.setup(tmp_path, manifest, parsed_options={"skills": True}, script_type="sh")
+        assert integration._skills_mode is True
+
+    def test_skills_mode_resets_on_default_setup(self, tmp_path):
+        integration = get_integration(self.KEY)
+        manifest = IntegrationManifest(self.KEY, tmp_path)
+        integration.setup(tmp_path, manifest, parsed_options={"skills": True}, script_type="sh")
+        assert integration._skills_mode is True
+
+        manifest2 = IntegrationManifest(self.KEY, tmp_path)
+        integration.setup(tmp_path, manifest2, script_type="sh")
+        assert integration._skills_mode is False
+
+    def test_init_cli_with_skills_option(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "opencode-skills"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "opencode",
+                "--integration-options", "--skills",
+                "--script", "sh", "--no-git", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+        skills_dir = project / ".opencode" / "skills"
+        assert skills_dir.is_dir(), "Skills directory was not created"
+        plan_skill = skills_dir / "speckit-plan" / "SKILL.md"
+        assert plan_skill.exists(), "speckit-plan/SKILL.md not found"
+
+        import json
+        init_opts = json.loads((project / ".specify" / "init-options.json").read_text())
+        assert init_opts.get("ai_skills") is True
+
+        commands_dir = project / ".opencode" / "commands"
+        if commands_dir.exists():
+            assert not list(commands_dir.glob("*.md"))
+
+    def test_build_command_invocation_skills_mode(self, tmp_path):
+        integration = get_integration(self.KEY)
+        manifest = IntegrationManifest(self.KEY, tmp_path)
+        integration.setup(tmp_path, manifest, parsed_options={"skills": True}, script_type="sh")
+
+        assert integration.build_command_invocation("speckit.plan", "add OAuth") == "/speckit-plan add OAuth"
+        assert integration.build_command_invocation("speckit.specify", "") == "/speckit-specify"
+
+    def test_build_command_invocation_default_mode(self, tmp_path):
+        integration = get_integration(self.KEY)
+        manifest = IntegrationManifest(self.KEY, tmp_path)
+        integration.setup(tmp_path, manifest, script_type="sh")
+        assert integration.build_command_invocation("speckit.plan", "add OAuth") == "/speckit.plan add OAuth"
+
+    def test_dispatch_command_uses_dotted_invocation_for_non_skills_project(self, tmp_path):
+        from unittest import mock
+
+        integration = get_integration(self.KEY)
+        integration._skills_mode = False  # no prior skills setup
+
+        project = tmp_path / "regular-project"
+        project.mkdir()
+        (project / ".opencode").mkdir()
+
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = mock.MagicMock(returncode=0)
+            integration.dispatch_command(
+                "speckit.plan", "test args", project_root=project, stream=False,
+            )
+
+        called_args = mock_run.call_args[0][0]
+        assert "--command" in called_args
+        assert called_args[called_args.index("--command") + 1] == "speckit.plan"
+        # singleton _skills_mode is not mutated by dispatch
+        assert integration._skills_mode is False
+
+    def test_dispatch_command_uses_hyphenated_invocation_for_skills_project(self, tmp_path):
+        from unittest import mock
+
+        integration = get_integration(self.KEY)
+        integration._skills_mode = False  # start without skills
+
+        project = tmp_path / "skills-project"
+        skills_dir = project / ".opencode" / "skills" / "speckit-plan"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text("# skill", encoding="utf-8")
+
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = mock.MagicMock(returncode=0)
+            integration.dispatch_command(
+                "speckit.plan", "test args", project_root=project, stream=False,
+            )
+
+        called_args = mock_run.call_args[0][0]
+        assert "--command" in called_args
+        assert called_args[called_args.index("--command") + 1] == "speckit-plan"
+        # singleton _skills_mode is not mutated by dispatch
+        assert integration._skills_mode is False
