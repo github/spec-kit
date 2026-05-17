@@ -26,7 +26,10 @@ from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 _FALLBACK_CORE_COMMAND_NAMES = frozenset({
+    "agent",
+    "governance",
     "analyze",
+    "arch",
     "checklist",
     "clarify",
     "constitution",
