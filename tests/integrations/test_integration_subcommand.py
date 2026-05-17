@@ -163,7 +163,30 @@ class TestIntegrationInstall:
         assert "already installed" in result.output
         normalized = " ".join(result.output.split())
         assert "specify integration upgrade copilot" in normalized
-        assert "specify integration uninstall copilot" in normalized
+        assert "already the default integration" in normalized
+        assert "No files were changed" in normalized
+        assert "specify integration uninstall copilot" not in normalized
+
+    def test_install_already_installed_non_default_guides_use(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            install = runner.invoke(app, [
+                "integration", "install", "codex",
+                "--script", "sh",
+            ], catch_exceptions=False)
+            assert install.exit_code == 0, install.output
+
+            result = runner.invoke(app, ["integration", "install", "codex"])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        normalized = " ".join(result.output.split())
+        assert "already installed" in normalized
+        assert "specify integration use codex" in normalized
+        assert "specify integration upgrade codex" in normalized
+        assert "specify integration uninstall codex" not in normalized
 
     def test_install_different_when_one_exists(self, tmp_path):
         project = _init_project(tmp_path, "copilot")
@@ -176,7 +199,11 @@ class TestIntegrationInstall:
         assert result.exit_code != 0
         assert "Installed integrations: copilot" in result.output
         assert "Default integration: copilot" in result.output
-        assert "--force" in result.output
+        normalized = " ".join(result.output.split())
+        assert "To replace the default integration" in normalized
+        assert "specify integration switch claude" in normalized
+        assert "To install 'claude' alongside" in normalized
+        assert "retry the same install command with --force" in normalized
 
     def test_install_multi_safe_integration(self, tmp_path):
         project = _init_project(tmp_path, "claude")
@@ -261,7 +288,11 @@ class TestIntegrationInstall:
         assert result.exit_code != 0
         assert "Installed integrations: copilot" in result.output
         assert "multi-install safe" in result.output
-        assert "--force" in result.output
+        normalized = " ".join(result.output.split())
+        assert "To replace the default integration" in normalized
+        assert "specify integration switch claude" in normalized
+        assert "To install 'claude' alongside" in normalized
+        assert "retry the same install command with --force" in normalized
 
     def test_install_multi_unsafe_allowed_with_force(self, tmp_path):
         project = _init_project(tmp_path, "copilot")
@@ -762,7 +793,7 @@ class TestIntegrationSwitch:
         assert result.exit_code == 0, result.output
 
         # Git extension commands should exist for opencode
-        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
+        opencode_git_feature = project / ".opencode" / "commands" / "speckit.git.feature.md"
         assert opencode_git_feature.exists(), "Git extension command should exist for opencode"
 
         # Old kimi extension skills should be removed
@@ -837,7 +868,7 @@ class TestIntegrationSwitch:
         ])
         assert result.exit_code == 0, result.output
 
-        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
+        opencode_git_feature = project / ".opencode" / "commands" / "speckit.git.feature.md"
         assert opencode_git_feature.exists(), "Git extension command should exist for opencode"
         assert not copilot_git_feature.exists(), "Old Copilot extension skill should be removed"
 
@@ -858,7 +889,7 @@ class TestIntegrationSwitch:
         result = _run_in_project(project, ["extension", "disable", "git"])
         assert result.exit_code == 0, result.output
 
-        opencode_git_feature = project / ".opencode" / "command" / "speckit.git.feature.md"
+        opencode_git_feature = project / ".opencode" / "commands" / "speckit.git.feature.md"
         assert opencode_git_feature.exists(), "Disabled extension command remains until integration switch"
 
         result = _run_in_project(project, [
@@ -1167,6 +1198,49 @@ class TestIntegrationUpgrade:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "gemini"
         assert "/speckit.plan" in template.read_text(encoding="utf-8")
+
+    def test_upgrade_migrates_opencode_legacy_dir(self, tmp_path):
+        """Upgrade moves OpenCode commands from .opencode/command/ to .opencode/commands/."""
+        project = _init_project(tmp_path, "opencode")
+
+        # Simulate a legacy project: rename commands/ back to command/
+        canonical = project / ".opencode" / "commands"
+        legacy = project / ".opencode" / "command"
+        assert canonical.is_dir(), "init should have created .opencode/commands/"
+        canonical.rename(legacy)
+        assert legacy.is_dir()
+        assert not canonical.exists()
+
+        # Patch the manifest to reflect old paths (command/ not commands/)
+        manifest_path = project / ".specify" / "integrations" / "opencode.manifest.json"
+        manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        patched_files = {}
+        for path, info in manifest_data.get("files", {}).items():
+            patched_files[path.replace(".opencode/commands/", ".opencode/command/")] = info
+        manifest_data["files"] = patched_files
+        manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+        old_commands = sorted(legacy.glob("speckit.*.md"))
+        assert len(old_commands) > 0, "Legacy dir should have speckit command files"
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "opencode",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, f"upgrade failed: {result.output}"
+
+        # New commands in canonical dir
+        assert canonical.is_dir(), ".opencode/commands/ should exist after upgrade"
+        new_commands = sorted(canonical.glob("speckit.*.md"))
+        assert len(new_commands) > 0, "Commands should exist in .opencode/commands/"
+
+        # Stale files removed from legacy dir
+        remaining = list(legacy.glob("speckit.*.md"))
+        assert len(remaining) == 0, (
+            f"Legacy .opencode/command/ should have no speckit files after upgrade, "
+            f"found: {[f.name for f in remaining]}"
+        )
 
 
 # ── Full lifecycle ───────────────────────────────────────────────────
