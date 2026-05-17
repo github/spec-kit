@@ -323,6 +323,7 @@ class TestInitIntegrationFlag:
     def test_shared_infra_skip_warning_displayed(self, tmp_path, capsys):
         """Console warning is displayed when files are skipped."""
         from specify_cli import _install_shared_infra
+        from tests.conftest import strip_ansi
 
         project = tmp_path / "warn-test"
         project.mkdir()
