@@ -1846,7 +1846,7 @@ Run {SCRIPT}
         registrar = CommandRegistrar()
         from specify_cli.extensions import ExtensionManifest
         manifest = ExtensionManifest(ext_dir / "extension.yml")
-        registered = registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
 
         skill_subdir = skills_dir / "speckit-cleanup-ext-run"
         assert skill_subdir.exists(), "Skill subdirectory should exist after registration"
@@ -2579,8 +2579,9 @@ class TestExtensionCatalog:
 
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
         """download_extension passes Authorization header when a provider is configured."""
-        from unittest.mock import patch, MagicMock
-        import zipfile, io
+        import io
+        import zipfile
+        from unittest.mock import MagicMock, patch
 
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
         self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
