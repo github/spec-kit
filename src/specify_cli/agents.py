@@ -401,6 +401,9 @@ class CommandRegistrar:
     ) -> str:
         """Compute the on-disk command or skill name for an agent."""
         if agent_config["extension"] != "/SKILL.md":
+            format_name = agent_config.get("format_name")
+            if format_name:
+                return format_name(cmd_name)
             return cmd_name
 
         short_name = cmd_name
@@ -812,22 +815,28 @@ class CommandRegistrar:
                 output_name = self._compute_output_name(
                     agent_name, cmd_name, agent_config
                 )
+                
+                names_to_clean = [output_name]
+                if output_name != cmd_name:
+                    names_to_clean.append(cmd_name)
+
                 for target_dir in dirs_to_clean:
-                    cmd_file = (
-                        target_dir / f"{output_name}{agent_config['extension']}"
-                    )
-                    if cmd_file.exists():
-                        cmd_file.unlink()
-                        # For SKILL.md agents each command lives in its own
-                        # subdirectory (e.g. .agents/skills/speckit-ext-cmd/
-                        # SKILL.md).  Remove the parent dir when it becomes
-                        # empty to avoid orphaned directories.
-                        parent = cmd_file.parent
-                        if parent != target_dir and parent.exists():
-                            try:
-                                parent.rmdir()
-                            except OSError:
-                                pass
+                    for name in names_to_clean:
+                        cmd_file = (
+                            target_dir / f"{name}{agent_config['extension']}"
+                        )
+                        if cmd_file.exists():
+                            cmd_file.unlink()
+                            # For SKILL.md agents each command lives in its own
+                            # subdirectory (e.g. .agents/skills/speckit-ext-cmd/
+                            # SKILL.md).  Remove the parent dir when it becomes
+                            # empty to avoid orphaned directories.
+                            parent = cmd_file.parent
+                            if parent != target_dir and parent.exists():
+                                try:
+                                    parent.rmdir()
+                                except OSError:
+                                    pass
 
                 if agent_name == "copilot":
                     prompt_file = (

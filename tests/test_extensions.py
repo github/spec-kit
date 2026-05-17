@@ -1302,6 +1302,42 @@ $ARGUMENTS
         assert not (skills_dir / "speckit-specify" / "SKILL.md").exists()
         assert not (skills_dir / "speckit-shortcut" / "SKILL.md").exists()
 
+    def test_unregister_commands_handles_legacy_dot_notated_files(self, project_dir):
+        """Unregister should clean up both legacy dot-notated and new hyphenated files."""
+        # 1. Mock an agent that uses hyphenated/formatted names (e.g. Cline)
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+        registrar = AgentCommandRegistrar()
+
+        # We'll use "cline" since it has format_name
+        assert "cline" in registrar.AGENT_CONFIGS
+        cline_config = registrar.AGENT_CONFIGS["cline"]
+        cline_dir = project_dir / cline_config["dir"]
+        cline_dir.mkdir(parents=True, exist_ok=True)
+
+        # 2. Create both legacy and new files
+        # Command name: speckit.git.commit
+        # Formatted name: speckit-git-commit
+        cmd_name = "speckit.git.commit"
+        formatted_name = "speckit-git-commit"
+
+        legacy_file = cline_dir / f"{cmd_name}.md"
+        formatted_file = cline_dir / f"{formatted_name}.md"
+
+        legacy_file.write_text("legacy body")
+        formatted_file.write_text("formatted body")
+
+        assert legacy_file.exists()
+        assert formatted_file.exists()
+
+        # 3. Call unregister
+        registrar.unregister_commands({"cline": [cmd_name]}, project_dir)
+
+        # 4. Verify both are gone
+        assert not legacy_file.exists(), "Legacy dot-notated file should be removed"
+        assert (
+            not formatted_file.exists()
+        ), "Formatted hyphenated file should be removed"
+
     def test_register_commands_for_all_agents_distinguishes_codex_from_amp(self, extension_dir, project_dir):
         """A Codex project under .agents/skills should not implicitly activate Amp."""
         skills_dir = project_dir / ".agents" / "skills"
@@ -4185,6 +4221,43 @@ class TestHookInvocationRendering:
 
         assert execution["command"] == "speckit.tasks"
         assert execution["invocation"] == "$speckit-tasks"
+
+    def test_cline_hooks_render_hyphenated_invocation(self, project_dir):
+        """Cline projects should render /speckit-* invocations."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "cline"}))
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "speckit.tasks",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "speckit.tasks"
+        assert execution["invocation"] == "/speckit-tasks"
+
+    def test_cline_hooks_render_extension_command(self, project_dir):
+        """Cline projects should render /speckit-my-ext-cmd for extension hooks."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "cline"}))
+
+        hook_executor = HookExecutor(project_dir)
+        # Test with a non-speckit. command
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "my-extension.do-something",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "my-extension.do-something"
+        assert execution["invocation"] == "/speckit-my-extension-do-something"
 
     def test_non_skill_command_keeps_slash_invocation(self, project_dir):
         """Custom hook commands should keep slash invocation style."""

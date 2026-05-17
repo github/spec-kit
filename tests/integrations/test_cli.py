@@ -267,6 +267,7 @@ class TestInitIntegrationFlag:
     def test_shared_infra_skip_warning_displayed(self, tmp_path, capsys):
         """Console warning is displayed when files are skipped."""
         from specify_cli import _install_shared_infra
+        from tests.conftest import strip_ansi
 
         project = tmp_path / "warn-test"
         project.mkdir()
@@ -279,10 +280,11 @@ class TestInitIntegrationFlag:
         _install_shared_infra(project, "sh", force=False)
 
         captured = capsys.readouterr()
-        assert "already exist and were not updated" in captured.out
-        assert "specify init --here --force" in captured.out
+        output = strip_ansi(captured.out)
+        assert "already exist and were not updated" in output
+        assert "specify init --here --force" in output
         # Rich may wrap long lines; normalize whitespace for the second command
-        normalized = " ".join(captured.out.split())
+        normalized = " ".join(output.split())
         assert "specify integration upgrade --force" in normalized
 
     def test_shared_infra_warns_when_manifest_cannot_be_loaded(self, tmp_path, capsys):
