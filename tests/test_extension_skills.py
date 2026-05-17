@@ -18,9 +18,7 @@ import yaml
 from pathlib import Path
 
 from specify_cli.extensions import (
-    ExtensionManifest,
     ExtensionManager,
-    ExtensionError,
 )
 
 
@@ -220,9 +218,7 @@ class TestExtensionSkillRegistration:
         """Skills should be created when ai_skills is enabled."""
         project_dir, skills_dir = skills_project
         manager = ExtensionManager(project_dir)
-        manifest = manager.install_from_directory(
-            extension_dir, "0.1.0", register_commands=False
-        )
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
 
         # Check that skill directories were created
         skill_dirs = sorted([d.name for d in skills_dir.iterdir() if d.is_dir()])
@@ -334,14 +330,13 @@ class TestExtensionSkillRegistration:
         """Kimi agent should use the same hyphenated skill names as hooks."""
         _create_init_options(project_dir, ai="kimi", ai_skills=True)
         _create_skills_dir(project_dir, ai="kimi")
-        ext_dir = _create_extension_dir(temp_dir, ext_id="test-ext")
+        ext_id = "test-ext"
+        ext_dir = _create_extension_dir(temp_dir, ext_id=ext_id)
 
         manager = ExtensionManager(project_dir)
-        manifest = manager.install_from_directory(
-            ext_dir, "0.1.0", register_commands=False
-        )
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
-        metadata = manager.registry.get(manifest.id)
+        metadata = manager.registry.get(ext_id)
         assert "speckit-test-ext-hello" in metadata["registered_skills"]
         assert "speckit-test-ext-world" in metadata["registered_skills"]
 
@@ -352,11 +347,9 @@ class TestExtensionSkillRegistration:
         ext_dir = _create_extension_dir(temp_dir, ext_id="test-ext")
 
         manager = ExtensionManager(project_dir)
-        manifest = manager.install_from_directory(
-            ext_dir, "0.1.0", register_commands=False
-        )
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
-        metadata = manager.registry.get(manifest.id)
+        metadata = manager.registry.get("test-ext")
         assert "speckit-test-ext-hello" in metadata["registered_skills"]
         assert "speckit-test-ext-world" in metadata["registered_skills"]
         assert (skills_dir / "speckit-test-ext-hello" / "SKILL.md").exists()
@@ -451,12 +444,11 @@ class TestExtensionSkillRegistration:
         )
         # Intentionally do NOT create ghost.md
 
+        ext_id = "missing-cmd-ext"
         manager = ExtensionManager(project_dir)
-        manifest = manager.install_from_directory(
-            ext_dir, "0.1.0", register_commands=False
-        )
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
-        metadata = manager.registry.get(manifest.id)
+        metadata = manager.registry.get(ext_id)
         assert "speckit-missing-cmd-ext-exists" in metadata["registered_skills"]
         assert "speckit-missing-cmd-ext-ghost" not in metadata["registered_skills"]
 
@@ -588,9 +580,7 @@ class TestExtensionSkillEdgeCases:
         )
 
         manager = ExtensionManager(project_dir)
-        manifest = manager.install_from_directory(
-            ext_dir, "0.1.0", register_commands=False
-        )
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
         skill_file = skills_dir / "speckit-nofm-ext-plain" / "SKILL.md"
         assert skill_file.exists()
@@ -607,9 +597,7 @@ class TestExtensionSkillEdgeCases:
         ext_dir = _create_extension_dir(temp_dir, ext_id="test-ext")
 
         manager = ExtensionManager(project_dir)
-        manifest = manager.install_from_directory(
-            ext_dir, "0.1.0", register_commands=False
-        )
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
         skills_dir = project_dir / ".gemini" / "skills"
         assert (skills_dir / "speckit-test-ext-hello" / "SKILL.md").exists()
@@ -623,12 +611,8 @@ class TestExtensionSkillEdgeCases:
         ext_dir_b = _create_extension_dir(temp_dir, ext_id="ext-b")
 
         manager = ExtensionManager(project_dir)
-        manifest_a = manager.install_from_directory(
-            ext_dir_a, "0.1.0", register_commands=False
-        )
-        manifest_b = manager.install_from_directory(
-            ext_dir_b, "0.1.0", register_commands=False
-        )
+        manager.install_from_directory(ext_dir_a, "0.1.0", register_commands=False)
+        manager.install_from_directory(ext_dir_b, "0.1.0", register_commands=False)
 
         # Both should have skills
         assert (skills_dir / "speckit-ext-a-hello" / "SKILL.md").exists()
@@ -684,9 +668,7 @@ class TestExtensionSkillEdgeCases:
 
         manager = ExtensionManager(project_dir)
         # Should not raise
-        manifest = manager.install_from_directory(
-            ext_dir, "0.1.0", register_commands=False
-        )
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
         skill_file = skills_dir / "speckit-badfm-ext-broken" / "SKILL.md"
         assert skill_file.exists()

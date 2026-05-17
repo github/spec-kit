@@ -32,6 +32,7 @@ def test_version_module_symbols_directly_importable():
         self_check,
         self_upgrade,
     )
+    assert GITHUB_API_LATEST.startswith("https://")
     assert callable(_get_installed_version)
     assert callable(_normalize_tag)
     assert callable(_is_newer)

@@ -62,6 +62,24 @@ specify init my-project --integration copilot
 cd my-project
 ```
 
+To check for updates or upgrade the installed CLI, use the self-management commands. See the [Upgrade Guide](./docs/upgrade.md) for detailed scenarios and customization options.
+
+```bash
+# Check whether a newer release is available (read-only — does not modify anything)
+specify self check
+
+# Preview what would run, without actually upgrading
+specify self upgrade --dry-run
+
+# Upgrade in place to the latest stable release (auto-detects uv tool vs pipx install)
+specify self upgrade
+
+# Or pin a specific release tag (replace vX.Y.Z with your desired release tag)
+specify self upgrade --tag vX.Y.Z
+```
+
+Bare `specify self upgrade` executes immediately, matching the `pip install -U` / `uv tool upgrade` / `npm update` convention. `uvx` (ephemeral) runs and source checkouts are detected and produce path-specific guidance instead of running an installer. Set `SPECIFY_UPGRADE_TIMEOUT_SECS` to cap how long the installer subprocess may run (default: no timeout — interrupt with `Ctrl+C` if needed).
+
 ### 3. Establish project principles
 
 Launch your coding agent in the project directory. Most agents expose spec-kit as `/speckit.*` slash commands; Codex CLI in skills mode uses `$speckit-*` instead.

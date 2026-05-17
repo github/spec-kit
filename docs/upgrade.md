@@ -8,10 +8,12 @@
 
 | What to Upgrade | Command | When to Use |
 |----------------|---------|-------------|
-| **CLI Tool Only** | `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@vX.Y.Z` | Get latest CLI features without touching project files |
-| **CLI Tool Only (pipx)** | `pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z` | Reinstall/upgrade a pipx-installed CLI to a specific release |
-| **Project Files** | `specify init --here --force --integration <your-agent>` | Update slash commands, templates, and scripts in your project |
-| **Both** | Run CLI upgrade, then project update | Recommended for major version updates |
+| **CLI Tool (recommended)** | `specify self upgrade` | Latest stable release, in place. Auto-detects whether you installed via `uv tool` or `pipx`. |
+| **CLI Tool — pin a version** | `specify self upgrade --tag vX.Y.Z` | Upgrade to a specific release tag instead of the latest stable. Replace `vX.Y.Z` with the release tag you want. |
+| **CLI Tool — manual fallback** | `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@vX.Y.Z` | When `specify self upgrade` isn't available (older installs) or when you want explicit control. |
+| **CLI Tool — manual fallback (pipx)** | `pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z` | Same as above, for pipx installs. |
+| **Project Files** | `specify init --here --force --integration <your-agent>` | Update slash commands, templates, and scripts in your project. |
+| **Both** | Run CLI upgrade, then project update | Recommended for major version updates. |
 
 ---
 
@@ -19,11 +21,29 @@
 
 The CLI tool (`specify`) is separate from your project files. Upgrade it to get the latest features and bug fixes.
 
-Before upgrading, you can check whether a newer released version is available:
+### Recommended: `specify self upgrade`
+
+The CLI ships with two self-management commands that handle the common case automatically:
 
 ```bash
+# Check whether a newer release is available (read-only — does not modify anything)
 specify self check
+
+# Preview what would run, without actually upgrading
+specify self upgrade --dry-run
+
+# Upgrade in place to the latest stable release (auto-detects uv tool vs pipx install)
+specify self upgrade
+
+# Or pin a specific release tag (replace vX.Y.Z with the release tag you want)
+specify self upgrade --tag vX.Y.Z
 ```
+
+Bare `specify self upgrade` executes immediately, matching the `pip install -U` / `uv tool upgrade` / `npm update` convention. The CLI classifies your runtime into one of: `uv tool`, `pipx`, `uvx (ephemeral)`, source checkout, or unsupported. Only `uv tool` and `pipx` are upgraded automatically; the other paths print path-specific guidance and exit 0 without touching anything.
+
+Set `SPECIFY_UPGRADE_TIMEOUT_SECS` to cap how long the installer subprocess may run (default: no timeout — interrupt with `Ctrl+C` if needed).
+
+If your installed CLI is older than the release that introduced `specify self upgrade`, use the manual equivalents below. These commands are also useful when you want explicit control over the installer command.
 
 ### If you installed with `uv tool install`
 
@@ -54,10 +74,14 @@ pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z
 ### Verify the upgrade
 
 ```bash
+# Confirms the CLI is working and shows installed tools
 specify check
+
+# Confirms the installed version against the latest GitHub release
+specify self check
 ```
 
-This shows installed tools and confirms the CLI is working. Use `specify version` to confirm which persistent CLI version is currently on your `PATH`.
+`specify check` shows the surrounding tool environment; `specify self check` is read-only and tells you whether you're now on the latest release (`Up to date: X.Y.Z`) or if a newer one became available between releases.
 
 ---
 
@@ -186,8 +210,8 @@ Restart your IDE to refresh the command list.
 ### Scenario 1: "I just want new slash commands"
 
 ```bash
-# Upgrade CLI (if using persistent install)
-uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git
+# Upgrade CLI (auto-detects uv tool vs pipx install)
+specify self upgrade
 
 # Update project files to get new commands
 specify init --here --force --integration copilot
@@ -204,7 +228,7 @@ cp .specify/memory/constitution.md /tmp/constitution-backup.md
 cp -r .specify/templates /tmp/templates-backup
 
 # 2. Upgrade CLI
-uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git
+specify self upgrade
 
 # 3. Update project
 specify init --here --force --integration copilot
@@ -388,7 +412,17 @@ Only Spec Kit infrastructure files:
 
 ### "CLI upgrade doesn't seem to work"
 
-Verify the installation:
+First, ask the CLI itself:
+
+```bash
+# Read-only — prints "Up to date: X.Y.Z" or "Update available: X.Y.Z → Y.Z.W"
+specify self check
+
+# Preview the install method, current version, and target tag the upgrade would use
+specify self upgrade --dry-run
+```
+
+If `self check` shows the wrong version, verify the installation:
 
 ```bash
 # Check installed tools
