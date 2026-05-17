@@ -8,6 +8,7 @@ ALLOW_EXISTING=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
 BRANCH_PREFIX=""
+MAX_PREFIX_LEN=16
 USE_TIMESTAMP=false
 ARGS=()
 i=1
@@ -102,8 +103,20 @@ if [ -n "$BRANCH_PREFIX" ]; then
     fi
     # Strip optional trailing '/' before checking for embedded slashes
     _check_prefix="${BRANCH_PREFIX%/}"
+    if [ -z "$_check_prefix" ]; then
+        echo 'Error: --prefix must contain at least one non-slash character' >&2
+        exit 1
+    fi
     if [[ "$_check_prefix" == */* ]]; then
         echo 'Error: --prefix must be a single segment (no embedded slashes); e.g. "feature", "bugfix"' >&2
+        exit 1
+    fi
+    if ! echo "$_check_prefix" | grep -qE '^[a-z0-9][-a-z0-9]*$'; then
+        echo 'Error: --prefix must start with a letter or digit and contain only ASCII lowercase letters, digits, and hyphens' >&2
+        exit 1
+    fi
+    if [ ${#_check_prefix} -gt "$MAX_PREFIX_LEN" ]; then
+        echo "Error: --prefix must be $MAX_PREFIX_LEN characters or fewer" >&2
         exit 1
     fi
     BRANCH_PREFIX="$_check_prefix/"

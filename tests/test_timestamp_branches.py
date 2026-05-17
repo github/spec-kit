@@ -1404,6 +1404,52 @@ class TestPrefixBash:
         assert len(spec_dirs) == 1
         assert "/" not in spec_dirs[0]
 
+    def test_prefix_rejects_non_ascii(self, git_repo: Path):
+        """Non-ASCII prefix is rejected."""
+        result = run_script(
+            git_repo, "--dry-run", "--prefix", "功能", "--short-name", "bad", "Bad prefix"
+        )
+        assert result.returncode != 0
+        assert "ascii" in result.stderr.lower()
+
+    def test_prefix_rejects_special_chars(self, git_repo: Path):
+        """Special characters in prefix are rejected."""
+        result = run_script(
+            git_repo, "--dry-run", "--prefix", "feat.fix", "--short-name", "bad", "Bad prefix"
+        )
+        assert result.returncode != 0
+        assert "ascii" in result.stderr.lower()
+
+    @pytest.mark.parametrize("prefix", ["---", "-a", "--leading"], ids=["hyphens", "leading-hyphen-letter", "double-leading"])
+    def test_prefix_rejects_invalid_start(self, git_repo: Path, prefix: str):
+        """Prefix not starting with a letter or digit is rejected."""
+        result = run_script(
+            git_repo, "--dry-run", "--prefix", prefix, "--short-name", "bad", "Bad prefix"
+        )
+        assert result.returncode != 0
+
+    def test_prefix_accepts_hyphenated(self, git_repo: Path):
+        """Valid hyphenated prefix like 'my-feature' is accepted."""
+        result = run_script(
+            git_repo, "--dry-run", "--prefix", "my-feature", "--short-name", "x", "X"
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_prefix_rejects_too_long(self, git_repo: Path):
+        """Prefix exceeding 16 characters is rejected."""
+        result = run_script(
+            git_repo, "--dry-run", "--prefix", "a" * 17, "--short-name", "x", "X"
+        )
+        assert result.returncode != 0
+        assert "16" in result.stderr
+
+    def test_prefix_accepts_max_length(self, git_repo: Path):
+        """Prefix of exactly 16 characters is accepted."""
+        result = run_script(
+            git_repo, "--dry-run", "--prefix", "a" * 16, "--short-name", "x", "X"
+        )
+        assert result.returncode == 0, result.stderr
+
     def test_prefix_numbering_with_existing_prefixed_branches(self, git_repo: Path):
         """Existing prefixed branches (e.g., feature/003-x) are counted for next number."""
         subprocess.run(
@@ -1495,6 +1541,15 @@ class TestPrefixBash:
         assert result.returncode == 0, result.stderr
         branch = _parse_branch_from_stdout(result.stdout)
         assert branch == "feature/001-ws", f"expected feature/001-ws, got: {branch}"
+
+    @pytest.mark.parametrize("prefix", ["/", "//", "///", "////"], ids=["single", "double", "triple", "quad"])
+    def test_prefix_rejects_slash_only(self, git_repo: Path, prefix: str):
+        """Slash-only values produce an empty segment after trimming the trailing '/'."""
+        result = run_script(
+            git_repo, "--dry-run", "--prefix", prefix, "--short-name", "bad", "Bad prefix"
+        )
+        assert result.returncode != 0
+        assert "non-slash" in result.stderr.lower() or "single segment" in result.stderr.lower()
 
     def test_prefix_rejects_embedded_slash(self, git_repo: Path):
         """Multi-segment prefix like 'feat/fix' is rejected."""
@@ -1603,6 +1658,46 @@ class TestPrefixPowerShell:
         branch = _parse_branch_from_stdout(result.stdout)
         assert branch == "feature/001-dry", f"expected feature/001-dry, got: {branch}"
 
+    def test_ps_prefix_rejects_non_ascii(self, ps_git_repo: Path):
+        """PowerShell: non-ASCII prefix is rejected."""
+        result = run_ps_script(
+            ps_git_repo, "-DryRun", "-Prefix", "功能", "-ShortName", "bad", "Bad"
+        )
+        assert result.returncode != 0
+        combined = (result.stderr + result.stdout).lower()
+        assert "ascii" in combined
+
+    @pytest.mark.parametrize("prefix", ["---", "-a"], ids=["hyphens", "leading-hyphen-letter"])
+    def test_ps_prefix_rejects_invalid_start(self, ps_git_repo: Path, prefix: str):
+        """PowerShell: prefix not starting with a letter or digit is rejected."""
+        result = run_ps_script(
+            ps_git_repo, "-DryRun", "-Prefix", prefix, "-ShortName", "bad", "Bad"
+        )
+        assert result.returncode != 0
+
+    def test_ps_prefix_accepts_hyphenated(self, ps_git_repo: Path):
+        """PowerShell: valid hyphenated prefix like 'my-feature' is accepted."""
+        result = run_ps_script(
+            ps_git_repo, "-DryRun", "-Prefix", "my-feature", "-ShortName", "x", "X"
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_ps_prefix_rejects_too_long(self, ps_git_repo: Path):
+        """PowerShell: prefix exceeding 16 characters is rejected."""
+        result = run_ps_script(
+            ps_git_repo, "-DryRun", "-Prefix", "a" * 17, "-ShortName", "x", "X"
+        )
+        assert result.returncode != 0
+        combined = (result.stderr + result.stdout).lower()
+        assert "16" in combined
+
+    def test_ps_prefix_accepts_max_length(self, ps_git_repo: Path):
+        """PowerShell: prefix of exactly 16 characters is accepted."""
+        result = run_ps_script(
+            ps_git_repo, "-DryRun", "-Prefix", "a" * 16, "-ShortName", "x", "X"
+        )
+        assert result.returncode == 0, result.stderr
+
     def test_ps_prefix_rejects_embedded_slash(self, ps_git_repo: Path):
         """PowerShell: multi-segment prefix is rejected."""
         result = run_ps_script(
@@ -1610,6 +1705,16 @@ class TestPrefixPowerShell:
         )
         assert result.returncode != 0
         assert "single segment" in result.stderr.lower() or "single segment" in result.stdout.lower()
+
+    @pytest.mark.parametrize("prefix", ["/", "//", "///", "////"], ids=["single", "double", "triple", "quad"])
+    def test_ps_prefix_rejects_slash_only(self, ps_git_repo: Path, prefix: str):
+        """PowerShell: slash-only values are rejected."""
+        result = run_ps_script(
+            ps_git_repo, "-DryRun", "-Prefix", prefix, "-ShortName", "bad", "Bad"
+        )
+        assert result.returncode != 0
+        combined = (result.stderr + result.stdout).lower()
+        assert "non-slash" in combined or "single segment" in combined
 
     def test_ps_prefix_trailing_slash_optional(self, ps_git_repo: Path):
         """PowerShell: trailing slash is normalized."""
@@ -1679,6 +1784,63 @@ class TestPrefixExtensionBash:
         )
         assert "feature/001-dry" not in branches.stdout
 
+    def test_ext_prefix_rejects_non_ascii(self, ext_git_repo: Path):
+        """Extension rejects non-ASCII prefix."""
+        result = self._run_ext(
+            ext_git_repo, "--dry-run", "--prefix", "功能", "--short-name", "bad", "Bad"
+        )
+        assert result.returncode != 0
+        assert "ascii" in result.stderr.lower()
+
+    @pytest.mark.parametrize("prefix", ["---", "-a"], ids=["hyphens", "leading-hyphen-letter"])
+    def test_ext_prefix_rejects_invalid_start(self, ext_git_repo: Path, prefix: str):
+        """Extension rejects prefix not starting with a letter or digit."""
+        result = self._run_ext(
+            ext_git_repo, "--dry-run", "--prefix", prefix, "--short-name", "bad", "Bad"
+        )
+        assert result.returncode != 0
+
+    def test_ext_prefix_accepts_hyphenated(self, ext_git_repo: Path):
+        """Extension accepts valid hyphenated prefix like 'my-feature'."""
+        result = self._run_ext(
+            ext_git_repo, "--dry-run", "--prefix", "my-feature", "--short-name", "x", "X"
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_ext_prefix_rejects_too_long(self, ext_git_repo: Path):
+        """Extension rejects prefix exceeding 16 characters."""
+        result = self._run_ext(
+            ext_git_repo, "--dry-run", "--prefix", "a" * 17, "--short-name", "x", "X"
+        )
+        assert result.returncode != 0
+        assert "16" in result.stderr
+
+    def test_ext_prefix_accepts_max_length(self, ext_git_repo: Path):
+        """Extension accepts prefix of exactly 16 characters."""
+        result = self._run_ext(
+            ext_git_repo, "--dry-run", "--prefix", "a" * 16, "--short-name", "x", "X"
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_ext_prefix_with_timestamp(self, ext_git_repo: Path):
+        """Extension: timestamp + prefix produces prefixed branch."""
+        result = self._run_ext(
+            ext_git_repo, "--dry-run", "--prefix", "feature", "--timestamp", "--short-name", "ts", "TS feat"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert re.match(r"^feature/\d{8}-\d{6}-ts$", branch), f"unexpected: {branch}"
+
+    def test_ext_prefix_with_long_name_timestamp(self, ext_git_repo: Path):
+        """Extension: timestamp + prefix truncates long suffix correctly."""
+        long_name = "a-" * 150 + "end"
+        result = self._run_ext(
+            ext_git_repo, "--dry-run", "--prefix", "feature", "--timestamp", "--short-name", long_name, "Long"
+        )
+        assert result.returncode == 0, result.stderr
+        branch = _parse_branch_from_stdout(result.stdout)
+        assert len(branch) <= 244, f"branch too long ({len(branch)} chars): {branch}"
+
     def test_ext_prefix_rejects_embedded_slash(self, ext_git_repo: Path):
         """Extension rejects multi-segment prefix."""
         result = self._run_ext(
@@ -1686,3 +1848,12 @@ class TestPrefixExtensionBash:
         )
         assert result.returncode != 0
         assert "single segment" in result.stderr
+
+    @pytest.mark.parametrize("prefix", ["/", "//", "///", "////"], ids=["single", "double", "triple", "quad"])
+    def test_ext_prefix_rejects_slash_only(self, ext_git_repo: Path, prefix: str):
+        """Extension rejects slash-only values."""
+        result = self._run_ext(
+            ext_git_repo, "--dry-run", "--prefix", prefix, "--short-name", "bad", "Bad"
+        )
+        assert result.returncode != 0
+        assert "non-slash" in result.stderr.lower() or "single segment" in result.stderr.lower()
