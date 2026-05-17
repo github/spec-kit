@@ -11,6 +11,8 @@ DRY_RUN=false
 ALLOW_EXISTING=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
+BRANCH_PREFIX=""
+MAX_PREFIX_LEN=16
 USE_TIMESTAMP=false
 ARGS=()
 i=1
@@ -59,8 +61,21 @@ while [ $i -le $# ]; do
         --timestamp)
             USE_TIMESTAMP=true
             ;;
+        --prefix)
+            if [ $((i + 1)) -gt $# ]; then
+                echo 'Error: --prefix requires a value' >&2
+                exit 1
+            fi
+            i=$((i + 1))
+            next_arg="${!i}"
+            if [[ "$next_arg" == --* ]]; then
+                echo 'Error: --prefix requires a value' >&2
+                exit 1
+            fi
+            BRANCH_PREFIX="$next_arg"
+            ;;
         --help|-h)
-            echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] <feature_description>"
+            echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] [--prefix <prefix>] <feature_description>"
             echo ""
             echo "Options:"
             echo "  --json              Output in JSON format"
@@ -69,6 +84,7 @@ while [ $i -le $# ]; do
             echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
             echo "  --number N          Specify branch number manually (overrides auto-detection)"
             echo "  --timestamp         Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
+            echo "  --prefix <prefix>   Custom prefix for the branch name (e.g. 'feature', 'bugfix')"
             echo "  --help, -h          Show this help message"
             echo ""
             echo "Environment variables:"
@@ -88,9 +104,37 @@ while [ $i -le $# ]; do
     i=$((i + 1))
 done
 
+# Validate and normalize branch prefix
+if [ -n "$BRANCH_PREFIX" ]; then
+    BRANCH_PREFIX=$(echo "$BRANCH_PREFIX" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [ -z "$BRANCH_PREFIX" ]; then
+        echo 'Error: --prefix cannot be empty or whitespace' >&2
+        exit 1
+    fi
+    # Strip optional trailing '/' before checking for embedded slashes
+    _check_prefix="${BRANCH_PREFIX%/}"
+    if [ -z "$_check_prefix" ]; then
+        echo 'Error: --prefix must contain at least one non-slash character' >&2
+        exit 1
+    fi
+    if [[ "$_check_prefix" == */* ]]; then
+        echo 'Error: --prefix must be a single segment (no embedded slashes); e.g. "feature", "bugfix"' >&2
+        exit 1
+    fi
+    if ! echo "$_check_prefix" | grep -qE '^[a-z0-9][-a-z0-9]*$'; then
+        echo 'Error: --prefix must start with a letter or digit and contain only ASCII lowercase letters, digits, and hyphens' >&2
+        exit 1
+    fi
+    if [ ${#_check_prefix} -gt "$MAX_PREFIX_LEN" ]; then
+        echo "Error: --prefix must be $MAX_PREFIX_LEN characters or fewer" >&2
+        exit 1
+    fi
+    BRANCH_PREFIX="$_check_prefix/"
+fi
+
 FEATURE_DESCRIPTION="${ARGS[*]}"
 if [ -z "$FEATURE_DESCRIPTION" ]; then
-    echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] <feature_description>" >&2
+    echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] [--prefix <prefix>] <feature_description>" >&2
     exit 1
 fi
 
@@ -134,6 +178,10 @@ _extract_highest_number() {
     local highest=0
     while IFS= read -r name; do
         [ -z "$name" ] && continue
+        # Strip optional prefix segment (e.g., "feature/003-name" -> "003-name")
+        if [[ "$name" =~ ^([^/]+)/([^/]+)$ ]]; then
+            name="${BASH_REMATCH[2]}"
+        fi
         if echo "$name" | grep -Eq '^[0-9]{3,}-' && ! echo "$name" | grep -Eq '^[0-9]{8}-[0-9]{6}-'; then
             number=$(echo "$name" | grep -Eo '^[0-9]+' || echo "0")
             number=$((10#$number))
@@ -334,7 +382,7 @@ else
     # Determine branch prefix
     if [ "$USE_TIMESTAMP" = true ]; then
         FEATURE_NUM=$(date +%Y%m%d-%H%M%S)
-        BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+        BRANCH_NAME="${BRANCH_PREFIX}${FEATURE_NUM}-${BRANCH_SUFFIX}"
     else
         if [ -z "$BRANCH_NUMBER" ]; then
             if [ "$DRY_RUN" = true ] && [ "$HAS_GIT" = true ]; then
@@ -351,7 +399,7 @@ else
         fi
 
         FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
-        BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+        BRANCH_NAME="${BRANCH_PREFIX}${FEATURE_NUM}-${BRANCH_SUFFIX}"
     fi
 fi
 
@@ -363,14 +411,14 @@ if [ -n "${GIT_BRANCH_NAME:-}" ] && [ "$BRANCH_BYTE_LEN" -gt $MAX_BRANCH_LENGTH 
     >&2 echo "Error: GIT_BRANCH_NAME must be 244 bytes or fewer in UTF-8. Provided value is ${BRANCH_BYTE_LEN} bytes."
     exit 1
 elif [ "$BRANCH_BYTE_LEN" -gt $MAX_BRANCH_LENGTH ]; then
-    PREFIX_LENGTH=$(( ${#FEATURE_NUM} + 1 ))
+    PREFIX_LENGTH=$(( ${#BRANCH_PREFIX} + ${#FEATURE_NUM} + 1 ))
     MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - PREFIX_LENGTH))
 
     TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SUFFIX_LENGTH)
     TRUNCATED_SUFFIX=$(echo "$TRUNCATED_SUFFIX" | sed 's/-$//')
 
     ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
-    BRANCH_NAME="${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
+    BRANCH_NAME="${BRANCH_PREFIX}${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
 
     >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
     >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"
