@@ -15,7 +15,7 @@ class GooseIntegration(YamlIntegration):
     registrar_config = {
         "dir": ".goose/recipes",
         "format": "yaml",
-        "args": "{{args}}",
+        "args": "{{ args | indent(2) }}",
         "extension": ".yaml",
     }
     context_file = "AGENTS.md"

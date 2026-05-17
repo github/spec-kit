@@ -1244,7 +1244,6 @@ class YamlIntegration(IntegrationBase):
 
         # Indent the body for YAML block scalar
         indented = "\n".join(f"  {line}" for line in body.split("\n"))
-
         lines = [
             header_yaml,
             "prompt: |",
