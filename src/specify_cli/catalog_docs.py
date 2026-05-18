@@ -1,4 +1,4 @@
-"""Helpers for rendering the built-in integrations reference table from the integration registry."""
+"""Helpers for rendering the built-in integrations reference table."""
 
 from __future__ import annotations
 
@@ -48,15 +48,39 @@ INTEGRATION_LABEL_OVERRIDES: dict[str, str] = {
 INTEGRATION_NOTES: dict[str, str] = {
     "agy": "Skills-based integration; skills are installed automatically",
     "claude": "Skills-based integration; installs skills in `.claude/skills`",
-    "codex": "Skills-based integration; installs skills into `.agents/skills` and invokes them as `$speckit-<command>`",
+    "codex": (
+        "Skills-based integration; installs skills into `.agents/skills` "
+        "and invokes them as `$speckit-<command>`"
+    ),
     "bob": "IDE-based agent",
-    "devin": "Skills-based integration; installs skills into `.devin/skills/` and invokes them as `/speckit-<command>`",
+    "devin": (
+        "Skills-based integration; installs skills into `.devin/skills/` "
+        "and invokes them as `/speckit-<command>`"
+    ),
     "goose": "Uses YAML recipe format in `.goose/recipes/`",
-    "kimi": "Skills-based integration; supports `--migrate-legacy` for dotted→hyphenated directory migration",
-    "kiro-cli": "Kiro CLI does not substitute `$ARGUMENTS` in file-based prompts, so Spec Kit ships a prose fallback at render time (see [Manage prompts](https://kiro.dev/docs/cli/chat/manage-prompts/) and issue [#1926](https://github.com/github/spec-kit/issues/1926)). Alias: `--integration kiro`",
+    "kimi": (
+        "Skills-based integration; supports `--migrate-legacy` "
+        "for dotted→hyphenated directory migration"
+    ),
+    "kiro-cli": (
+        "Kiro CLI does not substitute `$ARGUMENTS` in file-based prompts, "
+        "so Spec Kit ships a prose fallback at render time "
+        "(see [Manage prompts](https://kiro.dev/docs/cli/chat/manage-prompts/) "
+        "and issue [#1926](https://github.com/github/spec-kit/issues/1926)). "
+        "Alias: `--integration kiro`"
+    ),
     "lingma": "Skills-based integration; skills are installed automatically",
-    "pi": "Pi doesn't have MCP support out of the box, so `taskstoissues` won't work as intended. MCP support can be added via [extensions](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#extensions)",
-    "generic": "Bring your own agent — use `--integration generic --integration-options=\"--commands-dir <path>\"` for AI coding agents not listed above",
+    "pi": (
+        "Pi doesn't have MCP support out of the box, so `taskstoissues` "
+        "won't work as intended. MCP support can be added via "
+        "[extensions](https://github.com/badlogic/pi-mono/tree/main/"
+        "packages/coding-agent#extensions)"
+    ),
+    "generic": (
+        "Bring your own agent — use `--integration generic "
+        "--integration-options=\"--commands-dir <path>\"` "
+        "for AI coding agents not listed above"
+    ),
     "trae": "Skills-based integration; skills are installed automatically",
 }
 
@@ -77,7 +101,10 @@ def _get_integration_registry() -> dict[str, Any]:
     return INTEGRATION_REGISTRY
 
 
-def list_integrations_for_docs(warn_on_missing: bool = False, warn_on_extra: bool = False) -> list[tuple[str, str, str | None, str]]:
+def list_integrations_for_docs(
+    warn_on_missing: bool = False,
+    warn_on_extra: bool = False,
+) -> list[tuple[str, str, str | None, str]]:
     """List integrations with their documentation URLs and notes.
 
     Skips any integrations not in INTEGRATION_DOC_URLS. If `warn_on_missing` is True,
@@ -93,22 +120,30 @@ def list_integrations_for_docs(warn_on_missing: bool = False, warn_on_extra: boo
     if missing and warn_on_missing:
         import warnings
         warnings.warn(
-            f"Integration(s) missing from INTEGRATION_DOC_URLS: {', '.join(missing)}. "
-            "These will be skipped in the docs table. Add them to INTEGRATION_DOC_URLS in catalog_docs.py.",
+            f"Integration(s) missing from INTEGRATION_DOC_URLS: "
+            f"{', '.join(missing)}. These will be skipped in the docs table. "
+            "Add them to INTEGRATION_DOC_URLS in catalog_docs.py.",
             stacklevel=2
         )
 
     # Warn if there are stale keys in doc maps not in the registry (when enabled)
     if warn_on_extra:
         extra_in_urls = sorted(set(INTEGRATION_DOC_URLS) - registry_keys)
-        extra_in_labels = sorted(set(INTEGRATION_LABEL_OVERRIDES) - registry_keys)
+        extra_in_labels = sorted(
+            set(INTEGRATION_LABEL_OVERRIDES) - registry_keys
+        )
         extra_in_notes = sorted(set(INTEGRATION_NOTES) - registry_keys)
         extra_keys = extra_in_urls or extra_in_labels or extra_in_notes
         if extra_keys:
             import warnings
+            stale_keys = sorted(
+                set(extra_in_urls + extra_in_labels + extra_in_notes)
+            )
             warnings.warn(
-                f"Stale key(s) found in doc maps (no longer in registry): {sorted(set(extra_in_urls + extra_in_labels + extra_in_notes))}. "
-                "Consider removing them from INTEGRATION_DOC_URLS, INTEGRATION_LABEL_OVERRIDES, and INTEGRATION_NOTES.",
+                f"Stale key(s) found in doc maps (no longer in registry): "
+                f"{stale_keys}. Consider removing them from "
+                "INTEGRATION_DOC_URLS, INTEGRATION_LABEL_OVERRIDES, and "
+                "INTEGRATION_NOTES.",
                 stacklevel=2
             )
 

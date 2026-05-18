@@ -12,7 +12,8 @@ COMMUNITY_CATALOG_PATH = ROOT_DIR / "extensions" / "catalog.community.json"
 
 
 def _render_cell(value: str) -> str:
-    return value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("|", "\\|")
+    cleaned = value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+    return cleaned.replace("|", "\\|")
 
 
 def _format_tags(tags: Any) -> str:
@@ -24,7 +25,9 @@ def _format_tags(tags: Any) -> str:
     return ", ".join(cleaned) if cleaned else "—"
 
 
-def list_community_extensions(path: Path = COMMUNITY_CATALOG_PATH) -> list[dict[str, Any]]:
+def list_community_extensions(
+    path: Path = COMMUNITY_CATALOG_PATH,
+) -> list[dict[str, Any]]:
     """Return community extensions sorted alphabetically by name then ID."""
     if not path.exists():
         raise FileNotFoundError(
@@ -53,7 +56,10 @@ def list_community_extensions(path: Path = COMMUNITY_CATALOG_PATH) -> list[dict[
             }
         )
 
-    return sorted(rows, key=lambda row: (row["name"].casefold(), row["id"].casefold()))
+    return sorted(
+        rows,
+        key=lambda row: (row["name"].casefold(), row["id"].casefold()),
+    )
 
 
 def render_community_extensions_table(path: Path = COMMUNITY_CATALOG_PATH) -> str:

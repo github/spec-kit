@@ -2378,7 +2378,12 @@ def integration_search(
     tag: Optional[str] = typer.Option(None, "--tag", help="Filter by tag"),
     author: Optional[str] = typer.Option(None, "--author", help="Filter by author"),
     markdown: bool = typer.Option(
-        False, "--markdown", help="Output the full built-in integrations table as markdown (ignores filters)"
+        False,
+        "--markdown",
+        help=(
+            "Output the full built-in integrations table as markdown "
+            "(ignores filters)"
+        ),
     ),
 ):
     """Search for integrations in the active catalog stack, or output the built-in reference table with --markdown."""
