@@ -387,6 +387,7 @@ class SkillsIntegrationTests:
                 ".specify/scripts/bash/common.sh",
                 ".specify/scripts/bash/create-new-feature.sh",
                 ".specify/scripts/bash/setup-plan.sh",
+                ".specify/scripts/bash/setup-tasks.sh",
             ]
         else:
             files += [
@@ -394,6 +395,7 @@ class SkillsIntegrationTests:
                 ".specify/scripts/powershell/common.ps1",
                 ".specify/scripts/powershell/create-new-feature.ps1",
                 ".specify/scripts/powershell/setup-plan.ps1",
+                ".specify/scripts/powershell/setup-tasks.ps1",
             ]
         # Templates
         files += [

@@ -1,67 +1,152 @@
-# Spec Kit
+<div class="landing-hero">
 
-*Build high-quality software faster.*
+# GitHub Spec Kit
 
-**An effort to allow organizations to focus on product scenarios rather than writing undifferentiated code with the help of Spec-Driven Development.**
+**Define what to build before building it — with any AI coding agent.**
 
-## What is Spec-Driven Development?
+Spec Kit is a toolkit for [Spec-Driven Development](concepts/sdd.md) (SDD), a methodology that puts specifications at the center of AI-assisted software development. Instead of jumping straight to code, you describe *what* to build, refine it through structured phases, and let your AI coding agent implement it.
 
-Spec-Driven Development **flips the script** on traditional software development. For decades, code has been king — specifications were just scaffolding we built and discarded once the "real work" of coding began. Spec-Driven Development changes this: **specifications become executable**, directly generating working implementations rather than just guiding them.
+<a href="installation.md" class="btn btn-primary btn-lg">Install Spec Kit</a>&nbsp;
+<a href="quickstart.md" class="btn btn-outline-primary btn-lg">Quick Start</a>
 
-## Getting Started
+</div>
 
-- [Installation Guide](installation.md)
-- [Quick Start Guide](quickstart.md)
-- [Upgrade Guide](upgrade.md)
-- [Local Development](local-development.md)
+---
 
-## Core Philosophy
+<div class="pillar-grid">
 
-Spec-Driven Development is a structured process that emphasizes:
+<div class="pillar-card">
 
-- **Intent-driven development** where specifications define the "*what*" before the "*how*"
-- **Rich specification creation** using guardrails and organizational principles
-- **Multi-step refinement** rather than one-shot code generation from prompts
-- **Heavy reliance** on advanced AI model capabilities for specification interpretation
+### Spec-driven by default
 
-## Development Phases
+The core SDD process ships ready to use: **Spec → Plan → Tasks → Implement**.
 
-| Phase | Focus | Key Activities |
-|-------|-------|----------------|
-| **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
-| **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
-| **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
+Define what to build before building it. Rich templates, quality checklists, and cross-artifact analysis come out of the box. Each phase produces a Markdown artifact that feeds the next — giving your AI coding agent structured context instead of ad-hoc prompts.
 
-## Experimental Goals
+<a href="quickstart.md" class="pillar-link">Walk through the workflow →</a>
 
-Our research and experimentation focus on:
+</div>
 
-### Technology Independence
+<div class="pillar-card">
 
-- Create applications using diverse technology stacks
-- Validate the hypothesis that Spec-Driven Development is a process not tied to specific technologies, programming languages, or frameworks
+### Use any coding agent
 
-### Enterprise Constraints
+<span class="pillar-stat">30 integrations</span> — Copilot, Gemini, Codex, Windsurf, Claude, Forge, Kiro, and more. Switch freely between agents with a single command. No lock-in.
 
-- Demonstrate mission-critical application development
-- Incorporate organizational constraints (cloud providers, tech stacks, engineering practices)
-- Support enterprise design systems and compliance requirements
+Run `specify init` with your agent of choice and Spec Kit sets up the right command files, context rules, and directory structures automatically. If your agent isn't listed, the `generic` integration is an escape hatch for any tool.
 
-### User-Centric Development
+<a href="reference/integrations.md" class="pillar-link">See all integrations →</a>
 
-- Build applications for different user cohorts and preferences
-- Support various development approaches (from vibe-coding to AI-native development)
+</div>
 
-### Creative & Iterative Processes
+<div class="pillar-card">
 
-- Validate the concept of parallel implementation exploration
-- Provide robust iterative feature development workflows
-- Extend processes to handle upgrades and modernization tasks
+### Make it your own
 
-## Contributing
+<span class="pillar-stat">91 community extensions</span> (50+ authors), <span class="pillar-stat">18 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, or replace it entirely. Build and publish your own.
 
-Please see our [Contributing Guide](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md) for information on how to contribute to this project.
+Including entirely different SDD processes:
 
-## Support
+- **AIDE** — 7-step AI-driven engineering lifecycle
+- **Canon** — baseline-driven workflows (spec-first, code-first, spec-drift)
+- **Product Forge** — product-management-oriented SDD
+- **FX→.NET** — end-to-end .NET Framework migration across 7 phases
+- **MAQA** — multi-agent orchestration with quality assurance gates
 
-For support, please check our [Support Guide](https://github.com/github/spec-kit/blob/main/SUPPORT.md) or open an issue on GitHub.
+<a href="community/presets.md" class="pillar-link">Browse community presets →</a>
+
+</div>
+
+<div class="pillar-card">
+
+### Integrate into your organization
+
+Works offline, behind firewalls, and on **Windows, macOS, and Linux**. Host your own extension and preset catalogs so your organization controls what gets installed.
+
+Community extensions like CI Guard and Architecture Guard add compliance gates and governance that fit the way your team already works.
+
+<a href="installation.md" class="pillar-link">Installation guide →</a>&nbsp;&nbsp;
+<a href="reference/extensions.md" class="pillar-link">Extensions reference →</a>
+
+</div>
+
+</div>
+
+---
+
+<div class="community-section">
+
+## Built by the community
+
+**200+ contributors** power the Spec Kit ecosystem — from core integrations to entirely new development processes. Anyone can create and publish an extension, preset, or workflow.
+
+<div class="stats-grid">
+  <div class="stat-item">
+    <span class="stat-number">96K+</span>
+    <span class="stat-label">GitHub stars</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-number">200+</span>
+    <span class="stat-label">Contributors</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-number">30</span>
+    <span class="stat-label">Integrations</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-number">91</span>
+    <span class="stat-label">Extensions</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-number">18</span>
+    <span class="stat-label">Presets</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-number">4</span>
+    <span class="stat-label">Friends projects</span>
+  </div>
+</div>
+
+<a href="community/presets.md">Presets</a> · <a href="community/walkthroughs.md">Walkthroughs</a> · <a href="community/friends.md">Friends</a>
+
+</div>
+
+---
+
+## Explore the docs
+
+<div class="nav-cards">
+  <a href="quickstart.md" class="nav-card">
+    <strong>Getting Started</strong>
+    <span>Install, configure, and run your first SDD workflow</span>
+  </a>
+  <a href="reference/overview.md" class="nav-card">
+    <strong>Reference</strong>
+    <span>Core commands, integrations, extensions, presets, and workflows</span>
+  </a>
+  <a href="community/overview.md" class="nav-card">
+    <strong>Community</strong>
+    <span>Extensions, presets, walkthroughs, and friend projects</span>
+  </a>
+  <a href="local-development.md" class="nav-card">
+    <strong>Development</strong>
+    <span>Contribute to Spec Kit</span>
+  </a>
+  <a href="concepts/sdd.md" class="nav-card">
+    <strong>What is SDD?</strong>
+    <span>The philosophy behind Spec-Driven Development</span>
+  </a>
+</div>
+
+---
+
+<div class="footer-cta">
+
+```bash
+uvx --from git+https://github.com/github/spec-kit.git
+specify init my-project --integration copilot
+```
+
+Ready to start? Follow the [Quick Start Guide](quickstart.md).
+
+</div>

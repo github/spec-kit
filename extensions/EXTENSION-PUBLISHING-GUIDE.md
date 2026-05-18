@@ -7,9 +7,8 @@ This guide explains how to publish your extension to the Spec Kit extension cata
 1. [Prerequisites](#prerequisites)
 2. [Prepare Your Extension](#prepare-your-extension)
 3. [Submit to Catalog](#submit-to-catalog)
-4. [Verification Process](#verification-process)
-5. [Release Workflow](#release-workflow)
-6. [Best Practices](#best-practices)
+4. [Release Workflow](#release-workflow)
+5. [Best Practices](#best-practices)
 
 ---
 
@@ -133,222 +132,46 @@ specify extension add <extension-name> --from https://github.com/your-org/spec-k
 
 Spec Kit uses a dual-catalog system. For details about how catalogs work, see the main [Extensions README](README.md#extension-catalogs).
 
-**For extension publishing**: All community extensions should be added to `catalog.community.json`. Users browse this catalog and copy extensions they trust into their own `catalog.json`.
+**For extension publishing**: All community extensions are listed in `extensions/catalog.community.json`. Users browse this catalog and copy extensions they trust into their own `catalog.json`.
 
-### 1. Fork the spec-kit Repository
+### How to Submit
 
-```bash
-# Fork on GitHub
-# https://github.com/github/spec-kit/fork
+To submit your extension to the community catalog, file a new issue using the **[Extension Submission](https://github.com/github/spec-kit/issues/new?template=extension_submission.yml)** template. The template collects all required metadata, including:
 
-# Clone your fork
-git clone https://github.com/YOUR-USERNAME/spec-kit.git
-cd spec-kit
-```
+- Extension ID, name, and version
+- Description, author, and license
+- Repository, download URL, and documentation links
+- Required Spec Kit version and any tool dependencies
+- Number of commands and hooks
+- Tags and key features
+- Testing confirmation
 
-### 2. Add Extension to Community Catalog
+> [!IMPORTANT]
+> Do **not** open a pull request directly to edit `extensions/catalog.community.json`. All community extension submissions must go through the issue template so a maintainer can review the entry and update the catalog.
 
-Edit `extensions/catalog.community.json` and add your extension:
+### What Happens After You Submit
 
-```json
-{
-  "schema_version": "1.0",
-  "updated_at": "2026-01-28T15:54:00Z",
-  "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
-  "extensions": {
-    "your-extension": {
-      "name": "Your Extension Name",
-      "id": "your-extension",
-      "description": "Brief description of your extension",
-      "author": "Your Name",
-      "version": "1.0.0",
-      "download_url": "https://github.com/your-org/spec-kit-your-extension/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/your-org/spec-kit-your-extension",
-      "homepage": "https://github.com/your-org/spec-kit-your-extension",
-      "documentation": "https://github.com/your-org/spec-kit-your-extension/blob/main/docs/",
-      "changelog": "https://github.com/your-org/spec-kit-your-extension/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0",
-        "tools": [
-          {
-            "name": "required-mcp-tool",
-            "version": ">=1.0.0",
-            "required": true
-          }
-        ]
-      },
-      "provides": {
-        "commands": 3,
-        "hooks": 1
-      },
-      "tags": [
-        "category",
-        "tool-name",
-        "feature"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-01-28T00:00:00Z",
-      "updated_at": "2026-01-28T00:00:00Z"
-    }
-  }
-}
-```
+1. Your issue is automatically labeled and assigned to a maintainer for review
+2. A maintainer verifies that the catalog entry is complete and correctly formatted
+3. Once approved, the maintainer adds your extension to `extensions/catalog.community.json` and the Community Extensions table in the README
+4. Your extension becomes discoverable via `specify extension search`
 
-**Important**:
+### What Maintainers Check
 
-- Set `verified: false` (maintainers will verify)
-- Set `downloads: 0` and `stars: 0` (auto-updated later)
-- Use current timestamp for `created_at` and `updated_at`
-- Update the top-level `updated_at` to current time
+- The catalog entry fields are complete and correctly formatted
+- The download URL is accessible
+- The repository exists and contains an `extension.yml` manifest
 
-### 3. Update Community Extensions Table
-
-Add your extension to the Community Extensions table in the project root `README.md`:
-
-```markdown
-| Your Extension Name | Brief description of what it does | `<category>` | <effect> | [repo-name](https://github.com/your-org/spec-kit-your-extension) |
-```
-
-**(Table) Category** — pick the one that best fits your extension:
-
-- `docs` — reads, validates, or generates spec artifacts
-- `code` — reviews, validates, or modifies source code
-- `process` — orchestrates workflow across phases
-- `integration` — syncs with external platforms
-- `visibility` — reports on project health or progress
-
-**Effect** — choose one:
-
-- Read-only — produces reports without modifying files
-- Read+Write — modifies files, creates artifacts, or updates specs
-
-Insert your extension in alphabetical order in the table.
-
-### 4. Submit Pull Request
-
-```bash
-# Create a branch
-git checkout -b add-your-extension
-
-# Commit your changes
-git add extensions/catalog.community.json README.md
-git commit -m "Add your-extension to community catalog
-
-- Extension ID: your-extension
-- Version: 1.0.0
-- Author: Your Name
-- Description: Brief description
-"
-
-# Push to your fork
-git push origin add-your-extension
-
-# Create Pull Request on GitHub
-# https://github.com/github/spec-kit/compare
-```
-
-**Pull Request Template**:
-
-```markdown
-## Extension Submission
-
-**Extension Name**: Your Extension Name
-**Extension ID**: your-extension
-**Version**: 1.0.0
-**Author**: Your Name
-**Repository**: https://github.com/your-org/spec-kit-your-extension
-
-### Description
-Brief description of what your extension does.
-
-### Checklist
-- [x] Valid extension.yml manifest
-- [x] README.md with installation and usage docs
-- [x] LICENSE file included
-- [x] GitHub release created (v1.0.0)
-- [x] Extension tested on real project
-- [x] All commands working
-- [x] No security vulnerabilities
-- [x] Added to extensions/catalog.community.json
-- [x] Added to Community Extensions table in README.md
-
-### Testing
-Tested on:
-- macOS 13.0+ with spec-kit 0.1.0
-- Project: [Your test project]
-
-### Additional Notes
-Any additional context or notes for reviewers.
-```
-
----
-
-## Verification Process
-
-### What Happens After Submission
-
-1. **Automated Checks** (if available):
-   - Manifest validation
-   - Download URL accessibility
-   - Repository existence
-   - License file presence
-
-2. **Manual Review**:
-   - Code quality review
-   - Security audit
-   - Functionality testing
-   - Documentation review
-
-3. **Verification**:
-   - If approved, `verified: true` is set
-   - Extension appears in `specify extension search --verified`
-
-### Verification Criteria
-
-To be verified, your extension must:
-
-✅ **Functionality**:
-
-- Works as described in documentation
-- All commands execute without errors
-- No breaking changes to user workflows
-
-✅ **Security**:
-
-- No known vulnerabilities
-- No malicious code
-- Safe handling of user data
-- Proper validation of inputs
-
-✅ **Code Quality**:
-
-- Clean, readable code
-- Follows extension best practices
-- Proper error handling
-- Helpful error messages
-
-✅ **Documentation**:
-
-- Clear installation instructions
-- Usage examples
-- Troubleshooting section
-- Accurate description
-
-✅ **Maintenance**:
-
-- Active repository
-- Responsive to issues
-- Regular updates
-- Semantic versioning followed
+> [!NOTE]
+> Maintainers do **not** review, audit, or test the extension code itself.
 
 ### Typical Review Timeline
 
-- **Automated checks**: Immediate (if implemented)
-- **Manual review**: 3-7 business days
-- **Verification**: After successful review
+- **Review**: 3-7 business days
+
+### Updating an Existing Extension
+
+To update an extension that is already in the catalog (e.g., for a new version), file a new **[Extension Submission](https://github.com/github/spec-kit/issues/new?template=extension_submission.yml)** issue with the updated version, download URL, and any other changed fields. Mention in the issue that this is an update to an existing entry.
 
 ---
 
@@ -385,26 +208,7 @@ When releasing a new version:
    # Create release on GitHub
    ```
 
-4. **Update catalog**:
-
-   ```bash
-   # Fork spec-kit repo (or update existing fork)
-   cd spec-kit
-
-   # Update extensions/catalog.json
-   jq '.extensions["your-extension"].version = "1.1.0"' extensions/catalog.json > tmp.json && mv tmp.json extensions/catalog.json
-   jq '.extensions["your-extension"].download_url = "https://github.com/your-org/spec-kit-your-extension/archive/refs/tags/v1.1.0.zip"' extensions/catalog.json > tmp.json && mv tmp.json extensions/catalog.json
-   jq '.extensions["your-extension"].updated_at = "2026-02-15T00:00:00Z"' extensions/catalog.json > tmp.json && mv tmp.json extensions/catalog.json
-   jq '.updated_at = "2026-02-15T00:00:00Z"' extensions/catalog.json > tmp.json && mv tmp.json extensions/catalog.json
-
-   # Submit PR
-   git checkout -b update-your-extension-v1.1.0
-   git add extensions/catalog.json
-   git commit -m "Update your-extension to v1.1.0"
-   git push origin update-your-extension-v1.1.0
-   ```
-
-5. **Submit update PR** with changelog in description
+4. **File an update submission** using the [Extension Submission](https://github.com/github/spec-kit/issues/new?template=extension_submission.yml) template with the new version and download URL. Mention in the issue that this is an update to an existing entry.
 
 ---
 
@@ -473,9 +277,9 @@ A: The main catalog is for public extensions only. For private extensions:
 - Users add your catalog: `specify extension add-catalog https://your-domain.com/catalog.json`
 - Not yet implemented - coming in Phase 4
 
-### Q: How long does verification take?
+### Q: How long does review take?
 
-A: Typically 3-7 business days for initial review. Updates to verified extensions are usually faster.
+A: Typically 3-7 business days. Updates to existing extensions are usually faster.
 
 ### Q: What if my extension is rejected?
 
@@ -483,11 +287,11 @@ A: You'll receive feedback on what needs to be fixed. Make the changes and resub
 
 ### Q: Can I update my extension anytime?
 
-A: Yes, submit a PR to update the catalog with your new version. Verified status may be re-evaluated for major changes.
+A: Yes, file a new [Extension Submission](https://github.com/github/spec-kit/issues/new?template=extension_submission.yml) issue with the updated version and download URL. Mention that it is an update to an existing entry.
 
 ### Q: Do I need to be verified to be in the catalog?
 
-A: No, unverified extensions are still searchable. Verification just adds trust and visibility.
+A: No. All community extensions are listed in the catalog once their submission is reviewed and accepted.
 
 ### Q: Can extensions have paid features?
 
@@ -536,7 +340,7 @@ A: Extensions should be free and open-source. Commercial support/services are al
     "hooks": "integer (optional)"
   },
   "tags": ["array of strings (2-10 tags)"],
-  "verified": "boolean (default: false)",
+  "verified": "boolean (default: false, set by maintainers)",
   "downloads": "integer (auto-updated)",
   "stars": "integer (auto-updated)",
   "created_at": "string (ISO 8601 datetime)",

@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import yaml
+
 if TYPE_CHECKING:
     from .manifest import IntegrationManifest
 
@@ -86,6 +88,14 @@ class IntegrationBase(ABC):
 
     invoke_separator: str = "."
     """Separator used in slash-command invocations (``"."`` → ``/speckit.plan``)."""
+
+    multi_install_safe: bool = False
+    """Whether this integration is declared safe to install alongside others.
+
+    Safe integrations must use a static, unique agent root, command directory,
+    and context file. Registry tests enforce those invariants for every
+    integration that sets this flag.
+    """
 
     # -- Markers for managed context section ------------------------------
 
@@ -598,6 +608,7 @@ class IntegrationBase(ABC):
         # For .mdc files, treat Speckit-generated frontmatter-only content as empty
         if ctx_path.suffix == ".mdc":
             import re
+
             # Delete the file if only YAML frontmatter remains (no body content)
             frontmatter_only = re.match(
                 r"^---\n.*?\n---\s*$", normalized, re.DOTALL
@@ -945,7 +956,6 @@ class TomlIntegration(IntegrationBase):
         and ``>``) keep their YAML semantics instead of being treated as
         raw text.
         """
-        import yaml
 
         frontmatter_text, _ = TomlIntegration._split_frontmatter(content)
         if not frontmatter_text:
@@ -1132,7 +1142,6 @@ class YamlIntegration(IntegrationBase):
     @staticmethod
     def _extract_frontmatter(content: str) -> dict[str, Any]:
         """Extract frontmatter as a dict from YAML frontmatter block."""
-        import yaml
 
         if not content.startswith("---"):
             return {}
@@ -1193,24 +1202,38 @@ class YamlIntegration(IntegrationBase):
             text = text[len("speckit.") :]
         return text.replace(".", " ").replace("-", " ").replace("_", " ").title()
 
-    @staticmethod
-    def _render_yaml(title: str, description: str, body: str, source_id: str) -> str:
+
+    @classmethod
+    def _build_yaml_header(cls, title: str, description: str) -> dict[str, Any]:
+        """Build the base YAML header."""
+        header = {
+            "version": "1.0.0",
+            "title": title,
+            "description": description,
+            "author": {"contact": "spec-kit"},
+            "parameters": [
+                {
+                    "key": "args",
+                    "input_type": "string",
+                    "requirement": "optional",
+                    "default": "",
+                    "description": "User input passed to the command.",
+                }
+            ],
+            "extensions": [{"type": "builtin", "name": "developer"}],
+            "activities": ["Spec-Driven Development"],
+        }
+        return header
+
+    @classmethod
+    def _render_yaml(cls, title: str, description: str, body: str, source_id: str) -> str:
         """Render a YAML recipe file from title, description, and body.
 
         Produces a Goose-compatible recipe with a literal block scalar
         for the prompt content.  Uses ``yaml.safe_dump()`` for the
         header fields to ensure proper escaping.
         """
-        import yaml
-
-        header = {
-            "version": "1.0.0",
-            "title": title,
-            "description": description,
-            "author": {"contact": "spec-kit"},
-            "extensions": [{"type": "builtin", "name": "developer"}],
-            "activities": ["Spec-Driven Development"],
-        }
+        header = cls._build_yaml_header(title, description)
 
         header_yaml = yaml.safe_dump(
             header,
@@ -1219,11 +1242,19 @@ class YamlIntegration(IntegrationBase):
             default_flow_style=False,
         ).strip()
 
-        # Indent each line for YAML block scalar
+        # Indent the body for YAML block scalar
         indented = "\n".join(f"  {line}" for line in body.split("\n"))
 
-        lines = [header_yaml, "prompt: |", indented, "", f"# Source: {source_id}"]
+        lines = [
+            header_yaml,
+            "prompt: |",
+            indented,
+            "",
+            f"# Source: {source_id}",
+        ]
+
         return "\n".join(lines) + "\n"
+
 
     def setup(
         self,
@@ -1383,7 +1414,6 @@ class SkillsIntegration(IntegrationBase):
         template.  Each SKILL.md has normalised frontmatter containing
         ``name``, ``description``, ``compatibility``, and ``metadata``.
         """
-        import yaml
 
         templates = self.list_command_templates()
         if not templates:

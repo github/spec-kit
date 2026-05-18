@@ -22,7 +22,9 @@ class TestCheckToolClaude:
         fake_missing = tmp_path / "nonexistent" / "claude"
 
         with patch("specify_cli.CLAUDE_LOCAL_PATH", fake_claude), \
+             patch("specify_cli._utils.CLAUDE_LOCAL_PATH", fake_claude), \
              patch("specify_cli.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
+             patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
              patch("shutil.which", return_value=None):
             assert check_tool("claude") is True
 
@@ -36,7 +38,9 @@ class TestCheckToolClaude:
         fake_migrate = tmp_path / "nonexistent" / "claude"
 
         with patch("specify_cli.CLAUDE_LOCAL_PATH", fake_migrate), \
+             patch("specify_cli._utils.CLAUDE_LOCAL_PATH", fake_migrate), \
              patch("specify_cli.CLAUDE_NPM_LOCAL_PATH", fake_npm_claude), \
+             patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", fake_npm_claude), \
              patch("shutil.which", return_value=None):
             assert check_tool("claude") is True
 
@@ -45,7 +49,9 @@ class TestCheckToolClaude:
         fake_missing = tmp_path / "nonexistent" / "claude"
 
         with patch("specify_cli.CLAUDE_LOCAL_PATH", fake_missing), \
+             patch("specify_cli._utils.CLAUDE_LOCAL_PATH", fake_missing), \
              patch("specify_cli.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
+             patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
              patch("shutil.which", return_value="/usr/local/bin/claude"):
             assert check_tool("claude") is True
 
@@ -54,7 +60,9 @@ class TestCheckToolClaude:
         fake_missing = tmp_path / "nonexistent" / "claude"
 
         with patch("specify_cli.CLAUDE_LOCAL_PATH", fake_missing), \
+             patch("specify_cli._utils.CLAUDE_LOCAL_PATH", fake_missing), \
              patch("specify_cli.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
+             patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
              patch("shutil.which", return_value=None):
             assert check_tool("claude") is False
 
@@ -68,7 +76,9 @@ class TestCheckToolClaude:
         tracker = MagicMock()
 
         with patch("specify_cli.CLAUDE_LOCAL_PATH", fake_missing), \
+             patch("specify_cli._utils.CLAUDE_LOCAL_PATH", fake_missing), \
              patch("specify_cli.CLAUDE_NPM_LOCAL_PATH", fake_npm_claude), \
+             patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", fake_npm_claude), \
              patch("shutil.which", return_value=None):
             result = check_tool("claude", tracker=tracker)
 

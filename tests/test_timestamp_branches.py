@@ -116,6 +116,36 @@ def ext_ps_git_repo(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def ps_git_repo(tmp_path: Path) -> Path:
+    """Create a temp git repo with PowerShell scripts and a BOM-prefixed template."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True
+    )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "init", "-q"],
+        cwd=tmp_path,
+        check=True,
+    )
+    ps_dir = tmp_path / "scripts" / "powershell"
+    ps_dir.mkdir(parents=True)
+    shutil.copy(CREATE_FEATURE_PS, ps_dir / "create-new-feature.ps1")
+    common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
+    shutil.copy(common_ps, ps_dir / "common.ps1")
+    templates_dir = tmp_path / ".specify" / "templates"
+    templates_dir.mkdir(parents=True)
+    # Write a BOM-prefixed template to ensure the WriteAllText fix is actually exercised.
+    # If WriteAllText regresses, the output file will contain the BOM.
+    bom = b"\xef\xbb\xbf"
+    template_content = "# Feature Spec\n\nDescribe the feature here.\n"
+    (templates_dir / "spec-template.md").write_bytes(bom + template_content.encode("utf-8"))
+    return tmp_path
+
+
+@pytest.fixture
 def no_git_dir(tmp_path: Path) -> Path:
     """Create a temp directory without git, but with scripts."""
     scripts_dir = tmp_path / "scripts" / "bash"
@@ -380,6 +410,7 @@ class TestGetFeaturePathsSinglePrefix:
         )
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == str(tmp_path / "specs" / "001-target-spec")
+
 
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
     def test_ps_specify_feature_prefixed_resolves_by_prefix(self, git_repo: Path):
@@ -650,6 +681,45 @@ class TestAllowExistingBranchPowerShell:
         assert "$switchBranchError = git checkout -q $branchName 2>&1 | Out-String" in contents
         assert "exists but could not be checked out.`n$($switchBranchError.Trim())" in contents
 
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    @pytest.mark.skipif(
+        os.name != "nt" or shutil.which("powershell.exe") is None,
+        reason="Windows PowerShell not installed",
+    )
+    def test_ps_spec_file_written_without_bom(self, ps_git_repo: Path):
+        """spec.md generated from a BOM-prefixed template must not contain a UTF-8 BOM."""
+        result = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(CREATE_FEATURE_PS),
+                "-ShortName",
+                "bom-check",
+                "BOM check feature",
+            ],
+            cwd=ps_git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+        spec_file = next((ps_git_repo / "specs").rglob("spec.md"), None)
+        assert spec_file is not None, (
+            f"spec.md was not created.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+        raw = spec_file.read_bytes()
+        assert not raw.startswith(b"\xef\xbb\xbf"), (
+            f"spec.md must not start with a UTF-8 BOM — got first 3 bytes: {raw[:3]!r}"
+        )
+        # Verify template content was copied (not just an empty New-Item fallback)
+        assert "Feature Spec" in raw.decode("utf-8"), (
+            "spec.md does not contain template content — WriteAllText path was not exercised"
+        )
+
 
 class TestGitExtensionParity:
     def test_bash_extension_surfaces_checkout_errors(self):
@@ -902,30 +972,6 @@ def run_ps_script(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     script = cwd / "scripts" / "powershell" / "create-new-feature.ps1"
     cmd = ["pwsh", "-NoProfile", "-File", str(script), *args]
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
-
-
-@pytest.fixture
-def ps_git_repo(tmp_path: Path) -> Path:
-    """Create a temp git repo with PowerShell scripts and .specify dir."""
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True
-    )
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "init", "-q"],
-        cwd=tmp_path,
-        check=True,
-    )
-    ps_dir = tmp_path / "scripts" / "powershell"
-    ps_dir.mkdir(parents=True)
-    shutil.copy(CREATE_FEATURE_PS, ps_dir / "create-new-feature.ps1")
-    common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
-    shutil.copy(common_ps, ps_dir / "common.ps1")
-    (tmp_path / ".specify" / "templates").mkdir(parents=True)
-    return tmp_path
 
 
 @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not available")
@@ -1259,13 +1305,13 @@ class TestFeatureDirectoryResolution:
             pytest.fail("FEATURE_DIR not found in PowerShell output")
 
 
+
 # ── Description Quoting Tests (issue #2339) ──────────────────────────────────
 
 
 @requires_bash
 class TestDescriptionQuoting:
     """Descriptions with quotes, apostrophes, and backslashes must not break the script.
-
     Regression tests for https://github.com/github/spec-kit/issues/2339
     """
 
@@ -1273,9 +1319,9 @@ class TestDescriptionQuoting:
         "description",
         [
             "Add user's profile page",
-            "Fix the \"login\" bug",
+            'Fix the "login" bug',
             "Handle path\\with\\backslashes",
-            "It's a \"complex\" feature\\here",
+            'It\'s a "complex" feature\\here',
         ],
         ids=["apostrophe", "double-quotes", "backslashes", "mixed"],
     )
@@ -1290,16 +1336,22 @@ class TestDescriptionQuoting:
         "description",
         [
             "Add user's profile page",
-            "Fix the \"login\" bug",
+            'Fix the "login" bug',
             "Handle path\\with\\backslashes",
-            "It's a \"complex\" feature\\here",
+            'It\'s a "complex" feature\\here',
         ],
         ids=["apostrophe", "double-quotes", "backslashes", "mixed"],
     )
     def test_ext_script_handles_special_chars(self, ext_git_repo: Path, description: str):
         """Extension create-new-feature.sh succeeds with special characters in description."""
         script = (
-            ext_git_repo / ".specify" / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
+            ext_git_repo
+            / ".specify"
+            / "extensions"
+            / "git"
+            / "scripts"
+            / "bash"
+            / "create-new-feature.sh"
         )
         result = subprocess.run(
             ["bash", str(script), "--dry-run", "--short-name", "feat", description],
@@ -1321,3 +1373,4 @@ class TestDescriptionQuoting:
         """Plain description without special characters continues to work."""
         result = run_script(git_repo, "--dry-run", "--short-name", "feat", "Add login feature")
         assert result.returncode == 0, result.stderr
+        

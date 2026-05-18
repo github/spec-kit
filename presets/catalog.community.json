@@ -1,8 +1,64 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-15T00:00:00Z",
+  "updated_at": "2026-05-05T10:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
+    "a11y-governance": {
+      "name": "A11Y Governance",
+      "id": "a11y-governance",
+      "version": "0.2.0",
+      "description": "Adds accessibility, bilingual DE/EN delivery, CEFR-B2 readability, and inclusive-content governance to Spec Kit.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-a11y-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-a11y-governance/archive/refs/tags/v0.2.0.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-a11y-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-a11y-governance/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 9,
+        "commands": 3
+      },
+      "tags": [
+        "a11y",
+        "accessibility",
+        "bilingual",
+        "wcag",
+        "inclusion"
+      ],
+      "created_at": "2026-04-27T00:00:00Z",
+      "updated_at": "2026-04-27T00:00:00Z"
+    },
+    "agent-parity-governance": {
+      "name": "Agent Parity Governance",
+      "id": "agent-parity-governance",
+      "version": "0.1.0",
+      "description": "Keeps shared AI-agent guidance aligned across a project-defined set of agent instruction surfaces.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance/archive/refs/tags/v0.1.0.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 6,
+        "commands": 3
+      },
+      "tags": [
+        "agents",
+        "governance",
+        "parity",
+        "agent-guidance",
+        "multi-agent"
+      ],
+      "created_at": "2026-04-27T00:00:00Z",
+      "updated_at": "2026-04-27T00:00:00Z"
+    },
     "aide-in-place": {
       "name": "AIDE In-Place Migration",
       "id": "aide-in-place",
@@ -16,7 +72,9 @@
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.2.0",
-        "extensions": ["aide"]
+        "extensions": [
+          "aide"
+        ]
       },
       "provides": {
         "templates": 2,
@@ -28,6 +86,34 @@
         "brownfield",
         "aide"
       ]
+    },
+    "architecture-governance": {
+      "name": "Architecture Governance",
+      "id": "architecture-governance",
+      "version": "0.2.0",
+      "description": "Adds secure architecture governance, threat modeling, STRIDE/CAPEC, Zero Trust, S-ADRs, and OWASP SAMM to Spec Kit.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-architecture-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-architecture-governance/archive/refs/tags/v0.2.0.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-architecture-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-architecture-governance/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 11,
+        "commands": 3
+      },
+      "tags": [
+        "architecture",
+        "governance",
+        "threat-modeling",
+        "stride",
+        "zero-trust"
+      ],
+      "created_at": "2026-04-27T00:00:00Z",
+      "updated_at": "2026-04-27T00:00:00Z"
     },
     "canon-core": {
       "name": "Canon Core",
@@ -80,6 +166,34 @@
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z"
     },
+    "cross-platform-governance": {
+      "name": "Cross-Platform Governance",
+      "id": "cross-platform-governance",
+      "version": "0.1.0",
+      "description": "Adds Bash and PowerShell parity, dry-run/WhatIf parity, man-page expectations, and Verb-Noun Cmdlet discipline.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/archive/refs/tags/v0.1.0.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 8,
+        "commands": 3
+      },
+      "tags": [
+        "cross-platform",
+        "bash",
+        "powershell",
+        "man-page",
+        "cmdlet"
+      ],
+      "created_at": "2026-04-27T00:00:00Z",
+      "updated_at": "2026-04-27T00:00:00Z"
+    },
     "explicit-task-dependencies": {
       "name": "Explicit Task Dependencies",
       "id": "explicit-task-dependencies",
@@ -108,11 +222,11 @@
     "fiction-book-writing": {
       "name": "Fiction Book Writing",
       "id": "fiction-book-writing",
-      "version": "1.6.0",
-      "description": "Spec-Driven Development for novel and long-form fiction. 27 AI commands from idea to submission: story bible governance, 9 POV modes, all major plot structure frameworks, scene-by-scene drafting with quality gates, audiobook pipeline (SSML/ElevenLabs), cover design, sensitivity review, pacing and prose statistics, and pandoc-based export to DOCX/EPUB/LaTeX. Two style modes: author voice sample extraction or humanized-AI prose with 5 craft profiles. 12 languages supported.",
+      "version": "1.7.0",
+      "description": "Spec-Driven Development for novel and long-form fiction. 27 AI commands from idea to submission: story bible governance, 9 POV modes, all major plot structure frameworks, scene-by-scene drafting with quality gates, audiobook pipeline (SSML/ElevenLabs), cover design, sensitivity review, pacing and prose statistics, and pandoc-based export to DOCX/EPUB/LaTeX. Two style modes: author voice sample extraction or humanized-AI prose with 5 craft profiles. 12 languages supported. Support for offline semantic search.",
       "author": "Andreas Daumann",
       "repository": "https://github.com/adaumann/speckit-preset-fiction-book-writing",
-      "download_url": "https://github.com/adaumann/speckit-preset-fiction-book-writing/archive/refs/tags/v1.6.0.zip",
+      "download_url": "https://github.com/adaumann/speckit-preset-fiction-book-writing/archive/refs/tags/v1.7.0.zip",
       "homepage": "https://github.com/adaumann/speckit-preset-fiction-book-writing",
       "documentation": "https://github.com/adaumann/speckit-preset-fiction-book-writing/blob/main/fiction-book-writing/README.md",
       "license": "MIT",
@@ -122,7 +236,7 @@
       "provides": {
         "templates": 22,
         "commands": 27,
-        "scripts": 1
+        "scripts": 2
       },
       "tags": [
         "writing",
@@ -140,7 +254,72 @@
         "language-support"
       ],
       "created_at": "2026-04-09T08:00:00Z",
-      "updated_at": "2026-04-19T08:00:00Z"
+      "updated_at": "2026-04-27T08:00:00Z"
+    },
+    "game-narrative-writing": {
+      "name": "Game Narrative Writing",
+      "id": "game-narrative-writing",
+      "version": "1.0.0",
+      "description": "Spec-Driven Development for interactive game-narrative pre-production in video games. Authors write in a portable generic format, Twine/Sugarcube (.twee) or Ink (.ink). Covers choice-IF, visual novels, and branching dialogue. Supports Tier 1 mechanic hooks (flag, counter, inventory, timer, trust, currency, npc_state, ending_condition), multi-ending design, series carry-over variable registry, and NPC-focused character architecture.",
+      "author": "Andreas Daumann",
+      "repository": "https://github.com/adaumann/speckit-preset-game-narrative-writing",
+      "download_url": "https://github.com/adaumann/speckit-preset-game-narrative-writing/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/adaumann/speckit-preset-game-narrative-writing",
+      "documentation": "https://github.com/adaumann/speckit-preset-game-narrative-writing/blob/main/game-narrative-writing/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.5.0"
+      },
+      "provides": {
+        "templates": 22,
+        "commands": 36,
+        "scripts": 2
+      },
+      "tags": [
+        "game-writing",
+        "interactive-fiction",
+        "twine",
+        "ink",
+        "renpy",
+        "point-and-click",
+        "branching-narrative",
+        "choice-if",
+        "visual-novel",
+        "mechanic-hooks",
+        "game-narrative",
+        "export",
+        "series"
+      ],
+      "created_at": "2026-05-05T08:00:00Z",
+      "updated_at": "2026-05-05T08:00:00Z"
+    },
+    "isaqb-architecture-governance": {
+      "name": "iSAQB Architecture Governance",
+      "id": "isaqb-architecture-governance",
+      "version": "0.1.0",
+      "description": "Adds general iSAQB/CPSA-F and arc42 architecture governance, including views, quality scenarios, ADRs, risks, and technical debt.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/archive/refs/tags/v0.1.0.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 13,
+        "commands": 3
+      },
+      "tags": [
+        "architecture",
+        "governance",
+        "isaqb",
+        "arc42",
+        "adr"
+      ],
+      "created_at": "2026-04-27T00:00:00Z",
+      "updated_at": "2026-04-27T00:00:00Z"
     },
     "jira": {
       "name": "Jira Issue Tracking",
@@ -168,6 +347,37 @@
       ],
       "created_at": "2026-04-15T00:00:00Z",
       "updated_at": "2026-04-15T00:00:00Z"
+    },
+    "mde": {
+      "name": "Model Driven Engineering",
+      "id": "mde",
+      "version": "0.5.1",
+      "description": "Focuses on streamlined commands, app repository support, cross-spec support, and capability-aware project memory for model-driven engineering workflows.",
+      "author": "Ralph Hanna",
+      "repository": "https://github.com/AI-MDE/spec-kit-preset-mde",
+      "download_url": "https://github.com/AI-MDE/spec-kit-preset-mde/archive/refs/tags/v0.5.1.zip",
+      "homepage": "https://github.com/AI-MDE/spec-kit-preset-mde",
+      "documentation": "https://github.com/AI-MDE/spec-kit-preset-mde/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "extensions": [
+          "mde"
+        ]
+      },
+      "provides": {
+        "templates": 6,
+        "commands": 11
+      },
+      "tags": [
+        "model-driven-engineering",
+        "software-lifecycle",
+        "business-analysis",
+        "business-application",
+        "multi-layered-architecture"
+      ],
+      "created_at": "2026-05-08T00:00:00Z",
+      "updated_at": "2026-05-08T00:00:00Z"
     },
     "multi-repo-branching": {
       "name": "Multi-Repo Branching",
@@ -259,6 +469,61 @@
       "created_at": "2026-04-23T08:00:00Z",
       "updated_at": "2026-04-23T08:00:00Z"
     },
+    "security-governance": {
+      "name": "Security Governance",
+      "id": "security-governance",
+      "version": "0.2.0",
+      "description": "Adds secure development governance, MSL preference, ASVS verification, supply-chain transparency, and EU CRA awareness.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-security-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-security-governance/archive/refs/tags/v0.2.0.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-security-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-security-governance/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 12,
+        "commands": 3
+      },
+      "tags": [
+        "security",
+        "governance",
+        "msl",
+        "asvs",
+        "supply-chain"
+      ],
+      "created_at": "2026-04-27T00:00:00Z",
+      "updated_at": "2026-04-27T00:00:00Z"
+    },
+    "spec2cloud": {
+      "name": "Spec2Cloud",
+      "id": "spec2cloud",
+      "version": "1.1.0",
+      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
+      "author": "Azure Samples",
+      "repository": "https://github.com/Azure-Samples/Spec2Cloud",
+      "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/download/spec-kit-spec2cloud-v1.1.0/preset.zip",
+      "homepage": "https://aka.ms/spec2cloud",
+      "documentation": "https://github.com/Azure-Samples/Spec2Cloud/blob/main/spec-kit/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "templates": 5,
+        "commands": 8
+      },
+      "tags": [
+        "azure",
+        "spec2cloud",
+        "workflow",
+        "deployment"
+      ],
+      "created_at": "2026-04-30T00:00:00Z",
+      "updated_at": "2026-04-30T00:00:00Z"
+    }, 
     "toc-navigation": {
       "name": "Table of Contents Navigation",
       "id": "toc-navigation",

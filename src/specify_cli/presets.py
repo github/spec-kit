@@ -27,7 +27,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
-from .extensions import ExtensionRegistry, normalize_priority
+from .extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 
 
 def _substitute_core_template(
@@ -136,12 +136,25 @@ class PresetManifest:
     def _load_yaml(self, path: Path) -> dict:
         """Load YAML file safely."""
         try:
-            with open(path, 'r') as f:
-                return yaml.safe_load(f) or {}
+            with open(path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise PresetValidationError(f"Invalid YAML in {path}: {e}")
         except FileNotFoundError:
             raise PresetValidationError(f"Manifest not found: {path}")
+        except UnicodeDecodeError as e:
+            raise PresetValidationError(
+                f"Manifest is not valid UTF-8: {path} ({e.reason} at byte {e.start})"
+            )
+        except OSError as e:
+            raise PresetValidationError(f"Could not read manifest {path}: {e}")
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise PresetValidationError(
+                f"Manifest must be a YAML mapping, got {type(data).__name__}: {path}"
+            )
+        return data
 
     def _validate(self):
         """Validate manifest structure and required fields."""
@@ -563,7 +576,7 @@ class PresetManager:
                 raise PresetCompatibilityError(
                     f"Preset requires spec-kit {required}, "
                     f"but {speckit_version} is installed.\n"
-                    f"Upgrade spec-kit with: uv tool install specify-cli --force"
+                    f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
                 )
         except InvalidSpecifier:
             raise PresetCompatibilityError(
@@ -1035,9 +1048,9 @@ class PresetManager:
                     short_name = cmd_name
                     if short_name.startswith("speckit."):
                         short_name = short_name[len("speckit."):]
-                    desc = SKILL_DESCRIPTIONS.get(
+                    desc = fm.get("description", "") or SKILL_DESCRIPTIONS.get(
                         short_name.replace(".", "-"),
-                        fm.get("description", f"Command: {short_name}"),
+                        f"Command: {short_name}",
                     )
                     init_opts = load_init_options(self.project_root)
                     selected_ai = init_opts.get("ai") if isinstance(init_opts, dict) else ""
@@ -1301,9 +1314,9 @@ class PresetManager:
                         frontmatter[key] = core_frontmatter[key]
 
             original_desc = frontmatter.get("description", "")
-            enhanced_desc = SKILL_DESCRIPTIONS.get(
+            enhanced_desc = original_desc or SKILL_DESCRIPTIONS.get(
                 short_name,
-                original_desc or f"Spec-kit workflow command: {short_name}",
+                f"Spec-kit workflow command: {short_name}",
             )
             frontmatter = dict(frontmatter)
             frontmatter["description"] = enhanced_desc
@@ -1404,9 +1417,9 @@ class PresetManager:
                     )
 
                 original_desc = frontmatter.get("description", "")
-                enhanced_desc = SKILL_DESCRIPTIONS.get(
+                enhanced_desc = original_desc or SKILL_DESCRIPTIONS.get(
                     short_name,
-                    original_desc or f"Spec-kit workflow command: {short_name}",
+                    f"Spec-kit workflow command: {short_name}",
                 )
 
                 frontmatter_data = registrar.build_skill_frontmatter(
@@ -1832,20 +1845,20 @@ class PresetCatalog:
             )
 
     def _make_request(self, url: str):
-        """Build a urllib Request, adding a GitHub auth header when available.
+        """Build a urllib Request, adding auth headers when a provider matches.
 
-        Delegates to :func:`specify_cli._github_http.build_github_request`.
+        Delegates to :func:`specify_cli.authentication.http.build_request`.
         """
-        from specify_cli._github_http import build_github_request
-        return build_github_request(url)
+        from specify_cli.authentication.http import build_request
+        return build_request(url)
 
     def _open_url(self, url: str, timeout: int = 10):
-        """Open a URL with GitHub auth, stripping the header on cross-host redirects.
+        """Open a URL with provider-based auth, trying each configured provider.
 
-        Delegates to :func:`specify_cli._github_http.open_github_url`.
+        Delegates to :func:`specify_cli.authentication.http.open_url`.
         """
-        from specify_cli._github_http import open_github_url
-        return open_github_url(url, timeout)
+        from specify_cli.authentication.http import open_url
+        return open_url(url, timeout)
 
     def _load_catalog_config(self, config_path: Path) -> Optional[List[PresetCatalogEntry]]:
         """Load catalog stack configuration from a YAML file.

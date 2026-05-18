@@ -53,6 +53,7 @@ class ClaudeIntegration(SkillsIntegration):
         "extension": "/SKILL.md",
     }
     context_file = "CLAUDE.md"
+    multi_install_safe = True
 
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:

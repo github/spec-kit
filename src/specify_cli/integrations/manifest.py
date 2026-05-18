@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,59 @@ def _validate_rel_path(rel: Path, root: Path) -> Path:
             f"the project root {root_resolved}"
         ) from None
     return resolved
+
+
+def _manifest_path_label(root: Path, path: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _ensure_safe_manifest_directory(root: Path, directory: Path) -> None:
+    """Create a manifest directory without following symlinked parents."""
+    root_resolved = root.resolve()
+    try:
+        rel = directory.relative_to(root)
+    except ValueError:
+        label = _manifest_path_label(root, directory)
+        raise ValueError(f"Integration manifest directory escapes project root: {label}") from None
+
+    current = root
+    for part in rel.parts:
+        current = current / part
+        label = _manifest_path_label(root, current)
+        if current.is_symlink():
+            raise ValueError(f"Refusing to use symlinked integration manifest directory: {label}")
+        if current.exists():
+            if not current.is_dir():
+                raise ValueError(f"Integration manifest directory path is not a directory: {label}")
+            try:
+                current.resolve().relative_to(root_resolved)
+            except (OSError, ValueError):
+                raise ValueError(f"Integration manifest directory escapes project root: {label}") from None
+            continue
+        current.mkdir()
+        try:
+            current.resolve().relative_to(root_resolved)
+        except (OSError, ValueError):
+            raise ValueError(f"Integration manifest directory escapes project root: {label}") from None
+
+
+def _ensure_safe_manifest_destination(root: Path, path: Path) -> None:
+    """Refuse manifest writes that would escape the project or follow symlinks."""
+    root_resolved = root.resolve()
+    _ensure_safe_manifest_directory(root, path.parent)
+    label = _manifest_path_label(root, path)
+    if path.is_symlink():
+        raise ValueError(f"Refusing to overwrite symlinked integration manifest path: {label}")
+    if path.exists():
+        if not path.is_file():
+            raise ValueError(f"Integration manifest path is not a file: {label}")
+        try:
+            path.resolve().relative_to(root_resolved)
+        except (OSError, ValueError):
+            raise ValueError(f"Integration manifest path escapes project root: {label}") from None
 
 
 class IntegrationManifest:
@@ -217,8 +271,19 @@ class IntegrationManifest:
             "files": self._files,
         }
         path = self.manifest_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        content = json.dumps(data, indent=2) + "\n"
+        _ensure_safe_manifest_destination(self.project_root, path)
+        fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        temp_path = Path(temp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            temp_path.chmod(0o644)
+            _ensure_safe_manifest_destination(self.project_root, path)
+            os.replace(temp_path, path)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
         return path
 
     @classmethod
