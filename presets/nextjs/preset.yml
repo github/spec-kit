@@ -1,0 +1,33 @@
+schema_version: "1.0"
+
+preset:
+  id: "nextjs"
+  name: "Next.js Web Application"
+  version: "0.1.0"
+  description: "State-of-the-art directives for full-stack Next.js (App Router + Route Handlers + DB): frontend, backend, security, performance, infrastructure, and TypeScript code quality. Behaviors only — no stack lock-in."
+  author: "spec-kit"
+  repository: "https://github.com/Satcomx00-x00/spec-kit"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.6.0"
+
+provides:
+  templates:
+    - type: "template"
+      name: "constitution-template"
+      file: "templates/constitution-template.md"
+      description: "Next.js project constitution — phased, criticality-tagged behavioral directives for production web apps"
+      replaces: "constitution-template"
+
+    - type: "template"
+      name: "agent-context"
+      file: "templates/agent-context.md"
+      description: "Compressed always-on agent rules for Next.js development; copy or reference from AGENTS.md / CLAUDE.md / .github/copilot-instructions.md"
+
+tags:
+  - "nextjs"
+  - "web"
+  - "fullstack"
+  - "typescript"
+  - "production"
