@@ -10,6 +10,9 @@ This preset ships **behaviors, not a tech stack**. It does not pick your ORM, st
 |---|---|
 | `templates/constitution-template.md` | The project **directive**. Replaces the core constitution template. Encodes principles, phased criticality, and the full behavior matrix across Frontend, Backend, Security, Performance, TypeScript & Code Quality, and Infrastructure & Operations. |
 | `templates/agent-context.md` | The **global agent rules**. A compressed, always-on operating manual for AI coding agents working on the project. Mirror it into the agent's context file (`AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, etc.). |
+| `commands/speckit.constitution.scan.md` | New command **`/speckit.constitution.scan`**. Sibling to `/speckit.constitution`: instead of taking a prompt, it scans the repository (Markdown docs, `package.json`, `tsconfig.json`, Next.js structure, tooling, CI) and exports `.specify/memory/constitution.md` with a Sync Impact Report mapping evidence to every Critical directive. |
+| `scripts/bash/scan-repo.sh` · `scripts/powershell/scan-repo.ps1` | Repository scanners invoked by the command. Emit JSON conforming to `scripts/SCHEMA.md` — `.md` inventory (with headings + excerpts), parsed `package.json` (deps, scripts, signals), `tsconfig.json` strict-flag posture, App Router / Pages Router / middleware presence, `"use client"` / `"use server"` counts, DAL directory detection, CI workflows, env files, pinned Node version, git metadata. |
+| `scripts/SCHEMA.md` | Stable contract between the scanners and the command (`schema_version: "1.0"`). |
 
 ## Operating framework
 
@@ -42,13 +45,35 @@ Verify the constitution template resolves to this preset:
 specify preset resolve constitution-template
 ```
 
-Then run the constitution command in your project:
+Then run **one** of the constitution commands in your project:
 
 ```bash
+# Interactive: drafts the constitution from a prompt + repo context
 /speckit.constitution
+
+# Scan-driven: scans the repo (Markdown + package.json + tsconfig + Next.js
+# structure + tooling + CI) and exports a properly-structured constitution
+# with a Sync Impact Report mapping evidence to every Critical directive.
+/speckit.constitution.scan
 ```
 
-This produces `.specify/memory/constitution.md` — the project's living directive.
+Both produce `.specify/memory/constitution.md` — the project's living directive.
+
+### What `/speckit.constitution.scan` does
+
+1. Runs `scripts/bash/scan-repo.sh` (or `scan-repo.ps1`) to build a JSON inventory of the repository.
+2. Reads the most relevant Markdown evidence (`README.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`, `SECURITY.md`, agent context files, plus up to 10 likely product/engineering docs).
+3. Decides the operating **phase** (P1–P4) from evidence — defaults to P1 if no production signal is present.
+4. Fills the Next.js constitution template (does **not** rewrite the behavior matrix — the matrix is the source of truth).
+5. Prepends a **Sync Impact Report** as an HTML comment: inventory snapshot, per-directive status (`MET` / `NOT MET` / `PARTIAL` / `UNVERIFIED`), Markdown evidence consulted, and follow-up TODOs.
+6. Flags downstream templates (`plan-template`, `spec-template`, `tasks-template`, command files, agent context files) that may need realignment — **without** silently editing them.
+7. Writes `.specify/memory/constitution.md` and prints a summary plus a suggested commit message.
+
+You can pass freeform context with the command, e.g.:
+
+```bash
+/speckit.constitution.scan ratification date 2026-05-18; treat auth as Critical from P1
+```
 
 ## Wiring the agent context
 

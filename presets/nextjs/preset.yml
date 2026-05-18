@@ -25,6 +25,11 @@ provides:
       file: "templates/agent-context.md"
       description: "Compressed always-on agent rules for Next.js development; copy or reference from AGENTS.md / CLAUDE.md / .github/copilot-instructions.md"
 
+    - type: "command"
+      name: "speckit.constitution.scan"
+      file: "commands/speckit.constitution.scan.md"
+      description: "Scan the repo (Markdown docs + package.json + tsconfig + Next.js structure + tooling) and export a Next.js constitution at .specify/memory/constitution.md with a Sync Impact Report mapping evidence to directives."
+
 tags:
   - "nextjs"
   - "web"
