@@ -37,6 +37,7 @@ class OpencodeIntegration(MarkdownIntegration):
                 args.extend(["--command", command])
                 message = remainder
 
+        self._apply_extra_args_env_var(args)
         if model:
             args.extend(["-m", model])
         if output_json:

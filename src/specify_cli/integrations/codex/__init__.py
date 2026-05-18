@@ -53,6 +53,7 @@ class CodexIntegration(SkillsIntegration):
     ) -> list[str] | None:
         # Codex uses ``codex exec "prompt"`` for non-interactive mode.
         args: list[str] = ["codex", "exec", prompt]
+        self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])
         if output_json:

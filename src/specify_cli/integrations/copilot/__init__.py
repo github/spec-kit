@@ -149,6 +149,7 @@ class CopilotIntegration(IntegrationBase):
         # (default: enabled).  The deprecated SPECKIT_ALLOW_ALL_TOOLS
         # is also honoured as a fallback.
         args = [_copilot_executable(), "-p", prompt]
+        self._apply_extra_args_env_var(args)
         if _allow_all():
             args.append("--yolo")
         if model:
@@ -368,7 +369,11 @@ class CopilotIntegration(IntegrationBase):
         created: list[Path] = []
 
         script_type = opts.get("script_type", "sh")
-        arg_placeholder = self.registrar_config.get("args", "$ARGUMENTS")
+        arg_placeholder = (
+            self.registrar_config.get("args", "$ARGUMENTS")
+            if self.registrar_config
+            else "$ARGUMENTS"
+        )
 
         # 1. Process and write command files as .agent.md
         for src_file in templates:

@@ -49,6 +49,7 @@ class DevinIntegration(SkillsIntegration):
         kept on the integration for tool detection.
         """
         args = [self.key, "-p", prompt]
+        self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])
         return args
