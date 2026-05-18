@@ -25,15 +25,32 @@ def _get_catalog_docs_patches():
         "copilot": MagicMock(config={"name": "GitHub Copilot"}),
         "codex": MagicMock(config={"name": "Codex CLI"}),
     }
-    fake_doc_urls = {"copilot": "https://code.visualstudio.com/", "codex": "https://github.com/openai/codex"}
+    fake_doc_urls = {
+        "copilot": "https://code.visualstudio.com/",
+        "codex": "https://github.com/openai/codex",
+    }
     fake_label_overrides = {}
     fake_notes = {"copilot": "Test note"}
     
     stack = ExitStack()
-    stack.enter_context(patch("specify_cli.catalog_docs._get_integration_registry", return_value=fake_registry))
-    stack.enter_context(patch("specify_cli.catalog_docs.INTEGRATION_DOC_URLS", fake_doc_urls))
-    stack.enter_context(patch("specify_cli.catalog_docs.INTEGRATION_LABEL_OVERRIDES", fake_label_overrides))
-    stack.enter_context(patch("specify_cli.catalog_docs.INTEGRATION_NOTES", fake_notes))
+    stack.enter_context(
+        patch(
+            "specify_cli.catalog_docs._get_integration_registry",
+            return_value=fake_registry,
+        )
+    )
+    stack.enter_context(
+        patch("specify_cli.catalog_docs.INTEGRATION_DOC_URLS", fake_doc_urls)
+    )
+    stack.enter_context(
+        patch(
+            "specify_cli.catalog_docs.INTEGRATION_LABEL_OVERRIDES",
+            fake_label_overrides,
+        )
+    )
+    stack.enter_context(
+        patch("specify_cli.catalog_docs.INTEGRATION_NOTES", fake_notes)
+    )
     return stack
 
 
@@ -53,7 +70,7 @@ def test_render_cell_escapes_pipes_and_normalizes_newlines():
 
 
 def test_integrations_docs_label_and_url_sources():
-    """Test with a mocked registry and doc maps to avoid brittleness to live registry changes."""
+    """Test using mocked registry/doc maps to avoid test brittleness."""
     # Create a minimal fake registry with two known integrations
     fake_registry = {
         "copilot": MagicMock(config={"name": "GitHub Copilot"}),
@@ -61,17 +78,33 @@ def test_integrations_docs_label_and_url_sources():
     }
 
     # Mock the doc maps to only contain entries for the fake registry
-    fake_doc_urls = {"copilot": "https://code.visualstudio.com/", "codex": "https://github.com/openai/codex"}
+    fake_doc_urls = {
+        "copilot": "https://code.visualstudio.com/",
+        "codex": "https://github.com/openai/codex",
+    }
     fake_label_overrides = {}
     fake_notes = {}
 
-    patch_registry = patch("specify_cli.catalog_docs._get_integration_registry", return_value=fake_registry)
-    patch_urls = patch("specify_cli.catalog_docs.INTEGRATION_DOC_URLS", fake_doc_urls)
-    patch_labels = patch("specify_cli.catalog_docs.INTEGRATION_LABEL_OVERRIDES", fake_label_overrides)
-    patch_notes = patch("specify_cli.catalog_docs.INTEGRATION_NOTES", fake_notes)
+    patch_registry = patch(
+        "specify_cli.catalog_docs._get_integration_registry",
+        return_value=fake_registry,
+    )
+    patch_urls = patch(
+        "specify_cli.catalog_docs.INTEGRATION_DOC_URLS", fake_doc_urls
+    )
+    patch_labels = patch(
+        "specify_cli.catalog_docs.INTEGRATION_LABEL_OVERRIDES",
+        fake_label_overrides,
+    )
+    patch_notes = patch(
+        "specify_cli.catalog_docs.INTEGRATION_NOTES", fake_notes
+    )
 
     with patch_registry, patch_urls, patch_labels, patch_notes:
-        rows = {key: (label, url) for key, label, url, _notes in list_integrations_for_docs()}
+        rows = {
+            key: (label, url)
+            for key, label, url, _notes in list_integrations_for_docs()
+        }
         assert rows["copilot"][0] == "GitHub Copilot"
         assert rows["copilot"][1] == "https://code.visualstudio.com/"
         assert rows["codex"][0] == "Codex CLI"
@@ -90,11 +123,21 @@ def test_cli_integration_search_markdown_success():
 
 
 def test_cli_integration_search_markdown_with_filters_warns():
-    """Test that `integration search --markdown` with filters emits a warning to stderr."""
+    """Test that `integration search --markdown` with filters warns."""
     with _get_catalog_docs_patches():
-        result = runner.invoke(app, ["integration", "search", "test-query", "--markdown", "--tag", "some-tag"])
+        result = runner.invoke(
+            app,
+            [
+                "integration",
+                "search",
+                "test-query",
+                "--markdown",
+                "--tag",
+                "some-tag",
+            ],
+        )
         assert result.exit_code == 0
-        # Check for the specific Typer warning message (not generic Python warnings)
+        # Check for the specific Typer warning message
         assert "ignores query/--tag/--author filters" in result.stderr
         lines = result.stdout.splitlines()
         assert lines[0] == "| Agent | Key | Notes |"
@@ -115,10 +158,12 @@ def test_cli_integration_search_markdown_stdout_is_clean():
 
 
 def test_docs_reference_integrations_md_stays_in_sync():
-    """Regression test: committed docs/reference/integrations.md table should exist.
+    """Regression test: committed docs/reference/integrations.md stays in sync.
     
-    This ensures the integration reference docs file is present and contains expected markers.
-    If this test fails, run: poetry run python scripts/generate_integrations_reference.py --write
+    This ensures that the integration reference docs file contains the exact
+    list of integrations defined in the registry.
+    If this test fails, run: specify integration search --markdown
+    and update the table in docs/reference/integrations.md accordingly.
     """
     import pytest
     from pathlib import Path
@@ -130,26 +175,65 @@ def test_docs_reference_integrations_md_stays_in_sync():
     if not docs_file.exists():
         pytest.skip(
             f"Integration reference docs not found at {docs_file}. "
-            "Skipping sync test (expected in CI, acceptable in isolated test environments)."
+            "Skipping sync test (expected in CI, acceptable in isolated "
+            "test environments)."
         )
     
     # Read the committed file with explicit UTF-8 encoding
     with open(docs_file, encoding="utf-8") as f:
         committed_content = f.read()
     
-    # Verify the file contains table markers (the table structure)
-    assert "| Agent" in committed_content, \
-        "The committed integrations.md doesn't contain 'Agent' column marker. \n" \
-        "Run: poetry run python scripts/generate_integrations_reference.py --write"
-    
-    assert "| Key" in committed_content, \
-        "The committed integrations.md doesn't contain 'Key' column marker. \n" \
-        "Run: poetry run python scripts/generate_integrations_reference.py --write"
-    
-    assert "| Notes" in committed_content, \
-        "The committed integrations.md doesn't contain 'Notes' column marker. \n" \
-        "Run: poetry run python scripts/generate_integrations_reference.py --write"
-    
-    # The generated table should also have these markers
+    # Extract rows from the H2 section ## Supported AI Coding Agents
+    def parse_first_markdown_table(text: str) -> set[tuple[str, str, str]]:
+        lines = text.splitlines()
+        in_target_section = False
+        in_table = False
+        rows = []
+        for line in lines:
+            if line.startswith("## Supported AI Coding Agents"):
+                in_target_section = True
+                continue
+            if in_target_section:
+                if line.startswith("## "):
+                    break
+                if line.strip().startswith("|"):
+                    in_table = True
+                    parts = [p.strip() for p in line.split("|")[1:-1]]
+                    if (
+                        all(p.startswith("---") or p == "" for p in parts)
+                        or parts == ["Agent", "Key", "Notes"]
+                    ):
+                        continue
+                    rows.append((parts[0], parts[1], parts[2]))
+                elif in_table:
+                    break
+        return set(rows)
+
+    def parse_markdown_table_rows(text: str) -> set[tuple[str, str, str]]:
+        rows = []
+        for line in text.splitlines():
+            if line.strip().startswith("|"):
+                parts = [p.strip() for p in line.split("|")[1:-1]]
+                if (
+                    all(p.startswith("---") or p == "" for p in parts)
+                    or parts == ["Agent", "Key", "Notes"]
+                ):
+                    continue
+                rows.append((parts[0], parts[1], parts[2]))
+        return set(rows)
+
+    committed_rows = parse_first_markdown_table(committed_content)
     generated_table = render_integrations_table()
-    assert "| Agent | Key | Notes |" in generated_table
+    generated_rows = parse_markdown_table_rows(generated_table)
+
+    # Assert they are in perfect sync
+    diff_missing = generated_rows - committed_rows
+    diff_extra = committed_rows - generated_rows
+
+    error_msg = (
+        "The committed integrations.md table is out of sync with the registry.\n"
+        f"Missing from docs: {diff_missing}\n"
+        f"Extra in docs: {diff_extra}\n"
+        "To update the docs table, run: specify integration search --markdown"
+    )
+    assert not diff_missing and not diff_extra, error_msg
