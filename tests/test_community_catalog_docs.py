@@ -19,6 +19,12 @@ def _write_catalog(tmp_path: Path, extensions: dict) -> Path:
 # ---------------------------------------------------------------------------
 
 def test_community_extensions_table_renders() -> None:
+    from specify_cli.community_catalog_docs import COMMUNITY_CATALOG_PATH
+    if not COMMUNITY_CATALOG_PATH.exists():
+        pytest.skip(
+            f"Community catalog not found at {COMMUNITY_CATALOG_PATH}. "
+            "Skipping (expected when running from sdist/wheel)."
+        )
     table = render_community_extensions_table()
     assert "| Extension" in table
     assert "| ID" in table
@@ -28,6 +34,12 @@ def test_community_extensions_table_renders() -> None:
 
 
 def test_community_extensions_are_sorted_by_name() -> None:
+    from specify_cli.community_catalog_docs import COMMUNITY_CATALOG_PATH
+    if not COMMUNITY_CATALOG_PATH.exists():
+        pytest.skip(
+            f"Community catalog not found at {COMMUNITY_CATALOG_PATH}. "
+            "Skipping (expected when running from sdist/wheel)."
+        )
     rows = list_community_extensions()
     names = [row["name"] for row in rows]
     assert names == sorted(names, key=str.casefold)
@@ -105,3 +117,19 @@ def test_non_list_tags_renders_em_dash(tmp_path: Path) -> None:
     })
     table = render_community_extensions_table(path=f)
     assert "—" in table
+
+
+def test_url_escaping_in_repository_links(tmp_path: Path) -> None:
+    """Test that URLs with `)` and `|` are properly escaped in markdown links."""
+    f = _write_catalog(tmp_path, {
+        "foo": {
+            "name": "Foo",
+            "description": "",
+            "tags": [],
+            "verified": False,
+            "repository": "https://example.com/repo?x=1)&y=2|bad",  # Contains ) and |
+        },
+    })
+    table = render_community_extensions_table(path=f)
+    # The URL should be escaped: ) → \) and | → \|
+    assert "[Foo](https://example.com/repo?x=1\\)&y=2\\|bad)" in table
