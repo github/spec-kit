@@ -1,4 +1,6 @@
 """Agent configuration constants derived from the integration registry."""
+from __future__ import annotations
+
 from typing import Any
 
 
