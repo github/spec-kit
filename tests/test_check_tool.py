@@ -122,7 +122,7 @@ class TestCheckTip:
         output = strip_ansi(result.output)
         assert result.exit_code == 0
         assert (
-            "Tip: Run 'specify self check' to verify you have the latest CLI version."
+            "Tip: Run 'specify self check' to verify you have the latest CLI version"
             in output
         )
 
