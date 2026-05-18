@@ -95,6 +95,14 @@ def render_cell(value: str) -> str:
     return value.replace("|", "\\|")
 
 
+def _escape_url_for_markdown_link(url: str) -> str:
+    """Escape characters that can break Markdown link syntax.
+    
+    Escapes `)` and `|` which can terminate or corrupt the link destination.
+    """
+    return url.replace(")", "\\)").replace("|", "\\|")
+
+
 def _get_integration_registry() -> dict[str, Any]:
     from specify_cli.integrations import INTEGRATION_REGISTRY
 
@@ -170,7 +178,7 @@ def render_integrations_table() -> str:
     rows: list[list[str]] = []
 
     for key, label, url, notes in list_integrations_for_docs():
-        agent = f"[{label}]({url})" if url else label
+        agent = f"[{label}]({_escape_url_for_markdown_link(url)})" if url else label
         rows.append([agent, f"`{key}`", notes])
 
     def render_row(values: list[str]) -> str:

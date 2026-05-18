@@ -31,10 +31,6 @@ def _format_tags(tags: Any) -> str:
     return ", ".join(cleaned) if cleaned else "—"
 
 
-# For backwards compatibility and clarity
-_render_cell = render_cell
-
-
 def list_community_extensions(
     path: Path = COMMUNITY_CATALOG_PATH,
 ) -> list[dict[str, Any]]:
@@ -92,7 +88,7 @@ def render_community_extensions_table(path: Path = COMMUNITY_CATALOG_PATH) -> st
         table_rows.append(
             [
                 link,
-                f"`{row['id']}`",
+                f"`{render_cell(row['id'])}`",
                 render_cell(row["description"]),
                 _format_tags(row["tags"]),
                 row["verified"],
