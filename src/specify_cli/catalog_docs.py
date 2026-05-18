@@ -171,18 +171,28 @@ def list_integrations_for_docs(
 
 def render_integrations_table() -> str:
     """Render the built-in integrations reference table as markdown."""
-    rows: list[list[str]] = []
+    table_rows: list[list[str]] = []
 
     for key, label, url, notes in list_integrations_for_docs():
-        agent = f"[{label}]({_escape_url_for_markdown_link(url)})" if url else label
-        rows.append([agent, f"`{key}`", notes])
+        # Escape raw field values *before* composing Markdown syntax so that
+        # a pipe inside a label or notes doesn't break a link target.
+        safe_label = render_cell(label)
+        safe_notes = render_cell(notes)
+        safe_url = _escape_url_for_markdown_link(url) if url else None
+        agent = (
+            f"[{safe_label}]({safe_url})"
+            if safe_url
+            else safe_label
+        )
+        table_rows.append([agent, f"`{key}`", safe_notes])
+
+    headers = ("Agent", "Key", "Notes")
 
     def render_row(values: list[str]) -> str:
-        return "| " + " | ".join(render_cell(value) for value in values) + " |"
+        # Values are already escaped; do not re-apply render_cell here.
+        return "| " + " | ".join(values) + " |"
 
-    lines = [
-        render_row(["Agent", "Key", "Notes"]),
-        "| " + " | ".join(["---", "---", "---"]) + " |",
-    ]
-    lines.extend(render_row(row) for row in rows)
+    separator = "| " + " | ".join("---" for _ in headers) + " |"
+    lines = [render_row(list(headers)), separator]
+    lines.extend(render_row(row) for row in table_rows)
     return "\n".join(lines)
