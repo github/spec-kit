@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .catalog_docs import _escape_url_for_markdown_link, render_cell
+from .catalog_docs import escape_url_for_markdown_link, render_cell
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -28,8 +28,8 @@ def list_community_extensions(
     """Return community extensions sorted alphabetically by name then ID."""
     if not path.exists():
         raise FileNotFoundError(
-            f"Community catalog not found: {path}. "
-            "The --markdown flag requires a spec-kit source checkout."
+            f"Community catalog not found at {path}. "
+            "Ensure the repository checkout includes the extensions/ directory."
         )
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -70,7 +70,7 @@ def render_community_extensions_table(path: Path = COMMUNITY_CATALOG_PATH) -> st
         # Escape raw field values *before* composing Markdown syntax so that
         # a pipe inside a name or description doesn't break a link target.
         safe_name = render_cell(row["name"])
-        safe_repo = _escape_url_for_markdown_link(row["repository"])
+        safe_repo = escape_url_for_markdown_link(row["repository"])
         link = (
             f"[{safe_name}]({safe_repo})"
             if row["repository"]
