@@ -113,21 +113,74 @@ Before proposing code, check the relevant section below. When a directive confli
 
 ---
 
-## TypeScript & Code Quality — what to do
+## TypeScript Engineering — what to do
 
-- Strict TS across the project: `strict`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `exactOptionalPropertyTypes`.
-- Parse external input with a schema and pass narrowed types downstream. Read env vars through a single typed module; fail boot if required vars are missing or malformed.
-- Model state with discriminated unions, not boolean flags. Prefer `readonly` and `as const`. Keep functions pure where possible; isolate I/O behind named seams.
-- Use typed result envelopes (`ok`/`err`) at fallible seams; don't throw across module boundaries without a typed contract.
-- Co-locate tests with the code they exercise: unit for business logic, integration for boundaries.
-- Document public APIs with TSDoc. Use named exports. Avoid barrel files at module roots.
-- Enforce import boundaries (`server-only`, `client-only`, layered module rules) so leakage fails the build.
+TypeScript directives carry a **Scope** tag: `FE` (frontend), `BE` (backend), or `Both`. The full matrix lives in the constitution under *TypeScript Engineering Behaviors*; the operating cheat sheet below is what every agent must keep in mind on every change.
 
-## TypeScript & Code Quality — what NOT to do
+**Compiler & project config (Both)**
+- Strict from day one: `strict: true`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`, `noFallthroughCasesInSwitch`, `noImplicitReturns`, `forceConsistentCasingInFileNames`.
+- Use path aliases (`@/*`); avoid `../../../` chains. Use project references / `composite` in monorepos.
+- Type errors fail the CI build. Replace `@ts-ignore` with `@ts-expect-error` carrying a justification when truly necessary.
 
-- No `any`. No unchecked `as`. No `@ts-ignore`. No silent `// eslint-disable`.
-- No `utils.ts` dumping grounds. No default exports for testable modules.
+**Type system discipline (Both)**
+- `unknown` for untrusted/dynamic data; narrow before use. Never `any`.
+- Use `satisfies` for configs/routes/themes; use `as const` to prevent widening.
+- Discriminated unions over boolean flags. Make illegal states unrepresentable in the type.
+- Branded/nominal types for IDs, emails, and tokens — not raw `string`.
+- User-defined type predicates (`x is X`) for runtime narrowing. Type async returns explicitly. Narrow `catch` errors with `instanceof Error` or a typed union.
+- Reach for `Pick` / `Omit` / `Partial` / `Required` / `Record` before rolling your own. Use `readonly` and `ReadonlyArray` for inputs. Use template literal types for constrained strings.
+- Constrain generics with `extends`. Prefer interfaces for extensible shapes; types for unions/intersections/mapped.
+
+**SOLID**
+- **SRP / OCP** apply to both FE and BE: one reason to change; extend via new modules, not by editing existing ones.
+- **DIP / dependency injection** (BE): high-level code depends on abstractions. Inject DB, mailer, clock, and logger — never instantiate inside business logic.
+- **ISP / LSP** (Both): split fat interfaces; subtypes honor the parent contract.
+- Composition over inheritance.
+
+**Clean code & functional discipline (Both)**
+- Pure functions by default; isolate side effects at the edges. Immutable data; mutation is opt-in.
+- DRY only after the third repetition (Rule of Three). KISS / YAGNI. Law of Demeter.
+- Self-documenting names. Small functions, single level of abstraction, low cyclomatic complexity.
+- Early returns over `if`/`else` pyramids. Boolean parameters are a smell — split or pass an enum. Limit args to ≤ 3; group into a typed options object.
+
+**Runtime boundaries (Both / BE / FE)**
+- **Parse, don't validate.** Convert untrusted input into a typed value at the boundary, then trust the type.
+- (BE) Validate every external input — HTTP body, params, headers, env, queue messages — with a schema.
+- Validate environment variables at startup. Fail fast.
+- Never trust TS types at runtime across a process boundary. Define DTOs decoupling internal models from wire shapes.
+- (FE) Validate API responses on the client if the server contract isn't generated from a single source of truth.
+- Generate types from the source of truth (DB schema, OpenAPI, schema). `Result<T, E>` for expected failures; exceptions for unexpected ones.
+
+**Frontend patterns (FE)**
+- Type every prop explicitly. Discriminated-union props for component variants.
+- Type event handlers with the specific event type. Type `useState` explicitly when initial value doesn't capture the full union. Type refs with the specific element interface.
+- Generic components for reusable lists / forms / tables to preserve item types end-to-end.
+- Don't pass private or server-only types to client components.
+- Type custom hooks' return as `const` tuples or named objects for stable inference.
+
+**Backend patterns (BE)**
+- Mark server-only modules so client imports fail the build.
+- Type all service-layer inputs and outputs.
+- Model domain errors as a typed union. Use `never` to enforce exhaustive `switch` on discriminated unions.
+- Type DB rows from the schema. Keep domain ↔ persistence ↔ API types separate. Use opaque/branded IDs (`UserId` ≠ `OrderId`).
+
+**Project hygiene & DX (Both)**
+- One linter, one formatter, both on pre-commit and in CI. Ban circular imports via lint rule.
+- `PascalCase` types/components, `camelCase` values, `SCREAMING_SNAKE_CASE` constants.
+- Co-locate types with their module; export only what consumers need. At most one barrel per public boundary.
+- Write tests against the type-level contract, not only runtime behavior. Document non-obvious types with TSDoc.
+- Track `tsc` performance; use `--incremental`; split projects when builds exceed budget.
+
+## TypeScript Engineering — what NOT to do
+
+- No `any`. No `@ts-ignore`. No unchecked `as`. No `// eslint-disable` without a justified reason.
+- No raw `string` for IDs / emails / tokens — use branded types.
+- No boolean-parameter explosions — split or use an enum / discriminated union.
+- No deep class hierarchies — compose.
+- No hand-rolled DB row interfaces — type from the schema.
+- No global `index.ts` barrels that hide circular deps.
 - No premature abstraction — refactor on the third repetition, not the second.
+- No `HTMLElement` as a catch-all ref type. No `Promise<any>` as an inferred return.
 
 ---
 

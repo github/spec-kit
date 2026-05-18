@@ -30,7 +30,7 @@ The framework lets a team start enforcing the right things at the right time —
 - **Backend behaviors** — Data Access Layer, thin actions, schema-validated boundaries, authorization at the action, ownership checks, DTOs, transactions, webhooks, idempotency.
 - **Security behaviors** — Layered enforcement, session hygiene, secrets handling, CSP and security headers, MFA, audit trail, dependency posture.
 - **Performance behaviors** — Explicit caching, parallel fetches, field-data-driven optimization, CWV budgets in CI, image/font/script discipline, bundle audits, INP protection.
-- **TypeScript & Code Quality behaviors** — Strict compiler, banned escape hatches, schema-validated input, typed result envelopes, import boundaries, no barrel files, no dumping grounds.
+- **TypeScript Engineering behaviors** (carries a third tag — **Scope**: `FE` / `BE` / `Both`) — organized into eight subsections: Compiler & Project Config, Type System Discipline, SOLID, Clean Code & Functional Discipline, Runtime Boundaries, Frontend Patterns, Backend Patterns, Project Hygiene & DX. Covers strict compiler flags, banned escape hatches, `satisfies` vs `as`, branded/nominal IDs, discriminated unions, parse-don't-validate boundaries, schema-derived types, dependency injection, exhaustive switches with `never`, and naming/linting/test discipline.
 - **Infrastructure & Operations behaviors** — Reproducible builds, secret management, environment parity, immutable deploys, health-gated rollouts, backups with drills, observability, SLOs, blameless retrospectives.
 
 ## Install (local development)

@@ -100,8 +100,9 @@ From `inventory.package_json`:
 
 From `inventory.tsconfig`:
 
-- If `strict !== true` or `noUncheckedIndexedAccess !== true`, mark the corresponding P1 Critical TypeScript directives as **NOT MET** in the Sync Impact Report.
-- If `tsconfig.present === false`, flag the entire TypeScript & Code Quality section as **UNVERIFIED**.
+- If `strict !== true`, `noUncheckedIndexedAccess !== true`, or `exactOptionalPropertyTypes !== true`, mark the corresponding **TypeScript Engineering / Compiler & Project Config / P1 / Critical** directives as **NOT MET** in the Sync Impact Report.
+- If `noImplicitOverride`, `noFallthroughCasesInSwitch`, `noImplicitReturns`, or `forceConsistentCasingInFileNames` are missing or `false`, flag the corresponding **P1 / High** directives as **NOT MET**.
+- If `tsconfig.present === false`, flag the entire **TypeScript Engineering** section as **UNVERIFIED** and record a P1 Critical follow-up to introduce a strict `tsconfig.json`.
 
 From `inventory.nextjs`:
 
@@ -194,7 +195,11 @@ Last amended date:    <ISO>
 - [Frontend / P1 / Critical] Default to Server Components — <MET|UNVERIFIED|NOT MET> (<evidence>)
 - [Backend / P1 / Critical] Single Data Access Layer — <MET|NOT MET> (<evidence>)
 - [Backend / P1 / Critical] `server-only` on sensitive modules — <MET|NOT MET> (<evidence>)
-- [TS&CQ / P1 / Critical] Strict TS (`strict`, `noUncheckedIndexedAccess`, ...) — <MET|NOT MET> (<evidence>)
+- [TS Engineering / Compiler / P1 / Critical] `strict: true` — <MET|NOT MET> (<evidence>)
+- [TS Engineering / Compiler / P1 / Critical] `noUncheckedIndexedAccess` — <MET|NOT MET> (<evidence>)
+- [TS Engineering / Compiler / P1 / Critical] `exactOptionalPropertyTypes` — <MET|NOT MET> (<evidence>)
+- [TS Engineering / Compiler / P1 / High]     `noImplicitOverride`, `noFallthroughCasesInSwitch`, `noImplicitReturns`, `forceConsistentCasingInFileNames` — <MET|PARTIAL|NOT MET> (<evidence>)
+- [TS Engineering / Type System / P1 / Critical] No `any`, no unchecked `as` — <MET|UNVERIFIED|NOT MET> (<evidence: lint config, raw greps>)
 - [Infra / P1 / Critical] Reproducible builds + pinned runtime — <MET|PARTIAL|NOT MET> (<evidence>)
 - [Infra / P1 / High] CI runs typecheck/lint/test/build — <MET|NOT MET> (<evidence>)
 - ... include every Critical P1 directive at minimum; add Highs when evidence speaks to them.

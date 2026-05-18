@@ -3,10 +3,11 @@
 
 This constitution governs **behavior**, not technology choices. The team chooses concrete tools in the plan phase; the directives below hold regardless of which framework version, ORM, styling layer, or hosting target is selected.
 
-Every directive carries two tags:
+Every directive carries two tags, and the TypeScript Engineering section adds a third:
 
 - **Phase** — when the behavior must hold.
 - **Criticality** — how strictly it is enforced.
+- **Scope** *(TypeScript Engineering only)* — where the behavior applies: `FE` (frontend), `BE` (backend), or `Both`.
 
 ---
 
@@ -177,28 +178,123 @@ Lint, format, typecheck, and tests run in CI on every change; warnings on protec
 
 ---
 
-## TypeScript & Code Quality Behaviors
+## TypeScript Engineering Behaviors
 
-| Phase | Crit. | Behavior |
-|---|---|---|
-| P1 | Critical | Enable strict TS across the project: `strict`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `exactOptionalPropertyTypes`. |
-| P1 | Critical | Ban `any`, `@ts-ignore`, and unchecked `as` casts; require type guards or schema parsing at boundaries. |
-| P1 | Critical | Treat lint warnings as errors in CI on protected branches; no green merge with red warnings. |
-| P1 | High | Parse all external input (HTTP, env, storage, third-party SDKs) through a schema; pass narrowed types downstream. |
-| P1 | High | Read environment variables through a single typed module; fail boot if required vars are missing or malformed. |
-| P2 | High | Model state with discriminated unions, not boolean flags. |
-| P2 | High | Prefer `readonly` and `as const`; treat mutation as a deliberate, named decision. |
-| P2 | High | Keep functions pure where possible; isolate I/O and side effects behind named seams. |
-| P2 | High | Co-locate tests with the code they exercise; require unit tests for business logic and integration tests for boundaries. |
-| P2 | High | Use typed result envelopes (`ok`/`err`) at fallible seams; never throw across module boundaries without a typed contract. |
-| P2 | Medium | Document public APIs with TSDoc; keep private helpers self-explanatory and short. |
-| P2 | Medium | Use named exports; avoid default exports for testable modules. |
-| P3 | High | Enforce import boundaries (`server-only`, `client-only`, layered module rules) so leakage fails the build. |
-| P3 | High | Avoid barrel files at module roots; import from leaves to preserve tree-shaking. |
-| P3 | Medium | Cap cyclomatic complexity per function; split when a function holds more than one responsibility. |
-| P3 | Medium | Keep modules small and named for what they do, not what they contain (no `utils.ts` dumping grounds). |
-| P4 | Medium | Refactor on the third repetition, not the second; resist premature abstraction. |
-| P4 | Low | Track dead code and unused exports; remove on sight. |
+This section governs everything related to writing and maintaining TypeScript code. Each directive carries a third tag — **Scope** — clarifying whether it applies to frontend code (`FE`), backend code (`BE`), or both (`Both`).
+
+### Compiler & Project Config
+
+| Phase | Crit. | Scope | Behavior |
+|---|---|---|---|
+| P1 | Critical | Both | Enable `strict: true` from day one; retrofitting is painful. |
+| P1 | Critical | Both | Enable `noUncheckedIndexedAccess` — array and record access returns `T \| undefined`. |
+| P1 | Critical | Both | Enable `exactOptionalPropertyTypes` to separate "absent" from "explicitly undefined". |
+| P1 | High | Both | Enable `noImplicitOverride`, `noFallthroughCasesInSwitch`, and `noImplicitReturns`. |
+| P1 | High | Both | Enable `forceConsistentCasingInFileNames` to avoid case-sensitivity bugs across operating systems. |
+| P1 | High | Both | Use path aliases (`@/*`) to avoid `../../../` import chains. |
+| P1 | Medium | Both | Set `moduleResolution: "bundler"` for modern bundler-based projects. |
+| P1 | Medium | Both | Use project references / `composite` for monorepos to enable incremental builds. |
+| P2 | High | Both | Treat type errors as build failures in CI; never merge with `tsc` errors. |
+| P2 | High | Both | Ban `@ts-ignore` in CI; require `@ts-expect-error` with a justification comment when an escape hatch is genuinely needed. |
+
+### Type System Discipline
+
+| Phase | Crit. | Scope | Behavior |
+|---|---|---|---|
+| P1 | Critical | Both | Ban `any`; use `unknown` for untrusted or dynamic data and narrow before use. |
+| P1 | Critical | Both | Never cast with `as` to bypass the checker; use type guards or `satisfies` instead. |
+| P1 | High | Both | Use `satisfies` for configs, routes, and themes to validate shape while preserving literal types. |
+| P1 | High | Both | Use `as const` to prevent type widening on literal objects, tuples, and enums. |
+| P2 | High | Both | Prefer discriminated unions over boolean flags or optional-field combinations. |
+| P2 | High | Both | Make illegal states unrepresentable in the type, not just in runtime checks. |
+| P2 | High | Both | Use branded / nominal types for IDs, emails, and tokens — never raw `string`. |
+| P2 | High | Both | Use user-defined type predicates (`x is X`) for runtime narrowing. |
+| P2 | High | Both | Type async function returns explicitly; do not rely on inferred `Promise<any>`. |
+| P2 | High | Both | Narrow errors in `catch` with `instanceof Error` or a typed error union. |
+| P2 | Medium | Both | Use built-in utility types (`Pick`, `Omit`, `Partial`, `Required`, `Record`) before rolling your own. |
+| P2 | Medium | Both | Use `readonly` and `ReadonlyArray` for inputs that must not be mutated. |
+| P2 | Medium | Both | Use template literal types to constrain string shapes (routes, event names, units). |
+| P3 | Medium | Both | Use generics with constraints (`extends`) — avoid generics that accept anything. |
+| P3 | Low | Both | Prefer interfaces for extensible public shapes; types for unions, intersections, and mapped types. |
+
+### SOLID
+
+| Phase | Crit. | Scope | Behavior |
+|---|---|---|---|
+| P1 | Critical | Both | **SRP** — one module, class, or function has one reason to change. |
+| P1 | High | Both | **OCP** — extend behavior via new modules or strategies, not by editing existing ones. |
+| P2 | High | BE | **DIP** — high-level code depends on abstractions, not concrete implementations. |
+| P2 | High | BE | Inject dependencies (DB, mailer, clock, logger) — never instantiate them inside business logic. |
+| P2 | High | Both | **ISP** — split fat interfaces into small, role-specific ones consumers actually need. |
+| P2 | High | Both | **LSP** — subtypes honor the parent contract (no surprise throws, no narrower inputs, no broader outputs). |
+| P3 | Medium | Both | Prefer composition over inheritance; deep class hierarchies are a smell. |
+
+### Clean Code & Functional Discipline
+
+| Phase | Crit. | Scope | Behavior |
+|---|---|---|---|
+| P1 | Critical | Both | Pure functions by default; isolate side effects at the edges. |
+| P1 | High | Both | Immutable data structures; treat mutation as opt-in, not the default. |
+| P2 | High | Both | **DRY** — but only after the third repetition; avoid premature abstraction (Rule of Three). |
+| P2 | High | Both | **KISS / YAGNI** — don't build for hypothetical futures. |
+| P2 | High | Both | **Law of Demeter** — don't reach through chains of objects you don't own. |
+| P2 | High | Both | Self-documenting names; no abbreviations, no Hungarian notation. |
+| P2 | High | Both | Small functions with a single level of abstraction; keep cyclomatic complexity low. |
+| P2 | Medium | Both | Early returns over nested `if`/`else` pyramids. |
+| P2 | Medium | Both | Boolean parameters are a smell — split into two functions or pass an enum. |
+| P3 | Medium | Both | Limit function arguments (≤ 3); group related ones into a typed options object. |
+
+### Runtime Boundaries
+
+| Phase | Crit. | Scope | Behavior |
+|---|---|---|---|
+| P2 | Critical | Both | **Parse, don't validate** — convert untrusted input into a typed value at the boundary, then trust the type. |
+| P2 | Critical | BE | Validate every external input (HTTP body, params, headers, env, queue messages) with a schema. |
+| P2 | Critical | Both | Validate environment variables at startup with a schema; fail fast on missing or invalid values. |
+| P2 | Critical | Both | Never trust TypeScript types at runtime for data crossing a process boundary. |
+| P2 | High | Both | Define DTOs that decouple internal models from API and wire shapes. |
+| P2 | High | FE | Validate API responses on the client too if the server contract isn't generated from a single source. |
+| P3 | High | Both | Generate types from the source of truth (DB schema, OpenAPI, schema definitions) — never hand-sync. |
+| P3 | Medium | Both | Use `Result<T, E>`-style returns for expected failures; reserve exceptions for unexpected ones. |
+
+### Frontend Patterns
+
+| Phase | Crit. | Scope | Behavior |
+|---|---|---|---|
+| P2 | High | FE | Type every prop explicitly; never let component props fall to `any`. |
+| P2 | High | FE | Discriminated union props over many optional booleans for component variants. |
+| P2 | High | FE | Type event handlers with the specific event type; avoid `any` in callbacks. |
+| P2 | High | FE | Type `useState` explicitly when the initial value doesn't capture the full union. |
+| P2 | High | FE | Type refs with the specific element interface; never `HTMLElement` as a catch-all. |
+| P2 | Medium | FE | Use generic components for reusable lists, forms, and tables to preserve item types end-to-end. |
+| P2 | Medium | FE | Avoid passing private or server-only types to client components. |
+| P3 | Medium | FE | Type custom hooks' return as `const` tuples or named objects for stable inference. |
+
+### Backend Patterns
+
+| Phase | Crit. | Scope | Behavior |
+|---|---|---|---|
+| P2 | Critical | BE | Mark server-only modules so accidental client imports fail the build. |
+| P2 | Critical | BE | Type all service-layer inputs and outputs; no implicit `any` on public functions. |
+| P2 | High | BE | Model domain errors as a typed union, not as generic `Error` strings. |
+| P2 | High | BE | Use `never` to enforce exhaustive `switch` handling on discriminated unions. |
+| P2 | High | BE | Type DB query results from the schema; never hand-write row interfaces. |
+| P3 | High | BE | Keep domain types separate from persistence types and from API types. |
+| P3 | Medium | BE | Use opaque / branded types for foreign IDs so `UserId` can't be passed where `OrderId` is expected. |
+
+### Project Hygiene & DX
+
+| Phase | Crit. | Scope | Behavior |
+|---|---|---|---|
+| P1 | High | Both | Enforce one linter and one formatter; run both on pre-commit and in CI. |
+| P1 | High | Both | Ban circular imports via a lint rule. |
+| P2 | High | Both | Enforce consistent naming: `PascalCase` for types and components, `camelCase` for values, `SCREAMING_SNAKE_CASE` for constants. |
+| P2 | High | Both | Co-locate types with the module that owns them; export only what consumers need. |
+| P2 | High | Both | At most one barrel file per public boundary; avoid global `index.ts` re-exports that hide circular deps. |
+| P2 | High | Both | Write tests against the type-level contract, not only the runtime behavior. |
+| P3 | Medium | Both | Track `tsc` performance; use `--incremental` and split projects when builds exceed budget. |
+| P3 | Medium | Both | Document non-obvious types with TSDoc so IDE hover answers the "why". |
+| P4 | Medium | Both | Audit lingering `unknown` narrowing gaps and unchecked `as` occurrences periodically; treat them as tech debt with tickets. |
 
 ---
 
