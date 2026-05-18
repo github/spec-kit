@@ -148,7 +148,7 @@ class CopilotIntegration(IntegrationBase):
         # Controlled by SPECKIT_COPILOT_ALLOW_ALL_TOOLS env var
         # (default: enabled).  The deprecated SPECKIT_ALLOW_ALL_TOOLS
         # is also honoured as a fallback.
-        args = ["copilot", "-p", prompt]
+        args = [_copilot_executable(), "-p", prompt]
         if _allow_all():
             args.append("--yolo")
         if model:
@@ -216,7 +216,7 @@ class CopilotIntegration(IntegrationBase):
             agent_name = f"speckit.{stem}"
             prompt = args or ""
 
-        cli_args = ["copilot", "-p", prompt]
+        cli_args = [_copilot_executable(), "-p", prompt]
         if not skills_mode:
             cli_args.extend(["--agent", agent_name])
         if _allow_all():
