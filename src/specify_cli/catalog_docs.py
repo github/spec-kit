@@ -129,8 +129,9 @@ def list_integrations_for_docs(
         import warnings
         warnings.warn(
             f"Integration(s) missing from INTEGRATION_DOC_URLS: "
-            f"{', '.join(missing)}. These will be skipped in the docs table. "
-            "Add them to INTEGRATION_DOC_URLS in catalog_docs.py.",
+            f"{', '.join(missing)}. They will be included in the docs table "
+            "without documentation links. Add them to INTEGRATION_DOC_URLS in "
+            "catalog_docs.py if a link should be available.",
             stacklevel=2
         )
 
@@ -195,4 +196,4 @@ def render_integrations_table() -> str:
     separator = "| " + " | ".join("---" for _ in headers) + " |"
     lines = [render_row(list(headers)), separator]
     lines.extend(render_row(row) for row in table_rows)
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n"
