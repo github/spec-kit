@@ -98,7 +98,7 @@ def render_community_extensions_table(path: Path = COMMUNITY_CATALOG_PATH) -> st
     headers = ("Extension", "ID", "Description", "Tags", "Verified")
 
     def render_row(values: list[str]) -> str:
-        # Values are already escaped; do not re-apply _render_cell here.
+        # Values are already escaped; do not re-apply render_cell here.
         return "| " + " | ".join(values) + " |"
 
     separator = "| " + " | ".join("---" for _ in headers) + " |"

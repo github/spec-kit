@@ -113,12 +113,12 @@ def list_integrations_for_docs(
     warn_on_missing: bool = False,
     warn_on_extra: bool = False,
 ) -> list[tuple[str, str, str | None, str]]:
-    """List integrations with their documentation URLs and notes.
+    """List all integrations with their documentation URLs and notes.
 
-    Skips any integrations not in INTEGRATION_DOC_URLS. If `warn_on_missing` is True,
-    emits a Python warning for any missing entries. If `warn_on_extra` is True,
-    emits a warning for stale keys in the doc maps that are no longer in the registry.
-    Gracefully handles missing URL or notes entries by defaulting to None/empty string.
+    Returns all integrations in the registry. Missing entries in INTEGRATION_DOC_URLS
+    default to None; if `warn_on_missing` is True, emits a warning for these.
+    If `warn_on_extra` is True, emits a warning for stale keys in the doc maps that
+    are no longer in the registry. Missing notes entries default to empty string.
     """
     registry = _get_integration_registry()
     registry_keys = set(registry)
@@ -158,15 +158,11 @@ def list_integrations_for_docs(
     rows: list[tuple[str, str, str | None, str]] = []
 
     for key, integration in registry.items():
-        # Skip integrations not in the doc maps
-        if key not in INTEGRATION_DOC_URLS:
-            continue
-
         config = getattr(integration, "config", {})
         if not isinstance(config, dict):
             config = {}
         label = INTEGRATION_LABEL_OVERRIDES.get(key, str(config.get("name") or key))
-        url = INTEGRATION_DOC_URLS.get(key)
+        url = INTEGRATION_DOC_URLS.get(key)  # None if not in map
         notes = INTEGRATION_NOTES.get(key, "")
         rows.append((key, label, url, notes))
 
