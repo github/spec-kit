@@ -284,7 +284,7 @@ def integration_search(
             )
         from ..catalog_docs import render_integrations_table
         try:
-            typer.echo(render_integrations_table())
+            typer.echo(render_integrations_table(), nl=False)
         except Exception as exc:
             typer.echo(f"Error rendering integrations table: {exc}", err=True)
             raise typer.Exit(code=1)
