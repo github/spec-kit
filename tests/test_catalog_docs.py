@@ -185,6 +185,7 @@ def test_docs_reference_integrations_md_stays_in_sync():
     
     # Extract rows from the H2 section ## Supported AI Coding Agents
     def parse_first_markdown_table(text: str) -> set[tuple[str, str, str]]:
+        """Parse the first markdown table in a section, respecting escaped pipes."""
         lines = text.splitlines()
         in_target_section = False
         in_table = False
@@ -198,12 +199,34 @@ def test_docs_reference_integrations_md_stays_in_sync():
                     break
                 if line.strip().startswith("|"):
                     in_table = True
-                    parts = [p.strip() for p in line.split("|")[1:-1]]
+                    # Parse respecting escaped pipes (\|)
+                    parts = []
+                    current = ""
+                    for i, char in enumerate(line):
+                        if char == "|" and (i == 0 or line[i-1] != "\\"):
+                            parts.append(current.strip())
+                            current = ""
+                        else:
+                            current += char
+                    if current:
+                        parts.append(current.strip())
+                    
+                    # Remove empty leading/trailing parts from outer pipes
+                    if parts and parts[0] == "":
+                        parts = parts[1:]
+                    if parts and parts[-1] == "":
+                        parts = parts[:-1]
+                    
                     if (
                         all(p.startswith("---") or p == "" for p in parts)
                         or parts == ["Agent", "Key", "Notes"]
                     ):
                         continue
+                    
+                    # Validate we have 3 columns
+                    if len(parts) != 3:
+                        continue
+                    
                     rows.append((parts[0], parts[1], parts[2]))
                 elif in_table:
                     break
