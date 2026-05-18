@@ -29,9 +29,7 @@ Or install globally:
 import os
 import sys
 import zipfile
-import shutil
 import json
-import shlex
 import yaml
 from pathlib import Path
 
@@ -39,7 +37,6 @@ from typing import Any, Optional
 
 import typer
 from rich.panel import Panel
-from rich.live import Live
 from rich.align import Align
 from rich.table import Table
 from .integration_runtime import (
@@ -70,13 +67,13 @@ from ._console import (
     StepTracker,
     console,
     get_key as get_key,
-    select_with_arrows,
+    select_with_arrows as select_with_arrows,
     show_banner,
 )
 from ._assets import (
     _locate_bundled_extension,
     _locate_bundled_preset,
-    _locate_bundled_workflow,
+    _locate_bundled_workflow as _locate_bundled_workflow,
     _locate_core_pack,
     _repo_root,
     get_speckit_version as get_speckit_version,
