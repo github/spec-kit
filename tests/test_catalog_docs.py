@@ -244,8 +244,9 @@ def test_docs_reference_integrations_md_stays_in_sync():
                         continue
                     
                     # Validate we have 3 columns
-                    if len(parts) != 3:
-                        continue
+                    assert (
+                        len(parts) == 3
+                    ), f"Malformed row in integrations.md: {line!r} (expected 3 columns, got {len(parts)})"
                     
                     rows.append((parts[0], parts[1], parts[2]))
                 elif in_table:

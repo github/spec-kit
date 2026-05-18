@@ -95,7 +95,7 @@ def render_cell(value: str) -> str:
     return value.replace("|", "\\|")
 
 
-def _escape_url_for_markdown_link(url: str) -> str:
+def escape_url_for_markdown_link(url: str) -> str:
     """Escape characters that can break Markdown link syntax.
     
     Escapes `)` and `|` which can terminate or corrupt the link destination.
@@ -179,7 +179,7 @@ def render_integrations_table() -> str:
         # a pipe inside a label or notes doesn't break a link target.
         safe_label = render_cell(label)
         safe_notes = render_cell(notes)
-        safe_url = _escape_url_for_markdown_link(url) if url else None
+        safe_url = escape_url_for_markdown_link(url) if url else None
         agent = (
             f"[{safe_label}]({safe_url})"
             if safe_url
