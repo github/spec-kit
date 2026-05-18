@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
@@ -19,8 +19,9 @@ from specify_cli import app
 runner = CliRunner()
 
 
+@contextmanager
 def _get_catalog_docs_patches():
-    """Return context manager with mocked registry and doc maps for CLI tests."""
+    """Context manager that applies mocked registry and doc maps for tests."""
 
     fake_registry = {
         "copilot": MagicMock(config={"name": "GitHub Copilot"}),
@@ -33,26 +34,26 @@ def _get_catalog_docs_patches():
     fake_label_overrides = {}
     fake_notes = {"copilot": "Test note"}
     
-    stack = ExitStack()
-    stack.enter_context(
-        patch(
-            "specify_cli.catalog_docs._get_integration_registry",
-            return_value=fake_registry,
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch(
+                "specify_cli.catalog_docs._get_integration_registry",
+                return_value=fake_registry,
+            )
         )
-    )
-    stack.enter_context(
-        patch("specify_cli.catalog_docs.INTEGRATION_DOC_URLS", fake_doc_urls)
-    )
-    stack.enter_context(
-        patch(
-            "specify_cli.catalog_docs.INTEGRATION_LABEL_OVERRIDES",
-            fake_label_overrides,
+        stack.enter_context(
+            patch("specify_cli.catalog_docs.INTEGRATION_DOC_URLS", fake_doc_urls)
         )
-    )
-    stack.enter_context(
-        patch("specify_cli.catalog_docs.INTEGRATION_NOTES", fake_notes)
-    )
-    return stack
+        stack.enter_context(
+            patch(
+                "specify_cli.catalog_docs.INTEGRATION_LABEL_OVERRIDES",
+                fake_label_overrides,
+            )
+        )
+        stack.enter_context(
+            patch("specify_cli.catalog_docs.INTEGRATION_NOTES", fake_notes)
+        )
+        yield
 
 
 def test_integrations_table_renders():
