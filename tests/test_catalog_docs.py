@@ -210,16 +210,43 @@ def test_docs_reference_integrations_md_stays_in_sync():
         return set(rows)
 
     def parse_markdown_table_rows(text: str) -> set[tuple[str, str, str]]:
+        """Parse markdown table rows, respecting escaped pipes."""
         rows = []
         for line in text.splitlines():
-            if line.strip().startswith("|"):
-                parts = [p.strip() for p in line.split("|")[1:-1]]
-                if (
-                    all(p.startswith("---") or p == "" for p in parts)
-                    or parts == ["Agent", "Key", "Notes"]
-                ):
-                    continue
-                rows.append((parts[0], parts[1], parts[2]))
+            if not line.strip().startswith("|"):
+                continue
+            
+            # Split on pipes, but account for escaped pipes (\|)
+            # A cell ending with \| has an escaped pipe and should not split there
+            parts = []
+            current = ""
+            for i, char in enumerate(line):
+                if char == "|" and (i == 0 or line[i-1] != "\\"):
+                    parts.append(current.strip())
+                    current = ""
+                else:
+                    current += char
+            if current:
+                parts.append(current.strip())
+            
+            # Remove empty leading/trailing parts from outer pipes
+            if parts and parts[0] == "":
+                parts = parts[1:]
+            if parts and parts[-1] == "":
+                parts = parts[:-1]
+            
+            # Skip header and separator rows
+            if (
+                all(p.startswith("---") or p == "" for p in parts)
+                or parts == ["Agent", "Key", "Notes"]
+            ):
+                continue
+            
+            # Validate we have the expected 3 columns
+            if len(parts) != 3:
+                continue
+            
+            rows.append((parts[0], parts[1], parts[2]))
         return set(rows)
 
     committed_rows = parse_first_markdown_table(committed_content)

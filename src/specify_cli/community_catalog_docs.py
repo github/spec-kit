@@ -6,14 +6,20 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .catalog_docs import render_cell
+
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 COMMUNITY_CATALOG_PATH = ROOT_DIR / "extensions" / "catalog.community.json"
 
 
-def _render_cell(value: str) -> str:
-    cleaned = value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
-    return cleaned.replace("|", "\\|")
+def _escape_url_for_markdown_link(url: str) -> str:
+    """Escape characters that can break Markdown link syntax.
+    
+    Escapes `)` and `|` which can terminate or corrupt the link destination.
+    """
+    # Escape ) and | which can break markdown link [text](url) syntax
+    return url.replace(")", "\\)").replace("|", "\\|")
 
 
 def _format_tags(tags: Any) -> str:
@@ -23,6 +29,10 @@ def _format_tags(tags: Any) -> str:
     # an empty backtick span after pipe removal, so filter on the cleaned value.
     cleaned = [f"`{c}`" for tag in tags if (c := str(tag).replace("|", "").strip())]
     return ", ".join(cleaned) if cleaned else "—"
+
+
+# For backwards compatibility and clarity
+_render_cell = render_cell
 
 
 def list_community_extensions(
@@ -72,9 +82,10 @@ def render_community_extensions_table(path: Path = COMMUNITY_CATALOG_PATH) -> st
     for row in rows:
         # Escape raw field values *before* composing Markdown syntax so that
         # a pipe inside a name or description doesn't break a link target.
-        safe_name = _render_cell(row["name"])
+        safe_name = render_cell(row["name"])
+        safe_repo = _escape_url_for_markdown_link(row["repository"])
         link = (
-            f"[{safe_name}]({row['repository']})"
+            f"[{safe_name}]({safe_repo})"
             if row["repository"]
             else safe_name
         )
@@ -82,7 +93,7 @@ def render_community_extensions_table(path: Path = COMMUNITY_CATALOG_PATH) -> st
             [
                 link,
                 f"`{row['id']}`",
-                _render_cell(row["description"]),
+                render_cell(row["description"]),
                 _format_tags(row["tags"]),
                 row["verified"],
             ]
