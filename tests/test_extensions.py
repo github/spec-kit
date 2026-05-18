@@ -2577,6 +2577,51 @@ class TestExtensionCatalog:
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
 
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            # Root is not a JSON object.
+            [],
+            "oops",
+            42,
+            None,
+            # Root is fine but ``extensions`` is the wrong type.
+            {"schema_version": "1.0", "extensions": []},
+            {"schema_version": "1.0", "extensions": "oops"},
+            {"schema_version": "1.0", "extensions": None},
+            {"schema_version": "1.0", "extensions": 42},
+        ],
+    )
+    def test_fetch_single_catalog_rejects_malformed_payload(self, temp_dir, payload):
+        """Malformed catalog payloads raise ExtensionError, not AttributeError.
+
+        Without this guard, a payload like ``{"extensions": []}`` would pass the
+        key-presence check and then crash with ``AttributeError: 'list' object
+        has no attribute 'items'`` deep inside ``_get_merged_extensions``. The
+        sibling integration catalog reader already validates both the root
+        object and the nested mapping (see ``integrations/catalog.py``); the
+        extension catalog must stay consistent.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        entry = CatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(ExtensionError, match="Invalid catalog format"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
         """download_extension passes Authorization header when a provider is configured."""
         from unittest.mock import patch, MagicMock

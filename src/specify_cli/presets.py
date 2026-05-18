@@ -2045,11 +2045,31 @@ class PresetCatalog:
             with self._open_url(entry.url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
+            # Validate payload shape before iteration. Checking only key
+            # presence would let a payload like ``{"presets": []}`` or
+            # ``{"presets": null}`` slip through here and then crash with
+            # ``AttributeError: 'list' object has no attribute 'items'`` deep
+            # inside ``_get_merged_packs``. The sibling integration catalog
+            # reader already guards both the root object and the nested
+            # mapping (see ``integrations/catalog.py``); the preset catalog
+            # must stay consistent so a malformed upstream surfaces as the
+            # user-facing ``Invalid preset catalog format`` error instead of
+            # a raw Python traceback.
+            if not isinstance(catalog_data, dict):
+                raise PresetError(
+                    f"Invalid preset catalog format from {entry.url}: "
+                    "expected a JSON object"
+                )
             if (
                 "schema_version" not in catalog_data
                 or "presets" not in catalog_data
             ):
                 raise PresetError("Invalid preset catalog format")
+            if not isinstance(catalog_data.get("presets"), dict):
+                raise PresetError(
+                    f"Invalid preset catalog format from {entry.url}: "
+                    "'presets' must be a JSON object"
+                )
 
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             cache_file.write_text(json.dumps(catalog_data, indent=2))

@@ -1514,6 +1514,51 @@ class TestPresetCatalog:
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
 
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            # Root is not a JSON object.
+            [],
+            "oops",
+            42,
+            None,
+            # Root is fine but ``presets`` is the wrong type.
+            {"schema_version": "1.0", "presets": []},
+            {"schema_version": "1.0", "presets": "oops"},
+            {"schema_version": "1.0", "presets": None},
+            {"schema_version": "1.0", "presets": 42},
+        ],
+    )
+    def test_fetch_single_catalog_rejects_malformed_payload(self, project_dir, payload):
+        """Malformed catalog payloads raise PresetError, not AttributeError.
+
+        Without this guard, a payload like ``{"presets": []}`` would pass the
+        key-presence check and then crash with ``AttributeError: 'list' object
+        has no attribute 'items'`` deep inside ``_get_merged_packs``. The
+        sibling integration catalog reader already validates both the root
+        object and the nested mapping (see ``integrations/catalog.py``); the
+        preset catalog must stay consistent.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        entry = PresetCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(PresetError, match="Invalid preset catalog format"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
     def test_download_pack_sends_auth_header(self, project_dir, monkeypatch):
         """download_pack passes Authorization header when configured."""
         from unittest.mock import patch, MagicMock

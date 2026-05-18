@@ -1839,8 +1839,27 @@ class ExtensionCatalog(CatalogStackBase):
             with self._open_url(entry.url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
+            # Validate payload shape before iteration. Checking only key
+            # presence would let a payload like ``{"extensions": []}`` or
+            # ``{"extensions": null}`` slip through here and then crash with
+            # ``AttributeError: 'list' object has no attribute 'items'`` deep
+            # inside ``_get_merged_extensions``. The sibling integration
+            # catalog reader already guards both the root object and the
+            # nested mapping (see ``integrations/catalog.py``); the extension
+            # catalog must stay consistent so a malformed upstream surfaces as
+            # the user-facing ``Invalid catalog format`` error instead of a
+            # raw Python traceback.
+            if not isinstance(catalog_data, dict):
+                raise ExtensionError(
+                    f"Invalid catalog format from {entry.url}: expected a JSON object"
+                )
             if "schema_version" not in catalog_data or "extensions" not in catalog_data:
                 raise ExtensionError(f"Invalid catalog format from {entry.url}")
+            if not isinstance(catalog_data.get("extensions"), dict):
+                raise ExtensionError(
+                    f"Invalid catalog format from {entry.url}: "
+                    "'extensions' must be a JSON object"
+                )
 
             # Save to cache
             self.cache_dir.mkdir(parents=True, exist_ok=True)
