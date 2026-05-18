@@ -3,7 +3,7 @@ schema_version: "1.0"
 preset:
   id: "nextjs"
   name: "Next.js Web Application"
-  version: "0.1.0"
+  version: "0.2.0"
   description: "State-of-the-art directives for full-stack Next.js (App Router + Route Handlers + DB): frontend, backend, security, performance, infrastructure, and TypeScript code quality. Behaviors only — no stack lock-in."
   author: "spec-kit"
   repository: "https://github.com/Satcomx00-x00/spec-kit"
@@ -39,6 +39,31 @@ provides:
       name: "speckit.audit.deep"
       file: "commands/speckit.audit.deep.md"
       description: "Deep codebase audit: runs the regex audit, then layers tsc --noEmit, eslint, npm audit, and LLM-based file-level confirmation plus cross-file pattern analysis."
+
+    - type: "command"
+      name: "speckit.plan"
+      file: "commands/speckit.plan.md"
+      description: "Next.js-specialized feature planning. Decomposes a feature into routes, RSC/client boundaries, Server Actions, Route Handlers, DAL methods, schemas, caching, prerendering, metadata, and accessibility checkpoints — all tagged with Phase and Criticality."
+
+    - type: "command"
+      name: "speckit.tasks"
+      file: "commands/speckit.tasks.md"
+      description: "Next.js-shaped task generation. Converts a feature plan into an ordered task list with Next.js-idiomatic titles, acceptance criteria referencing constitution directives, and explicit phase tags."
+
+    - type: "command"
+      name: "speckit.scaffold.route"
+      file: "commands/speckit.scaffold.route.md"
+      description: "Scaffold a Next.js App Router route segment: page.tsx (RSC), layout.tsx, loading.tsx (skeleton), error.tsx (client boundary), not-found.tsx — all wired to constitution directives."
+
+    - type: "command"
+      name: "speckit.scaffold.dal"
+      file: "commands/speckit.scaffold.dal.md"
+      description: "Scaffold a DAL module at lib/dal/<entity>.ts with import 'server-only', typed Result envelope, schema-parsed inputs, and CRUD method stubs."
+
+    - type: "command"
+      name: "speckit.docs.sync"
+      file: "commands/speckit.docs.sync.md"
+      description: "Sync AGENTS.md / CLAUDE.md / .github/copilot-instructions.md / GEMINI.md from the installed agent-context.md template. Shows a diff for review before writing."
 
 tags:
   - "nextjs"
