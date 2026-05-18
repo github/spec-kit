@@ -129,3 +129,106 @@ additive fields do not bump the version.
 and the `/speckit.constitution.scan` command are versioned together; if a
 field is renamed or removed, the schema version bumps and the command is
 updated in lockstep.
+
+---
+
+# audit-codebase inventory schema
+
+`audit-codebase.sh` and `audit-codebase.ps1` emit a JSON document with
+this top-level shape. Companion commands: `/speckit.audit` and
+`/speckit.audit.deep`.
+
+```jsonc
+{
+  "schema_version": "1.0",
+  "command": "audit",
+  "scanned_at": "2026-05-18T07:42:00Z",
+  "repo_root": "/abs/path/to/repo",
+
+  "scope": {
+    "files_scanned":  123,
+    "paths_included": ["app", "src"],
+    "extensions":     [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"],
+    "min_severity":   "low",
+    "max_per_rule":   50
+  },
+
+  "summary": {
+    "rules_evaluated":     23,
+    "rules_with_findings": 8,
+    "findings_total":      27,
+    "by_severity":         { "critical": 13, "high": 10, "medium": 4, "low": 0 },
+    "by_section":          { "TypeScript": 12, "Frontend": 6, "Security": 5, "Backend": 2, "Performance": 1, "Infrastructure": 1 },
+    "by_rule":             { "TS.TYPE.any-usage": 1, "BE.DAL.missing-server-only": 1, "...": 0 }
+  },
+
+  "rules": [
+    {
+      "id":          "TS.TYPE.any-usage",
+      "severity":    "critical",
+      "section":     "TypeScript / Type System Discipline",
+      "phase":       "P1",
+      "scope":       "Both",
+      "directive":   "Ban any; use unknown for untrusted data and narrow before use",
+      "remediation": "Replace 'any' with 'unknown' and narrow at the use site, or define a precise type."
+    }
+  ],
+
+  "findings": [
+    {
+      "rule_id":     "TS.TYPE.any-usage",
+      "severity":    "critical",
+      "section":     "TypeScript / Type System Discipline",
+      "phase":       "P1",
+      "scope":       "Both",
+      "directive":   "Ban any; ...",
+      "remediation": "Replace 'any' with 'unknown' ...",
+      "file":        "src/lib/foo.ts",
+      "line":        42,
+      "snippet":     "function bar(x: any) {"
+    }
+  ]
+}
+```
+
+## Rule ID convention
+
+`<SECTION>.<AREA>.<slug>` where `SECTION` is one of:
+
+| Prefix  | Maps to constitution section                         |
+|---------|------------------------------------------------------|
+| `TS.`   | TypeScript Engineering Behaviors                     |
+| `FE.`   | Frontend Behaviors                                   |
+| `BE.`   | Backend Behaviors                                    |
+| `SEC.`  | Security Behaviors                                   |
+| `PERF.` | Performance Behaviors                                |
+| `INFRA.`| Infrastructure & Operations Behaviors                |
+
+`AREA` is a short subsection slug (`COMPILER`, `TYPE`, `RSC`, `IMG`, `DAL`,
+`ENV`, `SESSION`, `SECRET`, `SQL`, `XSS`, `LOG`, `CI`, …). The full
+catalog is printable with `--list-rules` (bash) or `-ListRules`
+(PowerShell).
+
+## Severity → constitution criticality
+
+| Severity   | Constitution criticality | Release impact                                                                 |
+|------------|--------------------------|--------------------------------------------------------------------------------|
+| `critical` | Critical                 | Blocks release. No exception without a recorded waiver and a fixed expiry.     |
+| `high`     | High                     | Requires an explicit, time-bound exception approved at review.                 |
+| `medium`   | Medium                   | Default expectation; deviations are noted and tracked.                         |
+| `low`      | Low                      | Recommended; revisit during regular audits.                                    |
+
+## Performance for big codebases
+
+- Single file-enumeration pass; rules grep over the cached list.
+- Parallel grep via `xargs -P` (POSIX) or per-file `Select-String` (PS).
+- `--paths` / `-Paths` to narrow scope to specific directories.
+- `--rules` / `-Rules` and `--sections` / `-Sections` to run a subset.
+- `--max-findings-per-rule` / `-MaxFindingsPerRule` to keep reports bounded.
+- `--severity` / `-Severity` to raise the floor.
+
+## Stability
+
+`schema_version: "1.0"` covers the audit document layout. If a field is
+renamed or removed, the schema version bumps in lockstep with the
+`/speckit.audit*` commands.

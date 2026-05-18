@@ -30,6 +30,16 @@ provides:
       file: "commands/speckit.constitution.scan.md"
       description: "Scan the repo (Markdown docs + package.json + tsconfig + Next.js structure + tooling) and export a Next.js constitution at .specify/memory/constitution.md with a Sync Impact Report mapping evidence to directives."
 
+    - type: "command"
+      name: "speckit.audit"
+      file: "commands/speckit.audit.md"
+      description: "Audit the codebase against TypeScript and Next.js behavioral directives. Runs the audit script, summarizes findings by section and severity, and proposes prioritized fixes."
+
+    - type: "command"
+      name: "speckit.audit.deep"
+      file: "commands/speckit.audit.deep.md"
+      description: "Deep codebase audit: runs the regex audit, then layers tsc --noEmit, eslint, npm audit, and LLM-based file-level confirmation plus cross-file pattern analysis."
+
 tags:
   - "nextjs"
   - "web"
