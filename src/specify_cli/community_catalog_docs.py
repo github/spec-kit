@@ -6,20 +6,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .catalog_docs import render_cell
+from .catalog_docs import _escape_url_for_markdown_link, render_cell
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 COMMUNITY_CATALOG_PATH = ROOT_DIR / "extensions" / "catalog.community.json"
-
-
-def _escape_url_for_markdown_link(url: str) -> str:
-    """Escape characters that can break Markdown link syntax.
-    
-    Escapes `)` and `|` which can terminate or corrupt the link destination.
-    """
-    # Escape ) and | which can break markdown link [text](url) syntax
-    return url.replace(")", "\\)").replace("|", "\\|")
 
 
 def _format_tags(tags: Any) -> str:

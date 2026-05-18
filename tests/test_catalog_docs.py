@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 from typer.testing import CliRunner
 
 from specify_cli.catalog_docs import (
+    _escape_url_for_markdown_link,
     render_cell,
     list_integrations_for_docs,
     render_integrations_table,
@@ -67,6 +68,24 @@ def test_render_cell_escapes_pipes_and_normalizes_newlines():
     assert render_cell("a\r\nb") == "a b"
     assert render_cell("a\rb") == "a b"
     assert render_cell("a|b\nc") == "a\\|b c"
+
+
+def test_escape_url_for_markdown_link():
+    """Test that URLs with special characters are properly escaped for Markdown links."""
+    # URLs containing ) and | should be escaped
+    assert _escape_url_for_markdown_link("https://example.com/path)") == (
+        "https://example.com/path\\)"
+    )
+    assert _escape_url_for_markdown_link("https://example.com/path|query") == (
+        "https://example.com/path\\|query"
+    )
+    assert _escape_url_for_markdown_link("https://example.com/path)|query") == (
+        "https://example.com/path\\)\\|query"
+    )
+    # URLs without special characters should be unchanged
+    assert _escape_url_for_markdown_link("https://example.com/path") == (
+        "https://example.com/path"
+    )
 
 
 def test_integrations_docs_label_and_url_sources():
