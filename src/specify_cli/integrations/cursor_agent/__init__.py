@@ -41,14 +41,30 @@ class CursorAgentIntegration(SkillsIntegration):
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive ``cursor-agent`` execution.
 
-        Uses ``-p`` (print/headless mode, which gives access to all
-        tools including write and shell) plus ``--trust`` (bypass the
-        Workspace Trust prompt — mandatory for headless execution; the
-        CLI exits non-zero without it).
+        Mandatory headless flags:
+
+        * ``-p`` — print/headless mode (access to all tools)
+        * ``--trust`` — bypass Workspace Trust prompt (CLI exits non-zero
+          otherwise)
+        * ``--approve-mcps`` — auto-approve MCP server loading (otherwise
+          MCP servers stay ``not loaded (needs approval)`` and tool calls
+          to them are silently dropped)
+        * ``--force`` — auto-approve tool invocations (shell/write/MCP),
+          matching the implicit "trusted environment" semantics that other
+          integrations (``claude -p``, ``codex --exec``) get by default
+
+        Together these are the minimum set required to make
+        ``specify workflow run speckit --input integration=cursor-agent``
+        behave the same way as it does for ``claude`` / ``codex``.
+        Verified locally: with ``--approve-mcps --force`` the agent can
+        call any configured MCP server (e.g. ``dingtalk-doc``) and write
+        files during ``/speckit-*`` skill execution; without them the run
+        either drops tool calls or exits non-zero on the first approval
+        prompt.
         """
         if not self.config or not self.config.get("requires_cli"):
             return None
-        args = [self.key, "-p", "--trust", prompt]
+        args = [self.key, "-p", "--trust", "--approve-mcps", "--force", prompt]
         if model:
             args.extend(["--model", model])
         if output_json:

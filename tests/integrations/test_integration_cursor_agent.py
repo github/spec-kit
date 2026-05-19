@@ -126,11 +126,14 @@ class TestCursorAgentCliDispatch:
         assert url is not None
         assert "cursor.com" in url
 
-    def test_build_exec_args_default_includes_trust_and_json(self):
+    def test_build_exec_args_default_includes_headless_flags_and_json(self):
+        """Default argv emits the full headless flag set: -p --trust
+        --approve-mcps --force, then prompt, then --output-format json.
+        """
         i = get_integration("cursor-agent")
         args = i.build_exec_args("/speckit-specify some-feature")
         assert args == [
-            "cursor-agent", "-p", "--trust",
+            "cursor-agent", "-p", "--trust", "--approve-mcps", "--force",
             "/speckit-specify some-feature",
             "--output-format", "json",
         ]
@@ -139,7 +142,8 @@ class TestCursorAgentCliDispatch:
         i = get_integration("cursor-agent")
         args = i.build_exec_args("/speckit-plan", output_json=False)
         assert args == [
-            "cursor-agent", "-p", "--trust", "/speckit-plan",
+            "cursor-agent", "-p", "--trust", "--approve-mcps", "--force",
+            "/speckit-plan",
         ]
 
     def test_build_exec_args_with_model(self):
@@ -148,9 +152,25 @@ class TestCursorAgentCliDispatch:
             "/speckit-specify", model="sonnet-4-thinking", output_json=False
         )
         assert args == [
-            "cursor-agent", "-p", "--trust", "/speckit-specify",
+            "cursor-agent", "-p", "--trust", "--approve-mcps", "--force",
+            "/speckit-specify",
             "--model", "sonnet-4-thinking",
         ]
+
+    def test_build_exec_args_contains_mandatory_headless_flags(self):
+        """The four headless flags must always appear together.
+
+        ``--approve-mcps`` is required so MCP servers (e.g. dingtalk-doc)
+        actually load in headless mode; ``--force`` is required so the
+        agent doesn't block on tool-call approval prompts during the
+        speckit workflow.  Together with ``-p`` and ``--trust`` they
+        bring cursor-agent's headless behaviour in line with
+        ``claude -p`` / ``codex --exec`` from spec-kit's perspective.
+        """
+        i = get_integration("cursor-agent")
+        args = i.build_exec_args("/speckit-implement", output_json=False)
+        for flag in ("-p", "--trust", "--approve-mcps", "--force"):
+            assert flag in args, f"missing mandatory headless flag: {flag}"
 
     def test_build_command_invocation_uses_hyphenated_skill_name(self):
         """SkillsIntegration: /speckit-plan (not /speckit.plan)."""
@@ -189,7 +209,7 @@ class TestCursorAgentCliDispatch:
         assert result["exit_code"] == 0
         argv = mock_run.call_args[0][0]
         assert argv[0] == fake_path, f"expected resolved .CMD path, got: {argv[0]!r}"
-        assert argv[1:4] == ["-p", "--trust", "/speckit-plan feature-x"]
+        assert argv[1:6] == ["-p", "--trust", "--approve-mcps", "--force", "/speckit-plan feature-x"]
 
     def test_dispatch_command_passthrough_when_shutil_which_finds_nothing(self):
         """If ``shutil.which`` returns ``None``, leave argv unchanged so the
