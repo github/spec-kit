@@ -1,0 +1,53 @@
+name: Deploy website (FTP)
+
+# Builds the Astro site in website/ and uploads dist/ to your cPanel host via FTP.
+#
+# Required GitHub repository secrets (Settings → Secrets and variables → Actions):
+#   FTP_SERVER    e.g. ftp.yourdomain.com   (host only, no ftp://)
+#   FTP_USERNAME  your cPanel / FTP account username
+#   FTP_PASSWORD  the matching password
+#
+# Optional secret:
+#   FTP_SERVER_DIR  target folder on the server (default: /public_html/)
+
+on:
+  push:
+    branches:
+      - claude/create-personal-website-82skn
+    paths:
+      - 'website/**'
+      - '.github/workflows/deploy-website.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build site
+        run: npm run build
+
+      - name: Deploy to cPanel via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_SERVER_DIR || '/public_html/' }}
+          local-dir: ./website/dist/
+          dangerous-clean-slate: false
