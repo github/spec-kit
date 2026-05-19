@@ -368,7 +368,7 @@ def install_shared_infra(
                                 # ``manifest.files`` performs on every access.
                                 if dst_path.is_file() and rel not in prior_hashes:
                                     try:
-                                        manifest.record_existing(rel)
+                                        manifest.record_existing(rel, recovered=True)
                                     except (OSError, ValueError) as exc:
                                         # Tolerate races / permission issues / non-file
                                         # collisions so one weird path does not abort
@@ -409,7 +409,7 @@ def install_shared_infra(
                         # performs on every access.
                         if dst.is_file() and rel not in prior_hashes:
                             try:
-                                manifest.record_existing(rel)
+                                manifest.record_existing(rel, recovered=True)
                             except (OSError, ValueError) as exc:
                                 # Tolerate races / permission issues / non-file
                                 # collisions so one weird path does not abort

@@ -296,3 +296,83 @@ class TestManifestLoadValidation:
         path.write_text("{not valid json", encoding="utf-8")
         with pytest.raises(ValueError, match="invalid JSON"):
             IntegrationManifest.load("bad", tmp_path)
+
+
+class TestManifestRecoveredFiles:
+    """Coverage for the ``recovered_files`` channel added in #2483.
+
+    When ``shared_infra`` skips an existing file (because the user already has
+    it on disk) it now records the file with ``recovered=True``. The path
+    appears in ``manifest.recovered_files`` and ``is_recovered(path)`` returns
+    True. ``refresh_managed`` (out of scope for this PR) consults this list
+    before treating the recorded hash as a managed baseline, defending against
+    silent overwrite of user customizations after manifest loss.
+    """
+
+    def test_record_existing_default_is_not_recovered(self, tmp_path):
+        (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        m.record_existing("f.txt")
+        assert m.is_recovered("f.txt") is False
+        assert m.recovered_files == set()
+
+    def test_record_existing_with_recovered_flag(self, tmp_path):
+        (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        m.record_existing("f.txt", recovered=True)
+        assert m.is_recovered("f.txt") is True
+        assert m.recovered_files == {"f.txt"}
+        # File still hashed normally so check_modified/uninstall keep working
+        assert m.files["f.txt"] == _sha256(tmp_path / "f.txt")
+
+    def test_recovered_files_round_trips_through_save_load(self, tmp_path):
+        (tmp_path / "a.txt").write_text("aaa", encoding="utf-8")
+        (tmp_path / "b.txt").write_text("bbb", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path, version="9.9")
+        m.record_existing("a.txt", recovered=True)
+        m.record_existing("b.txt")  # not recovered
+        m.save()
+        loaded = IntegrationManifest.load("test", tmp_path)
+        assert loaded.is_recovered("a.txt") is True
+        assert loaded.is_recovered("b.txt") is False
+        assert loaded.recovered_files == {"a.txt"}
+
+    def test_save_omits_empty_recovered_files(self, tmp_path):
+        m = IntegrationManifest("test", tmp_path)
+        m.record_file("f.txt", "x")
+        path = m.save()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert "recovered_files" not in data
+
+    def test_load_rejects_non_list_recovered_files(self, tmp_path):
+        path = tmp_path / ".specify" / "integrations" / "bad.manifest.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            json.dumps({"files": {}, "recovered_files": "not-a-list"}),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="recovered_files"):
+            IntegrationManifest.load("bad", tmp_path)
+
+
+class TestRecordExistingNewGuards:
+    """Coverage for the two new guards added by Copilot's 2026-05-18 review."""
+
+    def test_rejects_symlinked_ancestor(self, tmp_path):
+        real_dir = tmp_path / "real_dir"
+        real_dir.mkdir()
+        (real_dir / "file.txt").write_text("payload", encoding="utf-8")
+        (tmp_path / "linked_dir").symlink_to(real_dir, target_is_directory=True)
+        m = IntegrationManifest("test", tmp_path)
+        with pytest.raises(ValueError, match="symlinked"):
+            m.record_existing("linked_dir/file.txt")
+
+    def test_rejects_inside_root_dotdot_with_explicit_message(self, tmp_path):
+        # ``dir/../file.txt`` normalizes inside root, so the old "escapes
+        # project root" message was misleading. The new message names the
+        # actual reason: canonicalization.
+        (tmp_path / "dir").mkdir()
+        (tmp_path / "file.txt").write_text("x", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        with pytest.raises(ValueError, match=r"canonical|'\.\.' segments"):
+            m.record_existing("dir/../file.txt")
