@@ -907,12 +907,13 @@ class TomlIntegration(IntegrationBase):
         raw text.
         """
         import yaml
+        from ..yaml_utils import yaml_safe_load
 
         frontmatter_text, _ = TomlIntegration._split_frontmatter(content)
         if not frontmatter_text:
             return ""
         try:
-            frontmatter = yaml.safe_load(frontmatter_text) or {}
+            frontmatter = yaml_safe_load(frontmatter_text) or {}
         except yaml.YAMLError:
             return ""
 
@@ -1094,6 +1095,7 @@ class YamlIntegration(IntegrationBase):
     def _extract_frontmatter(content: str) -> dict[str, Any]:
         """Extract frontmatter as a dict from YAML frontmatter block."""
         import yaml
+        from ..yaml_utils import yaml_safe_load
 
         if not content.startswith("---"):
             return {}
@@ -1113,7 +1115,7 @@ class YamlIntegration(IntegrationBase):
 
         frontmatter_text = "".join(lines[1:frontmatter_end])
         try:
-            fm = yaml.safe_load(frontmatter_text) or {}
+            fm = yaml_safe_load(frontmatter_text) or {}
         except yaml.YAMLError:
             return {}
 
@@ -1162,7 +1164,7 @@ class YamlIntegration(IntegrationBase):
         for the prompt content.  Uses ``yaml.safe_dump()`` for the
         header fields to ensure proper escaping.
         """
-        import yaml
+        from ..yaml_utils import yaml_safe_dump
 
         header = {
             "version": "1.0.0",
@@ -1173,7 +1175,7 @@ class YamlIntegration(IntegrationBase):
             "activities": ["Spec-Driven Development"],
         }
 
-        header_yaml = yaml.safe_dump(
+        header_yaml = yaml_safe_dump(
             header,
             sort_keys=False,
             allow_unicode=True,
@@ -1343,6 +1345,7 @@ class SkillsIntegration(IntegrationBase):
         ``name``, ``description``, ``compatibility``, and ``metadata``.
         """
         import yaml
+        from ..yaml_utils import yaml_safe_load
 
         templates = self.list_command_templates()
         if not templates:
@@ -1385,7 +1388,7 @@ class SkillsIntegration(IntegrationBase):
                 parts = raw.split("---", 2)
                 if len(parts) >= 3:
                     try:
-                        fm = yaml.safe_load(parts[1])
+                        fm = yaml_safe_load(parts[1])
                         if isinstance(fm, dict):
                             frontmatter = fm
                     except yaml.YAMLError:

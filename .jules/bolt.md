@@ -1,0 +1,3 @@
+## 2024-05-19 - Fast YAML Loading using C Extensions in PyYAML
+**Learning:** PyYAML's default `safe_load` and `safe_dump` are written in pure Python. When the `libyaml` C library is available, PyYAML provides `CSafeLoader` and `CSafeDumper` which offer significantly faster YAML parsing and serialization. This is a critical performance detail in IO-bound CLI tools that heavily rely on parsing configuration files and manifests (like Spec Kit).
+**Action:** Created `src/specify_cli/yaml_utils.py` to transparently select the fastest available YAML loaders and dumpers, gracefully falling back to pure Python if C extensions are unavailable. Always use these custom utility functions over `yaml.safe_load`/`yaml.safe_dump` directly.

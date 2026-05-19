@@ -25,6 +25,8 @@ import re
 
 import yaml
 from packaging import version as pkg_version
+
+from specify_cli.yaml_utils import yaml_safe_dump, yaml_safe_load
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from .extensions import ExtensionRegistry, normalize_priority
@@ -137,7 +139,7 @@ class PresetManifest:
         """Load YAML file safely."""
         try:
             with open(path, 'r') as f:
-                return yaml.safe_load(f) or {}
+                return yaml_safe_load(f) or {}
         except yaml.YAMLError as e:
             raise PresetValidationError(f"Invalid YAML in {path}: {e}")
         except FileNotFoundError:
@@ -1050,7 +1052,7 @@ class PresetManager:
                         skill_name, desc,
                         f"override:{cmd_name}",
                     )
-                    fm_text = yaml.safe_dump(fm_data, sort_keys=False).strip()
+                    fm_text = yaml_safe_dump(fm_data, sort_keys=False).strip()
                     skill_title = self._skill_title_from_command(cmd_name)
                     skill_content = (
                         f"---\n{fm_text}\n---\n\n"
@@ -1322,7 +1324,7 @@ class PresetManager:
                     enhanced_desc,
                     f"preset:{manifest.id}",
                 )
-                frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+                frontmatter_text = yaml_safe_dump(frontmatter_data, sort_keys=False).strip()
                 skill_content = (
                     f"---\n"
                     f"{frontmatter_text}\n"
@@ -1415,7 +1417,7 @@ class PresetManager:
                     enhanced_desc,
                     f"templates/commands/{short_name}.md",
                 )
-                frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+                frontmatter_text = yaml_safe_dump(frontmatter_data, sort_keys=False).strip()
                 skill_title = self._skill_title_from_command(short_name)
                 skill_content = (
                     f"---\n"
@@ -1449,7 +1451,7 @@ class PresetManager:
                     frontmatter.get("description", f"Extension command: {command_name}"),
                     extension_restore["source"],
                 )
-                frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+                frontmatter_text = yaml_safe_dump(frontmatter_data, sort_keys=False).strip()
                 skill_content = (
                     f"---\n"
                     f"{frontmatter_text}\n"
@@ -1848,7 +1850,7 @@ class PresetCatalog:
         if not config_path.exists():
             return None
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml_safe_load(config_path.read_text(encoding="utf-8")) or {}
         except (yaml.YAMLError, OSError, UnicodeError) as e:
             raise PresetValidationError(
                 f"Failed to read catalog config {config_path}: {e}"
@@ -2753,7 +2755,7 @@ class PresetResolver:
                                         break
                                 if fence_end > 0:
                                     fm_text = "".join(lines[1:fence_end])
-                                    fm_data = yaml.safe_load(fm_text)
+                                    fm_data = yaml_safe_load(fm_text)
                                     if isinstance(fm_data, dict):
                                         fm_strategy = fm_data.get("strategy")
                                         if isinstance(fm_strategy, str) and fm_strategy.lower() in VALID_PRESET_STRATEGIES:
@@ -3042,7 +3044,7 @@ class PresetResolver:
                 else:
                     yaml_lines = []
                 try:
-                    return yaml.safe_load("\n".join(yaml_lines)) or {}
+                    return yaml_safe_load("\n".join(yaml_lines)) or {}
                 except yaml.YAMLError:
                     return {}
 
@@ -3062,7 +3064,7 @@ class PresetResolver:
             if top_fm:
                 top_frontmatter_text = (
                     "---\n"
-                    + yaml.safe_dump(top_fm, sort_keys=False).strip()
+                    + yaml_safe_dump(top_fm, sort_keys=False).strip()
                     + "\n---"
                 )
             else:

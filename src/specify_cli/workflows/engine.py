@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import yaml
+from ..yaml_utils import yaml_safe_load, yaml_safe_dump
 
 from .base import RunStatus, StepContext, StepResult, StepStatus
 
@@ -61,7 +61,7 @@ class WorkflowDefinition:
     def from_yaml(cls, path: Path) -> WorkflowDefinition:
         """Load a workflow definition from a YAML file."""
         with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+            data = yaml_safe_load(f)
         if not isinstance(data, dict):
             msg = f"Workflow YAML must be a mapping, got {type(data).__name__}."
             raise ValueError(msg)
@@ -70,7 +70,7 @@ class WorkflowDefinition:
     @classmethod
     def from_string(cls, content: str) -> WorkflowDefinition:
         """Load a workflow definition from a YAML string."""
-        data = yaml.safe_load(content)
+        data = yaml_safe_load(content)
         if not isinstance(data, dict):
             msg = f"Workflow YAML must be a mapping, got {type(data).__name__}."
             raise ValueError(msg)
@@ -412,9 +412,8 @@ class WorkflowEngine:
         run_dir = self.project_root / ".specify" / "workflows" / "runs" / state.run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         workflow_copy = run_dir / "workflow.yml"
-        import yaml
         with open(workflow_copy, "w", encoding="utf-8") as f:
-            yaml.safe_dump(definition.data, f, sort_keys=False)
+            yaml_safe_dump(definition.data, f, sort_keys=False)
 
         # Resolve inputs
         resolved_inputs = self._resolve_inputs(definition, inputs or {})
