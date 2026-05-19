@@ -106,3 +106,55 @@ class TestCursorAgentAutoPromote:
         assert result.exit_code == 0, f"init --ai cursor-agent failed: {result.output}"
         assert (target / ".cursor" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
+
+class TestCursorAgentCliDispatch:
+    """Verify the CLI dispatch path for cursor-agent (issue #2629).
+
+    The ``cursor-agent`` CLI supports headless execution via ``-p`` (with
+    full tool access including write/shell) and requires ``--trust`` to
+    bypass the Workspace Trust prompt.  These tests pin the exact argv
+    shape that the workflow runner will use.
+    """
+
+    def test_requires_cli_is_true(self):
+        i = get_integration("cursor-agent")
+        assert i.config.get("requires_cli") is True
+
+    def test_install_url_is_set(self):
+        i = get_integration("cursor-agent")
+        url = i.config.get("install_url")
+        assert url is not None
+        assert "cursor.com" in url
+
+    def test_build_exec_args_default_includes_trust_and_json(self):
+        i = get_integration("cursor-agent")
+        args = i.build_exec_args("/speckit-specify some-feature")
+        assert args == [
+            "cursor-agent", "-p", "--trust",
+            "/speckit-specify some-feature",
+            "--output-format", "json",
+        ]
+
+    def test_build_exec_args_text_output_omits_format(self):
+        i = get_integration("cursor-agent")
+        args = i.build_exec_args("/speckit-plan", output_json=False)
+        assert args == [
+            "cursor-agent", "-p", "--trust", "/speckit-plan",
+        ]
+
+    def test_build_exec_args_with_model(self):
+        i = get_integration("cursor-agent")
+        args = i.build_exec_args(
+            "/speckit-specify", model="sonnet-4-thinking", output_json=False
+        )
+        assert args == [
+            "cursor-agent", "-p", "--trust", "/speckit-specify",
+            "--model", "sonnet-4-thinking",
+        ]
+
+    def test_build_command_invocation_uses_hyphenated_skill_name(self):
+        """SkillsIntegration: /speckit-plan (not /speckit.plan)."""
+        i = get_integration("cursor-agent")
+        assert i.build_command_invocation("speckit.plan", "feature-x") == "/speckit-plan feature-x"
+        assert i.build_command_invocation("plan") == "/speckit-plan"
+
