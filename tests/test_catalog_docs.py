@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 from typer.testing import CliRunner
 
 from specify_cli.catalog_docs import (
-    _escape_url_for_markdown_link,
+    escape_url_for_markdown_link,
     render_cell,
     list_integrations_for_docs,
     render_integrations_table,
@@ -33,7 +33,7 @@ def _get_catalog_docs_patches():
     }
     fake_label_overrides = {}
     fake_notes = {"copilot": "Test note"}
-    
+
     with ExitStack() as stack:
         stack.enter_context(
             patch(
@@ -74,17 +74,17 @@ def test_render_cell_escapes_pipes_and_normalizes_newlines():
 def test_escape_url_for_markdown_link():
     """Test that URLs with special characters are properly escaped for Markdown links."""
     # URLs containing ) and | should be escaped
-    assert _escape_url_for_markdown_link("https://example.com/path)") == (
+    assert escape_url_for_markdown_link("https://example.com/path)") == (
         "https://example.com/path\\)"
     )
-    assert _escape_url_for_markdown_link("https://example.com/path|query") == (
+    assert escape_url_for_markdown_link("https://example.com/path|query") == (
         "https://example.com/path\\|query"
     )
-    assert _escape_url_for_markdown_link("https://example.com/path)|query") == (
+    assert escape_url_for_markdown_link("https://example.com/path)|query") == (
         "https://example.com/path\\)\\|query"
     )
     # URLs without special characters should be unchanged
-    assert _escape_url_for_markdown_link("https://example.com/path") == (
+    assert escape_url_for_markdown_link("https://example.com/path") == (
         "https://example.com/path"
     )
 
@@ -210,6 +210,29 @@ def test_docs_reference_integrations_md_stays_in_sync():
         in_target_section = False
         in_table = False
         rows = []
+
+        def split_markdown_table_row(line: str) -> list[str]:
+            parts = []
+            current = ""
+            backslash_run = 0
+            for char in line:
+                if char == "\\":
+                    backslash_run += 1
+                    current += char
+                    continue
+                if char == "|" and backslash_run % 2 == 0:
+                    parts.append(current.strip())
+                    current = ""
+                else:
+                    current += char
+                backslash_run = 0
+            parts.append(current.strip())
+            if parts and parts[0] == "":
+                parts = parts[1:]
+            if parts and parts[-1] == "":
+                parts = parts[:-1]
+            return parts
+
         for line in lines:
             if line.startswith("## Supported AI Coding Agents"):
                 in_target_section = True
@@ -219,24 +242,8 @@ def test_docs_reference_integrations_md_stays_in_sync():
                     break
                 if line.strip().startswith("|"):
                     in_table = True
-                    # Parse respecting escaped pipes (\|)
-                    parts = []
-                    current = ""
-                    for i, char in enumerate(line):
-                        if char == "|" and (i == 0 or line[i-1] != "\\"):
-                            parts.append(current.strip())
-                            current = ""
-                        else:
-                            current += char
-                    if current:
-                        parts.append(current.strip())
-                    
-                    # Remove empty leading/trailing parts from outer pipes
-                    if parts and parts[0] == "":
-                        parts = parts[1:]
-                    if parts and parts[-1] == "":
-                        parts = parts[:-1]
-                    
+                    parts = split_markdown_table_row(line)
+
                     if (
                         all(p.startswith("---") or p == "" for p in parts)
                         or parts == ["Agent", "Key", "Notes"]
@@ -256,29 +263,35 @@ def test_docs_reference_integrations_md_stays_in_sync():
     def parse_markdown_table_rows(text: str) -> set[tuple[str, str, str]]:
         """Parse markdown table rows, respecting escaped pipes."""
         rows = []
-        for line in text.splitlines():
-            if not line.strip().startswith("|"):
-                continue
-            
-            # Split on pipes, but account for escaped pipes (\|)
-            # A cell ending with \| has an escaped pipe and should not split there
+
+        def split_markdown_table_row(line: str) -> list[str]:
             parts = []
             current = ""
-            for i, char in enumerate(line):
-                if char == "|" and (i == 0 or line[i-1] != "\\"):
+            backslash_run = 0
+            for char in line:
+                if char == "\\":
+                    backslash_run += 1
+                    current += char
+                    continue
+                if char == "|" and backslash_run % 2 == 0:
                     parts.append(current.strip())
                     current = ""
                 else:
                     current += char
-            if current:
-                parts.append(current.strip())
-            
-            # Remove empty leading/trailing parts from outer pipes
+                backslash_run = 0
+            parts.append(current.strip())
             if parts and parts[0] == "":
                 parts = parts[1:]
             if parts and parts[-1] == "":
                 parts = parts[:-1]
-            
+            return parts
+
+        for line in text.splitlines():
+            if not line.strip().startswith("|"):
+                continue
+
+            parts = split_markdown_table_row(line)
+
             # Skip header and separator rows
             if (
                 all(p.startswith("---") or p == "" for p in parts)

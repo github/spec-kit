@@ -50,7 +50,10 @@ def test_community_extensions_are_sorted_by_name() -> None:
 # ---------------------------------------------------------------------------
 
 def test_missing_catalog_file(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError, match="spec-kit source checkout"):
+    with pytest.raises(
+        FileNotFoundError,
+        match="Ensure the repository checkout includes the extensions/ directory",
+    ):
         list_community_extensions(path=tmp_path / "missing.json")
 
 
