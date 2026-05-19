@@ -386,6 +386,10 @@ class TestIntegrationInstall:
         # Shared infrastructure should be present
         assert (project / ".specify" / "scripts").is_dir()
         assert (project / ".specify" / "templates").is_dir()
+        script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+        script_content = script.read_text(encoding="utf-8")
+        assert "/speckit-specify" in script_content
+        assert "/speckit.specify" not in script_content
 
 
 # ── uninstall ────────────────────────────────────────────────────────
@@ -514,7 +518,9 @@ class TestIntegrationUninstall:
     def test_uninstall_default_refreshes_templates_for_fallback(self, tmp_path):
         project = _init_project(tmp_path, "gemini")
         template = project / ".specify" / "templates" / "plan-template.md"
+        script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
         assert "/speckit.plan" in template.read_text(encoding="utf-8")
+        assert "/speckit.plan" in script.read_text(encoding="utf-8")
 
         old_cwd = os.getcwd()
         try:
@@ -533,6 +539,7 @@ class TestIntegrationUninstall:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "claude"
         assert "/speckit-plan" in template.read_text(encoding="utf-8")
+        assert "/speckit-plan" in script.read_text(encoding="utf-8")
 
     def test_uninstall_preserves_shared_infra(self, tmp_path):
         """Shared scripts and templates are not removed by integration uninstall."""
@@ -593,7 +600,9 @@ class TestIntegrationUse:
     def test_use_refreshes_shared_templates_between_command_styles(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         template = project / ".specify" / "templates" / "plan-template.md"
+        script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
         assert "/speckit-plan" in template.read_text(encoding="utf-8")
+        assert "/speckit-plan" in script.read_text(encoding="utf-8")
 
         old_cwd = os.getcwd()
         try:
@@ -607,10 +616,14 @@ class TestIntegrationUse:
             use_gemini = runner.invoke(app, ["integration", "use", "gemini"], catch_exceptions=False)
             assert use_gemini.exit_code == 0, use_gemini.output
             assert "/speckit.plan" in template.read_text(encoding="utf-8")
+            assert "/speckit.plan" in script.read_text(encoding="utf-8")
+            assert "/speckit-plan" not in script.read_text(encoding="utf-8")
 
             use_claude = runner.invoke(app, ["integration", "use", "claude"], catch_exceptions=False)
             assert use_claude.exit_code == 0, use_claude.output
             assert "/speckit-plan" in template.read_text(encoding="utf-8")
+            assert "/speckit-plan" in script.read_text(encoding="utf-8")
+            assert "/speckit.plan" not in script.read_text(encoding="utf-8")
         finally:
             os.chdir(old_cwd)
 
@@ -644,8 +657,7 @@ class TestIntegrationUse:
         assert "/speckit.plan" in updated
         assert "custom template" not in updated
 
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_use_does_not_persist_default_when_template_refresh_fails(self, tmp_path):
+    def test_use_does_not_persist_default_when_shared_infra_refresh_fails(self, tmp_path, monkeypatch):
         project = _init_project(tmp_path, "claude")
         int_json = project / ".specify" / "integration.json"
         init_options = project / ".specify" / "init-options.json"
@@ -661,12 +673,12 @@ class TestIntegrationUse:
 
             before_state = json.loads(int_json.read_text(encoding="utf-8"))
             before_options = json.loads(init_options.read_text(encoding="utf-8"))
+            import specify_cli
 
-            outside = tmp_path / "outside-template.md"
-            outside.write_text("# outside\n", encoding="utf-8")
-            template = project / ".specify" / "templates" / "plan-template.md"
-            template.unlink()
-            os.symlink(outside, template)
+            def fail_refresh(*args, **kwargs):
+                raise ValueError("refuse refresh")
+
+            monkeypatch.setattr(specify_cli, "_install_shared_infra", fail_refresh)
 
             result = runner.invoke(app, [
                 "integration", "use", "codex",
@@ -676,10 +688,9 @@ class TestIntegrationUse:
             os.chdir(old_cwd)
 
         assert result.exit_code != 0
-        assert "Failed to refresh shared templates" in result.output
+        assert "Failed to refresh shared infrastructure" in result.output
         assert json.loads(int_json.read_text(encoding="utf-8")) == before_state
         assert json.loads(init_options.read_text(encoding="utf-8")) == before_options
-        assert outside.read_text(encoding="utf-8") == "# outside\n"
 
 
 # ── switch ───────────────────────────────────────────────────────────
@@ -737,7 +748,9 @@ class TestIntegrationSwitch:
     def test_switch_same_force_refreshes_shared_templates(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         template = project / ".specify" / "templates" / "plan-template.md"
+        script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
         template.write_text("# custom shared template\n", encoding="utf-8")
+        script.write_text("# custom shared script\n", encoding="utf-8")
 
         old_cwd = os.getcwd()
         try:
@@ -749,8 +762,9 @@ class TestIntegrationSwitch:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, result.output
-        assert "managed shared templates refreshed" in result.output
+        assert "managed shared infrastructure refreshed" in result.output
         assert "/speckit-plan" in template.read_text(encoding="utf-8")
+        assert "/speckit-plan" in script.read_text(encoding="utf-8")
 
     def test_switch_installed_target_rejects_integration_options(self, tmp_path):
         project = _init_project(tmp_path, "claude")
@@ -779,6 +793,8 @@ class TestIntegrationSwitch:
         project = _init_project(tmp_path, "claude")
         # Verify claude files exist (claude uses skills)
         assert (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
+        shared_script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+        assert "/speckit-specify" in shared_script.read_text(encoding="utf-8")
 
         old_cwd = os.getcwd()
         try:
@@ -797,6 +813,8 @@ class TestIntegrationSwitch:
 
         # New copilot files created
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+        assert "/speckit.specify" in shared_script.read_text(encoding="utf-8")
+        assert "/speckit-specify" not in shared_script.read_text(encoding="utf-8")
 
         # integration.json updated
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
@@ -938,12 +956,13 @@ class TestIntegrationSwitch:
         assert "claude" not in git_meta["registered_commands"]
         assert "opencode" not in git_meta["registered_commands"]
 
-    def test_switch_preserves_shared_infra(self, tmp_path):
-        """Switching preserves shared scripts, templates, and memory."""
+    def test_switch_refreshes_managed_shared_script_refs(self, tmp_path):
+        """Switching refreshes managed shared scripts to the target command style."""
         project = _init_project(tmp_path, "claude")
         shared_script = project / ".specify" / "scripts" / "bash" / "common.sh"
         assert shared_script.exists()
         shared_content = shared_script.read_text(encoding="utf-8")
+        assert "/speckit-plan" in shared_content
 
         old_cwd = os.getcwd()
         try:
@@ -956,9 +975,10 @@ class TestIntegrationSwitch:
             os.chdir(old_cwd)
         assert result.exit_code == 0
 
-        # Shared infra untouched
         assert shared_script.exists()
-        assert shared_script.read_text(encoding="utf-8") == shared_content
+        updated = shared_script.read_text(encoding="utf-8")
+        assert "/speckit.plan" in updated
+        assert "/speckit-plan" not in updated
 
     def test_switch_refreshes_stale_managed_shared_infra(self, tmp_path):
         """Regression for #2293: stale managed shared scripts get refreshed on switch."""
@@ -966,7 +986,7 @@ class TestIntegrationSwitch:
 
         project = _init_project(tmp_path, "claude")
         shared_script = project / ".specify" / "scripts" / "bash" / "common.sh"
-        bundled_bytes = shared_script.read_bytes()
+        assert "/speckit-plan" in shared_script.read_text(encoding="utf-8")
 
         # Simulate a stale vendored script: write truncated content as bytes
         # (write_text would translate \n→\r\n on Windows and break the hash)
@@ -993,8 +1013,11 @@ class TestIntegrationSwitch:
             os.chdir(old_cwd)
         assert result.exit_code == 0
 
-        # Stale managed file should be replaced by the bundled version
-        assert shared_script.read_bytes() == bundled_bytes
+        # Stale managed file should be replaced by the target integration's rendered version.
+        updated = shared_script.read_text(encoding="utf-8")
+        assert "# stale vendored copy" not in updated
+        assert "/speckit.plan" in updated
+        assert "/speckit-plan" not in updated
 
     def test_switch_preserves_user_customized_shared_infra(self, tmp_path):
         """User customizations (hash divergence from manifest) survive switch without --refresh-shared-infra."""
@@ -1024,10 +1047,11 @@ class TestIntegrationSwitch:
         """--refresh-shared-infra explicitly overwrites user customizations on switch."""
         project = _init_project(tmp_path, "claude")
         shared_script = project / ".specify" / "scripts" / "bash" / "common.sh"
-        bundled_bytes = shared_script.read_bytes()
+        assert "/speckit-plan" in shared_script.read_text(encoding="utf-8")
+        rendered_bytes = shared_script.read_bytes()
 
         # User customization (hash diverges from manifest)
-        custom_bytes = bundled_bytes + b"\n# user customization\n"
+        custom_bytes = rendered_bytes + b"\n# user customization\n"
         shared_script.write_bytes(custom_bytes)
 
         old_cwd = os.getcwd()
@@ -1041,8 +1065,11 @@ class TestIntegrationSwitch:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        # Customization is overwritten with the bundled version
-        assert shared_script.read_bytes() == bundled_bytes
+        # Customization is overwritten with the target integration's rendered version.
+        updated = shared_script.read_text(encoding="utf-8")
+        assert "# user customization" not in updated
+        assert "/speckit.plan" in updated
+        assert "/speckit-plan" not in updated
 
     def test_switch_skips_symlinked_parent_directory(self, tmp_path):
         """Regression: if .specify/scripts/bash is a symlink, switch must not write through it.
@@ -1222,7 +1249,7 @@ class TestIntegrationUpgrade:
         assert updated["ai"] == "gemini"
         assert updated["context_file"] == "GEMINI.md"
 
-    def test_upgrade_does_not_persist_state_when_template_refresh_fails(self, tmp_path, monkeypatch):
+    def test_upgrade_does_not_persist_state_when_shared_infra_refresh_fails(self, tmp_path, monkeypatch):
         project = _init_project(tmp_path, "claude")
         int_json = project / ".specify" / "integration.json"
         init_options = project / ".specify" / "init-options.json"
@@ -1234,10 +1261,16 @@ class TestIntegrationUpgrade:
 
         import specify_cli
 
-        def fail_refresh(*args, **kwargs):
-            raise ValueError("refuse refresh")
+        real_install_shared_infra = specify_cli._install_shared_infra
+        calls = {"count": 0}
 
-        monkeypatch.setattr(specify_cli, "_refresh_shared_templates", fail_refresh)
+        def fail_refresh(*args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 2:
+                raise ValueError("refuse refresh")
+            return real_install_shared_infra(*args, **kwargs)
+
+        monkeypatch.setattr(specify_cli, "_install_shared_infra", fail_refresh)
 
         result = _run_in_project(project, [
             "integration", "upgrade", "claude",
@@ -1245,15 +1278,40 @@ class TestIntegrationUpgrade:
         ])
 
         assert result.exit_code != 0
-        assert "Failed to refresh shared templates" in result.output
+        assert "Failed to refresh shared infrastructure" in result.output
         assert json.loads(int_json.read_text(encoding="utf-8")) == before_state
         assert json.loads(init_options.read_text(encoding="utf-8")) == before_options
         assert manifest_path.read_text(encoding="utf-8") == before_manifest
 
+    def test_upgrade_default_refreshes_shared_script_refs_for_option_separator_change(self, tmp_path):
+        project = _init_project(tmp_path, "copilot")
+        template = project / ".specify" / "templates" / "plan-template.md"
+        managed_script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+        customized_script = project / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
+
+        assert "/speckit.plan" in template.read_text(encoding="utf-8")
+        assert "/speckit.specify" in managed_script.read_text(encoding="utf-8")
+        customized_before = customized_script.read_text(encoding="utf-8") + "\n# user customization\n"
+        customized_script.write_text(customized_before, encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "copilot",
+            "--integration-options", "--skills",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert "/speckit-plan" in template.read_text(encoding="utf-8")
+        managed_content = managed_script.read_text(encoding="utf-8")
+        assert "/speckit-specify" in managed_content
+        assert "/speckit.specify" not in managed_content
+        assert customized_script.read_text(encoding="utf-8") == customized_before
+
     def test_upgrade_non_default_keeps_default_template_invocations(self, tmp_path):
         project = _init_project(tmp_path, "gemini")
         template = project / ".specify" / "templates" / "plan-template.md"
+        script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
         assert "/speckit.plan" in template.read_text(encoding="utf-8")
+        assert "/speckit.plan" in script.read_text(encoding="utf-8")
 
         old_cwd = os.getcwd()
         try:
@@ -1276,6 +1334,8 @@ class TestIntegrationUpgrade:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "gemini"
         assert "/speckit.plan" in template.read_text(encoding="utf-8")
+        assert "/speckit.plan" in script.read_text(encoding="utf-8")
+        assert "/speckit-plan" not in script.read_text(encoding="utf-8")
 
     def test_upgrade_migrates_opencode_legacy_dir(self, tmp_path):
         """Upgrade moves OpenCode commands from .opencode/command/ to .opencode/commands/."""

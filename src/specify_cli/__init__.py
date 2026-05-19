@@ -161,9 +161,9 @@ def _install_shared_infra(
     ``bash`` when *script_type* is ``"sh"`` and ``powershell`` when it is
     ``"ps"``.  Tracks all installed files in ``speckit.manifest.json``.
 
-    Page templates are processed to resolve ``__SPECKIT_COMMAND_<NAME>__``
-    placeholders using *invoke_separator* (``"."`` for markdown agents,
-    ``"-"`` for skills agents).
+    Shared scripts and page templates are processed to resolve
+    ``__SPECKIT_COMMAND_<NAME>__`` placeholders using *invoke_separator*
+    (``"."`` for markdown agents, ``"-"`` for skills agents).
 
     Overwrite policy:
 
@@ -755,16 +755,18 @@ def _set_default_integration(
 
     if refresh_templates:
         try:
-            _refresh_shared_templates(
+            _install_shared_infra(
                 project_root,
+                resolved_script,
                 invoke_separator=_invoke_separator_for_integration(
                     integration, {"integration_settings": settings}, key, parsed_options
                 ),
                 force=refresh_templates_force,
+                refresh_managed=True,
             )
         except (ValueError, OSError) as exc:
             raise _SharedTemplateRefreshError(
-                f"Failed to refresh shared templates for '{key}': {exc}"
+                f"Failed to refresh shared infrastructure for '{key}': {exc}"
             ) from exc
 
     _write_integration_json(project_root, key, installed_keys, settings)
@@ -1115,7 +1117,7 @@ def _update_init_options_for_integration(
 @integration_app.command("use")
 def integration_use(
     key: str = typer.Argument(help="Installed integration key to make the default"),
-    force: bool = typer.Option(False, "--force", help="Overwrite managed shared templates while changing the default"),
+    force: bool = typer.Option(False, "--force", help="Overwrite managed shared infrastructure while changing the default"),
 ):
     """Set the default integration without uninstalling other integrations."""
     from .integrations import get_integration
@@ -1312,7 +1314,7 @@ def integration_switch(
             )
             console.print(
                 f"\n[green]✓[/green] Default integration remains [bold]{target}[/bold]; "
-                "managed shared templates refreshed."
+                "managed shared infrastructure refreshed."
             )
             raise typer.Exit(0)
         console.print(f"[yellow]Integration '{target}' is already the default integration. Nothing to switch.[/yellow]")
@@ -1667,16 +1669,18 @@ def integration_upgrade(
         )
         if installed_key == key:
             try:
-                _refresh_shared_templates(
+                _install_shared_infra(
                     project_root,
+                    selected_script,
                     invoke_separator=_invoke_separator_for_integration(
                         integration, {"integration_settings": settings}, key, parsed_options
                     ),
                     force=force,
+                    refresh_managed=True,
                 )
             except (ValueError, OSError) as exc:
                 raise _SharedTemplateRefreshError(
-                    f"Failed to refresh shared templates for '{key}': {exc}"
+                    f"Failed to refresh shared infrastructure for '{key}': {exc}"
                 ) from exc
         new_manifest.save()
         _write_integration_json(project_root, installed_key, installed_keys, settings)

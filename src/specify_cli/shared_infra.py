@@ -369,7 +369,16 @@ def install_shared_infra(
 
                         if not _ensure_or_bucket_dir(dst_path.parent):
                             continue
-                        planned_copies.append((dst_path, rel, src_path.read_bytes(), src_path.stat().st_mode & 0o777))
+                        content = src_path.read_text(encoding="utf-8")
+                        content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+                        planned_copies.append(
+                            (
+                                dst_path,
+                                rel,
+                                content.encode("utf-8"),
+                                src_path.stat().st_mode & 0o777,
+                            )
+                        )
 
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
     if templates_src.is_dir():

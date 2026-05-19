@@ -165,7 +165,7 @@ function Test-FeatureBranch {
 }
 
 # True when .specify/feature.json pins an existing feature directory that matches the
-# active FEATURE_DIR from Get-FeaturePathsEnv (so /speckit.plan can skip git branch pattern checks).
+# active FEATURE_DIR from Get-FeaturePathsEnv (so __SPECKIT_COMMAND_PLAN__ can skip git branch pattern checks).
 function Test-FeatureJsonMatchesFeatureDir {
     param(
         [Parameter(Mandatory = $true)][string]$RepoRoot,
@@ -288,7 +288,7 @@ function Get-FeaturePathsEnv {
 
     # Resolve feature directory.  Priority:
     #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit override)
-    #   2. .specify/feature.json "feature_directory" key (persisted by /speckit.specify)
+    #   2. .specify/feature.json "feature_directory" key (persisted by __SPECKIT_COMMAND_SPECIFY__)
     #   3. Branch-name-based prefix lookup (same as scripts/bash/common.sh)
     $featureJson = Join-Path $repoRoot '.specify/feature.json'
     if ($env:SPECIFY_FEATURE_DIRECTORY) {
