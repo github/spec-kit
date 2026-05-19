@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from ..yaml_utils import yaml_safe_load, yaml_dump
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +178,7 @@ class WorkflowCatalog:
         if not config_path.exists():
             return None
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml_safe_load(config_path.read_text(encoding="utf-8")) or {}
         except (yaml.YAMLError, OSError, UnicodeError) as exc:
             raise WorkflowValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
@@ -468,7 +469,7 @@ class WorkflowCatalog:
 
         data: dict[str, Any] = {"catalogs": []}
         if config_path.exists():
-            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            raw = yaml_safe_load(config_path.read_text(encoding="utf-8"))
             if not isinstance(raw, dict):
                 raise WorkflowValidationError(
                     "Catalog config file is corrupted (expected a mapping)."
@@ -505,7 +506,7 @@ class WorkflowCatalog:
 
         config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+            yaml_dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     def remove_catalog(self, index: int) -> str:
         """Remove a catalog source by index (0-based). Returns the removed name."""
@@ -513,7 +514,7 @@ class WorkflowCatalog:
         if not config_path.exists():
             raise WorkflowValidationError("No catalog config file found.")
 
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        data = yaml_safe_load(config_path.read_text(encoding="utf-8")) or {}
         if not isinstance(data, dict):
             raise WorkflowValidationError(
                 "Catalog config file is corrupted (expected a mapping)."
@@ -533,7 +534,7 @@ class WorkflowCatalog:
         data["catalogs"] = catalogs
 
         with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+            yaml_dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
         if isinstance(removed, dict):
             return removed.get("name", f"catalog-{index + 1}")

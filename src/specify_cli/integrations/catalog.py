@@ -21,6 +21,8 @@ from typing import Any, Dict, List, Optional
 import yaml
 from packaging import version as pkg_version
 
+from ..yaml_utils import yaml_safe_load
+
 
 # ---------------------------------------------------------------------------
 # Errors
@@ -101,7 +103,7 @@ class IntegrationCatalog:
         if not config_path.exists():
             return None
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml_safe_load(config_path.read_text(encoding="utf-8")) or {}
         except (yaml.YAMLError, OSError, UnicodeError) as exc:
             raise IntegrationCatalogError(
                 f"Failed to read catalog config {config_path}: {exc}"
@@ -447,7 +449,7 @@ class IntegrationDescriptor:
     def _load(path: Path) -> dict:
         try:
             with open(path, "r", encoding="utf-8") as fh:
-                return yaml.safe_load(fh) or {}
+                return yaml_safe_load(fh) or {}
         except yaml.YAMLError as exc:
             raise IntegrationDescriptorError(f"Invalid YAML in {path}: {exc}")
         except FileNotFoundError:

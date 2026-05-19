@@ -41,6 +41,8 @@ import urllib.request
 import yaml
 from pathlib import Path
 
+from .yaml_utils import yaml_safe_load, yaml_dump
+
 from packaging.version import InvalidVersion, Version
 from typing import Any, Optional
 
@@ -3123,7 +3125,7 @@ def preset_catalog_add(
     # Load existing config
     if config_path.exists():
         try:
-            config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            config = yaml_safe_load(config_path.read_text(encoding="utf-8")) or {}
         except Exception as e:
             console.print(f"[red]Error:[/red] Failed to read {config_path}: {e}")
             raise typer.Exit(1)
@@ -3151,7 +3153,7 @@ def preset_catalog_add(
     })
 
     config["catalogs"] = catalogs
-    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    config_path.write_text(yaml_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     install_label = "install allowed" if install_allowed else "discovery only"
     console.print(f"\n[green]✓[/green] Added catalog '[bold]{name}[/bold]' ({install_label})")
@@ -3179,7 +3181,7 @@ def preset_catalog_remove(
         raise typer.Exit(1)
 
     try:
-        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        config = yaml_safe_load(config_path.read_text(encoding="utf-8")) or {}
     except Exception:
         console.print("[red]Error:[/red] Failed to read preset catalog config.")
         raise typer.Exit(1)
@@ -3196,7 +3198,7 @@ def preset_catalog_remove(
         raise typer.Exit(1)
 
     config["catalogs"] = catalogs
-    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    config_path.write_text(yaml_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     console.print(f"[green]✓[/green] Removed catalog '{name}'")
     if not catalogs:
@@ -3465,7 +3467,7 @@ def catalog_add(
     # Load existing config
     if config_path.exists():
         try:
-            config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            config = yaml_safe_load(config_path.read_text(encoding="utf-8")) or {}
         except Exception as e:
             console.print(f"[red]Error:[/red] Failed to read {config_path}: {e}")
             raise typer.Exit(1)
@@ -3493,7 +3495,7 @@ def catalog_add(
     })
 
     config["catalogs"] = catalogs
-    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    config_path.write_text(yaml_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     install_label = "install allowed" if install_allowed else "discovery only"
     console.print(f"\n[green]✓[/green] Added catalog '[bold]{name}[/bold]' ({install_label})")
@@ -3521,7 +3523,7 @@ def catalog_remove(
         raise typer.Exit(1)
 
     try:
-        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        config = yaml_safe_load(config_path.read_text(encoding="utf-8")) or {}
     except Exception:
         console.print("[red]Error:[/red] Failed to read catalog config.")
         raise typer.Exit(1)
@@ -3538,7 +3540,7 @@ def catalog_remove(
         raise typer.Exit(1)
 
     config["catalogs"] = catalogs
-    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    config_path.write_text(yaml_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     console.print(f"[green]✓[/green] Removed catalog '{name}'")
     if not catalogs:
@@ -4282,21 +4284,21 @@ def extension_update(
                     # 6. Validate extension ID from ZIP BEFORE modifying installation
                     # Handle both root-level and nested extension.yml (GitHub auto-generated ZIPs)
                     with zipfile.ZipFile(zip_path, "r") as zf:
-                        import yaml
+                        from .yaml_utils import yaml_safe_load
                         manifest_data = None
                         namelist = zf.namelist()
 
                         # First try root-level extension.yml
                         if "extension.yml" in namelist:
                             with zf.open("extension.yml") as f:
-                                manifest_data = yaml.safe_load(f) or {}
+                                manifest_data = yaml_safe_load(f) or {}
                         else:
                             # Look for extension.yml in a single top-level subdirectory
                             # (e.g., "repo-name-branch/extension.yml")
                             manifest_paths = [n for n in namelist if n.endswith("/extension.yml") and n.count("/") == 1]
                             if len(manifest_paths) == 1:
                                 with zf.open(manifest_paths[0]) as f:
-                                    manifest_data = yaml.safe_load(f) or {}
+                                    manifest_data = yaml_safe_load(f) or {}
 
                         if manifest_data is None:
                             raise ValueError("Downloaded extension archive is missing 'extension.yml'")

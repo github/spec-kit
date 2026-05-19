@@ -23,6 +23,7 @@ import pathspec
 
 import yaml
 from packaging import version as pkg_version
+from .yaml_utils import yaml_safe_load, yaml_safe_dump, yaml_dump
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 _FALLBACK_CORE_COMMAND_NAMES = frozenset({
@@ -140,7 +141,7 @@ class ExtensionManifest:
         """Load YAML file safely."""
         try:
             with open(path, 'r') as f:
-                data = yaml.safe_load(f)
+                data = yaml_safe_load(f)
         except yaml.YAMLError as e:
             raise ValidationError(f"Invalid YAML in {path}: {e}")
         except FileNotFoundError:
@@ -856,7 +857,6 @@ class ExtensionManager:
         from . import load_init_options
         from .agents import CommandRegistrar
         from .integrations import get_integration
-        import yaml
 
         written: List[str] = []
         opts = load_init_options(self.project_root)
@@ -931,7 +931,7 @@ class ExtensionManager:
                 description,
                 f"extension:{manifest.id}",
             )
-            frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+            frontmatter_text = yaml_safe_dump(frontmatter_data, sort_keys=False).strip()
 
             # Derive a human-friendly title from the command name
             short_name = cmd_name
@@ -1004,13 +1004,13 @@ class ExtensionManager:
                 if not skill_md.is_file():
                     continue
                 try:
-                    import yaml as _yaml
+                    from .yaml_utils import yaml_safe_load as _yaml_safe_load
                     raw = skill_md.read_text(encoding="utf-8")
                     source = ""
                     if raw.startswith("---"):
                         parts = raw.split("---", 2)
                         if len(parts) >= 3:
-                            fm = _yaml.safe_load(parts[1]) or {}
+                            fm = _yaml_safe_load(parts[1]) or {}
                             source = (
                                 fm.get("metadata", {}).get("source", "")
                                 if isinstance(fm, dict)
@@ -1055,13 +1055,13 @@ class ExtensionManager:
                     if not skill_md.is_file():
                         continue
                     try:
-                        import yaml as _yaml
+                        from .yaml_utils import yaml_safe_load as _yaml_safe_load
                         raw = skill_md.read_text(encoding="utf-8")
                         source = ""
                         if raw.startswith("---"):
                             parts = raw.split("---", 2)
                             if len(parts) >= 3:
-                                fm = _yaml.safe_load(parts[1]) or {}
+                                fm = _yaml_safe_load(parts[1]) or {}
                                 source = (
                                     fm.get("metadata", {}).get("source", "")
                                     if isinstance(fm, dict)
@@ -1557,7 +1557,7 @@ class ExtensionCatalog:
         if not config_path.exists():
             return None
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml_safe_load(config_path.read_text(encoding="utf-8")) or {}
         except (yaml.YAMLError, OSError, UnicodeError) as e:
             raise ValidationError(
                 f"Failed to read catalog config {config_path}: {e}"
@@ -2057,7 +2057,7 @@ class ConfigManager:
             return {}
 
         try:
-            return yaml.safe_load(file_path.read_text(encoding="utf-8")) or {}
+            return yaml_safe_load(file_path.read_text(encoding="utf-8")) or {}
         except (yaml.YAMLError, OSError, UnicodeError):
             return {}
 
@@ -2301,7 +2301,7 @@ class HookExecutor:
             }
 
         try:
-            return yaml.safe_load(self.config_file.read_text(encoding="utf-8")) or {}
+            return yaml_safe_load(self.config_file.read_text(encoding="utf-8")) or {}
         except (yaml.YAMLError, OSError, UnicodeError):
             return {
                 "installed": [],
@@ -2317,7 +2317,7 @@ class HookExecutor:
         """
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
         self.config_file.write_text(
-            yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True),
+            yaml_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True),
             encoding="utf-8",
         )
 

@@ -14,6 +14,7 @@ import platform
 import re
 from copy import deepcopy
 import yaml
+from .yaml_utils import yaml_safe_load, yaml_dump
 
 
 def _build_agent_configs() -> dict[str, Any]:
@@ -80,7 +81,7 @@ class CommandRegistrar:
         body = content[end_marker + 3 :].strip()
 
         try:
-            frontmatter = yaml.safe_load(frontmatter_str) or {}
+            frontmatter = yaml_safe_load(frontmatter_str) or {}
         except yaml.YAMLError:
             frontmatter = {}
 
@@ -102,7 +103,7 @@ class CommandRegistrar:
         if not fm:
             return ""
 
-        yaml_str = yaml.dump(
+        yaml_str = yaml_dump(
             fm, default_flow_style=False, sort_keys=False, allow_unicode=True
         )
         return f"---\n{yaml_str}---\n"

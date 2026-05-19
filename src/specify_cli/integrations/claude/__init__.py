@@ -7,9 +7,8 @@ from typing import Any
 
 import re
 
-import yaml
-
 from ..base import SkillsIntegration
+from ...yaml_utils import yaml_safe_dump
 from ..manifest import IntegrationManifest
 
 # Note injected into hook sections so Claude maps dot-notation command
@@ -112,7 +111,7 @@ class ClaudeIntegration(SkillsIntegration):
         skill_frontmatter = self._build_skill_fm(
             skill_name, description, f"templates/commands/{template_name}.md"
         )
-        frontmatter_text = yaml.safe_dump(skill_frontmatter, sort_keys=False).strip()
+        frontmatter_text = yaml_safe_dump(skill_frontmatter, sort_keys=False).strip()
         return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
 
     def _build_skill_fm(self, name: str, description: str, source: str) -> dict:
