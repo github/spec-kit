@@ -202,6 +202,16 @@ class IntegrationBase(ABC):
             )
             raise NotImplementedError(msg)
 
+        # Windows: ``subprocess.run`` calls ``CreateProcess`` which does not
+        # consult ``PATHEXT``, so a bare command name like ``cursor-agent``
+        # that resolves to ``cursor-agent.cmd`` fails with ``WinError 2``.
+        # Resolve via ``shutil.which`` (which does honor ``PATHEXT``) so
+        # ``.cmd``/``.bat`` shims work transparently.  On POSIX this is a
+        # no-op for absolute paths and a harmless lookup otherwise.
+        resolved = shutil.which(exec_args[0])
+        if resolved:
+            exec_args = [resolved, *exec_args[1:]]
+
         cwd = str(project_root) if project_root else None
 
         if stream:

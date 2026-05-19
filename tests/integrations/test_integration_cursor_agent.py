@@ -158,3 +158,55 @@ class TestCursorAgentCliDispatch:
         assert i.build_command_invocation("speckit.plan", "feature-x") == "/speckit-plan feature-x"
         assert i.build_command_invocation("plan") == "/speckit-plan"
 
+    def test_dispatch_command_resolves_cmd_shim_for_subprocess(self):
+        """``.cmd`` shims must be resolved to their full path before ``subprocess.run``.
+
+        ``cursor-agent`` (and other npm-installed CLIs on Windows) ship as
+        ``cursor-agent.cmd`` wrappers.  ``shutil.which`` honors ``PATHEXT``
+        and finds them, but Python's ``subprocess.run`` calls
+        ``CreateProcess`` which does **not** consult ``PATHEXT`` and fails
+        with ``WinError 2`` on a bare ``["cursor-agent", ...]`` argv.  The
+        fix in ``base.py::dispatch_command`` resolves ``exec_args[0]`` via
+        ``shutil.which`` so the full ``.cmd`` path is what reaches
+        ``CreateProcess``.
+        """
+        from unittest.mock import patch, MagicMock
+        i = get_integration("cursor-agent")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "ok"
+        mock_result.stderr = ""
+
+        fake_path = r"C:\Users\foo\AppData\Local\cursor-agent\cursor-agent.CMD"
+        with patch(
+            "specify_cli.integrations.base.shutil.which", return_value=fake_path
+        ), patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = i.dispatch_command(
+                "speckit.plan", args="feature-x", stream=False, timeout=5
+            )
+
+        assert result["exit_code"] == 0
+        argv = mock_run.call_args[0][0]
+        assert argv[0] == fake_path, f"expected resolved .CMD path, got: {argv[0]!r}"
+        assert argv[1:4] == ["-p", "--trust", "/speckit-plan feature-x"]
+
+    def test_dispatch_command_passthrough_when_shutil_which_finds_nothing(self):
+        """If ``shutil.which`` returns ``None``, leave argv unchanged so the
+        existing ``FileNotFoundError`` path remains observable to callers."""
+        from unittest.mock import patch, MagicMock
+        i = get_integration("cursor-agent")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with patch(
+            "specify_cli.integrations.base.shutil.which", return_value=None
+        ), patch("subprocess.run", return_value=mock_result) as mock_run:
+            i.dispatch_command("speckit.plan", stream=False, timeout=5)
+
+        argv = mock_run.call_args[0][0]
+        assert argv[0] == "cursor-agent"
+
