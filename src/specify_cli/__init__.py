@@ -3604,6 +3604,9 @@ def extension_add(
     if priority < 1:
         console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
         raise typer.Exit(1)
+    if dev and from_url:
+        console.print("[red]Error:[/red] --dev and --from cannot be used together.")
+        raise typer.Exit(1)
 
     manager = ExtensionManager(project_root)
     speckit_version = get_speckit_version()
@@ -3625,7 +3628,6 @@ def extension_add(
 
             elif from_url:
                 # Install from URL (ZIP file)
-                import urllib.request
                 import urllib.error
                 from urllib.parse import urlparse
 
@@ -3643,27 +3645,17 @@ def extension_add(
                 console.print("Only install extensions from sources you trust.\n")
                 console.print(f"Downloading from {from_url}...")
 
-                # Download ZIP to temp location
-                download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
-                download_dir.mkdir(parents=True, exist_ok=True)
-                zip_path = download_dir / f"{extension}-url-download.zip"
-
                 try:
                     from specify_cli.authentication.http import open_url as _open_url
 
                     with _open_url(from_url, timeout=60) as response:
                         zip_data = response.read()
-                    zip_path.write_bytes(zip_data)
 
                     # Install from downloaded ZIP
-                    manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
+                    manifest = manager.install_from_zip_bytes(zip_data, speckit_version, priority=priority)
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
                     raise typer.Exit(1)
-                finally:
-                    # Clean up downloaded ZIP
-                    if zip_path.exists():
-                        zip_path.unlink()
 
             else:
                 # Try bundled extensions first (shipped with spec-kit)

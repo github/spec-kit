@@ -8,6 +8,7 @@ without bloating the core framework.
 
 import json
 import hashlib
+import io
 import os
 import tempfile
 import zipfile
@@ -1224,6 +1225,16 @@ class ExtensionManager:
             ValidationError: If manifest is invalid or priority is invalid
             CompatibilityError: If extension is incompatible
         """
+        with zip_path.open("rb") as zip_file:
+            return self.install_from_zip_bytes(zip_file.read(), speckit_version, priority=priority)
+
+    def install_from_zip_bytes(
+        self,
+        zip_bytes: bytes,
+        speckit_version: str,
+        priority: int = 10,
+    ) -> ExtensionManifest:
+        """Install extension from ZIP bytes."""
         # Validate priority early
         if priority < 1:
             raise ValidationError("Priority must be a positive integer (1 or higher)")
@@ -1232,7 +1243,7 @@ class ExtensionManager:
             temp_path = Path(tmpdir)
 
             # Extract ZIP safely (prevent Zip Slip attack)
-            with zipfile.ZipFile(zip_path, 'r') as zf:
+            with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as zf:
                 # Validate all paths first before extracting anything
                 temp_path_resolved = temp_path.resolve()
                 for member in zf.namelist():

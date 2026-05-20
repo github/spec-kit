@@ -3458,6 +3458,87 @@ class TestExtensionIgnore:
 class TestExtensionAddCLI:
     """CLI integration tests for extension add command."""
 
+    def test_add_rejects_dev_and_from_together(self, tmp_path):
+        """extension add should reject mutually exclusive --dev and --from flags."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        extension_dir = tmp_path / "extension"
+        extension_dir.mkdir()
+        (extension_dir / "extension.yml").write_text(
+            "id: test-ext\nname: Test Extension\nversion: 1.0.0\ncommands: []\n",
+            encoding="utf-8",
+        )
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert "--dev and --from cannot be used together" in result.output
+
+    def test_add_from_url_installs_from_downloaded_bytes(self, tmp_path):
+        """extension add --from should install from in-memory bytes."""
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.extensions import ExtensionManager
+
+        runner = CliRunner()
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        fake_manifest = SimpleNamespace(
+            id="test-ext",
+            name="Test Extension",
+            version="1.0.0",
+            description="desc",
+            warnings=[],
+            commands=[],
+        )
+        zip_payload = b"fake-zip-bytes"
+        install_args = {}
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return zip_payload
+
+        def _install_from_zip_bytes(self_obj, payload, _speckit_version, priority=10):
+            install_args["payload"] = payload
+            install_args["priority"] = priority
+            return fake_manifest
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url", return_value=_Resp()), \
+             patch.object(ExtensionManager, "install_from_zip_bytes", _install_from_zip_bytes), \
+             patch.object(ExtensionManager, "install_from_zip", side_effect=AssertionError("legacy path install should not be used")):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "../../evil", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert install_args["payload"] == zip_payload
+        assert install_args["priority"] == 10
+
     def test_add_by_display_name_uses_resolved_id_for_download(self, tmp_path):
         """extension add by display name should use resolved ID for download_extension()."""
         from typer.testing import CliRunner
