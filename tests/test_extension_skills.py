@@ -377,6 +377,40 @@ class TestExtensionSkillRegistration:
         assert "speckit-test-ext-hello" in written
         assert "Run this updated hello." in skill_file.read_text(encoding="utf-8")
 
+    def test_dev_skill_registration_falls_back_to_copy_when_relpath_fails(
+        self, skills_project, extension_dir, monkeypatch
+    ):
+        """Dev-mode skill registration stays functional across Windows drive roots."""
+        project_dir, skills_dir = skills_project
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        def raise_relpath_error(path, start=None):
+            raise ValueError("path is on mount 'D:', start on mount 'C:'")
+
+        monkeypatch.setattr(
+            "specify_cli.extensions.os.path.relpath", raise_relpath_error
+        )
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        assert "speckit-test-ext-hello" in written
+        assert skill_file.exists()
+        assert not skill_file.is_symlink()
+        assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+        assert (
+            extension_dir
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        ).exists()
+
     def test_registered_skills_in_registry(self, skills_project, extension_dir):
         """Registry should contain registered_skills list."""
         project_dir, skills_dir = skills_project

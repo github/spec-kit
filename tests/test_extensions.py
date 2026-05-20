@@ -1799,6 +1799,40 @@ Run {SCRIPT}
             / "speckit.test-ext.hello.agent.md"
         ).exists()
 
+    def test_dev_register_commands_falls_back_to_copy_when_relpath_fails(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Dev-mode registration stays functional across Windows drive roots."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        def raise_relpath_error(path, start=None):
+            raise ValueError("path is on mount 'D:', start on mount 'C:'")
+
+        monkeypatch.setattr("specify_cli.agents.os.path.relpath", raise_relpath_error)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "copilot",
+            manifest,
+            extension_dir,
+            project_dir,
+            link_outputs=True,
+        )
+
+        cmd_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        assert cmd_file.exists()
+        assert not cmd_file.is_symlink()
+        assert "Extension: test-ext" in cmd_file.read_text(encoding="utf-8")
+        assert (
+            extension_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "copilot"
+            / "speckit.test-ext.hello.agent.md"
+        ).exists()
+
     def test_dev_register_commands_rejects_cache_path_traversal(self, temp_dir):
         """Dev-mode cache writes must stay inside the agent cache root."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar

@@ -679,9 +679,10 @@ class CommandRegistrar:
                 dest_file.unlink()
             target = os.path.relpath(cache_file, dest_file.parent)
             os.symlink(target, dest_file)
-        except OSError:
+        except (OSError, ValueError):
             # Windows often requires Developer Mode or admin privileges for
-            # symlinks. Keep dev installs functional by falling back to a copy.
+            # symlinks, and relpath can fail across drives. Keep dev installs
+            # functional by falling back to a copy.
             if dest_file.is_symlink():
                 dest_file.unlink()
             dest_file.write_text(content, encoding="utf-8")

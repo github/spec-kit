@@ -960,7 +960,7 @@ class ExtensionManager:
                         skill_file.unlink()
                     target = os.path.relpath(cache_file, skill_file.parent)
                     os.symlink(target, skill_file)
-                except OSError:
+                except (OSError, ValueError):
                     if skill_file.is_symlink():
                         skill_file.unlink()
                     skill_file.write_text(skill_content, encoding="utf-8")
