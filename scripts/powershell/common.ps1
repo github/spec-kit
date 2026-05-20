@@ -358,28 +358,35 @@ function Test-DirHasFiles {
 function Get-InvokeSeparator {
     param([string]$RepoRoot = (Get-RepoRoot))
 
-    $integrationJson = Join-Path $RepoRoot '.specify/integration.json'
-    if (-not (Test-Path -LiteralPath $integrationJson -PathType Leaf)) {
-        return '.'
+    if ($null -eq $script:SpecKitInvokeSeparatorCache) {
+        $script:SpecKitInvokeSeparatorCache = @{}
+    }
+    if ($script:SpecKitInvokeSeparatorCache.ContainsKey($RepoRoot)) {
+        return $script:SpecKitInvokeSeparatorCache[$RepoRoot]
     }
 
-    try {
-        $state = Get-Content -LiteralPath $integrationJson -Raw | ConvertFrom-Json
-        $key = if ($state.default_integration) { [string]$state.default_integration } elseif ($state.integration) { [string]$state.integration } else { '' }
-        if ($key -and $state.integration_settings) {
-            $settingProperty = $state.integration_settings.PSObject.Properties[$key]
-            if ($settingProperty) {
-                $setting = $settingProperty.Value
-                if ($setting -and ($setting.invoke_separator -eq '.' -or $setting.invoke_separator -eq '-')) {
-                    return [string]$setting.invoke_separator
+    $separator = '.'
+    $integrationJson = Join-Path $RepoRoot '.specify/integration.json'
+    if (Test-Path -LiteralPath $integrationJson -PathType Leaf) {
+        try {
+            $state = Get-Content -LiteralPath $integrationJson -Raw | ConvertFrom-Json
+            $key = if ($state.default_integration) { [string]$state.default_integration } elseif ($state.integration) { [string]$state.integration } else { '' }
+            if ($key -and $state.integration_settings) {
+                $settingProperty = $state.integration_settings.PSObject.Properties[$key]
+                if ($settingProperty) {
+                    $setting = $settingProperty.Value
+                    if ($setting -and ($setting.invoke_separator -eq '.' -or $setting.invoke_separator -eq '-')) {
+                        $separator = [string]$setting.invoke_separator
+                    }
                 }
             }
+        } catch {
+            $separator = '.'
         }
-    } catch {
-        return '.'
     }
 
-    return '.'
+    $script:SpecKitInvokeSeparatorCache[$RepoRoot] = $separator
+    return $separator
 }
 
 function Format-SpecKitCommand {
@@ -395,7 +402,7 @@ function Format-SpecKitCommand {
     } elseif ($name.StartsWith('speckit-')) {
         $name = $name.Substring(8)
     }
-    $name = $name -replace '\.', $separator
+    $name = $name -replace '[.-]', $separator
 
     return "/speckit$separator$name"
 }

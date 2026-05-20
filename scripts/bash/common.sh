@@ -309,24 +309,28 @@ has_jq() {
 
 get_invoke_separator() {
     local repo_root="${1:-$(get_repo_root)}"
-    local integration_json="$repo_root/.specify/integration.json"
-    local separator="."
-
-    if [[ ! -f "$integration_json" ]]; then
-        printf '%s\n' "$separator"
+    if [[ "${_SPECIFY_INVOKE_SEPARATOR_CACHE_REPO_ROOT:-}" == "$repo_root" && -n "${_SPECIFY_INVOKE_SEPARATOR_CACHE_VALUE:-}" ]]; then
+        printf '%s\n' "$_SPECIFY_INVOKE_SEPARATOR_CACHE_VALUE"
         return 0
     fi
 
-    if command -v jq >/dev/null 2>&1; then
-        if separator=$(jq -r '(.default_integration // .integration // "") as $k | if $k == "" then "." else (.integration_settings[$k].invoke_separator // ".") end' "$integration_json" 2>/dev/null); then
-            case "$separator" in
-                "."|"-") printf '%s\n' "$separator"; return 0 ;;
-            esac
-        fi
-    fi
+    local integration_json="$repo_root/.specify/integration.json"
+    local separator="."
+    local parsed_with_jq=0
 
-    if command -v python3 >/dev/null 2>&1; then
-        if separator=$(python3 - "$integration_json" <<'PY' 2>/dev/null
+    if [[ -f "$integration_json" ]]; then
+        if command -v jq >/dev/null 2>&1; then
+            local jq_separator
+            if jq_separator=$(jq -r '(.default_integration // .integration // "") as $k | if $k == "" then "." else (.integration_settings[$k].invoke_separator // ".") end' "$integration_json" 2>/dev/null); then
+                parsed_with_jq=1
+                case "$jq_separator" in
+                    "."|"-") separator="$jq_separator" ;;
+                esac
+            fi
+        fi
+
+        if [[ "$parsed_with_jq" -eq 0 ]] && command -v python3 >/dev/null 2>&1; then
+            if separator=$(python3 - "$integration_json" <<'PY' 2>/dev/null
 import json
 import sys
 
@@ -345,25 +349,38 @@ except Exception:
     print(".")
 PY
 ); then
-            case "$separator" in
-                "."|"-") printf '%s\n' "$separator"; return 0 ;;
-            esac
+                case "$separator" in
+                    "."|"-") ;;
+                    *) separator="." ;;
+                esac
+            else
+                separator="."
+            fi
         fi
     fi
 
-    printf '.\n'
+    _SPECIFY_INVOKE_SEPARATOR_CACHE_REPO_ROOT="$repo_root"
+    _SPECIFY_INVOKE_SEPARATOR_CACHE_VALUE="$separator"
+    printf '%s\n' "$separator"
 }
 
 format_speckit_command() {
     local command_name="$1"
     local repo_root="${2:-$(get_repo_root)}"
     local separator
-    separator=$(get_invoke_separator "$repo_root")
+    if [[ "${_SPECIFY_INVOKE_SEPARATOR_CACHE_REPO_ROOT:-}" == "$repo_root" && -n "${_SPECIFY_INVOKE_SEPARATOR_CACHE_VALUE:-}" ]]; then
+        separator="$_SPECIFY_INVOKE_SEPARATOR_CACHE_VALUE"
+    else
+        separator=$(get_invoke_separator "$repo_root")
+        _SPECIFY_INVOKE_SEPARATOR_CACHE_REPO_ROOT="$repo_root"
+        _SPECIFY_INVOKE_SEPARATOR_CACHE_VALUE="$separator"
+    fi
 
     command_name="${command_name#/}"
     command_name="${command_name#speckit.}"
     command_name="${command_name#speckit-}"
     command_name="${command_name//./$separator}"
+    command_name="${command_name//-/$separator}"
 
     printf '/speckit%s%s\n' "$separator" "$command_name"
 }

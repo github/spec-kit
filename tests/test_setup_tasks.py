@@ -106,6 +106,26 @@ def _run_bash_format_command(repo: Path, command_name: str) -> subprocess.Comple
     )
 
 
+def _run_powershell_format_command(repo: Path, command_name: str) -> subprocess.CompletedProcess:
+    script = repo / ".specify" / "scripts" / "powershell" / "common.ps1"
+    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    return subprocess.run(
+        [
+            exe,
+            "-NoProfile",
+            "-Command",
+            '$common = $args[0]; $commandName = $args[1]; . $common; Format-SpecKitCommand -CommandName $commandName -RepoRoot (Get-Location).Path',
+            str(script),
+            command_name,
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+
 def _git_init(repo: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     subprocess.run(
@@ -409,6 +429,54 @@ def test_bash_command_hint_rejects_invalid_invoke_separator(tasks_repo: Path) ->
 
 
 @requires_bash
+def test_bash_command_hint_normalizes_mixed_separators(tasks_repo: Path) -> None:
+    _write_integration_state(tasks_repo, "copilot", ".")
+
+    result = _run_bash_format_command(tasks_repo, "/speckit-git.commit")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit.git.commit"
+
+    _write_integration_state(tasks_repo, "claude", "-")
+
+    result = _run_bash_format_command(tasks_repo, "speckit.git-commit")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit-git-commit"
+
+
+@requires_bash
+def test_bash_command_hint_caches_invoke_separator_per_process(tasks_repo: Path) -> None:
+    _write_integration_state(tasks_repo, "claude", "-")
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "common.sh"
+    dot_state = {
+        "integration": "copilot",
+        "default_integration": "copilot",
+        "installed_integrations": ["copilot"],
+        "integration_settings": {"copilot": {"invoke_separator": "."}},
+    }
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; format_speckit_command plan "$PWD"; printf "%s" "$2" > .specify/integration.json; format_speckit_command tasks "$PWD"',
+            "bash",
+            str(script),
+            json.dumps(dot_state),
+        ],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["/speckit-plan", "/speckit-tasks"]
+
+
+@requires_bash
 def test_setup_tasks_bash_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -> None:
     _write_integration_state(tasks_repo, "claude", "-")
     feat = tasks_repo / "specs" / "001-my-feature"
@@ -613,6 +681,25 @@ def test_setup_tasks_ps_missing_template_errors(tasks_repo: Path) -> None:
  
     assert result.returncode != 0
     assert "tasks-template" in result.stderr.lower() or "tasks-template" in result.stdout.lower()
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+def test_powershell_command_hint_normalizes_mixed_separators(
+    tasks_repo: Path,
+) -> None:
+    _write_integration_state(tasks_repo, "copilot", ".")
+
+    result = _run_powershell_format_command(tasks_repo, "/speckit-git.commit")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit.git.commit"
+
+    _write_integration_state(tasks_repo, "claude", "-")
+
+    result = _run_powershell_format_command(tasks_repo, "speckit.git-commit")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit-git-commit"
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
