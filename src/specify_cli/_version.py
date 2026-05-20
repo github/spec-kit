@@ -10,7 +10,11 @@ at module level, keeping this layer thin and circular-import-safe).
 from __future__ import annotations
 
 import json
+import os
+import sys
+import time
 import urllib.error
+from pathlib import Path
 
 import typer
 from packaging.version import InvalidVersion, Version
@@ -181,12 +185,8 @@ def self_upgrade() -> None:
 # 24h in the platform user-cache dir; cache misses are written even on fetch
 # failure (`latest=null`) so a transient outage doesn't trigger a network call
 # on every CLI invocation. Best-effort: every error path swallows the exception
-# so the helper never blocks the command the user actually invoked.
-
-import os
-import sys
-import time
-from pathlib import Path
+# so the helper never fails the command the user actually invoked, though cache
+# misses may add a bounded startup delay while contacting GitHub.
 
 _UPDATE_CHECK_CACHE_TTL_SECONDS = 24 * 60 * 60
 
@@ -245,7 +245,7 @@ def _check_for_updates() -> None:
     """Print a one-line upgrade hint when a newer spec-kit release is available.
 
     Fully best-effort — any error (offline, rate-limited, parse failure) is
-    swallowed so the command the user actually invoked is never blocked.
+    swallowed so the command the user actually invoked is never failed.
     """
     if _should_skip_update_check():
         return
@@ -261,7 +261,14 @@ def _check_for_updates() -> None:
             # negative (`latest=null`) entry; either way, no fetch.
             latest_tag = cached.get("latest")
         else:
-            latest_tag, _reason = _fetch_latest_release_tag()
+            try:
+                latest_tag, _reason = _fetch_latest_release_tag()
+            except Exception:
+                if cache_path is not None:
+                    # Cache malformed/unexpected fetch failures too, so they
+                    # don't trigger a network call on every CLI invocation.
+                    _write_update_check_cache(cache_path, None)
+                return
             if cache_path is not None:
                 # Cache the attempt even on failure so transient outages
                 # don't trigger a network call on every CLI invocation.

@@ -1,15 +1,13 @@
-"""Tests for the update-check helper in specify_cli.__init__.
+"""Tests for the update-check helper in specify_cli._version.
 
 Covers issue https://github.com/github/spec-kit/issues/1320 — the CLI should
 nudge users who are running outdated releases toward an upgrade, without
-blocking any command when offline or rate-limited.
+failing any command when offline or rate-limited.
 """
 
 import json
 import time
 from io import StringIO
-
-import pytest
 
 from specify_cli._version import (
     _check_for_updates,
@@ -138,6 +136,24 @@ class TestCheckForUpdates:
 
         self._run_and_capture(monkeypatch)
 
+        assert cache_file.exists()
+        data = json.loads(cache_file.read_text())
+        assert data["latest"] is None
+        assert time.time() - float(data["checked_at"]) < 5
+
+    def test_fetch_exception_writes_negative_cache(self, monkeypatch, tmp_path):
+        cache_file = tmp_path / "vc.json"
+        monkeypatch.setattr("specify_cli._version._get_installed_version", lambda: "0.6.2")
+        monkeypatch.setattr("specify_cli._version._update_check_cache_path", lambda: cache_file)
+
+        def _fetch_raises() -> tuple[str | None, str | None]:
+            raise ValueError("GitHub API response missing valid tag_name")
+
+        monkeypatch.setattr("specify_cli._version._fetch_latest_release_tag", _fetch_raises)
+
+        out = self._run_and_capture(monkeypatch)
+
+        assert out == ""
         assert cache_file.exists()
         data = json.loads(cache_file.read_text())
         assert data["latest"] is None
