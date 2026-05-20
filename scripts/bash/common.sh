@@ -307,6 +307,67 @@ has_jq() {
     command -v jq >/dev/null 2>&1
 }
 
+get_invoke_separator() {
+    local repo_root="${1:-$(get_repo_root)}"
+    local integration_json="$repo_root/.specify/integration.json"
+    local separator="."
+
+    if [[ ! -f "$integration_json" ]]; then
+        printf '%s\n' "$separator"
+        return 0
+    fi
+
+    if command -v jq >/dev/null 2>&1; then
+        if separator=$(jq -r '(.default_integration // .integration // "") as $k | if $k == "" then "." else (.integration_settings[$k].invoke_separator // ".") end' "$integration_json" 2>/dev/null); then
+            case "$separator" in
+                "."|"-") printf '%s\n' "$separator"; return 0 ;;
+            esac
+        fi
+    fi
+
+    if command -v python3 >/dev/null 2>&1; then
+        if separator=$(python3 - "$integration_json" <<'PY' 2>/dev/null
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        state = json.load(fh)
+    key = state.get("default_integration") or state.get("integration") or ""
+    settings = state.get("integration_settings")
+    separator = "."
+    if isinstance(key, str) and isinstance(settings, dict):
+        entry = settings.get(key)
+        if isinstance(entry, dict) and entry.get("invoke_separator") in {".", "-"}:
+            separator = entry["invoke_separator"]
+    print(separator)
+except Exception:
+    print(".")
+PY
+); then
+            case "$separator" in
+                "."|"-") printf '%s\n' "$separator"; return 0 ;;
+            esac
+        fi
+    fi
+
+    printf '.\n'
+}
+
+format_speckit_command() {
+    local command_name="$1"
+    local repo_root="${2:-$(get_repo_root)}"
+    local separator
+    separator=$(get_invoke_separator "$repo_root")
+
+    command_name="${command_name#/}"
+    command_name="${command_name#speckit.}"
+    command_name="${command_name#speckit-}"
+    command_name="${command_name//./$separator}"
+
+    printf '/speckit%s%s\n' "$separator" "$command_name"
+}
+
 # Escape a string for safe embedding in a JSON value (fallback when jq is unavailable).
 # Handles backslash, double-quote, and JSON-required control character escapes (RFC 8259).
 json_escape() {

@@ -355,6 +355,51 @@ function Test-DirHasFiles {
     }
 }
 
+function Get-InvokeSeparator {
+    param([string]$RepoRoot = (Get-RepoRoot))
+
+    $integrationJson = Join-Path $RepoRoot '.specify/integration.json'
+    if (-not (Test-Path -LiteralPath $integrationJson -PathType Leaf)) {
+        return '.'
+    }
+
+    try {
+        $state = Get-Content -LiteralPath $integrationJson -Raw | ConvertFrom-Json
+        $key = if ($state.default_integration) { [string]$state.default_integration } elseif ($state.integration) { [string]$state.integration } else { '' }
+        if ($key -and $state.integration_settings) {
+            $settingProperty = $state.integration_settings.PSObject.Properties[$key]
+            if ($settingProperty) {
+                $setting = $settingProperty.Value
+                if ($setting -and ($setting.invoke_separator -eq '.' -or $setting.invoke_separator -eq '-')) {
+                    return [string]$setting.invoke_separator
+                }
+            }
+        }
+    } catch {
+        return '.'
+    }
+
+    return '.'
+}
+
+function Format-SpecKitCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$CommandName,
+        [string]$RepoRoot = (Get-RepoRoot)
+    )
+
+    $separator = Get-InvokeSeparator -RepoRoot $RepoRoot
+    $name = $CommandName.TrimStart('/')
+    if ($name.StartsWith('speckit.')) {
+        $name = $name.Substring(8)
+    } elseif ($name.StartsWith('speckit-')) {
+        $name = $name.Substring(8)
+    }
+    $name = $name -replace '\.', $separator
+
+    return "/speckit$separator$name"
+}
+
 # Find a usable Python 3 executable (python3, python, or py -3).
 # Returns the command/arguments as an array, or $null if none found.
 function Get-Python3Command {
