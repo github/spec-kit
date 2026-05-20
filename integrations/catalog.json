@@ -272,6 +272,15 @@
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
+    },
+    "hermes": {
+      "id": "hermes",
+      "name": "Hermes Agent",
+      "version": "1.0.0",
+      "description": "Hermes Agent skills-based integration by Nous Research",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills"]
     }
   }
 }

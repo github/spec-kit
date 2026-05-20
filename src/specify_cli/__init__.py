@@ -1979,11 +1979,11 @@ def integration_uninstall(
         console.print(f"[dim]Details:[/dim] {exc}")
         raise typer.Exit(1)
 
-    removed, skipped = manifest.uninstall(project_root, force=force)
+    if not integration:
+        console.print(f"[red]Error:[/red] Integration '{key}' not found in registry.")
+        raise typer.Exit(1)
 
-    # Remove managed context section from the agent context file
-    if integration:
-        integration.remove_context_section(project_root)
+    removed, skipped = integration.teardown(project_root, manifest, force=force)
 
     remaining = [installed for installed in installed_keys if installed != key]
     new_default = default_key if default_key != key else (remaining[0] if remaining else None)
