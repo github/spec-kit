@@ -105,7 +105,7 @@ def register(app: typer.Typer) -> None:
         here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
         force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
         skip_tls: bool = typer.Option(False, "--skip-tls", help="Deprecated (no-op). Previously: skip SSL/TLS verification.", hidden=True),
-        debug: bool = typer.Option(False, "--debug", help="Deprecated (no-op). Previously: show verbose diagnostic output.", hidden=True),
+        debug: bool = typer.Option(False, "--debug", help="Deprecated. Previously: show verbose diagnostic output; currently only prints additional diagnostic details on failure.", hidden=True),
         github_token: str = typer.Option(None, "--github-token", help="Deprecated (no-op). Previously: GitHub token for API requests.", hidden=True),
         ai_skills: bool = typer.Option(False, "--ai-skills", help="Install Prompt.MD templates as agent skills (requires --ai)"),
         offline: bool = typer.Option(False, "--offline", help="Deprecated (no-op). All scaffolding now uses bundled assets.", hidden=True),
@@ -117,24 +117,18 @@ def register(app: typer.Typer) -> None:
         """
         Initialize a new Specify project.
 
-        By default, project files are downloaded from the latest GitHub release.
-        Use --offline to scaffold from assets bundled inside the specify-cli
-        package instead (no internet access required, ideal for air-gapped or
-        enterprise environments).
-
-        NOTE: Starting with v0.6.0, bundled assets will be used by default and
-        the --offline flag will be removed. The GitHub download path will be
-        retired because bundled assets eliminate the need for network access,
-        avoid proxy/firewall issues, and guarantee that templates always match
-        the installed CLI version.
+        Project files are scaffolded from assets bundled inside the specify-cli
+        package, so initialization does not need network access and templates
+        match the installed CLI version.
 
         This command will:
         1. Check that required tools are installed (git is optional)
         2. Let you choose your coding agent integration, or default to Copilot
            in non-interactive sessions
-        3. Download template from GitHub (or use bundled assets with --offline)
+        3. Install bundled Spec Kit templates, scripts, workflow, and shared
+           project infrastructure
         4. Initialize a fresh git repository (if not --no-git and no existing repo)
-        5. Optionally set up coding agent integration commands
+        5. Set up coding agent integration commands and optional presets
 
         Examples:
             specify init my-project
@@ -383,8 +377,6 @@ def register(app: typer.Typer) -> None:
         console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
 
         tracker = StepTracker("Initialize Specify Project")
-
-        sys._specify_tracker_active = True
 
         tracker.add("precheck", "Check required tools")
         tracker.complete("precheck", "ok")
