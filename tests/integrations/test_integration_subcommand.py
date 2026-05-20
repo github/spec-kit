@@ -230,6 +230,29 @@ class TestIntegrationInstall:
         assert (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
         assert (project / ".agents" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
+    def test_install_non_default_refreshes_init_options_version_only(self, tmp_path, monkeypatch):
+        project = _init_project(tmp_path, "claude")
+        init_options = project / ".specify" / "init-options.json"
+        opts = json.loads(init_options.read_text(encoding="utf-8"))
+        opts["speckit_version"] = "0.6.1"
+        init_options.write_text(json.dumps(opts), encoding="utf-8")
+
+        import specify_cli
+
+        monkeypatch.setattr(specify_cli, "get_speckit_version", lambda: "0.8.11")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+
+        assert result.exit_code == 0, result.output
+        updated = json.loads(init_options.read_text(encoding="utf-8"))
+        assert updated["speckit_version"] == "0.8.11"
+        assert updated["integration"] == "claude"
+        assert updated["ai"] == "claude"
+        assert updated["context_file"] == "CLAUDE.md"
+
     def test_install_additional_preserves_shared_manifest(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         shared_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
@@ -1143,6 +1166,56 @@ class TestIntegrationUpgrade:
         assert result.exit_code != 0
         assert "manifest" in result.output
         assert "unreadable" in result.output
+
+    def test_upgrade_refreshes_init_options_speckit_version(self, tmp_path, monkeypatch):
+        project = _init_project(tmp_path, "claude")
+        init_options = project / ".specify" / "init-options.json"
+        opts = json.loads(init_options.read_text(encoding="utf-8"))
+        opts["speckit_version"] = "0.6.1"
+        init_options.write_text(json.dumps(opts), encoding="utf-8")
+
+        import specify_cli
+
+        monkeypatch.setattr(specify_cli, "get_speckit_version", lambda: "0.8.11")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "claude",
+            "--force",
+        ])
+
+        assert result.exit_code == 0, result.output
+        updated = json.loads(init_options.read_text(encoding="utf-8"))
+        assert updated["speckit_version"] == "0.8.11"
+
+    def test_upgrade_non_default_refreshes_init_options_version_only(self, tmp_path, monkeypatch):
+        project = _init_project(tmp_path, "gemini")
+        install = _run_in_project(project, [
+            "integration", "install", "claude",
+            "--script", "sh",
+        ])
+        assert install.exit_code == 0, install.output
+
+        init_options = project / ".specify" / "init-options.json"
+        opts = json.loads(init_options.read_text(encoding="utf-8"))
+        opts["speckit_version"] = "0.6.1"
+        init_options.write_text(json.dumps(opts), encoding="utf-8")
+
+        import specify_cli
+
+        monkeypatch.setattr(specify_cli, "get_speckit_version", lambda: "0.8.11")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "claude",
+            "--script", "sh",
+            "--force",
+        ])
+
+        assert result.exit_code == 0, result.output
+        updated = json.loads(init_options.read_text(encoding="utf-8"))
+        assert updated["speckit_version"] == "0.8.11"
+        assert updated["integration"] == "gemini"
+        assert updated["ai"] == "gemini"
+        assert updated["context_file"] == "GEMINI.md"
 
     def test_upgrade_does_not_persist_state_when_template_refresh_fails(self, tmp_path, monkeypatch):
         project = _init_project(tmp_path, "claude")

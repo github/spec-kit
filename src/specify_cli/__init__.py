@@ -1332,6 +1332,15 @@ def _write_integration_json(
     )
 
 
+def _refresh_init_options_speckit_version(project_root: Path) -> None:
+    """Refresh only the Spec Kit version recorded in init-options.json."""
+    opts = load_init_options(project_root)
+    if not isinstance(opts, dict) or not opts:
+        return
+    opts["speckit_version"] = get_speckit_version()
+    save_init_options(project_root, opts)
+
+
 def _clear_init_options_for_integration(project_root: Path, integration_key: str) -> None:
     """Clear active integration keys from init-options.json when they match."""
     opts = load_init_options(project_root)
@@ -1692,6 +1701,8 @@ def integration_install(
         _write_integration_json(project_root, new_default, new_installed, settings)
         if new_default == integration.key:
             _update_init_options_for_integration(project_root, integration, script_type=selected_script)
+        else:
+            _refresh_init_options_speckit_version(project_root)
 
     except Exception as e:
         # Attempt rollback of any files written by setup
@@ -1775,6 +1786,7 @@ def _update_init_options_for_integration(
     opts["integration"] = integration.key
     opts["ai"] = integration.key
     opts["context_file"] = integration.context_file
+    opts["speckit_version"] = get_speckit_version()
     if script_type:
         opts["script"] = script_type
     if isinstance(integration, SkillsIntegration) or getattr(integration, "_skills_mode", False):
@@ -2339,6 +2351,8 @@ def integration_upgrade(
         _write_integration_json(project_root, installed_key, installed_keys, settings)
         if installed_key == key:
             _update_init_options_for_integration(project_root, integration, script_type=selected_script)
+        else:
+            _refresh_init_options_speckit_version(project_root)
     except Exception as exc:
         # Don't teardown — setup overwrites in-place, so teardown would
         # delete files that were working before the upgrade.  Just report.
