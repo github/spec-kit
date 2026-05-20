@@ -1225,8 +1225,11 @@ class ExtensionManager:
             ValidationError: If manifest is invalid or priority is invalid
             CompatibilityError: If extension is incompatible
         """
-        with zip_path.open("rb") as zip_file:
-            return self.install_from_zip_bytes(zip_file.read(), speckit_version, priority=priority)
+        try:
+            with zip_path.open("rb") as zip_file:
+                return self.install_from_zip_bytes(zip_file.read(), speckit_version, priority=priority)
+        except OSError as e:
+            raise ValidationError(f"Failed to read ZIP file {zip_path}: {e}") from e
 
     def install_from_zip_bytes(
         self,
@@ -1234,7 +1237,20 @@ class ExtensionManager:
         speckit_version: str,
         priority: int = 10,
     ) -> ExtensionManifest:
-        """Install extension from ZIP bytes."""
+        """Install extension from ZIP bytes.
+
+        Args:
+            zip_bytes: ZIP archive content.
+            speckit_version: Current spec-kit version.
+            priority: Resolution priority (lower = higher precedence, default 10).
+
+        Returns:
+            Installed extension manifest.
+
+        Raises:
+            ValidationError: If manifest is invalid or priority is invalid.
+            CompatibilityError: If extension is incompatible.
+        """
         # Validate priority early
         if priority < 1:
             raise ValidationError("Priority must be a positive integer (1 or higher)")

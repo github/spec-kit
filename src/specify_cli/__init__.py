@@ -3649,10 +3649,10 @@ def extension_add(
                     from specify_cli.authentication.http import open_url as _open_url
 
                     with _open_url(from_url, timeout=60) as response:
-                        zip_data = response.read()
+                        zip_bytes = response.read()
 
                     # Install from downloaded ZIP
-                    manifest = manager.install_from_zip_bytes(zip_data, speckit_version, priority=priority)
+                    manifest = manager.install_from_zip_bytes(zip_bytes, speckit_version, priority=priority)
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
                     raise typer.Exit(1)

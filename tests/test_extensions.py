@@ -3510,28 +3510,28 @@ class TestExtensionAddCLI:
         zip_payload = b"fake-zip-bytes"
         install_args = {}
 
-        class _Resp:
+        class _MockHTTPResponse:
             def __enter__(self):
                 return self
 
-            def __exit__(self, *_args):
+            def __exit__(self, exc_type, exc_val, exc_tb):
                 return False
 
             def read(self):
                 return zip_payload
 
-        def _install_from_zip_bytes(self_obj, payload, _speckit_version, priority=10):
+        def _install_from_zip_bytes(_self, payload, _speckit_version, priority=10):
             install_args["payload"] = payload
             install_args["priority"] = priority
             return fake_manifest
 
         with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("specify_cli.authentication.http.open_url", return_value=_Resp()), \
+             patch("specify_cli.authentication.http.open_url", return_value=_MockHTTPResponse()), \
              patch.object(ExtensionManager, "install_from_zip_bytes", _install_from_zip_bytes), \
              patch.object(ExtensionManager, "install_from_zip", side_effect=AssertionError("legacy path install should not be used")):
             result = runner.invoke(
                 app,
-                ["extension", "add", "../../evil", "--from", "https://example.com/ext.zip"],
+                ["extension", "add", "ignored-extension-name", "--from", "https://example.com/ext.zip"],
                 catch_exceptions=True,
             )
 
