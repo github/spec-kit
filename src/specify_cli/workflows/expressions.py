@@ -102,6 +102,15 @@ def _build_namespace(context: Any) -> dict[str, Any]:
         ns["item"] = context.item
     if hasattr(context, "fan_in"):
         ns["fan_in"] = context.fan_in or {}
+    # Engine-managed runtime metadata. Always present (even outside a
+    # run) so templates referencing it never error: `run_id` falls back
+    # to an empty string when no run is active (dry-run, validation,
+    # ad-hoc evaluator usage). The value is the same one Spec Kit
+    # prints as `Run ID:` at the end of `workflow run` — auto-generated
+    # runs use an 8-character uuid4 hex; operator-supplied ids may be
+    # any alphanumeric string with hyphens or underscores.
+    run_id = getattr(context, "run_id", None) or ""
+    ns["context"] = {"run_id": run_id}
     return ns
 
 
