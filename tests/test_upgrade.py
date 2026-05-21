@@ -3,9 +3,9 @@
 Network isolation contract (SC-004 / FR-014): every test that exercises
 `specify self check` or `_fetch_latest_release_tag()` MUST mock
 `urllib.request.urlopen` so no real outbound call ever reaches
-api.github.com. The `self upgrade` stub tests do not need that patch because
-the stub is contractually network-free. Run this module under `pytest-socket`
-(if installed) with `--disable-socket` as an extra safety net.
+api.github.com. Tests for non-network `self upgrade` behavior should keep that
+contract explicit with local mocks. Run this module under `pytest-socket` (if
+installed) with `--disable-socket` as an extra safety net.
 """
 
 import json
@@ -53,39 +53,6 @@ def _http_error(code: int, message: str = "error") -> urllib.error.HTTPError:
         hdrs={},  # type: ignore[arg-type]
         fp=None,
     )
-
-
-class TestSelfUpgradeStub:
-    """Pins the `specify self upgrade` stub output + exit code (contract §3.5, FR-016)."""
-
-    def test_prints_exactly_three_lines_and_exits_zero(self):
-        result = runner.invoke(app, ["self", "upgrade"])
-        assert result.exit_code == 0
-        lines = strip_ansi(result.output).strip().splitlines()
-        assert lines == [
-            "specify self upgrade is not implemented yet.",
-            "Run 'specify self check' to see whether a newer release is available.",
-            "Actual self-upgrade is planned as follow-up work.",
-        ]
-
-    def test_stub_makes_no_network_call(self):
-        # The stub must not hit the network via either urllib path:
-        # unauthenticated requests use urlopen() directly; authenticated ones
-        # go through build_opener(...).open().  Both are patched so that any
-        # accidental network call raises immediately.
-        network_error = AssertionError("stub must not hit the network")
-        with (
-            patch(
-                "specify_cli.authentication.http.urllib.request.urlopen",
-                side_effect=network_error,
-            ),
-            patch(
-                "specify_cli.authentication.http.urllib.request.build_opener",
-                side_effect=network_error,
-            ),
-        ):
-            result = runner.invoke(app, ["self", "upgrade"])
-        assert result.exit_code == 0
 
 
 class TestIsNewer:
@@ -195,6 +162,8 @@ class TestUserStory1:
         assert "Current version could not be determined" in output
         assert "0.7.4" in output
         assert "git+https://github.com/github/spec-kit.git@v0.7.4" in output
+        assert "specify self upgrade" in output
+        assert "pipx install --force git+https://github.com/github/spec-kit.git@v0.7.4" in output
 
     def test_unparseable_tag_routes_to_indeterminate(self):
         with patch("specify_cli._version._get_installed_version", return_value="0.7.4"), patch(
