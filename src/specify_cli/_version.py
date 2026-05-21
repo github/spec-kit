@@ -885,12 +885,19 @@ def _emit_guidance(method: _InstallMethod, target_tag: str | None) -> None:
 
     if method == _InstallMethod.SOURCE_CHECKOUT:
         tree = _source_checkout_path()
-        tree_str = str(tree) if tree else "(path unavailable)"
-        console.print(
-            f"Running from a source checkout at {tree_str}; "
-            "upgrade by running the following commands from that directory:",
-            soft_wrap=True,
-        )
+        if tree is None:
+            console.print(
+                "Running from a source checkout, but the checkout path could not "
+                "be detected; upgrade by running the following commands from your "
+                "checkout directory:",
+                soft_wrap=True,
+            )
+        else:
+            console.print(
+                f"Running from a source checkout at {tree}; "
+                "upgrade by running the following commands from that directory:",
+                soft_wrap=True,
+            )
         console.print("  git pull")
         console.print("  pip install -e .")
         return

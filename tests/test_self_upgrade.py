@@ -1017,6 +1017,26 @@ class TestSourceCheckout:
         assert "pip install -e ." in out
         assert mock_run.call_count == 0
 
+    def test_source_checkout_without_path_mentions_checkout_directory(
+        self,
+        unsupported_argv0,
+        clean_environ,
+    ):
+        with patch("specify_cli._version._editable_marker_seen", return_value=True), patch(
+            "specify_cli._version._source_checkout_path", return_value=None
+        ), patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.subprocess.run"
+        ) as mock_run:
+            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        out = strip_ansi(result.output)
+        assert result.exit_code == 0
+        assert "checkout path could not be detected" in out
+        assert "from your checkout directory" in out
+        assert "(path unavailable)" not in out
+        assert mock_run.call_count == 0
+
 
 class TestUnsupported:
     """Unsupported path enumerates manual reinstall commands."""
