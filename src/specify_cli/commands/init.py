@@ -150,8 +150,6 @@ def register(app: typer.Typer) -> None:
         """
         # Lazy imports to avoid circular dependency — __init__.py imports this module
         from .. import (
-            _cli_error_detail,
-            _cli_phase_label,
             _install_shared_infra_or_exit,
             _parse_integration_options,
             _print_cli_warning,
