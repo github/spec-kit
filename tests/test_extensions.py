@@ -2622,6 +2622,48 @@ class TestExtensionCatalog:
             with pytest.raises(ExtensionError, match="Invalid catalog format"):
                 catalog._fetch_single_catalog(entry, force_refresh=True)
 
+    def test_get_merged_extensions_skips_non_mapping_entries(self, temp_dir):
+        """Per-entry guard: one malformed entry shouldn't poison the merge.
+
+        ``_fetch_single_catalog`` validates that ``extensions`` is a mapping,
+        but it doesn't (and shouldn't) validate every entry inside it — a
+        single bad entry in an otherwise-valid catalog should be skipped, not
+        crash the whole resolve path. Mirrors the per-entry skip in
+        ``integrations/catalog.py``: a malformed entry returns no error,
+        valid entries continue to merge normally.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        # Mix of valid entry, list-shaped entry, and string-shaped entry.
+        payload = {
+            "schema_version": "1.0",
+            "extensions": {
+                "good": {"name": "Good", "version": "1.0.0"},
+                "bad-list": [],
+                "bad-str": "oops",
+            },
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        entry = CatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch.object(catalog, "get_active_catalogs", return_value=[entry]):
+            merged = catalog._get_merged_extensions(force_refresh=True)
+
+        # Only the well-formed entry survives; the two malformed entries are
+        # silently dropped rather than raising or crashing.
+        assert [ext["id"] for ext in merged] == ["good"]
+
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
         """download_extension passes Authorization header when a provider is configured."""
         from unittest.mock import patch, MagicMock

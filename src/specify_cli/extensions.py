@@ -1914,6 +1914,16 @@ class ExtensionCatalog(CatalogStackBase):
                 continue
 
             for ext_id, ext_data in catalog_data.get("extensions", {}).items():
+                # Per-entry guard: ``_fetch_single_catalog`` already validates
+                # that ``catalog_data["extensions"]`` is a mapping, but it
+                # does not (and should not) validate every entry shape there
+                # — one malformed entry shouldn't poison an otherwise valid
+                # catalog. Skip non-mapping entries here so a payload like
+                # ``{"extensions": {"foo": [], "bar": {...}}}`` still merges
+                # the valid entries without crashing on ``**ext_data``.
+                # Mirrors ``integrations/catalog.py:245``.
+                if not isinstance(ext_data, dict):
+                    continue
                 if ext_id not in merged:  # Higher-priority catalog wins
                     merged[ext_id] = {
                         **ext_data,

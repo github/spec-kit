@@ -2103,6 +2103,17 @@ class PresetCatalog:
             try:
                 data = self._fetch_single_catalog(entry, force_refresh)
                 for pack_id, pack_data in data.get("presets", {}).items():
+                    # Per-entry guard: ``_fetch_single_catalog`` already
+                    # validates that ``data["presets"]`` is a mapping, but it
+                    # does not (and should not) validate every entry shape
+                    # there — one malformed entry shouldn't poison an
+                    # otherwise valid catalog. Skip non-mapping entries here
+                    # so a payload like ``{"presets": {"foo": [], "bar":
+                    # {...}}}`` still merges the valid entries without
+                    # crashing on ``**pack_data``. Mirrors
+                    # ``integrations/catalog.py:245``.
+                    if not isinstance(pack_data, dict):
+                        continue
                     pack_data_with_catalog = {**pack_data, "_catalog_name": entry.name, "_install_allowed": entry.install_allowed}
                     merged[pack_id] = pack_data_with_catalog
             except PresetError:

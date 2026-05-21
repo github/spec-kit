@@ -1559,6 +1559,47 @@ class TestPresetCatalog:
             with pytest.raises(PresetError, match="Invalid preset catalog format"):
                 catalog._fetch_single_catalog(entry, force_refresh=True)
 
+    def test_get_merged_packs_skips_non_mapping_entries(self, project_dir):
+        """Per-entry guard: one malformed entry shouldn't poison the merge.
+
+        ``_fetch_single_catalog`` validates that ``presets`` is a mapping,
+        but it doesn't (and shouldn't) validate every entry inside it — a
+        single bad entry in an otherwise-valid catalog should be skipped,
+        not crash the whole resolve path. Mirrors the per-entry skip in
+        ``integrations/catalog.py``: a malformed entry returns no error,
+        valid entries continue to merge normally.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        payload = {
+            "schema_version": "1.0",
+            "presets": {
+                "good": {"name": "Good", "version": "1.0.0"},
+                "bad-list": [],
+                "bad-str": "oops",
+            },
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        entry = PresetCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch.object(catalog, "get_active_catalogs", return_value=[entry]):
+            merged = catalog._get_merged_packs(force_refresh=True)
+
+        # Only the well-formed entry survives; the two malformed entries are
+        # silently dropped rather than raising or crashing.
+        assert list(merged.keys()) == ["good"]
+
     def test_download_pack_sends_auth_header(self, project_dir, monkeypatch):
         """download_pack passes Authorization header when configured."""
         from unittest.mock import patch, MagicMock
