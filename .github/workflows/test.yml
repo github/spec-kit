@@ -29,6 +29,7 @@ jobs:
   pytest:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.12", "3.13"]
