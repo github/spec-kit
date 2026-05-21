@@ -57,13 +57,19 @@ def _get_installed_version() -> str:
 
 
 def _normalize_tag(tag: str) -> str:
-    """Strip exactly one leading 'v' from a release tag.
+    """Normalize common git release-tag spellings into PEP 440 text."""
+    normalized = tag[1:] if tag.startswith("v") else tag
+    prerelease_match = re.match(
+        r"^(\d+\.\d+\.\d+)[-.]?(alpha|beta|a|b|rc)[-.]?(\d+)(.*)$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if prerelease_match is None:
+        return normalized
 
-    Returns the rest of the string unchanged. This handles the common
-    'vX.Y.Z' tag convention in this repo; it MUST NOT strip more
-    aggressively (e.g., two leading 'v's keeps one).
-    """
-    return tag[1:] if tag.startswith("v") else tag
+    base, label, number, rest = prerelease_match.groups()
+    pep440_label = {"alpha": "a", "beta": "b"}.get(label.lower(), label.lower())
+    return f"{base}{pep440_label}{number}{rest}"
 
 
 def _is_newer(latest: str, current: str) -> bool:
@@ -250,7 +256,7 @@ def _scrubbed_env() -> dict[str, str]:
 
 _TAG_REGEX = re.compile(
     r"^v\d+\.\d+\.\d+"
-    r"(?:(?:\.?dev\d+)|(?:[-.]?(?:a|b|rc|alpha|beta)\d+)|"
+    r"(?:(?:\.?dev\d+)|(?:[-.]?(?:a|b|rc|alpha|beta)[-.]?\d+)|"
     r"(?:\+[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*))?$"
 )
 

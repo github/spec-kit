@@ -75,6 +75,18 @@ def route_open_url_through_urlopen(monkeypatch):
     monkeypatch.setattr("specify_cli.authentication.http.open_url", _open_url)
 
 
+def _fake_argv0(monkeypatch, tmp_path, env_name, path_parts):
+    """Create a fake executable under tmp_path and point sys.argv[0] at it."""
+    monkeypatch.setenv(env_name, str(tmp_path))
+    fake_dir = tmp_path.joinpath(*path_parts)
+    fake_dir.mkdir(parents=True)
+    fake_specify = fake_dir / "specify"
+    fake_specify.write_text("#!/usr/bin/env python\n")
+    fake_specify.chmod(0o755)
+    monkeypatch.setattr("sys.argv", [str(fake_specify)])
+    return fake_specify
+
+
 @pytest.fixture
 def uv_tool_argv0(monkeypatch, tmp_path):
     """Point sys.argv[0] at a simulated `uv tool` install path under tmp HOME.
@@ -84,64 +96,48 @@ def uv_tool_argv0(monkeypatch, tmp_path):
     `_UV_TOOL_ROOT_OVERRIDE` knob in production code.
     """
     if os.name == "nt":
-        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-        fake_dir = tmp_path / "uv" / "tools" / "specify-cli" / "bin"
-    else:
-        monkeypatch.setenv("HOME", str(tmp_path))
-        fake_dir = tmp_path / ".local" / "share" / "uv" / "tools" / "specify-cli" / "bin"
-    fake_dir.mkdir(parents=True)
-    fake_specify = fake_dir / "specify"
-    fake_specify.write_text("#!/usr/bin/env python\n")
-    fake_specify.chmod(0o755)
-    monkeypatch.setattr("sys.argv", [str(fake_specify)])
-    return fake_specify
+        return _fake_argv0(
+            monkeypatch, tmp_path, "LOCALAPPDATA", ("uv", "tools", "specify-cli", "bin")
+        )
+    return _fake_argv0(
+        monkeypatch,
+        tmp_path,
+        "HOME",
+        (".local", "share", "uv", "tools", "specify-cli", "bin"),
+    )
 
 
 @pytest.fixture
 def pipx_argv0(monkeypatch, tmp_path):
     """Point sys.argv[0] at a simulated pipx install path under tmp HOME."""
     if os.name == "nt":
-        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-        fake_dir = tmp_path / "pipx" / "venvs" / "specify-cli" / "bin"
-    else:
-        monkeypatch.setenv("HOME", str(tmp_path))
-        fake_dir = tmp_path / ".local" / "pipx" / "venvs" / "specify-cli" / "bin"
-    fake_dir.mkdir(parents=True)
-    fake_specify = fake_dir / "specify"
-    fake_specify.write_text("#!/usr/bin/env python\n")
-    fake_specify.chmod(0o755)
-    monkeypatch.setattr("sys.argv", [str(fake_specify)])
-    return fake_specify
+        return _fake_argv0(
+            monkeypatch, tmp_path, "LOCALAPPDATA", ("pipx", "venvs", "specify-cli", "bin")
+        )
+    return _fake_argv0(
+        monkeypatch, tmp_path, "HOME", (".local", "pipx", "venvs", "specify-cli", "bin")
+    )
 
 
 @pytest.fixture
 def uvx_ephemeral_argv0(monkeypatch, tmp_path):
     """Point sys.argv[0] at a simulated uvx ephemeral-cache path under tmp HOME."""
     if os.name == "nt":
-        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-        fake_dir = tmp_path / "uv" / "cache" / "archive-v0" / "abc123" / "bin"
-    else:
-        monkeypatch.setenv("HOME", str(tmp_path))
-        fake_dir = tmp_path / ".cache" / "uv" / "archive-v0" / "abc123" / "bin"
-    fake_dir.mkdir(parents=True)
-    fake_specify = fake_dir / "specify"
-    fake_specify.write_text("#!/usr/bin/env python\n")
-    fake_specify.chmod(0o755)
-    monkeypatch.setattr("sys.argv", [str(fake_specify)])
-    return fake_specify
+        return _fake_argv0(
+            monkeypatch,
+            tmp_path,
+            "LOCALAPPDATA",
+            ("uv", "cache", "archive-v0", "abc123", "bin"),
+        )
+    return _fake_argv0(
+        monkeypatch, tmp_path, "HOME", (".cache", "uv", "archive-v0", "abc123", "bin")
+    )
 
 
 @pytest.fixture
 def unsupported_argv0(monkeypatch, tmp_path):
     """Point sys.argv[0] at a path that does not match any installer prefix."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    fake_dir = tmp_path / "random" / "location" / "bin"
-    fake_dir.mkdir(parents=True)
-    fake_specify = fake_dir / "specify"
-    fake_specify.write_text("#!/usr/bin/env python\n")
-    fake_specify.chmod(0o755)
-    monkeypatch.setattr("sys.argv", [str(fake_specify)])
-    return fake_specify
+    return _fake_argv0(monkeypatch, tmp_path, "HOME", ("random", "location", "bin"))
 
 
 class TestDetectionUvTool:
@@ -1728,6 +1724,21 @@ class TestTagValidation:
                 ["self", "upgrade", "--dry-run", "--tag", "v1.0.0-rc1"],
             )
         assert result.exit_code == 0
+
+    def test_valid_beta_dot_tag_uses_pep440_equivalent_for_noop(
+        self, uv_tool_argv0, clean_environ
+    ):
+        with patch("specify_cli._version.shutil.which", return_value="/usr/bin/uv"), patch(
+            "specify_cli._version._get_installed_version", return_value="1.0.0b1"
+        ):
+            result = runner.invoke(
+                app,
+                ["self", "upgrade", "--tag", "v1.0.0-beta.1"],
+            )
+        assert result.exit_code == 0
+        assert "Already on requested release: v1.0.0-beta.1" in strip_ansi(
+            result.output
+        )
 
     def test_valid_build_metadata_tag(self, uv_tool_argv0, clean_environ):
         with patch("specify_cli._version.shutil.which", return_value="/usr/bin/uv"), patch(
