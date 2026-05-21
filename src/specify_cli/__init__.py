@@ -741,6 +741,7 @@ def _set_default_integration(
     parsed_options: dict[str, Any] | None = None,
     refresh_templates: bool = True,
     refresh_templates_force: bool = False,
+    refresh_hint: str | None = None,
 ) -> None:
     """Persist *key* as default and align active runtime metadata."""
     resolved_script = _resolve_integration_script_type(project_root, state, key, script_type)
@@ -763,6 +764,7 @@ def _set_default_integration(
                 ),
                 force=refresh_templates_force,
                 refresh_managed=True,
+                refresh_hint=refresh_hint,
             )
         except (ValueError, OSError) as exc:
             raise _SharedTemplateRefreshError(
@@ -1148,6 +1150,10 @@ def integration_use(
         raw_options=raw_options,
         parsed_options=parsed_options,
         refresh_templates_force=force,
+        refresh_hint=(
+            "To overwrite customizations, re-run with "
+            f"[cyan]specify integration use {key} --force[/cyan]."
+        ),
     )
     console.print(f"[green]✓[/green] Default integration set to [bold]{key}[/bold].")
 

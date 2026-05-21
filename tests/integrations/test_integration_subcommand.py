@@ -643,6 +643,8 @@ class TestIntegrationUse:
 
             use_gemini = runner.invoke(app, ["integration", "use", "gemini"], catch_exceptions=False)
             assert use_gemini.exit_code == 0, use_gemini.output
+            normalized = " ".join(use_gemini.output.split())
+            assert "specify integration use gemini --force" in normalized
             assert template.read_text(encoding="utf-8") == "custom template with /speckit-plan\n"
 
             force_use = runner.invoke(app, [
