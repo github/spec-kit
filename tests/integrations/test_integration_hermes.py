@@ -5,17 +5,24 @@ to ``~/.hermes/skills/`` (global) rather than the project-local
 ``.hermes/skills/`` directory.  A project-local marker (empty directory)
 is created so extension commands (e.g. git) can detect Hermes.
 
-Several shared tests from ``SkillsIntegrationTests`` assume project-local
-skills — they are overridden here with Hermes-appropriate assertions.
+All tests that touch ``~/.hermes/`` use ``monkeypatch`` to isolate
+``Path.home()`` to a temp directory so the test suite is hermetic and
+non-destructive to a developer's real Hermes installation.
 """
 
 from pathlib import Path
 
-from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
-from specify_cli.integrations.hermes import HermesIntegration
+from specify_cli.integrations import get_integration
 from specify_cli.integrations.manifest import IntegrationManifest
 
 from .test_integration_base_skills import SkillsIntegrationTests
+
+
+def _fake_home(tmp_path: Path) -> Path:
+    """Create and return an isolated home directory under *tmp_path*."""
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    return home
 
 
 class TestHermesIntegration(SkillsIntegrationTests):
@@ -27,8 +34,11 @@ class TestHermesIntegration(SkillsIntegrationTests):
 
     # -- Hermes-specific setup: skills go to ~/.hermes/skills/ -------------
 
-    def test_setup_writes_to_global_skills_dir(self, tmp_path):
+    def test_setup_writes_to_global_skills_dir(self, tmp_path, monkeypatch):
         """Skills are written to ~/.hermes/skills/, not project-local."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
@@ -37,12 +47,16 @@ class TestHermesIntegration(SkillsIntegrationTests):
         assert len(skill_files) > 0, "No skill files were created"
         for f in skill_files:
             # Every skill file should be under ~/.hermes/skills/speckit-*/
-            assert str(f).startswith(
-                str(Path.home() / ".hermes" / "skills")
-            ), f"{f} is not under ~/.hermes/skills/"
+            expected_prefix = str(home / ".hermes" / "skills")
+            assert str(f).startswith(expected_prefix), (
+                f"{f} is not under ~/.hermes/skills/"
+            )
 
-    def test_local_marker_dir_created(self, tmp_path):
+    def test_local_marker_dir_created(self, tmp_path, monkeypatch):
         """Project-local .hermes/skills/ should exist but be empty."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
@@ -54,19 +68,22 @@ class TestHermesIntegration(SkillsIntegrationTests):
 
     # -- Override shared tests that assume project-local skills ------------
 
-    def test_setup_writes_to_correct_directory(self, tmp_path):
+    def test_setup_writes_to_correct_directory(self, tmp_path, monkeypatch):
         """Override: Hermes writes to global, not project-local."""
-        self.test_setup_writes_to_global_skills_dir(tmp_path)
+        self.test_setup_writes_to_global_skills_dir(tmp_path, monkeypatch)
 
-    def test_plan_references_correct_context_file(self, tmp_path):
+    def test_plan_references_correct_context_file(self, tmp_path, monkeypatch):
         """Plan skill goes to global dir, but we check it still references AGENTS.md."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
         i = get_integration(self.KEY)
         if not i.context_file:
             return
         m = IntegrationManifest(self.KEY, tmp_path)
-        created = i.setup(tmp_path, m)
+        i.setup(tmp_path, m)
         # Find the plan skill in global ~/.hermes/skills/
-        plan_file = Path.home() / ".hermes" / "skills" / "speckit-plan" / "SKILL.md"
+        plan_file = home / ".hermes" / "skills" / "speckit-plan" / "SKILL.md"
         assert plan_file.exists(), f"Plan skill {plan_file} not created globally"
         content = plan_file.read_text(encoding="utf-8")
         assert i.context_file in content, (
@@ -76,22 +93,28 @@ class TestHermesIntegration(SkillsIntegrationTests):
             "Plan skill has unprocessed __CONTEXT_FILE__ placeholder"
         )
 
-    def test_all_files_tracked_in_manifest(self, tmp_path):
+    def test_all_files_tracked_in_manifest(self, tmp_path, monkeypatch):
         """Override: Hermes does not track skills in the project manifest
         since they live globally.  Only project-local files (scripts,
         templates, context) are tracked."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
         for f in created:
             # Global files (in ~/.hermes/) are not tracked in manifest
-            if str(f).startswith(str(Path.home())):
+            if str(f).startswith(str(home)):
                 continue
             rel = f.resolve().relative_to(tmp_path.resolve()).as_posix()
             assert rel in m.files, f"{rel} not tracked in manifest"
 
-    def test_install_uninstall_roundtrip(self, tmp_path):
+    def test_install_uninstall_roundtrip(self, tmp_path, monkeypatch):
         """Override: Hermes uninstall removes global skills + local marker."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.install(tmp_path, m)
@@ -101,17 +124,19 @@ class TestHermesIntegration(SkillsIntegrationTests):
         for f in created:
             if "SKILL.md" in str(f):
                 assert f.exists(), f"{f} does not exist"
-        removed, skipped = i.uninstall(tmp_path, m)
-        # Global skills should be gone
+        removed, skipped = i.teardown(tmp_path, m, force=True)
         for f in created:
             if "SKILL.md" in str(f):
                 assert not f.exists(), f"{f} should have been removed"
         # Local marker should be gone
         assert not (tmp_path / ".hermes" / "skills").exists()
 
-    def test_modified_file_survives_uninstall(self, tmp_path):
-        """Override: Hermes global skills are always removed on uninstall
-        (no hash-based preservation since they're not in manifest)."""
+    def test_modified_file_survives_uninstall(self, tmp_path, monkeypatch):
+        """Override: Hermes global skills are removed on uninstall only
+        when force=True (no hash-based preservation since they're not in manifest)."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.install(tmp_path, m)
@@ -121,15 +146,18 @@ class TestHermesIntegration(SkillsIntegrationTests):
         assert len(skill_files) > 0
         modified_file = skill_files[0]
         modified_file.write_text("user modified this", encoding="utf-8")
-        removed, skipped = i.uninstall(tmp_path, m)
-        # Global skills are removed unconditionally (no manifest tracking)
+        # Global skills are only removed with force=True
+        removed, skipped = i.teardown(tmp_path, m, force=True)
         assert not modified_file.exists(), (
-            "Modified global skill should be removed on uninstall"
+            "Modified global skill should be removed on teardown with force=True"
         )
 
-    def test_pre_existing_skills_not_removed(self, tmp_path):
+    def test_pre_existing_skills_not_removed(self, tmp_path, monkeypatch):
         """Override: pre-existing non-speckit skills in the global dir
         should survive Hermes uninstall."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
         i = get_integration(self.KEY)
         # Create a foreign skill in the global dir first
         global_skills_dir = i._hermes_home_skills_dir()
@@ -142,9 +170,12 @@ class TestHermesIntegration(SkillsIntegrationTests):
 
         assert (foreign_dir / "SKILL.md").exists(), "Foreign skill was removed"
 
-    def test_complete_file_inventory_sh(self, tmp_path):
+    def test_complete_file_inventory_sh(self, tmp_path, monkeypatch):
         """Override: Hermes init produces no local SKILL.md files,
         only the empty .hermes/skills/ marker."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -173,8 +204,11 @@ class TestHermesIntegration(SkillsIntegrationTests):
         # Ensure the marker exists (empty dir won't appear in file listing)
         assert (project / ".hermes" / "skills").is_dir()
 
-    def test_complete_file_inventory_ps(self, tmp_path):
+    def test_complete_file_inventory_ps(self, tmp_path, monkeypatch):
         """Override: Same as sh variant but for PowerShell script type."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -201,8 +235,11 @@ class TestHermesIntegration(SkillsIntegrationTests):
         )
         assert (project / ".hermes" / "skills").is_dir()
 
-    def test_install_uninstall_cleanup(self, tmp_path):
+    def test_install_uninstall_cleanup(self, tmp_path, monkeypatch):
         """Verify global skills are cleaned and local marker is removed."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
@@ -211,7 +248,7 @@ class TestHermesIntegration(SkillsIntegrationTests):
         global_skills = [
             f for f in created
             if "SKILL.md" in str(f)
-            and str(f).startswith(str(Path.home() / ".hermes"))
+            and str(f).startswith(str(home / ".hermes"))
         ]
         assert len(global_skills) > 0
         for f in global_skills:
@@ -220,8 +257,8 @@ class TestHermesIntegration(SkillsIntegrationTests):
         # Verify local marker exists
         assert (tmp_path / ".hermes" / "skills").is_dir()
 
-        # Teardown
-        removed, skipped = i.teardown(tmp_path, m)
+        # Teardown with force=True to clean global skills
+        removed, skipped = i.teardown(tmp_path, m, force=True)
 
         # Global skills removed
         for f in global_skills:
@@ -236,9 +273,12 @@ class TestHermesIntegration(SkillsIntegrationTests):
 class TestHermesAutoPromote:
     """--ai hermes auto-promotes to integration path."""
 
-    def test_ai_hermes_without_ai_skills_auto_promotes(self, tmp_path):
+    def test_ai_hermes_without_ai_skills_auto_promotes(self, tmp_path, monkeypatch):
         """--ai hermes should work the same as --integration hermes,
         creating global skills and a local marker."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -254,7 +294,7 @@ class TestHermesAutoPromote:
 
         assert result.exit_code == 0, f"init --ai hermes failed: {result.output}"
         # Skills should be in global ~/.hermes/skills/
-        assert (Path.home() / ".hermes" / "skills" / "speckit-plan" / "SKILL.md").exists()
+        assert (home / ".hermes" / "skills" / "speckit-plan" / "SKILL.md").exists()
         # Local marker should exist
         assert (target / ".hermes" / "skills").is_dir()
         # No SKILL.md files in project-local dir

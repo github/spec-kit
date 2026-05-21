@@ -189,14 +189,22 @@ class HermesIntegration(SkillsIntegration):
         *,
         force: bool = False,
     ) -> tuple[list[Path], list[Path]]:
-        """Uninstall integration files and clean up global skills.
+        """Uninstall integration files and optionally clean up global skills.
 
         Removes the managed context section from AGENTS.md, removes the
-        project-local marker directory, and deletes all ``speckit-*``
-        directories from ``~/.hermes/skills/``.
+        project-local marker directory, and delegates to
+        ``manifest.uninstall()`` for project-local tracked files.
+
+        Global ``speckit-*`` skills under ``~/.hermes/skills/`` are only
+        removed when ``force=True`` to avoid destroying skills shared with
+        other Spec Kit projects.
         """
         # Remove managed context section from AGENTS.md
         self.remove_context_section(project_root)
+
+        # Delegate to manifest for project-local tracked files (scripts,
+        # templates, context entries tracked in the manifest).
+        removed, skipped = manifest.uninstall(project_root, force=force)
 
         # Remove project-local marker directory if empty
         local_skills_dir = project_root / ".hermes" / "skills"
@@ -206,18 +214,19 @@ class HermesIntegration(SkillsIntegration):
             if hermes_dir.is_dir() and not any(hermes_dir.iterdir()):
                 hermes_dir.rmdir()
 
-        # Remove global Hermes skills for speckit
-        removed: list[Path] = []
-        global_skills_dir = self._hermes_home_skills_dir()
-        if global_skills_dir.is_dir():
-            for skill_dir in sorted(global_skills_dir.iterdir()):
-                if skill_dir.is_dir() and skill_dir.name.startswith("speckit-"):
-                    skill_file = skill_dir / "SKILL.md"
-                    if skill_file.exists():
-                        removed.append(skill_file)
-                    rmtree(skill_dir, ignore_errors=True)
+        # Remove global Hermes skills for speckit — only when force=True
+        # to avoid destroying skills shared with other Spec Kit projects.
+        if force:
+            global_skills_dir = self._hermes_home_skills_dir()
+            if global_skills_dir.is_dir():
+                for skill_dir in sorted(global_skills_dir.iterdir()):
+                    if skill_dir.is_dir() and skill_dir.name.startswith("speckit-"):
+                        skill_file = skill_dir / "SKILL.md"
+                        if skill_file.exists():
+                            removed.append(skill_file)
+                        rmtree(skill_dir, ignore_errors=True)
 
-        return removed, []
+        return removed, skipped
 
     # -- CLI dispatch ------------------------------------------------------
 
