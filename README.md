@@ -9,10 +9,9 @@
 </p>
 
 <p align="center">
-    <a href="https://github.com/github/spec-kit/releases/latest"><img src="https://img.shields.io/github/v/release/github/spec-kit" alt="Latest Release"/></a>
-    <a href="https://github.com/github/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/github/spec-kit?style=social" alt="GitHub stars"/></a>
-    <a href="https://github.com/github/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/github/spec-kit" alt="License"/></a>
-    <a href="https://github.github.io/spec-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
+    <a href="https://github.com/bigsmartben/spec-kit/releases"><img src="https://img.shields.io/github/v/release/bigsmartben/spec-kit" alt="Latest Release"/></a>
+    <a href="https://github.com/bigsmartben/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/bigsmartben/spec-kit?style=social" alt="GitHub stars"/></a>
+    <a href="https://github.com/bigsmartben/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/bigsmartben/spec-kit" alt="License"/></a>
 </p>
 
 ---
@@ -34,16 +33,16 @@ Spec Kit 是一套面向使用者的 Spec-Driven Development 工具链。你先�
 
 ### 1. 安装
 
-推荐使用 [uv](https://docs.astral.sh/uv/)。如果你使用本仓库的内部构建，可以安装固定版本：
+推荐使用 [uv](https://docs.astral.sh/uv/)。当前仓库的固定内部版本安装命令如下：
 
 ```bash
 uv tool install specify-cli --from git+https://github.com/bigsmartben/spec-kit.git@bigsmartben-v0.8.13-community.1
 ```
 
-如果你要安装上游版本，把 `vX.Y.Z` 换成 [GitHub Releases](https://github.com/github/spec-kit/releases) 中的版本号：
+如果你要跟随当前分支安装，可以使用：
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+uv tool install specify-cli --from git+https://github.com/bigsmartben/spec-kit.git
 ```
 
 本地开发这个仓库时，可以从当前目录安装：
@@ -408,4 +407,4 @@ specify preset add --dev ./presets/workflow-preset
 
 ## 致谢
 
-Spec Kit 基于 GitHub Spec Kit 上游项目，并受 [John Lam](https://github.com/jflam) 关于 Spec-Driven Development 的工作影响。
+本仓库维护了面向当前使用场景的 Spec Kit 分发、扩展和预设。
