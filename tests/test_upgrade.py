@@ -62,7 +62,7 @@ def route_open_url_through_urlopen(monkeypatch):
 
     def _open_url(url, timeout=10, extra_headers=None):
         req = specify_cli.authentication.http.build_request(url, extra_headers)
-        return specify_cli._version.urllib.request.urlopen(req, timeout=timeout)
+        return specify_cli.authentication.http.urllib.request.urlopen(req, timeout=timeout)
 
     monkeypatch.setattr("specify_cli.authentication.http.open_url", _open_url)
 

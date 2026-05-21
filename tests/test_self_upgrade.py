@@ -68,10 +68,8 @@ def route_open_url_through_urlopen(monkeypatch):
     """Keep release-tag tests hermetic even when ~/.specify/auth.json exists."""
 
     def _open_url(url, timeout=10, extra_headers=None):
-        req = specify_cli._version.urllib.request.Request(url)
-        for key, value in (extra_headers or {}).items():
-            req.add_header(key, value)
-        return specify_cli._version.urllib.request.urlopen(req, timeout=timeout)
+        req = specify_cli.authentication.http.build_request(url, extra_headers)
+        return specify_cli.authentication.http.urllib.request.urlopen(req, timeout=timeout)
 
     monkeypatch.setattr("specify_cli.authentication.http.open_url", _open_url)
 
