@@ -779,6 +779,378 @@ class TestGateStep:
         assert any("on_reject" in e for e in errors)
 
 
+class TestGateOnConditionStep:
+    """Test the gate-on-condition step type — auto-firing review gate."""
+
+    def test_first_matching_condition_wins(self):
+        """Conditions are evaluated in declaration order; the first
+        truthy one's ``then_route`` is recorded as ``output.choice``
+        and the step auto-completes without operator interaction.
+        """
+        from specify_cli.workflows.steps.gate_on_condition import (
+            GateOnConditionStep,
+        )
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = GateOnConditionStep()
+        ctx = StepContext(
+            steps={
+                "detect": {
+                    "output": {
+                        "has_pending_work": True,
+                        "is_clean": False,
+                    }
+                }
+            }
+        )
+        result = step.execute(
+            {
+                "id": "review",
+                "conditions": [
+                    {
+                        "if": "{{ steps.detect.output.has_pending_work }}",
+                        "then_route": "regenerate",
+                    },
+                    {
+                        "if": "{{ steps.detect.output.is_clean }}",
+                        "then_route": "continue",
+                    },
+                ],
+            },
+            ctx,
+        )
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["choice"] == "regenerate"
+        assert result.output["auto_fired"] is True
+        assert result.output["matched_condition_index"] == 0
+
+    def test_declaration_order_when_multiple_truthy(self):
+        """When multiple conditions are truthy, only the FIRST matches.
+
+        Locks the declaration-order contract — re-ordering YAML
+        conditions changes routing.
+        """
+        from specify_cli.workflows.steps.gate_on_condition import (
+            GateOnConditionStep,
+        )
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = GateOnConditionStep()
+        ctx = StepContext(steps={"d": {"output": {"a": True, "b": True}}})
+        result = step.execute(
+            {
+                "id": "review",
+                "conditions": [
+                    {"if": "{{ steps.d.output.a }}", "then_route": "first"},
+                    {"if": "{{ steps.d.output.b }}", "then_route": "second"},
+                ],
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["choice"] == "first"
+
+    def test_no_match_no_fallback_aborts(self):
+        """No condition matches AND no ``fallback_prompt`` declared →
+        the step fails with ``output.aborted = True`` so the engine
+        treats it like a deliberate gate abort.
+        """
+        from specify_cli.workflows.steps.gate_on_condition import (
+            GateOnConditionStep,
+        )
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = GateOnConditionStep()
+        ctx = StepContext(steps={"d": {"output": {"flag": False}}})
+        result = step.execute(
+            {
+                "id": "review",
+                "conditions": [
+                    {"if": "{{ steps.d.output.flag }}", "then_route": "x"},
+                ],
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert result.output["aborted"] is True
+        assert result.output["auto_fired"] is False
+        assert result.error is not None
+        assert "no condition matched" in result.error
+
+    def test_no_match_with_fallback_pauses_non_tty(self, monkeypatch):
+        """No condition matches AND ``fallback_prompt`` declared,
+        with stdin NOT a TTY → step PAUSES for ``specify workflow
+        resume`` (same contract as the regular ``gate`` step).
+        """
+        from specify_cli.workflows.steps.gate_on_condition import (
+            GateOnConditionStep,
+        )
+        from specify_cli.workflows.steps import gate_on_condition as goc_module
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.setattr(goc_module.sys.stdin, "isatty", lambda: False)
+
+        step = GateOnConditionStep()
+        ctx = StepContext(steps={"d": {"output": {"flag": False}}})
+        result = step.execute(
+            {
+                "id": "review",
+                "conditions": [
+                    {"if": "{{ steps.d.output.flag }}", "then_route": "x"},
+                ],
+                "fallback_prompt": {
+                    "message": "Ambiguous — pick one.",
+                    "options": ["approve", "reject"],
+                },
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.PAUSED
+        assert result.output["auto_fired"] is False
+        assert result.output["choice"] is None
+        assert result.output["message"] == "Ambiguous — pick one."
+
+    def test_no_match_with_fallback_prompts_tty(self, monkeypatch):
+        """No condition matches AND ``fallback_prompt`` declared, with
+        stdin IS a TTY → step prompts the operator and records the
+        verdict in ``output.choice``.
+        """
+        from specify_cli.workflows.steps.gate_on_condition import (
+            GateOnConditionStep,
+        )
+        from specify_cli.workflows.steps import gate_on_condition as goc_module
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.setattr(goc_module.sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr(
+            GateOnConditionStep,
+            "_prompt",
+            staticmethod(lambda _msg, _opts: "approve"),
+        )
+
+        step = GateOnConditionStep()
+        ctx = StepContext(steps={"d": {"output": {"flag": False}}})
+        result = step.execute(
+            {
+                "id": "review",
+                "conditions": [
+                    {"if": "{{ steps.d.output.flag }}", "then_route": "x"},
+                ],
+                "fallback_prompt": {
+                    "message": "Pick one.",
+                    "options": ["approve", "reject"],
+                },
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["choice"] == "approve"
+        assert result.output["auto_fired"] is False
+
+    def test_fallback_reject_with_abort_marks_aborted(self, monkeypatch):
+        """When the fallback prompt is rejected and
+        ``on_reject: abort`` is declared, the step fails with
+        ``aborted=True`` so the run halts. Matches regular ``gate``
+        semantics.
+        """
+        from specify_cli.workflows.steps.gate_on_condition import (
+            GateOnConditionStep,
+        )
+        from specify_cli.workflows.steps import gate_on_condition as goc_module
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.setattr(goc_module.sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr(
+            GateOnConditionStep,
+            "_prompt",
+            staticmethod(lambda _msg, _opts: "reject"),
+        )
+
+        step = GateOnConditionStep()
+        ctx = StepContext(steps={"d": {"output": {"flag": False}}})
+        result = step.execute(
+            {
+                "id": "review",
+                "conditions": [
+                    {"if": "{{ steps.d.output.flag }}", "then_route": "x"},
+                ],
+                "fallback_prompt": {
+                    "message": "Pick one.",
+                    "options": ["approve", "reject"],
+                    "on_reject": "abort",
+                },
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert result.output["aborted"] is True
+
+    def test_validate_missing_conditions(self):
+        from specify_cli.workflows.steps.gate_on_condition import (
+            GateOnConditionStep,
+        )
+
+        step = GateOnConditionStep()
+        errors = step.validate({"id": "review"})
+        assert any("'conditions'" in e and "missing" in e for e in errors)
+
+    def test_validate_empty_conditions(self):
+        from specify_cli.workflows.steps.gate_on_condition import (
+            GateOnConditionStep,
+        )
+
+        step = GateOnConditionStep()
+        errors = step.validate({"id": "review", "conditions": []})
+        assert any("non-empty" in e for e in errors)
+
+    def test_validate_condition_missing_then_route(self):
+        from specify_cli.workflows.steps.gate_on_condition import (
+            GateOnConditionStep,
+        )
+
+        step = GateOnConditionStep()
+        errors = step.validate(
+            {
+                "id": "review",
+                "conditions": [{"if": "{{ true }}"}],  # no then_route
+            }
+        )
+        assert any("then_route" in e for e in errors)
+
+    def test_validate_fallback_invalid_on_reject(self):
+        from specify_cli.workflows.steps.gate_on_condition import (
+            GateOnConditionStep,
+        )
+
+        step = GateOnConditionStep()
+        errors = step.validate(
+            {
+                "id": "review",
+                "conditions": [
+                    {"if": "{{ true }}", "then_route": "x"},
+                ],
+                "fallback_prompt": {
+                    "message": "Pick.",
+                    "on_reject": "invalid",
+                },
+            }
+        )
+        assert any("on_reject" in e for e in errors)
+
+    def test_validate_rejects_non_string_if(self):
+        """``if:`` must be a string template; a bare int / list would
+        coerce through ``evaluate_condition`` and surface only at
+        runtime, so the validator catches it eagerly.
+        """
+        from specify_cli.workflows.steps.gate_on_condition import (
+            GateOnConditionStep,
+        )
+
+        step = GateOnConditionStep()
+        errors = step.validate(
+            {
+                "id": "review",
+                "conditions": [{"if": 42, "then_route": "x"}],
+            }
+        )
+        assert any("'if' must be a string" in e for e in errors)
+
+    def test_validate_rejects_non_string_then_route(self):
+        from specify_cli.workflows.steps.gate_on_condition import (
+            GateOnConditionStep,
+        )
+
+        step = GateOnConditionStep()
+        errors = step.validate(
+            {
+                "id": "review",
+                "conditions": [
+                    {"if": "{{ true }}", "then_route": ["a", "b"]}
+                ],
+            }
+        )
+        assert any("'then_route' must be a" in e for e in errors)
+
+    def test_validate_rejects_empty_then_route(self):
+        """An empty ``then_route`` would silently match a downstream
+        ``switch case: ""`` which is almost always an authoring
+        mistake. Validator rejects it eagerly.
+        """
+        from specify_cli.workflows.steps.gate_on_condition import (
+            GateOnConditionStep,
+        )
+
+        step = GateOnConditionStep()
+        errors = step.validate(
+            {
+                "id": "review",
+                "conditions": [{"if": "{{ true }}", "then_route": ""}],
+            }
+        )
+        assert any("'then_route' must be a non-empty" in e for e in errors)
+
+    def test_registered_in_step_registry(self):
+        """The step type must be registered so workflow YAML can
+        reference ``type: gate-on-condition``.
+        """
+        from specify_cli.workflows import STEP_REGISTRY
+
+        assert "gate-on-condition" in STEP_REGISTRY
+
+    def test_end_to_end_in_workflow_routes_via_switch(self, project_dir):
+        """End-to-end: a gate-on-condition step's ``output.choice``
+        drives a downstream switch, exactly the same way a regular
+        gate's choice does. Locks the contract that downstream
+        branching is identical between the two gate kinds.
+        """
+        from specify_cli.workflows.engine import (
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "auto-gate-routes"
+  name: "Auto Gate Routes"
+  version: "1.0.0"
+inputs:
+  state:
+    type: string
+    default: "pending"
+steps:
+  - id: review
+    type: gate-on-condition
+    conditions:
+      - if: "{{ inputs.state == 'clean' }}"
+        then_route: continue
+      - if: "{{ inputs.state == 'pending' }}"
+        then_route: regenerate
+  - id: route
+    type: switch
+    expression: "{{ steps.review.output.choice }}"
+    cases:
+      regenerate:
+        - id: rerun
+          type: shell
+          run: "echo rerun"
+      continue:
+        - id: noop
+          type: shell
+          run: "echo noop"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition, {"state": "pending"})
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["review"]["output"]["choice"] == "regenerate"
+        assert state.step_results["review"]["output"]["auto_fired"] is True
+        assert "rerun" in state.step_results
+        assert "noop" not in state.step_results
+
+
 class TestIfThenStep:
     """Test the if/then/else step type."""
 

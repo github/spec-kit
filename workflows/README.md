@@ -78,7 +78,7 @@ specify workflow run speckit \
 
 ## Step Types
 
-Workflows support 10 built-in step types:
+Workflows support 11 built-in step types:
 
 ### Command Steps (default)
 
@@ -125,6 +125,37 @@ Pause for human review. The workflow resumes when `specify workflow resume` is c
   options: [approve, edit, reject]
   on_reject: abort
 ```
+
+### Gate-on-Condition Steps
+
+Auto-firing review gate that records a verdict without operator
+interaction when a condition matches. Conditions are evaluated in
+declaration order; the first truthy condition's `then_route` is
+recorded as `output.choice` exactly like a regular gate's verdict.
+
+When no condition matches, the step falls back to an interactive
+prompt (`fallback_prompt:`) — or aborts the run if no fallback is
+declared.
+
+```yaml
+- id: review-overview
+  type: gate-on-condition
+  conditions:
+    - if: "{{ steps.detect.output.has_pending_work }}"
+      then_route: regenerate
+    - if: "{{ steps.detect.output.is_clean }}"
+      then_route: continue
+  fallback_prompt:
+    message: "Ambiguous — approve, regenerate, or abort?"
+    options: [approve, regenerate, abort]
+    on_reject: abort
+```
+
+Downstream `switch` / `if` steps branch on `output.choice` exactly
+the same way they branch on a regular gate's choice. The output also
+includes `output.auto_fired` (`True` when a condition matched,
+`False` when the operator chose) so workflows can distinguish
+automatic from interactive verdicts.
 
 ### If/Then/Else Steps
 

@@ -93,8 +93,8 @@ def _get_valid_step_types() -> set[str]:
     if STEP_REGISTRY:
         return set(STEP_REGISTRY.keys())
     return {
-        "command", "shell", "prompt", "gate", "if",
-        "switch", "while", "do-while", "fan-out", "fan-in",
+        "command", "shell", "prompt", "gate", "gate-on-condition",
+        "if", "switch", "while", "do-while", "fan-out", "fan-in",
     }
 
 
