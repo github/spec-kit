@@ -548,6 +548,16 @@ def _manual_source_spec(target_tag: str | None) -> str:
     return f"{_GITHUB_SOURCE_URL}@{target_tag or _MANUAL_TAG_PLACEHOLDER}"
 
 
+def _manual_tag_or_placeholder(tag: str | None) -> str | None:
+    """Return a validated release tag for copy/paste guidance, or None."""
+    if tag is None:
+        return None
+    try:
+        return _validate_tag(tag)
+    except typer.BadParameter:
+        return None
+
+
 def _assemble_installer_argv(
     method: _InstallMethod, target_tag: str | None
 ) -> list[str] | None:
@@ -1037,6 +1047,7 @@ def self_check() -> None:
         return
 
     latest_normalized = _normalize_tag(tag)
+    manual_tag = _manual_tag_or_placeholder(tag)
 
     if installed == "unknown":
         # FR-020: surface the latest release and the recovery action even
@@ -1044,8 +1055,10 @@ def self_check() -> None:
         console.print("Current version could not be determined.")
         console.print(f"Latest release: {latest_normalized}")
         console.print("\nManual fallback:")
-        console.print(f"  uv tool install specify-cli --force --from {_manual_source_spec(tag)}")
-        console.print(f"  pipx install --force {_manual_source_spec(tag)}")
+        console.print(
+            f"  uv tool install specify-cli --force --from {_manual_source_spec(manual_tag)}"
+        )
+        console.print(f"  pipx install --force {_manual_source_spec(manual_tag)}")
         console.print("\nIf this install can still be detected:")
         console.print("  specify self upgrade")
         return
@@ -1055,8 +1068,10 @@ def self_check() -> None:
         console.print("\nTo upgrade:")
         console.print("  specify self upgrade")
         console.print("\nManual fallback:")
-        console.print(f"  uv tool install specify-cli --force --from {_manual_source_spec(tag)}")
-        console.print(f"  pipx install --force {_manual_source_spec(tag)}")
+        console.print(
+            f"  uv tool install specify-cli --force --from {_manual_source_spec(manual_tag)}"
+        )
+        console.print(f"  pipx install --force {_manual_source_spec(manual_tag)}")
         return
 
     # Installed is parseable AND is >= latest → "up to date" (FR-006).

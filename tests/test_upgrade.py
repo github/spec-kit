@@ -165,6 +165,17 @@ class TestUserStory1:
         assert "specify self upgrade" in output
         assert "pipx install --force git+https://github.com/github/spec-kit.git@v0.7.4" in output
 
+    def test_unknown_installed_uses_placeholder_when_latest_tag_is_invalid(self):
+        with patch("specify_cli._version._get_installed_version", return_value="unknown"), patch(
+            "specify_cli.authentication.http.urllib.request.urlopen",
+            return_value=_mock_urlopen_response({"tag_name": "v0.9.0;echo unsafe"}),
+        ):
+            result = runner.invoke(app, ["self", "check"])
+        output = strip_ansi(result.output)
+        assert result.exit_code == 0
+        assert "git+https://github.com/github/spec-kit.git@vX.Y.Z" in output
+        assert "git+https://github.com/github/spec-kit.git@v0.9.0;echo unsafe" not in output
+
     def test_unparseable_tag_routes_to_indeterminate(self):
         with patch("specify_cli._version._get_installed_version", return_value="0.7.4"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
