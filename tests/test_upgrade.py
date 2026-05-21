@@ -166,6 +166,7 @@ class TestUserStory1:
         output = strip_ansi(result.output)
         assert result.exit_code == 0
         assert "Current version could not be determined" in output
+        assert "Latest release: v0.7.4" in output
         assert "0.7.4" in output
         assert "git+https://github.com/github/spec-kit.git@v0.7.4" in output
         assert "specify self upgrade" in output
@@ -180,10 +181,11 @@ class TestUserStory1:
         output = strip_ansi(result.output)
         assert result.exit_code == 0
         assert "Latest release: vX.Y.Z" in output
+        assert "Could not validate latest release tag from GitHub." in output
         assert "git+https://github.com/github/spec-kit.git@vX.Y.Z" in output
         assert "v0.9.0;echo unsafe" not in output
 
-    def test_unparseable_tag_routes_to_indeterminate(self):
+    def test_unparseable_tag_reports_validation_failure_without_raw_tag(self):
         with patch("specify_cli._version._get_installed_version", return_value="0.7.4"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
             return_value=_mock_urlopen_response({"tag_name": "not-a-version"}),
@@ -192,8 +194,11 @@ class TestUserStory1:
         output = strip_ansi(result.output)
         assert result.exit_code == 0
         assert "Update available" not in output
-        assert "Up to date" in output
+        assert "Up to date" not in output
+        assert "Could not validate latest release tag from GitHub." in output
         assert "0.7.4" in output
+        assert "not-a-version" not in output
+        assert "git+https://github.com/github/spec-kit.git@vX.Y.Z" in output
 
 
 class TestFailureCategorization:

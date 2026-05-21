@@ -72,8 +72,9 @@ def route_auth_open_url_through_urlopen(monkeypatch) -> None:
     """Route auth-aware GitHub requests through urlopen for hermetic tests."""
     from specify_cli.authentication import http as _auth_http
 
-    def _open_url(url, timeout=10, extra_headers=None):
-        req = _auth_http.build_request(url, extra_headers)
+    def _open_url(url, timeout=10, extra_headers=None, *args, **kwargs):
+        _ = args, kwargs
+        req = _auth_http.build_request(url, extra_headers or {})
         return _auth_http.urllib.request.urlopen(req, timeout=timeout)
 
     monkeypatch.setattr(_auth_http, "open_url", _open_url)

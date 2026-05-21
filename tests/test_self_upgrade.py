@@ -1686,12 +1686,34 @@ class TestVerificationMismatch:
             mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 _completed_process(0),
-                _completed_process(0, stdout="specify-cli 0.7.6\n"),
+                _completed_process(0, stdout="specify-cli version 0.7.6\n"),
             ]
             result = runner.invoke(app, ["self", "upgrade"])
 
         assert result.exit_code == 0
         assert "Upgraded specify-cli: 0.7.5 → 0.7.6" in strip_ansi(result.output)
+
+    def test_verify_rejects_output_without_parseable_version(
+        self,
+        uv_tool_argv0,
+        clean_environ,
+    ):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+        ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
+            "specify_cli._version._get_installed_version", return_value="0.7.5"
+        ):
+            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_run.side_effect = [
+                _completed_process(0),
+                _completed_process(0, stdout="specify version unknown\n"),
+            ]
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        assert result.exit_code == 2
+        out = strip_ansi(result.output)
+        assert "Verification failed" in out
+        assert "(unknown) (expected v0.7.6)" in out
 
     def test_verify_uses_current_entrypoint_when_not_on_path(
         self,

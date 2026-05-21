@@ -786,7 +786,19 @@ def _run_installer(plan: _UpgradePlan) -> _InstallerResult:
         raise
 
 
-_VERIFY_VERSION_REGEX = re.compile(r"\b(?:specify|specify-cli)\s+(\S+)")
+_VERIFY_VERSION_LINE_RE = re.compile(r"^\s*(?:specify|specify-cli)\b(?P<rest>.*)$")
+
+
+def _parse_verify_version_output(output: str) -> str | None:
+    """Return the first parseable version token from `specify --version` output."""
+    for line in output.splitlines():
+        match = _VERIFY_VERSION_LINE_RE.match(line)
+        if not match:
+            continue
+        for token in match.group("rest").split():
+            if _parse_version_text(token) is not None:
+                return token
+    return None
 
 
 def _verify_upgrade(plan: _UpgradePlan) -> str | None:
@@ -827,8 +839,7 @@ def _verify_upgrade(plan: _UpgradePlan) -> str | None:
         return None
     if result.returncode != 0:
         return None
-    match = _VERIFY_VERSION_REGEX.search(result.stdout or "")
-    return match.group(1) if match else None
+    return _parse_verify_version_output(result.stdout or "")
 
 
 def _source_checkout_path() -> Path | None:
@@ -1087,11 +1098,22 @@ def self_check() -> None:
         console.print(f"[yellow]Could not check latest release:[/yellow] {failure_reason}")
         return
 
-    latest_normalized = _normalize_tag(tag)
     manual_tag = _manual_tag_or_placeholder(tag)
-    latest_display = (
-        _normalize_tag(manual_tag) if manual_tag is not None else _MANUAL_TAG_PLACEHOLDER
-    )
+    latest_display = manual_tag or _MANUAL_TAG_PLACEHOLDER
+
+    if manual_tag is None:
+        if installed == "unknown":
+            console.print("Current version could not be determined.")
+            console.print(f"Latest release: {latest_display}")
+        else:
+            console.print(f"Installed: {installed}")
+        console.print("[yellow]Could not validate latest release tag from GitHub.[/yellow]")
+        console.print("\nManual fallback:")
+        console.print(
+            f"  uv tool install specify-cli --force --from {_manual_source_spec(manual_tag)}"
+        )
+        console.print(f"  pipx install --force {_manual_source_spec(manual_tag)}")
+        return
 
     if installed == "unknown":
         # FR-020: surface the latest release and the recovery action even
@@ -1107,8 +1129,9 @@ def self_check() -> None:
         console.print("  specify self upgrade")
         return
 
+    latest_normalized = _normalize_tag(manual_tag)
     if _is_newer(latest_normalized, installed):
-        console.print(f"[green]Update available:[/green] {installed} → {latest_normalized}")
+        console.print(f"[green]Update available:[/green] {installed} → {latest_display}")
         console.print("\nTo upgrade:")
         console.print("  specify self upgrade")
         console.print("\nManual fallback:")
