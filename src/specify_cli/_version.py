@@ -37,6 +37,12 @@ _RESOLUTION_FAILURE_RATE_LIMITED = (
     "rate limited (configure ~/.specify/auth.json with a GitHub token)"
 )
 _RESOLUTION_FAILURE_HTTP_PREFIX = "HTTP "
+_FAILURE_INSTALLER_MISSING = "installer-missing"
+_FAILURE_INSTALLER_INVALID = "installer-invalid"
+_FAILURE_TARGET_TAG_UNPARSEABLE = "target-tag-unparseable"
+_FAILURE_INSTALLER_TIMEOUT = "installer-timeout"
+_FAILURE_INSTALLER_FAILED = "installer-failed"
+_FAILURE_VERIFICATION_MISMATCH = "verification-mismatch"
 
 
 def _get_installed_version() -> str:
@@ -297,7 +303,11 @@ def _expand_prefix(prefix: str) -> Path | None:
     expanded = os.path.expandvars(expanded)
     if _UNRESOLVED_ENV_VAR_RE.search(expanded):
         return None
-    return Path(expanded).resolve() if Path(expanded).is_absolute() else Path(expanded)
+    try:
+        expanded_path = Path(expanded)
+        return expanded_path.resolve() if expanded_path.is_absolute() else expanded_path
+    except OSError:
+        return None
 
 
 def _path_is_within_prefix(path: Path, prefix: Path) -> bool:
@@ -652,7 +662,7 @@ def _build_upgrade_plan(
                     preview_summary="",
                     pre_upgrade_snapshot=current,
                 ),
-                "target-tag-unparseable",
+                _FAILURE_TARGET_TAG_UNPARSEABLE,
             )
     else:
         target_tag = None
@@ -963,7 +973,7 @@ def _emit_failure(
         console.print(f"Upgrade aborted: {category}", soft_wrap=True)
         return
 
-    if category == "installer-missing":
+    if category == _FAILURE_INSTALLER_MISSING:
         if installer_name and (
             os.path.isabs(installer_name) or _is_path_like_command(installer_name)
         ):
@@ -979,7 +989,7 @@ def _emit_failure(
             )
         return
 
-    if category == "installer-invalid":
+    if category == _FAILURE_INSTALLER_INVALID:
         name = installer_name or "(unknown)"
         if installer_name and (
             os.path.isabs(installer_name) or _is_path_like_command(installer_name)
@@ -996,7 +1006,7 @@ def _emit_failure(
         console.print(message, soft_wrap=True)
         return
 
-    if category == "target-tag-unparseable":
+    if category == _FAILURE_TARGET_TAG_UNPARSEABLE:
         if plan is None:
             raise RuntimeError(
                 "internal routing error: target-tag-unparseable requires plan to be set"
@@ -1011,7 +1021,7 @@ def _emit_failure(
         )
         return
 
-    if category == "installer-timeout":
+    if category == _FAILURE_INSTALLER_TIMEOUT:
         if plan is None:
             raise RuntimeError(
                 "internal routing error: installer-timeout requires plan to be set"
@@ -1033,7 +1043,7 @@ def _emit_failure(
         console.print(_rollback_hint(plan), soft_wrap=True)
         return
 
-    if category == "installer-failed":
+    if category == _FAILURE_INSTALLER_FAILED:
         if plan is None or installer_exit is None:
             raise RuntimeError(
                 "internal routing error: installer-failed requires both "
@@ -1051,7 +1061,7 @@ def _emit_failure(
         console.print(_rollback_hint(plan), soft_wrap=True)
         return
 
-    if category == "verification-mismatch":
+    if category == _FAILURE_VERIFICATION_MISMATCH:
         if plan is None:
             raise RuntimeError(
                 "internal routing error: verification-mismatch requires plan to be set"
@@ -1252,7 +1262,7 @@ def self_upgrade(
 
     if plan.installer_argv is None:
         _emit_failure(
-            "installer-missing",
+            _FAILURE_INSTALLER_MISSING,
             plan=plan,
             installer_name=_installer_binary_name(plan.method),
         )
@@ -1263,7 +1273,7 @@ def self_upgrade(
     target_tag = plan.target_tag
     target_version = _parse_version_text(target_tag)
     if target_version is None:
-        _emit_failure("target-tag-unparseable", plan=plan)
+        _emit_failure(_FAILURE_TARGET_TAG_UNPARSEABLE, plan=plan)
         raise typer.Exit(1)
     target_canonical = str(target_version)
 
@@ -1299,15 +1309,15 @@ def self_upgrade(
     installer_name = plan.installer_argv[0] if plan.installer_argv else None
 
     if installer_result.kind == _InstallerResultKind.MISSING:
-        _emit_failure("installer-missing", plan=plan, installer_name=installer_name)
+        _emit_failure(_FAILURE_INSTALLER_MISSING, plan=plan, installer_name=installer_name)
         raise typer.Exit(3)
 
     if installer_result.kind == _InstallerResultKind.INVALID:
-        _emit_failure("installer-invalid", plan=plan, installer_name=installer_name)
+        _emit_failure(_FAILURE_INSTALLER_INVALID, plan=plan, installer_name=installer_name)
         raise typer.Exit(3)
 
     if installer_result.kind == _InstallerResultKind.TIMEOUT:
-        _emit_failure("installer-timeout", plan=plan)
+        _emit_failure(_FAILURE_INSTALLER_TIMEOUT, plan=plan)
         raise typer.Exit(124)
 
     if (
@@ -1318,7 +1328,7 @@ def self_upgrade(
 
     if installer_result.returncode != 0:
         _emit_failure(
-            "installer-failed",
+            _FAILURE_INSTALLER_FAILED,
             plan=plan,
             installer_exit=installer_result.returncode,
         )
@@ -1334,7 +1344,7 @@ def self_upgrade(
         != _canonicalize_version_text(verified)
     ):
         _emit_failure(
-            "verification-mismatch",
+            _FAILURE_VERIFICATION_MISMATCH,
             plan=plan,
             verified_version=verified,
         )

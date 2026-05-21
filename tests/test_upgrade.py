@@ -1,11 +1,12 @@
 """Tests for the `specify self` sub-app (`self check` and `self upgrade`).
 
 Network isolation contract (SC-004 / FR-014): every test that exercises
-`specify self check` or `_fetch_latest_release_tag()` MUST mock
-`urllib.request.urlopen` so no real outbound call ever reaches
-api.github.com. Tests for non-network `self upgrade` behavior should keep that
-contract explicit with local mocks. Run this module under `pytest-socket` (if
-installed) with `--disable-socket` as an extra safety net.
+`specify self check` or `_fetch_latest_release_tag()` MUST mock the outbound
+urllib path it expects (`urlopen` for unauthenticated requests, `build_opener`
+for authenticated requests) so no real outbound call ever reaches api.github.com.
+Tests for non-network `self upgrade` behavior should keep that contract explicit
+with local mocks. Run this module under `pytest-socket` (if installed) with
+`--disable-socket` as an extra safety net.
 """
 
 import json
@@ -23,7 +24,7 @@ from specify_cli._version import (
     _is_newer,
     _normalize_tag,
 )
-from tests.conftest import route_auth_open_url_through_urlopen, strip_ansi
+from tests.conftest import strip_ansi
 
 runner = CliRunner()
 
@@ -53,12 +54,6 @@ def _http_error(code: int, message: str = "error") -> urllib.error.HTTPError:
         hdrs={},  # type: ignore[arg-type]
         fp=None,
     )
-
-
-@pytest.fixture(autouse=True)
-def route_open_url_through_urlopen(monkeypatch):
-    """Keep release-tag tests hermetic even when ~/.specify/auth.json exists."""
-    route_auth_open_url_through_urlopen(monkeypatch)
 
 
 class TestIsNewer:
@@ -305,6 +300,18 @@ def _capture_request_via_urlopen():
     return captured, _side_effect
 
 
+def _capture_request_via_auth_opener():
+    captured = {}
+
+    def _side_effect(req, *args, **kwargs):
+        captured["request"] = req
+        return _mock_urlopen_response({"tag_name": "v0.7.4"})
+
+    opener = MagicMock()
+    opener.open.side_effect = _side_effect
+    return captured, opener
+
+
 def _inject_github_config(monkeypatch, token_env="GH_TOKEN"):
     from tests.auth_helpers import inject_github_config
     inject_github_config(monkeypatch, token_env)
@@ -315,8 +322,11 @@ class TestUserStory3:
         monkeypatch.setenv("GH_TOKEN", SENTINEL_GH_TOKEN)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         _inject_github_config(monkeypatch, token_env="GH_TOKEN")
-        captured, side_effect = _capture_request_via_urlopen()
-        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
+        captured, opener = _capture_request_via_auth_opener()
+        with patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+            return_value=opener,
+        ):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") == f"Bearer {SENTINEL_GH_TOKEN}"
@@ -325,8 +335,11 @@ class TestUserStory3:
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
         _inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
-        captured, side_effect = _capture_request_via_urlopen()
-        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
+        captured, opener = _capture_request_via_auth_opener()
+        with patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+            return_value=opener,
+        ):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") == f"Bearer {SENTINEL_GITHUB_TOKEN}"
@@ -364,8 +377,11 @@ class TestUserStory3:
         monkeypatch.setenv("GH_TOKEN", "   ")
         monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
         _inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
-        captured, side_effect = _capture_request_via_urlopen()
-        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
+        captured, opener = _capture_request_via_auth_opener()
+        with patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+            return_value=opener,
+        ):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") == f"Bearer {SENTINEL_GITHUB_TOKEN}"

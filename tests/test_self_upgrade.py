@@ -25,7 +25,7 @@ from specify_cli._version import (
     _verify_upgrade,
 )
 
-from tests.conftest import route_auth_open_url_through_urlopen, strip_ansi
+from tests.conftest import strip_ansi
 
 runner = CliRunner()
 
@@ -61,12 +61,6 @@ def clean_environ(monkeypatch):
     """Strip any real GH_TOKEN / GITHUB_TOKEN from the test environment."""
     monkeypatch.delenv("GH_TOKEN", raising=False)
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-
-
-@pytest.fixture(autouse=True)
-def route_open_url_through_urlopen(monkeypatch):
-    """Keep release-tag tests hermetic even when ~/.specify/auth.json exists."""
-    route_auth_open_url_through_urlopen(monkeypatch)
 
 
 def _fake_argv0(monkeypatch, tmp_path, env_name, path_parts):
@@ -404,6 +398,12 @@ class TestPrefixExpansion:
 
     def test_unresolved_posix_variable_is_rejected(self):
         assert specify_cli._version._expand_prefix("$SPECIFY_MISSING/specify-cli/") is None
+
+    def test_absolute_prefix_resolve_oserror_is_rejected(self, tmp_path):
+        prefix = str(tmp_path / "specify-cli")
+
+        with patch("pathlib.Path.resolve", side_effect=OSError("bad path")):
+            assert specify_cli._version._expand_prefix(prefix) is None
 
 
 class TestArgvAssemblyUvTool:
