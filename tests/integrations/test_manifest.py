@@ -354,6 +354,27 @@ class TestManifestRecoveredFiles:
         with pytest.raises(ValueError, match="recovered_files"):
             IntegrationManifest.load("bad", tmp_path)
 
+    def test_is_recovered_absolute_path_returns_false(self, tmp_path):
+        # Copilot round-5 finding: passing an absolute path silently returned
+        # False because the stored keys are relative POSIX strings. Now the
+        # call normalizes through ``_validate_rel_path`` which raises on
+        # absolute inputs; we catch and return False so query semantics stay
+        # exception-free.
+        (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        m.record_existing("f.txt", recovered=True)
+        import sys
+        abs_input = "C:\\tmp\\f.txt" if sys.platform == "win32" else "/tmp/f.txt"
+        assert m.is_recovered(abs_input) is False
+
+    def test_is_recovered_escaping_path_returns_false(self, tmp_path):
+        # A relative path that resolves outside project_root cannot have been
+        # recorded; ``_validate_rel_path`` raises and ``is_recovered`` returns
+        # False rather than letting the ValueError propagate.
+        m = IntegrationManifest("test", tmp_path)
+        # Don't record anything — the path is impossible to record anyway.
+        assert m.is_recovered("../escape.txt") is False
+
 
 class TestRecordExistingNewGuards:
     """Coverage for the two new guards added by Copilot's 2026-05-18 review."""

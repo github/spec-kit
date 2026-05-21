@@ -222,9 +222,20 @@ class IntegrationManifest:
         return set(self._recovered_files)
 
     def is_recovered(self, rel_path: str | Path) -> bool:
-        """Return True if *rel_path* was recorded via ``record_existing(recovered=True)``."""
-        rel = Path(rel_path)
-        normalized = rel.as_posix()
+        """Return True if *rel_path* was recorded via ``record_existing(recovered=True)``.
+
+        Input is normalized through the same ``_validate_rel_path`` pipeline that
+        ``record_existing`` uses for its stored keys, so the two methods agree
+        on key format. Absolute paths and paths that escape the project root
+        return ``False`` (they cannot match the relative POSIX keys we store) —
+        consistent with Python's membership-predicate convention of not raising
+        on a not-in-set query.
+        """
+        try:
+            abs_path = _validate_rel_path(Path(rel_path), self.project_root)
+            normalized = abs_path.relative_to(self.project_root).as_posix()
+        except ValueError:
+            return False
         return normalized in self._recovered_files
 
     def check_modified(self) -> list[str]:
