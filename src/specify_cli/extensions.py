@@ -1226,8 +1226,10 @@ class ExtensionManager:
             CompatibilityError: If extension is incompatible
         """
         try:
-            with zip_path.open("rb") as zip_file:
-                return self.install_from_zip_bytes(zip_file.read(), speckit_version, priority=priority)
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                return self._install_from_zip_file(zf, speckit_version, priority=priority)
+        except zipfile.BadZipFile as e:
+            raise ValidationError(f"Invalid ZIP file {zip_path}: {e}") from e
         except OSError as e:
             raise ValidationError(f"Failed to read ZIP file {zip_path}: {e}") from e
 
@@ -1251,6 +1253,32 @@ class ExtensionManager:
             ValidationError: If manifest is invalid or priority is invalid.
             CompatibilityError: If extension is incompatible.
         """
+        try:
+            with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as zf:
+                return self._install_from_zip_file(zf, speckit_version, priority=priority)
+        except zipfile.BadZipFile as e:
+            raise ValidationError(f"Invalid ZIP data: {e}") from e
+
+    def _install_from_zip_file(
+        self,
+        zf: "zipfile.ZipFile",
+        speckit_version: str,
+        priority: int = 10,
+    ) -> ExtensionManifest:
+        """Shared implementation: install extension from an already-open ZipFile.
+
+        Args:
+            zf: Open ZipFile object (path-backed or in-memory).
+            speckit_version: Current spec-kit version.
+            priority: Resolution priority (lower = higher precedence, default 10).
+
+        Returns:
+            Installed extension manifest.
+
+        Raises:
+            ValidationError: If manifest is invalid or priority is invalid.
+            CompatibilityError: If extension is incompatible.
+        """
         # Validate priority early
         if priority < 1:
             raise ValidationError("Priority must be a positive integer (1 or higher)")
@@ -1259,20 +1287,19 @@ class ExtensionManager:
             temp_path = Path(tmpdir)
 
             # Extract ZIP safely (prevent Zip Slip attack)
-            with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as zf:
-                # Validate all paths first before extracting anything
-                temp_path_resolved = temp_path.resolve()
-                for member in zf.namelist():
-                    member_path = (temp_path / member).resolve()
-                    # Use is_relative_to for safe path containment check
-                    try:
-                        member_path.relative_to(temp_path_resolved)
-                    except ValueError:
-                        raise ValidationError(
-                            f"Unsafe path in ZIP archive: {member} (potential path traversal)"
-                        )
-                # Only extract after all paths are validated
-                zf.extractall(temp_path)
+            # Validate all paths first before extracting anything
+            temp_path_resolved = temp_path.resolve()
+            for member in zf.namelist():
+                member_path = (temp_path / member).resolve()
+                # Use is_relative_to for safe path containment check
+                try:
+                    member_path.relative_to(temp_path_resolved)
+                except ValueError:
+                    raise ValidationError(
+                        f"Unsafe path in ZIP archive: {member} (potential path traversal)"
+                    )
+            # Only extract after all paths are validated
+            zf.extractall(temp_path)
 
             # Find extension directory (may be nested)
             extension_dir = temp_path

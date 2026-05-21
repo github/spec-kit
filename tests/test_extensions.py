@@ -3511,14 +3511,24 @@ class TestExtensionAddCLI:
         install_args = {}
 
         class _MockHTTPResponse:
+            def __init__(self):
+                self._data = zip_payload
+                self._pos = 0
+
             def __enter__(self):
                 return self
 
             def __exit__(self, exc_type, exc_val, exc_tb):
                 return False
 
-            def read(self):
-                return zip_payload
+            def read(self, n=-1):
+                if n == -1:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                else:
+                    chunk = self._data[self._pos:self._pos + n]
+                    self._pos += len(chunk)
+                return chunk
 
         def _install_from_zip_bytes(_self, payload, _speckit_version, priority=10):
             install_args["payload"] = payload
@@ -3538,6 +3548,51 @@ class TestExtensionAddCLI:
         assert result.exit_code == 0, result.output
         assert install_args["payload"] == zip_payload
         assert install_args["priority"] == 10
+
+    def test_add_from_url_rejects_oversized_download(self, tmp_path):
+        """extension add --from should reject downloads exceeding the 50 MB size cap."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        _50MB_PLUS_1 = 50 * 1024 * 1024 + 1
+        large_payload = b"X" * _50MB_PLUS_1
+
+        class _LargeHTTPResponse:
+            def __init__(self):
+                self._data = large_payload
+                self._pos = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return False
+
+            def read(self, n=-1):
+                if n == -1:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                else:
+                    chunk = self._data[self._pos:self._pos + n]
+                    self._pos += len(chunk)
+                return chunk
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url", return_value=_LargeHTTPResponse()):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "ignored-extension-name", "--from", "https://example.com/large.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code != 0
+        assert "50" in result.output  # error message mentions size limit
 
     def test_add_by_display_name_uses_resolved_id_for_download(self, tmp_path):
         """extension add by display name should use resolved ID for download_extension()."""

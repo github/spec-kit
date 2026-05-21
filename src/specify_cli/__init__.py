@@ -3648,11 +3648,27 @@ def extension_add(
                 try:
                     from specify_cli.authentication.http import open_url as _open_url
 
+                    _MAX_ZIP_BYTES = 50 * 1024 * 1024  # 50 MB hard cap
                     with _open_url(from_url, timeout=60) as response:
-                        zip_bytes = response.read()
+                        chunks: list[bytes] = []
+                        total = 0
+                        while True:
+                            chunk = response.read(65536)
+                            if not chunk:
+                                break
+                            total += len(chunk)
+                            if total > _MAX_ZIP_BYTES:
+                                raise ValueError(
+                                    f"Download exceeded maximum allowed size of {_MAX_ZIP_BYTES // (1024 * 1024)} MB"
+                                )
+                            chunks.append(chunk)
+                        zip_bytes = b"".join(chunks)
 
                     # Install from downloaded ZIP
                     manifest = manager.install_from_zip_bytes(zip_bytes, speckit_version, priority=priority)
+                except ValueError as e:
+                    console.print(f"[red]Error:[/red] {e}")
+                    raise typer.Exit(1)
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
                     raise typer.Exit(1)
