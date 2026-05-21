@@ -672,27 +672,22 @@ class WorkflowEngine:
                     for _loop_iter in range(max_iters - 1):
                         if not evaluate_condition(condition, context):
                             break
-                        # Snapshot iteration-0 results under a
-                        # namespaced key before the first overwrite.
-                        if _loop_iter == 0:
-                            for ns in result.next_steps:
-                                orig = ns.get("id")
-                                if orig and orig in context.steps:
-                                    ns_key = f"{step_id}:{orig}:0"
-                                    context.steps[ns_key] = context.steps[orig]
-                                    state.step_results[ns_key] = context.steps[orig]
-                        # Namespace nested step IDs per iteration
-                        iter_steps = []
-                        original_ids = {}
+                        # Snapshot current results under namespaced
+                        # keys for per-iteration history before they
+                        # are overwritten by the next iteration.
                         for ns in result.next_steps:
-                            ns_copy = dict(ns)
-                            if "id" in ns_copy:
-                                orig = ns_copy["id"]
-                                ns_copy["id"] = f"{step_id}:{orig}:{_loop_iter + 1}"
-                                original_ids[ns_copy["id"]] = orig
-                            iter_steps.append(ns_copy)
+                            orig = ns.get("id")
+                            if orig and orig in context.steps:
+                                ns_key = f"{step_id}:{orig}:{_loop_iter}"
+                                context.steps[ns_key] = context.steps[orig]
+                                state.step_results[ns_key] = context.steps[orig]
+                        # Execute body with original step IDs so
+                        # results land at the unprefixed keys.  Both
+                        # inter-step references within the body and
+                        # the loop condition naturally see the latest
+                        # values without a copy-back.
                         self._execute_steps(
-                            iter_steps, context, state, registry,
+                            result.next_steps, context, state, registry,
                             step_offset=-1,
                         )
                         if state.status in (
@@ -701,15 +696,6 @@ class WorkflowEngine:
                             RunStatus.ABORTED,
                         ):
                             return
-                        # Copy namespaced results back to unprefixed
-                        # keys so loop conditions see updated values.
-                        # Only after a fully completed iteration —
-                        # partial results from paused/failed steps
-                        # must not overwrite the unprefixed key.
-                        for namespaced, orig in original_ids.items():
-                            if namespaced in context.steps:
-                                context.steps[orig] = context.steps[namespaced]
-                                state.step_results[orig] = context.steps[namespaced]
 
             # Fan-out: execute nested step template per item with unique IDs
             if step_type == "fan-out":
