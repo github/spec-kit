@@ -1907,8 +1907,18 @@ steps:
         # Iteration 1: counter=2, echoes "done" → condition false → stop
         # Without the fix, condition always reads iteration-0 stdout,
         # so the loop runs all max_iterations.
+        import sys
+
         counter_file = project_dir / ".counter"
         counter_file.write_text("0", encoding="utf-8")
+        py = sys.executable
+        script_file = project_dir / "_tick.py"
+        script_file.write_text(
+            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
+            "n = int(p.read_text()) + 1; p.write_text(str(n))\n"
+            "print('done' if n >= 2 else str(n), end='')\n",
+            encoding="utf-8",
+        )
 
         yaml_str = f"""
 schema_version: "1.0"
@@ -1924,11 +1934,7 @@ steps:
     steps:
       - id: attempt
         type: shell
-        run: |
-          n=$(cat {counter_file})
-          n=$((n + 1))
-          printf '%s' $n > {counter_file}
-          if [ "$n" -ge 2 ]; then printf done; else printf $n; fi
+        run: {py} {script_file}
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
@@ -1939,6 +1945,8 @@ steps:
         assert state.step_results["attempt"]["output"]["stdout"] == "done"
         # Namespaced iteration-1 result should also exist.
         assert "retry-loop:attempt:1" in state.step_results
+        # Iteration-0 history preserved under namespaced key.
+        assert "retry-loop:attempt:0" in state.step_results
         # Counter should be 2 (iteration 0 + iteration 1), not 5.
         assert counter_file.read_text(encoding="utf-8").strip() == "2"
 
@@ -1950,8 +1958,18 @@ steps:
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
         from specify_cli.workflows.base import RunStatus
 
+        import sys
+
         counter_file = project_dir / ".counter"
         counter_file.write_text("0", encoding="utf-8")
+        py = sys.executable
+        script_file = project_dir / "_tick.py"
+        script_file.write_text(
+            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
+            "n = int(p.read_text()) + 1; p.write_text(str(n))\n"
+            "print('done' if n >= 2 else str(n), end='')\n",
+            encoding="utf-8",
+        )
 
         yaml_str = f"""
 schema_version: "1.0"
@@ -1967,11 +1985,7 @@ steps:
     steps:
       - id: attempt
         type: shell
-        run: |
-          n=$(cat {counter_file})
-          n=$((n + 1))
-          printf '%s' $n > {counter_file}
-          if [ "$n" -ge 2 ]; then printf done; else printf $n; fi
+        run: {py} {script_file}
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
@@ -1990,8 +2004,18 @@ steps:
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
         from specify_cli.workflows.base import RunStatus
 
+        import sys
+
         counter_file = project_dir / ".counter"
         counter_file.write_text("0", encoding="utf-8")
+        py = sys.executable
+        script_file = project_dir / "_tick.py"
+        script_file.write_text(
+            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
+            "n = int(p.read_text()) + 1; p.write_text(str(n))\n"
+            "print('pending', end='')\n",
+            encoding="utf-8",
+        )
 
         yaml_str = f"""
 schema_version: "1.0"
@@ -2007,11 +2031,7 @@ steps:
     steps:
       - id: tick
         type: shell
-        run: |
-          n=$(cat {counter_file})
-          n=$((n + 1))
-          printf '%s' $n > {counter_file}
-          printf 'pending'
+        run: {py} {script_file}
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
@@ -2022,7 +2042,8 @@ steps:
         assert counter_file.read_text(encoding="utf-8").strip() == "3"
         # Unprefixed key holds the last iteration's result.
         assert state.step_results["tick"]["output"]["stdout"] == "pending"
-        # Namespaced keys for loop iterations 1 and 2 exist.
+        # Namespaced keys for all iterations exist.
+        assert "retry-loop:tick:0" in state.step_results
         assert "retry-loop:tick:1" in state.step_results
         assert "retry-loop:tick:2" in state.step_results
 
@@ -2035,8 +2056,18 @@ steps:
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
         from specify_cli.workflows.base import RunStatus
 
+        import sys
+
         counter_file = project_dir / ".counter"
         counter_file.write_text("0", encoding="utf-8")
+        py = sys.executable
+        script_file = project_dir / "_tick.py"
+        script_file.write_text(
+            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
+            "n = int(p.read_text()) + 1; p.write_text(str(n))\n"
+            "print('pending', end='')\n",
+            encoding="utf-8",
+        )
 
         yaml_str = f"""
 schema_version: "1.0"
@@ -2052,11 +2083,7 @@ steps:
     steps:
       - id: tick
         type: shell
-        run: |
-          n=$(cat {counter_file})
-          n=$((n + 1))
-          printf '%s' $n > {counter_file}
-          printf 'pending'
+        run: {py} {script_file}
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)

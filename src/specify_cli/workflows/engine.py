@@ -672,6 +672,15 @@ class WorkflowEngine:
                     for _loop_iter in range(max_iters - 1):
                         if not evaluate_condition(condition, context):
                             break
+                        # Snapshot iteration-0 results under a
+                        # namespaced key before the first overwrite.
+                        if _loop_iter == 0:
+                            for ns in result.next_steps:
+                                orig = ns.get("id")
+                                if orig and orig in context.steps:
+                                    ns_key = f"{step_id}:{orig}:0"
+                                    context.steps[ns_key] = context.steps[orig]
+                                    state.step_results[ns_key] = context.steps[orig]
                         # Namespace nested step IDs per iteration
                         iter_steps = []
                         original_ids = {}
