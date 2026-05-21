@@ -2114,17 +2114,9 @@ steps:
             encoding="utf-8",
         )
 
-        # Step B: reads step A's stdout from a marker file written by
-        # the test harness (since shell steps can't read context).
-        # Instead, step B just echoes its own value — we verify via
-        # the engine that step B's namespaced result was aliased back.
-        step_b_file = project_dir / "_step_b.py"
-        step_b_file.write_text(
-            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
-            "print('b-saw-' + p.read_text().strip(), end='')\n",
-            encoding="utf-8",
-        )
-
+        # Step B uses {{ steps.step-a.output.stdout }} expression
+        # substitution in its run command so the engine resolves the
+        # aliased unprefixed key — this is the real inter-step test.
         yaml_str = f"""
 schema_version: "1.0"
 workflow:
@@ -2142,7 +2134,7 @@ steps:
         run: '"{py}" "{step_a_file}"'
       - id: step-b
         type: shell
-        run: '"{py}" "{step_b_file}"'
+        run: "echo b-saw-{{{{ steps.step-a.output.stdout }}}}"
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
@@ -2151,7 +2143,8 @@ steps:
         assert state.status == RunStatus.COMPLETED
         # Both unprefixed keys reflect the latest iteration's results.
         assert state.step_results["step-a"]["output"]["stdout"] == "3"
-        assert state.step_results["step-b"]["output"]["stdout"] == "b-saw-3"
+        # Step B saw step A's output via expression substitution.
+        assert "b-saw-3" in state.step_results["step-b"]["output"]["stdout"]
         # Namespaced keys exist for loop iterations.
         assert "retry-loop:step-a:1" in state.step_results
         assert "retry-loop:step-b:1" in state.step_results

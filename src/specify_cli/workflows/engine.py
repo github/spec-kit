@@ -678,11 +678,11 @@ class WorkflowEngine:
                         # result back to the unprefixed key so that
                         # later steps in the same body and the loop
                         # condition see the latest values.
-                        for ns in result.next_steps:
+                        for ns_idx, ns in enumerate(result.next_steps):
                             ns_copy = dict(ns)
                             orig = ns_copy.get("id")
-                            if orig:
-                                ns_copy["id"] = f"{step_id}:{orig}:{_loop_iter + 1}"
+                            base_id = orig or f"step-{ns_idx}"
+                            ns_copy["id"] = f"{step_id}:{base_id}:{_loop_iter + 1}"
                             self._execute_steps(
                                 [ns_copy], context, state, registry,
                                 step_offset=-1,
