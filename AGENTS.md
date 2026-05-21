@@ -66,11 +66,13 @@ Each base class provides the following methods. You only need to override a meth
 
 | Method | Default Behavior | Override When |
 |---|---|---|
-| `setup()` | Processes templates, writes command files, updates the context file | The agent needs companion files, settings merges, or non-standard file layouts |
-| `teardown()` | Removes all files tracked by the integration manifest | The agent created files outside the standard manifest (rare) |
-| `command_filename(template_name)` | Returns `<template_name><extension>` | The agent uses a different naming convention (e.g., Copilot uses `speckit.<name>.agent.md`) |
+| `setup()` | In `IntegrationBase`, copies raw templates to their destination paths and installs/updates the context file; no placeholder processing is applied by default | The agent needs processed templates, companion files, settings merges, or non-standard file layouts |
+| `teardown()` | Delegates to `IntegrationManifest.uninstall()`, which removes tracked files when safe and may skip modified files | The agent created files outside the standard manifest or needs custom uninstall behavior |
+| `command_filename(template_name)` | In `IntegrationBase`, returns `speckit.{template_name}.md` | The agent uses a different naming convention (e.g., Copilot uses `speckit.<name>.agent.md`) |
 | `options()` | Returns an empty list (no extra CLI flags) | The agent supports integration-specific install options (e.g., `--skills` for Codex) |
-| `process_template(content)` | Replaces `{SCRIPT}`, `$ARGUMENTS`, and `__AGENT__` placeholders | The agent uses non-standard placeholders (e.g., Forge uses `{{parameters}}`) |
+| `process_template(content)` | Base implementation processes known placeholders such as `{SCRIPT}`, `$ARGUMENTS`, and `__AGENT__` when used by subclasses that call it | The agent uses non-standard placeholders (e.g., Forge uses `{{parameters}}`) |
+
+> **Note:** `MarkdownIntegration`, `TomlIntegration`, `YamlIntegration`, and `SkillsIntegration` override `setup()` and `command_filename()` to provide format-specific filenames and template processing behavior.
 
 > **Rule of thumb:** Start with `MarkdownIntegration` and zero overrides. Only add custom logic when a specific behavior cannot be achieved with the defaults.
 
