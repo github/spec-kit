@@ -141,14 +141,16 @@ class IntegrationBase(ABC):
         return None
 
     def _apply_extra_args_env_var(self, args: list[str]) -> None:
-        """Append `SPECIFY_<KEY>_EXTRA_ARGS` env-var value to *args*.
+        """Append `SPECIFY_INTEGRATION_<KEY>_EXTRA_ARGS` env-var value to *args*.
 
         Operators can inject extra CLI flags into the spawned agent
         subprocess by setting an env var named for the integration key,
-        e.g. `SPECIFY_CLAUDE_EXTRA_ARGS="--dangerously-skip-permissions"`.
+        e.g. `SPECIFY_INTEGRATION_CLAUDE_EXTRA_ARGS="--dangerously-skip-permissions"`.
+        The `INTEGRATION` segment scopes the variable to this subsystem
+        so it does not collide with other Spec Kit env-var namespaces.
         Hyphens in the integration key are replaced with underscores
         and the key is uppercased
-        (e.g. `kiro-cli` → `SPECIFY_KIRO_CLI_EXTRA_ARGS`).
+        (e.g. `kiro-cli` → `SPECIFY_INTEGRATION_KIRO_CLI_EXTRA_ARGS`).
 
         Useful in CI / non-interactive contexts where the spawned agent
         needs flags that change its prompt-handling behaviour.
@@ -159,7 +161,7 @@ class IntegrationBase(ABC):
         See issue #2595.
         """
         env_name = (
-            f"SPECIFY_{self.key.upper().replace('-', '_')}_EXTRA_ARGS"
+            f"SPECIFY_INTEGRATION_{self.key.upper().replace('-', '_')}_EXTRA_ARGS"
         )
         extra = os.environ.get(env_name, "").strip()
         if extra:
