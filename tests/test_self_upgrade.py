@@ -247,7 +247,7 @@ class TestDetectionUvTool:
         ), patch("specify_cli._version._editable_marker_seen", return_value=False):
             method, signals = _detect_install_method(include_signals=True)
         assert method == _InstallMethod.UNSUPPORTED
-        assert signals.installer_registries_consulted == []
+        assert signals.installer_registries_consulted == ()
 
     def test_bare_argv0_missing_path_resolution_allows_tier3_registry_detection(
         self, monkeypatch, tmp_path
@@ -394,7 +394,7 @@ class TestDetectionUvTool:
             method, signals = _detect_install_method(include_signals=True)
         assert method == _InstallMethod.UNSUPPORTED
         assert signals.matched_tier is None
-        assert signals.installer_registries_consulted == []
+        assert signals.installer_registries_consulted == ()
 
 
 class TestPrefixExpansion:
@@ -1260,6 +1260,34 @@ class TestInstallerMissing:
         out = strip_ansi(result.output)
         assert f"Installer path {fake_uv} is not an executable file" in out
         assert "not found on PATH" not in out
+
+    def test_bare_invalid_installer_message_does_not_call_it_a_path(
+        self, uv_tool_argv0, clean_environ
+    ):
+        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+        ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"), patch(
+            "specify_cli._version._assemble_installer_argv",
+            return_value=[
+                "uv",
+                "tool",
+                "install",
+                "specify-cli",
+                "--force",
+                "--from",
+                "git+https://github.com/github/spec-kit.git@v0.7.6",
+            ],
+        ), patch(
+            "specify_cli._version.subprocess.run",
+            side_effect=PermissionError("Permission denied"),
+        ):
+            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        assert result.exit_code == 3
+        out = strip_ansi(result.output)
+        assert "Installer uv is not executable" in out
+        assert "Installer path uv" not in out
 
     def test_exec_oserror_errno_is_treated_as_invalid_installer(
         self, uv_tool_argv0, clean_environ, tmp_path

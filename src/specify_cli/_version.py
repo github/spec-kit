@@ -228,7 +228,7 @@ class _DetectionSignals:
     matched_tier: int | None
     matched_prefix: str | None
     editable_marker_seen: bool
-    installer_registries_consulted: list[str]
+    installer_registries_consulted: tuple[str, ...]
     resolved_method: _InstallMethod
 
 
@@ -438,7 +438,7 @@ def _detect_install_method(
                         matched_tier=1,
                         matched_prefix=prefix,
                         editable_marker_seen=False,
-                        installer_registries_consulted=[],
+                        installer_registries_consulted=(),
                         resolved_method=method,
                     )
                 return method
@@ -452,7 +452,7 @@ def _detect_install_method(
                 matched_tier=2,
                 matched_prefix=None,
                 editable_marker_seen=True,
-                installer_registries_consulted=[],
+                installer_registries_consulted=(),
                 resolved_method=method,
             )
         return method
@@ -512,7 +512,7 @@ def _detect_install_method(
                     matched_tier=3,
                     matched_prefix=None,
                     editable_marker_seen=False,
-                    installer_registries_consulted=consulted,
+                    installer_registries_consulted=tuple(consulted),
                     resolved_method=method,
                 )
             return method
@@ -525,7 +525,7 @@ def _detect_install_method(
             matched_tier=None,
             matched_prefix=None,
             editable_marker_seen=False,
-            installer_registries_consulted=consulted,
+            installer_registries_consulted=tuple(consulted),
             resolved_method=method,
         )
     return method
@@ -911,10 +911,17 @@ def _emit_failure(
 
     if category == "installer-invalid":
         name = installer_name or "(unknown)"
-        console.print(
-            f"Installer path {name} is not an executable file; fix the path or reinstall it and retry.",
-            soft_wrap=True,
-        )
+        if installer_name and os.path.isabs(installer_name):
+            message = (
+                f"Installer path {name} is not an executable file; "
+                "fix the path or reinstall it and retry."
+            )
+        else:
+            message = (
+                f"Installer {name} is not executable; "
+                "fix the command or reinstall it and retry."
+            )
+        console.print(message, soft_wrap=True)
         return
 
     if category == "target-tag-unparseable":
