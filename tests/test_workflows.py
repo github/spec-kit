@@ -1934,7 +1934,7 @@ steps:
     steps:
       - id: attempt
         type: shell
-        run: {py} {script_file}
+        run: '"{py}" "{script_file}"'
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
@@ -1985,7 +1985,7 @@ steps:
     steps:
       - id: attempt
         type: shell
-        run: {py} {script_file}
+        run: '"{py}" "{script_file}"'
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
@@ -2031,7 +2031,7 @@ steps:
     steps:
       - id: tick
         type: shell
-        run: {py} {script_file}
+        run: '"{py}" "{script_file}"'
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
@@ -2083,7 +2083,7 @@ steps:
     steps:
       - id: tick
         type: shell
-        run: {py} {script_file}
+        run: '"{py}" "{script_file}"'
 """
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
