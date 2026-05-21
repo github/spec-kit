@@ -17,6 +17,73 @@
         "workflow",
         "core"
       ]
+    },
+    "arch": {
+      "name": "Architecture Workflow",
+      "id": "arch",
+      "version": "1.1.0",
+      "description": "Generate or reverse project-level 4+1 architecture view artifacts and synthesis",
+      "author": "bigsmartben",
+      "repository": "https://github.com/bigsmartben/spec-kit-arch",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.8.10.dev0"
+      },
+      "provides": {
+        "commands": 2
+      },
+      "tags": [
+        "architecture",
+        "4plus1",
+        "workflow",
+        "design"
+      ]
+    },
+    "preview": {
+      "name": "Interactive HTML Preview",
+      "id": "preview",
+      "version": "1.0.0",
+      "description": "Generate self-contained interactive HTML prototypes from Spec Kit artifacts",
+      "author": "bigsmartben",
+      "repository": "https://github.com/bigsmartben/spec-kit-preview",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.8.10.dev0"
+      },
+      "provides": {
+        "commands": 1
+      },
+      "tags": [
+        "preview",
+        "prototype",
+        "html",
+        "ux"
+      ]
+    },
+    "agent-governance": {
+      "name": "Agent Governance",
+      "id": "agent-governance",
+      "version": "1.2.0",
+      "description": "Generate agent-platform repository governance files from Spec Kit metadata",
+      "author": "bigben",
+      "repository": "https://github.com/bigsmartben/spec-kit-agent-governance",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 3
+      },
+      "tags": [
+        "governance",
+        "agents",
+        "memory",
+        "context"
+      ]
     }
   }
 }

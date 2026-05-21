@@ -3405,6 +3405,14 @@ class TestBundledPresetLocator:
         assert path is not None
         assert (path / "preset.yml").is_file()
 
+    def test_locate_bundled_workflow_preset(self):
+        """_locate_bundled_preset finds the workflow preset."""
+        from specify_cli import _locate_bundled_preset
+
+        path = _locate_bundled_preset("workflow-preset")
+        assert path is not None
+        assert (path / "preset.yml").is_file()
+
     def test_locate_bundled_preset_not_found(self):
         """_locate_bundled_preset returns None for nonexistent preset."""
         from specify_cli import _locate_bundled_preset
@@ -3436,12 +3444,13 @@ class TestBundledPresetLocator:
         assert "installed" in result.output.lower()
 
     def test_bundled_preset_in_catalog(self):
-        """Verify the lean preset is listed in catalog.json with bundled marker."""
+        """Verify bundled presets are listed in catalog.json with bundled marker."""
         catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
         catalog = json.loads(catalog_path.read_text())
-        assert "lean" in catalog["presets"]
-        assert catalog["presets"]["lean"]["bundled"] is True
-        assert "download_url" not in catalog["presets"]["lean"]
+        for preset_id in ("lean", "workflow-preset"):
+            assert preset_id in catalog["presets"]
+            assert catalog["presets"][preset_id]["bundled"] is True
+            assert "download_url" not in catalog["presets"][preset_id]
 
     def test_bundled_preset_download_raises_error(self, project_dir):
         """download_pack raises PresetError for bundled presets without download_url."""

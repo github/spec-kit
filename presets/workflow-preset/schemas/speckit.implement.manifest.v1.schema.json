@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "speckit.implement.manifest.v1.schema.json",
+  "title": "Spec Kit Implement Handoff Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_type",
+    "run_id",
+    "feature_path",
+    "context_index_path",
+    "planner_outputs",
+    "shards",
+    "dependencies",
+    "dispatch_order"
+  ],
+  "properties": {
+    "contract_type": {
+      "const": "speckit.implement.manifest.v1"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "feature_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "context_index_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "planner_outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "vertical_capability",
+          "planner_id",
+          "shard_plan_path",
+          "handoff_draft_paths",
+          "context_digest_draft_paths"
+        ],
+        "properties": {
+          "vertical_capability": {
+            "type": "string",
+            "minLength": 1
+          },
+          "planner_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "shard_plan_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "handoff_draft_paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "context_digest_draft_paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "shards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shard_id",
+          "handoff_path",
+          "context_digest_path",
+          "receipt_path",
+          "task_ids",
+          "vertical_capability"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "handoff_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "context_digest_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "receipt_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "task_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "vertical_capability": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shard_id",
+          "depends_on"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "dispatch_order": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

@@ -920,6 +920,66 @@ class TestGitExtensionAutoInstall:
         git_skills = [f for f in claude_skills.iterdir() if f.name.startswith("speckit-git-")]
         assert len(git_skills) > 0, "no git extension commands registered"
 
+    def test_community_extensions_and_workflow_preset_auto_installed(self, tmp_path):
+        """specify init installs bundled community extensions and the workflow preset."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "community-defaults"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here", "--ai", "claude", "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        for extension_id in ("arch", "preview", "agent-governance"):
+            ext_dir = project / ".specify" / "extensions" / extension_id
+            assert (ext_dir / "extension.yml").exists(), f"{extension_id} was not installed"
+
+        extensions_yml = project / ".specify" / "extensions.yml"
+        hooks_data = yaml.safe_load(extensions_yml.read_text(encoding="utf-8"))
+        assert hooks_data["installed"] == ["agent-governance", "arch", "git", "preview"]
+
+        preset_dir = project / ".specify" / "presets" / "workflow-preset"
+        assert (preset_dir / "preset.yml").exists(), "workflow-preset was not installed"
+        preset_registry = json.loads((project / ".specify" / "presets" / ".registry").read_text())
+        assert "workflow-preset" in preset_registry["presets"]
+
+    def test_no_git_keeps_community_defaults(self, tmp_path):
+        """--no-git skips only git; bundled community defaults still install."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "no-git-community-defaults"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here", "--ai", "claude", "--script", "sh",
+                "--no-git", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+        assert not (project / ".specify" / "extensions" / "git").exists()
+
+        for extension_id in ("arch", "preview", "agent-governance"):
+            ext_dir = project / ".specify" / "extensions" / extension_id
+            assert (ext_dir / "extension.yml").exists(), f"{extension_id} was not installed"
+
+        assert (project / ".specify" / "presets" / "workflow-preset" / "preset.yml").exists()
+
 
 class TestSharedInfraCommandRefs:
     """Verify _install_shared_infra resolves __SPECKIT_COMMAND_*__ in page templates."""
@@ -1244,7 +1304,7 @@ class TestIntegrationCatalogDiscoveryCLI:
         normalized = _normalize_cli_output(result.output)
 
         assert result.exit_code == 0, result.output
-        assert "Failed to clean up extension artifacts for integration 'copilot'" in normalized
+        assert "Failed to clean up extension/preset artifacts for integration 'copilot'" in normalized
         assert "cleanup exploded" in normalized
         assert "Switched to integration" in normalized
 

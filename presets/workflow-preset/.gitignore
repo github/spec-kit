@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+dist/
+*.zip
+.DS_Store
+docs/superpowers/

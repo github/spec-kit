@@ -3553,6 +3553,29 @@ class TestExtensionAddCLI:
         assert "reinstall" in result.output.lower()
 
 
+class TestBundledCommunityExtensionLocator:
+    """Tests for bundled community extension discovery."""
+
+    def test_locate_bundled_community_extensions(self):
+        """_locate_bundled_extension finds the bundled community extensions."""
+        from specify_cli import _locate_bundled_extension
+
+        for extension_id in ("arch", "preview", "agent-governance"):
+            path = _locate_bundled_extension(extension_id)
+            assert path is not None, f"{extension_id} was not located"
+            assert (path / "extension.yml").is_file()
+
+    def test_community_extensions_in_catalog(self):
+        """Bundled community extensions are listed in catalog.json."""
+        catalog_path = Path(__file__).parent.parent / "extensions" / "catalog.json"
+        catalog = json.loads(catalog_path.read_text())
+
+        for extension_id in ("arch", "preview", "agent-governance"):
+            assert extension_id in catalog["extensions"]
+            assert catalog["extensions"][extension_id]["bundled"] is True
+            assert "download_url" not in catalog["extensions"][extension_id]
+
+
 class TestDownloadExtensionBundled:
     """Tests for download_extension handling of bundled extensions."""
 

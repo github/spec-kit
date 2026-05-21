@@ -1,0 +1,28 @@
+schema_version: "1.0"
+
+preset:
+  id: "arch-governance"
+  name: "Architecture Governance"
+  version: "1.0.0"
+  description: "Inject project architecture SSOT into the core planning workflow"
+  author: "bigsmartben"
+  repository: "https://github.com/bigsmartben/spec-kit-arch"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.8.9.dev0"
+
+provides:
+  templates:
+    - type: "command"
+      name: "speckit.plan"
+      file: "commands/speckit.plan.md"
+      description: "Wrap core planning with architecture SSOT grounding"
+      replaces: "speckit.plan"
+      strategy: "wrap"
+
+tags:
+  - "architecture"
+  - "governance"
+  - "planning"
+  - "ssot"
