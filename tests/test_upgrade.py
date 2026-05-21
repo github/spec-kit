@@ -173,8 +173,9 @@ class TestUserStory1:
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
         assert result.exit_code == 0
+        assert "Latest release: vX.Y.Z" in output
         assert "git+https://github.com/github/spec-kit.git@vX.Y.Z" in output
-        assert "git+https://github.com/github/spec-kit.git@v0.9.0;echo unsafe" not in output
+        assert "v0.9.0;echo unsafe" not in output
 
     def test_unparseable_tag_routes_to_indeterminate(self):
         with patch("specify_cli._version._get_installed_version", return_value="0.7.4"), patch(

@@ -157,7 +157,7 @@ def _is_comparable_version_text(value: str) -> bool:
 
 
 def _render_argv(argv: list[str]) -> str:
-    """Render argv for copy/paste on the current platform."""
+    """Render argv as POSIX shell text, or cmd.exe-style text on Windows."""
     return subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
 
 
@@ -225,7 +225,7 @@ class _UpgradePlan:
 
 @dataclass(frozen=True)
 class _DetectionSignals:
-    """Test-only record of which detection tier fired."""
+    """Diagnostic record of which detection tier fired."""
 
     sys_argv0: str
     matched_tier: int | None
@@ -262,6 +262,7 @@ _TAG_REGEX = re.compile(
     r"(?:(?:\.?dev\d+)|(?:[-.]?(?:a|b|rc|alpha|beta)[-.]?\d+)|"
     r"(?:\+[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*))?$"
 )
+_INVALID_TAG_MESSAGE = "Invalid --tag: expected vMAJOR.MINOR.PATCH[suffix]"
 
 
 def _validate_tag(tag: str) -> str:
@@ -273,15 +274,13 @@ def _validate_tag(tag: str) -> str:
     """
     tag = tag.strip()
     if not tag:
-        raise typer.BadParameter("Invalid --tag: expected vMAJOR.MINOR.PATCH[suffix]")
+        raise typer.BadParameter(_INVALID_TAG_MESSAGE)
     if not _TAG_REGEX.match(tag):
-        raise typer.BadParameter("Invalid --tag: expected vMAJOR.MINOR.PATCH[suffix]")
+        raise typer.BadParameter(_INVALID_TAG_MESSAGE)
     try:
         Version(_normalize_tag(tag))
     except InvalidVersion as exc:
-        raise typer.BadParameter(
-            "Invalid --tag: expected vMAJOR.MINOR.PATCH[suffix]"
-        ) from exc
+        raise typer.BadParameter(_INVALID_TAG_MESSAGE) from exc
 
     return tag
 
@@ -1048,12 +1047,15 @@ def self_check() -> None:
 
     latest_normalized = _normalize_tag(tag)
     manual_tag = _manual_tag_or_placeholder(tag)
+    latest_display = (
+        _normalize_tag(manual_tag) if manual_tag is not None else _MANUAL_TAG_PLACEHOLDER
+    )
 
     if installed == "unknown":
         # FR-020: surface the latest release and the recovery action even
         # when the local distribution metadata is unavailable.
         console.print("Current version could not be determined.")
-        console.print(f"Latest release: {latest_normalized}")
+        console.print(f"Latest release: {latest_display}")
         console.print("\nManual fallback:")
         console.print(
             f"  uv tool install specify-cli --force --from {_manual_source_spec(manual_tag)}"
