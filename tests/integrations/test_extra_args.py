@@ -274,3 +274,84 @@ def test_copilot_integration_honours_extra_args(monkeypatch):
         "--output-format",
         "json",
     ]
+
+
+# ---------------------------------------------------------------------------
+# `dispatch_command` end-to-end coverage
+#
+# Workflow execution calls `impl.dispatch_command(...)`, not
+# `build_exec_args` directly. `IntegrationBase.dispatch_command` delegates
+# to `build_exec_args` (so the override fixes above flow through), but
+# `CopilotIntegration` overrides `dispatch_command` and constructs
+# `cli_args` inline — the hook must be invoked there too or the env var
+# is silently ignored at workflow runtime. These tests monkeypatch
+# `subprocess.run` and assert the env-var args reach the executed argv.
+# ---------------------------------------------------------------------------
+
+
+class _RunCapture:
+    """Test double that captures argv passed to subprocess.run."""
+
+    def __init__(self):
+        self.captured_args: list[str] | None = None
+
+    def __call__(self, args, **kwargs):
+        self.captured_args = list(args)
+
+        class _Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return _Result()
+
+
+def test_copilot_dispatch_command_includes_extra_args(monkeypatch):
+    """Locks the bypass fix: `CopilotIntegration.dispatch_command`
+    must honour `SPECIFY_COPILOT_EXTRA_ARGS`, not just `build_exec_args`.
+    """
+    import subprocess
+
+    from specify_cli.integrations.copilot import CopilotIntegration
+
+    capture = _RunCapture()
+    monkeypatch.setattr(subprocess, "run", capture)
+    monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
+    monkeypatch.setenv(
+        "SPECIFY_COPILOT_EXTRA_ARGS", "--allow-tool 'shell(echo)'"
+    )
+
+    CopilotIntegration().dispatch_command(
+        "speckit.plan", args="body", stream=False
+    )
+
+    assert capture.captured_args is not None
+    # Hook inserted between `-p prompt` and the canonical Copilot flags.
+    p_idx = capture.captured_args.index("-p")
+    agent_idx = capture.captured_args.index("--agent")
+    extra_idx = capture.captured_args.index("--allow-tool")
+    assert p_idx < extra_idx < agent_idx
+    assert "shell(echo)" in capture.captured_args
+
+
+def test_codex_dispatch_command_includes_extra_args(monkeypatch):
+    """Lock the inherited `IntegrationBase.dispatch_command` path:
+    Codex (and by transitivity Devin, Opencode) flow through
+    `build_exec_args`, so the env var must reach argv at workflow
+    runtime.
+    """
+    import subprocess
+
+    from specify_cli.integrations.codex import CodexIntegration
+
+    capture = _RunCapture()
+    monkeypatch.setattr(subprocess, "run", capture)
+    monkeypatch.setenv("SPECIFY_CODEX_EXTRA_ARGS", "--sandbox read-only")
+
+    CodexIntegration().dispatch_command(
+        "speckit.plan", args="body", stream=False
+    )
+
+    assert capture.captured_args is not None
+    assert "--sandbox" in capture.captured_args
+    assert "read-only" in capture.captured_args
