@@ -406,6 +406,24 @@ class TestPrefixExpansion:
             assert specify_cli._version._expand_prefix(prefix) is None
 
 
+class TestArgv0Resolution:
+    """Entrypoint path resolution edge cases."""
+
+    def test_absolute_argv0_resolve_oserror_returns_original_path(self, tmp_path):
+        argv0 = tmp_path / "specify"
+
+        with patch("pathlib.Path.resolve", side_effect=OSError("bad path")):
+            assert specify_cli._version._resolved_argv0_path(str(argv0)) == argv0
+
+    def test_path_lookup_resolve_oserror_returns_unresolved_lookup_path(self):
+        with patch(
+            "specify_cli._version.shutil.which", return_value="/broken/specify"
+        ), patch("pathlib.Path.resolve", side_effect=OSError("bad path")):
+            result = specify_cli._version._resolved_argv0_path("specify")
+
+        assert str(result) == "/broken/specify"
+
+
 class TestArgvAssemblyUvTool:
     """uv-tool installer argv shape."""
 

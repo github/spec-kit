@@ -323,14 +323,21 @@ def _path_is_within_prefix(path: Path, prefix: Path) -> bool:
     return common == os.path.normcase(str(prefix))
 
 
+def _resolve_path_or_original(path: Path) -> Path:
+    try:
+        return path.resolve()
+    except OSError:
+        return path
+
+
 def _resolved_argv0_path(argv0: str | None = None) -> Path:
     """Resolve the running entrypoint path, consulting PATH for bare commands."""
     raw = argv0 or sys.argv[0]
     candidate = Path(raw)
     if candidate.is_absolute():
-        return candidate.resolve()
+        return _resolve_path_or_original(candidate)
     if candidate.exists():
-        return candidate.resolve()
+        return _resolve_path_or_original(candidate)
 
     lookup_names = [raw]
     if len(candidate.parts) > 1:
@@ -341,7 +348,7 @@ def _resolved_argv0_path(argv0: str | None = None) -> Path:
     for lookup_name in lookup_names:
         resolved = shutil.which(lookup_name)
         if resolved:
-            return Path(resolved).resolve()
+            return _resolve_path_or_original(Path(resolved))
     return candidate
 
 
