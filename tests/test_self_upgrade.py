@@ -625,6 +625,25 @@ class TestDryRunUvTool:
         assert "Target version: v0.8.0" in strip_ansi(result.output)
         mock_urlopen.assert_not_called()
 
+    def test_dry_run_rejects_unparseable_network_tag_before_preview(
+        self, uv_tool_argv0, clean_environ
+    ):
+        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.subprocess.run"
+        ) as mock_run, patch(
+            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+        ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
+            mock_urlopen.return_value = _mock_urlopen_response(
+                {"tag_name": "v0.9.0;echo unsafe"}
+            )
+            result = runner.invoke(app, ["self", "upgrade", "--dry-run"])
+
+        out = strip_ansi(result.output)
+        assert result.exit_code == 1
+        assert "not a comparable version" in out
+        assert "Command that would be executed:" not in out
+        assert mock_run.call_count == 0
+
     def test_dry_run_with_missing_uv_flags_unresolved_installer(
         self, uv_tool_argv0, clean_environ
     ):

@@ -619,6 +619,7 @@ def _build_upgrade_plan(
     """Return a resolved upgrade plan or `(None, failure_reason)`.
 
     A valid `target_tag_override` skips network resolution entirely.
+    A fetched target tag is validated before installer argv construction.
     """
     method = _detect_install_method()
 
@@ -628,7 +629,21 @@ def _build_upgrade_plan(
         tag, failure_reason = _fetch_latest_release_tag()
         if tag is None:
             return None, failure_reason  # surfaces as exit 1 in the orchestrator
-        target_tag = tag
+        try:
+            target_tag = _validate_tag(tag)
+        except typer.BadParameter:
+            current = _get_installed_version()
+            return (
+                _UpgradePlan(
+                    method=method,
+                    current_version=current,
+                    target_tag=tag,
+                    installer_argv=None,
+                    preview_summary="",
+                    pre_upgrade_snapshot=current,
+                ),
+                "target-tag-unparseable",
+            )
     else:
         target_tag = None
 
@@ -1147,6 +1162,10 @@ def self_upgrade(
                 "internal contract violation: _build_upgrade_plan returned (None, None)"
             )
         _emit_failure(failure_reason)
+        raise typer.Exit(1)
+
+    if failure_reason is not None:
+        _emit_failure(failure_reason, plan=plan)
         raise typer.Exit(1)
 
     # --dry-run preview path. Non-upgradable methods still emit guidance
