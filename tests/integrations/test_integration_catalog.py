@@ -512,7 +512,7 @@ class TestIntegrationListCatalog:
         finally:
             os.chdir(old)
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.output
         assert "test-agent" in result.output
         assert "Test Agent" in result.output
 
