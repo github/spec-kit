@@ -150,8 +150,11 @@ def register(app: typer.Typer) -> None:
         """
         # Lazy imports to avoid circular dependency — __init__.py imports this module
         from .. import (
+            _cli_error_detail,
+            _cli_phase_label,
             _install_shared_infra_or_exit,
             _parse_integration_options,
+            _print_cli_warning,
             _write_integration_json,
             ensure_executable_scripts,
             save_init_options,
@@ -584,7 +587,13 @@ def register(app: typer.Typer) -> None:
                                         zip_path = preset_catalog.download_pack(preset)
                                         preset_manager.install_from_zip(zip_path, speckit_ver)
                                     except PresetError as preset_err:
-                                        console.print(f"[yellow]Warning:[/yellow] Failed to install preset '{preset}': {preset_err}")
+                                        _print_cli_warning(
+                                            "install",
+                                            "preset",
+                                            preset,
+                                            preset_err,
+                                            continuing="Continuing without the optional preset.",
+                                        )
                                     finally:
                                         if zip_path is not None:
                                             try:
@@ -592,7 +601,13 @@ def register(app: typer.Typer) -> None:
                                             except OSError:
                                                 pass
                     except Exception as preset_err:
-                        console.print(f"[yellow]Warning:[/yellow] Failed to install preset: {preset_err}")
+                        _print_cli_warning(
+                            "install",
+                            "preset",
+                            preset,
+                            preset_err,
+                            continuing="Continuing without the optional preset.",
+                        )
 
                 tracker.complete("final", "project ready")
             except (typer.Exit, SystemExit):
