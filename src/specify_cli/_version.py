@@ -32,6 +32,11 @@ from packaging.version import InvalidVersion, Version
 from ._console import console
 
 GITHUB_API_LATEST = "https://api.github.com/repos/github/spec-kit/releases/latest"
+_RESOLUTION_FAILURE_OFFLINE = "offline or timeout"
+_RESOLUTION_FAILURE_RATE_LIMITED = (
+    "rate limited (configure ~/.specify/auth.json with a GitHub token)"
+)
+_RESOLUTION_FAILURE_HTTP_PREFIX = "HTTP "
 
 
 def _get_installed_version() -> str:
@@ -111,12 +116,10 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     except urllib.error.HTTPError as e:
         # Order matters: HTTPError is a subclass of URLError.
         if e.code == 403:
-            return None, (
-                "rate limited (configure ~/.specify/auth.json with a GitHub token)"
-            )
-        return None, f"HTTP {e.code}"
+            return None, _RESOLUTION_FAILURE_RATE_LIMITED
+        return None, f"{_RESOLUTION_FAILURE_HTTP_PREFIX}{e.code}"
     except (urllib.error.URLError, OSError):
-        return None, "offline or timeout"
+        return None, _RESOLUTION_FAILURE_OFFLINE
 
 
 def _parse_version_text(value: str) -> Version | None:
@@ -175,8 +178,8 @@ _INSTALLER_PATH_PREFIXES: dict[str, list[str]] = {
 
 _RESOLUTION_FAILURE_CATEGORIES: frozenset[str] = frozenset(
     {
-        "offline or timeout",
-        "rate limited (configure ~/.specify/auth.json with a GitHub token)",
+        _RESOLUTION_FAILURE_OFFLINE,
+        _RESOLUTION_FAILURE_RATE_LIMITED,
     }
 )
 
@@ -741,7 +744,7 @@ def _run_installer(plan: _UpgradePlan) -> _InstallerResult:
         raise
 
 
-_VERIFY_VERSION_REGEX = re.compile(r"specify (\S+)")
+_VERIFY_VERSION_REGEX = re.compile(r"\b(?:specify|specify-cli)\s+(\S+)")
 
 
 def _verify_upgrade(plan: _UpgradePlan) -> str | None:
@@ -890,7 +893,7 @@ def _emit_failure(
     """Render user-facing output for resolver, installer, or verification failures."""
     if (
         category in _RESOLUTION_FAILURE_CATEGORIES
-        or category.startswith("HTTP ")
+        or category.startswith(_RESOLUTION_FAILURE_HTTP_PREFIX)
     ):
         console.print(f"Upgrade aborted: {category}", soft_wrap=True)
         return
