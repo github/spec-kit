@@ -687,15 +687,15 @@ class WorkflowEngine:
                                 [ns_copy], context, state, registry,
                                 step_offset=-1,
                             )
-                            if orig and ns_copy["id"] in context.steps:
-                                context.steps[orig] = context.steps[ns_copy["id"]]
-                                state.step_results[orig] = context.steps[ns_copy["id"]]
                             if state.status in (
                                 RunStatus.PAUSED,
                                 RunStatus.FAILED,
                                 RunStatus.ABORTED,
                             ):
                                 return
+                            if orig and ns_copy["id"] in context.steps:
+                                context.steps[orig] = context.steps[ns_copy["id"]]
+                                state.step_results[orig] = context.steps[ns_copy["id"]]
 
             # Fan-out: execute nested step template per item with unique IDs
             if step_type == "fan-out":

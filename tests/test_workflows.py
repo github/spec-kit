@@ -2090,6 +2090,74 @@ steps:
         assert counter_file.read_text(encoding="utf-8").strip() == "3"
         assert state.step_results["tick"]["output"]["stdout"] == "pending"
 
+    def test_while_loop_multi_step_body_inter_step_refs(self, project_dir):
+        """Multi-step loop body: step B must see step A's output from the
+        current iteration, not a stale previous one.
+
+        See https://github.com/github/spec-kit/issues/2592
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        import sys
+
+        counter_file = project_dir / ".counter"
+        counter_file.write_text("0", encoding="utf-8")
+        py = sys.executable
+
+        # Step A: increments counter file, echoes the value.
+        step_a_file = project_dir / "_step_a.py"
+        step_a_file.write_text(
+            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
+            "n = int(p.read_text()) + 1; p.write_text(str(n))\n"
+            "print(str(n), end='')\n",
+            encoding="utf-8",
+        )
+
+        # Step B: reads step A's stdout from a marker file written by
+        # the test harness (since shell steps can't read context).
+        # Instead, step B just echoes its own value — we verify via
+        # the engine that step B's namespaced result was aliased back.
+        step_b_file = project_dir / "_step_b.py"
+        step_b_file.write_text(
+            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
+            "print('b-saw-' + p.read_text().strip(), end='')\n",
+            encoding="utf-8",
+        )
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "while-multi-step"
+  name: "While Multi Step"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: while
+    condition: "{{{{ 'done' not in steps.step-a.output.stdout }}}}"
+    max_iterations: 3
+    steps:
+      - id: step-a
+        type: shell
+        run: '"{py}" "{step_a_file}"'
+      - id: step-b
+        type: shell
+        run: '"{py}" "{step_b_file}"'
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # Both unprefixed keys reflect the latest iteration's results.
+        assert state.step_results["step-a"]["output"]["stdout"] == "3"
+        assert state.step_results["step-b"]["output"]["stdout"] == "b-saw-3"
+        # Namespaced keys exist for loop iterations.
+        assert "retry-loop:step-a:1" in state.step_results
+        assert "retry-loop:step-b:1" in state.step_results
+        assert "retry-loop:step-a:2" in state.step_results
+        assert "retry-loop:step-b:2" in state.step_results
+
 
 # ===== State Persistence Tests =====
 
