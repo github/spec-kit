@@ -369,9 +369,14 @@ def _editable_direct_url_path() -> Path | None:
     """Return the editable checkout root recorded in direct_url.json, if any."""
     import importlib.metadata as _md
 
+    metadata_errors = [_md.PackageNotFoundError]
+    invalid_metadata_error = getattr(_md, "InvalidMetadataError", None)
+    if invalid_metadata_error is not None:
+        metadata_errors.append(invalid_metadata_error)
+
     try:
         dist = _md.distribution("specify-cli")
-    except _md.PackageNotFoundError:
+    except tuple(metadata_errors):
         return None
 
     payload = dist.read_text("direct_url.json")
@@ -823,9 +828,14 @@ def _source_checkout_path() -> Path | None:
         if git_root is not None:
             return git_root
 
+    metadata_errors = [_md.PackageNotFoundError]
+    invalid_metadata_error = getattr(_md, "InvalidMetadataError", None)
+    if invalid_metadata_error is not None:
+        metadata_errors.append(invalid_metadata_error)
+
     try:
         dist = _md.distribution("specify-cli")
-    except _md.PackageNotFoundError:
+    except tuple(metadata_errors):
         return None
     files = dist.files or []
     for f in files:

@@ -9,13 +9,14 @@ installed) with `--disable-socket` as an extra safety net.
 """
 
 import json
-import urllib.error
 import importlib.metadata
+import urllib.error
 from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
+import specify_cli
 from specify_cli import app
 from specify_cli._version import (
     _fetch_latest_release_tag,
@@ -53,6 +54,17 @@ def _http_error(code: int, message: str = "error") -> urllib.error.HTTPError:
         hdrs={},  # type: ignore[arg-type]
         fp=None,
     )
+
+
+@pytest.fixture(autouse=True)
+def route_open_url_through_urlopen(monkeypatch):
+    """Keep release-tag tests hermetic even when ~/.specify/auth.json exists."""
+
+    def _open_url(url, timeout=10, extra_headers=None):
+        req = specify_cli.authentication.http.build_request(url, extra_headers)
+        return specify_cli._version.urllib.request.urlopen(req, timeout=timeout)
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", _open_url)
 
 
 class TestIsNewer:
@@ -287,7 +299,7 @@ class TestUserStory2:
 def _capture_request_via_urlopen():
     captured = {}
 
-    def _side_effect(req, timeout=None):
+    def _side_effect(req, *args, **kwargs):
         captured["request"] = req
         return _mock_urlopen_response({"tag_name": "v0.7.4"})
 
@@ -305,9 +317,7 @@ class TestUserStory3:
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         _inject_github_config(monkeypatch, token_env="GH_TOKEN")
         captured, side_effect = _capture_request_via_urlopen()
-        mock_opener = MagicMock()
-        mock_opener.open.side_effect = side_effect
-        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") == f"Bearer {SENTINEL_GH_TOKEN}"
@@ -317,9 +327,7 @@ class TestUserStory3:
         monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
         _inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         captured, side_effect = _capture_request_via_urlopen()
-        mock_opener = MagicMock()
-        mock_opener.open.side_effect = side_effect
-        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") == f"Bearer {SENTINEL_GITHUB_TOKEN}"
@@ -358,9 +366,7 @@ class TestUserStory3:
         monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
         _inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         captured, side_effect = _capture_request_via_urlopen()
-        mock_opener = MagicMock()
-        mock_opener.open.side_effect = side_effect
-        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") == f"Bearer {SENTINEL_GITHUB_TOKEN}"

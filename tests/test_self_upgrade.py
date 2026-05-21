@@ -5,6 +5,7 @@ suite stays isolated from the real environment.
 """
 
 import errno
+import importlib.metadata
 import json
 import os
 import subprocess
@@ -799,6 +800,26 @@ class TestDetectionPipx:
 
 
 class TestEditableInstallMetadata:
+    def test_editable_marker_false_when_metadata_is_invalid(self):
+        invalid_metadata_error = getattr(importlib.metadata, "InvalidMetadataError", None)
+        if invalid_metadata_error is None:
+            class _FakeInvalidMetadataError(Exception):
+                pass
+
+            invalid_metadata_error = _FakeInvalidMetadataError
+
+        with patch.object(
+            importlib.metadata,
+            "InvalidMetadataError",
+            invalid_metadata_error,
+            create=True,
+        ), patch(
+            "importlib.metadata.distribution",
+            side_effect=invalid_metadata_error("bad metadata"),
+        ):
+            assert specify_cli._version._editable_marker_seen() is False
+            assert specify_cli._version._source_checkout_path() is None
+
     def test_direct_url_editable_install_marks_source_checkout(self, tmp_path):
         project_root = tmp_path / "spec-kit"
         project_root.mkdir()
