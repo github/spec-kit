@@ -1012,7 +1012,7 @@ def _emit_failure(
                 "internal routing error: target-tag-unparseable requires plan to be set"
             )
         console.print(
-            f"Upgrade aborted: resolved release tag {plan.target_tag!r} is not a comparable version.",
+            "Upgrade aborted: resolved release tag is not a comparable version.",
             soft_wrap=True,
         )
         console.print(

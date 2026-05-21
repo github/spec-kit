@@ -544,6 +544,7 @@ class TestAlreadyLatestUvTool:
         assert result.exit_code == 1
         out = strip_ansi(result.output)
         assert "not a comparable version" in out
+        assert "release-main" not in out
         assert "Already on latest release" not in out
         assert mock_run.call_count == 0
 
@@ -635,6 +636,7 @@ class TestDryRunUvTool:
         out = strip_ansi(result.output)
         assert result.exit_code == 1
         assert "not a comparable version" in out
+        assert "v0.9.0;echo unsafe" not in out
         assert "Command that would be executed:" not in out
         assert mock_run.call_count == 0
 
@@ -1906,7 +1908,8 @@ class TestResolutionFailures:
 
         assert result.exit_code == 1
         out = strip_ansi(result.output)
-        assert "resolved release tag 'release-main' is not a comparable version" in out
+        assert "resolved release tag is not a comparable version" in out
+        assert "release-main" not in out
         assert "Traceback" not in out
         assert mock_run.call_count == 0
 
