@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+INTEGRATIONS_REFERENCE_PATH = ROOT_DIR / "docs" / "reference" / "integrations.md"
 
 
 INTEGRATION_DOC_URLS: dict[str, str | None] = {
