@@ -136,3 +136,18 @@ def test_url_escaping_in_repository_links(tmp_path: Path) -> None:
     table = render_community_extensions_table(path=f)
     # The URL should be escaped: ) → \) and | → \|
     assert "[Foo](https://example.com/repo?x=1\\)&y=2\\|bad)" in table
+
+
+def test_extension_id_is_sanitized(tmp_path: Path) -> None:
+    f = _write_catalog(tmp_path, {
+        "foo|bar": {
+            "name": "Foo",
+            "id": "foo|bar\n",
+            "description": "",
+            "tags": [],
+            "verified": False,
+            "repository": "",
+        },
+    })
+    table = render_community_extensions_table(path=f)
+    assert "`foo\\|bar `" in table

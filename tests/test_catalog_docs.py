@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from specify_cli.catalog_docs import (
     escape_url_for_markdown_link,
+    INTEGRATIONS_REFERENCE_PATH,
     render_cell,
     list_integrations_for_docs,
     render_integrations_table,
@@ -61,6 +62,35 @@ def test_integrations_table_renders():
     lines = table.splitlines()
     assert lines[0] == "| Agent | Key | Notes |"
     assert lines[1] == "| --- | --- | --- |"
+
+
+def test_integrations_reference_doc_matches_renderer():
+    doc_text = INTEGRATIONS_REFERENCE_PATH.read_text(encoding="utf-8")
+    start_marker = "## Supported AI Coding Agents\n\n"
+    end_marker = "\n## List Available Integrations\n"
+    start = doc_text.index(start_marker) + len(start_marker)
+    end = doc_text.index(end_marker)
+    committed_table = doc_text[start:end].rstrip("\n")
+    rendered_table = render_integrations_table().rstrip("\n")
+
+    def parse_table(table: str) -> list[list[str]]:
+        rows: list[list[str]] = []
+        for line in table.splitlines():
+            if not line.startswith("| "):
+                continue
+            parts = [part.strip() for part in line.strip("|").split("|")]
+            if parts and set(parts[0]) == {"-"}:
+                continue
+            if len(parts) == 3:
+                rows.append(parts)
+        return rows
+
+    committed_rows = parse_table(committed_table)
+    rendered_rows = parse_table(rendered_table)
+    committed_rows.sort(key=lambda row: row[1])
+    rendered_rows.sort(key=lambda row: row[1])
+
+    assert committed_rows == rendered_rows
 
 
 def test_render_cell_escapes_pipes_and_normalizes_newlines():
