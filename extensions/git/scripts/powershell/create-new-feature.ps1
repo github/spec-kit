@@ -54,24 +54,19 @@ if ($Prefix) {
         Write-Error "Error: -Prefix cannot be empty or whitespace"
         exit 1
     }
-    $checkPrefix = $Prefix.TrimEnd('/')
-    if ([string]::IsNullOrEmpty($checkPrefix)) {
-        Write-Error "Error: -Prefix must contain at least one non-slash character"
+    if ($Prefix.Contains('/')) {
+        Write-Error "Error: -Prefix must not contain slashes; e.g. 'feature', 'bugfix'"
         exit 1
     }
-    if ($checkPrefix.Contains('/')) {
-        Write-Error "Error: -Prefix must be a single segment (no embedded slashes); e.g. 'feature', 'bugfix'"
-        exit 1
-    }
-    if ($checkPrefix -notmatch '^[a-z0-9][-a-z0-9]*$') {
+    if ($Prefix -cnotmatch '^[a-z0-9][-a-z0-9]*$') {
         Write-Error "Error: -Prefix must start with a letter or digit and contain only ASCII lowercase letters, digits, and hyphens"
         exit 1
     }
-    if ($checkPrefix.Length -gt $MaxPrefixLen) {
+    if ($Prefix.Length -gt $MaxPrefixLen) {
         Write-Error "Error: -Prefix must be $MaxPrefixLen characters or fewer"
         exit 1
     }
-    $Prefix = "$checkPrefix/"
+    $Prefix = "$Prefix/"
 }
 
 if ([string]::IsNullOrWhiteSpace($featureDesc)) {

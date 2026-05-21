@@ -73,7 +73,7 @@ The `create-new-feature` scripts accept a `--prefix` (Bash) / `-Prefix` (PowerSh
 - `bugfix` — bug fixes
 - `hotfix` — urgent production fixes
 
-The trailing `/` is optional — the script auto-appends it if missing. The final branch name format is `{prefix}/{number}-{short-name}` (e.g., `--prefix "feature"` produces `feature/001-user-auth`).
+The script appends the `/` separator automatically. The final branch name format is `{prefix}/{number}-{short-name}` (e.g., `--prefix "feature"` produces `feature/001-user-auth`).
 
 ## Installation
 

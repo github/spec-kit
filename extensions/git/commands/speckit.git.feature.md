@@ -43,7 +43,7 @@ Determine the branch prefix based on the nature of the work:
 - Use `hotfix` for urgent production fixes
 - Use no prefix (omit `--prefix`) for the default flat naming
 
-Choose the most appropriate prefix based on the feature description and context. The trailing `/` is optional — the script auto-appends it if missing. The final branch name format is `{prefix}/{number}-{short-name}` (e.g., `--prefix "feature"` produces `feature/001-user-auth`).
+Choose the most appropriate prefix based on the feature description and context. The script appends the `/` separator automatically. The final branch name format is `{prefix}/{number}-{short-name}` (e.g., `--prefix "feature"` produces `feature/001-user-auth`).
 
 ## Execution
 
