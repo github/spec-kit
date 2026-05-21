@@ -953,9 +953,9 @@ class ExtensionManager:
                 )
 
             if link_outputs:
-                cache_file.parent.mkdir(parents=True, exist_ok=True)
-                cache_file.write_text(skill_content, encoding="utf-8")
                 try:
+                    cache_file.parent.mkdir(parents=True, exist_ok=True)
+                    cache_file.write_text(skill_content, encoding="utf-8")
                     if skill_file.exists() or skill_file.is_symlink():
                         skill_file.unlink()
                     target = os.path.relpath(cache_file, skill_file.parent)

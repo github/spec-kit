@@ -1833,6 +1833,43 @@ Run {SCRIPT}
             / "speckit.test-ext.hello.agent.md"
         ).exists()
 
+    def test_dev_register_commands_falls_back_to_copy_when_cache_write_fails(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Dev-mode registration stays functional when the dev cache is unwritable."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+        original_write_text = Path.write_text
+
+        def raise_cache_write_error(path, *args, **kwargs):
+            if ".specify-dev" in path.parts:
+                raise OSError("cache is not writable")
+            return original_write_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", raise_cache_write_error)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "copilot",
+            manifest,
+            extension_dir,
+            project_dir,
+            link_outputs=True,
+        )
+
+        cmd_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        assert cmd_file.exists()
+        assert not cmd_file.is_symlink()
+        assert "Extension: test-ext" in cmd_file.read_text(encoding="utf-8")
+        assert not (
+            extension_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "copilot"
+            / "speckit.test-ext.hello.agent.md"
+        ).exists()
+
     def test_dev_register_commands_rejects_cache_path_traversal(self, temp_dir):
         """Dev-mode cache writes must stay inside the agent cache root."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar

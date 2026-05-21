@@ -411,6 +411,41 @@ class TestExtensionSkillRegistration:
             / "SKILL.md"
         ).exists()
 
+    def test_dev_skill_registration_falls_back_to_copy_when_cache_write_fails(
+        self, skills_project, extension_dir, monkeypatch
+    ):
+        """Dev-mode skill registration stays functional when the dev cache is unwritable."""
+        project_dir, skills_dir = skills_project
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        original_write_text = Path.write_text
+
+        def raise_cache_write_error(path, *args, **kwargs):
+            if ".specify-dev" in path.parts:
+                raise OSError("cache is not writable")
+            return original_write_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", raise_cache_write_error)
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        assert "speckit-test-ext-hello" in written
+        assert skill_file.exists()
+        assert not skill_file.is_symlink()
+        assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+        assert not (
+            extension_dir
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        ).exists()
+
     def test_registered_skills_in_registry(self, skills_project, extension_dir):
         """Registry should contain registered_skills list."""
         project_dir, skills_dir = skills_project
