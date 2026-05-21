@@ -1,0 +1,14 @@
+[project]
+name = "spec-kit-agent-governance"
+version = "1.2.0"
+description = "Spec Kit extension for generating agent platform governance files"
+requires-python = ">=3.10"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

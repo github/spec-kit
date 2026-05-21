@@ -1,0 +1,29 @@
+schema_version: "1.0"
+
+extension:
+  id: arch
+  name: "Architecture Workflow"
+  version: "1.1.0"
+  description: "Generate or reverse project-level 4+1 architecture view artifacts and synthesis"
+  author: bigsmartben
+  repository: https://github.com/bigsmartben/spec-kit-arch
+  homepage: https://github.com/bigsmartben/spec-kit-arch
+  license: MIT
+
+requires:
+  speckit_version: ">=0.8.10.dev0"
+
+provides:
+  commands:
+    - name: speckit.arch.generate
+      file: commands/speckit.arch.generate.md
+      description: "Execute the 4+1 architecture workflow and generate architecture view artifacts"
+    - name: speckit.arch.reverse
+      file: commands/speckit.arch.reverse.md
+      description: "Reverse-generate 4+1 architecture artifacts from observable repository facts"
+
+tags:
+  - architecture
+  - 4plus1
+  - workflow
+  - design

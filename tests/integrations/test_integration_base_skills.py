@@ -15,6 +15,7 @@ import yaml
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from specify_cli.integrations.base import SkillsIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
+from tests.integrations.community_defaults import bundled_community_default_files
 
 
 class SkillsIntegrationTests:
@@ -413,6 +414,7 @@ class SkillsIntegrationTests:
         # Agent context file (if set)
         if i.context_file:
             files.append(i.context_file)
+        files.extend(bundled_community_default_files(self.KEY))
         return sorted(files)
 
     def test_complete_file_inventory_sh(self, tmp_path):

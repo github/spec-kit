@@ -7,6 +7,7 @@ import pytest
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.base import MarkdownIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
+from tests.integrations.community_defaults import bundled_community_default_files
 
 
 class TestGenericIntegration:
@@ -254,7 +255,7 @@ class TestGenericIntegration:
             p.relative_to(project).as_posix()
             for p in project.rglob("*") if p.is_file()
         )
-        expected = sorted([
+        expected = [
             "AGENTS.md",
             ".myagent/commands/speckit.analyze.md",
             ".myagent/commands/speckit.checklist.md",
@@ -282,7 +283,15 @@ class TestGenericIntegration:
             ".specify/templates/tasks-template.md",
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
-        ])
+        ]
+        expected.extend(
+            bundled_community_default_files(
+                "generic",
+                commands_dir=".myagent/commands",
+                include_registered_commands=False,
+            )
+        )
+        expected = sorted(expected)
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
@@ -310,7 +319,7 @@ class TestGenericIntegration:
             p.relative_to(project).as_posix()
             for p in project.rglob("*") if p.is_file()
         )
-        expected = sorted([
+        expected = [
             "AGENTS.md",
             ".myagent/commands/speckit.analyze.md",
             ".myagent/commands/speckit.checklist.md",
@@ -338,7 +347,15 @@ class TestGenericIntegration:
             ".specify/templates/tasks-template.md",
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
-        ])
+        ]
+        expected.extend(
+            bundled_community_default_files(
+                "generic",
+                commands_dir=".myagent/commands",
+                include_registered_commands=False,
+            )
+        )
+        expected = sorted(expected)
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"

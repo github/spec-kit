@@ -1,0 +1,302 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "speckit.implement.handoff.v2.schema.json",
+  "title": "Spec Kit Implement Handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_type",
+    "shard_id",
+    "agent_topology",
+    "lifecycle_stage",
+    "vertical_capability",
+    "capability_boundary",
+    "planner_outputs",
+    "draft_source",
+    "task_ids",
+    "task_text",
+    "context_digest_path",
+    "context_index_path",
+    "allowed_read_paths",
+    "allowed_write_paths",
+    "context_gaps",
+    "validation_commands",
+    "task_status_update",
+    "forbidden_actions"
+  ],
+  "properties": {
+    "contract_type": {
+      "const": "speckit.implement.handoff.v2"
+    },
+    "shard_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "agent_topology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "core_agent",
+        "vertical_planner_agent",
+        "worker_agent"
+      ],
+      "properties": {
+        "core_agent": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "role"
+          ],
+          "properties": {
+            "role": {
+              "const": "orchestrator"
+            }
+          }
+        },
+        "vertical_planner_agent": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "role",
+            "vertical_planner_only",
+            "may_execute_implementation",
+            "may_write_manifest",
+            "may_update_tasks_md"
+          ],
+          "properties": {
+            "role": {
+              "const": "planner"
+            },
+            "vertical_planner_only": {
+              "const": true
+            },
+            "may_execute_implementation": {
+              "const": false
+            },
+            "may_write_manifest": {
+              "const": false
+            },
+            "may_update_tasks_md": {
+              "const": false
+            }
+          }
+        },
+        "worker_agent": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "role",
+            "single_handoff_only",
+            "may_dispatch_workers",
+            "may_update_tasks_md"
+          ],
+          "properties": {
+            "role": {
+              "const": "executor"
+            },
+            "single_handoff_only": {
+              "const": true
+            },
+            "may_dispatch_workers": {
+              "const": false
+            },
+            "may_update_tasks_md": {
+              "const": false
+            }
+          }
+        }
+      }
+    },
+    "lifecycle_stage": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vertical_capability": {
+      "type": "string",
+      "enum": [
+        "domain-model",
+        "api-contract",
+        "persistence",
+        "service-flow",
+        "ui",
+        "cli",
+        "test-validation",
+        "documentation",
+        "integration",
+        "cleanup"
+      ]
+    },
+    "capability_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owns",
+        "depends_on",
+        "must_not_touch"
+      ],
+      "properties": {
+        "owns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "must_not_touch": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "planner_outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shard_plan_path",
+        "handoff_draft_path",
+        "context_digest_draft_path",
+        "vertical_capability"
+      ],
+      "properties": {
+        "shard_plan_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "handoff_draft_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "context_digest_draft_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vertical_capability": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "draft_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vertical_planner_id",
+        "handoff_draft_path",
+        "context_digest_draft_path"
+      ],
+      "properties": {
+        "vertical_planner_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "handoff_draft_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "context_digest_draft_path": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "task_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "task_text": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "context_digest_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "context_index_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "allowed_read_paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "allowed_write_paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "not": {
+          "pattern": "tasks\\.md$"
+        }
+      }
+    },
+    "context_gaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "validation_commands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "task_status_update": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "receipt_path",
+        "committer",
+        "contract_type",
+        "required_fields"
+      ],
+      "properties": {
+        "mode": {
+          "const": "receipt"
+        },
+        "receipt_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "committer": {
+          "const": "core_agent"
+        },
+        "contract_type": {
+          "const": "speckit.implement.receipt.v1"
+        },
+        "required_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "forbidden_actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

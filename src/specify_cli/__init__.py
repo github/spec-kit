@@ -142,6 +142,9 @@ def _build_ai_assistant_help() -> str:
     return base_help + " Use " + aliases_text + "."
 AI_ASSISTANT_HELP = _build_ai_assistant_help()
 
+DEFAULT_BUNDLED_EXTENSIONS = ("arch", "preview", "agent-governance")
+DEFAULT_BUNDLED_PRESETS = ("workflow-preset",)
+
 
 def _build_integration_equivalent(
     integration_key: str,
@@ -749,7 +752,9 @@ def init(
         ("chmod", "Ensure scripts executable"),
         ("constitution", "Constitution setup"),
         ("git", "Install git extension"),
+        ("extensions", "Install bundled extensions"),
         ("workflow", "Install bundled workflow"),
+        ("presets", "Install bundled presets"),
         ("final", "Finalize"),
     ]:
         tracker.add(key, label)
@@ -819,6 +824,26 @@ def init(
 
             ensure_constitution_from_template(project_path, tracker=tracker)
 
+            # Persist the CLI options before installing extensions/presets so
+            # command and skill registration can resolve the active integration.
+            init_opts = {
+                "ai": selected_ai,
+                "integration": resolved_integration.key,
+                "branch_numbering": branch_numbering or "sequential",
+                "context_file": resolved_integration.context_file,
+                "here": here,
+                "script": selected_script,
+                "speckit_version": get_speckit_version(),
+            }
+            # Ensure ai_skills is set for SkillsIntegration so downstream
+            # tools (extensions, presets) emit SKILL.md overrides correctly.
+            # Also set for integrations running in skills mode (e.g. Copilot
+            # with --skills).
+            from .integrations.base import SkillsIntegration as _SkillsPersist
+            if isinstance(resolved_integration, _SkillsPersist) or getattr(resolved_integration, "_skills_mode", False):
+                init_opts["ai_skills"] = True
+            save_init_options(project_path, init_opts)
+
             if not no_git:
                 tracker.start("git")
                 git_messages = []
@@ -871,6 +896,42 @@ def init(
             else:
                 tracker.skip("git", "--no-git flag")
 
+            # Install bigsmartben fork's bundled community extensions.
+            tracker.start("extensions")
+            extension_messages = []
+            extension_has_error = False
+            try:
+                from .extensions import ExtensionManager
+                manager = ExtensionManager(project_path)
+                for extension_id in DEFAULT_BUNDLED_EXTENSIONS:
+                    bundled_path = _locate_bundled_extension(extension_id)
+                    if not bundled_path:
+                        extension_has_error = True
+                        extension_messages.append(f"{extension_id}: bundled extension not found")
+                        continue
+                    if manager.registry.is_installed(extension_id):
+                        extension_messages.append(f"{extension_id}: already installed")
+                        continue
+                    try:
+                        manager.install_from_directory(
+                            bundled_path, get_speckit_version()
+                        )
+                        extension_messages.append(f"{extension_id}: installed")
+                    except Exception as ext_err:
+                        extension_has_error = True
+                        sanitized_ext = str(ext_err).replace('\n', ' ').strip()
+                        extension_messages.append(
+                            f"{extension_id}: install failed: {sanitized_ext[:100]}"
+                        )
+            except Exception as ext_err:
+                extension_has_error = True
+                sanitized_ext = str(ext_err).replace('\n', ' ').strip()
+                extension_messages.append(f"install failed: {sanitized_ext[:120]}")
+            if extension_has_error:
+                tracker.error("extensions", "; ".join(extension_messages))
+            else:
+                tracker.complete("extensions", "; ".join(extension_messages))
+
             # Install bundled speckit workflow
             try:
                 bundled_wf = _locate_bundled_workflow("speckit")
@@ -905,26 +966,42 @@ def init(
             # Fix permissions after all installs (scripts + extensions)
             ensure_executable_scripts(project_path, tracker=tracker)
 
-            # Persist the CLI options so later operations (e.g. preset add)
-            # can adapt their behaviour without re-scanning the filesystem.
-            # Must be saved BEFORE preset install so _get_skills_dir() works.
-            init_opts = {
-                "ai": selected_ai,
-                "integration": resolved_integration.key,
-                "branch_numbering": branch_numbering or "sequential",
-                "context_file": resolved_integration.context_file,
-                "here": here,
-                "script": selected_script,
-                "speckit_version": get_speckit_version(),
-            }
-            # Ensure ai_skills is set for SkillsIntegration so downstream
-            # tools (extensions, presets) emit SKILL.md overrides correctly.
-            # Also set for integrations running in skills mode (e.g. Copilot
-            # with --skills).
-            from .integrations.base import SkillsIntegration as _SkillsPersist
-            if isinstance(resolved_integration, _SkillsPersist) or getattr(resolved_integration, "_skills_mode", False):
-                init_opts["ai_skills"] = True
-            save_init_options(project_path, init_opts)
+            # Install bigsmartben fork's bundled workflow preset.
+            tracker.start("presets")
+            preset_messages = []
+            preset_has_error = False
+            try:
+                from .presets import PresetManager
+                preset_manager = PresetManager(project_path)
+                speckit_ver = get_speckit_version()
+                for preset_id in DEFAULT_BUNDLED_PRESETS:
+                    bundled_path = _locate_bundled_preset(preset_id)
+                    if not bundled_path:
+                        preset_has_error = True
+                        preset_messages.append(f"{preset_id}: bundled preset not found")
+                        continue
+                    if preset_manager.registry.is_installed(preset_id):
+                        preset_messages.append(f"{preset_id}: already installed")
+                        continue
+                    try:
+                        preset_manager.install_from_directory(
+                            bundled_path, speckit_ver
+                        )
+                        preset_messages.append(f"{preset_id}: installed")
+                    except Exception as preset_err:
+                        preset_has_error = True
+                        sanitized_preset = str(preset_err).replace('\n', ' ').strip()
+                        preset_messages.append(
+                            f"{preset_id}: install failed: {sanitized_preset[:100]}"
+                        )
+            except Exception as preset_err:
+                preset_has_error = True
+                sanitized_preset = str(preset_err).replace('\n', ' ').strip()
+                preset_messages.append(f"install failed: {sanitized_preset[:120]}")
+            if preset_has_error:
+                tracker.error("presets", "; ".join(preset_messages))
+            else:
+                tracker.complete("presets", "; ".join(preset_messages))
 
             # Install preset if specified
             if preset:
@@ -1892,6 +1969,18 @@ def integration_uninstall(
 
     removed, skipped = manifest.uninstall(project_root, force=force)
 
+    try:
+        from .extensions import ExtensionManager
+        from .presets import PresetManager
+
+        ExtensionManager(project_root).unregister_agent_artifacts(key)
+        PresetManager(project_root).unregister_agent_artifacts(key)
+    except Exception as cleanup_err:
+        console.print(
+            f"[yellow]Warning:[/yellow] Could not clean up extension/preset artifacts "
+            f"for '{key}': {cleanup_err}"
+        )
+
     # Remove managed context section from the agent context file
     if integration:
         integration.remove_context_section(project_root)
@@ -2066,12 +2155,14 @@ def integration_switch(
         # remain as orphans in the old agent's directory.
         try:
             from .extensions import ExtensionManager
+            from .presets import PresetManager
 
             ext_mgr = ExtensionManager(project_root)
             ext_mgr.unregister_agent_artifacts(installed_key)
+            PresetManager(project_root).unregister_agent_artifacts(installed_key)
         except Exception as ext_err:
             console.print(
-                f"[yellow]Warning:[/yellow] Could not clean up extension artifacts "
+                f"[yellow]Warning:[/yellow] Could not clean up extension/preset artifacts "
                 f"(commands, skills, registry entries) for '{installed_key}': {ext_err}"
             )
 
@@ -2214,6 +2305,111 @@ def integration_switch(
     console.print(f"\n[green]✓[/green] Switched to integration '{name}'")
 
 
+def _preset_managed_modified_files(
+    project_root: Path,
+    agent_name: str,
+    modified: list[str],
+) -> set[str]:
+    """Return modified manifest paths that are currently managed by presets."""
+    if not modified:
+        return set()
+
+    try:
+        from .agents import CommandRegistrar
+        from .presets import PresetManager
+    except Exception:
+        return set()
+
+    agent_config = CommandRegistrar.AGENT_CONFIGS.get(agent_name)
+    if not agent_config:
+        return set()
+
+    manager = PresetManager(project_root)
+    registered_command_names: set[str] = set()
+    registered_skill_names: set[str] = set()
+
+    for metadata in manager.registry.list().values():
+        commands_by_agent = metadata.get("registered_commands", {})
+        if isinstance(commands_by_agent, dict):
+            commands = commands_by_agent.get(agent_name, [])
+            if isinstance(commands, list):
+                registered_command_names.update(
+                    command for command in commands if isinstance(command, str)
+                )
+
+        skills = metadata.get("registered_skills", [])
+        if isinstance(skills, list):
+            registered_skill_names.update(skill for skill in skills if isinstance(skill, str))
+
+    managed: set[str] = set()
+    extension = agent_config.get("extension", "")
+    command_dir = str(agent_config.get("dir", "")).strip("/")
+
+    for rel in modified:
+        rel_path = Path(rel)
+        rel_posix = rel_path.as_posix()
+
+        if extension == "/SKILL.md":
+            if rel_path.name == "SKILL.md" and rel_path.parent.name in registered_skill_names:
+                managed.add(rel)
+            continue
+
+        if command_dir and not rel_posix.startswith(f"{command_dir}/"):
+            continue
+        for command_name in registered_command_names:
+            if rel_path.name == f"{command_name}{extension}":
+                managed.add(rel)
+                break
+
+    return managed
+
+
+def _remove_stale_extension_commands_from_dirs(
+    project_root: Path,
+    stale_files: set[str],
+) -> None:
+    """Remove extension commands from old command dirs discovered during upgrade."""
+    if not stale_files:
+        return
+
+    try:
+        from .extensions import ExtensionManager
+    except Exception:
+        return
+
+    manager = ExtensionManager(project_root)
+    command_names: set[str] = set()
+    for metadata in manager.registry.list().values():
+        registered_commands = metadata.get("registered_commands", {})
+        if not isinstance(registered_commands, dict):
+            continue
+        for commands in registered_commands.values():
+            if isinstance(commands, list):
+                command_names.update(command for command in commands if isinstance(command, str))
+
+    if not command_names:
+        return
+
+    stale_dirs = {
+        (project_root / rel).parent
+        for rel in stale_files
+        if isinstance(rel, str)
+    }
+    suffixes = (".md", ".toml", ".yaml", ".agent.md")
+
+    for stale_dir in stale_dirs:
+        if not stale_dir.is_dir():
+            continue
+        for command_name in command_names:
+            for suffix in suffixes:
+                stale_path = stale_dir / f"{command_name}{suffix}"
+                try:
+                    if stale_path.is_file():
+                        stale_path.unlink()
+                except OSError:
+                    pass
+
+
 @integration_app.command("upgrade")
 def integration_upgrade(
     key: str | None = typer.Argument(None, help="Integration key to upgrade (default: current integration)"),
@@ -2263,6 +2459,9 @@ def integration_upgrade(
 
     # Detect modified files via manifest hashes
     modified = old_manifest.check_modified()
+    preset_managed = _preset_managed_modified_files(project_root, key, modified)
+    if preset_managed:
+        modified = [rel for rel in modified if rel not in preset_managed]
     if modified and not force:
         console.print(f"[yellow]⚠[/yellow]  {len(modified)} file(s) have been modified since installation:")
         for rel in modified:
@@ -2354,8 +2553,20 @@ def integration_upgrade(
         stale_manifest = IntegrationManifest(key, project_root, version="stale-cleanup")
         stale_manifest._files = {k: old_files[k] for k in stale_keys}
         stale_removed, _ = stale_manifest.uninstall(project_root, force=True)
+        _remove_stale_extension_commands_from_dirs(project_root, stale_keys)
         if stale_removed:
             console.print(f"  Removed {len(stale_removed)} stale file(s) from previous install")
+
+    try:
+        from .extensions import ExtensionManager
+
+        ext_mgr = ExtensionManager(project_root)
+        ext_mgr.register_enabled_extensions_for_agent(key)
+    except Exception as ext_err:
+        console.print(
+            f"[yellow]Warning:[/yellow] Could not refresh extension commands, skills, "
+            f"or related artifacts for '{key}': {ext_err}"
+        )
 
     name = (integration.config or {}).get("name", key)
     console.print(f"\n[green]✓[/green] Integration '{name}' upgraded successfully")

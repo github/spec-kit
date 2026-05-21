@@ -40,10 +40,14 @@ packages = ["src/specify_cli"]
 "scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
 # Bundled extensions (installable via `specify extension add <name>`)
 "extensions/git" = "specify_cli/core_pack/extensions/git"
+"extensions/arch" = "specify_cli/core_pack/extensions/arch"
+"extensions/preview" = "specify_cli/core_pack/extensions/preview"
+"extensions/agent-governance" = "specify_cli/core_pack/extensions/agent-governance"
 # Bundled workflows (auto-installed during `specify init`)
 "workflows/speckit" = "specify_cli/core_pack/workflows/speckit"
 # Bundled presets (installable via `specify preset add <name>` or `specify init --preset <name>`)
 "presets/lean" = "specify_cli/core_pack/presets/lean"
+"presets/workflow-preset" = "specify_cli/core_pack/presets/workflow-preset"
 
 [project.optional-dependencies]
 test = [
@@ -70,4 +74,3 @@ omit = ["*/tests/*", "*/__pycache__/*"]
 precision = 2
 show_missing = true
 skip_covered = false
-
