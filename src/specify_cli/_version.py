@@ -607,6 +607,11 @@ def _installer_binary_name(method: _InstallMethod) -> str | None:
     return None
 
 
+def _is_path_like_command(value: str) -> bool:
+    """Return whether an argv[0] names a path rather than a bare command."""
+    return Path(value).parent != Path(".") or "/" in value or "\\" in value
+
+
 def _method_label(method: _InstallMethod) -> str:
     """Render the user-facing label for an install method."""
     return {
@@ -731,13 +736,19 @@ def _run_installer(plan: _UpgradePlan) -> _InstallerResult:
     # saw printed. A lightweight pre-flight via `shutil.which` short-circuits
     # the obvious "binary disappeared" case before spawning, and the
     # try/except below catches the residual race window.
-    installer_cmd = Path(plan.installer_argv[0])
+    installer_name = plan.installer_argv[0]
+    installer_cmd = Path(installer_name)
     if installer_cmd.is_absolute():
         if installer_cmd.exists() and (
             not installer_cmd.is_file() or not os.access(installer_cmd, os.X_OK)
         ):
             return _InstallerResult(_InstallerResultKind.INVALID)
-    elif shutil.which(plan.installer_argv[0]) is None:
+    elif _is_path_like_command(installer_name):
+        if not installer_cmd.exists():
+            return _InstallerResult(_InstallerResultKind.MISSING)
+        if not installer_cmd.is_file() or not os.access(installer_cmd, os.X_OK):
+            return _InstallerResult(_InstallerResultKind.INVALID)
+    elif shutil.which(installer_name) is None:
         return _InstallerResult(_InstallerResultKind.MISSING)
 
     timeout_raw = os.environ.get("SPECIFY_UPGRADE_TIMEOUT_SECS")

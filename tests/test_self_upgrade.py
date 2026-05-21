@@ -444,7 +444,7 @@ class TestBareUpgradeUvTool:
     """uv-tool happy path, bare invocation."""
 
     def test_happy_path_end_to_end(self, uv_tool_argv0, clean_environ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -467,7 +467,7 @@ class TestBareUpgradeUvTool:
     def test_one_user_action_no_prompt(self, uv_tool_argv0, clean_environ):
         # The single `invoke` represents the single user action — no prompt.
         # If a prompt existed, runner.invoke would hang waiting for input.
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -487,7 +487,7 @@ class TestAlreadyLatestUvTool:
     def test_already_latest_exits_zero_no_subprocess(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
@@ -502,7 +502,7 @@ class TestAlreadyLatestUvTool:
     def test_dev_build_ahead_of_release_reports_newer_noop(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
@@ -517,7 +517,7 @@ class TestAlreadyLatestUvTool:
     def test_unparseable_current_version_does_not_false_noop(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
@@ -538,7 +538,7 @@ class TestAlreadyLatestUvTool:
     def test_unparseable_resolved_target_fails_before_literal_noop(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
@@ -592,7 +592,7 @@ class TestDryRunUvTool:
         uv_tool_argv0,
         clean_environ,
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
@@ -611,7 +611,7 @@ class TestDryRunUvTool:
 
     def test_dry_run_with_tag_skips_network(self, uv_tool_argv0, clean_environ):
         # --dry-run with --tag must NOT hit the network.
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ), patch("specify_cli._version.shutil.which", return_value="/usr/bin/uv"), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -627,7 +627,7 @@ class TestDryRunUvTool:
     def test_dry_run_rejects_unparseable_network_tag_before_preview(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
@@ -646,7 +646,7 @@ class TestDryRunUvTool:
     def test_dry_run_with_missing_uv_flags_unresolved_installer(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value=None
@@ -866,7 +866,7 @@ class TestEditableInstallMetadata:
 
 class TestTagValidationWhitespace:
     def test_tag_whitespace_is_trimmed_before_validation(self, uv_tool_argv0, clean_environ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -906,7 +906,7 @@ class TestBareUpgradePipx:
     """pipx happy path."""
 
     def test_happy_path(self, pipx_argv0, clean_environ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/pipx"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -942,7 +942,7 @@ class TestDetectionShortCircuit:
 
 class TestDryRunPipx:
     def test_dry_run_preview_names_pipx(self, pipx_argv0, clean_environ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/pipx"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -967,7 +967,7 @@ class TestUvxEphemeral:
         uvx_ephemeral_argv0,
         clean_environ,
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run:
             mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
@@ -986,7 +986,7 @@ class TestUvxEphemeral:
         clean_environ,
     ):
         with patch(
-            "specify_cli._version.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             side_effect=AssertionError("non-upgradable uvx path must not hit network"),
         ):
             result = runner.invoke(app, ["self", "upgrade"])
@@ -1009,7 +1009,7 @@ class TestSourceCheckout:
 
         with patch("specify_cli._version._editable_marker_seen", return_value=True), patch(
             "specify_cli._version._source_checkout_path", return_value=fake_tree
-        ), patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        ), patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run:
             mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
@@ -1033,7 +1033,7 @@ class TestUnsupported:
     ):
         with patch("specify_cli._version._editable_marker_seen", return_value=False), patch(
             "specify_cli._version.shutil.which", return_value=None
-        ), patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        ), patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run:
             mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
@@ -1060,7 +1060,7 @@ class TestUnsupported:
         with patch("specify_cli._version._editable_marker_seen", return_value=False), patch(
             "specify_cli._version.shutil.which", return_value=None
         ), patch(
-            "specify_cli._version.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             side_effect=AssertionError("unsupported guidance should not require network"),
         ):
             result = runner.invoke(app, ["self", "upgrade"])
@@ -1086,7 +1086,7 @@ class TestDryRunNonUpgradablePaths:
         uvx_ephemeral_argv0,
         clean_environ,
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen:
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade", "--dry-run"])
         assert result.exit_code == 0
@@ -1101,7 +1101,7 @@ class TestDryRunNonUpgradablePaths:
     ):
         with patch("specify_cli._version._editable_marker_seen", return_value=False), patch(
             "specify_cli._version.shutil.which", return_value=None
-        ), patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen:
+        ), patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen:
             mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade", "--dry-run"])
         assert result.exit_code == 0
@@ -1118,7 +1118,7 @@ class TestInstallerMissing:
 
     def test_uv_missing_exits_3(self, uv_tool_argv0, clean_environ):
         which_results = {"specify": "/usr/local/bin/specify"}
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda n: which_results.get(n)
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
             mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
@@ -1130,7 +1130,7 @@ class TestInstallerMissing:
 
     def test_pipx_missing_exits_3(self, pipx_argv0, clean_environ):
         which_results = {}
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda n: which_results.get(n)
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
             mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
@@ -1145,7 +1145,7 @@ class TestInstallerMissing:
         fake_uv.parent.mkdir()
         fake_uv.write_text("#!/bin/sh\n")
         fake_uv.chmod(0o755)
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda name: None
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -1168,6 +1168,38 @@ class TestInstallerMissing:
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 0
 
+    def test_relative_installer_path_does_not_require_path_lookup(
+        self, monkeypatch, uv_tool_argv0, clean_environ, tmp_path
+    ):
+        fake_uv = tmp_path / "uv"
+        fake_uv.write_text("#!/bin/sh\n")
+        fake_uv.chmod(0o755)
+        monkeypatch.chdir(tmp_path)
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.shutil.which", side_effect=lambda name: None
+        ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
+            "specify_cli._version._get_installed_version", return_value="0.7.5"
+        ), patch(
+            "specify_cli._version._verify_upgrade", return_value="0.7.6"
+        ), patch(
+            "specify_cli._version._assemble_installer_argv",
+            return_value=[
+                "./uv",
+                "tool",
+                "install",
+                "specify-cli",
+                "--force",
+                "--from",
+                "git+https://github.com/github/spec-kit.git@v0.7.6",
+            ],
+        ):
+            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_run.side_effect = [_completed_process(0)]
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        assert result.exit_code == 0
+        assert mock_run.call_args.args[0][0] == "./uv"
+
     def test_resolved_absolute_installer_removed_before_exec_gets_missing_path_message(
         self, uv_tool_argv0, clean_environ, tmp_path
     ):
@@ -1180,7 +1212,7 @@ class TestInstallerMissing:
             fake_uv.unlink()
             raise FileNotFoundError(str(fake_uv))
 
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which",
             side_effect=lambda name: str(fake_uv) if name == "uv" else None,
         ), patch("specify_cli._version.subprocess.run", side_effect=fake_run), patch(
@@ -1202,7 +1234,7 @@ class TestInstallerMissing:
         fake_uv.parent.mkdir()
         fake_uv.write_text("#!/bin/sh\n")
         fake_uv.chmod(0o644)
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda name: None
         ), patch("specify_cli._version.os.access", return_value=False), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -1229,7 +1261,7 @@ class TestInstallerMissing:
     def test_real_installer_exit_126_is_not_treated_as_invalid_path(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -1246,7 +1278,7 @@ class TestInstallerMissing:
         self, uv_tool_argv0, clean_environ, tmp_path
     ):
         fake_uv = tmp_path / "missing-installer" / "uv"
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda name: None
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"), patch(
             "specify_cli._version._assemble_installer_argv",
@@ -1275,7 +1307,7 @@ class TestInstallerMissing:
         fake_uv.parent.mkdir()
         fake_uv.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
         fake_uv.chmod(0o755)
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda name: None
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"), patch(
             "specify_cli._version._assemble_installer_argv",
@@ -1302,7 +1334,7 @@ class TestInstallerMissing:
     def test_bare_invalid_installer_message_does_not_call_it_a_path(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"), patch(
             "specify_cli._version._assemble_installer_argv",
@@ -1335,7 +1367,7 @@ class TestInstallerMissing:
         fake_uv.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
         fake_uv.chmod(0o755)
         invalid_error = OSError(errno.ENOEXEC, "Exec format error")
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda name: None
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"), patch(
             "specify_cli._version._assemble_installer_argv",
@@ -1364,7 +1396,7 @@ class TestInstallerMissing:
         fake_uv.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
         fake_uv.chmod(0o755)
         transient_error = OSError(errno.EMFILE, "Too many open files")
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda name: None
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"), patch(
             "specify_cli._version._assemble_installer_argv",
@@ -1388,7 +1420,7 @@ class TestInstallerFailed:
     """Installer non-zero exit → propagate code, print rollback hint."""
 
     def test_installer_exit_2_propagates(self, uv_tool_argv0, clean_environ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -1411,7 +1443,7 @@ class TestInstallerFailed:
         assert mock_run.call_count == 1
 
     def test_installer_exit_127_propagates(self, uv_tool_argv0, clean_environ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -1425,7 +1457,7 @@ class TestInstallerFailed:
         self, uv_tool_argv0, clean_environ, monkeypatch
     ):
         monkeypatch.setenv("SPECIFY_UPGRADE_TIMEOUT_SECS", "12")
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -1444,7 +1476,7 @@ class TestInstallerFailed:
         self, uv_tool_argv0, clean_environ, monkeypatch
     ):
         monkeypatch.setenv("SPECIFY_UPGRADE_TIMEOUT_SECS", "nan")
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -1465,7 +1497,7 @@ class TestInstallerFailed:
     def test_real_installer_exit_124_is_not_treated_as_timeout(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -1479,7 +1511,7 @@ class TestInstallerFailed:
         assert "Upgrade timed out while waiting for the installer subprocess." not in out
 
     def test_pipx_failure_prints_pipx_rollback_hint(self, pipx_argv0, clean_environ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/pipx"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -1497,7 +1529,7 @@ class TestInstallerFailed:
     def test_prerelease_failure_degrades_rollback_hint_to_releases_page(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="1.0.0rc1"
@@ -1521,7 +1553,7 @@ class TestVerificationMismatch:
         uv_tool_argv0,
         clean_environ,
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -1544,7 +1576,7 @@ class TestVerificationMismatch:
         uv_tool_argv0,
         clean_environ,
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -1566,7 +1598,7 @@ class TestVerificationMismatch:
         uv_tool_argv0,
         clean_environ,
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.9.0"
@@ -1586,7 +1618,7 @@ class TestVerificationMismatch:
         uv_tool_argv0,
         clean_environ,
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -1723,7 +1755,7 @@ class TestResolutionFailures:
 
     def test_offline_exits_1_with_phase1_string(self, uv_tool_argv0, clean_environ):
         with patch(
-            "specify_cli._version.urllib.request.urlopen",
+            "specify_cli.authentication.http.urllib.request.urlopen",
             side_effect=urllib.error.URLError("nope"),
         ):
             result = runner.invoke(app, ["self", "upgrade"])
@@ -1738,7 +1770,7 @@ class TestResolutionFailures:
             hdrs={},  # type: ignore[arg-type]
             fp=None,
         )
-        with patch("specify_cli._version.urllib.request.urlopen", side_effect=err):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=err):
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 1
         assert (
@@ -1754,7 +1786,7 @@ class TestResolutionFailures:
             hdrs={},  # type: ignore[arg-type]
             fp=None,
         )
-        with patch("specify_cli._version.urllib.request.urlopen", side_effect=err):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=err):
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 1
         assert "Upgrade aborted: HTTP 500" in strip_ansi(result.output)
@@ -1762,7 +1794,7 @@ class TestResolutionFailures:
     def test_unparseable_resolved_release_tag_exits_1_without_traceback(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
@@ -1856,7 +1888,7 @@ class TestUnknownCurrent:
         uv_tool_argv0,
         clean_environ,
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="unknown"
@@ -1878,7 +1910,7 @@ class TestUnknownCurrent:
         uv_tool_argv0,
         clean_environ,
     ):
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="unknown"
@@ -1904,7 +1936,7 @@ class TestTokenScrubbing:
         monkeypatch.setenv("GH_TOKEN", SENTINEL_GH_TOKEN)
         monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
 
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -1933,7 +1965,7 @@ class TestTokenScrubbing:
         monkeypatch.setenv("gh_token", SENTINEL_GH_TOKEN)
         monkeypatch.setenv("GitHub_Token", SENTINEL_GITHUB_TOKEN)
 
-        with patch("specify_cli._version.urllib.request.urlopen") as mock_urlopen, patch(
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
