@@ -281,7 +281,7 @@ Our research and experimentation focus on:
 
 - **Linux/macOS/Windows**
 - [Supported](#-supported-ai-coding-agent-integrations) AI coding agent.
-- [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pypa.github.io/pipx/) for persistent installation
+- [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pipx.pypa.io/) for persistent installation
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
 
