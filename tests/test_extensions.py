@@ -3553,15 +3553,14 @@ class TestExtensionAddCLI:
         """extension add --from should reject downloads exceeding the 50 MB size cap."""
         from typer.testing import CliRunner
         from unittest.mock import patch
-        from specify_cli import app
+        from specify_cli import app, _MAX_ZIP_BYTES
 
         runner = CliRunner()
         project_dir = tmp_path / "test-project"
         project_dir.mkdir()
         (project_dir / ".specify").mkdir()
 
-        _50MB_PLUS_1 = 50 * 1024 * 1024 + 1
-        large_payload = b"X" * _50MB_PLUS_1
+        large_payload = b"X" * (_MAX_ZIP_BYTES + 1)
 
         class _LargeHTTPResponse:
             def __init__(self):
@@ -3592,7 +3591,7 @@ class TestExtensionAddCLI:
             )
 
         assert result.exit_code != 0
-        assert "50" in result.output  # error message mentions size limit
+        assert "exceeded maximum allowed size" in result.output
 
     def test_add_by_display_name_uses_resolved_id_for_download(self, tmp_path):
         """extension add by display name should use resolved ID for download_extension()."""

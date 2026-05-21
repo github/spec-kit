@@ -117,6 +117,8 @@ AI_ASSISTANT_ALIASES = {
 
 # Agents that use TOML command format (others use Markdown)
 _TOML_AGENTS = frozenset({"gemini", "tabnine"})
+_MAX_ZIP_BYTES = 50 * 1024 * 1024  # 50 MB hard cap for --from URL downloads
+_DOWNLOAD_CHUNK_SIZE = 64 * 1024   # 64 KB read chunks
 
 def _build_ai_assistant_help() -> str:
     """Build the --ai help text from AGENT_CONFIG so it stays in sync with runtime config."""
@@ -3648,12 +3650,11 @@ def extension_add(
                 try:
                     from specify_cli.authentication.http import open_url as _open_url
 
-                    _MAX_ZIP_BYTES = 50 * 1024 * 1024  # 50 MB hard cap
                     with _open_url(from_url, timeout=60) as response:
                         chunks: list[bytes] = []
                         total = 0
                         while True:
-                            chunk = response.read(65536)
+                            chunk = response.read(_DOWNLOAD_CHUNK_SIZE)
                             if not chunk:
                                 break
                             total += len(chunk)
