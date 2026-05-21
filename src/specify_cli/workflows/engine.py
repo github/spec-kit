@@ -674,15 +674,24 @@ class WorkflowEngine:
                             break
                         # Namespace nested step IDs per iteration
                         iter_steps = []
+                        original_ids = {}
                         for ns in result.next_steps:
                             ns_copy = dict(ns)
                             if "id" in ns_copy:
-                                ns_copy["id"] = f"{step_id}:{ns_copy['id']}:{_loop_iter + 1}"
+                                orig = ns_copy["id"]
+                                ns_copy["id"] = f"{step_id}:{orig}:{_loop_iter + 1}"
+                                original_ids[ns_copy["id"]] = orig
                             iter_steps.append(ns_copy)
                         self._execute_steps(
                             iter_steps, context, state, registry,
                             step_offset=-1,
                         )
+                        # Copy namespaced results back to unprefixed
+                        # keys so loop conditions see updated values.
+                        for namespaced, orig in original_ids.items():
+                            if namespaced in context.steps:
+                                context.steps[orig] = context.steps[namespaced]
+                                state.step_results[orig] = context.steps[namespaced]
                         if state.status in (
                             RunStatus.PAUSED,
                             RunStatus.FAILED,

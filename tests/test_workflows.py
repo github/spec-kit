@@ -1889,6 +1889,183 @@ steps:
         errors = validate_workflow(definition)
         assert any("invalid default" in e for e in errors), errors
 
+    def test_while_loop_condition_reads_latest_iteration(self, project_dir):
+        """Regression: while-loop condition must see updated step output
+        from the most recent iteration, not stale iteration-0 data.
+
+        See https://github.com/github/spec-kit/issues/2592
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        # Shell step echoes a counter via a file.
+        # Condition: exit_code != 0 means "keep looping" — but a non-zero
+        # exit code would mark the step FAILED and abort the run, so we
+        # use stdout-based comparison instead.
+        #
+        # Iteration 0: counter=1, echoes "1" → not "done" → loop continues
+        # Iteration 1: counter=2, echoes "done" → condition false → stop
+        # Without the fix, condition always reads iteration-0 stdout,
+        # so the loop runs all max_iterations.
+        counter_file = project_dir / ".counter"
+        counter_file.write_text("0", encoding="utf-8")
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "while-condition-update"
+  name: "While Condition Update"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: while
+    condition: "{{{{ 'done' not in steps.attempt.output.stdout }}}}"
+    max_iterations: 5
+    steps:
+      - id: attempt
+        type: shell
+        run: |
+          n=$(cat {counter_file})
+          n=$((n + 1))
+          printf '%s' $n > {counter_file}
+          if [ "$n" -ge 2 ]; then printf done; else printf $n; fi
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # The unprefixed key should reflect the latest iteration's result.
+        assert state.step_results["attempt"]["output"]["stdout"] == "done"
+        # Namespaced iteration-1 result should also exist.
+        assert "retry-loop:attempt:1" in state.step_results
+        # Counter should be 2 (iteration 0 + iteration 1), not 5.
+        assert counter_file.read_text(encoding="utf-8").strip() == "2"
+
+    def test_do_while_loop_condition_reads_latest_iteration(self, project_dir):
+        """Regression: do-while loop condition must also see updated output.
+
+        See https://github.com/github/spec-kit/issues/2592
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        counter_file = project_dir / ".counter"
+        counter_file.write_text("0", encoding="utf-8")
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "do-while-condition-update"
+  name: "Do While Condition Update"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: do-while
+    condition: "{{{{ 'done' not in steps.attempt.output.stdout }}}}"
+    max_iterations: 5
+    steps:
+      - id: attempt
+        type: shell
+        run: |
+          n=$(cat {counter_file})
+          n=$((n + 1))
+          printf '%s' $n > {counter_file}
+          if [ "$n" -ge 2 ]; then printf done; else printf $n; fi
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["attempt"]["output"]["stdout"] == "done"
+        assert counter_file.read_text(encoding="utf-8").strip() == "2"
+
+    def test_while_loop_runs_to_max_when_condition_stays_true(self, project_dir):
+        """While loop must still run to max_iterations when the condition
+        never becomes false — copy-back must not break this path.
+
+        See https://github.com/github/spec-kit/issues/2592
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        counter_file = project_dir / ".counter"
+        counter_file.write_text("0", encoding="utf-8")
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "while-max-iterations"
+  name: "While Max Iterations"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: while
+    condition: "{{{{ 'done' not in steps.tick.output.stdout }}}}"
+    max_iterations: 3
+    steps:
+      - id: tick
+        type: shell
+        run: |
+          n=$(cat {counter_file})
+          n=$((n + 1))
+          printf '%s' $n > {counter_file}
+          printf 'pending'
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # All 3 iterations ran (iteration 0 + 2 loop iterations).
+        assert counter_file.read_text(encoding="utf-8").strip() == "3"
+        # Unprefixed key holds the last iteration's result.
+        assert state.step_results["tick"]["output"]["stdout"] == "pending"
+        # Namespaced keys for loop iterations 1 and 2 exist.
+        assert "retry-loop:tick:1" in state.step_results
+        assert "retry-loop:tick:2" in state.step_results
+
+    def test_do_while_loop_runs_to_max_when_condition_stays_true(self, project_dir):
+        """Do-while loop must still run to max_iterations when the condition
+        never becomes false.
+
+        See https://github.com/github/spec-kit/issues/2592
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        counter_file = project_dir / ".counter"
+        counter_file.write_text("0", encoding="utf-8")
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "do-while-max-iterations"
+  name: "Do While Max Iterations"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: do-while
+    condition: "{{{{ 'done' not in steps.tick.output.stdout }}}}"
+    max_iterations: 3
+    steps:
+      - id: tick
+        type: shell
+        run: |
+          n=$(cat {counter_file})
+          n=$((n + 1))
+          printf '%s' $n > {counter_file}
+          printf 'pending'
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        assert counter_file.read_text(encoding="utf-8").strip() == "3"
+        assert state.step_results["tick"]["output"]["stdout"] == "pending"
+
 
 # ===== State Persistence Tests =====
 
