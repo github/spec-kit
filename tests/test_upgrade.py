@@ -16,7 +16,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-import specify_cli
 from specify_cli import app
 from specify_cli._version import (
     _fetch_latest_release_tag,
@@ -24,7 +23,7 @@ from specify_cli._version import (
     _is_newer,
     _normalize_tag,
 )
-from tests.conftest import strip_ansi
+from tests.conftest import route_auth_open_url_through_urlopen, strip_ansi
 
 runner = CliRunner()
 
@@ -59,12 +58,7 @@ def _http_error(code: int, message: str = "error") -> urllib.error.HTTPError:
 @pytest.fixture(autouse=True)
 def route_open_url_through_urlopen(monkeypatch):
     """Keep release-tag tests hermetic even when ~/.specify/auth.json exists."""
-
-    def _open_url(url, timeout=10, extra_headers=None):
-        req = specify_cli.authentication.http.build_request(url, extra_headers)
-        return specify_cli.authentication.http.urllib.request.urlopen(req, timeout=timeout)
-
-    monkeypatch.setattr("specify_cli.authentication.http.open_url", _open_url)
+    route_auth_open_url_through_urlopen(monkeypatch)
 
 
 class TestIsNewer:

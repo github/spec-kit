@@ -25,7 +25,7 @@ from specify_cli._version import (
     _verify_upgrade,
 )
 
-from tests.conftest import strip_ansi
+from tests.conftest import route_auth_open_url_through_urlopen, strip_ansi
 
 runner = CliRunner()
 
@@ -66,12 +66,7 @@ def clean_environ(monkeypatch):
 @pytest.fixture(autouse=True)
 def route_open_url_through_urlopen(monkeypatch):
     """Keep release-tag tests hermetic even when ~/.specify/auth.json exists."""
-
-    def _open_url(url, timeout=10, extra_headers=None):
-        req = specify_cli.authentication.http.build_request(url, extra_headers)
-        return specify_cli.authentication.http.urllib.request.urlopen(req, timeout=timeout)
-
-    monkeypatch.setattr("specify_cli.authentication.http.open_url", _open_url)
+    route_auth_open_url_through_urlopen(monkeypatch)
 
 
 def _fake_argv0(monkeypatch, tmp_path, env_name, path_parts):
@@ -1199,6 +1194,34 @@ class TestInstallerMissing:
 
         assert result.exit_code == 0
         assert mock_run.call_args.args[0][0] == "./uv"
+
+    def test_relative_installer_path_missing_gets_path_specific_message(
+        self, monkeypatch, uv_tool_argv0, clean_environ, tmp_path
+    ):
+        monkeypatch.chdir(tmp_path)
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.shutil.which", side_effect=lambda name: None
+        ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"), patch(
+            "specify_cli._version._assemble_installer_argv",
+            return_value=[
+                "./uv",
+                "tool",
+                "install",
+                "specify-cli",
+                "--force",
+                "--from",
+                "git+https://github.com/github/spec-kit.git@v0.7.6",
+            ],
+        ):
+            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        assert result.exit_code == 3
+        assert (
+            "Installer path ./uv no longer exists; reinstall it and retry."
+            in strip_ansi(result.output)
+        )
+        assert "not found on PATH" not in strip_ansi(result.output)
 
     def test_resolved_absolute_installer_removed_before_exec_gets_missing_path_message(
         self, uv_tool_argv0, clean_environ, tmp_path

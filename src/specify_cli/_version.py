@@ -852,7 +852,7 @@ def _source_checkout_path() -> Path | None:
     for f in files:
         try:
             abs_path = Path(dist.locate_file(f)).resolve()
-        except Exception:
+        except (OSError, RuntimeError, TypeError, ValueError):
             continue
         git_root = _git_ancestor(abs_path)
         if git_root is not None:
@@ -944,7 +944,9 @@ def _emit_failure(
         return
 
     if category == "installer-missing":
-        if installer_name and os.path.isabs(installer_name):
+        if installer_name and (
+            os.path.isabs(installer_name) or _is_path_like_command(installer_name)
+        ):
             console.print(
                 f"Installer path {installer_name} no longer exists; reinstall it and retry.",
                 soft_wrap=True,
