@@ -1,5 +1,12 @@
-"""Tests for the per-integration `SPECIFY_<KEY>_EXTRA_ARGS` env-var hook
-in `SkillsIntegration.build_exec_args`. See issue #2595."""
+"""Tests for the per-integration `SPECIFY_<KEY>_EXTRA_ARGS` env-var hook.
+
+The hook is implemented in `IntegrationBase._apply_extra_args_env_var`
+and wired into every concrete `build_exec_args` —
+`MarkdownIntegration`, `TomlIntegration`, `SkillsIntegration`, plus the
+overrides in Codex, Devin, Opencode and Copilot. These tests cover both
+the shared mechanism (via `SkillsIntegration` stubs near the top of the
+file) and each override integration end-to-end (further down). See
+issue #2595."""
 
 import os
 
@@ -213,6 +220,39 @@ def test_opencode_integration_honours_extra_args(monkeypatch):
         "--format",
         "json",
         "p",
+    ]
+
+
+def test_opencode_extra_args_cannot_clobber_prompt_derived_command(
+    monkeypatch,
+):
+    """Operator-injected extra args must appear BEFORE the prompt-derived
+    ``--command <X>`` so that Spec Kit's command selection wins under
+    repeated-flag CLI semantics (last value typically takes precedence).
+
+    Locks against the regression where an operator setting
+    ``SPECIFY_OPENCODE_EXTRA_ARGS="--command malicious"`` could redirect
+    a slash-prefixed prompt to a different command.
+    """
+    from specify_cli.integrations.opencode import OpencodeIntegration
+
+    monkeypatch.setenv(
+        "SPECIFY_OPENCODE_EXTRA_ARGS", "--command operator-override"
+    )
+    args = OpencodeIntegration().build_exec_args("/speckit body text")
+    # Prompt-derived "--command speckit" appears AFTER the
+    # operator-injected one, so a CLI that resolves repeated flags
+    # last-wins will honour Spec Kit's choice.
+    assert args == [
+        "opencode",
+        "run",
+        "--command",
+        "operator-override",
+        "--command",
+        "speckit",
+        "--format",
+        "json",
+        "body text",
     ]
 
 
