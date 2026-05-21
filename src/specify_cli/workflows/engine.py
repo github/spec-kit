@@ -672,30 +672,30 @@ class WorkflowEngine:
                     for _loop_iter in range(max_iters - 1):
                         if not evaluate_condition(condition, context):
                             break
-                        # Snapshot current results under namespaced
-                        # keys for per-iteration history before they
-                        # are overwritten by the next iteration.
+                        # Namespace nested step IDs per iteration
+                        # so logs and state keys are unique.
+                        # Execute one step at a time and alias each
+                        # result back to the unprefixed key so that
+                        # later steps in the same body and the loop
+                        # condition see the latest values.
                         for ns in result.next_steps:
-                            orig = ns.get("id")
-                            if orig and orig in context.steps:
-                                ns_key = f"{step_id}:{orig}:{_loop_iter}"
-                                context.steps[ns_key] = context.steps[orig]
-                                state.step_results[ns_key] = context.steps[orig]
-                        # Execute body with original step IDs so
-                        # results land at the unprefixed keys.  Both
-                        # inter-step references within the body and
-                        # the loop condition naturally see the latest
-                        # values without a copy-back.
-                        self._execute_steps(
-                            result.next_steps, context, state, registry,
-                            step_offset=-1,
-                        )
-                        if state.status in (
-                            RunStatus.PAUSED,
-                            RunStatus.FAILED,
-                            RunStatus.ABORTED,
-                        ):
-                            return
+                            ns_copy = dict(ns)
+                            orig = ns_copy.get("id")
+                            if orig:
+                                ns_copy["id"] = f"{step_id}:{orig}:{_loop_iter + 1}"
+                            self._execute_steps(
+                                [ns_copy], context, state, registry,
+                                step_offset=-1,
+                            )
+                            if orig and ns_copy["id"] in context.steps:
+                                context.steps[orig] = context.steps[ns_copy["id"]]
+                                state.step_results[orig] = context.steps[ns_copy["id"]]
+                            if state.status in (
+                                RunStatus.PAUSED,
+                                RunStatus.FAILED,
+                                RunStatus.ABORTED,
+                            ):
+                                return
 
             # Fan-out: execute nested step template per item with unique IDs
             if step_type == "fan-out":

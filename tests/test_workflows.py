@@ -1943,9 +1943,8 @@ steps:
         assert state.status == RunStatus.COMPLETED
         # The unprefixed key should reflect the latest iteration's result.
         assert state.step_results["attempt"]["output"]["stdout"] == "done"
-        # Iteration-0 history preserved under namespaced key.
-        assert "retry-loop:attempt:0" in state.step_results
-        assert state.step_results["retry-loop:attempt:0"]["output"]["stdout"] != "done"
+        # Namespaced iteration-1 result should also exist.
+        assert "retry-loop:attempt:1" in state.step_results
         # Counter should be 2 (iteration 0 + iteration 1), not 5.
         assert counter_file.read_text(encoding="utf-8").strip() == "2"
 
@@ -2041,9 +2040,9 @@ steps:
         assert counter_file.read_text(encoding="utf-8").strip() == "3"
         # Unprefixed key holds the last iteration's result.
         assert state.step_results["tick"]["output"]["stdout"] == "pending"
-        # Namespaced history keys for previous iterations exist.
-        assert "retry-loop:tick:0" in state.step_results
+        # Namespaced keys for loop iterations exist.
         assert "retry-loop:tick:1" in state.step_results
+        assert "retry-loop:tick:2" in state.step_results
 
     def test_do_while_loop_runs_to_max_when_condition_stays_true(self, project_dir):
         """Do-while loop must still run to max_iterations when the condition
