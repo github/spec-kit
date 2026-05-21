@@ -1,0 +1,49 @@
+name: Community Bundle Smoke
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  init-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.11"
+
+      - name: Install CLI from checkout
+        run: |
+          set -euo pipefail
+          uv venv /tmp/specify-community-smoke-venv
+          uv pip install --python /tmp/specify-community-smoke-venv/bin/python .
+
+      - name: Verify bundled init defaults
+        run: |
+          set -euo pipefail
+          project_dir="$(mktemp -d)"
+          cd "$project_dir"
+          /tmp/specify-community-smoke-venv/bin/specify init --here --ai claude --script sh --ignore-agent-tools
+
+          test -f .specify/extensions/arch/extension.yml
+          test -f .specify/extensions/preview/extension.yml
+          test -f .specify/extensions/agent-governance/extension.yml
+          test -f .specify/presets/workflow-preset/preset.yml
+
+          test -f .claude/skills/speckit-arch-generate/SKILL.md
+          test -f .claude/skills/speckit-preview-html/SKILL.md
+          test -f .claude/skills/speckit-agent-governance-refresh/SKILL.md

@@ -21,6 +21,7 @@
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
 - [⚡ Get Started](#-get-started)
+- [🏢 Bigsmartben Fork: Internal Bundle](#-bigsmartben-fork-internal-bundle)
 - [📽️ Video Overview](#️-video-overview)
 - [🧩 Community Extensions](#-community-extensions)
 - [🎨 Community Presets](#-community-presets)
@@ -105,6 +106,30 @@ Use **`/speckit.implement`** to execute all tasks and build your feature accordi
 ```
 
 For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+
+## 🏢 Bigsmartben Fork: Internal Bundle
+
+This fork is packaged for internal use with the community workflow stack bundled directly into `specify init`. Internal users do not need separate `uv add`, `specify extension add`, or `specify preset add` steps for these defaults.
+
+Install the pinned internal build:
+
+```bash
+uv tool install specify-cli --from git+https://github.com/bigsmartben/spec-kit.git@bigsmartben-v0.8.13-community.1
+```
+
+Then initialize a project normally:
+
+```bash
+specify init my-project --integration claude
+cd my-project
+```
+
+The init flow installs these bundled defaults automatically:
+
+- `arch`
+- `preview`
+- `agent-governance`
+- `workflow-preset`
 
 ## 📽️ Video Overview
 
