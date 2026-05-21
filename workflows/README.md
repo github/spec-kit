@@ -287,6 +287,51 @@ specify workflow resume <run_id>
 
 Run states: `created` → `running` → `completed` | `paused` | `failed` | `aborted`
 
+## Non-Interactive Gate Testing
+
+`gate` steps prompt interactively by default. For CI / non-interactive
+test runs, supply a `--gate-script` YAML that pre-records verdicts.
+Both `workflow run` and `workflow resume` accept the flag, so a
+scripted CI run can also drive gates that fire only after a prior
+pause:
+
+```bash
+specify workflow run my-pipeline --gate-script verdicts.yaml
+specify workflow resume <run_id> --gate-script verdicts.yaml
+```
+
+```yaml
+# verdicts.yaml
+schema: speckit.gate-script/v1
+verdicts:
+  - gate_id: review-overview
+    iteration: 0
+    verdict: improve
+  - gate_id: review-overview
+    iteration: 1
+    verdict: approve
+  - gate_id: review-final
+    iteration: 0
+    verdict: approve
+```
+
+Behaviour:
+
+- `gate_id` matches the workflow YAML step `id` (the author-visible
+  base id — engine-internal loop namespacing like `parent:child:N` is
+  unwrapped automatically).
+- `iteration` selects which firing the verdict applies to (0-indexed,
+  counting from the first time the gate runs within the run).
+- `verdict` is the option string the gate would otherwise produce —
+  typically `approve` / `reject` / `edit` / a custom route name.
+- When the engine finds no matching entry, the gate falls back to its
+  normal behaviour (interactive prompt on TTY, `PAUSED` otherwise).
+  This lets workflows partially-script only the gates they care about.
+- `output.scripted` records `True` for scripted verdicts and `False`
+  for interactive ones, so workflows can distinguish them downstream.
+- Scripted `reject` verdicts honour the gate's `on_reject` setting
+  identically to operator-driven rejects.
+
 ## Catalog Management
 
 Workflows are discovered through catalogs. By default, Spec Kit uses the official and community catalogs:

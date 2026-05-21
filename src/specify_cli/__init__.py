@@ -4736,9 +4736,22 @@ def workflow_run(
     input_values: list[str] | None = typer.Option(
         None, "--input", "-i", help="Input values as key=value pairs"
     ),
+    gate_script: Path | None = typer.Option(
+        None,
+        "--gate-script",
+        help=(
+            "Path to a gate-script YAML (schema speckit.gate-script/v1) "
+            "that supplies verdicts for gate steps. Gates with a "
+            "matching (gate_id, iteration) entry use the scripted "
+            "verdict instead of prompting; non-matching gates fall "
+            "back to their normal behaviour. Intended for CI / "
+            "non-interactive testing of gated workflows."
+        ),
+    ),
 ):
     """Run a workflow from an installed ID or local YAML path."""
     from .workflows.engine import WorkflowEngine
+    from .workflows.gate_script import load_gate_script
 
     project_root = _require_specify_project()
     engine = WorkflowEngine(project_root)
@@ -4771,11 +4784,22 @@ def workflow_run(
             key, _, value = kv.partition("=")
             inputs[key.strip()] = value.strip()
 
+    # Load gate script if supplied. Failures are fatal — the operator
+    # asked for non-interactive run, so silently falling back to
+    # prompts on a broken script would be worse than failing fast.
+    parsed_script: list[dict[str, Any]] | None = None
+    if gate_script is not None:
+        try:
+            parsed_script = load_gate_script(gate_script)
+        except (FileNotFoundError, ValueError) as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(1)
+
     console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
     console.print(f"[dim]Version: {definition.version}[/dim]\n")
 
     try:
-        state = engine.execute(definition, inputs)
+        state = engine.execute(definition, inputs, gate_script=parsed_script)
     except ValueError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
@@ -4800,16 +4824,36 @@ def workflow_run(
 @workflow_app.command("resume")
 def workflow_resume(
     run_id: str = typer.Argument(..., help="Run ID to resume"),
+    gate_script: Path | None = typer.Option(
+        None,
+        "--gate-script",
+        help=(
+            "Path to a gate-script YAML (schema speckit.gate-script/v1) "
+            "consulted by gate steps that fire after resume. Same "
+            "format as `specify workflow run --gate-script`."
+        ),
+    ),
 ):
     """Resume a paused or failed workflow run."""
     from .workflows.engine import WorkflowEngine
+    from .workflows.gate_script import load_gate_script
 
     project_root = _require_specify_project()
     engine = WorkflowEngine(project_root)
     engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
+    # Load gate script if supplied \u2014 same fail-fast semantics as
+    # `workflow run --gate-script`.
+    parsed_script: list[dict[str, Any]] | None = None
+    if gate_script is not None:
+        try:
+            parsed_script = load_gate_script(gate_script)
+        except (FileNotFoundError, ValueError) as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(1)
+
     try:
-        state = engine.resume(run_id)
+        state = engine.resume(run_id, gate_script=parsed_script)
     except FileNotFoundError:
         console.print(f"[red]Error:[/red] Run not found: {run_id}")
         raise typer.Exit(1)

@@ -73,6 +73,18 @@ class StepContext:
     #: Current run ID.
     run_id: str | None = None
 
+    #: Optional scripted gate verdicts for CI / non-interactive testing.
+    #: When set, ``GateStep`` consults this list before prompting the
+    #: operator. Loaded from ``--gate-script`` on ``specify workflow
+    #: run``. Each entry is a mapping with ``gate_id``, ``iteration``,
+    #: and ``verdict`` keys (see ``speckit.gate-script/v1`` schema).
+    gate_script: list[dict[str, Any]] = field(default_factory=list)
+
+    #: Per-gate firing counter. Increments each time a gate step with
+    #: the same base ID fires within the current run. Used to match
+    #: ``gate_script`` entries by ``(gate_id, iteration)``.
+    gate_firing_counts: dict[str, int] = field(default_factory=dict)
+
 
 @dataclass
 class StepResult:

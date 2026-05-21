@@ -779,6 +779,485 @@ class TestGateStep:
         assert any("on_reject" in e for e in errors)
 
 
+class TestGateScriptLoader:
+    """Test the gate-script loader/validator helpers."""
+
+    def test_parse_valid_script_returns_verdicts(self):
+        from specify_cli.workflows.gate_script import parse_gate_script
+
+        data = {
+            "schema": "speckit.gate-script/v1",
+            "verdicts": [
+                {"gate_id": "g1", "iteration": 0, "verdict": "approve"},
+                {"gate_id": "g1", "iteration": 1, "verdict": "reject"},
+            ],
+        }
+        verdicts = parse_gate_script(data)
+        assert len(verdicts) == 2
+        assert verdicts[0]["verdict"] == "approve"
+        assert verdicts[1]["verdict"] == "reject"
+
+    def test_parse_rejects_wrong_schema(self):
+        from specify_cli.workflows.gate_script import parse_gate_script
+
+        with pytest.raises(ValueError, match="unsupported schema"):
+            parse_gate_script(
+                {
+                    "schema": "speckit.gate-script/v999",
+                    "verdicts": [],
+                }
+            )
+
+    def test_parse_rejects_missing_verdicts(self):
+        from specify_cli.workflows.gate_script import parse_gate_script
+
+        with pytest.raises(ValueError, match="'verdicts'"):
+            parse_gate_script({"schema": "speckit.gate-script/v1"})
+
+    def test_parse_rejects_non_mapping_verdict(self):
+        from specify_cli.workflows.gate_script import parse_gate_script
+
+        with pytest.raises(ValueError, match="must be a mapping"):
+            parse_gate_script(
+                {
+                    "schema": "speckit.gate-script/v1",
+                    "verdicts": ["not-a-mapping"],
+                }
+            )
+
+    def test_parse_rejects_missing_required_fields(self):
+        from specify_cli.workflows.gate_script import parse_gate_script
+
+        with pytest.raises(ValueError, match="'iteration'"):
+            parse_gate_script(
+                {
+                    "schema": "speckit.gate-script/v1",
+                    "verdicts": [{"gate_id": "g", "verdict": "approve"}],
+                }
+            )
+
+    def test_parse_rejects_non_int_iteration(self):
+        from specify_cli.workflows.gate_script import parse_gate_script
+
+        with pytest.raises(ValueError, match="'iteration' must be an integer"):
+            parse_gate_script(
+                {
+                    "schema": "speckit.gate-script/v1",
+                    "verdicts": [
+                        {"gate_id": "g", "iteration": "0", "verdict": "x"}
+                    ],
+                }
+            )
+
+    def test_parse_rejects_bool_iteration(self):
+        """``bool`` is a subclass of ``int`` so a naive ``isinstance``
+        check accepts ``True``. Validator rejects it explicitly so a
+        YAML authoring mistake (``iteration: true``) doesn't silently
+        coerce to 1.
+        """
+        from specify_cli.workflows.gate_script import parse_gate_script
+
+        with pytest.raises(ValueError, match="'iteration' must be an integer"):
+            parse_gate_script(
+                {
+                    "schema": "speckit.gate-script/v1",
+                    "verdicts": [
+                        {"gate_id": "g", "iteration": True, "verdict": "x"}
+                    ],
+                }
+            )
+
+    def test_lookup_finds_matching_entry(self):
+        from specify_cli.workflows.gate_script import lookup_scripted_verdict
+
+        script = [
+            {"gate_id": "g1", "iteration": 0, "verdict": "improve"},
+            {"gate_id": "g1", "iteration": 1, "verdict": "approve"},
+            {"gate_id": "g2", "iteration": 0, "verdict": "reject"},
+        ]
+        assert lookup_scripted_verdict(script, "g1", 0) == "improve"
+        assert lookup_scripted_verdict(script, "g1", 1) == "approve"
+        assert lookup_scripted_verdict(script, "g2", 0) == "reject"
+
+    def test_lookup_returns_none_for_no_match(self):
+        from specify_cli.workflows.gate_script import lookup_scripted_verdict
+
+        script = [{"gate_id": "g1", "iteration": 0, "verdict": "approve"}]
+        assert lookup_scripted_verdict(script, "g1", 1) is None
+        assert lookup_scripted_verdict(script, "g2", 0) is None
+
+    def test_lookup_empty_script_returns_none(self):
+        from specify_cli.workflows.gate_script import lookup_scripted_verdict
+
+        assert lookup_scripted_verdict([], "g1", 0) is None
+
+    def test_extract_base_gate_id_unwrapped(self):
+        from specify_cli.workflows.gate_script import extract_base_gate_id
+
+        assert extract_base_gate_id("my-gate") == "my-gate"
+
+    def test_extract_base_gate_id_unwraps_loop_namespacing(self):
+        """The engine namespaces nested loop steps as
+        ``parent:child:iter``. Gate scripts match on the
+        author-visible base id, so this helper inverts that.
+        """
+        from specify_cli.workflows.gate_script import extract_base_gate_id
+
+        assert extract_base_gate_id("my-loop:my-gate:1") == "my-gate"
+        assert extract_base_gate_id("outer:inner:my-gate:42") == "my-gate"
+
+    def test_load_from_file(self, tmp_path):
+        from specify_cli.workflows.gate_script import load_gate_script
+
+        script_path = tmp_path / "script.yaml"
+        script_path.write_text(
+            "schema: speckit.gate-script/v1\n"
+            "verdicts:\n"
+            "  - {gate_id: review, iteration: 0, verdict: improve}\n",
+            encoding="utf-8",
+        )
+        verdicts = load_gate_script(script_path)
+        assert verdicts == [
+            {"gate_id": "review", "iteration": 0, "verdict": "improve"}
+        ]
+
+    def test_load_missing_file_raises(self, tmp_path):
+        from specify_cli.workflows.gate_script import load_gate_script
+
+        with pytest.raises(FileNotFoundError):
+            load_gate_script(tmp_path / "does-not-exist.yaml")
+
+    def test_parse_rejects_duplicate_gate_id_iteration(self):
+        """Two entries sharing the same ``(gate_id, iteration)`` would
+        silently shadow each other (``lookup_scripted_verdict``
+        returns the first match). The validator rejects them at parse
+        time so copy-paste authoring mistakes surface immediately.
+        """
+        from specify_cli.workflows.gate_script import parse_gate_script
+
+        with pytest.raises(ValueError, match="duplicate"):
+            parse_gate_script(
+                {
+                    "schema": "speckit.gate-script/v1",
+                    "verdicts": [
+                        {"gate_id": "g", "iteration": 0, "verdict": "approve"},
+                        {"gate_id": "g", "iteration": 0, "verdict": "reject"},
+                    ],
+                }
+            )
+
+    def test_parse_allows_same_gate_id_different_iterations(self):
+        """Distinct iterations under the same gate_id are valid — that's
+        how the script drives multi-firing gates (e.g. improve → approve).
+        """
+        from specify_cli.workflows.gate_script import parse_gate_script
+
+        verdicts = parse_gate_script(
+            {
+                "schema": "speckit.gate-script/v1",
+                "verdicts": [
+                    {"gate_id": "g", "iteration": 0, "verdict": "improve"},
+                    {"gate_id": "g", "iteration": 1, "verdict": "approve"},
+                ],
+            }
+        )
+        assert len(verdicts) == 2
+
+
+class TestGateScriptIntegration:
+    """End-to-end tests for gate-script with GateStep + engine."""
+
+    def test_gate_uses_scripted_verdict_instead_of_prompting(
+        self, project_dir, monkeypatch
+    ):
+        """A gate with a matching script entry returns the scripted
+        verdict directly. ``output.scripted == True`` and the gate
+        never prompts.
+
+        Locks the core contract from issue #2594: workflows can be
+        driven non-interactively in CI by supplying a verdict script.
+        """
+        from specify_cli.workflows.engine import (
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.steps.gate import GateStep
+
+        # Sentinel: if the gate ever prompts, fail the test loudly.
+        def _should_not_prompt(*_args, **_kwargs):
+            raise AssertionError("Gate prompted despite scripted verdict.")
+
+        monkeypatch.setattr(
+            GateStep, "_prompt", staticmethod(_should_not_prompt)
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "scripted-gate"
+  name: "Scripted Gate"
+  version: "1.0.0"
+steps:
+  - id: review
+    type: gate
+    message: "Approve?"
+    options: [approve, reject]
+    on_reject: abort
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(
+            definition,
+            gate_script=[
+                {"gate_id": "review", "iteration": 0, "verdict": "approve"},
+            ],
+        )
+
+        assert state.status == RunStatus.COMPLETED
+        review = state.step_results["review"]
+        assert review["output"]["choice"] == "approve"
+        assert review["output"]["scripted"] is True
+
+    def test_improve_then_approve_cycle_via_switch_unroll(
+        self, project_dir, monkeypatch
+    ):
+        """End-to-end: the canonical CI-test scenario from issue
+        #2594 — improve → re-review → approve, with zero operator
+        input. Uses the manually-unrolled gate+switch pattern
+        (rather than a while/do-while loop) so this test stays
+        decoupled from the separate loop-iteration namespacing
+        change tracked in issue #2592.
+        """
+        from specify_cli.workflows.engine import (
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.steps.gate import GateStep
+
+        def _should_not_prompt(*_args, **_kwargs):
+            raise AssertionError("Gate prompted despite scripted verdict.")
+
+        monkeypatch.setattr(
+            GateStep, "_prompt", staticmethod(_should_not_prompt)
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "improve-approve-cycle"
+  name: "Improve Approve Cycle"
+  version: "1.0.0"
+steps:
+  - id: review-first
+    type: gate
+    message: "Approve?"
+    options: [approve, improve, reject]
+    on_reject: abort
+  - id: maybe-improve
+    type: switch
+    expression: "{{ steps.review-first.output.choice }}"
+    cases:
+      improve:
+        - id: review-second
+          type: gate
+          message: "Approve after improve?"
+          options: [approve, reject]
+          on_reject: abort
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(
+            definition,
+            gate_script=[
+                {"gate_id": "review-first", "iteration": 0, "verdict": "improve"},
+                {"gate_id": "review-second", "iteration": 0, "verdict": "approve"},
+            ],
+        )
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["review-first"]["output"]["choice"] == "improve"
+        assert state.step_results["review-first"]["output"]["scripted"] is True
+        assert state.step_results["review-second"]["output"]["choice"] == "approve"
+        assert state.step_results["review-second"]["output"]["scripted"] is True
+
+    def test_iteration_counter_increments_on_repeated_gate_id(
+        self, project_dir, monkeypatch
+    ):
+        """A workflow with two separate ``gate`` steps that share
+        the same base ``id`` (allowed by the engine's step-id
+        uniqueness rules only across non-sibling positions) would
+        normally conflict — but the more practical scenario is two
+        DIFFERENT gates, each firing once at iteration 0.
+
+        This test locks the per-gate iteration counter: each gate's
+        counter is independent, so two consecutive single-firing
+        gates both look up at iteration 0 against their own
+        ``gate_id``.
+        """
+        from specify_cli.workflows.engine import (
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.steps.gate import GateStep
+
+        monkeypatch.setattr(
+            GateStep,
+            "_prompt",
+            staticmethod(
+                lambda *_a, **_kw: (_ for _ in ()).throw(
+                    AssertionError("Gate prompted despite scripted verdict.")
+                )
+            ),
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "two-gates"
+  name: "Two Gates"
+  version: "1.0.0"
+steps:
+  - id: gate-a
+    type: gate
+    message: "A?"
+    options: [approve, reject]
+  - id: gate-b
+    type: gate
+    message: "B?"
+    options: [approve, reject]
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(
+            definition,
+            gate_script=[
+                {"gate_id": "gate-a", "iteration": 0, "verdict": "approve"},
+                {"gate_id": "gate-b", "iteration": 0, "verdict": "approve"},
+            ],
+        )
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["gate-a"]["output"]["choice"] == "approve"
+        assert state.step_results["gate-b"]["output"]["choice"] == "approve"
+
+    def test_default_behaviour_preserved_without_script(
+        self, project_dir, monkeypatch
+    ):
+        """When no script is provided, the gate falls back to its
+        normal behaviour: ``PAUSED`` in non-TTY environments.
+
+        Locks the byte-equivalent default required by the issue's
+        acceptance criteria.
+        """
+        from specify_cli.workflows.engine import (
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.steps import gate as gate_module
+
+        monkeypatch.setattr(gate_module.sys.stdin, "isatty", lambda: False)
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "unscripted"
+  name: "Unscripted"
+  version: "1.0.0"
+steps:
+  - id: review
+    type: gate
+    message: "Approve?"
+    options: [approve, reject]
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.PAUSED
+        review = state.step_results["review"]
+        assert review["output"]["choice"] is None
+        assert review["output"]["scripted"] is False
+
+    def test_non_matching_script_entry_falls_back_to_prompt(
+        self, project_dir, monkeypatch
+    ):
+        """When the script has entries but none matches the current
+        gate firing, the gate falls back to its normal behaviour.
+        Locks the partial-script contract: workflow authors can
+        script only the gates they care about.
+        """
+        from specify_cli.workflows.engine import (
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.steps import gate as gate_module
+
+        monkeypatch.setattr(gate_module.sys.stdin, "isatty", lambda: False)
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "partial-script"
+  name: "Partial Script"
+  version: "1.0.0"
+steps:
+  - id: unrelated-gate
+    type: gate
+    message: "Approve?"
+    options: [approve, reject]
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(
+            definition,
+            gate_script=[
+                {"gate_id": "other-gate", "iteration": 0, "verdict": "approve"},
+            ],
+        )
+
+        assert state.status == RunStatus.PAUSED
+        assert state.step_results["unrelated-gate"]["output"]["scripted"] is False
+
+    def test_scripted_reject_with_abort_halts_run(self, project_dir):
+        """A scripted ``reject`` verdict on a gate with
+        ``on_reject: abort`` halts the run with ``ABORTED`` status,
+        same as a human-driven reject would.
+        """
+        from specify_cli.workflows.engine import (
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "scripted-reject"
+  name: "Scripted Reject"
+  version: "1.0.0"
+steps:
+  - id: review
+    type: gate
+    message: "Approve?"
+    options: [approve, reject]
+    on_reject: abort
+  - id: after
+    type: shell
+    run: "echo should-not-run"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(
+            definition,
+            gate_script=[
+                {"gate_id": "review", "iteration": 0, "verdict": "reject"},
+            ],
+        )
+
+        assert state.status == RunStatus.ABORTED
+        assert state.step_results["review"]["output"]["aborted"] is True
+        assert "after" not in state.step_results
+
+
 class TestIfThenStep:
     """Test the if/then/else step type."""
 

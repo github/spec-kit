@@ -7,6 +7,10 @@ from typing import Any
 
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
+from specify_cli.workflows.gate_script import (
+    extract_base_gate_id,
+    lookup_scripted_verdict,
+)
 
 
 class GateStep(StepBase):
@@ -19,6 +23,14 @@ class GateStep(StepBase):
 
     The user's choice is stored in ``output.choice``.  ``on_reject``
     controls abort / skip behaviour.
+
+    When the engine receives a ``--gate-script`` (or a caller passes
+    one through ``WorkflowEngine.execute(gate_script=...)``), the
+    gate consults the script before doing anything else: a matching
+    ``(gate_id, iteration)`` entry's verdict is used directly and
+    ``output.scripted`` is set to ``True``. This is the
+    non-interactive harness used by CI tests. When no script entry
+    matches, the gate falls back to its normal behaviour.
     """
 
     type_key = "gate"
@@ -35,13 +47,45 @@ class GateStep(StepBase):
         if show_file and isinstance(show_file, str) and "{{" in show_file:
             show_file = evaluate_expression(show_file, context)
 
-        output = {
+        output: dict[str, Any] = {
             "message": message,
             "options": options,
             "on_reject": on_reject,
             "show_file": show_file,
             "choice": None,
+            "scripted": False,
         }
+
+        # Scripted verdict path: consult the gate-script first.
+        # The firing counter increments for every gate execution
+        # regardless of whether a script entry matches, so reordering
+        # the YAML doesn't shift scripted verdicts onto unrelated
+        # firings.
+        base_gate_id = extract_base_gate_id(str(config.get("id", "")))
+        iteration = context.gate_firing_counts.get(base_gate_id, 0)
+        context.gate_firing_counts[base_gate_id] = iteration + 1
+
+        scripted_verdict = lookup_scripted_verdict(
+            context.gate_script, base_gate_id, iteration
+        )
+        if scripted_verdict is not None:
+            output["choice"] = scripted_verdict
+            output["scripted"] = True
+            if scripted_verdict in ("reject", "abort"):
+                if on_reject == "abort":
+                    output["aborted"] = True
+                    return StepResult(
+                        status=StepStatus.FAILED,
+                        output=output,
+                        error=(
+                            f"Gate scripted-rejected at step "
+                            f"{config.get('id', '?')!r} (gate-script verdict)"
+                        ),
+                    )
+                if on_reject == "retry":
+                    return StepResult(status=StepStatus.PAUSED, output=output)
+                # on_reject == "skip" → completed, downstream decides
+            return StepResult(status=StepStatus.COMPLETED, output=output)
 
         # Non-interactive: pause for later resume
         if not sys.stdin.isatty():

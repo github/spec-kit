@@ -415,6 +415,7 @@ class WorkflowEngine:
         definition: WorkflowDefinition,
         inputs: dict[str, Any] | None = None,
         run_id: str | None = None,
+        gate_script: list[dict[str, Any]] | None = None,
     ) -> RunState:
         """Execute a workflow definition.
 
@@ -426,6 +427,12 @@ class WorkflowEngine:
             User-provided input values.
         run_id:
             Optional run ID (auto-generated if not provided).
+        gate_script:
+            Optional list of pre-parsed gate-script verdicts (see
+            ``workflows.gate_script``). When provided, ``GateStep``
+            consults this list before prompting the operator, so the
+            workflow runs non-interactively. Used by CI tests and the
+            ``specify workflow run --gate-script <path>`` flag.
 
         Returns
         -------
@@ -462,6 +469,7 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            gate_script=gate_script or [],
         )
 
         # Execute steps
@@ -484,8 +492,18 @@ class WorkflowEngine:
         state.save()
         return state
 
-    def resume(self, run_id: str) -> RunState:
-        """Resume a paused or failed workflow run."""
+    def resume(
+        self,
+        run_id: str,
+        gate_script: list[dict[str, Any]] | None = None,
+    ) -> RunState:
+        """Resume a paused or failed workflow run.
+
+        ``gate_script`` is consulted by ``GateStep`` for any gate that
+        fires after resume — useful for scripted CI tests that pause
+        on a gate, capture intermediate state, and then resume with a
+        scripted verdict.
+        """
         state = RunState.load(run_id, self.project_root)
         if state.status not in (RunStatus.PAUSED, RunStatus.FAILED):
             msg = f"Cannot resume run {run_id!r} with status {state.status.value!r}."
@@ -510,6 +528,7 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            gate_script=gate_script or [],
         )
 
         from . import STEP_REGISTRY
