@@ -559,7 +559,7 @@ class CommandRegistrar:
             dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
             self._ensure_inside(dest_file, commands_dir)
             dest_file.parent.mkdir(parents=True, exist_ok=True)
-            dest_file.write_text(output, encoding="utf-8")
+            dest_file.write_bytes(output.replace("\r\n", "\n").encode("utf-8"))
 
             if agent_name == "copilot":
                 self.write_copilot_prompt(project_root, cmd_name)
@@ -625,7 +625,7 @@ class CommandRegistrar:
                 )
                 self._ensure_inside(alias_file, commands_dir)
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
-                alias_file.write_text(alias_output, encoding="utf-8")
+                alias_file.write_bytes(alias_output.replace("\r\n", "\n").encode("utf-8"))
                 if agent_name == "copilot":
                     self.write_copilot_prompt(project_root, alias)
                 registered.append(alias)
@@ -644,7 +644,7 @@ class CommandRegistrar:
         prompts_dir.mkdir(parents=True, exist_ok=True)
         prompt_file = prompts_dir / f"{cmd_name}.prompt.md"
         CommandRegistrar._ensure_inside(prompt_file, prompts_dir)
-        prompt_file.write_text(f"---\nagent: {cmd_name}\n---\n", encoding="utf-8")
+        prompt_file.write_bytes(f"---\nagent: {cmd_name}\n---\n".encode("utf-8"))
 
     @staticmethod
     def _resolve_agent_dir(

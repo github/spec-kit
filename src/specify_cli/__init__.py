@@ -2427,9 +2427,17 @@ def _preset_managed_modified_files(
             continue
 
         if command_dir and not rel_posix.startswith(f"{command_dir}/"):
-            continue
+            if agent_name != "copilot" or not rel_posix.startswith(".github/prompts/"):
+                continue
         for command_name in registered_command_names:
             if rel_path.name == f"{command_name}{extension}":
+                managed.add(rel)
+                break
+            if (
+                agent_name == "copilot"
+                and rel_posix.startswith(".github/prompts/")
+                and rel_path.name == f"{command_name}.prompt.md"
+            ):
                 managed.add(rel)
                 break
 
