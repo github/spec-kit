@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "speckit.implement.receipt.v1.schema.json",
+  "title": "Spec Kit Implement Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_type",
+    "shard_id",
+    "task_ids",
+    "completed_task_ids",
+    "changed_paths",
+    "validation_evidence"
+  ],
+  "properties": {
+    "contract_type": {
+      "const": "speckit.implement.receipt.v1"
+    },
+    "shard_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "completed_task_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "changed_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "validation_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

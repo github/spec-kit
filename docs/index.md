@@ -43,15 +43,15 @@ Run `specify init` with your agent of choice and Spec Kit sets up the right comm
 
 ### Make it your own
 
-<span class="pillar-stat">91 community extensions</span> (50+ authors), <span class="pillar-stat">18 presets</span>, and growing — including entirely different SDD processes:
+<span class="pillar-stat">91 community extensions</span> (50+ authors), <span class="pillar-stat">18 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, or replace it entirely. Build and publish your own.
+
+Including entirely different SDD processes:
 
 - **AIDE** — 7-step AI-driven engineering lifecycle
 - **Canon** — baseline-driven workflows (spec-first, code-first, spec-drift)
 - **Product Forge** — product-management-oriented SDD
 - **FX→.NET** — end-to-end .NET Framework migration across 7 phases
 - **MAQA** — multi-agent orchestration with quality assurance gates
-
-Tune the core process with presets, extend it with extensions, orchestrate it with workflows, or replace it entirely. Build and publish your own.
 
 <a href="community/presets.md" class="pillar-link">Browse community presets →</a>
 
@@ -124,9 +124,9 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
     <strong>Reference</strong>
     <span>Core commands, integrations, extensions, presets, and workflows</span>
   </a>
-  <a href="community/presets.md" class="nav-card">
+  <a href="community/overview.md" class="nav-card">
     <strong>Community</strong>
-    <span>Presets, walkthroughs, and friend projects</span>
+    <span>Extensions, presets, walkthroughs, and friend projects</span>
   </a>
   <a href="local-development.md" class="nav-card">
     <strong>Development</strong>

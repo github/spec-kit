@@ -1,0 +1,46 @@
+schema_version: "1.0"
+
+extension:
+  id: agent-governance
+  name: "Agent Governance"
+  version: "1.2.0"
+  description: "Generate agent-platform repository governance files from Spec Kit metadata"
+  author: "bigben"
+  repository: "https://github.com/bigsmartben/spec-kit-agent-governance"
+  homepage: "https://github.com/bigsmartben/spec-kit-agent-governance"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.8.0"
+  tools:
+    - name: "uv"
+      required: true
+
+provides:
+  commands:
+    - name: "speckit.agent-governance.refresh"
+      file: "commands/speckit.agent-governance.refresh.md"
+      description: "Generate or update the active agent platform governance file"
+
+hooks:
+  after_constitution:
+    command: "speckit.agent-governance.refresh"
+    optional: true
+    prompt: "Refresh agent governance after constitution changes?"
+    description: "Generates the active agent platform governance file"
+  after_plan:
+    command: "speckit.agent-governance.refresh"
+    optional: true
+    prompt: "Refresh agent governance after planning?"
+    description: "Keeps the active agent platform governance file aligned"
+  after_tasks:
+    command: "speckit.agent-governance.refresh"
+    optional: true
+    prompt: "Refresh agent governance after task generation?"
+    description: "Keeps the active agent platform governance file aligned"
+
+tags:
+  - "governance"
+  - "agents"
+  - "memory"
+  - "context"

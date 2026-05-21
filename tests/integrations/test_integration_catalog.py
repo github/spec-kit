@@ -512,7 +512,7 @@ class TestIntegrationListCatalog:
         finally:
             os.chdir(old)
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.output
         assert "test-agent" in result.output
         assert "Test Agent" in result.output
 
@@ -605,7 +605,26 @@ class TestIntegrationUpgrade:
             result = runner.invoke(app, ["integration", "upgrade"], catch_exceptions=False)
         finally:
             os.chdir(old)
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.output
+        assert "upgraded successfully" in result.output
+
+    def test_upgrade_allows_preset_managed_copilot_prompt_rewrite(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        runner = CliRunner()
+        project = self._init_project(tmp_path, "copilot")
+
+        prompt_file = project / ".github" / "prompts" / "speckit.implement.prompt.md"
+        assert prompt_file.exists()
+        prompt_file.write_bytes(prompt_file.read_bytes().replace(b"\n", b"\r\n"))
+
+        old = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["integration", "upgrade"], catch_exceptions=False)
+        finally:
+            os.chdir(old)
+        assert result.exit_code == 0, result.output
         assert "upgraded successfully" in result.output
 
     def test_upgrade_blocks_on_modified_files(self, tmp_path):

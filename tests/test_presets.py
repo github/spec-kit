@@ -2266,6 +2266,37 @@ class TestPresetSkills:
         )
         return skill_dir
 
+    def _create_command_preset(self, temp_dir, preset_id, command_name, description, body):
+        preset_dir = temp_dir / preset_id
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        command_file = f"{command_name}.md"
+        (preset_dir / "commands" / command_file).write_text(
+            f"---\ndescription: {description}\n---\n\n{body}\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": preset_id,
+                "name": preset_id,
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": command_name,
+                        "file": f"commands/{command_file}",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        return preset_dir
+
     def test_skill_overridden_on_preset_install(self, project_dir, temp_dir):
         """When --ai-skills was used, a preset command override should update the skill."""
         # Simulate --ai-skills having been used: write init-options + create skill
@@ -2289,6 +2320,120 @@ class TestPresetSkills:
         # Verify it was recorded in registry
         metadata = manager.registry.get("self-test")
         assert "speckit-specify" in metadata.get("registered_skills", [])
+
+    def test_core_command_override_skill_uses_preset_command_description(self, project_dir, temp_dir):
+        """Preset skill overrides for core commands should keep preset frontmatter descriptions."""
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-taskstoissues")
+
+        preset_dir = temp_dir / "taskstoissues-description"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.repro.taskstoissues.md").write_text(
+            "---\n"
+            "description: COMMAND-FRONTMATTER-DESCRIPTION\n"
+            "---\n\n"
+            "# Repro command body\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "taskstoissues-description",
+                "name": "Taskstoissues Description",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.taskstoissues",
+                        "file": "commands/speckit.repro.taskstoissues.md",
+                        "description": "MANIFEST-DESCRIPTION",
+                        "replaces": "speckit.taskstoissues",
+                        "strategy": "replace",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-taskstoissues" / "SKILL.md"
+        content = skill_file.read_text()
+        assert "description: COMMAND-FRONTMATTER-DESCRIPTION" in content
+        assert "Convert tasks from tasks.md into GitHub issues." not in content
+        assert "source: preset:taskstoissues-description" in content
+
+    def test_core_skill_restore_uses_core_command_description(self, project_dir, temp_dir):
+        """Core skill restore should keep core command frontmatter descriptions."""
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-taskstoissues")
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "taskstoissues.md").write_text(
+            "---\n"
+            "description: CORE-FRONTMATTER-DESCRIPTION\n"
+            "---\n\n"
+            "core taskstoissues body\n"
+        )
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "taskstoissues-restore",
+            "speckit.taskstoissues",
+            "PRESET-FRONTMATTER-DESCRIPTION",
+            "preset taskstoissues body\n",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.remove("taskstoissues-restore")
+
+        skill_file = skills_dir / "speckit-taskstoissues" / "SKILL.md"
+        content = skill_file.read_text()
+        assert "description: CORE-FRONTMATTER-DESCRIPTION" in content
+        assert "Convert tasks from tasks.md into GitHub issues." not in content
+        assert "source: templates/commands/taskstoissues.md" in content
+        assert "core taskstoissues body" in content
+
+    def test_override_skill_reconcile_uses_override_command_description(self, project_dir, temp_dir):
+        """Override skill reconciliation should keep override frontmatter descriptions."""
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-taskstoissues")
+
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.taskstoissues.md").write_text(
+            "---\n"
+            "description: OVERRIDE-FRONTMATTER-DESCRIPTION\n"
+            "---\n\n"
+            "override taskstoissues body\n"
+        )
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "taskstoissues-reconcile",
+            "speckit.taskstoissues",
+            "PRESET-FRONTMATTER-DESCRIPTION",
+            "preset taskstoissues body\n",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-taskstoissues" / "SKILL.md"
+        content = skill_file.read_text()
+        assert "description: OVERRIDE-FRONTMATTER-DESCRIPTION" in content
+        assert "Convert tasks from tasks.md into GitHub issues." not in content
+        assert "source: override:speckit.taskstoissues" in content
+        assert "override taskstoissues body" in content
 
     def test_skill_not_updated_when_ai_skills_disabled(self, project_dir, temp_dir):
         """When --ai-skills was NOT used, preset install should not touch skills."""
@@ -3260,6 +3405,14 @@ class TestBundledPresetLocator:
         assert path is not None
         assert (path / "preset.yml").is_file()
 
+    def test_locate_bundled_workflow_preset(self):
+        """_locate_bundled_preset finds the workflow preset."""
+        from specify_cli import _locate_bundled_preset
+
+        path = _locate_bundled_preset("workflow-preset")
+        assert path is not None
+        assert (path / "preset.yml").is_file()
+
     def test_locate_bundled_preset_not_found(self):
         """_locate_bundled_preset returns None for nonexistent preset."""
         from specify_cli import _locate_bundled_preset
@@ -3291,12 +3444,13 @@ class TestBundledPresetLocator:
         assert "installed" in result.output.lower()
 
     def test_bundled_preset_in_catalog(self):
-        """Verify the lean preset is listed in catalog.json with bundled marker."""
+        """Verify bundled presets are listed in catalog.json with bundled marker."""
         catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
         catalog = json.loads(catalog_path.read_text())
-        assert "lean" in catalog["presets"]
-        assert catalog["presets"]["lean"]["bundled"] is True
-        assert "download_url" not in catalog["presets"]["lean"]
+        for preset_id in ("lean", "workflow-preset"):
+            assert preset_id in catalog["presets"]
+            assert catalog["presets"][preset_id]["bundled"] is True
+            assert "download_url" not in catalog["presets"][preset_id]
 
     def test_bundled_preset_download_raises_error(self, project_dir):
         """download_pack raises PresetError for bundled presets without download_url."""

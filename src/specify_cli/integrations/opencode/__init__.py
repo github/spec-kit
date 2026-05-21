@@ -8,12 +8,13 @@ class OpencodeIntegration(MarkdownIntegration):
     config = {
         "name": "opencode",
         "folder": ".opencode/",
-        "commands_subdir": "command",
+        "commands_subdir": "commands",
         "install_url": "https://opencode.ai",
         "requires_cli": True,
     }
     registrar_config = {
-        "dir": ".opencode/command",
+        "dir": ".opencode/commands",
+        "legacy_dir": ".opencode/command",
         "format": "markdown",
         "args": "$ARGUMENTS",
         "extension": ".md",

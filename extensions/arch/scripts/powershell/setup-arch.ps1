@@ -83,6 +83,7 @@ function Convert-ToPlainPath {
 $repoRoot = Convert-ToPlainPath (Get-RepoRoot)
 $archDir = Join-Path $repoRoot ".specify/memory"
 $archFile = Join-Path $archDir "architecture.md"
+$repoFactsFile = Join-Path $archDir "architecture-repo-facts.md"
 $scenarioView = Join-Path $archDir "architecture-scenario-view.md"
 $logicalView = Join-Path $archDir "architecture-logical-view.md"
 $processView = Join-Path $archDir "architecture-process-view.md"
@@ -104,13 +105,18 @@ function Copy-TemplateIfMissing {
     $template = Resolve-ArchitectureTemplate -TemplateName $TemplateName -RepoRoot $repoRoot
     if ($template -and (Test-Path -LiteralPath $template -PathType Leaf)) {
         Copy-Item -LiteralPath $template -Destination $Destination -Force
-        Write-Output "Copied $TemplateName template to $Destination"
+        if ($Json) {
+            [Console]::Error.WriteLine("Copied $TemplateName template to $Destination")
+        } else {
+            Write-Output "Copied $TemplateName template to $Destination"
+        }
     } else {
         Write-Warning "$TemplateName template not found"
         New-Item -ItemType File -Path $Destination -Force | Out-Null
     }
 }
 
+Copy-TemplateIfMissing -TemplateName "architecture-repo-facts-template" -Destination $repoFactsFile
 Copy-TemplateIfMissing -TemplateName "architecture-template" -Destination $archFile
 Copy-TemplateIfMissing -TemplateName "architecture-scenario-template" -Destination $scenarioView
 Copy-TemplateIfMissing -TemplateName "architecture-logical-template" -Destination $logicalView
@@ -122,6 +128,7 @@ if ($Json) {
     [PSCustomObject]@{
         ARCH_FILE = $archFile
         ARCH_DIR = $archDir
+        REPO_FACTS_FILE = $repoFactsFile
         SCENARIO_VIEW = $scenarioView
         LOGICAL_VIEW = $logicalView
         PROCESS_VIEW = $processView
@@ -131,6 +138,7 @@ if ($Json) {
 } else {
     Write-Output "ARCH_FILE: $archFile"
     Write-Output "ARCH_DIR: $archDir"
+    Write-Output "REPO_FACTS_FILE: $repoFactsFile"
     Write-Output "SCENARIO_VIEW: $scenarioView"
     Write-Output "LOGICAL_VIEW: $logicalView"
     Write-Output "PROCESS_VIEW: $processView"

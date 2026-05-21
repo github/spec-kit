@@ -25,6 +25,30 @@
         "workflow",
         "core"
       ]
+    },
+    "workflow-preset": {
+      "name": "Workflow Preset",
+      "id": "workflow-preset",
+      "version": "1.0.3",
+      "description": "Plan design artifacts and agent-native handoff orchestration",
+      "author": "bigsmartben",
+      "repository": "https://github.com/bigsmartben/spec-kit-workflow-preset",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.8.10.dev0"
+      },
+      "provides": {
+        "commands": 3,
+        "templates": 4
+      },
+      "tags": [
+        "planning",
+        "design",
+        "implementation",
+        "orchestration",
+        "handoff"
+      ]
     }
   }
 }

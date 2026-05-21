@@ -7,9 +7,23 @@ workflow:
   description: "Runs specify → plan → tasks → implement with review gates"
 
 requires:
-  speckit_version: ">=0.7.2"
+  # 0.8.5 is the first release with engine-side resolution of the
+  # ``integration: "auto"`` default. Older versions would treat "auto"
+  # as a literal integration key and fail at dispatch.
+  speckit_version: ">=0.8.5"
   integrations:
-    any: ["copilot", "claude", "gemini"]
+    # The four commands below (specify, plan, tasks, implement) are core
+    # spec-kit commands provided by every integration. The list here is an
+    # advisory, non-exhaustive compatibility hint following the documented
+    # ``any: [...]`` schema -- it is NOT a closed set. The workflow runs
+    # against any integration the project was initialized with, including
+    # ones not listed below, as long as that integration provides the four
+    # core commands referenced in ``steps``.
+    any:
+      - "claude"
+      - "copilot"
+      - "gemini"
+      - "opencode"
 
 inputs:
   spec:
@@ -18,8 +32,8 @@ inputs:
     prompt: "Describe what you want to build"
   integration:
     type: string
-    default: "copilot"
-    prompt: "Integration to use (e.g. claude, copilot, gemini)"
+    default: "auto"
+    prompt: "Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's initialized integration)"
   scope:
     type: string
     default: "full"

@@ -1,0 +1,71 @@
+schema_version: "1.0"
+
+preset:
+  id: "workflow-preset"
+  name: "Workflow Preset"
+  version: "1.0.3"
+  description: "Plan design artifacts and agent-native handoff orchestration"
+  author: "bigsmartben"
+  repository: "https://github.com/bigsmartben/spec-kit-workflow-preset"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.8.10.dev0"
+
+provides:
+  templates:
+    - type: "template"
+      name: "plan-template"
+      file: "templates/plan-template.md"
+      description: "Add design artifact navigation to the plan template"
+      replaces: "plan-template"
+      strategy: "wrap"
+
+    - type: "command"
+      name: "speckit.plan"
+      file: "commands/speckit.plan.md"
+      description: "Wrap core planning with optional class, sequence, and test design artifacts"
+      replaces: "speckit.plan"
+      strategy: "wrap"
+
+    - type: "command"
+      name: "speckit.tasks"
+      file: "commands/speckit.tasks.md"
+      description: "Wrap task generation with optional design artifact awareness"
+      replaces: "speckit.tasks"
+      strategy: "wrap"
+
+    - type: "command"
+      name: "speckit.implement"
+      file: "commands/speckit.implement.md"
+      description: "Run agent-native handoff orchestration or execute one worker handoff"
+      replaces: "speckit.implement"
+      strategy: "replace"
+
+    - type: "template"
+      name: "speckit-implement-manifest-v1-schema"
+      file: "schemas/speckit.implement.manifest.v1.schema.json"
+      description: "Decouple the handoff manifest JSON contract"
+      replaces: "speckit-implement-manifest-v1-schema"
+      strategy: "replace"
+
+    - type: "template"
+      name: "speckit-implement-handoff-v2-schema"
+      file: "schemas/speckit.implement.handoff.v2.schema.json"
+      description: "Decouple the handoff JSON contract"
+      replaces: "speckit-implement-handoff-v2-schema"
+      strategy: "replace"
+
+    - type: "template"
+      name: "speckit-implement-receipt-v1-schema"
+      file: "schemas/speckit.implement.receipt.v1.schema.json"
+      description: "Decouple the receipt JSON contract"
+      replaces: "speckit-implement-receipt-v1-schema"
+      strategy: "replace"
+
+tags:
+  - "planning"
+  - "design"
+  - "implementation"
+  - "orchestration"
+  - "handoff"

@@ -1906,7 +1906,7 @@ Run {SCRIPT}
         registrar = CommandRegistrar()
         from specify_cli.extensions import ExtensionManifest
         manifest = ExtensionManifest(ext_dir / "extension.yml")
-        registered = registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
 
         skill_subdir = skills_dir / "speckit-cleanup-ext-run"
         assert skill_subdir.exists(), "Skill subdirectory should exist after registration"
@@ -2640,7 +2640,8 @@ class TestExtensionCatalog:
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
         """download_extension passes Authorization header when a provider is configured."""
         from unittest.mock import patch, MagicMock
-        import zipfile, io
+        import zipfile
+        import io
 
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
         self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
@@ -2938,6 +2939,110 @@ class TestCatalogStack:
 
         assert len(entries) == 1
         assert entries[0].url == "http://localhost:8000/catalog.json"
+
+    @pytest.mark.parametrize(
+        "config_content", ["[]\n", "false\n", "0\n", "''\n", "- item\n"]
+    )
+    def test_load_catalog_config_rejects_non_mapping_roots(
+        self, temp_dir, config_content
+    ):
+        """Malformed roots raise ValidationError, not fallback or AttributeError."""
+        project_dir = self._make_project(temp_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        config_path.write_text(config_content, encoding="utf-8")
+
+        catalog = ExtensionCatalog(project_dir)
+
+        with pytest.raises(
+            ValidationError, match="expected a YAML mapping at the root"
+        ) as exc_info:
+            catalog.get_active_catalogs()
+        assert str(config_path) in str(exc_info.value)
+
+    def test_load_catalog_config_rejects_boolean_priority(self, temp_dir):
+        """Boolean priorities are rejected instead of being coerced to 1 or 0."""
+        import yaml as yaml_module
+
+        project_dir = self._make_project(temp_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        config_path.write_text(
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "bad-priority",
+                            "url": "https://example.com/catalog.json",
+                            "priority": True,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        with pytest.raises(
+            ValidationError, match="Invalid priority|expected integer"
+        ) as exc_info:
+            catalog.get_active_catalogs()
+        assert str(config_path) in str(exc_info.value)
+
+    def test_load_catalog_config_defaults_blank_names(self, temp_dir):
+        """Blank and null names normalize by valid catalog order."""
+        import yaml as yaml_module
+
+        project_dir = self._make_project(temp_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        config_path.write_text(
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {"name": "skipped", "url": "   "},
+                        {"name": None, "url": "https://one.example.com/catalog.json"},
+                        {"name": "   ", "url": "https://two.example.com/catalog.json"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        assert [entry.name for entry in catalog.get_active_catalogs()] == [
+            "catalog-1",
+            "catalog-2",
+        ]
+
+    @pytest.mark.parametrize(
+        ("url", "expected_detail"),
+        [
+            ("relative/catalog.json", "HTTPS"),
+            ("https:///no-host", "valid URL with a host"),
+        ],
+    )
+    def test_load_catalog_config_invalid_url_includes_context(
+        self, temp_dir, url, expected_detail
+    ):
+        """Invalid catalog URLs include the config path and entry index."""
+        import yaml as yaml_module
+
+        project_dir = self._make_project(temp_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        config_path.write_text(
+            yaml_module.dump({"catalogs": [{"name": "bad", "url": url}]}),
+            encoding="utf-8",
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        with pytest.raises(ValidationError) as exc_info:
+            catalog.get_active_catalogs()
+        message = str(exc_info.value)
+        assert "Invalid catalog URL" in message
+        assert str(config_path) in message
+        assert "index 0" in message
+        assert expected_detail in message
 
     # --- Merge conflict resolution ---
 
@@ -3531,6 +3636,29 @@ class TestExtensionAddCLI:
         assert result.exit_code != 0
         assert "bundled with spec-kit" in result.output
         assert "reinstall" in result.output.lower()
+
+
+class TestBundledCommunityExtensionLocator:
+    """Tests for bundled community extension discovery."""
+
+    def test_locate_bundled_community_extensions(self):
+        """_locate_bundled_extension finds the bundled community extensions."""
+        from specify_cli import _locate_bundled_extension
+
+        for extension_id in ("arch", "preview", "agent-governance"):
+            path = _locate_bundled_extension(extension_id)
+            assert path is not None, f"{extension_id} was not located"
+            assert (path / "extension.yml").is_file()
+
+    def test_community_extensions_in_catalog(self):
+        """Bundled community extensions are listed in catalog.json."""
+        catalog_path = Path(__file__).parent.parent / "extensions" / "catalog.json"
+        catalog = json.loads(catalog_path.read_text())
+
+        for extension_id in ("arch", "preview", "agent-governance"):
+            assert extension_id in catalog["extensions"]
+            assert catalog["extensions"][extension_id]["bundled"] is True
+            assert "download_url" not in catalog["extensions"][extension_id]
 
 
 class TestDownloadExtensionBundled:

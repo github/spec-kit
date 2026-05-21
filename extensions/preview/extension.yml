@@ -1,0 +1,27 @@
+schema_version: "1.0"
+
+extension:
+  id: preview
+  name: "Interactive HTML Preview"
+  version: "1.0.0"
+  description: "Generate self-contained interactive HTML prototypes from Spec Kit artifacts"
+  author: bigsmartben
+  repository: https://github.com/bigsmartben/spec-kit-preview
+  homepage: https://github.com/bigsmartben/spec-kit-preview
+  license: MIT
+
+requires:
+  speckit_version: ">=0.8.10.dev0"
+
+provides:
+  commands:
+    - name: speckit.preview.html
+      file: commands/speckit.preview.html.md
+      description: "Generate a self-contained interactive HTML prototype from Spec Kit artifacts"
+
+tags:
+  - "preview"
+  - "prototype"
+  - "html"
+  - "ux"
+

@@ -53,9 +53,9 @@
 
 ## Cross-View Architecture Model
 
-This section normalizes the 4+1 design results into the architecture SSOT for later `plan` reasoning. Record how concepts derive, constrain, depend on, or guard each other. This is architecture design synthesis, not tracking or audit. Do not treat view-specific concepts as equivalent or interchangeable.
+This section normalizes the 4+1 design results into the architecture SSOT. Record how concepts derive, constrain, depend on, or guard each other. This is architecture design synthesis, not tracking or audit. Do not treat view-specific concepts as equivalent or interchangeable.
 
-| Architecture Concept | Scenario Meaning | Logical Interpretation | Runtime Role | Development Boundary | Physical Constraint | Plan Reasoning Constraint |
+| Architecture Concept | Scenario Meaning | Logical Interpretation | Runtime Role | Development Boundary | Physical Constraint | Architecture Constraint |
 |----------------------|------------------|------------------------|--------------|----------------------|---------------------|---------------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 

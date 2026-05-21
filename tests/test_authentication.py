@@ -832,7 +832,7 @@ class TestFetchLatestReleaseTagDelegation:
 
     def test_gh_token_forwarded_when_configured(self, monkeypatch):
         from unittest.mock import MagicMock, patch
-        from specify_cli import _fetch_latest_release_tag
+        from specify_cli._version import _fetch_latest_release_tag
         monkeypatch.setenv("GH_TOKEN", "forwarded-sentinel")
         self._set_config(monkeypatch, [_github_entry()])
         captured, side_effect = self._capture_request()
@@ -843,7 +843,7 @@ class TestFetchLatestReleaseTagDelegation:
 
     def test_no_config_means_no_auth(self, monkeypatch):
         from unittest.mock import patch
-        from specify_cli import _fetch_latest_release_tag
+        from specify_cli._version import _fetch_latest_release_tag
         self._set_config(monkeypatch, [])
         captured, side_effect = self._capture_request()
         with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
@@ -852,7 +852,7 @@ class TestFetchLatestReleaseTagDelegation:
 
     def test_accept_header_present(self, monkeypatch):
         from unittest.mock import patch
-        from specify_cli import _fetch_latest_release_tag
+        from specify_cli._version import _fetch_latest_release_tag
         self._set_config(monkeypatch, [])
         captured, side_effect = self._capture_request()
         with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):

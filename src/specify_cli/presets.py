@@ -1048,9 +1048,9 @@ class PresetManager:
                     short_name = cmd_name
                     if short_name.startswith("speckit."):
                         short_name = short_name[len("speckit."):]
-                    desc = SKILL_DESCRIPTIONS.get(
+                    desc = fm.get("description", "") or SKILL_DESCRIPTIONS.get(
                         short_name.replace(".", "-"),
-                        fm.get("description", f"Command: {short_name}"),
+                        f"Command: {short_name}",
                     )
                     init_opts = load_init_options(self.project_root)
                     selected_ai = init_opts.get("ai") if isinstance(init_opts, dict) else ""
@@ -1314,9 +1314,9 @@ class PresetManager:
                         frontmatter[key] = core_frontmatter[key]
 
             original_desc = frontmatter.get("description", "")
-            enhanced_desc = SKILL_DESCRIPTIONS.get(
+            enhanced_desc = original_desc or SKILL_DESCRIPTIONS.get(
                 short_name,
-                original_desc or f"Spec-kit workflow command: {short_name}",
+                f"Spec-kit workflow command: {short_name}",
             )
             frontmatter = dict(frontmatter)
             frontmatter["description"] = enhanced_desc
@@ -1417,9 +1417,9 @@ class PresetManager:
                     )
 
                 original_desc = frontmatter.get("description", "")
-                enhanced_desc = SKILL_DESCRIPTIONS.get(
+                enhanced_desc = original_desc or SKILL_DESCRIPTIONS.get(
                     short_name,
-                    original_desc or f"Spec-kit workflow command: {short_name}",
+                    f"Spec-kit workflow command: {short_name}",
                 )
 
                 frontmatter_data = registrar.build_skill_frontmatter(
@@ -1478,6 +1478,66 @@ class PresetManager:
             else:
                 # No core or extension template — remove the skill entirely
                 shutil.rmtree(skill_subdir)
+
+    def unregister_agent_artifacts(self, agent_name: str) -> None:
+        """Remove preset command and skill files registered for one agent."""
+        if not agent_name:
+            return
+
+        try:
+            from . import _get_skills_dir as resolve_skills_dir
+            from .agents import CommandRegistrar
+        except ImportError:
+            return
+
+        if agent_name not in CommandRegistrar.AGENT_CONFIGS:
+            return
+
+        registrar = CommandRegistrar()
+        agent_config = CommandRegistrar.AGENT_CONFIGS.get(agent_name, {})
+        is_skill_agent = agent_config.get("extension") == "/SKILL.md"
+        skills_dir = resolve_skills_dir(self.project_root, agent_name)
+
+        for pack_id, metadata in self.registry.list().items():
+            updates: Dict[str, Any] = {}
+
+            registered_commands = metadata.get("registered_commands", {})
+            if isinstance(registered_commands, dict) and agent_name in registered_commands:
+                command_names = registered_commands.get(agent_name)
+                if not is_skill_agent and isinstance(command_names, list) and command_names:
+                    registrar.unregister_commands(
+                        {agent_name: [c for c in command_names if isinstance(c, str)]},
+                        self.project_root,
+                    )
+                new_registered = copy.deepcopy(registered_commands)
+                new_registered.pop(agent_name, None)
+                updates["registered_commands"] = new_registered
+
+            registered_skills = metadata.get("registered_skills", [])
+            if isinstance(registered_skills, list) and skills_dir.is_dir():
+                for skill_name in registered_skills:
+                    if not isinstance(skill_name, str):
+                        continue
+                    skill_dir = skills_dir / skill_name
+                    skill_file = skill_dir / "SKILL.md"
+                    if not skill_file.is_file():
+                        continue
+                    try:
+                        raw = skill_file.read_text(encoding="utf-8")
+                        source = ""
+                        if raw.startswith("---"):
+                            parts = raw.split("---", 2)
+                            if len(parts) >= 3:
+                                fm = yaml.safe_load(parts[1]) or {}
+                                if isinstance(fm, dict):
+                                    source = fm.get("metadata", {}).get("source", "")
+                        if source == f"preset:{pack_id}":
+                            shutil.rmtree(skill_dir)
+                    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+                        continue
+
+            if updates:
+                self.registry.update(pack_id, updates)
 
     def install_from_directory(
         self,

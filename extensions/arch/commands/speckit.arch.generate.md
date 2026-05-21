@@ -26,12 +26,13 @@ Generate or update the project-level architecture SSOT as 4+1 architecture artif
 
 The scenario view is the entry point. It produces the UC semantics for this architecture pass: actors, goals, use cases, scenario paths, branches, and acceptance meaning. The other four views are derived from the scenario view.
 
-The six artifacts are the authoritative architecture design source for later iterations. They serve two purposes: produce high-quality 4+1 architecture reasoning in this command, and constrain later `plan` reasoning to stay inside the architecture SSOT.
+The six artifacts are the authoritative architecture design source. They preserve project-level architecture intent, boundaries, tradeoffs, constraints, and unresolved gaps as 4+1 architecture reasoning.
 
 ## Operating Boundaries
 
 - Write only the six architecture artifacts listed above.
-- Do not require `.specify/memory/uc.md`. If it exists, read it only as supporting reference, not as a hard prerequisite or sole source of truth.
+- Setup may create `.specify/memory/architecture-repo-facts.md` as a placeholder for reverse workflow compatibility, but generate must not load, populate, or update it.
+- If `.specify/memory/uc.md` exists, read it only as supporting reference, not as a hard prerequisite or sole source of truth.
 - Do not modify `.specify/memory/uc.md`, `.specify/memory/constitution.md`, feature specs, plans, tasks, source code, tests, or root `docs/`.
 - Stay at abstract architecture-design level.
 - Do not write concrete classes, files, functions, endpoints, DTO fields, database tables, framework selections, library choices, UI component details, deployment manifests, task breakdowns, test strategy, validation anchors, code notes, deployment scripts, or runbooks.
@@ -41,7 +42,7 @@ The six artifacts are the authoritative architecture design source for later ite
 
 ### Architecture Reasoning Layer
 
-Reason only in the 4+1 views. Use each view template as the source of truth for that view's reasoning contract and artifact structure. Produce architecture design inference, not tracking, audit, or implementation planning. Maintain a cross-view architecture model that normalizes architecture meaning for synthesis and later `plan` reasoning while preserving each view's distinct concept type. Every conclusion must still be grounded in a scenario, object, state, collaboration, boundary, deployment constraint, or stated external constraint. Do not translate, rename, or equate concepts across views through notation-specific terms.
+Reason only in the 4+1 views. Use each view template as the source of truth for that view's reasoning contract and artifact structure. Produce architecture design inference, not tracking, audit, or implementation planning. Maintain a cross-view architecture model that normalizes architecture meaning for synthesis while preserving each view's distinct concept type. Every conclusion must still be grounded in a scenario, object, state, collaboration, boundary, deployment constraint, or stated external constraint. Do not translate, rename, or equate concepts across views through notation-specific terms.
 
 ### Representation Layer
 
@@ -54,10 +55,11 @@ Markdown tables are the default artifact structure. Optional diagrams are render
 
 ## Outline
 
-1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for `ARCH_FILE`, `ARCH_DIR`, `SCENARIO_VIEW`, `LOGICAL_VIEW`, `PROCESS_VIEW`, `DEVELOPMENT_VIEW`, and `PHYSICAL_VIEW`.
+1. **Setup**: Run `{SCRIPT}` from repo root and parse JSON for `ARCH_FILE`, `ARCH_DIR`, `SCENARIO_VIEW`, `LOGICAL_VIEW`, `PROCESS_VIEW`, `DEVELOPMENT_VIEW`, and `PHYSICAL_VIEW`. The setup JSON may also include `REPO_FACTS_FILE` for reverse workflow compatibility; acknowledge it and ignore it for this generate workflow.
 
 2. **Load context**:
    - Read all six architecture artifacts created by setup.
+   - Do not read `REPO_FACTS_FILE` or `.specify/memory/architecture-repo-facts.md`.
    - Read `.specify/memory/uc.md` if present as optional scenario background.
    - Read the six architecture templates under `.specify/extensions/arch/templates/`.
 
