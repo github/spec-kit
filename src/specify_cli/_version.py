@@ -739,9 +739,11 @@ def _run_installer(plan: _UpgradePlan) -> _InstallerResult:
     installer_name = plan.installer_argv[0]
     installer_cmd = Path(installer_name)
     if installer_cmd.is_absolute():
-        if installer_cmd.exists() and (
-            not installer_cmd.is_file() or not os.access(installer_cmd, os.X_OK)
-        ):
+        if not installer_cmd.exists():
+            binary_name = _installer_binary_name(plan.method)
+            if binary_name is None or shutil.which(binary_name) != installer_name:
+                return _InstallerResult(_InstallerResultKind.MISSING)
+        elif not installer_cmd.is_file() or not os.access(installer_cmd, os.X_OK):
             return _InstallerResult(_InstallerResultKind.INVALID)
     elif _is_path_like_command(installer_name):
         if not installer_cmd.exists():
@@ -961,7 +963,9 @@ def _emit_failure(
 
     if category == "installer-invalid":
         name = installer_name or "(unknown)"
-        if installer_name and os.path.isabs(installer_name):
+        if installer_name and (
+            os.path.isabs(installer_name) or _is_path_like_command(installer_name)
+        ):
             message = (
                 f"Installer path {name} is not an executable file; "
                 "fix the path or reinstall it and retry."

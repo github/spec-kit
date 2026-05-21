@@ -1281,6 +1281,40 @@ class TestInstallerMissing:
             in strip_ansi(result.output)
         )
 
+    def test_relative_installer_path_not_executable_gets_path_specific_message(
+        self, monkeypatch, uv_tool_argv0, clean_environ, tmp_path
+    ):
+        fake_uv = tmp_path / "uv"
+        fake_uv.write_text("#!/bin/sh\n")
+        fake_uv.chmod(0o644)
+        monkeypatch.chdir(tmp_path)
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.shutil.which", side_effect=lambda name: None
+        ), patch("specify_cli._version.os.access", return_value=False), patch(
+            "specify_cli._version._get_installed_version", return_value="0.7.5"
+        ), patch(
+            "specify_cli._version._assemble_installer_argv",
+            return_value=[
+                "./uv",
+                "tool",
+                "install",
+                "specify-cli",
+                "--force",
+                "--from",
+                "git+https://github.com/github/spec-kit.git@v0.7.6",
+            ],
+        ):
+            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        out = strip_ansi(result.output)
+        assert result.exit_code == 3
+        assert (
+            "Installer path ./uv is not an executable file; fix the path or reinstall it and retry."
+            in out
+        )
+        assert "Installer ./uv is not executable" not in out
+
     def test_real_installer_exit_126_is_not_treated_as_invalid_path(
         self, uv_tool_argv0, clean_environ
     ):
@@ -1303,7 +1337,9 @@ class TestInstallerMissing:
         fake_uv = tmp_path / "missing-installer" / "uv"
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda name: None
-        ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"), patch(
+        ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
+            "specify_cli._version._get_installed_version", return_value="0.7.5"
+        ), patch(
             "specify_cli._version._assemble_installer_argv",
             return_value=[
                 str(fake_uv),
@@ -1322,6 +1358,7 @@ class TestInstallerMissing:
             f"Installer path {fake_uv} no longer exists; reinstall it and retry."
             in strip_ansi(result.output)
         )
+        mock_run.assert_not_called()
 
     def test_exec_oserror_is_treated_as_invalid_installer(
         self, uv_tool_argv0, clean_environ, tmp_path
