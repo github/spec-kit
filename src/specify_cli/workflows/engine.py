@@ -695,18 +695,21 @@ class WorkflowEngine:
                             iter_steps, context, state, registry,
                             step_offset=-1,
                         )
-                        # Copy namespaced results back to unprefixed
-                        # keys so loop conditions see updated values.
-                        for namespaced, orig in original_ids.items():
-                            if namespaced in context.steps:
-                                context.steps[orig] = context.steps[namespaced]
-                                state.step_results[orig] = context.steps[namespaced]
                         if state.status in (
                             RunStatus.PAUSED,
                             RunStatus.FAILED,
                             RunStatus.ABORTED,
                         ):
                             return
+                        # Copy namespaced results back to unprefixed
+                        # keys so loop conditions see updated values.
+                        # Only after a fully completed iteration —
+                        # partial results from paused/failed steps
+                        # must not overwrite the unprefixed key.
+                        for namespaced, orig in original_ids.items():
+                            if namespaced in context.steps:
+                                context.steps[orig] = context.steps[namespaced]
+                                state.step_results[orig] = context.steps[namespaced]
 
             # Fan-out: execute nested step template per item with unique IDs
             if step_type == "fan-out":
