@@ -9,6 +9,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -250,10 +251,12 @@ class TestSecurityWorkflow:
 
         assert nosec_lines == []
 
-    def test_run_command_does_not_accept_shell_argument(self):
+    def test_run_command_rejects_shell_execution_compatibly(self):
         from specify_cli import run_command
 
-        assert "shell" not in inspect.signature(run_command).parameters
+        assert inspect.signature(run_command).parameters["shell"].default is False
+        with pytest.raises(ValueError, match="does not support shell=True"):
+            run_command(["echo", "blocked"], shell=True)  # noqa: S604
 
     def test_committed_audit_requirements_are_hashed(self):
         requirements = SECURITY_REQUIREMENTS.read_text(encoding="utf-8")

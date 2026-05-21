@@ -27,8 +27,22 @@ def dump_frontmatter(data: dict[str, Any]) -> str:
     return yaml.safe_dump(data, sort_keys=False, allow_unicode=True).strip()
 
 
-def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> str | None:
-    """Run a shell command and optionally capture output."""
+def run_command(
+    cmd: list[str],
+    check_return: bool = True,
+    capture: bool = False,
+    shell: bool = False,
+) -> str | None:
+    """Run a command without invoking a shell and optionally capture output.
+
+    ``shell`` remains accepted for public API compatibility, but shell
+    execution is intentionally unsupported.
+    """
+    if shell:
+        raise ValueError(
+            "run_command() does not support shell=True; pass argv as a list"
+        )
+
     try:
         if capture:
             result = subprocess.run(cmd, check=check_return, capture_output=True, text=True, shell=shell)
