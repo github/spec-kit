@@ -529,7 +529,7 @@ Goose uses Block's YAML recipe format. The integration extends `YamlIntegration`
 | Command files have wrong argument syntax | Wrong `args` value in `registrar_config` | Use `$ARGUMENTS` for Markdown agents, `{{args}}` for TOML/YAML agents |
 | Context file not created or updated | `context_file` is `None` or points to wrong path | Set `context_file` to the exact relative path the agent reads |
 | Uninstall leaves files behind | Files created in `setup()` not registered with manifest | Call `self.manifest.add(path)` for every file created in a custom `setup()` |
-| Black background in table cells (docx output) | `ShadingType.SOLID` used instead of `ShadingType.CLEAR` | Use `ShadingType.CLEAR` for all cell shading |
+| Generated command/template files contain literal placeholders or malformed variables | `registrar_config["format"]` or placeholder syntax does not match the agent's template type | Verify the integration uses the correct template format and placeholder style for that agent, then regenerate with `specify init` |
 
 ### Debugging Tips
 
