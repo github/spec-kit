@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-05T10:00:00Z",
+  "updated_at": "2026-05-16T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -63,7 +63,7 @@
       "name": "AIDE In-Place Migration",
       "id": "aide-in-place",
       "version": "1.0.0",
-      "description": "Adapts the AIDE workflow for in-place technology migrations (X → Y pattern). Overrides vision, roadmap, progress, and work item commands with migration-specific guidance.",
+      "description": "Adapts the AIDE workflow for in-place technology migrations (X \u2192 Y pattern). Overrides vision, roadmap, progress, and work item commands with migration-specific guidance.",
       "author": "mnriem",
       "repository": "https://github.com/mnriem/spec-kit-presets",
       "download_url": "https://github.com/mnriem/spec-kit-presets/releases/download/aide-in-place-v1.0.0/aide-in-place.zip",
@@ -348,6 +348,34 @@
       "created_at": "2026-04-15T00:00:00Z",
       "updated_at": "2026-04-15T00:00:00Z"
     },
+    "linear": {
+      "name": "Linear Storage Backend",
+      "id": "linear",
+      "version": "1.0.0",
+      "description": "Replaces local-file storage with Linear-as-storage-backend. Pairs with the 'linear' extension. All Spec-Driven Development artifacts persist as Linear issues with dual labels (speckit:* + feature:NNN-name).",
+      "author": "speckit-linear",
+      "repository": "https://github.com/derobiwan/speckit-linear",
+      "download_url": "https://github.com/derobiwan/speckit-linear/archive/refs/tags/v1.0.0.zip",
+      "homepage": "https://github.com/derobiwan/speckit-linear",
+      "documentation": "https://github.com/derobiwan/speckit-linear/blob/main/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 9
+      },
+      "tags": [
+        "linear",
+        "mcp",
+        "project-management",
+        "issue-tracking",
+        "spec-driven-development"
+      ],
+      "created_at": "2026-05-16T00:00:00Z",
+      "updated_at": "2026-05-16T00:00:00Z"
+    },
     "mde": {
       "name": "Model Driven Engineering",
       "id": "mde",
@@ -435,7 +463,7 @@
       "name": "Screenwriting",
       "id": "screenwriting",
       "version": "1.0.0",
-      "description": "Spec-Driven Development for screenwriting/scriptwriting/tutorials: feature films, television (pilot, episode, limited series), and stage plays. Adapts the Spec Kit workflow to screenplay craft — slug lines, action lines, act breaks, beat sheets, and industry-standard pitch documents replace prose fiction conventions. Supports three-act, Save the Cat, TV pilot, network episode, cable/streaming episode, and stage-play structural frameworks.",
+      "description": "Spec-Driven Development for screenwriting/scriptwriting/tutorials: feature films, television (pilot, episode, limited series), and stage plays. Adapts the Spec Kit workflow to screenplay craft \u2014 slug lines, action lines, act breaks, beat sheets, and industry-standard pitch documents replace prose fiction conventions. Supports three-act, Save the Cat, TV pilot, network episode, cable/streaming episode, and stage-play structural frameworks.",
       "author": "Andreas Daumann",
       "repository": "https://github.com/adaumann/speckit-preset-screenwriting",
       "download_url": "https://github.com/adaumann/speckit-preset-screenwriting/archive/refs/tags/v1.0.0.zip",
@@ -501,7 +529,7 @@
       "name": "Spec2Cloud",
       "id": "spec2cloud",
       "version": "1.1.0",
-      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
+      "description": "Spec-driven workflow tuned for shipping to Azure: spec \u2192 plan \u2192 tasks \u2192 implement \u2192 deploy.",
       "author": "Azure Samples",
       "repository": "https://github.com/Azure-Samples/Spec2Cloud",
       "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/download/spec-kit-spec2cloud-v1.1.0/preset.zip",
@@ -523,7 +551,7 @@
       ],
       "created_at": "2026-04-30T00:00:00Z",
       "updated_at": "2026-04-30T00:00:00Z"
-    }, 
+    },
     "toc-navigation": {
       "name": "Table of Contents Navigation",
       "id": "toc-navigation",
