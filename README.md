@@ -35,7 +35,7 @@
 - [🔧 Prerequisites](#-prerequisites)
 - [📖 Learn More](#-learn-more)
 - [📋 Detailed Process](#-detailed-process)
-- [ Support](#-support)
+- [💬 Support](#-support)
 - [🙏 Acknowledgements](#-acknowledgements)
 - [📄 License](#-license)
 
@@ -581,7 +581,7 @@ Once the implementation is complete, test the application and resolve any runtim
 
 ---
 
-##  Support
+## 💬 Support
 
 For support, please open a [GitHub issue](https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
 
