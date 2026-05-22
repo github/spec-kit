@@ -49,7 +49,7 @@ def list_community_extensions(
                 "description": str(ext.get("description") or ""),
                 "tags": ext.get("tags") or [],
                 "verified": "Yes" if bool(ext.get("verified")) else "No",
-                "repository": str(ext.get("repository") or ""),
+                "repository": str(ext.get("repository") or "").strip(),
             }
         )
 
