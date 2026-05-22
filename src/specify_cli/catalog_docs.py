@@ -102,7 +102,7 @@ def render_cell(value: str) -> str:
 
 def escape_url_for_markdown_link(url: str) -> str:
     """Escape characters that can break Markdown link syntax.
-    
+
     Escapes `)` and `|` which can terminate or corrupt the link destination.
     """
     return url.replace(")", "\\)").replace("|", "\\|")
