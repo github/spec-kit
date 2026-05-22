@@ -1971,7 +1971,7 @@ class TestSelfTestPreset:
         assert manifest.id == "self-test"
         assert manifest.name == "Self-Test Preset"
         assert manifest.version == "1.0.0"
-        assert len(manifest.templates) == 8  # 6 templates + 2 commands
+        assert len(manifest.templates) == 7  # 5 templates + 2 commands
 
     def test_self_test_provides_all_core_templates(self):
         """Verify the self-test preset provides an override for every core template."""
