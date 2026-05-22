@@ -25,6 +25,12 @@ import yaml
 if TYPE_CHECKING:
     from .manifest import IntegrationManifest
 
+_HOOK_COMMAND_NOTE = (
+    "- When constructing slash commands from hook command names, "
+    "replace dots (`.`) with hyphens (`-`). "
+    "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
+)
+
 
 # ---------------------------------------------------------------------------
 # IntegrationOption
@@ -1391,15 +1397,46 @@ class SkillsIntegration(IntegrationBase):
             invocation = f"{invocation} {args}"
         return invocation
 
+    @staticmethod
+    def _inject_hook_command_note(content: str) -> str:
+        """Insert a dot-to-hyphen note before each hook output instruction.
+
+        Targets the line ``- For each executable hook, output the following``
+        and inserts the note on the line before it, matching its indentation.
+        Skips if the note is already present.
+        """
+        if "replace dots" in content:
+            return content
+
+        def repl(m: re.Match[str]) -> str:
+            indent = m.group(1)
+            instruction = m.group(2)
+            eol = m.group(3)
+            return (
+                indent
+                + _HOOK_COMMAND_NOTE.rstrip("\n")
+                + eol
+                + indent
+                + instruction
+                + eol
+            )
+
+        return re.sub(
+            r"(?m)^(\s*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
+            repl,
+            content,
+        )
+
     def post_process_skill_content(self, content: str) -> str:
         """Post-process a SKILL.md file's content after generation.
 
         Called by external skill generators (presets, extensions) to let
         the integration inject agent-specific frontmatter or body
-        transformations.  The default implementation returns *content*
-        unchanged.  Subclasses may override — see ``ClaudeIntegration``.
+        transformations.  The base implementation injects shared skills
+        guidance for converting dotted hook command names to hyphenated
+        slash commands.  Subclasses may override — see ``ClaudeIntegration``.
         """
-        return content
+        return self._inject_hook_command_note(content)
 
     def setup(
         self,
@@ -1508,6 +1545,11 @@ class SkillsIntegration(IntegrationBase):
             dst = self.write_file_and_record(
                 skill_content, skill_file, project_root, manifest
             )
+            content = dst.read_text(encoding="utf-8")
+            updated = self.post_process_skill_content(content)
+            if updated != content:
+                dst.write_bytes(updated.encode("utf-8"))
+                self.record_file_in_manifest(dst, project_root, manifest)
             created.append(dst)
 
         # Upsert managed context section into the agent context file

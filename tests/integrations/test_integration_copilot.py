@@ -404,6 +404,20 @@ class TestCopilotSkillsMode:
         updated = copilot.post_process_skill_content(content)
         assert "mode: speckit.plan" in updated
 
+    def test_post_process_skill_content_injects_hook_note(self):
+        """post_process_skill_content() should inject shared hook guidance."""
+        copilot = self._make_copilot()
+        content = (
+            "---\n"
+            'name: "speckit-specify"\n'
+            'description: "Specify workflow"\n'
+            "---\n"
+            "\n- For each executable hook, output the following\n"
+        )
+        updated = copilot.post_process_skill_content(content)
+        assert "replace dots" in updated
+        assert "mode: speckit.specify" in updated
+
     def test_post_process_idempotent(self):
         """post_process_skill_content() must be idempotent."""
         copilot = self._make_copilot()
@@ -433,6 +447,14 @@ class TestCopilotSkillsMode:
             skill_dir_name = f.parent.name
             stem = skill_dir_name.removeprefix("speckit-")
             assert fm["mode"] == f"speckit.{stem}"
+
+    def test_skills_hook_sections_explain_dotted_command_conversion(self, tmp_path):
+        """Generated skills with hook sections should include shared hook guidance."""
+        copilot = self._make_copilot()
+        self._setup_skills(copilot, tmp_path)
+        specify_skill = tmp_path / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        content = specify_skill.read_text(encoding="utf-8")
+        assert "replace dots" in content
 
     # -- Template processing ----------------------------------------------
 

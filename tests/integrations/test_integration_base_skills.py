@@ -176,6 +176,21 @@ class SkillsIntegrationTests:
                 f"skills agents must use /speckit-<name>"
             )
 
+    def test_hook_sections_explain_dotted_command_conversion(self, tmp_path):
+        """Generated skills with hook sections must explain dotted command conversion."""
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        i.setup(tmp_path, m)
+        specify_skill = i.skills_dest(tmp_path) / "speckit-specify" / "SKILL.md"
+        assert specify_skill.exists()
+        content = specify_skill.read_text(encoding="utf-8")
+        assert "replace dots" in content, (
+            "speckit-specify should explain dotted hook command conversion"
+        )
+        assert content.count("replace dots") == content.count(
+            "- For each executable hook, output the following"
+        )
+
     def test_skill_body_has_content(self, tmp_path):
         """Each SKILL.md body should contain template content after the frontmatter."""
         i = get_integration(self.KEY)

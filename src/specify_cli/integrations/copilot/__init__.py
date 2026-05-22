@@ -255,11 +255,12 @@ class CopilotIntegration(IntegrationBase):
         return f"speckit.{template_name}.agent.md"
 
     def post_process_skill_content(self, content: str) -> str:
-        """Inject Copilot-specific ``mode:`` field into SKILL.md frontmatter.
+        """Inject shared hook guidance and Copilot ``mode:`` frontmatter.
 
         Inserts ``mode: speckit.<stem>`` before the closing ``---`` so
         Copilot can associate the skill with its agent mode.
         """
+        content = SkillsIntegration._inject_hook_command_note(content)
         lines = content.splitlines(keepends=True)
 
         # Extract skill name from frontmatter to derive the mode value
