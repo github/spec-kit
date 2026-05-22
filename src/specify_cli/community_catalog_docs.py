@@ -27,10 +27,17 @@ def list_community_extensions(
 ) -> list[dict[str, Any]]:
     """Return community extensions sorted alphabetically by name then ID."""
     if not path.exists():
-        raise FileNotFoundError(
-            f"Community catalog not found at {path}. "
-            "Ensure the repository checkout includes the extensions/ directory."
-        )
+        if path == COMMUNITY_CATALOG_PATH:
+            message = (
+                f"Community catalog not found at {path}. "
+                "Ensure the repository checkout includes the extensions/ directory."
+            )
+        else:
+            message = (
+                f"Community catalog not found at {path}. "
+                "Provide path= to a valid community catalog JSON file."
+            )
+        raise FileNotFoundError(message)
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError(f"Expected {path} to contain a JSON object")
