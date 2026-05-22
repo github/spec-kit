@@ -505,7 +505,7 @@ class TestClaudeHookCommandNote:
         """Skills that have hook sections should get the normalization note."""
         i = get_integration("claude")
         m = IntegrationManifest("claude", tmp_path)
-        created = i.setup(tmp_path, m, script_type="sh")
+        i.setup(tmp_path, m, script_type="sh")
         specify_skill = tmp_path / ".claude/skills/speckit-specify/SKILL.md"
         assert specify_skill.exists()
         content = specify_skill.read_text(encoding="utf-8")
@@ -530,6 +530,17 @@ class TestClaudeHookCommandNote:
         twice = SkillsIntegration._inject_hook_command_note(once)
         assert once == twice, "Hook note injection should be idempotent"
 
+    def test_hook_note_not_suppressed_by_unrelated_phrase(self, tmp_path):
+        """Unrelated text should not trip the hook-note idempotence guard."""
+        content = (
+            "---\nname: test\n---\n\n"
+            "This paragraph says replace dots in a different context.\n"
+            "- For each executable hook, output the following based on its flag:\n"
+        )
+        result = SkillsIntegration._inject_hook_command_note(content)
+        assert "This paragraph says replace dots in a different context." in result
+        assert result.count("replace dots (`.`) with hyphens") == 1
+
     def test_hook_note_preserves_indentation(self, tmp_path):
         """The injected note should match the indentation of the target line."""
         content = (
@@ -538,7 +549,7 @@ class TestClaudeHookCommandNote:
         )
         result = SkillsIntegration._inject_hook_command_note(content)
         lines = result.splitlines()
-        note_line = [l for l in lines if "replace dots" in l][0]
+        note_line = [line for line in lines if "replace dots" in line][0]
         assert note_line.startswith("   "), "Note should preserve indentation"
 
     def test_post_process_injects_all_claude_flags(self):

@@ -78,7 +78,7 @@ class CodexIntegration(SkillsIntegration):
         and inserts the note on the line before it, matching its indentation.
         Skips if the note is already present.
         """
-        if "replace dots" in content:
+        if _HOOK_COMMAND_NOTE.rstrip("\n") in content:
             return content
 
         def repl(m: re.Match[str]) -> str:

@@ -1405,13 +1405,17 @@ class SkillsIntegration(IntegrationBase):
         and inserts the note on the line before it, matching its indentation.
         Skips if the note is already present.
         """
-        if "replace dots" in content:
+        if _HOOK_COMMAND_NOTE.rstrip("\n") in content:
             return content
 
         def repl(m: re.Match[str]) -> str:
             indent = m.group(1)
             instruction = m.group(2)
-            eol = m.group(3)
+            # ``eol`` is empty when the regex matched via ``$`` because the
+            # instruction was the final line of a file with no trailing
+            # newline. Default to ``\n`` so the note never collapses onto
+            # the same line as the instruction.
+            eol = m.group(3) or "\n"
             return (
                 indent
                 + _HOOK_COMMAND_NOTE.rstrip("\n")
@@ -1539,17 +1543,14 @@ class SkillsIntegration(IntegrationBase):
                 f"{processed_body}"
             )
 
+            skill_content = self.post_process_skill_content(skill_content)
+
             # Write speckit-<name>/SKILL.md
             skill_dir = skills_dir / skill_name
             skill_file = skill_dir / "SKILL.md"
             dst = self.write_file_and_record(
                 skill_content, skill_file, project_root, manifest
             )
-            content = dst.read_text(encoding="utf-8")
-            updated = self.post_process_skill_content(content)
-            if updated != content:
-                dst.write_bytes(updated.encode("utf-8"))
-                self.record_file_in_manifest(dst, project_root, manifest)
             created.append(dst)
 
         # Upsert managed context section into the agent context file
