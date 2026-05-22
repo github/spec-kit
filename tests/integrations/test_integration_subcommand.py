@@ -764,7 +764,8 @@ class TestIntegrationSwitch:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, result.output
-        assert "managed shared infrastructure refreshed" in result.output
+        assert "shared infrastructure refreshed" in result.output
+        assert "managed shared infrastructure refreshed" not in result.output
         assert "/speckit-plan" in template.read_text(encoding="utf-8")
         assert "/speckit-plan" in script.read_text(encoding="utf-8")
 

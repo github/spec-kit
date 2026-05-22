@@ -1119,7 +1119,7 @@ def _update_init_options_for_integration(
 @integration_app.command("use")
 def integration_use(
     key: str = typer.Argument(help="Installed integration key to make the default"),
-    force: bool = typer.Option(False, "--force", help="Overwrite managed shared infrastructure while changing the default"),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing shared infrastructure files, including customizations, while changing the default"),
 ):
     """Set the default integration without uninstalling other integrations."""
     from .integrations import get_integration
@@ -1320,7 +1320,7 @@ def integration_switch(
             )
             console.print(
                 f"\n[green]✓[/green] Default integration remains [bold]{target}[/bold]; "
-                "managed shared infrastructure refreshed."
+                "shared infrastructure refreshed."
             )
             raise typer.Exit(0)
         console.print(f"[yellow]Integration '{target}' is already the default integration. Nothing to switch.[/yellow]")
