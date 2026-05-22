@@ -38,7 +38,7 @@ if (Test-Path $paths.IMPL_PLAN) {
     Write-Output "Plan already exists at $($paths.IMPL_PLAN), skipping template copy"
 } else {
     $template = Resolve-Template -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
-    if ($template -and (Test-Path $template)) { 
+    if ($template -and (Test-Path $template)) {
         # Read the template content and write it to the implementation plan file with UTF-8 encoding without BOM
         $content = [System.IO.File]::ReadAllText($template)
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
