@@ -39,6 +39,11 @@ class TestCache:
         cache_file.write_text("{not json")
         assert _read_update_check_cache(cache_file) is None
 
+    def test_invalid_latest_cache_type_returns_none(self, tmp_path):
+        cache_file = tmp_path / "version_check.json"
+        cache_file.write_text(json.dumps({"checked_at": time.time(), "latest": ["v0.7.0"]}))
+        assert _read_update_check_cache(cache_file) is None
+
     def test_write_round_trips(self, tmp_path):
         cache_file = tmp_path / "nested" / "version_check.json"
         _write_update_check_cache(cache_file, "v0.9.9")
@@ -85,6 +90,18 @@ class TestCheckForUpdates:
         assert "v0.7.0" in out
         assert "v0.6.2" in out
         assert "uv tool install specify-cli" in out
+
+    def test_upgrade_command_uses_exact_release_tag(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("specify_cli._version._get_installed_version", lambda: "0.6.2")
+        monkeypatch.setattr(
+            "specify_cli._version._update_check_cache_path", lambda: tmp_path / "vc.json"
+        )
+        monkeypatch.setattr("specify_cli._version._fetch_latest_release_tag", lambda: ("0.7.0", None))
+
+        out = self._run_and_capture(monkeypatch)
+
+        assert "git+https://github.com/github/spec-kit.git@0.7.0" in out
+        assert "git+https://github.com/github/spec-kit.git@v0.7.0" not in out
 
     def test_no_output_when_up_to_date(self, monkeypatch, tmp_path):
         monkeypatch.setattr("specify_cli._version._get_installed_version", lambda: "0.7.0")
@@ -178,6 +195,26 @@ class TestCheckForUpdates:
 
         assert call_counter["n"] == 0
         assert out == ""
+
+    def test_invalid_latest_cache_type_is_treated_as_miss(self, monkeypatch, tmp_path):
+        cache_file = tmp_path / "vc.json"
+        cache_file.write_text(json.dumps({"checked_at": time.time(), "latest": ["v0.7.0"]}))
+
+        monkeypatch.setattr("specify_cli._version._get_installed_version", lambda: "0.6.2")
+        monkeypatch.setattr("specify_cli._version._update_check_cache_path", lambda: cache_file)
+
+        call_counter = {"n": 0}
+
+        def _fetch() -> tuple[str | None, str | None]:
+            call_counter["n"] += 1
+            return ("v0.7.0", None)
+
+        monkeypatch.setattr("specify_cli._version._fetch_latest_release_tag", _fetch)
+
+        out = self._run_and_capture(monkeypatch)
+
+        assert call_counter["n"] == 1
+        assert "v0.7.0" in out
 
     def test_opt_in_default_off_short_circuits(self, monkeypatch, tmp_path):
         """Without SPECIFY_ENABLE_UPDATE_CHECK the helper must not hit the network."""

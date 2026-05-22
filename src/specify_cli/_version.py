@@ -180,13 +180,13 @@ def self_upgrade() -> None:
 # ===== Opt-in startup update check (addresses #1320) =====
 #
 # Silent companion to `specify self check`: when SPECIFY_ENABLE_UPDATE_CHECK=1
-# is set in an interactive non-CI shell, the top-level Typer callback prints a
-# one-line upgrade hint if a newer release is available. Result is cached for
-# 24h in the platform user-cache dir; cache misses are written even on fetch
-# failure (`latest=null`) so a transient outage doesn't trigger a network call
-# on every CLI invocation. Best-effort: every error path swallows the exception
-# so the helper never fails the command the user actually invoked, though cache
-# misses may add a bounded startup delay while contacting GitHub.
+# is set in an interactive non-CI shell, the top-level Typer callback prints
+# upgrade guidance if a newer release is available. Result is cached for 24h in
+# the platform user-cache dir; cache misses are written even on fetch failure
+# (`latest=null`) so a transient outage doesn't trigger a network call on every
+# CLI invocation. Best-effort: every error path swallows the exception so the
+# helper never fails the command the user actually invoked, though cache misses
+# may add a bounded startup delay while contacting GitHub.
 
 _UPDATE_CHECK_CACHE_TTL_SECONDS = 24 * 60 * 60
 
@@ -205,6 +205,9 @@ def _read_update_check_cache(path: Path) -> dict | None:
             return None
         data = json.loads(path.read_text(encoding="utf-8"))
         checked_at = float(data.get("checked_at", 0))
+        latest = data.get("latest")
+        if latest is not None and not isinstance(latest, str):
+            return None
         if time.time() - checked_at > _UPDATE_CHECK_CACHE_TTL_SECONDS:
             return None
         return data
@@ -242,7 +245,7 @@ def _should_skip_update_check() -> bool:
 
 
 def _check_for_updates() -> None:
-    """Print a one-line upgrade hint when a newer spec-kit release is available.
+    """Print upgrade guidance when a newer spec-kit release is available.
 
     Fully best-effort — any error (offline, rate-limited, parse failure) is
     swallowed so the command the user actually invoked is never failed.
@@ -286,7 +289,7 @@ def _check_for_updates() -> None:
         )
         console.print(
             f"[dim]   Upgrade: uv tool install specify-cli --force "
-            f"--from git+https://github.com/github/spec-kit.git@v{latest_display}[/dim]"
+            f"--from git+https://github.com/github/spec-kit.git@{latest_tag}[/dim]"
         )
         console.print(
             "[dim]   (unset SPECIFY_ENABLE_UPDATE_CHECK to disable this check)[/dim]"
