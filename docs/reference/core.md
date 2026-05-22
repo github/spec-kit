@@ -69,6 +69,8 @@ specify check
 
 Checks that required tools are available on your system: `git` and any CLI-based AI coding agents. IDE-based agents are skipped since they don't require a CLI tool.
 
+This command stays offline. If a command behaves like an older Spec Kit version or an expected CLI feature is missing, run `specify self check` to check whether your local CLI is behind the latest release.
+
 ## Version Information
 
 ```bash
@@ -76,6 +78,16 @@ specify version
 ```
 
 Displays the Spec Kit CLI version, Python version, platform, and architecture.
+
+To inspect local CLI capabilities without checking the network:
+
+```bash
+specify version --features
+specify version --features --json
+```
+
+The JSON form is intended for scripts and coding agents that need to choose a
+workflow based on the installed CLI's supported features.
 
 A quick version check is also available via:
 

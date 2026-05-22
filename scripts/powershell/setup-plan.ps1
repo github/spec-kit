@@ -36,8 +36,10 @@ New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 # Copy plan template if it exists, otherwise note it or create empty file
 $template = Resolve-Template -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
 if ($template -and (Test-Path $template)) { 
-    Copy-Item $template $paths.IMPL_PLAN -Force
-    Write-Output "Copied plan template to $($paths.IMPL_PLAN)"
+    # Read the template content and write it to the implementation plan file with UTF-8 encoding without BOM
+    $content = [System.IO.File]::ReadAllText($template)
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
 } else {
     Write-Warning "Plan template not found"
     # Create a basic plan file if template doesn't exist

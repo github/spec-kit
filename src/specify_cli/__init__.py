@@ -32,12 +32,9 @@ import zipfile
 import shutil
 import json
 import shlex
-import urllib.error
-import urllib.request
 import yaml
 from pathlib import Path
 
-from packaging.version import InvalidVersion, Version
 from typing import Any, Optional
 
 import typer
@@ -58,7 +55,7 @@ from .integration_state import (
     installed_integration_keys as _installed_integration_keys,
     integration_setting as _integration_setting,
     integration_settings as _integration_settings,
-    normalize_integration_state as _normalize_integration_state,
+    try_read_integration_json as _try_read_integration_json,
     write_integration_json as _write_integration_json_file,
 )
 from .shared_infra import (
@@ -95,8 +92,12 @@ from ._utils import (
     merge_json_files as merge_json_files,
     run_command as run_command,
 )
-
-GITHUB_API_LATEST = "https://api.github.com/repos/github/spec-kit/releases/latest"
+from ._version import (
+    GITHUB_API_LATEST as GITHUB_API_LATEST,
+    self_app as _self_app,
+    self_check as self_check,
+    self_upgrade as self_upgrade,
+)
 
 def _build_agent_config() -> dict[str, dict[str, Any]]:
     """Derive AGENT_CONFIG from INTEGRATION_REGISTRY."""
@@ -229,9 +230,10 @@ def _install_shared_infra(
 ) -> bool:
     """Install shared infrastructure files into *project_path*.
 
-    Copies ``.specify/scripts/`` and ``.specify/templates/`` from the
-    bundled core_pack or source checkout.  Tracks all installed files
-    in ``speckit.manifest.json``.
+    Copies ``.specify/scripts/<variant>/`` and ``.specify/templates/`` from
+    the bundled core_pack or source checkout, where ``<variant>`` is
+    ``bash`` when *script_type* is ``"sh"`` and ``powershell`` when it is
+    ``"ps"``.  Tracks all installed files in ``speckit.manifest.json``.
 
     Page templates are processed to resolve ``__SPECKIT_COMMAND_<NAME>__``
     placeholders using *invoke_separator* (``"."`` for markdown agents,
@@ -423,6 +425,35 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
     if agent_folder:
         return project_path / agent_folder.rstrip("/") / "skills"
     return project_path / ".agents" / "skills"
+
+
+def _cli_error_detail(exc: BaseException) -> str:
+    """Return a compact one-line exception detail for CLI output."""
+    detail = str(exc).replace("\n", " ").strip()
+    return detail or exc.__class__.__name__
+
+
+def _cli_phase_label(phase: str, target_kind: str, target: str | None = None) -> str:
+    """Format a stable operation label for user-visible diagnostics."""
+    label = f"{phase} {target_kind}".strip()
+    if target:
+        label = f"{label} '{target}'"
+    return label
+
+
+def _print_cli_warning(
+    phase: str,
+    target_kind: str,
+    target: str | None,
+    exc: BaseException,
+    *,
+    continuing: str | None = None,
+) -> None:
+    """Print a warning that names the failed CLI phase and target."""
+    label = _cli_phase_label(phase, target_kind, target)
+    console.print(f"[yellow]Warning:[/yellow] Failed to {label}: {_cli_error_detail(exc)}")
+    if continuing:
+        console.print(f"[dim]{continuing}[/dim]")
 
 
 # Constants kept for backward compatibility with presets and extensions.
@@ -857,9 +888,8 @@ def init(
                         git_messages.append("bundled extension not found")
                 except Exception as ext_err:
                     git_has_error = True
-                    sanitized_ext = str(ext_err).replace('\n', ' ').strip()
                     git_messages.append(
-                        f"extension install failed: {sanitized_ext[:120]}"
+                        f"extension install failed during optional git setup: {_cli_error_detail(ext_err)[:120]}"
                     )
                 summary = "; ".join(git_messages)
                 if git_has_error:
@@ -897,8 +927,10 @@ def init(
                 else:
                     tracker.skip("workflow", "bundled workflow not found")
             except Exception as wf_err:
-                sanitized_wf = str(wf_err).replace('\n', ' ').strip()
-                tracker.error("workflow", f"install failed: {sanitized_wf[:120]}")
+                tracker.error(
+                    "workflow",
+                    f"install bundled workflow 'speckit' failed: {_cli_error_detail(wf_err)[:120]}",
+                )
 
             # Fix permissions after all installs (scripts + extensions)
             ensure_executable_scripts(project_path, tracker=tracker)
@@ -960,7 +992,13 @@ def init(
                                     zip_path = preset_catalog.download_pack(preset)
                                     preset_manager.install_from_zip(zip_path, speckit_ver)
                                 except PresetError as preset_err:
-                                    console.print(f"[yellow]Warning:[/yellow] Failed to install preset '{preset}': {preset_err}")
+                                    _print_cli_warning(
+                                        "install",
+                                        "preset",
+                                        preset,
+                                        preset_err,
+                                        continuing="Continuing without the optional preset.",
+                                    )
                                 finally:
                                     if zip_path is not None:
                                         # Clean up downloaded ZIP to avoid cache accumulation
@@ -970,7 +1008,14 @@ def init(
                                             # Best-effort cleanup; failure to delete is non-fatal
                                             pass
                 except Exception as preset_err:
-                    console.print(f"[yellow]Warning:[/yellow] Failed to install preset: {preset_err}")
+                    # Optional preset install must not abort project initialization.
+                    _print_cli_warning(
+                        "install",
+                        "preset",
+                        preset,
+                        preset_err,
+                        continuing="Continuing without the optional preset.",
+                    )
 
             tracker.complete("final", "project ready")
         except (typer.Exit, SystemExit):
@@ -1155,14 +1200,60 @@ def check():
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install a coding agent for the best experience[/dim]")
 
+    console.print("[dim]Tip: Run 'specify self check' to verify you have the latest CLI version[/dim]")
+
+
+def _feature_capabilities() -> dict[str, bool]:
+    """Return stable local CLI capability flags for humans and agents."""
+    return {
+        "controlled_multi_install_integrations": True,
+        "integration_use_command": True,
+        "multi_install_safe_registry_metadata": True,
+        "integration_upgrade_command": True,
+        "self_check_command": True,
+        "workflow_catalog": True,
+        "bundled_templates": True,
+    }
+
+
 @app.command()
-def version():
+def version(
+    features: bool = typer.Option(
+        False,
+        "--features",
+        help="Show local CLI feature capabilities.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit feature capabilities as JSON. Requires --features.",
+    ),
+):
     """Display version and system information."""
     import platform
 
-    show_banner()
-
     cli_version = get_speckit_version()
+
+    if json_output and not features:
+        console.print("[red]Error:[/red] --json requires --features.")
+        raise typer.Exit(1)
+
+    if features:
+        capabilities = _feature_capabilities()
+        if json_output:
+            payload = {"version": cli_version, "features": capabilities}
+            console.print(json.dumps(payload, indent=2))
+            return
+
+        console.print(f"Spec Kit CLI: {cli_version}")
+        console.print()
+        console.print("Features:")
+        for key, enabled in capabilities.items():
+            label = key.replace("_", " ")
+            console.print(f"- {label}: {'yes' if enabled else 'no'}")
+        return
+
+    show_banner()
 
     info_table = Table(show_header=False, box=None, padding=(0, 2))
     info_table.add_column("Key", style="cyan", justify="right")
@@ -1185,156 +1276,7 @@ def version():
     console.print(panel)
     console.print()
 
-def _get_installed_version() -> str:
-    """Return the installed specify-cli distribution version or 'unknown'.
-
-    Uses importlib.metadata so the value reflects what was actually installed
-    by pip/uv/pipx — not a value read from pyproject.toml. This is
-    intentional for `specify self check`, which should reason about the
-    installed distribution rather than a source-tree fallback. Callers must
-    treat the sentinel string 'unknown' as an indeterminate value (see FR-020).
-    """
-
-    import importlib.metadata
-
-    metadata_errors = [importlib.metadata.PackageNotFoundError]
-    invalid_metadata_error = getattr(importlib.metadata, "InvalidMetadataError", None)
-    if invalid_metadata_error is not None:
-        metadata_errors.append(invalid_metadata_error)
-
-    try:
-        return importlib.metadata.version("specify-cli")
-    except tuple(metadata_errors):
-        return "unknown"
-
-def _normalize_tag(tag: str) -> str:
-    """Strip exactly one leading 'v' from a release tag.
-
-    Returns the rest of the string unchanged. This handles the common
-    'vX.Y.Z' tag convention in this repo; it MUST NOT strip more
-    aggressively (e.g., two leading 'v's keeps one).
-    """
-    return tag[1:] if tag.startswith("v") else tag
-
-def _is_newer(latest: str, current: str) -> bool:
-    """Return True iff `latest` is strictly greater than `current` under PEP 440.
-
-    Returns False whenever either side is 'unknown' or fails to parse; this
-    keeps the comparison indeterminate (rather than crashing or falsely
-    recommending a downgrade) on edge inputs.
-    """
-    if latest == "unknown" or current == "unknown":
-        return False
-    try:
-        return Version(latest) > Version(current)
-    except InvalidVersion:
-        return False
-
-
-def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
-    """Return (tag, failure_category). Exactly one outbound call, 5 s timeout.
-
-    On success: (tag_name, None).
-    On a documented network/HTTP failure (added in T029/T030): (None, category).
-    On anything else — including a malformed response body — the exception
-    propagates; there is no catch-all (research D-006).
-    """
-    from .authentication.http import open_url
-
-    try:
-        with open_url(
-            GITHUB_API_LATEST,
-            timeout=5,
-            extra_headers={"Accept": "application/vnd.github+json"},
-        ) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-            tag = payload.get("tag_name")
-            if not isinstance(tag, str) or not tag:
-                raise ValueError("GitHub API response missing valid tag_name")
-            return tag, None
-    except urllib.error.HTTPError as e:
-        # Order matters: HTTPError is a subclass of URLError.
-        if e.code == 403:
-            return None, (
-                "rate limited (configure ~/.specify/auth.json with a GitHub token)"
-            )
-        return None, f"HTTP {e.code}"
-    except (urllib.error.URLError, OSError):
-        return None, "offline or timeout"
-
-
-# ===== Self Commands =====
-self_app = typer.Typer(
-    name="self",
-    help="Manage the specify CLI itself (read-only check and reserved upgrade command).",
-    add_completion=False,
-)
-app.add_typer(self_app, name="self")
-
-@self_app.command("check")
-def self_check() -> None:
-    """Check whether a newer specify-cli release is available. Read-only.
-
-    This command only checks for updates; it does not modify your installation.
-    The reserved (and currently non-destructive) `specify self upgrade` command
-    is the name that a future release will use for actual self-upgrade — its
-    behavior is not implemented in this release and is intentionally out of
-    scope here. See `specify self upgrade --help` for its current status.
-    """
-
-    installed = _get_installed_version()
-    tag, failure_reason = _fetch_latest_release_tag()
-
-    if tag is None:
-        # Graceful-failure path (FR-008). `failure_reason` is one of the
-        # enumerated strings produced by _fetch_latest_release_tag() — it
-        # never contains a URL, headers, response body, or traceback.
-        assert failure_reason is not None
-        console.print(f"Installed: {installed}")
-        console.print(f"[yellow]Could not check latest release:[/yellow] {failure_reason}")
-        return
-
-    latest_normalized = _normalize_tag(tag)
-
-    if installed == "unknown":
-        # FR-020: surface the latest release and the recovery action even
-        # when the local distribution metadata is unavailable.
-        console.print("Current version could not be determined.")
-        console.print(f"Latest release: {latest_normalized}")
-        console.print("\nTo reinstall:")
-        console.print("  uv tool install specify-cli --force \\")
-        console.print(f"    --from git+https://github.com/github/spec-kit.git@{tag}")
-        return
-
-    if _is_newer(latest_normalized, installed):
-        console.print(f"[green]Update available:[/green] {installed} → {latest_normalized}")
-        console.print("\nTo upgrade:")
-        console.print("  uv tool install specify-cli --force \\")
-        console.print(f"    --from git+https://github.com/github/spec-kit.git@{tag}")
-        return
-
-    # Installed is parseable AND is >= latest → "up to date" (FR-006).
-    # Also reached when the tag is unparseable (InvalidVersion) → _is_newer
-    # returns False, and the up-to-date branch is the safer default per
-    # FR-004 / test T016.
-    console.print(f"[green]Up to date:[/green] {installed}")
-
-
-@self_app.command("upgrade")
-def self_upgrade() -> None:
-    """Reserved command surface for self-upgrade; not implemented in this release.
-
-    This command is a documented non-destructive stub in this release: it
-    performs no outbound network request, no install-method detection, and
-    invokes no installer. It prints a three-line guidance message and exits 0.
-    Actual self-upgrade is planned as follow-up work.
-
-    Use `specify self check` today to see whether a newer release is available
-    and to get a copy-pasteable reinstall command.
-    """
-    console.print("specify self upgrade is not implemented yet.")
-    console.print("Run 'specify self check' to see whether a newer release is available.")
-    console.print("Actual self-upgrade is planned as follow-up work.")
+app.add_typer(_self_app, name="self")
 
 
 # ===== Extension Commands =====
@@ -1386,35 +1328,37 @@ integration_app.add_typer(integration_catalog_app, name="catalog")
 
 
 def _read_integration_json(project_root: Path) -> dict[str, Any]:
-    """Load ``.specify/integration.json``. Returns normalized state when present."""
+    """Load ``.specify/integration.json``. Returns normalized state when present.
+
+    Delegates the parse / schema-guard logic to the shared
+    :func:`_try_read_integration_json` helper so the CLI and workflow engine
+    cannot drift on validation rules. Each error variant is translated into
+    the existing loud-fail UX (console message + ``typer.Exit(1)``).
+    """
     path = project_root / INTEGRATION_JSON
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        console.print(f"[red]Error:[/red] {path} contains invalid JSON.")
+    state, error = _try_read_integration_json(project_root)
+    if error is None:
+        return state or {}
+    if error.kind == "decode":
+        console.print(f"[red]Error:[/red] {path} contains invalid JSON or is not valid UTF-8.")
         console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
-        console.print(f"[dim]Details:[/dim] {exc}")
-        raise typer.Exit(1)
-    except OSError as exc:
+        console.print(f"[dim]Details:[/dim] {error.detail}")
+    elif error.kind == "os":
         console.print(f"[red]Error:[/red] Could not read {path}.")
         console.print(f"Please fix file permissions or delete {INTEGRATION_JSON} and retry.")
-        console.print(f"[dim]Details:[/dim] {exc}")
-        raise typer.Exit(1)
-    if not isinstance(data, dict):
-        console.print(f"[red]Error:[/red] {path} must contain a JSON object, got {type(data).__name__}.")
-        console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
-        raise typer.Exit(1)
-    schema = data.get("integration_state_schema")
-    if isinstance(schema, int) and not isinstance(schema, bool) and schema > INTEGRATION_STATE_SCHEMA:
+        console.print(f"[dim]Details:[/dim] {error.detail}")
+    elif error.kind == "not_object":
         console.print(
-            f"[red]Error:[/red] {path} uses integration state schema {schema}, "
+            f"[red]Error:[/red] {path} must contain a JSON object, got {error.detail}."
+        )
+        console.print(f"Please fix or delete {INTEGRATION_JSON} and retry.")
+    elif error.kind == "schema_too_new":
+        console.print(
+            f"[red]Error:[/red] {path} uses integration state schema {error.schema}, "
             f"but this CLI only supports schema {INTEGRATION_STATE_SCHEMA}."
         )
         console.print("Please upgrade Spec Kit before modifying integrations.")
-        raise typer.Exit(1)
-    return _normalize_integration_state(data)
+    raise typer.Exit(1)
 
 
 def _write_integration_json(
@@ -1696,10 +1640,18 @@ def integration_install(
 
     if key in installed_keys:
         console.print(f"[yellow]Integration '{key}' is already installed.[/yellow]")
+        if default_key == key:
+            console.print("It is already the default integration.")
+        else:
+            console.print(
+                f"To make it the default integration, run "
+                f"[cyan]specify integration use {key}[/cyan]."
+            )
         console.print(
-            f"Run [cyan]specify integration upgrade {key}[/cyan] to reinstall managed files, "
-            f"or [cyan]specify integration uninstall {key}[/cyan] first."
+            f"To refresh its managed files or options, run "
+            f"[cyan]specify integration upgrade {key}[/cyan]."
         )
+        console.print("No files were changed.")
         raise typer.Exit(0)
 
     if installed_keys and not force:
@@ -1719,8 +1671,12 @@ def integration_install(
                 "integrations are declared multi-install safe."
             )
             console.print(
-                f"Run [cyan]specify integration switch {key}[/cyan] to replace the default "
-                f"integration, or retry with [cyan]--force[/cyan] to opt in."
+                f"To replace the default integration, run "
+                f"[cyan]specify integration switch {key}[/cyan]."
+            )
+            console.print(
+                f"To install '{key}' alongside the existing integrations anyway, "
+                "retry the same install command with [cyan]--force[/cyan]."
             )
             raise typer.Exit(1)
 
@@ -1782,20 +1738,29 @@ def integration_install(
         if new_default == integration.key:
             _update_init_options_for_integration(project_root, integration, script_type=selected_script)
 
-    except Exception as e:
+    except Exception as exc:
         # Attempt rollback of any files written by setup
         try:
             integration.teardown(project_root, manifest, force=True)
         except Exception as rollback_err:
             # Suppress so the original setup error remains the primary failure
-            console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration changes: {rollback_err}")
+            _print_cli_warning(
+                "rollback",
+                "integration",
+                key,
+                rollback_err,
+                continuing="The original install failure is still the primary error.",
+            )
         if installed_keys:
             _write_integration_json(
                 project_root, default_key, installed_keys, _integration_settings(current)
             )
         else:
             _remove_integration_json(project_root)
-        console.print(f"[red]Error:[/red] Failed to install integration: {e}")
+        console.print(
+            f"[red]Error:[/red] Failed to {_cli_phase_label('install', 'integration', key)}: "
+            f"{_cli_error_detail(exc)}"
+        )
         raise typer.Exit(1)
 
     name = (integration.config or {}).get("name", key)
@@ -2162,9 +2127,12 @@ def integration_switch(
             ext_mgr = ExtensionManager(project_root)
             ext_mgr.unregister_agent_artifacts(installed_key)
         except Exception as ext_err:
-            console.print(
-                f"[yellow]Warning:[/yellow] Could not clean up extension artifacts "
-                f"(commands, skills, registry entries) for '{installed_key}': {ext_err}"
+            _print_cli_warning(
+                "clean up extension artifacts for",
+                "integration",
+                installed_key,
+                ext_err,
+                continuing="Continuing with integration switch; old extension artifacts may need manual cleanup.",
             )
 
         # Clear metadata so a failed Phase 2 doesn't leave stale references
@@ -2259,18 +2227,27 @@ def integration_switch(
             ext_mgr = ExtensionManager(project_root)
             ext_mgr.register_enabled_extensions_for_agent(target)
         except Exception as ext_err:
-            console.print(
-                f"[yellow]Warning:[/yellow] Could not register extension commands, skills, "
-                f"or related artifacts for '{target}': {ext_err}"
+            _print_cli_warning(
+                "register extension artifacts for",
+                "integration",
+                target,
+                ext_err,
+                continuing="The integration switch succeeded, but installed extensions may need re-registration.",
             )
 
-    except Exception as e:
+    except Exception as exc:
         # Attempt rollback of any files written by setup
         try:
             target_integration.teardown(project_root, manifest, force=True)
         except Exception as rollback_err:
             # Suppress so the original setup error remains the primary failure
-            console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration '{target}': {rollback_err}")
+            _print_cli_warning(
+                "rollback",
+                "integration",
+                target,
+                rollback_err,
+                continuing="The original switch failure is still the primary error.",
+            )
         if installed_keys:
             fallback_key = installed_keys[0]
             fallback_integration = get_integration(fallback_key)
@@ -2299,7 +2276,10 @@ def integration_switch(
                 )
         else:
             _remove_integration_json(project_root)
-        console.print(f"[red]Error:[/red] Failed to install integration '{target}': {e}")
+        console.print(
+            f"[red]Error:[/red] Failed to {_cli_phase_label('install', 'integration', target)} "
+            f"during switch: {_cli_error_detail(exc)}"
+        )
         raise typer.Exit(1)
 
     name = (target_integration.config or {}).get("name", target)
@@ -2434,7 +2414,8 @@ def integration_upgrade(
     except Exception as exc:
         # Don't teardown — setup overwrites in-place, so teardown would
         # delete files that were working before the upgrade.  Just report.
-        console.print(f"[red]Error:[/red] Failed to upgrade integration: {exc}")
+        console.print(f"[red]Error:[/red] Failed to {_cli_phase_label('upgrade', 'integration', key)}.")
+        console.print(f"[dim]Details:[/dim] {_cli_error_detail(exc)}")
         console.print("[yellow]The previous integration files may still be in place.[/yellow]")
         raise typer.Exit(1)
 

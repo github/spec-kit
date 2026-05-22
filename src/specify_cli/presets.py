@@ -1048,9 +1048,9 @@ class PresetManager:
                     short_name = cmd_name
                     if short_name.startswith("speckit."):
                         short_name = short_name[len("speckit."):]
-                    desc = SKILL_DESCRIPTIONS.get(
+                    desc = fm.get("description", "") or SKILL_DESCRIPTIONS.get(
                         short_name.replace(".", "-"),
-                        fm.get("description", f"Command: {short_name}"),
+                        f"Command: {short_name}",
                     )
                     init_opts = load_init_options(self.project_root)
                     selected_ai = init_opts.get("ai") if isinstance(init_opts, dict) else ""
@@ -1314,9 +1314,9 @@ class PresetManager:
                         frontmatter[key] = core_frontmatter[key]
 
             original_desc = frontmatter.get("description", "")
-            enhanced_desc = SKILL_DESCRIPTIONS.get(
+            enhanced_desc = original_desc or SKILL_DESCRIPTIONS.get(
                 short_name,
-                original_desc or f"Spec-kit workflow command: {short_name}",
+                f"Spec-kit workflow command: {short_name}",
             )
             frontmatter = dict(frontmatter)
             frontmatter["description"] = enhanced_desc
@@ -1417,9 +1417,9 @@ class PresetManager:
                     )
 
                 original_desc = frontmatter.get("description", "")
-                enhanced_desc = SKILL_DESCRIPTIONS.get(
+                enhanced_desc = original_desc or SKILL_DESCRIPTIONS.get(
                     short_name,
-                    original_desc or f"Spec-kit workflow command: {short_name}",
+                    f"Spec-kit workflow command: {short_name}",
                 )
 
                 frontmatter_data = registrar.build_skill_frontmatter(
@@ -1903,12 +1903,24 @@ class PresetCatalog:
             if not url:
                 continue
             self._validate_catalog_url(url)
+            raw_priority = item.get("priority", idx + 1)
+            # Reject bools explicitly: ``bool`` is a subclass of ``int`` so
+            # ``int(True)`` silently returns 1, which would let a YAML
+            # ``priority: true`` slip through as a valid priority of 1. The
+            # sibling integration-catalog reader in ``catalogs.py`` already
+            # guards this; mirror the check here so the three catalog
+            # validators stay consistent.
+            if isinstance(raw_priority, bool):
+                raise PresetValidationError(
+                    f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
+                    f"expected integer, got {raw_priority!r}"
+                )
             try:
-                priority = int(item.get("priority", idx + 1))
+                priority = int(raw_priority)
             except (TypeError, ValueError):
                 raise PresetValidationError(
                     f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
-                    f"expected integer, got {item.get('priority')!r}"
+                    f"expected integer, got {raw_priority!r}"
                 )
             raw_install = item.get("install_allowed", False)
             if isinstance(raw_install, str):
