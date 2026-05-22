@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-05T10:00:00Z",
+  "updated_at": "2026-05-22T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -472,11 +472,11 @@
     "security-governance": {
       "name": "Security Governance",
       "id": "security-governance",
-      "version": "0.2.0",
-      "description": "Adds secure development governance, MSL preference, ASVS verification, supply-chain transparency, and EU CRA awareness.",
+      "version": "0.3.0",
+      "description": "Adds memory-safe-language preference, secure code generation, ASVS verification, SBOM/AI-SBOM supply-chain transparency, and EU Cyber Resilience Act awareness.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-security-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-security-governance/archive/refs/tags/v0.2.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-security-governance/archive/refs/tags/v0.3.0.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-security-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-security-governance/blob/main/README.md",
       "license": "MIT",
@@ -491,11 +491,20 @@
         "security",
         "governance",
         "msl",
+        "ssdf",
         "asvs",
-        "supply-chain"
+        "supply-chain",
+        "sbom",
+        "ai-sbom",
+        "vex",
+        "slsa",
+        "cwe-top-25",
+        "g7",
+        "bsi",
+        "cra"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-04-27T00:00:00Z"
+      "updated_at": "2026-05-22T00:00:00Z"
     },
     "spec2cloud": {
       "name": "Spec2Cloud",
