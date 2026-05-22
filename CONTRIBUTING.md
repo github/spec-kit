@@ -38,7 +38,7 @@ On [GitHub Codespaces](https://github.com/features/codespaces) it's even simpler
 1. Fork and clone the repository
 1. Configure and install the dependencies: `uv sync --extra test`
 1. Make sure the CLI works on your machine: `uv run specify --help`
-1. Create a new branch: `git checkout -b my-branch-name`
+1. Create a new branch: `git checkout -b <type>/<number>-<short-slug>` (see [Branch naming](#branch-naming) below)
 1. Make your change, add tests, and make sure everything still works
 1. Test the CLI functionality with a sample project if relevant
 1. Push to your fork and submit a pull request
@@ -54,6 +54,20 @@ Here are a few things you can do that will increase the likelihood of your pull 
 - Keep your change as focused as possible. If there are multiple changes you would like to make that are not dependent upon each other, consider submitting them as separate pull requests.
 - Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
 - Test your changes with the Spec-Driven Development workflow to ensure compatibility.
+
+### Branch naming
+
+We recommend naming branches as `<type>/<number>-<short-slug>`, where `<number>` is the issue or PR number (whichever comes first) and `<type>` is one of:
+
+| Prefix | When to use | Example |
+|---|---|---|
+| `feat/` | New features | `feat/2342-workflow-cli-alignment` |
+| `fix/` | Bug fixes | `fix/2653-paths-only-validation` |
+| `docs/` | Documentation changes | `docs/2677-branch-naming-convention` |
+| `community/` | Community catalog additions | `community/2492-add-mde-extension` |
+| `chore/` | Maintenance, tooling, CI | `chore/2366-editorconfig` |
+
+Including the issue or PR number makes branches traceable — especially useful since the project uses squash merges and `git branch --merged` won't detect merged branches. If you start with a PR (no issue), use the PR number once it's assigned.
 
 ## Development workflow
 
