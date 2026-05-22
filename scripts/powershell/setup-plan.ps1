@@ -35,7 +35,11 @@ New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 
 # Copy plan template if plan doesn't already exist
 if (Test-Path $paths.IMPL_PLAN) {
-    Write-Output "Plan already exists at $($paths.IMPL_PLAN), skipping template copy"
+    if ($Json) {
+        [Console]::Error.WriteLine("Plan already exists at $($paths.IMPL_PLAN), skipping template copy")
+    } else {
+        Write-Output "Plan already exists at $($paths.IMPL_PLAN), skipping template copy"
+    }
 } else {
     $template = Resolve-Template -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
     if ($template -and (Test-Path $template)) {

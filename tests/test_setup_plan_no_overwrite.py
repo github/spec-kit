@@ -209,3 +209,8 @@ def test_ps_setup_plan_preserves_existing_plan(plan_repo: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert (feat / "plan.md").read_text(encoding="utf-8") == existing_content
+    # stdout must be valid JSON (no status messages mixed in)
+    data = json.loads(result.stdout)
+    assert "IMPL_PLAN" in data
+    # The skip message should be on stderr
+    assert "already exists" in result.stderr
