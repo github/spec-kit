@@ -6,9 +6,39 @@
 
 ### Added
 
-- feat(cli): opt-in launch warning when a newer spec-kit release is available; enable with `SPECIFY_ENABLE_UPDATE_CHECK=1` (or `true`/`yes`/`on`), cached for 24h, and suppressed in non-interactive shells and `CI=1` (#1320)
+- feat(cli): opt-in launch warning when a newer spec-kit release is available; enable with `SPECIFY_ENABLE_UPDATE_CHECK=1` (or `true`/`yes`/`on`), cached for 24h, and suppressed in non-interactive shells and when `CI` is set (#1320)
 - fix(cli): cache update-check failures so transient outages don't trigger a network call on every CLI invocation (#1320)
 - refactor(cli): move update-check helpers into `_version.py` and reuse the existing `_get_installed_version` / `_fetch_latest_release_tag` / `_is_newer` primitives from #2550 (#1320)
+
+## [0.8.13] - 2026-05-21
+
+### Changed
+
+- fix: while/do-while loop condition reads stale iteration-0 step output (#2662)
+- docs: fix directory hierarchy in README examples (#2639)
+- fix(catalogs): reject boolean priority in extension and preset catalog readers (#2589)
+- Update Agent Governance extension to v1.2.0 (#2659)
+- Add agentic workflows for community catalog submissions (#2655)
+- feat: add self-check tip to check output (#2574)
+- fix(cli): clarify exception diagnostics (#2602)
+- ci: add diff whitespace check (#2572)
+- chore: release 0.8.12, begin 0.8.13.dev0 development (#2648)
+
+## [0.8.12] - 2026-05-20
+
+### Changed
+
+- fix(codex): inject dot-to-hyphen hook command note in Codex skills (#2503)
+- Update Squad Bridge extension to v1.3.0 (#2645)
+- Update Superpowers Implementation Bridge extension to v0.5.0 (#2644)
+- Add Team Assign extension to community catalog (#2642)
+- refactor: migrate extension catalog stack parsing to shared base (#2576)
+- Update Architecture Workflow extension to v1.1.0 (#2588)
+-  fix(workflow): support integration: auto to follow project's initialized AI (#2421)
+- Add Superpowers Implementation Bridge extension to community catalog (#2586)
+- Add Interactive HTML Preview extension to community catalog (#2585)
+- chore: release 0.8.11, begin 0.8.12.dev0 development (#2584)
+- Update Agent Governance extension to v1.1.0 (#2583)
 
 ## [0.8.11] - 2026-05-15
 

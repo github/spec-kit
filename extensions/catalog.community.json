@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-15T00:00:00Z",
+  "updated_at": "2026-05-21T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -71,10 +71,10 @@
     "agent-governance": {
       "name": "Agent Governance",
       "id": "agent-governance",
-      "description": "Project-local agent governance memory and context projection.",
+      "description": "Generate agent-platform repository governance files from Spec Kit metadata.",
       "author": "bigben",
-      "version": "1.1.0",
-      "download_url": "https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v1.1.0.zip",
+      "version": "1.2.0",
+      "download_url": "https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v1.2.0.zip",
       "repository": "https://github.com/bigsmartben/spec-kit-agent-governance",
       "homepage": "https://github.com/bigsmartben/spec-kit-agent-governance",
       "documentation": "https://github.com/bigsmartben/spec-kit-agent-governance/blob/main/README.md",
@@ -84,8 +84,8 @@
         "speckit_version": ">=0.8.0",
         "tools": [
           {
-            "name": "python3",
-            "required": false
+            "name": "uv",
+            "required": true
           }
         ]
       },
@@ -103,7 +103,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-14T00:00:00Z",
-      "updated_at": "2026-05-15T00:00:00Z"
+      "updated_at": "2026-05-21T00:00:00Z"
     },
     "agent-orchestrator": {
       "name": "Intelligent Agent Orchestrator",
@@ -2617,8 +2617,8 @@
       "id": "speckit-superpowers-bridge",
       "description": "Thin orchestrator between Spec Kit (design) and Superpowers (implementation). Cross-agent.",
       "author": "lihan3238",
-      "version": "0.4.1",
-      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v0.4.1/speckit-superpowers-bridge-v0.4.1.zip",
+      "version": "0.5.0",
+      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v0.5.0/speckit-superpowers-bridge-v0.5.0.zip",
       "repository": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "homepage": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "documentation": "https://github.com/lihan3238/speckit-superpowers-bridge#readme",
@@ -2659,7 +2659,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-15T00:00:00Z",
-      "updated_at": "2026-05-15T00:00:00Z"
+      "updated_at": "2026-05-20T00:00:00Z"
     },
     "speckit-utils": {
       "name": "SDD Utilities",
@@ -2729,21 +2729,21 @@
     "squad": {
       "name": "Squad Bridge",
       "id": "squad",
-      "description": "Bootstrap and synchronize a Squad agent team from your Spec Kit spec and tasks.",
+      "description": "Bootstrap and synchronize a Squad agent team from your Speckit spec and tasks.",
       "author": "jwill824",
-      "version": "1.1.0",
-      "download_url": "https://github.com/jwill824/spec-kit-squad/archive/refs/tags/v1.1.0.zip",
+      "version": "1.3.0",
+      "download_url": "https://github.com/jwill824/spec-kit-squad/archive/refs/tags/v1.3.0.zip",
       "repository": "https://github.com/jwill824/spec-kit-squad",
       "homepage": "https://github.com/jwill824/spec-kit-squad",
       "documentation": "https://github.com/jwill824/spec-kit-squad/blob/main/README.md",
       "changelog": "https://github.com/jwill824/spec-kit-squad/blob/main/docs/CHANGELOG.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.1.0",
+        "speckit_version": ">=0.8.11",
         "tools": [
           {
             "name": "@bradygaster/squad-cli",
-            "version": ">=0.1.0",
+            "version": ">=0.9.4",
             "required": true
           }
         ]
@@ -2763,7 +2763,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-29T00:00:00Z",
-      "updated_at": "2026-04-29T00:00:00Z"
+      "updated_at": "2026-05-20T00:00:00Z"
     },
     "staff-review": {
       "name": "Staff Review Extension",
@@ -2964,6 +2964,37 @@
       "stars": 0,
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
+    },
+    "team-assign": {
+      "name": "Team Assign",
+      "id": "team-assign",
+      "description": "Assign tasks.md items to human engineers, split into subtasks, and generate a per-engineer workboard",
+      "author": "tarunkumarbhati",
+      "version": "1.0.0",
+      "download_url": "https://github.com/tarunkumarbhati/spec-kit-team-assign/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/tarunkumarbhati/spec-kit-team-assign",
+      "homepage": "https://github.com/tarunkumarbhati/spec-kit-team-assign",
+      "documentation": "https://github.com/tarunkumarbhati/spec-kit-team-assign/blob/main/README.md",
+      "changelog": "https://github.com/tarunkumarbhati/spec-kit-team-assign/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 3
+      },
+      "tags": [
+        "team",
+        "assignment",
+        "process",
+        "planning",
+        "subtasks"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-20T00:00:00Z",
+      "updated_at": "2026-05-20T00:00:00Z"
     },
     "time-machine": {
       "name": "Time Machine",
