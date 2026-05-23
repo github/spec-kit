@@ -3147,9 +3147,13 @@ class TestExtensionIgnore:
                 else:
                     p.write_text(content)
 
-        # Write .extensionignore
+        # Write .extensionignore. Pinned to UTF-8 so non-ASCII patterns
+        # in tests (see ``test_extensionignore_utf8_patterns``) survive
+        # the round-trip on Windows runners with non-UTF-8 default locales.
         if ignore_content is not None:
-            (ext_dir / ".extensionignore").write_text(ignore_content)
+            (ext_dir / ".extensionignore").write_text(
+                ignore_content, encoding="utf-8"
+            )
 
         return ext_dir
 
@@ -3378,6 +3382,44 @@ class TestExtensionIgnore:
         dest = proj_dir / ".specify" / "extensions" / "test-ext"
         assert (dest / "docs" / "guide.md").exists()
         assert not (dest / "docs" / "internal" / "draft.md").exists()
+
+    def test_extensionignore_utf8_patterns(self, temp_dir, valid_manifest_data):
+        """Non-ASCII patterns in .extensionignore work on every locale.
+
+        ``Path.read_text`` defaults to the system locale codec on Windows
+        (cp1252 / gb2312 / cp932). Without an explicit ``encoding="utf-8"``,
+        a pattern like ``ドキュメント/`` written by a UTF-8 host becomes
+        mojibake on a cp1252 host and silently fails to match — leaking
+        files the author intended to exclude. The existing
+        ``test_extensionignore_windows_backslash_patterns`` already shows
+        the codebase treats this as a Windows-author-friendly file; UTF-8
+        is part of that same contract.
+        """
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={
+                "ドキュメント/private.md": "secret",
+                "ドキュメント/public.md": "public",
+                "docs/guide.md": "# Guide",
+                "café/résumé.txt": "draft",
+            },
+            ignore_content="ドキュメント/\ncafé/\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        # Multibyte patterns excluded.
+        assert not (dest / "ドキュメント").exists()
+        assert not (dest / "café").exists()
+        # ASCII path with no matching pattern is unaffected.
+        assert (dest / "docs" / "guide.md").exists()
 
     def test_extensionignore_star_does_not_cross_directories(self, temp_dir, valid_manifest_data):
         """'*' should NOT match across directory boundaries (gitignore semantics)."""

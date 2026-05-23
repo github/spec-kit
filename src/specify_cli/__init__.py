@@ -397,7 +397,15 @@ def save_init_options(project_path: Path, options: dict[str, Any]) -> None:
     """
     dest = project_path / INIT_OPTIONS_FILE
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(json.dumps(options, indent=2, sort_keys=True))
+    # Pin UTF-8 explicitly: ``Path.write_text`` defaults to the system
+    # locale codec, which is cp1252 / gb2312 / cp932 on Windows. A
+    # locale-encoded write succeeds locally but produces a file a peer
+    # machine (different locale) or Unix CI cannot decode. The sibling
+    # integration-catalog writer in ``integrations/catalog.py`` already
+    # pins ``encoding="utf-8"`` for the same reason.
+    dest.write_text(
+        json.dumps(options, indent=2, sort_keys=True), encoding="utf-8"
+    )
 
 
 def load_init_options(project_path: Path) -> dict[str, Any]:
@@ -409,8 +417,15 @@ def load_init_options(project_path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
+        # Match the explicit UTF-8 used by ``save_init_options``; without
+        # it ``read_text`` falls back to the system codec on Windows and
+        # raises ``UnicodeDecodeError`` on any file a peer wrote with
+        # non-ASCII content. ``UnicodeDecodeError`` is a subclass of
+        # ``ValueError``, not ``OSError`` / ``json.JSONDecodeError``, so
+        # it must be listed explicitly here to preserve the existing
+        # "fall back to empty dict" contract.
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return {}
 
 
