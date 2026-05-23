@@ -1222,6 +1222,11 @@ class ExtensionManager:
         # extension (configs stranded in .backup/).
         did_remove = False
         if force and self.registry.is_installed(manifest.id):
+            # Clear any stale backup from a previous remove so that only the
+            # backup produced by the current remove() call is restored later.
+            backup_config_dir = self.extensions_dir / ".backup" / manifest.id
+            if backup_config_dir.exists():
+                shutil.rmtree(backup_config_dir)
             did_remove = self.remove(manifest.id)
 
         # Install extension
@@ -1251,15 +1256,17 @@ class ExtensionManager:
         hook_executor = HookExecutor(self.project_root)
         hook_executor.register_hooks(manifest)
 
-        # Restore config files from backup when --force triggered a removal
-        # Only restore when a remove was actually performed, so that stale
-        # backup files from a previous removal don't get resurrected when the
-        # extension wasn't already installed.
+        # Restore config files from backup when --force triggered a removal.
+        # Only restore *.yml config files to match what remove() backs up,
+        # so unexpected artifacts in .backup/ are not resurrected.
         if did_remove:
             backup_config_dir = self.extensions_dir / ".backup" / manifest.id
             if backup_config_dir.exists():
                 for cfg_file in backup_config_dir.iterdir():
-                    if cfg_file.is_file():
+                    if cfg_file.is_file() and (
+                        cfg_file.name.endswith("-config.yml") or
+                        cfg_file.name.endswith("-config.local.yml")
+                    ):
                         shutil.copy2(cfg_file, dest_dir / cfg_file.name)
                 shutil.rmtree(backup_config_dir)
 

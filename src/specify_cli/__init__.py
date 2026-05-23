@@ -1627,7 +1627,7 @@ def extension_add(
     speckit_version = get_speckit_version()
 
     if force:
-        console.print("[yellow]--force:[/yellow] Will overwrite if already installed\n")
+        console.print("[yellow]--force:[/yellow] Will overwrite if already installed")
 
     # Prompt for URL-based installs BEFORE the spinner so the user can
     # actually see and respond to the confirmation (the Rich status
