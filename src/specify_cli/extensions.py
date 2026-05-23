@@ -1702,6 +1702,44 @@ class ExtensionCatalog(CatalogStackBase):
         from specify_cli.authentication.http import open_url
         return open_url(url, timeout)
 
+    def _validate_catalog_payload(self, catalog_data: Any, url: str) -> None:
+        """Validate a parsed catalog payload's shape.
+
+        Applied to both network-fetched and cache-loaded payloads so a
+        once-poisoned cache (older spec-kit version, manual edit, upstream
+        served a bad payload before the network-side guards were added)
+        cannot re-crash ``_get_merged_extensions`` on subsequent calls.
+
+        Checking only key presence would let a payload like
+        ``{"extensions": []}`` or ``{"extensions": null}`` slip through
+        here and then crash with ``AttributeError: 'list' object has no
+        attribute 'items'`` deep inside ``_get_merged_extensions``. The
+        sibling integration catalog reader already guards both the root
+        object and the nested mapping (see ``integrations/catalog.py``);
+        the extension catalog must stay consistent so a malformed payload
+        surfaces as the user-facing ``Invalid catalog format`` error
+        instead of a raw Python traceback.
+
+        Args:
+            catalog_data: Parsed JSON payload from the catalog source.
+            url: Source URL — used in the error message so the user can
+                tell which catalog in a multi-catalog stack is malformed.
+
+        Raises:
+            ExtensionError: If the payload's shape is invalid.
+        """
+        if not isinstance(catalog_data, dict):
+            raise ExtensionError(
+                f"Invalid catalog format from {url}: expected a JSON object"
+            )
+        if "schema_version" not in catalog_data or "extensions" not in catalog_data:
+            raise ExtensionError(f"Invalid catalog format from {url}")
+        if not isinstance(catalog_data.get("extensions"), dict):
+            raise ExtensionError(
+                f"Invalid catalog format from {url}: "
+                "'extensions' must be a JSON object"
+            )
+
     def get_active_catalogs(self) -> List[CatalogEntry]:
         """Get the ordered list of active catalogs.
 
@@ -1827,11 +1865,19 @@ class ExtensionCatalog(CatalogStackBase):
                     # If metadata is invalid or missing expected fields, treat cache as invalid
                     pass
 
-        # Use cache if valid
+        # Use cache if valid. A previously-cached payload must clear the
+        # same shape checks as a freshly-fetched one — otherwise a once-
+        # poisoned cache (older spec-kit version, manual edit, upstream
+        # served a bad payload before the network-side guards were added)
+        # would re-crash on every invocation despite the cache being
+        # "valid" by age. If validation fails on the cached read, fall
+        # through to the network fetch path so the cache gets refreshed.
         if is_valid:
             try:
-                return json.loads(cache_file.read_text())
-            except json.JSONDecodeError:
+                cached_data = json.loads(cache_file.read_text())
+                self._validate_catalog_payload(cached_data, entry.url)
+                return cached_data
+            except (json.JSONDecodeError, ExtensionError):
                 pass
 
         # Fetch from network
@@ -1839,27 +1885,7 @@ class ExtensionCatalog(CatalogStackBase):
             with self._open_url(entry.url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
-            # Validate payload shape before iteration. Checking only key
-            # presence would let a payload like ``{"extensions": []}`` or
-            # ``{"extensions": null}`` slip through here and then crash with
-            # ``AttributeError: 'list' object has no attribute 'items'`` deep
-            # inside ``_get_merged_extensions``. The sibling integration
-            # catalog reader already guards both the root object and the
-            # nested mapping (see ``integrations/catalog.py``); the extension
-            # catalog must stay consistent so a malformed upstream surfaces as
-            # the user-facing ``Invalid catalog format`` error instead of a
-            # raw Python traceback.
-            if not isinstance(catalog_data, dict):
-                raise ExtensionError(
-                    f"Invalid catalog format from {entry.url}: expected a JSON object"
-                )
-            if "schema_version" not in catalog_data or "extensions" not in catalog_data:
-                raise ExtensionError(f"Invalid catalog format from {entry.url}")
-            if not isinstance(catalog_data.get("extensions"), dict):
-                raise ExtensionError(
-                    f"Invalid catalog format from {entry.url}: "
-                    "'extensions' must be a JSON object"
-                )
+            self._validate_catalog_payload(catalog_data, entry.url)
 
             # Save to cache
             self.cache_dir.mkdir(parents=True, exist_ok=True)

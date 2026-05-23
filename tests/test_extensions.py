@@ -2622,6 +2622,76 @@ class TestExtensionCatalog:
             with pytest.raises(ExtensionError, match="Invalid catalog format"):
                 catalog._fetch_single_catalog(entry, force_refresh=True)
 
+    @pytest.mark.parametrize(
+        "cached_payload",
+        [
+            [],
+            "oops",
+            42,
+            None,
+            {"schema_version": "1.0", "extensions": []},
+            {"schema_version": "1.0", "extensions": "oops"},
+            {"schema_version": "1.0", "extensions": None},
+        ],
+    )
+    def test_fetch_single_catalog_rejects_malformed_cached_payload(
+        self, temp_dir, cached_payload
+    ):
+        """A poisoned cache silently falls back to the network instead of
+        crashing — cached payloads pass through the same shape validation
+        as freshly-fetched ones.
+
+        Without this, a cache poisoned by an older spec-kit version (or a
+        manual edit, or an upstream that briefly served a bad payload
+        before the network guards landed) would re-crash every invocation
+        of ``_get_merged_extensions`` despite the cache being "valid" by
+        age. The recovery contract is: if the cached payload fails
+        validation, drop it and refetch — never propagate
+        ``AttributeError`` to the caller.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+
+        # Poison the default-URL cache. ``DEFAULT_CATALOG_URL`` is the
+        # branch that goes through ``is_cache_valid()`` (the non-default
+        # branch uses per-URL hashed cache files but the same code path
+        # below).
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text(json.dumps(cached_payload))
+        catalog.cache_metadata_file.write_text(
+            json.dumps(
+                {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                }
+            )
+        )
+
+        # Network refetch returns a valid payload so the recovery path
+        # can complete.
+        valid = {
+            "schema_version": "1.0",
+            "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        entry = CatalogEntry(
+            url=ExtensionCatalog.DEFAULT_CATALOG_URL,
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog._fetch_single_catalog(entry, force_refresh=False)
+
+        # The poisoned cache was discarded and the network payload returned.
+        assert result == valid
+
     def test_get_merged_extensions_skips_non_mapping_entries(self, temp_dir):
         """Per-entry guard: one malformed entry shouldn't poison the merge.
 

@@ -1559,6 +1559,77 @@ class TestPresetCatalog:
             with pytest.raises(PresetError, match="Invalid preset catalog format"):
                 catalog._fetch_single_catalog(entry, force_refresh=True)
 
+    @pytest.mark.parametrize(
+        "cached_payload",
+        [
+            [],
+            "oops",
+            42,
+            None,
+            {"schema_version": "1.0", "presets": []},
+            {"schema_version": "1.0", "presets": "oops"},
+            {"schema_version": "1.0", "presets": None},
+        ],
+    )
+    def test_fetch_single_catalog_rejects_malformed_cached_payload(
+        self, project_dir, cached_payload
+    ):
+        """A poisoned cache silently falls back to the network instead of
+        crashing — cached payloads pass through the same shape validation
+        as freshly-fetched ones.
+
+        Without this, a cache poisoned by an older spec-kit version (or a
+        manual edit, or an upstream that briefly served a bad payload
+        before the network guards landed) would re-crash every invocation
+        of ``_get_merged_packs`` despite the cache being "valid" by age.
+        The recovery contract is: if the cached payload fails validation,
+        drop it and refetch — never propagate ``AttributeError`` to the
+        caller.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+
+        # Poison the default-URL cache. ``DEFAULT_CATALOG_URL`` and
+        # non-default URLs both flow through the same cache-load branch.
+        cache_file, metadata_file = catalog._get_cache_paths(
+            catalog.DEFAULT_CATALOG_URL
+        )
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(cached_payload))
+        metadata_file.write_text(
+            json.dumps(
+                {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": catalog.DEFAULT_CATALOG_URL,
+                }
+            )
+        )
+
+        # Network refetch returns a valid payload so the recovery path
+        # can complete.
+        valid = {
+            "schema_version": "1.0",
+            "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        entry = PresetCatalogEntry(
+            url=catalog.DEFAULT_CATALOG_URL,
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog._fetch_single_catalog(entry, force_refresh=False)
+
+        # The poisoned cache was discarded and the network payload returned.
+        assert result == valid
+
     def test_get_merged_packs_skips_non_mapping_entries(self, project_dir):
         """Per-entry guard: one malformed entry shouldn't poison the merge.
 
