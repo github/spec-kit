@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from contextlib import ExitStack, contextmanager
+import re
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from specify_cli.catalog_docs import (
     escape_url_for_markdown_link,
+    escape_markdown_link_text,
     INTEGRATIONS_REFERENCE_PATH,
     render_cell,
     list_integrations_for_docs,
@@ -21,19 +24,29 @@ runner = CliRunner()
 
 
 @contextmanager
-def _get_catalog_docs_patches():
+def _get_catalog_docs_patches(
+    *,
+    fake_registry=None,
+    fake_doc_urls=None,
+    fake_label_overrides=None,
+    fake_notes=None,
+):
     """Context manager that applies mocked registry and doc maps for tests."""
 
-    fake_registry = {
-        "copilot": MagicMock(config={"name": "GitHub Copilot"}),
-        "codex": MagicMock(config={"name": "Codex CLI"}),
-    }
-    fake_doc_urls = {
-        "copilot": "https://code.visualstudio.com/",
-        "codex": "https://github.com/openai/codex",
-    }
-    fake_label_overrides = {}
-    fake_notes = {"copilot": "Test note"}
+    if fake_registry is None:
+        fake_registry = {
+            "copilot": MagicMock(config={"name": "GitHub Copilot"}),
+            "codex": MagicMock(config={"name": "Codex CLI"}),
+        }
+    if fake_doc_urls is None:
+        fake_doc_urls = {
+            "copilot": "https://code.visualstudio.com/",
+            "codex": "https://github.com/openai/codex",
+        }
+    if fake_label_overrides is None:
+        fake_label_overrides = {}
+    if fake_notes is None:
+        fake_notes = {"copilot": "Test note"}
 
     with ExitStack() as stack:
         stack.enter_context(
@@ -65,6 +78,11 @@ def test_integrations_table_renders():
 
 
 def test_integrations_reference_doc_matches_renderer():
+    if not INTEGRATIONS_REFERENCE_PATH.exists():
+        pytest.skip(
+            f"Integrations reference not found at {INTEGRATIONS_REFERENCE_PATH}. "
+            "Skipping (expected when running from sdist/wheel)."
+        )
     doc_text = INTEGRATIONS_REFERENCE_PATH.read_text(encoding="utf-8")
     start_marker = "## Supported AI Coding Agents\n\n"
     end_marker = "\n## List Available Integrations\n"
@@ -78,7 +96,10 @@ def test_integrations_reference_doc_matches_renderer():
         for line in table.splitlines():
             if not line.startswith("| "):
                 continue
-            parts = [part.strip() for part in line.strip("|").split("|")]
+            parts = [
+                part.strip()
+                for part in re.split(r"(?<!\\)\|", line.strip("|"))
+            ]
             if parts and set(parts[0]) == {"-"}:
                 continue
             if len(parts) == 3:
@@ -119,38 +140,13 @@ def test_escape_url_for_markdown_link():
     )
 
 
+def test_escape_markdown_link_text():
+    assert escape_markdown_link_text("Code [Buddy]") == "Code \\[Buddy\\]"
+
+
 def test_integrations_docs_label_and_url_sources():
     """Test using mocked registry/doc maps to avoid test brittleness."""
-    # Create a minimal fake registry with two known integrations
-    fake_registry = {
-        "copilot": MagicMock(config={"name": "GitHub Copilot"}),
-        "codex": MagicMock(config={"name": "Codex CLI"}),
-    }
-
-    # Mock the doc maps to only contain entries for the fake registry
-    fake_doc_urls = {
-        "copilot": "https://code.visualstudio.com/",
-        "codex": "https://github.com/openai/codex",
-    }
-    fake_label_overrides = {}
-    fake_notes = {}
-
-    patch_registry = patch(
-        "specify_cli.catalog_docs._get_integration_registry",
-        return_value=fake_registry,
-    )
-    patch_urls = patch(
-        "specify_cli.catalog_docs.INTEGRATION_DOC_URLS", fake_doc_urls
-    )
-    patch_labels = patch(
-        "specify_cli.catalog_docs.INTEGRATION_LABEL_OVERRIDES",
-        fake_label_overrides,
-    )
-    patch_notes = patch(
-        "specify_cli.catalog_docs.INTEGRATION_NOTES", fake_notes
-    )
-
-    with patch_registry, patch_urls, patch_labels, patch_notes:
+    with _get_catalog_docs_patches(fake_notes={}):
         rows = {
             key: (label, url)
             for key, label, url, _notes in list_integrations_for_docs()
@@ -170,6 +166,24 @@ def test_cli_integration_search_markdown_success():
         assert len(lines) > 2  # At least header, separator, and one data row
         assert lines[0] == "| Agent | Key | Notes |"
         assert lines[1] == "| --- | --- | --- |"
+
+
+def test_render_integrations_table_escapes_link_text():
+    fake_registry = {
+        "bracket": MagicMock(config={"name": "Code [Buddy]"}),
+    }
+    fake_doc_urls = {
+        "bracket": "https://example.com/docs",
+    }
+
+    with _get_catalog_docs_patches(
+        fake_registry=fake_registry,
+        fake_doc_urls=fake_doc_urls,
+        fake_notes={},
+    ):
+        table = render_integrations_table()
+
+    assert "[Code \\[Buddy\\]](https://example.com/docs)" in table
 
 
 def test_cli_integration_search_markdown_with_filters_warns():
