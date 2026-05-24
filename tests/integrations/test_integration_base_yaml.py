@@ -369,6 +369,7 @@ class YamlIntegrationTests:
         "implement",
         "plan",
         "specify",
+        "status",
         "tasks",
         "taskstoissues",
     ]
