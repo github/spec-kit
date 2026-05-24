@@ -99,6 +99,15 @@ def test_extension_without_repository(tmp_path: Path) -> None:
     assert "[Foo](" not in table  # plain name, no link
 
 
+def test_whitespace_repository_is_treated_as_missing(tmp_path: Path) -> None:
+    f = _write_catalog(tmp_path, {
+        "foo": {"name": "Foo", "id": "foo", "description": "", "tags": [], "verified": False, "repository": "   "},
+    })
+    table = render_community_extensions_table(path=f)
+    assert "Foo" in table
+    assert "[Foo](" not in table
+
+
 def test_tags_containing_pipe_do_not_break_table(tmp_path: Path) -> None:
     f = _write_catalog(tmp_path, {
         # No "id" field — exercises ext_id fallback; tag has pipe — exercises stripping
@@ -136,6 +145,20 @@ def test_url_escaping_in_repository_links(tmp_path: Path) -> None:
     table = render_community_extensions_table(path=f)
     # The URL should be escaped: ) → \) and | → \|
     assert "[Foo](https://example.com/repo?x=1\\)&y=2\\|bad)" in table
+
+
+def test_link_text_is_escaped(tmp_path: Path) -> None:
+    f = _write_catalog(tmp_path, {
+        "foo": {
+            "name": "Code [Buddy]",
+            "description": "",
+            "tags": [],
+            "verified": False,
+            "repository": "https://example.com/repo",
+        },
+    })
+    table = render_community_extensions_table(path=f)
+    assert "[Code \\[Buddy\\]](https://example.com/repo)" in table
 
 
 def test_extension_id_is_sanitized(tmp_path: Path) -> None:
