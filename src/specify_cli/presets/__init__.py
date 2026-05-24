@@ -576,7 +576,7 @@ class PresetManager:
 
         try:
             specifier = SpecifierSet(required)
-            if current not in specifier:
+            if not specifier.contains(current, prereleases=True):
                 raise PresetCompatibilityError(
                     f"Preset requires spec-kit {required}, "
                     f"but {speckit_version} is installed.\n"

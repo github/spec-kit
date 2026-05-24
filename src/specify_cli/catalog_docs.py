@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
+from ._assets import _repo_root
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
+ROOT_DIR = _repo_root()
 INTEGRATIONS_REFERENCE_PATH = ROOT_DIR / "docs" / "reference" / "integrations.md"
 
 
@@ -102,10 +102,15 @@ def render_cell(value: str) -> str:
 
 def escape_url_for_markdown_link(url: str) -> str:
     """Escape characters that can break Markdown link syntax.
-    
+
     Escapes `)` and `|` which can terminate or corrupt the link destination.
     """
     return url.replace(")", "\\)").replace("|", "\\|")
+
+
+def escape_markdown_link_text(text: str) -> str:
+    """Escape characters that can break Markdown link text."""
+    return text.replace("[", "\\[").replace("]", "\\]")
 
 
 def _get_integration_registry() -> dict[str, Any]:
@@ -155,7 +160,7 @@ def list_integrations_for_docs(
             )
             warnings.warn(
                 f"Stale key(s) found in doc maps (no longer in registry): "
-                f"{stale_keys}. Consider removing them from "
+                f"{', '.join(stale_keys)}. Consider removing them from "
                 "INTEGRATION_DOC_URLS, INTEGRATION_LABEL_OVERRIDES, and "
                 "INTEGRATION_NOTES.",
                 stacklevel=2
@@ -182,7 +187,7 @@ def render_integrations_table() -> str:
     for key, label, url, notes in list_integrations_for_docs():
         # Escape raw field values *before* composing Markdown syntax so that
         # a pipe inside a label or notes doesn't break a link target.
-        safe_label = render_cell(label)
+        safe_label = escape_markdown_link_text(render_cell(label))
         safe_notes = render_cell(notes)
         safe_url = escape_url_for_markdown_link(url) if url else None
         agent = (

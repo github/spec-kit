@@ -6,10 +6,15 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .catalog_docs import escape_url_for_markdown_link, render_cell
+from ._assets import _repo_root
+from .catalog_docs import (
+    escape_markdown_link_text,
+    escape_url_for_markdown_link,
+    render_cell,
+)
 
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
+ROOT_DIR = _repo_root()
 COMMUNITY_CATALOG_PATH = ROOT_DIR / "extensions" / "catalog.community.json"
 
 
@@ -49,7 +54,7 @@ def list_community_extensions(
                 "description": str(ext.get("description") or ""),
                 "tags": ext.get("tags") or [],
                 "verified": "Yes" if bool(ext.get("verified")) else "No",
-                "repository": str(ext.get("repository") or ""),
+                "repository": str(ext.get("repository") or "").strip(),
             }
         )
 
@@ -69,13 +74,13 @@ def render_community_extensions_table(path: Path = COMMUNITY_CATALOG_PATH) -> st
     for row in rows:
         # Escape raw field values *before* composing Markdown syntax so that
         # a pipe inside a name or description doesn't break a link target.
-        safe_name = render_cell(row["name"])
-        safe_repo = escape_url_for_markdown_link(row["repository"])
-        link = (
-            f"[{safe_name}]({safe_repo})"
-            if row["repository"]
-            else safe_name
-        )
+        safe_name = escape_markdown_link_text(render_cell(row["name"]))
+        repository = row["repository"]
+        if repository:
+            safe_repo = escape_url_for_markdown_link(repository)
+            link = f"[{safe_name}]({safe_repo})"
+        else:
+            link = safe_name
         table_rows.append(
             [
                 link,

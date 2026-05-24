@@ -1001,6 +1001,14 @@ class TestExtensionManager:
         with pytest.raises(CompatibilityError, match="Extension requires spec-kit"):
             manager.check_compatibility(manifest, "0.0.1")
 
+    def test_check_compatibility_allows_prerelease_builds(self, extension_dir, project_dir):
+        """Prerelease spec-kit builds should satisfy compatible version ranges."""
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        result = manager.check_compatibility(manifest, "0.8.8.dev0")
+        assert result is True
+
     def test_install_from_directory(self, extension_dir, project_dir):
         """Test installing extension from directory."""
         manager = ExtensionManager(project_dir)
@@ -2624,6 +2632,10 @@ class TestVersionSatisfies:
         """Test complex version specifier."""
         assert version_satisfies("1.0.5", ">=1.0.0,!=1.0.3")
         assert not version_satisfies("1.0.3", ">=1.0.0,!=1.0.3")
+
+    def test_version_satisfies_prerelease(self):
+        """Prerelease builds should satisfy compatible lower bounds."""
+        assert version_satisfies("0.8.8.dev0", ">=0.2.0")
 
     def test_version_satisfies_invalid(self):
         """Test invalid version strings."""

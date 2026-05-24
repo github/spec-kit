@@ -99,6 +99,15 @@ def test_extension_without_repository(tmp_path: Path) -> None:
     assert "[Foo](" not in table  # plain name, no link
 
 
+def test_whitespace_repository_is_treated_as_missing(tmp_path: Path) -> None:
+    f = _write_catalog(tmp_path, {
+        "foo": {"name": "Foo", "id": "foo", "description": "", "tags": [], "verified": False, "repository": "   "},
+    })
+    table = render_community_extensions_table(path=f)
+    assert "Foo" in table
+    assert "[Foo](" not in table
+
+
 def test_tags_containing_pipe_do_not_break_table(tmp_path: Path) -> None:
     f = _write_catalog(tmp_path, {
         # No "id" field — exercises ext_id fallback; tag has pipe — exercises stripping
