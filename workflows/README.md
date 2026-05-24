@@ -106,9 +106,15 @@ Send an arbitrary inline prompt to an integration CLI (no command file needed):
 
 ### Shell Steps
 
-Run a shell command and capture output:
+Run a shell command and capture output. Workflows that contain shell steps
+must opt in explicitly at the top level:
 
 ```yaml
+requires:
+  permissions:
+    shell: true
+
+steps:
 - id: run-tests
   type: shell
   run: "cd {{ inputs.project_dir }} && npm test"

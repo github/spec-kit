@@ -193,6 +193,14 @@ steps:
       args: "{{ inputs.spec }}"
 ```
 
+Workflows that include any `type: shell` step must also declare:
+
+```yaml
+requires:
+  permissions:
+    shell: true
+```
+
 This produces the following execution flow:
 
 ```mermaid

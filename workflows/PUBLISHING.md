@@ -84,6 +84,14 @@ steps:
     on_reject: abort
 ```
 
+If your workflow contains any `type: shell` step, it must also opt in explicitly:
+
+```yaml
+requires:
+  permissions:
+    shell: true
+```
+
 **Validation Checklist**:
 
 - ✅ `id` is lowercase alphanumeric with hyphens (single-character IDs are allowed)
@@ -91,6 +99,7 @@ steps:
 - ✅ `description` is concise
 - ✅ All step IDs are unique
 - ✅ Step types are valid: `command`, `prompt`, `shell`, `gate`, `if`, `switch`, `while`, `do-while`, `fan-out`, `fan-in`
+- ✅ Shell steps are explicitly enabled with `requires.permissions.shell: true`
 - ✅ Required fields present per step type (e.g., `condition` for `if`, `expression` for `switch`)
 - ✅ Input types are valid: `string`, `number`, `boolean`
 - ✅ Step IDs do not contain `:` (reserved for engine-generated nested IDs like `parentId:childId`)
