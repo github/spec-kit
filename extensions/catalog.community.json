@@ -2860,7 +2860,7 @@
     "superb": {
       "name": "Superpowers Bridge",
       "id": "superb",
-      "description": "Bridges selected installed quality-control skills into Spec Kit workflows and adds bridge-native utilities.",
+      "description": "Orchestrates obra/superpowers skills within the spec-kit SDD workflow. Thin bridge commands delegate to superpowers' authoritative SKILL.md files at runtime (with graceful fallback), while bridge-original commands provide spec-kit-native value. Eight commands cover the full lifecycle: intent clarification, TDD enforcement, task review, verification, critique, systematic debugging, branch completion, and review response. Hook-bound commands fire automatically; standalone commands are invoked when needed.",
       "author": "rbbtsn0w",
       "version": "1.4.0",
       "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/superpowers-bridge-v1.4.0/superpowers-bridge.zip",
