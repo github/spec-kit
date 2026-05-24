@@ -388,6 +388,14 @@ Only Spec Kit infrastructure files:
 
 ### "CLI upgrade doesn't seem to work"
 
+If a command behaves like an older Spec Kit version, first check for local CLI drift:
+
+```bash
+specify self check
+```
+
+`specify check` is an offline environment scan; `specify self check` is the CLI version lookup.
+
 Verify the installation:
 
 ```bash

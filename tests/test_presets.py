@@ -1830,6 +1830,31 @@ class TestPresetCatalogMultiCatalog:
         with pytest.raises(PresetValidationError, match="Invalid priority"):
             catalog._load_catalog_config(config_path)
 
+    def test_load_catalog_config_rejects_boolean_priority(self, project_dir):
+        """A YAML ``priority: true`` is a typo, not a request for priority 1.
+
+        ``bool`` is a subclass of ``int`` in Python, so ``int(True)`` silently
+        returns ``1``. Without an explicit guard a malformed config like
+        ``priority: yes`` would be accepted as a valid priority of 1 and
+        silently change catalog ordering. The sibling integration-catalog
+        reader rejects this case (see ``catalogs.py``); the preset catalog
+        reader must stay consistent.
+        """
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [
+                {
+                    "name": "bool-priority",
+                    "url": "https://example.com/catalog.json",
+                    "priority": True,
+                }
+            ]
+        }))
+
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="Invalid priority|expected integer"):
+            catalog._load_catalog_config(config_path)
+
     def test_load_catalog_config_install_allowed_string(self, project_dir):
         """Test that install_allowed accepts string values."""
         config_path = project_dir / ".specify" / "preset-catalogs.yml"

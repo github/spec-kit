@@ -379,6 +379,32 @@ Implementation: Extends `YamlIntegration` (parallel to `TomlIntegration`):
 4. Uses `yaml.safe_dump()` for header fields to ensure proper escaping
 5. Sets `context_file = "AGENTS.md"` so the base setup manages the Spec Kit context section there
 
+## Branch Naming Convention
+
+All branches **must** follow this pattern:
+
+```
+<type>/<number>-<short-slug>
+```
+
+Where `<number>` is either an issue number or a PR number — whichever is created first.
+
+| Prefix | When to use | Example |
+|---|---|---|
+| `feat/` | New features | `feat/2342-workflow-cli-alignment` |
+| `fix/` | Bug fixes | `fix/2653-paths-only-validation` |
+| `docs/` | Documentation changes | `docs/2677-branch-naming-convention` |
+| `community/` | Community catalog additions | `community/2492-add-mde-extension` |
+| `chore/` | Maintenance, tooling, CI | `chore/2366-editorconfig` |
+
+**Rules:**
+
+1. Always include the issue or PR number immediately after the prefix — this is what makes branches traceable
+2. Use kebab-case for the slug
+3. Keep the slug short — enough to identify the work without looking up the issue
+
+---
+
 ## Common Pitfalls
 
 1. **Using shorthand keys for CLI-based integrations**: For CLI-based integrations (`requires_cli: True`), the `key` must match the executable name (e.g., `"cursor-agent"` not `"cursor"`). `shutil.which(key)` is used for CLI tool checks — mismatches require special-case mappings. IDE-based integrations (`requires_cli: False`) are not subject to this constraint.

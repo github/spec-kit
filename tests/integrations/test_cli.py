@@ -22,6 +22,26 @@ def _normalize_cli_output(output: str) -> str:
     return output.strip()
 
 
+class TestCliDiagnosticFormatting:
+    def test_cli_error_detail_flattens_newlines(self):
+        import specify_cli
+
+        assert specify_cli._cli_error_detail(RuntimeError("line one\nline two")) == "line one line two"
+
+    def test_cli_error_detail_handles_empty_message(self):
+        import specify_cli
+
+        assert specify_cli._cli_error_detail(RuntimeError()) == "RuntimeError"
+
+    def test_cli_phase_label_includes_target(self):
+        import specify_cli
+
+        assert (
+            specify_cli._cli_phase_label("rollback", "integration", "codex")
+            == "rollback integration 'codex'"
+        )
+
+
 class TestInitIntegrationFlag:
     def test_integration_and_ai_mutually_exclusive(self, tmp_path):
         from typer.testing import CliRunner
@@ -173,6 +193,42 @@ class TestInitIntegrationFlag:
         assert ".myagent/commands" in normalized_output
         assert normalized_output.index("Deprecation Warning") < normalized_output.index("Next Steps")
         assert (project / ".myagent" / "commands" / "speckit.plan.md").exists()
+
+    def test_init_optional_preset_failure_reports_target_and_continues(
+        self, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.presets import PresetManager
+
+        def fail_install(self, path, version):
+            raise OSError("preset install exploded\nwith context")
+
+        monkeypatch.setattr(PresetManager, "install_from_directory", fail_install)
+
+        project = tmp_path / "init-preset-warning"
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(project),
+                "--integration",
+                "copilot",
+                "--script",
+                "sh",
+                "--no-git",
+                "--preset",
+                "lean",
+            ],
+            catch_exceptions=False,
+        )
+        normalized = _normalize_cli_output(result.output)
+
+        assert result.exit_code == 0, result.output
+        assert "Failed to install preset 'lean'" in normalized
+        assert "preset install exploded with context" in normalized
+        assert "Continuing without the optional preset" in normalized
+        assert "Project ready" in normalized
 
     def test_ai_claude_here_preserves_preexisting_commands(self, tmp_path):
         from typer.testing import CliRunner
@@ -1054,6 +1110,143 @@ class TestIntegrationCatalogDiscoveryCLI:
             return runner.invoke(app, argv, catch_exceptions=False)
         finally:
             os.chdir(old)
+
+    def test_integration_install_failure_reports_phase_target_and_rollback(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+        from specify_cli.integrations.base import IntegrationBase
+
+        class BrokenIntegration(IntegrationBase):
+            key = "broken-test"
+            config = {
+                "name": "Broken Test",
+                "folder": ".broken/",
+                "commands_subdir": "commands",
+                "install_url": None,
+                "requires_cli": False,
+            }
+            registrar_config = {
+                "dir": ".broken/commands",
+                "format": "markdown",
+                "args": "$ARGUMENTS",
+                "extension": ".md",
+            }
+            context_file = "BROKEN.md"
+
+            def setup(self, project_root, manifest, **kwargs):
+                raise OSError("setup exploded\nwith context")
+
+            def teardown(self, project_root, manifest, force=False):
+                raise OSError("rollback exploded")
+
+        project = self._make_project(tmp_path)
+        monkeypatch.setitem(INTEGRATION_REGISTRY, "broken-test", BrokenIntegration())
+
+        result = self._invoke(["integration", "install", "broken-test"], project)
+        normalized = _normalize_cli_output(result.output)
+
+        assert result.exit_code == 1, result.output
+        assert "Failed to rollback integration 'broken-test'" in normalized
+        assert "rollback exploded" in normalized
+        assert "Failed to install integration 'broken-test'" in normalized
+        assert "setup exploded with context" in normalized
+
+    def test_integration_upgrade_failure_reports_phase_and_target(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+        from specify_cli.integrations.copilot import CopilotIntegration
+
+        class UpgradeBrokenIntegration(CopilotIntegration):
+            key = "upgrade-broken"
+            config = dict(CopilotIntegration.config)
+            config["name"] = "Upgrade Broken"
+
+            def setup(self, project_root, manifest, **kwargs):
+                raise OSError("upgrade exploded\nwith context")
+
+        project = self._make_project(tmp_path)
+        monkeypatch.setitem(
+            INTEGRATION_REGISTRY, "upgrade-broken", UpgradeBrokenIntegration()
+        )
+
+        (project / ".specify" / "integrations").mkdir(parents=True, exist_ok=True)
+        (project / ".specify" / "integration.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "integration": "upgrade-broken",
+                    "integrations": ["upgrade-broken"],
+                    "integration_settings": {"upgrade-broken": {"script": "sh"}},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (
+            project / ".specify" / "integrations" / "upgrade-broken.manifest.json"
+        ).write_text(
+            json.dumps(
+                {
+                    "integration": "upgrade-broken",
+                    "version": "0.0.0",
+                    "installed_at": "2026-05-16T00:00:00+00:00",
+                    "files": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = self._invoke(["integration", "upgrade", "upgrade-broken"], project)
+        normalized = _normalize_cli_output(result.output)
+
+        assert result.exit_code == 1, result.output
+        assert "Failed to upgrade integration 'upgrade-broken'" in normalized
+        assert "upgrade exploded with context" in normalized
+        assert "previous integration files may still be in place" in normalized
+
+    def test_integration_switch_cleanup_warning_reports_phase_and_targets(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.extensions import ExtensionManager
+
+        project = self._make_project(tmp_path)
+        (project / ".specify" / "integrations").mkdir(parents=True, exist_ok=True)
+        (project / ".specify" / "integration.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "integration": "copilot",
+                    "integrations": ["copilot"],
+                    "integration_settings": {"copilot": {"script": "sh"}},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (project / ".specify" / "integrations" / "copilot.manifest.json").write_text(
+            json.dumps(
+                {
+                    "integration": "copilot",
+                    "version": "0.0.0",
+                    "installed_at": "2026-05-16T00:00:00+00:00",
+                    "files": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def fail_cleanup(self, integration_key):
+            raise OSError("cleanup exploded")
+
+        monkeypatch.setattr(ExtensionManager, "unregister_agent_artifacts", fail_cleanup)
+
+        result = self._invoke(["integration", "switch", "claude"], project)
+        normalized = _normalize_cli_output(result.output)
+
+        assert result.exit_code == 0, result.output
+        assert "Failed to clean up extension artifacts for integration 'copilot'" in normalized
+        assert "cleanup exploded" in normalized
+        assert "Switched to integration" in normalized
 
     # -- Project guard -----------------------------------------------------
 
