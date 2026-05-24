@@ -327,7 +327,7 @@ specify workflow catalog remove <index>
 
 ## Repository Layout
 
-```
+```text
 workflows/
 ├── ARCHITECTURE.md                         # Internal architecture documentation
 ├── PUBLISHING.md                           # Guide for submitting workflows to the catalog

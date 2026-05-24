@@ -186,7 +186,7 @@ When `specify workflow add <id>` installs from catalog, it downloads the workflo
 
 ## Module Structure
 
-```
+```text
 src/specify_cli/
 ├── workflows/
 │   ├── __init__.py          # STEP_REGISTRY + _register_builtin_steps()
