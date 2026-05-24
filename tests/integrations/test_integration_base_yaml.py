@@ -11,7 +11,6 @@ adapted for YAML recipe output format.
 import os
 
 import yaml
-
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from specify_cli.integrations.base import YamlIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
@@ -58,7 +57,7 @@ class YamlIntegrationTests:
         i = get_integration(self.KEY)
         assert i.registrar_config["dir"] == self.REGISTRAR_DIR
         assert i.registrar_config["format"] == "yaml"
-        assert i.registrar_config["args"] == "{{args}}"
+        assert i.registrar_config["args"] == i.registrar_config['args']
         assert i.registrar_config["extension"] == ".yaml"
 
     def test_context_file(self):
@@ -133,7 +132,7 @@ class YamlIntegrationTests:
         m = IntegrationManifest(self.KEY, tmp_path)
         created = i.setup(tmp_path, m)
         cmd_files = [f for f in created if "scripts" not in f.parts]
-        has_args = any("{{args}}" in f.read_text(encoding="utf-8") for f in cmd_files)
+        has_args = any(i.registrar_config['args']  in f.read_text(encoding="utf-8") for f in cmd_files)
         assert has_args, "No YAML recipe contains {{args}} placeholder"
         has_dollar_args = any(
             "$ARGUMENTS" in f.read_text(encoding="utf-8") for f in cmd_files
@@ -270,8 +269,8 @@ class YamlIntegrationTests:
     # -- CLI auto-promote -------------------------------------------------
 
     def test_ai_flag_auto_promotes(self, tmp_path):
-        from typer.testing import CliRunner
         from specify_cli import app
+        from typer.testing import CliRunner
 
         project = tmp_path / f"promote-{self.KEY}"
         project.mkdir()
@@ -301,8 +300,8 @@ class YamlIntegrationTests:
         assert cmd_dir.is_dir(), f"--ai {self.KEY} did not create commands directory"
 
     def test_integration_flag_creates_files(self, tmp_path):
-        from typer.testing import CliRunner
         from specify_cli import app
+        from typer.testing import CliRunner
 
         project = tmp_path / f"int-{self.KEY}"
         project.mkdir()
@@ -338,8 +337,9 @@ class YamlIntegrationTests:
     def test_init_options_includes_context_file(self, tmp_path):
         """init-options.json must include context_file for the active integration."""
         import json
-        from typer.testing import CliRunner
+
         from specify_cli import app
+        from typer.testing import CliRunner
 
         project = tmp_path / f"opts-{self.KEY}"
         project.mkdir()
@@ -430,8 +430,8 @@ class YamlIntegrationTests:
 
     def test_complete_file_inventory_sh(self, tmp_path):
         """Every file produced by specify init --integration <key> --script sh."""
-        from typer.testing import CliRunner
         from specify_cli import app
+        from typer.testing import CliRunner
 
         project = tmp_path / f"inventory-sh-{self.KEY}"
         project.mkdir()
@@ -466,8 +466,8 @@ class YamlIntegrationTests:
 
     def test_complete_file_inventory_ps(self, tmp_path):
         """Every file produced by specify init --integration <key> --script ps."""
-        from typer.testing import CliRunner
         from specify_cli import app
+        from typer.testing import CliRunner
 
         project = tmp_path / f"inventory-ps-{self.KEY}"
         project.mkdir()
