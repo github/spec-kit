@@ -34,10 +34,9 @@ def test_arch_command_is_phase_based_and_does_not_require_uc_command():
     assert "Architecture Reasoning Layer" in content
     assert "Representation Layer" in content
     assert "project-level architecture SSOT" in content
-    assert "constrain later `plan` reasoning to stay inside the architecture SSOT" in content
     assert "Use each view template as the source of truth for that view's reasoning contract" in content
     assert "Produce architecture design inference, not tracking, audit, or implementation planning" in content
-    assert "normalizes architecture meaning for synthesis and later `plan` reasoning" in content
+    assert "normalizes architecture meaning for synthesis" in content
     assert "Markdown tables are the default artifact structure" in content
     assert "Optional diagrams are renderings, not reasoning inputs" in content
     assert "Add optional diagrams only after the relevant view's reasoning is complete" in content
@@ -50,7 +49,7 @@ def test_arch_command_is_phase_based_and_does_not_require_uc_command():
     assert "Use Case, Domain Object, Component, Container, or Deployment Unit" in content
     for term in ["C4", "UML", "Mermaid", "PlantUML"]:
         assert len(re.findall(rf"\b{re.escape(term)}\b", content)) == 1
-    assert "Do not require `.specify/memory/uc.md`" in content
+    assert "not as a hard prerequisite or sole source of truth" in content
     assert "Read the six architecture templates under `.specify/extensions/arch/templates/`" in content
     assert "__SPECKIT_COMMAND_UC__" not in content
     assert "Read `.specify/memory/constitution.md`" not in content
@@ -98,10 +97,9 @@ def test_architecture_synthesis_references_five_view_files():
     ]:
         assert f".specify/memory/{filename}" in content
     assert "Cross-View Architecture Model" in content
-    assert "normalizes the 4+1 design results into the architecture SSOT for later `plan` reasoning" in content
+    assert "normalizes the 4+1 design results into the architecture SSOT" in content
     assert "This is architecture design synthesis, not tracking or audit" in content
     assert "Do not treat view-specific concepts as equivalent or interchangeable" in content
-    assert "Plan Reasoning Constraint" in content
     assert "Key Architecture Conclusions" in content
     for section in [
         "Architecture Intent",

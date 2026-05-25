@@ -940,13 +940,13 @@ class TestGitExtensionAutoInstall:
 
         assert result.exit_code == 0, f"init failed: {result.output}"
 
-        for extension_id in ("arch", "preview", "agent-governance"):
+        for extension_id in ("arch", "preview", "repository-governance"):
             ext_dir = project / ".specify" / "extensions" / extension_id
             assert (ext_dir / "extension.yml").exists(), f"{extension_id} was not installed"
 
         extensions_yml = project / ".specify" / "extensions.yml"
         hooks_data = yaml.safe_load(extensions_yml.read_text(encoding="utf-8"))
-        assert hooks_data["installed"] == ["agent-governance", "arch", "git", "preview"]
+        assert hooks_data["installed"] == ["arch", "git", "preview", "repository-governance"]
 
         preset_dir = project / ".specify" / "presets" / "workflow-preset"
         assert (preset_dir / "preset.yml").exists(), "workflow-preset was not installed"
@@ -974,7 +974,7 @@ class TestGitExtensionAutoInstall:
         assert result.exit_code == 0, f"init failed: {result.output}"
         assert not (project / ".specify" / "extensions" / "git").exists()
 
-        for extension_id in ("arch", "preview", "agent-governance"):
+        for extension_id in ("arch", "preview", "repository-governance"):
             ext_dir = project / ".specify" / "extensions" / extension_id
             assert (ext_dir / "extension.yml").exists(), f"{extension_id} was not installed"
 

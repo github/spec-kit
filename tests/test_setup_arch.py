@@ -91,6 +91,7 @@ def _assert_arch_json(repo: Path, data: dict[str, str], *, exact_paths: bool = T
     expected = {
         "ARCH_FILE": repo / ".specify" / "memory" / "architecture.md",
         "ARCH_DIR": repo / ".specify" / "memory",
+        "REPO_FACTS_FILE": repo / ".specify" / "memory" / "architecture-repo-facts.md",
         "SCENARIO_VIEW": repo / ".specify" / "memory" / "architecture-scenario-view.md",
         "LOGICAL_VIEW": repo / ".specify" / "memory" / "architecture-logical-view.md",
         "PROCESS_VIEW": repo / ".specify" / "memory" / "architecture-process-view.md",

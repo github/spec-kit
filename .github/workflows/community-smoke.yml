@@ -41,9 +41,9 @@ jobs:
 
           test -f .specify/extensions/arch/extension.yml
           test -f .specify/extensions/preview/extension.yml
-          test -f .specify/extensions/agent-governance/extension.yml
+          test -f .specify/extensions/repository-governance/extension.yml
           test -f .specify/presets/workflow-preset/preset.yml
 
           test -f .claude/skills/speckit-arch-generate/SKILL.md
           test -f .claude/skills/speckit-preview-html/SKILL.md
-          test -f .claude/skills/speckit-agent-governance-refresh/SKILL.md
+          test -f .claude/skills/speckit-repository-governance-refresh/SKILL.md
