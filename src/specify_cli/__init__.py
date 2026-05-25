@@ -36,10 +36,12 @@ from pathlib import Path
 
 from typing import Any, Optional
 
+import click
 import typer
 from rich.panel import Panel
 from rich.align import Align
 from rich.table import Table
+from .integration_scaffold import supported_integration_scaffold_types
 from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
@@ -584,6 +586,8 @@ dev_integration_app = typer.Typer(
 )
 dev_app.add_typer(dev_integration_app, name="integration")
 
+INTEGRATION_SCAFFOLD_TYPES = supported_integration_scaffold_types()
+
 
 @dev_integration_app.command("scaffold")
 def dev_integration_scaffold(
@@ -591,7 +595,8 @@ def dev_integration_scaffold(
     integration_type: str = typer.Option(
         "markdown",
         "--type",
-        help="Scaffold type: markdown, toml, yaml, or skills",
+        click_type=click.Choice(INTEGRATION_SCAFFOLD_TYPES),
+        help=f"Scaffold type: {', '.join(INTEGRATION_SCAFFOLD_TYPES)}",
     ),
 ):
     """Create a minimal built-in integration package and test skeleton."""

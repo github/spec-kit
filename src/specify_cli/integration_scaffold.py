@@ -90,7 +90,6 @@ def _display_name(key: str) -> str:
 def _integration_content(
     *,
     key: str,
-    package_name: str,
     class_name: str,
     integration_type: str,
 ) -> str:
@@ -119,6 +118,7 @@ class {class_name}({template.base_class}):
         "extension": "{template.extension}",
     }}
     context_file = "AGENTS.md"
+    multi_install_safe = True
 '''
 
 
@@ -152,7 +152,20 @@ def test_metadata():
     assert integration.registrar_config["args"] == "{template.args}"
     assert integration.registrar_config["extension"] == "{template.extension}"
     assert integration.context_file == "AGENTS.md"
+    assert integration.multi_install_safe is True
 '''
+
+
+def _is_spec_kit_repo_root(project_root: Path) -> bool:
+    """Return True when `project_root` looks like the Spec Kit repository root."""
+    return all(
+        (
+            (project_root / "pyproject.toml").is_file(),
+            (project_root / "src" / "specify_cli" / "__init__.py").is_file(),
+            (project_root / "src" / "specify_cli" / "integrations").is_dir(),
+            (project_root / "tests" / "integrations").is_dir(),
+        )
+    )
 
 
 def scaffold_integration(
@@ -169,7 +182,7 @@ def scaffold_integration(
 
     integrations_root = project_root / "src" / "specify_cli" / "integrations"
     tests_root = project_root / "tests" / "integrations"
-    if not integrations_root.is_dir() or not tests_root.is_dir():
+    if not _is_spec_kit_repo_root(project_root):
         raise ValueError("Run this command from the Spec Kit repository root.")
 
     package_name = _package_name(clean_key)
@@ -188,7 +201,6 @@ def scaffold_integration(
     integration_file.write_text(
         _integration_content(
             key=clean_key,
-            package_name=package_name,
             class_name=class_name,
             integration_type=normalized_type,
         ),

@@ -17,6 +17,8 @@ def _repo_root(tmp_path: Path) -> Path:
     root = tmp_path / "spec-kit"
     (root / "src" / "specify_cli" / "integrations").mkdir(parents=True)
     (root / "tests" / "integrations").mkdir(parents=True)
+    (root / "pyproject.toml").write_text("[project]\nname = \"specify-cli\"\n", encoding="utf-8")
+    (root / "src" / "specify_cli" / "__init__.py").write_text("", encoding="utf-8")
     return root
 
 
@@ -44,10 +46,12 @@ def test_dev_integration_scaffold_creates_markdown_files(tmp_path, monkeypatch):
     assert 'key = "my-agent"' in content
     assert '"folder": ".my-agent/"' in content
     assert '"extension": ".md"' in content
+    assert "multi_install_safe = True" in content
 
     test_content = test_file.read_text(encoding="utf-8")
     assert "from specify_cli.integrations.my_agent import MyAgentIntegration" in test_content
     assert 'assert integration.registrar_config["dir"] == ".my-agent/commands"' in test_content
+    assert "assert integration.multi_install_safe is True" in test_content
 
 
 @pytest.mark.parametrize(
@@ -76,6 +80,22 @@ def test_scaffold_type_templates(
     assert f'"commands_subdir": "{commands_subdir}"' in content
     assert f'"args": "{args}"' in content
     assert f'"extension": "{extension}"' in content
+    assert "multi_install_safe = True" in content
+
+
+def test_dev_integration_scaffold_rejects_unknown_type_before_scaffolding(tmp_path, monkeypatch):
+    root = _repo_root(tmp_path)
+    monkeypatch.chdir(root)
+
+    result = runner.invoke(app, [
+        "dev", "integration", "scaffold", "my-agent",
+        "--type", "xml",
+    ], catch_exceptions=False)
+
+    output = strip_ansi(result.output)
+    assert result.exit_code == 2
+    assert "Invalid value for '--type'" in output
+    assert not (root / "src" / "specify_cli" / "integrations" / "my_agent").exists()
 
 
 def test_scaffold_refuses_invalid_key(tmp_path):
