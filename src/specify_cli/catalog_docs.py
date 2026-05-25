@@ -131,13 +131,14 @@ def list_integrations_for_docs(
     If `warn_on_extra` is True, emits a warning for stale keys in the doc maps that
     are no longer in the registry. Missing notes entries default to empty string.
     """
+    import warnings
+
     registry = _get_integration_registry()
     registry_keys = set(registry)
 
     # Warn if there are integrations missing from INTEGRATION_DOC_URLS (when enabled)
     missing = sorted(registry_keys - set(INTEGRATION_DOC_URLS))
     if missing and warn_on_missing:
-        import warnings
         warnings.warn(
             f"Integration(s) missing from INTEGRATION_DOC_URLS: "
             f"{', '.join(missing)}. They will be included in the docs table "
@@ -155,7 +156,6 @@ def list_integrations_for_docs(
         extra_in_notes = sorted(set(INTEGRATION_NOTES) - registry_keys)
         extra_keys = extra_in_urls or extra_in_labels or extra_in_notes
         if extra_keys:
-            import warnings
             stale_keys = sorted(
                 set(extra_in_urls + extra_in_labels + extra_in_notes)
             )

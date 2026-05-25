@@ -52,7 +52,7 @@ def test_community_extensions_are_sorted_by_name() -> None:
 def test_missing_catalog_file(tmp_path: Path) -> None:
     with pytest.raises(
         FileNotFoundError,
-        match="Ensure the repository checkout includes the extensions/ directory",
+        match="Provide path= to a valid community catalog JSON file",
     ):
         list_community_extensions(path=tmp_path / "missing.json")
 
@@ -119,6 +119,24 @@ def test_tags_containing_pipe_do_not_break_table(tmp_path: Path) -> None:
     # id falls back to the dict key when "id" field is absent
     assert "`foo`" in table
     # row is well-formed: 5-column table has exactly 6 pipe separators per row
+    foo_row = next(line for line in table.split("\n") if line.startswith("| ") and "Foo" in line)
+    assert foo_row.count("|") == 6
+
+
+def test_tags_with_newlines_are_normalized(tmp_path: Path) -> None:
+    f = _write_catalog(tmp_path, {
+        "foo": {
+            "name": "Foo",
+            "description": "",
+            "tags": ["foo\nbar", "baz\r\nqux", "quux\rquuz"],
+            "verified": False,
+            "repository": "",
+        },
+    })
+    table = render_community_extensions_table(path=f)
+    assert "`foo bar`" in table
+    assert "`baz qux`" in table
+    assert "`quux quuz`" in table
     foo_row = next(line for line in table.split("\n") if line.startswith("| ") and "Foo" in line)
     assert foo_row.count("|") == 6
 
