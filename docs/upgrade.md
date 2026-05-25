@@ -12,8 +12,8 @@
 | **CLI Tool — pin a version** | `specify self upgrade --tag vX.Y.Z` | Upgrade to a specific release tag instead of the latest stable. Replace `vX.Y.Z` with the release tag you want. |
 | **CLI Tool — manual fallback** | `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@vX.Y.Z` | When `specify self upgrade` isn't available (older installs) or when you want explicit control. |
 | **CLI Tool — manual fallback (pipx)** | `pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z` | Same as above, for pipx installs. |
-| **Project Files** | `specify init --here --force --integration <your-agent>` | Update slash commands, templates, and scripts in your project. |
-| **Both** | Run CLI upgrade, then project update | Recommended for major version updates. |
+| **Project Files** | `specify init --here --force --integration <your-agent>` | Update slash commands, templates, and scripts in your project |
+| **Both** | Run CLI upgrade, then project update | Recommended for major version updates |
 
 ---
 

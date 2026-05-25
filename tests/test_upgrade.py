@@ -10,8 +10,8 @@ with local mocks. Run this module under `pytest-socket` (if installed) with
 """
 
 import json
-import importlib.metadata
 import urllib.error
+import importlib.metadata
 from unittest.mock import MagicMock, patch
 
 import pytest
