@@ -1,0 +1,46 @@
+schema_version: "1.0"
+
+extension:
+  id: repository-governance
+  name: "Repository Governance"
+  version: "2.0.0"
+  description: "Generate Repository Governance Framework files from Spec Kit metadata"
+  author: "bigben"
+  repository: "https://github.com/bigsmartben/spec-kit-agent-governance"
+  homepage: "https://github.com/bigsmartben/spec-kit-agent-governance"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.8.0"
+  tools:
+    - name: "uv"
+      required: true
+
+provides:
+  commands:
+    - name: "speckit.repository-governance.refresh"
+      file: "commands/speckit.repository-governance.refresh.md"
+      description: "Generate or update the active repository governance file"
+
+hooks:
+  after_constitution:
+    command: "speckit.repository-governance.refresh"
+    optional: true
+    prompt: "Refresh repository governance after constitution changes?"
+    description: "Generates the active repository governance file"
+  after_plan:
+    command: "speckit.repository-governance.refresh"
+    optional: true
+    prompt: "Refresh repository governance after planning?"
+    description: "Keeps the active repository governance file aligned"
+  after_tasks:
+    command: "speckit.repository-governance.refresh"
+    optional: true
+    prompt: "Refresh repository governance after task generation?"
+    description: "Keeps the active repository governance file aligned"
+
+tags:
+  - "governance"
+  - "agents"
+  - "memory"
+  - "context"

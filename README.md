@@ -154,7 +154,7 @@ specify integration list
 | --- | --- | --- |
 | `arch` | `specify init` 默认安装 | 生成或反向生成项目级 4+1 架构视图，形成 `.specify/memory/architecture*.md` 架构记忆。 |
 | `preview` | `specify init` 默认安装 | 根据当前 feature 的规格和计划生成 `specs/<feature>/preview/index.html`，用于实现前验证 UI 和交互假设。 |
-| `agent-governance` | `specify init` 默认安装 | 从仓库结构和 Spec Kit 元数据生成 active agent 的治理说明，例如 `AGENTS.md`、`CLAUDE.md` 或 Copilot instructions 中的托管区块。 |
+| `repository-governance` | 按需安装 | 生成 Repository Governance Framework 治理说明，包含垂直 SSOT 注册、读取顺序、缺失 SSOT 处理和仓库事实证据。 |
 | `git` | 初始化时默认安装，传 `--no-git` 可跳过 | 初始化 Git、创建 feature branch、校验分支、检测 remote，并可配置自动提交。 |
 | `template` | 开发模板 | 给扩展作者复制使用，不是普通项目必装扩展。 |
 | `selftest` | 测试工具 | 用于验证扩展目录和 catalog 生命周期，主要服务仓库维护。 |
@@ -164,7 +164,7 @@ specify integration list
 ```bash
 specify extension add arch
 specify extension add preview
-specify extension add agent-governance
+specify extension add repository-governance
 specify extension add git
 ```
 
@@ -181,7 +181,7 @@ specify extension info arch
 /speckit.arch.generate
 /speckit.arch.reverse
 /speckit.preview.html
-/speckit.agent-governance.refresh
+/speckit.repository-governance.refresh
 ```
 
 ### 什么时候用这些扩展
@@ -189,7 +189,7 @@ specify extension info arch
 - 新项目或架构正在变化：先跑 `/speckit.arch.generate`，让后续计划有稳定架构上下文。
 - 接手旧仓库：跑 `/speckit.arch.reverse`，先从仓库事实反推架构记忆。
 - 做前端或交互功能：在 `/speckit.specify` 或 `/speckit.plan` 后跑 `/speckit.preview.html`，先看原型再实现。
-- 团队使用多个 agent：用 `agent-governance` 维护各 agent 的仓库规则，减少上下文漂移。
+- 团队使用多个 agent：用 `repository-governance` 维护仓库级治理框架和 agent 执行边界，减少上下文漂移。
 - 希望 feature 分支和提交更规范：保留 `git` 扩展，按需要配置 `.specify/extensions/git/git-config.yml`。
 
 ## 本仓库内置预设
@@ -304,7 +304,7 @@ AGENTS.md
 ```text
 /speckit.constitution
 /speckit.arch.reverse
-/speckit.agent-governance.refresh
+/speckit.repository-governance.refresh
 /speckit.specify
 /speckit.clarify
 /speckit.plan

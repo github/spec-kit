@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate or refresh Spec Kit agent platform governance for the current project."""
+"""Generate or refresh Spec Kit repository governance for the current project."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any
 
 
-MEMORY_PATH = Path(".specify/memory/agent-governance.md")
-TEMPLATE_PATH = Path(".specify/extensions/agent-governance/templates/agent-governance-template.md")
+MEMORY_PATH = Path(".specify/memory/repository-governance.md")
+TEMPLATE_PATH = Path(".specify/extensions/repository-governance/templates/repository-governance-template.md")
 INTEGRATION_JSON = Path(".specify/integration.json")
 INIT_OPTIONS_JSON = Path(".specify/init-options.json")
 
@@ -99,6 +99,10 @@ def render_initial_memory(root: Path, template: str) -> str:
             "",
             *repository_evidence_lines(root, state, init_options),
             "",
+            "## Vertical SSOT Evidence",
+            "",
+            *vertical_ssot_evidence_lines(root, state, init_options),
+            "",
             "## Repository Areas",
             "",
             *repository_area_lines(root),
@@ -127,7 +131,7 @@ def replace_sync_report(content: str, root: Path, state: dict[str, Any]) -> str:
             f"- Skills Scanned: {len(scan_skills(root))}",
             f"- MCP Config Files Scanned: {', '.join(scan_mcp_configs(root)) or 'none'}",
             f"- Extension Config Status: .specify/extensions.yml ({extensions_status(root)})",
-            "- Sections Changed: initialized repository evidence and development commands",
+        "- Sections Changed: initialized repository evidence, vertical SSOT registry, and development commands",
             "- Flow: generate missing target governance files; update existing target governance files",
             "-->",
         ]
@@ -169,12 +173,118 @@ def repository_evidence_lines(root: Path, state: dict[str, Any], init_options: d
     return lines
 
 
+def vertical_ssot_evidence_lines(root: Path, state: dict[str, Any], init_options: dict[str, Any]) -> list[str]:
+    return [
+        evidence_line("Architecture evidence", architecture_evidence(root)),
+        evidence_line("Engineering evidence", engineering_evidence(root)),
+        evidence_line("Code Style evidence", code_style_evidence(root)),
+        evidence_line("Directory Structure evidence", directory_structure_evidence(root)),
+        evidence_line("Toolchain evidence", toolchain_evidence(root)),
+        evidence_line("Agent Harness evidence", agent_harness_evidence(root, init_options, state)),
+    ]
+
+
+def architecture_evidence(root: Path) -> list[str]:
+    return unique_ordered(
+        [
+            *existing_dirs(root, ["src", "app", "lib", "services", "packages"]),
+            *route_files(root),
+            *existing_paths(root, ["openapi.yaml", "openapi.yml", "openapi.json", "api.yaml", "api.yml", "schema.graphql"]),
+            *existing_dirs(root, ["infra", "deploy", "k8s", "helm"]),
+        ]
+    )
+
+
+def engineering_evidence(root: Path) -> list[str]:
+    return unique_ordered(
+        [
+            *directory_files(root, ".github/workflows"),
+            *existing_paths(root, ["CHANGELOG.md", "RELEASE.md", "VERSION", "package.json", "pyproject.toml", "Cargo.toml", "go.mod"]),
+            *existing_paths(root, ["Makefile", "Taskfile.yml", "Taskfile.yaml", "justfile"]),
+        ]
+    )
+
+
+def code_style_evidence(root: Path) -> list[str]:
+    return unique_ordered(
+        [
+            *existing_paths(
+                root,
+                [
+                    ".editorconfig",
+                    ".prettierrc",
+                    ".prettierrc.json",
+                    ".prettierrc.yml",
+                    "prettier.config.js",
+                    "eslint.config.js",
+                    ".eslintrc",
+                    ".eslintrc.json",
+                    "ruff.toml",
+                    ".ruff.toml",
+                    "pyproject.toml",
+                    "mypy.ini",
+                    "pytest.ini",
+                    "tox.ini",
+                ],
+            ),
+            *existing_dirs(root, ["test", "tests", "spec", "specs"]),
+        ]
+    )
+
+
+def directory_structure_evidence(root: Path) -> list[str]:
+    return repository_area_paths(root)
+
+
+def toolchain_evidence(root: Path) -> list[str]:
+    return unique_ordered(
+        [
+            *existing_paths(
+                root,
+                [
+                    "package.json",
+                    "pyproject.toml",
+                    "Cargo.toml",
+                    "go.mod",
+                    "Gemfile",
+                    "pom.xml",
+                    "build.gradle",
+                    "build.gradle.kts",
+                    "Dockerfile",
+                    "docker-compose.yml",
+                    "docker-compose.yaml",
+                    "Makefile",
+                    "Taskfile.yml",
+                    "Taskfile.yaml",
+                    "justfile",
+                ],
+            ),
+            *existing_paths(root, ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "uv.lock", "poetry.lock", "Cargo.lock", "go.sum", "Gemfile.lock"]),
+        ]
+    )
+
+
+def agent_harness_evidence(root: Path, init_options: dict[str, Any], state: dict[str, Any]) -> list[str]:
+    return unique_ordered([*existing_context_files(root, init_options, state), *scan_skills(root), *scan_mcp_configs(root)])
+
+
 def evidence_line(label: str, values: list[str]) -> str:
     return f"- {label}: {format_values(values)}"
 
 
 def format_values(values: list[str]) -> str:
     return ", ".join(f"`{value}`" for value in values) if values else "none detected"
+
+
+def unique_ordered(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
 
 
 def existing_paths(root: Path, names: list[str]) -> list[str]:
@@ -190,6 +300,31 @@ def directory_files(root: Path, directory: str) -> list[str]:
     if not base.is_dir():
         return []
     return sorted(rel(root, path) for path in base.iterdir() if path.is_file())
+
+
+def route_files(root: Path) -> list[str]:
+    result: list[str] = []
+    route_name_pattern = re.compile(r"(route|routes|router|api|endpoint)", re.IGNORECASE)
+    route_content_pattern = re.compile(
+        r"(@app\.route|APIRouter|router\.|Route::|express\(|fastify\(|app\.(get|post|put|delete|patch)\()",
+        re.IGNORECASE,
+    )
+    for base in (root / name for name in ("src", "app", "lib", "services", "packages")):
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*")):
+            if not path.is_file() or ignored(path):
+                continue
+            if route_name_pattern.search(path.name):
+                result.append(rel(root, path))
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            if route_content_pattern.search(text):
+                result.append(rel(root, path))
+    return unique_ordered(result)
 
 
 def repository_area_lines(root: Path) -> list[str]:
@@ -327,17 +462,22 @@ def render_projection(root: Path, target: Path, state: dict[str, Any], created_m
         MARKER_START,
         "## Repository Governance",
         "- SSOT: this managed section.",
+        "- Framework: Repository Governance Framework.",
         f"- Target: {rel(root, target)}",
         f"- Active integration: {default_key}",
         f"- Refresh source: {source_label}",
         f"- Cache: {MEMORY_PATH.as_posix()} ({'created' if created_memory else 'present'})",
         "",
         "## Scope",
-        "- agent collaboration rules",
-        "- tool and MCP permissions",
-        "- write boundaries",
-        "- skill invocation contracts",
-        "- project governance: external",
+        "- Repository Governance Framework",
+        "- top-level SSOT registry and routing",
+        "- vertical SSOT discovery and read order",
+        "- missing SSOT handling from repository evidence",
+        "- conflict priority and handoff requirements",
+        "- architecture methodology: owned by Architecture SSOT",
+        "",
+        "## Vertical SSOT Registry",
+        *section_or_default(source_text, ["## Vertical SSOT Registry"], vertical_ssot_registry_default()),
         "",
         "## Context",
         f"- Installed integrations: {', '.join(installed) if installed else 'none'}",
@@ -348,6 +488,9 @@ def render_projection(root: Path, target: Path, state: dict[str, Any], created_m
         "## Repository Evidence",
         *section_or_default(source_text, ["## Repository Evidence"], repository_evidence_default()),
         "",
+        "## Vertical SSOT Evidence",
+        *section_or_default(source_text, ["## Vertical SSOT Evidence"], vertical_ssot_evidence_default()),
+        "",
         "## Repository Areas",
         *section_or_default(source_text, ["## Repository Areas"], repository_areas_default()),
         "",
@@ -357,14 +500,22 @@ def render_projection(root: Path, target: Path, state: dict[str, Any], created_m
         "## Development Commands",
         *section_or_default(source_text, ["## Development Commands"], development_commands_default()),
         "",
+        "## Missing SSOT Handling",
+        *section_or_default(source_text, ["## Missing SSOT Handling"], missing_ssot_handling_default()),
+        "",
         "## Authority",
         "1. Current user instruction",
-        "2. Active `SPECKIT GOVERNANCE` section",
-        "3. User-authored repository instructions for agent behavior",
-        "4. Skill-local `SKILL.md`",
-        "5. Tool and MCP defaults",
+        "2. Safety and permission constraints",
+        "3. Active `SPECKIT GOVERNANCE` section",
+        "4. Vertical SSOT documents",
+        "5. Current repository code and configuration facts",
+        "6. Tests and CI results",
+        "7. Historical documents",
+        "8. Agent inference",
         "",
         "## Repository Workflow",
+        "- Classify task type before changing files.",
+        "- Route task to relevant vertical SSOT entries.",
         "- Read: Repository Evidence",
         "- Run: Development Commands",
         "- Scope: active task only",
@@ -478,6 +629,17 @@ def repository_evidence_default() -> list[str]:
     return ["- none captured"]
 
 
+def vertical_ssot_evidence_default() -> list[str]:
+    return [
+        "- Architecture evidence: none detected",
+        "- Engineering evidence: none detected",
+        "- Code Style evidence: none detected",
+        "- Directory Structure evidence: none detected",
+        "- Toolchain evidence: none detected",
+        "- Agent Harness evidence: none detected",
+    ]
+
+
 def repository_areas_default() -> list[str]:
     return ["- none detected"]
 
@@ -494,6 +656,26 @@ def directory_governance_default() -> list[str]:
 
 def development_commands_default() -> list[str]:
     return ["- none recorded"]
+
+
+def vertical_ssot_registry_default() -> list[str]:
+    return [
+        "- Architecture SSOT: owns architecture boundaries, interfaces, dependencies, runtime constraints, deployment assumptions, and scenario-level architecture decisions.",
+        "- Engineering SSOT: owns branch, version, release, CI/CD, and collaboration process.",
+        "- Code Style SSOT: owns naming, formatting, comments, error handling, logging, tests, and quality standards.",
+        "- Directory Structure SSOT: owns directory layout, file placement, module organization, and configuration locations.",
+        "- Toolchain SSOT: owns standard tools, command entrypoints, configuration templates, and execution constraints.",
+        "- Agent Harness SSOT: owns agent task boundaries, tool usage, permissions, audit, validation, and failure handling.",
+    ]
+
+
+def missing_ssot_handling_default() -> list[str]:
+    return [
+        "- If a vertical SSOT is missing or incomplete, infer temporary guidance from current repository evidence.",
+        "- Mark inferred guidance as pending SSOT solidification.",
+        "- Do not present inferred guidance as an approved repository rule.",
+        "- Do not let inference override explicit SSOT content.",
+    ]
 
 
 def extract_section(path: Path, heading: str) -> list[str]:

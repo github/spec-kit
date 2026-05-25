@@ -1,7 +1,7 @@
 [project]
 name = "spec-kit-agent-governance"
-version = "1.2.0"
-description = "Spec Kit extension for generating agent platform governance files"
+version = "2.0.0"
+description = "Spec Kit extension for generating Repository Governance Framework files"
 requires-python = ">=3.10"
 dependencies = []
 

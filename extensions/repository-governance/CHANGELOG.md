@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## [2.0.0] - 2026-05-25
+
+### Changed
+
+- Reposition the extension as a Repository Governance Framework generator.
+- Rename runtime command, template, and helper files to repository-governance while preserving the Spec Kit command/template/script separation.
+- Add a top-level vertical SSOT registry and missing-SSOT handling rules without embedding architecture methodology in the top-level governance layer.
+- Capture repository facts as vertical SSOT evidence for Architecture, Engineering, Code Style, Directory Structure, Toolchain, and Agent Harness coverage.
+
 ## [1.2.0] - 2026-05-19
 
 ### Changed

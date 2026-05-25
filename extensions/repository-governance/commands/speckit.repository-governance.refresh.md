@@ -1,8 +1,8 @@
 ---
-description: "Generate or update the active agent governance file"
+description: "Generate or update the active repository governance file"
 ---
 
-# Agent Governance Generate/Update
+# Repository Governance Generate/Update
 
 ## Input
 
@@ -10,9 +10,9 @@ $ARGUMENTS
 
 ## Output
 
-- Active agent platform governance file.
+- Active repository governance file.
 - Managed `SPECKIT GOVERNANCE` section.
-- `.specify/memory/agent-governance.md`: internal cache.
+- `.specify/memory/repository-governance.md`: internal cache.
 
 ## Procedure
 
@@ -28,12 +28,19 @@ $ARGUMENTS
 7. Distill detected repository areas into action rules.
    - depth: 2
    - include hidden and cache directories
-8. Preserve content outside managed markers.
-9. Preserve managed markers verbatim.
-10. Run:
+8. Capture repository facts as vertical SSOT evidence.
+   - Architecture evidence
+   - Engineering evidence
+   - Code Style evidence
+   - Directory Structure evidence
+   - Toolchain evidence
+   - Agent Harness evidence
+9. Preserve content outside managed markers.
+10. Preserve managed markers verbatim.
+11. Run:
 
    ```bash
-   uv run python .specify/extensions/agent-governance/scripts/refresh_agent_governance.py
+   uv run python .specify/extensions/repository-governance/scripts/refresh_repository_governance.py
    ```
 
 ## Report

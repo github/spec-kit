@@ -1,41 +1,8 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-20T00:00:00Z",
+  "updated_at": "2026-05-25T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
-    "aide": {
-      "name": "AI-Driven Engineering (AIDE)",
-      "id": "aide",
-      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation.",
-      "author": "mnriem",
-      "version": "1.0.0",
-      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/aide-v1.0.0/aide.zip",
-      "repository": "https://github.com/mnriem/spec-kit-extensions",
-      "homepage": "https://github.com/mnriem/spec-kit-extensions",
-      "documentation": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/README.md",
-      "changelog": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.2.0"
-      },
-      "provides": {
-        "commands": 7,
-        "hooks": 0
-      },
-      "tags": [
-        "workflow",
-        "project-management",
-        "ai-driven",
-        "new-project",
-        "planning",
-        "experimental"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-18T00:00:00Z",
-      "updated_at": "2026-03-18T00:00:00Z"
-    },
     "agent-assign": {
       "name": "Agent Assign",
       "id": "agent-assign",
@@ -68,43 +35,6 @@
       "created_at": "2026-03-31T00:00:00Z",
       "updated_at": "2026-03-31T00:00:00Z"
     },
-    "agent-governance": {
-      "name": "Agent Governance",
-      "id": "agent-governance",
-      "description": "Project-local agent governance memory and context projection.",
-      "author": "bigben",
-      "version": "1.1.0",
-      "download_url": "https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v1.1.0.zip",
-      "repository": "https://github.com/bigsmartben/spec-kit-agent-governance",
-      "homepage": "https://github.com/bigsmartben/spec-kit-agent-governance",
-      "documentation": "https://github.com/bigsmartben/spec-kit-agent-governance/blob/main/README.md",
-      "changelog": "https://github.com/bigsmartben/spec-kit-agent-governance/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.8.0",
-        "tools": [
-          {
-            "name": "python3",
-            "required": false
-          }
-        ]
-      },
-      "provides": {
-        "commands": 1,
-        "hooks": 3
-      },
-      "tags": [
-        "governance",
-        "agents",
-        "memory",
-        "context"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-05-14T00:00:00Z",
-      "updated_at": "2026-05-15T00:00:00Z"
-    },
     "agent-orchestrator": {
       "name": "Intelligent Agent Orchestrator",
       "id": "agent-orchestrator",
@@ -136,6 +66,39 @@
       "stars": 0,
       "created_at": "2026-05-04T00:00:00Z",
       "updated_at": "2026-05-04T00:00:00Z"
+    },
+    "aide": {
+      "name": "AI-Driven Engineering (AIDE)",
+      "id": "aide",
+      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation.",
+      "author": "mnriem",
+      "version": "1.0.0",
+      "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/aide-v1.0.0/aide.zip",
+      "repository": "https://github.com/mnriem/spec-kit-extensions",
+      "homepage": "https://github.com/mnriem/spec-kit-extensions",
+      "documentation": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/README.md",
+      "changelog": "https://github.com/mnriem/spec-kit-extensions/blob/main/aide/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 7,
+        "hooks": 0
+      },
+      "tags": [
+        "workflow",
+        "project-management",
+        "ai-driven",
+        "new-project",
+        "planning",
+        "experimental"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-18T00:00:00Z",
+      "updated_at": "2026-03-18T00:00:00Z"
     },
     "api-evolve": {
       "name": "API Evolve",
@@ -437,7 +400,7 @@
       "updated_at": "2026-04-10T00:00:00Z"
     },
     "brownkit": {
-      "name": "BrownKit \u2014 Brownfield Discovery for Spec-Kit",
+      "name": "BrownKit — Brownfield Discovery for Spec-Kit",
       "id": "brownkit",
       "description": "Evidence-driven capability discovery, security and QA risk assessment for existing codebases.",
       "author": "Maksim Shautsou",
@@ -599,6 +562,35 @@
       "created_at": "2026-04-11T18:00:00Z",
       "updated_at": "2026-04-11T18:00:00Z"
     },
+    "checkpoint": {
+      "name": "Checkpoint Extension",
+      "id": "checkpoint",
+      "description": "An extension to commit the changes made during the middle of the implementation, so you don't end up with just one very large commit at the end.",
+      "author": "aaronrsun",
+      "version": "1.0.0",
+      "download_url": "https://github.com/aaronrsun/spec-kit-checkpoint/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/aaronrsun/spec-kit-checkpoint",
+      "homepage": "https://github.com/aaronrsun/spec-kit-checkpoint",
+      "documentation": "https://github.com/aaronrsun/spec-kit-checkpoint/blob/main/README.md",
+      "changelog": "https://github.com/aaronrsun/spec-kit-checkpoint/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "checkpoint",
+        "commit"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-03-22T00:00:00Z",
+      "updated_at": "2026-03-22T00:00:00Z"
+    },
     "ci-guard": {
       "name": "CI Guard",
       "id": "ci-guard",
@@ -631,35 +623,6 @@
       "stars": 0,
       "created_at": "2026-04-10T17:00:00Z",
       "updated_at": "2026-04-10T17:00:00Z"
-    },
-    "checkpoint": {
-      "name": "Checkpoint Extension",
-      "id": "checkpoint",
-      "description": "An extension to commit the changes made during the middle of the implementation, so you don't end up with just one very large commit at the end.",
-      "author": "aaronrsun",
-      "version": "1.0.0",
-      "download_url": "https://github.com/aaronrsun/spec-kit-checkpoint/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/aaronrsun/spec-kit-checkpoint",
-      "homepage": "https://github.com/aaronrsun/spec-kit-checkpoint",
-      "documentation": "https://github.com/aaronrsun/spec-kit-checkpoint/blob/main/README.md",
-      "changelog": "https://github.com/aaronrsun/spec-kit-checkpoint/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "commands": 1,
-        "hooks": 0
-      },
-      "tags": [
-        "checkpoint",
-        "commit"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-03-22T00:00:00Z",
-      "updated_at": "2026-03-22T00:00:00Z"
     },
     "cleanup": {
       "name": "Cleanup Extension",
@@ -723,36 +686,6 @@
       "created_at": "2026-03-19T12:08:20Z",
       "updated_at": "2026-04-03T12:35:01Z"
     },
-    "critique": {
-      "name": "Spec Critique Extension",
-      "id": "critique",
-      "description": "Dual-lens critical review of spec and plan from product strategy and engineering risk perspectives.",
-      "author": "arunt14",
-      "version": "1.0.0",
-      "download_url": "https://github.com/arunt14/spec-kit-critique/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/arunt14/spec-kit-critique",
-      "homepage": "https://github.com/arunt14/spec-kit-critique",
-      "documentation": "https://github.com/arunt14/spec-kit-critique/blob/main/README.md",
-      "changelog": "https://github.com/arunt14/spec-kit-critique/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.1.0"
-      },
-      "provides": {
-        "commands": 1,
-        "hooks": 1
-      },
-      "tags": [
-        "docs",
-        "review",
-        "planning"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-04-01T00:00:00Z",
-      "updated_at": "2026-04-01T00:00:00Z"
-    },
     "confluence": {
       "name": "Confluence Extension",
       "id": "confluence",
@@ -812,6 +745,36 @@
       "stars": 0,
       "created_at": "2026-05-03T00:00:00Z",
       "updated_at": "2026-05-05T00:00:00Z"
+    },
+    "critique": {
+      "name": "Spec Critique Extension",
+      "id": "critique",
+      "description": "Dual-lens critical review of spec and plan from product strategy and engineering risk perspectives.",
+      "author": "arunt14",
+      "version": "1.0.0",
+      "download_url": "https://github.com/arunt14/spec-kit-critique/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/arunt14/spec-kit-critique",
+      "homepage": "https://github.com/arunt14/spec-kit-critique",
+      "documentation": "https://github.com/arunt14/spec-kit-critique/blob/main/README.md",
+      "changelog": "https://github.com/arunt14/spec-kit-critique/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "docs",
+        "review",
+        "planning"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-04-01T00:00:00Z"
     },
     "diagram": {
       "name": "Spec Diagram",
@@ -2180,6 +2143,44 @@
       "created_at": "2026-03-23T13:30:00Z",
       "updated_at": "2026-03-23T13:30:00Z"
     },
+    "repository-governance": {
+      "name": "Repository Governance",
+      "id": "repository-governance",
+      "description": "Generate Repository Governance Framework files with vertical SSOT routing and evidence.",
+      "author": "bigben",
+      "version": "2.0.0",
+      "download_url": "https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v2.0.0.zip",
+      "repository": "https://github.com/bigsmartben/spec-kit-agent-governance",
+      "homepage": "https://github.com/bigsmartben/spec-kit-agent-governance",
+      "documentation": "https://github.com/bigsmartben/spec-kit-agent-governance/blob/main/README.md",
+      "changelog": "https://github.com/bigsmartben/spec-kit-agent-governance/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0",
+        "tools": [
+          {
+            "name": "uv",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 3
+      },
+      "tags": [
+        "governance",
+        "repository",
+        "ssot",
+        "agents",
+        "context"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-14T00:00:00Z",
+      "updated_at": "2026-05-25T00:00:00Z"
+    },
     "reqnroll-bdd": {
       "name": "Reqnroll BDD",
       "id": "reqnroll-bdd",
@@ -2996,6 +2997,38 @@
       "created_at": "2026-05-20T00:00:00Z",
       "updated_at": "2026-05-20T00:00:00Z"
     },
+    "threatmodel": {
+      "name": "OWASP LLM Threat Model",
+      "id": "threatmodel",
+      "description": "OWASP Top 10 for LLM Applications 2025 threat analysis on agent artifacts",
+      "author": "NaviaSamal",
+      "version": "1.0.0",
+      "download_url": "https://github.com/NaviaSamal/spec-kit-threatmodel/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/NaviaSamal/spec-kit-threatmodel",
+      "homepage": "https://github.com/NaviaSamal/spec-kit-threatmodel",
+      "documentation": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/README.md",
+      "changelog": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.6.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "security",
+        "owasp",
+        "threat-model",
+        "llm",
+        "analysis"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-04-25T00:00:00Z",
+      "updated_at": "2026-04-25T00:00:00Z"
+    },
     "time-machine": {
       "name": "Time Machine",
       "id": "time-machine",
@@ -3064,38 +3097,6 @@
       "stars": 0,
       "created_at": "2026-04-10T00:00:00Z",
       "updated_at": "2026-04-10T00:00:00Z"
-    },
-    "threatmodel": {
-      "name": "OWASP LLM Threat Model",
-      "id": "threatmodel",
-      "description": "OWASP Top 10 for LLM Applications 2025 threat analysis on agent artifacts",
-      "author": "NaviaSamal",
-      "version": "1.0.0",
-      "download_url": "https://github.com/NaviaSamal/spec-kit-threatmodel/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/NaviaSamal/spec-kit-threatmodel",
-      "homepage": "https://github.com/NaviaSamal/spec-kit-threatmodel",
-      "documentation": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/README.md",
-      "changelog": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/CHANGELOG.md",
-      "license": "MIT",
-      "requires": {
-        "speckit_version": ">=0.6.0"
-      },
-      "provides": {
-        "commands": 1,
-        "hooks": 1
-      },
-      "tags": [
-        "security",
-        "owasp",
-        "threat-model",
-        "llm",
-        "analysis"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-04-25T00:00:00Z",
-      "updated_at": "2026-04-25T00:00:00Z"
     },
     "token-analyzer": {
       "name": "Token Consumption Analyzer",
