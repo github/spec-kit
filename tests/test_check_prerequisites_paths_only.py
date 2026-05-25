@@ -1,6 +1,7 @@
 """Regression tests for check-prerequisites paths-only behavior."""
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -15,13 +16,20 @@ PS_SCRIPT = PROJECT_ROOT / "scripts" / "powershell" / "check-prerequisites.ps1"
 HAS_PWSH = shutil.which("pwsh") is not None
 
 
+def _clean_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.pop("SPECIFY_FEATURE", None)
+    env.pop("SPECIFY_FEATURE_DIRECTORY", None)
+    return env
+
+
 @pytest.fixture
 def git_repo(tmp_path: Path) -> Path:
     """Create a minimal spec-kit-style git repo with a fixed feature directory."""
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "init", "-q", "--initial-branch", "main"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "checkout", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "--allow-empty", "-m", "init", "-q"], cwd=tmp_path, check=True)
 
     specify_dir = tmp_path / ".specify"
     specify_dir.mkdir()
@@ -40,6 +48,7 @@ def test_bash_paths_only_skips_branch_validation(git_repo: Path) -> None:
         text=True,
         capture_output=True,
         check=False,
+        env=_clean_env(),
     )
 
     assert result.returncode == 0, result.stderr
@@ -56,6 +65,7 @@ def test_powershell_paths_only_skips_branch_validation(git_repo: Path) -> None:
         text=True,
         capture_output=True,
         check=False,
+        env=_clean_env(),
     )
 
     assert result.returncode == 0, result.stderr
