@@ -2,6 +2,20 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.13] - 2026-05-21
+
+### Changed
+
+- fix: while/do-while loop condition reads stale iteration-0 step output (#2662)
+- docs: fix directory hierarchy in README examples (#2639)
+- fix(catalogs): reject boolean priority in extension and preset catalog readers (#2589)
+- Update Agent Governance extension to v1.2.0 (#2659)
+- Add agentic workflows for community catalog submissions (#2655)
+- feat: add self-check tip to check output (#2574)
+- fix(cli): clarify exception diagnostics (#2602)
+- ci: add diff whitespace check (#2572)
+- chore: release 0.8.12, begin 0.8.13.dev0 development (#2648)
+
 ## [0.8.12] - 2026-05-20
 
 ### Changed
