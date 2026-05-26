@@ -1356,7 +1356,9 @@ def self_upgrade(
         )
         raise typer.Exit(2)
 
+    pre_upgrade_display = _canonicalize_version_text(plan.pre_upgrade_snapshot)
+    verified_display = _canonicalize_version_text(verified)
     console.print(
-        f"Upgraded specify-cli: {plan.pre_upgrade_snapshot} → {verified}",
+        f"Upgraded specify-cli: {pre_upgrade_display} → {verified_display}",
         soft_wrap=True,
     )

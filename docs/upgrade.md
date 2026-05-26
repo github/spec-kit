@@ -415,7 +415,7 @@ Only Spec Kit infrastructure files:
 If a command behaves like an older Spec Kit version, first ask the CLI itself:
 
 ```bash
-# Read-only — prints "Up to date: X.Y.Z" or "Update available: X.Y.Z → Y.Z.W"
+# Read-only — prints "Up to date: X.Y.Z" or "Update available: X.Y.Z → vY.Z.W"
 specify self check
 
 # Preview the install method, current version, and target tag the upgrade would use
