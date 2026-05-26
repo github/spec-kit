@@ -9,7 +9,6 @@ with local mocks. Run this module under `pytest-socket` (if installed) with
 `--disable-socket` as an extra safety net.
 """
 
-import json
 import urllib.error
 import importlib.metadata
 from unittest.mock import MagicMock, patch
@@ -25,6 +24,7 @@ from specify_cli._version import (
     _normalize_tag,
 )
 from tests.conftest import strip_ansi
+from tests.http_helpers import mock_urlopen_response
 
 runner = CliRunner()
 
@@ -34,16 +34,6 @@ SENTINEL_GITHUB_TOKEN = "SENTINEL-GITHUB-TOKEN-VALUE"
 _RATE_LIMITED_REASON = (
     "rate limited (configure ~/.specify/auth.json with a GitHub token)"
 )
-
-
-def _mock_urlopen_response(payload: dict) -> MagicMock:
-    body = json.dumps(payload).encode("utf-8")
-    resp = MagicMock()
-    resp.read.return_value = body
-    cm = MagicMock()
-    cm.__enter__.return_value = resp
-    cm.__exit__.return_value = False
-    return cm
 
 
 def _http_error(code: int, message: str = "error") -> urllib.error.HTTPError:
@@ -119,7 +109,7 @@ class TestUserStory1:
     def test_newer_available_prints_update_and_install_command(self):
         with patch("specify_cli._version._get_installed_version", return_value="0.7.4"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
-            return_value=_mock_urlopen_response({"tag_name": "v0.9.0"}),
+            return_value=mock_urlopen_response({"tag_name": "v0.9.0"}),
         ):
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
@@ -132,7 +122,7 @@ class TestUserStory1:
     def test_up_to_date_prints_current_only(self):
         with patch("specify_cli._version._get_installed_version", return_value="0.9.0"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
-            return_value=_mock_urlopen_response({"tag_name": "v0.9.0"}),
+            return_value=mock_urlopen_response({"tag_name": "v0.9.0"}),
         ):
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
@@ -144,7 +134,7 @@ class TestUserStory1:
     def test_dev_build_ahead_of_release_is_up_to_date(self):
         with patch("specify_cli._version._get_installed_version", return_value="0.7.5.dev0"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
-            return_value=_mock_urlopen_response({"tag_name": "v0.7.4"}),
+            return_value=mock_urlopen_response({"tag_name": "v0.7.4"}),
         ):
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
@@ -155,7 +145,7 @@ class TestUserStory1:
     def test_unknown_installed_still_prints_latest_and_reinstall(self):
         with patch("specify_cli._version._get_installed_version", return_value="unknown"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
-            return_value=_mock_urlopen_response({"tag_name": "v0.7.4"}),
+            return_value=mock_urlopen_response({"tag_name": "v0.7.4"}),
         ):
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
@@ -170,7 +160,7 @@ class TestUserStory1:
     def test_unknown_installed_uses_placeholder_when_latest_tag_is_invalid(self):
         with patch("specify_cli._version._get_installed_version", return_value="unknown"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
-            return_value=_mock_urlopen_response({"tag_name": "v0.9.0;echo unsafe"}),
+            return_value=mock_urlopen_response({"tag_name": "v0.9.0;echo unsafe"}),
         ):
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
@@ -183,7 +173,7 @@ class TestUserStory1:
     def test_unparseable_tag_reports_validation_failure_without_raw_tag(self):
         with patch("specify_cli._version._get_installed_version", return_value="0.7.4"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
-            return_value=_mock_urlopen_response({"tag_name": "not-a-version"}),
+            return_value=mock_urlopen_response({"tag_name": "not-a-version"}),
         ):
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
@@ -295,7 +285,7 @@ def _capture_request_via_urlopen():
 
     def _side_effect(req, *args, **kwargs):
         captured["request"] = req
-        return _mock_urlopen_response({"tag_name": "v0.7.4"})
+        return mock_urlopen_response({"tag_name": "v0.7.4"})
 
     return captured, _side_effect
 
@@ -305,7 +295,7 @@ def _capture_request_via_auth_opener():
 
     def _side_effect(req, *args, **kwargs):
         captured["request"] = req
-        return _mock_urlopen_response({"tag_name": "v0.7.4"})
+        return mock_urlopen_response({"tag_name": "v0.7.4"})
 
     opener = MagicMock()
     opener.open.side_effect = _side_effect

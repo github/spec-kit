@@ -145,9 +145,8 @@ def _canonicalize_version_text(value: str) -> str:
 
 def _stable_release_tag_for_version(version_text: str) -> str | None:
     """Return `vX.Y.Z` only for exact stable release versions."""
-    try:
-        parsed = Version(version_text)
-    except InvalidVersion:
+    parsed = _parse_version_text(version_text)
+    if parsed is None:
         return None
     if parsed.pre or parsed.post or parsed.dev or parsed.local:
         return None

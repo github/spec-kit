@@ -39,7 +39,7 @@ specify self upgrade
 specify self upgrade --tag vX.Y.Z
 ```
 
-Bare `specify self upgrade` executes immediately, matching the `pip install -U` / `uv tool upgrade` / `npm update` convention. The CLI classifies your runtime into one of: `uv tool`, `pipx`, `uvx (ephemeral)`, source checkout, or unsupported. Only `uv tool` and `pipx` are upgraded automatically; the other paths print path-specific guidance and exit 0 without touching anything.
+Bare `specify self upgrade` executes immediately, matching the no-prompt behavior of commands like `pip install -U` and `npm update`. The CLI classifies your runtime into one of: `uv tool`, `pipx`, `uvx (ephemeral)`, source checkout, or unsupported. Only `uv tool` and `pipx` are upgraded automatically; for `uv tool` installs, it runs `uv tool install specify-cli --force --from <git ref>` under the hood so pinned release tags work. The other paths print path-specific guidance and exit 0 without touching anything.
 
 Set `SPECIFY_UPGRADE_TIMEOUT_SECS` to cap how long the installer subprocess may run (default: no timeout — interrupt with `Ctrl+C` if needed). If that internal timeout fires, `specify self upgrade` exits 124 and reports that it timed out while waiting for the installer subprocess, including the configured timeout and manual retry command. A real installer exit code 124 is propagated with `Upgrade failed. Installer exit code: 124.`, so scripts should treat exit 124 as ambiguous and inspect the message when they need to distinguish the two cases.
 

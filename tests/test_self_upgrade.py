@@ -10,7 +10,7 @@ import json
 import os
 import subprocess
 import urllib.error
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from typer.testing import CliRunner
@@ -26,22 +26,12 @@ from specify_cli._version import (
 )
 
 from tests.conftest import strip_ansi
+from tests.http_helpers import mock_urlopen_response
 
 runner = CliRunner()
 
 SENTINEL_GH_TOKEN = "SENTINEL-GH-TOKEN-VALUE"
 SENTINEL_GITHUB_TOKEN = "SENTINEL-GITHUB-TOKEN-VALUE"
-
-
-def _mock_urlopen_response(payload: dict) -> MagicMock:
-    """Build a urlopen() context-manager mock whose .read() returns the JSON payload."""
-    body = json.dumps(payload).encode("utf-8")
-    resp = MagicMock()
-    resp.read.return_value = body
-    cm = MagicMock()
-    cm.__enter__.return_value = resp
-    cm.__exit__.return_value = False
-    return cm
 
 
 def _completed_process(
@@ -462,7 +452,7 @@ class TestBareUpgradeUvTool:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 _completed_process(0),  # installer
                 _completed_process(0, stdout="specify 0.7.6\n"),  # verify
@@ -485,7 +475,7 @@ class TestBareUpgradeUvTool:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(0, stdout="specify 0.7.6\n"),
@@ -505,7 +495,7 @@ class TestAlreadyLatestUvTool:
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.6"):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
 
         assert result.exit_code == 0
@@ -520,7 +510,7 @@ class TestAlreadyLatestUvTool:
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.7.dev0"):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
 
         assert result.exit_code == 0
@@ -535,7 +525,7 @@ class TestAlreadyLatestUvTool:
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version._get_installed_version", return_value="release-main"):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(0, stdout="specify 0.7.6\n"),
@@ -556,7 +546,7 @@ class TestAlreadyLatestUvTool:
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version._get_installed_version", return_value="release-main"):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "release-main"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "release-main"})
             result = runner.invoke(app, ["self", "upgrade"])
 
         assert result.exit_code == 1
@@ -611,7 +601,7 @@ class TestDryRunUvTool:
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade", "--dry-run"])
 
         assert result.exit_code == 0
@@ -646,7 +636,7 @@ class TestDryRunUvTool:
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
-            mock_urlopen.return_value = _mock_urlopen_response(
+            mock_urlopen.return_value = mock_urlopen_response(
                 {"tag_name": "v0.9.0;echo unsafe"}
             )
             result = runner.invoke(app, ["self", "upgrade", "--dry-run"])
@@ -666,7 +656,7 @@ class TestDryRunUvTool:
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value=None
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade", "--dry-run"])
 
         assert result.exit_code == 0
@@ -886,7 +876,7 @@ class TestTagValidationWhitespace:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v9.9.9"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v9.9.9"})
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(0, stdout="specify 0.8.0\n"),
@@ -926,7 +916,7 @@ class TestBareUpgradePipx:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(0, stdout="specify 0.7.6\n"),
@@ -962,7 +952,7 @@ class TestDryRunPipx:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade", "--dry-run"])
         assert result.exit_code == 0
         assert "Detected install method: pipx" in strip_ansi(result.output)
@@ -985,7 +975,7 @@ class TestUvxEphemeral:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run:
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 0
         expected = (
@@ -1027,7 +1017,7 @@ class TestSourceCheckout:
         ), patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run:
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
 
         assert result.exit_code == 0
@@ -1047,7 +1037,7 @@ class TestSourceCheckout:
         ), patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run:
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
 
         out = strip_ansi(result.output)
@@ -1071,7 +1061,7 @@ class TestUnsupported:
         ), patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run:
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
 
         assert result.exit_code == 0
@@ -1122,7 +1112,7 @@ class TestDryRunNonUpgradablePaths:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen:
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade", "--dry-run"])
         assert result.exit_code == 0
         out = strip_ansi(result.output)
@@ -1137,7 +1127,7 @@ class TestDryRunNonUpgradablePaths:
         with patch("specify_cli._version._editable_marker_seen", return_value=False), patch(
             "specify_cli._version.shutil.which", return_value=None
         ), patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen:
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade", "--dry-run"])
         assert result.exit_code == 0
         assert "Could not identify your install method" in strip_ansi(result.output)
@@ -1156,7 +1146,7 @@ class TestInstallerMissing:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda n: which_results.get(n)
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 3
         out = strip_ansi(result.output)
@@ -1168,7 +1158,7 @@ class TestInstallerMissing:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda n: which_results.get(n)
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 3
         assert "Installer pipx not found on PATH" in strip_ansi(result.output)
@@ -1198,7 +1188,7 @@ class TestInstallerMissing:
                 "git+https://github.com/github/spec-kit.git@v0.7.6",
             ],
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [_completed_process(0)]
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 0
@@ -1228,7 +1218,7 @@ class TestInstallerMissing:
                 "git+https://github.com/github/spec-kit.git@v0.7.6",
             ],
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [_completed_process(0)]
             result = runner.invoke(app, ["self", "upgrade"])
 
@@ -1253,7 +1243,7 @@ class TestInstallerMissing:
                 "git+https://github.com/github/spec-kit.git@v0.7.6",
             ],
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
 
         assert result.exit_code == 3
@@ -1281,7 +1271,7 @@ class TestInstallerMissing:
         ), patch("specify_cli._version.subprocess.run", side_effect=fake_run), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
 
         assert result.exit_code == 3
@@ -1313,7 +1303,7 @@ class TestInstallerMissing:
                 "git+https://github.com/github/spec-kit.git@v0.7.6",
             ],
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 3
         assert (
@@ -1344,7 +1334,7 @@ class TestInstallerMissing:
                 "git+https://github.com/github/spec-kit.git@v0.7.6",
             ],
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
 
         out = strip_ansi(result.output)
@@ -1363,7 +1353,7 @@ class TestInstallerMissing:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [_completed_process(126)]
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 126
@@ -1391,7 +1381,7 @@ class TestInstallerMissing:
                 "git+https://github.com/github/spec-kit.git@v0.7.6",
             ],
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 3
         assert (
@@ -1424,7 +1414,7 @@ class TestInstallerMissing:
             "specify_cli._version.subprocess.run",
             side_effect=PermissionError("Permission denied"),
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 3
         out = strip_ansi(result.output)
@@ -1451,7 +1441,7 @@ class TestInstallerMissing:
             "specify_cli._version.subprocess.run",
             side_effect=PermissionError("Permission denied"),
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
 
         assert result.exit_code == 3
@@ -1481,7 +1471,7 @@ class TestInstallerMissing:
                 "git+https://github.com/github/spec-kit.git@v0.7.6",
             ],
         ), patch("specify_cli._version.subprocess.run", side_effect=invalid_error):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 3
         out = strip_ansi(result.output)
@@ -1510,7 +1500,7 @@ class TestInstallerMissing:
                 "git+https://github.com/github/spec-kit.git@v0.7.6",
             ],
         ), patch("specify_cli._version.subprocess.run", side_effect=transient_error):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code != 3
         assert isinstance(result.exception, OSError)
@@ -1525,7 +1515,7 @@ class TestInstallerFailed:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [_completed_process(2)]  # installer fails
             result = runner.invoke(app, ["self", "upgrade"])
 
@@ -1548,7 +1538,7 @@ class TestInstallerFailed:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [_completed_process(127)]
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 127
@@ -1562,7 +1552,7 @@ class TestInstallerFailed:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 subprocess.TimeoutExpired(cmd=["uv"], timeout=12)
             ]
@@ -1581,7 +1571,7 @@ class TestInstallerFailed:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(0, stdout="specify 0.7.6\n"),
@@ -1602,7 +1592,7 @@ class TestInstallerFailed:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [_completed_process(124)]
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 124
@@ -1616,7 +1606,7 @@ class TestInstallerFailed:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [_completed_process(2)]
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 2
@@ -1626,6 +1616,26 @@ class TestInstallerFailed:
             "git+https://github.com/github/spec-kit.git@v0.7.5"
         ) in out
 
+    def test_rollback_hint_accepts_normalizable_stable_snapshot(
+        self, uv_tool_argv0, clean_environ
+    ):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+        ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
+            "specify_cli._version._get_installed_version", return_value="v0.7.5"
+        ):
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_run.side_effect = [_completed_process(2)]
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        assert result.exit_code == 2
+        out = strip_ansi(result.output)
+        assert (
+            "To pin back to the previous version: uv tool install specify-cli --force "
+            "--from git+https://github.com/github/spec-kit.git@v0.7.5"
+        ) in out
+        assert "Previous version was not an exact stable release tag" not in out
+
     def test_prerelease_failure_degrades_rollback_hint_to_releases_page(
         self, uv_tool_argv0, clean_environ
     ):
@@ -1634,7 +1644,7 @@ class TestInstallerFailed:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="1.0.0rc1"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v1.0.0"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v1.0.0"})
             mock_run.side_effect = [_completed_process(2)]
             result = runner.invoke(app, ["self", "upgrade"])
 
@@ -1658,7 +1668,7 @@ class TestVerificationMismatch:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 _completed_process(0),  # installer OK
                 _completed_process(0, stdout="specify 0.7.5\n"),  # verify: OLD!
@@ -1681,7 +1691,7 @@ class TestVerificationMismatch:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(1, stdout="specify 0.7.6\n"),
@@ -1703,7 +1713,7 @@ class TestVerificationMismatch:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.9.0"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v9.9.9"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v9.9.9"})
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(0, stdout="specify 1.0.0rc1\n"),
@@ -1723,7 +1733,7 @@ class TestVerificationMismatch:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(0, stdout="specify-cli version 0.7.6\n"),
@@ -1743,7 +1753,7 @@ class TestVerificationMismatch:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(0, stdout="specify version unknown\n"),
@@ -1921,7 +1931,7 @@ class TestResolutionFailures:
         ) as mock_run, patch(
             "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "release-main"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "release-main"})
             result = runner.invoke(app, ["self", "upgrade"])
 
         assert result.exit_code == 1
@@ -2016,7 +2026,7 @@ class TestUnknownCurrent:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="unknown"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(0, stdout="specify 0.7.6\n"),
@@ -2038,7 +2048,7 @@ class TestUnknownCurrent:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="unknown"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [_completed_process(2)]  # installer fails
             result = runner.invoke(app, ["self", "upgrade"])
 
@@ -2064,7 +2074,7 @@ class TestTokenScrubbing:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(0, stdout="specify 0.7.6\n"),
@@ -2093,7 +2103,7 @@ class TestTokenScrubbing:
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = _mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(0, stdout="specify 0.7.6\n"),
