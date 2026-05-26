@@ -197,14 +197,6 @@ Execution steps:
 
 7. Write the updated spec back to `FEATURE_SPEC`.
 
-8. Report completion (after questioning loop ends or early termination):
-   - Number of questions asked & answered.
-   - Path to updated spec.
-   - Sections touched (list names).
-   - Coverage summary table listing each taxonomy category with Status: Resolved (was Partial/Missing and addressed), Deferred (exceeds question quota or better suited for planning), Clear (already sufficient), Outstanding (still Partial/Missing but low impact).
-   - If any Outstanding or Deferred remain, recommend whether to proceed to `__SPECKIT_COMMAND_PLAN__` or run `__SPECKIT_COMMAND_CLARIFY__` again later post-plan.
-   - Suggested next command.
-
 Behavior rules:
 
 - If no meaningful ambiguities found (or all potential questions would be low-impact), respond: "No critical ambiguities detected worth formal clarification." and suggest proceeding.
@@ -217,17 +209,27 @@ Behavior rules:
 
 Context for prioritization: {ARGS}
 
-## Post-Execution Checks
+## Mandatory Post-Execution Hooks
 
-**Check for extension hooks (after clarification)**:
+**You MUST complete this section before reporting completion to the user.**
+
 Check if `.specify/extensions.yml` exists in the project root.
-- If it exists, read it and look for entries under the `hooks.after_clarify` key
-- If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
+- If it does not exist, or no hooks are registered under `hooks.after_clarify`, skip to the Completion Report.
+- If it exists, read it and look for entries under the `hooks.after_clarify` key.
+- If the YAML cannot be parsed or is invalid, skip hook checking silently and continue to the Completion Report.
 - Filter out hooks where `enabled` is explicitly `false`. Treat hooks without an `enabled` field as enabled by default.
 - For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
   - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
   - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
 - For each executable hook, output the following based on its `optional` flag:
+  - **Mandatory hook** (`optional: false`) — **You MUST emit `EXECUTE_COMMAND:` for each mandatory hook**:
+    ```
+    ## Extension Hooks
+
+    **Automatic Hook**: {extension}
+    Executing: `/{command}`
+    EXECUTE_COMMAND: {command}
+    ```
   - **Optional hook** (`optional: true`):
     ```
     ## Extension Hooks
@@ -239,12 +241,19 @@ Check if `.specify/extensions.yml` exists in the project root.
     Prompt: {prompt}
     To execute: `/{command}`
     ```
-  - **Mandatory hook** (`optional: false`):
-    ```
-    ## Extension Hooks
 
-    **Automatic Hook**: {extension}
-    Executing: `/{command}`
-    EXECUTE_COMMAND: {command}
-    ```
-- If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
+## Completion Report
+
+Report completion (after questioning loop ends or early termination):
+- Number of questions asked & answered.
+- Path to updated spec.
+- Sections touched (list names).
+- Coverage summary table listing each taxonomy category with Status: Resolved (was Partial/Missing and addressed), Deferred (exceeds question quota or better suited for planning), Clear (already sufficient), Outstanding (still Partial/Missing but low impact).
+- If any Outstanding or Deferred remain, recommend whether to proceed to `__SPECKIT_COMMAND_PLAN__` or run `__SPECKIT_COMMAND_CLARIFY__` again later post-plan.
+- Suggested next command.
+
+## Done When
+
+- [ ] Spec ambiguities identified and clarifications integrated into spec file
+- [ ] Extension hooks dispatched (if `.specify/extensions.yml` exists and has `after_clarify` hooks)
+- [ ] Completion reported to user with questions answered, sections touched, and coverage summary
