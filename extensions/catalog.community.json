@@ -3176,7 +3176,7 @@
         "speckit_version": ">=0.1.0",
         "tools": [
           {
-            "name": "python3 + tiktoken",
+            "name": "python3",
             "required": false
           },
           {
