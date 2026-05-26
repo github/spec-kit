@@ -827,7 +827,14 @@ class ExtensionManager:
         Returns:
             List of skill names that were created (for registry storage).
         """
-        skills_dir = self._get_skills_dir()
+        try:
+            skills_dir = self._get_skills_dir()
+        except (ValueError, OSError) as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Skipping skill registration: %s", exc,
+            )
+            return []
         if not skills_dir:
             return []
 

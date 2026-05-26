@@ -330,8 +330,10 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
         The skills directory ``Path``, or ``None`` if skills are not active.
 
     Raises:
-        ValueError: If the resolved skills path escapes the project root or
-            a parent component is a symlink.
+        ValueError: If the resolved skills path escapes the project root,
+            a parent component is a symlink, or a path component exists
+            but is not a directory.
+        OSError: If the directory cannot be created (e.g. permission denied).
     """
     from .shared_infra import (
         SymlinkedSharedPathError,
