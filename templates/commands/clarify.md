@@ -202,13 +202,14 @@ Execution steps:
    - If it does NOT exist, skip this step silently.
    - If it exists:
      1. Read the checklist file.
-     2. Re-evaluate each checklist item against the **updated** spec (the version just saved in step 7).
-     3. For each item:
+     2. Identify all GitHub task-list checkbox lines — lines matching `- [ ]` or `- [x]` outside of code fences. Ignore all other content (headings, notes, non-checkbox bullets, metadata).
+     3. Re-evaluate each checkbox item against the **updated** spec (the version just saved in step 7).
+     4. For each checkbox item:
         - If the item now passes (e.g., a `[NEEDS CLARIFICATION]` marker was resolved, a requirement was made unambiguous, an edge case was added), update the marker from `- [ ]` to `- [x]`.
         - If the item previously passed and still passes, leave it as `- [x]`.
         - If the item does not pass, leave it as `- [ ]`.
-     4. Save the updated checklist file.
-     5. Record the before/after pass counts for the Completion Report (e.g., "12/16 → 15/16 items passing").
+     5. Save the updated checklist file.
+     6. Record the before/after pass counts as checked/total checkbox items for the Completion Report (e.g., "12/16 → 15/16 items passing").
 
 Behavior rules:
 
@@ -269,6 +270,6 @@ Report completion (after questioning loop ends or early termination):
 ## Done When
 
 - [ ] Spec ambiguities identified and clarifications integrated into spec file
-- [ ] Spec quality checklist re-validated against updated spec (if `checklists/requirements.md` exists)
+- [ ] Spec quality checklist re-validated against updated spec (if `FEATURE_DIR/checklists/requirements.md` exists)
 - [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
 - [ ] Completion reported to user with questions answered, sections touched, checklist status, and coverage summary
