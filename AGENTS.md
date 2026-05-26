@@ -536,7 +536,7 @@ Goose uses Block's YAML recipe format. The integration extends `YamlIntegration`
 **Inspect the manifest file** to see what files are tracked for an integration:
 
 ```bash
-cat .mycli/.specify-manifest.json
+cat .specify/integrations/mycli.manifest.json
 ```
 
 **Run with verbose output** to trace what Specify CLI is doing during install:
