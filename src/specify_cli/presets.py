@@ -1100,9 +1100,20 @@ class PresetManager:
         Delegates to :func:`resolve_active_skills_dir` which reads
         init-options, applies the Kimi native-skills fallback, and
         safely creates the directory when ``ai_skills`` is enabled.
+
+        Returns ``None`` (instead of raising) when the directory cannot
+        be created due to symlink, containment, or permission issues so
+        that callers can fall back gracefully.
         """
-        from . import resolve_active_skills_dir
-        return resolve_active_skills_dir(self.project_root)
+        from . import resolve_active_skills_dir, _print_cli_warning
+        try:
+            return resolve_active_skills_dir(self.project_root)
+        except (ValueError, OSError) as exc:
+            _print_cli_warning(
+                "resolve", "skills directory", None, exc,
+                continuing="Continuing without skill registration.",
+            )
+            return None
 
     @staticmethod
     def _skill_names_for_command(cmd_name: str) -> tuple[str, str]:

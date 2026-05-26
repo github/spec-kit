@@ -804,9 +804,20 @@ class ExtensionManager:
         Delegates to :func:`resolve_active_skills_dir` which reads
         init-options, applies the Kimi native-skills fallback, and
         safely creates the directory when ``ai_skills`` is enabled.
+
+        Returns ``None`` (instead of raising) when the directory cannot
+        be created due to symlink, containment, or permission issues so
+        that callers can fall back gracefully.
         """
-        from . import resolve_active_skills_dir
-        return resolve_active_skills_dir(self.project_root)
+        from . import resolve_active_skills_dir, _print_cli_warning
+        try:
+            return resolve_active_skills_dir(self.project_root)
+        except (ValueError, OSError) as exc:
+            _print_cli_warning(
+                "resolve", "skills directory", None, exc,
+                continuing="Continuing without skill registration.",
+            )
+            return None
 
     def _register_extension_skills(
         self,
@@ -827,14 +838,7 @@ class ExtensionManager:
         Returns:
             List of skill names that were created (for registry storage).
         """
-        try:
-            skills_dir = self._get_skills_dir()
-        except (ValueError, OSError) as exc:
-            import logging
-            logging.getLogger(__name__).warning(
-                "Skipping skill registration: %s", exc,
-            )
-            return []
+        skills_dir = self._get_skills_dir()
         if not skills_dir:
             return []
 
