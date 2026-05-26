@@ -204,10 +204,9 @@ Execution steps:
      1. Read the checklist file.
      2. Identify all GitHub task-list checkbox lines — lines matching `- [ ]` or `- [x]` outside of code fences. Ignore all other content (headings, notes, non-checkbox bullets, metadata).
      3. Re-evaluate each checkbox item against the **updated** spec (the version just saved in step 7).
-     4. For each checkbox item:
-        - If the item now passes (e.g., a `[NEEDS CLARIFICATION]` marker was resolved, a requirement was made unambiguous, an edge case was added), update the marker from `- [ ]` to `- [x]`.
-        - If the item previously passed and still passes, leave it as `- [x]`.
-        - If the item does not pass, leave it as `- [ ]`.
+     4. For each checkbox item, set its marker based solely on whether it passes against the current spec — prior state does not matter:
+        - If the item passes: set to `- [x]`.
+        - If the item does not pass: set to `- [ ]` (even if it was previously `- [x]` — spec edits can cause regressions).
      5. Save the updated checklist file.
      6. Record the before/after pass counts as checked/total checkbox items for the Completion Report (e.g., "12/16 → 15/16 items passing").
 
@@ -262,7 +261,7 @@ Report completion (after questioning loop ends or early termination):
 - Number of questions asked & answered.
 - Path to updated spec.
 - Sections touched (list names).
-- Spec quality checklist status (if `FEATURE_DIR/checklists/requirements.md` was re-validated): show before/after pass counts (e.g., "Spec Quality Checklist: 12/16 → 15/16 items passing") and list any items that changed from unchecked to checked. If any items remain unchecked, list them as areas needing attention.
+- Spec quality checklist status (if `FEATURE_DIR/checklists/requirements.md` was re-validated): show before/after pass counts (e.g., "Spec Quality Checklist: 12/16 → 15/16 items passing") and list any items that changed state — both newly checked (unchecked → checked) and any regressions (checked → unchecked). If any items remain unchecked, list them as areas needing attention.
 - Coverage summary table listing each taxonomy category with Status: Resolved (was Partial/Missing and addressed), Deferred (exceeds question quota or better suited for planning), Clear (already sufficient), Outstanding (still Partial/Missing but low impact).
 - If any Outstanding or Deferred remain, recommend whether to proceed to `__SPECKIT_COMMAND_PLAN__` or run `__SPECKIT_COMMAND_CLARIFY__` again later post-plan.
 - Suggested next command.
