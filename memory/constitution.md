@@ -15,7 +15,7 @@ Sync Impact Report
     `templates/commands/*.md` are consumed by downstream projects and remain
     unaffected — this constitution governs only spec-kit's own work)
 - Follow-up TODOs: none
-- Provenance: see GitHub Discussion #2504 and Issue #2698
+- Provenance: see GitHub Discussion #2504
 -->
 
 # Spec Kit Constitution
