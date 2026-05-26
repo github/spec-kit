@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
+from tests.conftest import strip_ansi
 
 
 runner = CliRunner()
@@ -49,7 +50,8 @@ def _write_invalid_manifest(project, key):
 
 
 def _integration_list_row_cells(output: str, key: str) -> list[str]:
-    row = next(line for line in output.splitlines() if line.startswith(f"│ {key}"))
+    plain = strip_ansi(output)
+    row = next(line for line in plain.splitlines() if line.startswith(f"│ {key}"))
     return [cell.strip() for cell in row.split("│")[1:-1]]
 
 
@@ -160,8 +162,9 @@ class TestIntegrationInstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        assert "already installed" in result.output
-        normalized = " ".join(result.output.split())
+        plain = strip_ansi(result.output)
+        assert "already installed" in plain
+        normalized = " ".join(plain.split())
         assert "specify integration upgrade copilot" in normalized
         assert "already the default integration" in normalized
         assert "No files were changed" in normalized
@@ -197,9 +200,10 @@ class TestIntegrationInstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Installed integrations: copilot" in result.output
-        assert "Default integration: copilot" in result.output
-        normalized = " ".join(result.output.split())
+        plain = strip_ansi(result.output)
+        assert "Installed integrations: copilot" in plain
+        assert "Default integration: copilot" in plain
+        normalized = " ".join(plain.split())
         assert "To replace the default integration" in normalized
         assert "specify integration switch claude" in normalized
         assert "To install 'claude' alongside" in normalized
@@ -309,9 +313,10 @@ class TestIntegrationInstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Installed integrations: copilot" in result.output
-        assert "multi-install safe" in result.output
-        normalized = " ".join(result.output.split())
+        plain = strip_ansi(result.output)
+        assert "Installed integrations: copilot" in plain
+        assert "multi-install safe" in plain
+        normalized = " ".join(plain.split())
         assert "To replace the default integration" in normalized
         assert "specify integration switch claude" in normalized
         assert "To install 'claude' alongside" in normalized
