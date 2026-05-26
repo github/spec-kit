@@ -197,6 +197,19 @@ Execution steps:
 
 7. Write the updated spec back to `FEATURE_SPEC`.
 
+8. **Re-validate Spec Quality Checklist** (if it exists):
+   - Check if `FEATURE_DIR/checklists/requirements.md` exists.
+   - If it does NOT exist, skip this step silently.
+   - If it exists:
+     1. Read the checklist file.
+     2. Re-evaluate each checklist item against the **updated** spec (the version just saved in step 7).
+     3. For each item:
+        - If the item now passes (e.g., a `[NEEDS CLARIFICATION]` marker was resolved, a requirement was made unambiguous, an edge case was added), update the marker from `- [ ]` to `- [x]`.
+        - If the item previously passed and still passes, leave it as `- [x]`.
+        - If the item does not pass, leave it as `- [ ]`.
+     4. Save the updated checklist file.
+     5. Record the before/after pass counts for the Completion Report (e.g., "12/16 → 15/16 items passing").
+
 Behavior rules:
 
 - If no meaningful ambiguities found (or all potential questions would be low-impact), respond: "No critical ambiguities detected worth formal clarification." and suggest proceeding.
@@ -248,6 +261,7 @@ Report completion (after questioning loop ends or early termination):
 - Number of questions asked & answered.
 - Path to updated spec.
 - Sections touched (list names).
+- Spec quality checklist status (if `FEATURE_DIR/checklists/requirements.md` was re-validated): show before/after pass counts (e.g., "Spec Quality Checklist: 12/16 → 15/16 items passing") and list any items that changed from unchecked to checked. If any items remain unchecked, list them as areas needing attention.
 - Coverage summary table listing each taxonomy category with Status: Resolved (was Partial/Missing and addressed), Deferred (exceeds question quota or better suited for planning), Clear (already sufficient), Outstanding (still Partial/Missing but low impact).
 - If any Outstanding or Deferred remain, recommend whether to proceed to `__SPECKIT_COMMAND_PLAN__` or run `__SPECKIT_COMMAND_CLARIFY__` again later post-plan.
 - Suggested next command.
@@ -255,5 +269,6 @@ Report completion (after questioning loop ends or early termination):
 ## Done When
 
 - [ ] Spec ambiguities identified and clarifications integrated into spec file
+- [ ] Spec quality checklist re-validated against updated spec (if `checklists/requirements.md` exists)
 - [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
-- [ ] Completion reported to user with questions answered, sections touched, and coverage summary
+- [ ] Completion reported to user with questions answered, sections touched, checklist status, and coverage summary
