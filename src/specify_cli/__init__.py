@@ -335,10 +335,7 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
             but is not a directory.
         OSError: If the directory cannot be created (e.g. permission denied).
     """
-    from .shared_infra import (
-        SymlinkedSharedPathError,
-        _ensure_safe_shared_directory,
-    )
+    from .shared_infra import _ensure_safe_shared_directory
 
     opts = load_init_options(project_root)
     if not isinstance(opts, dict):
@@ -359,16 +356,9 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
         return skills_dir if skills_dir.is_dir() else None
 
     # ai_skills is explicitly enabled — create the directory safely.
-    try:
-        _ensure_safe_shared_directory(project_root, skills_dir)
-    except SymlinkedSharedPathError as exc:
-        raise ValueError(
-            f"Refusing to create agent skills directory '{skills_dir}': {exc}"
-        ) from None
-    except ValueError as exc:
-        raise ValueError(
-            f"Cannot create agent skills directory '{skills_dir}': {exc}"
-        ) from None
+    _ensure_safe_shared_directory(
+        project_root, skills_dir, context="agent skills directory",
+    )
     return skills_dir
 
 
