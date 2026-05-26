@@ -353,7 +353,13 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
 
     if not ai_skills_enabled:
         # Kimi native-skills fallback: use the directory only if it exists.
-        return skills_dir if skills_dir.is_dir() else None
+        if not skills_dir.is_dir():
+            return None
+        _ensure_safe_shared_directory(
+            project_root, skills_dir,
+            create=False, context="agent skills directory",
+        )
+        return skills_dir
 
     # ai_skills is explicitly enabled — create the directory safely.
     _ensure_safe_shared_directory(
