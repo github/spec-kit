@@ -106,7 +106,7 @@ vertical_capability: <capability>
 - include task text for assigned `task_ids`
 - include document headings from `context-index.json`
 - include only referenced sections
-- include relevant `class-diagram.md`, `contracts/sequences.md`, `test-plan.md`, `contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` constraints
+- include relevant `class-diagram.md`, `contracts/sequences.md`, `contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` constraints, plus research.md validation decisions and quickstart.md validation paths from `research.md` and `quickstart.md`
 - record unresolved required context as `context_gaps`
 
 ## Path Rules

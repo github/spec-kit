@@ -639,9 +639,12 @@ class TestIntegrationUpgrade:
         manifest_data = json.loads(manifest_path.read_text())
         tracked_files = manifest_data.get("files", {})
         assert tracked_files, "Manifest should track at least one file"
-        first_rel = next(iter(tracked_files))
-        target_file = project / first_rel
-        assert target_file.exists(), f"Tracked file {first_rel} should exist"
+        target_rel = next(
+            rel for rel in tracked_files
+            if rel.endswith("speckit.constitution.agent.md")
+        )
+        target_file = project / target_rel
+        assert target_file.exists(), f"Tracked file {target_rel} should exist"
         target_file.write_text("MODIFIED CONTENT\n")
 
         old = os.getcwd()

@@ -2,7 +2,7 @@
 
 This Spec Kit community preset combines behavior-first specification, design-aware planning, and agent-native handoff orchestration.
 
-It keeps `/speckit.specify`, `/speckit.clarify`, `/speckit.checklist`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.analyze` compatible with the core workflow while adding behavior drafts, behavior testability checks, optional design artifacts for internal object design, service sequencing, and test strategy. It replaces `/speckit.implement` with a Core Agent, Vertical Planner Agent, and Worker Agent orchestration contract that writes handoffs to disk.
+It keeps `/speckit.specify`, `/speckit.clarify`, `/speckit.checklist`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.analyze` compatible with the core workflow while adding behavior drafts, behavior testability checks, optional design artifacts for internal object design and service sequencing, and task-time test strategy derivation. It replaces `/speckit.implement` with a Core Agent, Vertical Planner Agent, and Worker Agent orchestration contract that writes handoffs to disk.
 
 ## Goal
 
@@ -46,13 +46,14 @@ Planning capabilities:
 - Adds plan-template navigation to the core plan output.
 - Stores internal object design in `class-diagram.md`.
 - Stores service, command, event, async, retry, rollback, and failure-path flows in `contracts/sequences.md`.
-- Stores validation strategy and scenario planning in `test-plan.md`.
+- Records validation decisions in `research.md` and validation paths in `quickstart.md`.
 - Keeps product requirements in `spec.md`, domain facts in `data-model.md`, interface schemas in `contracts/`, and executable validation guidance in `quickstart.md`.
 
 Task generation capabilities:
 
 - Wraps `/speckit.tasks` so task generation can consume the design artifacts.
 - Uses formal BDD, UIF, and behavior contracts to derive test-first fixture, acceptance test, implementation, and verification tasks.
+- Performs test strategy derivation from BDD contracts, Expected UIF contracts, behavior contracts, interface contracts, `research.md`, and `quickstart.md` without writing a separate strategy artifact.
 - Uses design artifacts to derive implementation, integration, orchestration, failure-handling, and validation tasks.
 - Preserves the existing checklist format and user-story organization.
 
@@ -80,8 +81,8 @@ Implementation capabilities:
 Context-load controls:
 
 - `context-index.json` records the available planning and implementation context without requiring every worker to read every source document.
-- Context digests include only assigned task text, relevant headings, referenced sections, and applicable `class-diagram.md`, `contracts/sequences.md`, or `test-plan.md` constraints.
-- `context_gaps` are explicit blockers. A Worker Agent stops instead of guessing or expanding into full `spec.md`, `plan.md`, `contracts/`, `class-diagram.md`, or `test-plan.md`.
+- Context digests include only assigned task text, relevant headings, referenced sections, applicable `class-diagram.md` or `contracts/sequences.md` constraints, relevant `research.md` validation decisions, and relevant `quickstart.md` validation paths.
+- `context_gaps` are explicit blockers. A Worker Agent stops instead of guessing or expanding into full `spec.md`, `plan.md`, `research.md`, `contracts/`, `class-diagram.md`, or `quickstart.md`.
 - `allowed_read_paths` and `allowed_write_paths` make each handoff auditable and prevent broad implementation runs from silently crossing capability boundaries.
 - Worker receipts separate execution evidence from task status commits, so the Core Agent can review validation evidence before updating `tasks.md`.
 
@@ -90,7 +91,7 @@ Context-load controls:
 1. `/speckit.specify` keeps the core requirements output and adds behavior drafts when they help clarify acceptance behavior.
 2. `/speckit.clarify` and `/speckit.checklist` use those drafts to surface ambiguity and testability gaps.
 3. `/speckit.plan` keeps the core planning outputs, formalizes behavior drafts into contracts, and adds design artifacts when they help implementation.
-4. `/speckit.tasks` reads the core plan outputs plus behavior and design artifacts, then produces executable tasks.
+4. `/speckit.tasks` reads the core plan outputs, optional design artifacts, behavior contracts, interface contracts, `research.md`, and `quickstart.md`, then produces executable tasks with inline test level, data strategy, and evidence requirements.
 5. `/speckit.analyze` checks vertical consistency across requirements, behavior drafts, contracts, and tasks.
 6. `/speckit.implement` enters Core Agent mode when no handoff path is provided.
 7. The Core Agent writes `context-index.json` and dispatches one Vertical Planner Agent per active vertical capability.
@@ -114,7 +115,7 @@ Context-load controls:
 Release install:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/archive/refs/tags/v1.1.0.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/archive/refs/tags/v1.2.0.zip
 ```
 
 Local development install:
@@ -178,7 +179,6 @@ This preset adds optional/contextual planning artifacts:
 
 - `specs/<feature>/class-diagram.md`
 - `specs/<feature>/contracts/sequences.md`
-- `specs/<feature>/test-plan.md`
 
 Agent-native handoff orchestration writes implementation artifacts:
 
@@ -217,9 +217,9 @@ Development-only contract helpers:
 
 `contracts/sequences.md` captures service-call, command, event, external-system, retry, rollback, compensation, async, and failure-path sequencing. It is the flow design map that helps implementation preserve call order, service boundaries, async behavior, idempotency, compensation, and error propagation. Sequences always live at this path, even when there are no other contract files.
 
-`test-plan.md` captures validation intent: test objectives, in/out of scope, test levels, data strategy, requirement traceability, and scenario matrix. It is the validation design map that helps `/speckit.tasks` and Worker Agents produce tests and evidence aligned with planned risk, not just nearby code changes.
+Test strategy derivation happens during `/speckit.tasks`. The command derives unit, contract, integration, and end-to-end validation work from BDD contracts, Expected UIF contracts, behavior contracts, interface contracts, `research.md`, and `quickstart.md`, then writes the strategy inline on the relevant `tasks.md` checklist items.
 
-The handoff context digest includes these design artifacts when present, so Worker Agents can preserve object boundaries, service flows, and validation intent without reading full planning documents by default.
+The handoff context digest includes relevant design constraints, validation decisions, quickstart paths, and behavior contracts when present, so Worker Agents can preserve object boundaries, service flows, and validation intent without reading full planning documents by default.
 
 See `speckit-cross-agent-subagents.md` for the cross-platform subagent mapping, worker prompt, parallel dispatch rules, and minimal handoff/receipt contract.
 
@@ -275,9 +275,9 @@ When a task spans capabilities, the Core Agent should split it into dependent ha
 
 ## Safety Boundaries
 
-Planning artifacts are optional/contextual. Simple features may produce concise files or `N/A` sections with concrete reasons. The command should avoid large placeholder artifacts and should not move product requirements out of `spec.md`, interface schemas out of `contracts/`, or quick validation instructions out of `quickstart.md`.
+Planning artifacts are optional/contextual. Simple features may produce concise files or `N/A` sections with concrete reasons. The command should avoid large placeholder artifacts and should not move product requirements out of `spec.md`, interface schemas out of `contracts/`, validation decisions out of `research.md`, or quick validation instructions out of `quickstart.md`.
 
-Vertical Planner Agents may read only the planning artifacts required to produce their capability-local shard plan and digest drafts. Worker Agents should treat the final handoff JSON and its digest as the primary context. They should not read full `spec.md`, `plan.md`, `contracts/`, `class-diagram.md`, or `test-plan.md` by default. If the digest contains `context_gaps`, the Worker Agent must stop instead of expanding context on its own.
+Vertical Planner Agents may read only the planning artifacts required to produce their capability-local shard plan and digest drafts. Worker Agents should treat the final handoff JSON and its digest as the primary context. They should not read full `spec.md`, `plan.md`, `research.md`, `contracts/`, `class-diagram.md`, or `quickstart.md` by default. If the digest contains `context_gaps`, the Worker Agent must stop instead of expanding context on its own.
 
 Completed `[x]` tasks are not scheduled into new implementation handoffs.
 
@@ -318,7 +318,7 @@ specify preset remove workflow-preset
 After tagging a release, validate archive installation:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/archive/refs/tags/v1.1.0.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/archive/refs/tags/v1.2.0.zip
 ```
 
 ## Source Rationale

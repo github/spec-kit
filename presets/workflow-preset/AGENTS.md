@@ -21,7 +21,7 @@ This repository is a Spec Kit community preset named `workflow-preset`.
 - Planning design artifacts are optional and contextual:
   - `class-diagram.md`
   - `contracts/sequences.md`
-  - `test-plan.md`
+- Validation strategy is derived by `/speckit.tasks` from behavior contracts, interface contracts, `research.md`, and `quickstart.md`; do not add standalone `test-plan.md` without intentionally updating the preset contract.
 - Do not move product requirements out of `spec.md`, domain model details out of `data-model.md`, interface schemas out of `contracts/`, or validation run guidance out of `quickstart.md`.
 
 ## Handoff Boundaries
@@ -36,7 +36,7 @@ When working from a generated handoff JSON:
 - Execute only the listed `task_ids`.
 - Write only paths listed in `allowed_write_paths`.
 - Do not edit `tasks.md`; write only the declared receipt and scoped task paths.
-- Do not read full `spec.md`, `plan.md`, `contracts/`, `class-diagram.md`, or `test-plan.md` unless the handoff explicitly allows it.
+- Do not read full `spec.md`, `plan.md`, `research.md`, `contracts/`, `class-diagram.md`, or `quickstart.md` unless the handoff explicitly allows it.
 
 ## Validation
 

@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import yaml
+
 from specify_cli.agents import CommandRegistrar
 from specify_cli.extensions import ExtensionManager
 from specify_cli.integrations import get_integration
@@ -42,10 +44,18 @@ def _copied_workflow_preset_files() -> list[str]:
         for source_file in source_dir.rglob("*")
         if source_file.is_file()
     ]
-    files.extend([
-        f".specify/presets/{DEFAULT_PRESET_ID}/.composed/speckit.plan.md",
-        f".specify/presets/{DEFAULT_PRESET_ID}/.composed/speckit.tasks.md",
-    ])
+
+    preset_data = yaml.safe_load((source_dir / "preset.yml").read_text(encoding="utf-8"))
+    for entry in preset_data.get("provides", {}).get("templates", []):
+        if (
+            isinstance(entry, dict)
+            and entry.get("type") == "command"
+            and entry.get("strategy") == "wrap"
+            and isinstance(entry.get("file"), str)
+        ):
+            files.append(
+                f".specify/presets/{DEFAULT_PRESET_ID}/.composed/{Path(entry['file']).name}"
+            )
     return files
 
 

@@ -74,15 +74,19 @@ schemas and validator coverage.
 Keep `/speckit.plan` and `/speckit.tasks` as core-template wrappers unless the
 contract tests are intentionally updated to change that rule.
 
-Keep product requirements in `spec.md`, domain model details in
-`data-model.md`, interface schemas in `contracts/`, and validation run guidance
-in `quickstart.md`.
-
 Planning design artifacts remain optional and contextual:
 
 - `class-diagram.md`
 - `contracts/sequences.md`
-- `test-plan.md`
+
+Validation strategy is derived by `/speckit.tasks` from behavior contracts,
+interface contracts, `research.md`, and `quickstart.md`. Do not add a
+standalone `test-plan.md` artifact unless the preset contract is deliberately
+changed for an audit or manual-review requirement.
+
+Keep product requirements in `spec.md`, domain model details in
+`data-model.md`, interface schemas in `contracts/`, and validation run guidance
+in `quickstart.md`.
 
 ## Handoff Extension Rules
 

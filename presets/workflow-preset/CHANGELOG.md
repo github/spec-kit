@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.2.0
+
+- Removed the standalone test strategy artifact from the current contract; `/speckit.tasks` now derives test level, fixture/mock/sandbox strategy, and validation evidence requirements from behavior contracts, interface contracts, `research.md`, and `quickstart.md`.
+
 ## 1.1.0
 
 - Tightened `/speckit.plan` BDD Draft formalization rules to improve reasoning stability without adding a traceability system.

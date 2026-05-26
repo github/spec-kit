@@ -137,9 +137,16 @@ catalogs:
 
 ## File Resolution
 
-Presets can provide command files, template files (like `plan-template.md`), and script files. These are resolved at runtime using a **replace** strategy — the first match in the priority stack wins and is used entirely. Each file is looked up independently, so different files can come from different layers.
+Presets can provide command files, template files (like `plan-template.md`), and script files. These are resolved at runtime by priority. Each file is looked up independently, so different files can come from different layers.
 
-> **Note:** Additional composition strategies (`append`, `prepend`, `wrap`) are planned for a future release.
+Preset entries can either replace lower-priority files or compose with them:
+
+| Strategy | Behavior |
+|----------|----------|
+| `replace` | Fully replaces the lower-priority file |
+| `prepend` | Places preset content before the lower-priority file |
+| `append` | Places preset content after the lower-priority file |
+| `wrap` | Replaces `{CORE_TEMPLATE}` or `$CORE_SCRIPT` with the lower-priority content |
 
 The resolution stack, from highest to lowest precedence:
 

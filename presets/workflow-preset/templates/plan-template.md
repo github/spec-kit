@@ -4,7 +4,6 @@
 
 - Internal object design: `./class-diagram.md`
 - Service sequences: `./contracts/sequences.md`
-- Test plan: `./test-plan.md`
 - Behavior draft: `./behavior/bdd.draft.feature`
 - BDD contracts: `./contracts/bdd/`
 - Expected UIF contracts: `./contracts/uif/`

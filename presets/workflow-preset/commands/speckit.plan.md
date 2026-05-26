@@ -1,5 +1,5 @@
 ---
-description: Wrap the core planning workflow with optional class, sequence, and test design artifacts.
+description: Wrap the core planning workflow with optional class and sequence design artifacts.
 strategy: wrap
 ---
 
@@ -7,17 +7,18 @@ strategy: wrap
 
 This preset preserves the core planning workflow and adds optional/contextual design artifacts for features that need more structure than `plan.md` should carry.
 
-Generate the three design artifacts only when useful for the feature:
+Generate the two design artifacts only when useful for the feature:
 
 - `class-diagram.md`: internal implementation object structure.
 - `contracts/sequences.md`: service-call, command, event, and integration sequencing.
-- `test-plan.md`: testing strategy, validation levels, data strategy, traceability, and scenario matrix.
 
 For simple features, keep these artifacts concise. It is acceptable to create a short artifact with `N/A` sections when the reason is concrete, for example "No service boundary exists for this static documentation change." Do not create large placeholder files.
 
-Keep `plan.md` as summary/navigation. It should point to detailed design artifacts when they exist, but it must not embed complete class diagrams, complete sequence diagrams, or full test matrices.
+Keep `plan.md` as summary/navigation. It should point to detailed design artifacts when they exist, but it must not embed complete class diagrams or complete sequence diagrams.
 
 Store service sequences only at `contracts/sequences.md`, even when there are no other contract files. Do not create a root-level `sequences.md`.
+
+Validation strategy is not a standalone planning artifact. Planning-time validation decisions belong in `research.md`; executable validation paths belong in `quickstart.md`; concrete test and verification tasks belong in `tasks.md` through the tasks command.
 
 ## Additional Phase 1 Design Outputs
 
@@ -35,17 +36,10 @@ During Phase 1, after core research has resolved planning unknowns and while pro
    - Use Mermaid sequence diagrams by default when diagrams help, but structured text is acceptable for simple flows.
    - Do not define field schemas, internal class inheritance, test matrices, or user-facing run instructions.
 
-3. `test-plan.md`
-   - Capture validation intent at scenario and test-level granularity.
-   - Include objectives, in-scope and out-of-scope validation, unit/contract/integration/end-to-end strategy, test data and fixture strategy, requirement traceability, and a scenario matrix when useful.
-   - Include non-functional validation only when required by the feature.
-   - Do not write test function bodies, assertions, fixture files, task IDs, or implementation order.
-
 When `plan.md` has a design artifact/navigation section, include links to:
 
 - Internal object design: `./class-diagram.md`
 - Service sequences: `./contracts/sequences.md`
-- Test plan: `./test-plan.md`
 - Behavior draft: `./behavior/bdd.draft.feature`
 - BDD contracts: `./contracts/bdd/`
 - Expected UIF contracts: `./contracts/uif/`
@@ -100,6 +94,10 @@ Before finishing, the final report must list generated artifacts and state wheth
 
 - `class-diagram.md`: populated, intentionally minimal, or not applicable with reason.
 - `contracts/sequences.md`: populated, intentionally minimal, or not applicable with reason.
-- `test-plan.md`: populated, intentionally minimal, or not applicable with reason.
+
+Also report where validation decisions were recorded:
+
+- `research.md`: selected test level, fixture strategy, mock/external-system strategy, and error-branch validation decisions when relevant.
+- `quickstart.md`: executable validation paths for the planned behavior when relevant.
 
 Report unresolved design gaps separately from downstream tasks. Do not mark the planning run complete if a design artifact contains unresolved `NEEDS CLARIFICATION` items that block task generation.

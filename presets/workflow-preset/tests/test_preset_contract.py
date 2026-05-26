@@ -391,7 +391,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertEqual("1.0", data["schema_version"])
         self.assertEqual("workflow-preset", data["preset"]["id"])
         self.assertEqual("Workflow Preset", data["preset"]["name"])
-        self.assertEqual("1.1.0", data["preset"]["version"])
+        self.assertEqual("1.2.0", data["preset"]["version"])
         self.assertEqual(
             "Behavior-first specification, design artifacts, and agent-native handoff orchestration",
             data["preset"]["description"],
@@ -424,6 +424,11 @@ class PresetContractTests(unittest.TestCase):
             self.assertEqual(f"commands/{command_name}.md", command["file"])
             self.assertEqual(command_name, command["replaces"])
             self.assertEqual("wrap", command["strategy"])
+
+        self.assertEqual(
+            "Wrap core planning with optional class and sequence design artifacts",
+            entries["speckit.plan"]["description"],
+        )
 
         for command_name in (
             "speckit.specify",
@@ -496,10 +501,12 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("{CORE_TEMPLATE}", command)
         self.assertIn("class-diagram.md", command)
         self.assertIn("contracts/sequences.md", command)
-        self.assertIn("test-plan.md", command)
+        self.assertNotIn("test-plan.md", command)
         self.assertIn("strategy: wrap", command)
-        self.assertIn("Generate the three design artifacts only when useful", command)
+        self.assertIn("Generate the two design artifacts only when useful", command)
         self.assertIn("Keep `plan.md` as summary/navigation", command)
+        self.assertIn("validation decisions belong in `research.md`", command)
+        self.assertIn("executable validation paths belong in `quickstart.md`", command)
         self.assertIn("final report must list generated artifacts", command)
         self.assertNotIn("speckit.tasks", command)
         self.assertNotIn("speckit.implement", command)
@@ -511,7 +518,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("## Design Artifacts", template)
         self.assertIn("./class-diagram.md", template)
         self.assertIn("./contracts/sequences.md", template)
-        self.assertIn("./test-plan.md", template)
+        self.assertNotIn("test-plan.md", template)
         self.assertIn("./data-model.md", template)
         self.assertIn("./contracts/", template)
         self.assertIn("./quickstart.md", template)
@@ -522,10 +529,14 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("{CORE_TEMPLATE}", tasks)
         self.assertIn("class-diagram.md", tasks)
         self.assertIn("contracts/sequences.md", tasks)
-        self.assertIn("test-plan.md", tasks)
+        self.assertNotIn("test-plan.md", tasks)
         self.assertIn("strategy: wrap", tasks)
         self.assertIn("implementation, integration, orchestration", tasks)
         self.assertIn("existing checklist format and user-story organization", tasks)
+        self.assertIn("Test Strategy Derivation", tasks)
+        self.assertIn("derive the test level", tasks)
+        self.assertIn("fixture/mock/sandbox/real-system strategy", tasks)
+        self.assertIn("inline evidence requirement", tasks)
 
     def test_behavior_first_command_wrapper_contracts(self) -> None:
         specify = SPECIFY_COMMAND_PATH.read_text(encoding="utf-8")
@@ -591,6 +602,8 @@ class PresetContractTests(unittest.TestCase):
         ):
             self.assertIn(term, plan)
 
+        self.assertNotIn("test-plan.md", plan)
+
         for term in (
             "contracts/bdd/",
             "contracts/uif/",
@@ -605,8 +618,13 @@ class PresetContractTests(unittest.TestCase):
             "For each UIF user_event",
             "For each UIF api_call",
             "For each quickstart validation path",
+            "derive the test level",
+            "fixture/mock/sandbox/real-system strategy",
+            "inline evidence requirement",
         ):
             self.assertIn(term, tasks)
+
+        self.assertNotIn("test-plan.md", tasks)
 
         self.assertIn("./behavior/bdd.draft.feature", template)
         self.assertIn("./contracts/bdd/", template)
@@ -817,6 +835,10 @@ class PresetContractTests(unittest.TestCase):
         ]
         for term in required_terms:
             self.assertIn(term, command)
+
+        self.assertIn("include relevant `research.md` validation decisions", command)
+        self.assertIn("include relevant `quickstart.md` validation paths", command)
+        self.assertNotIn("test-plan.md", command)
 
     def test_contract_schemas_are_decoupled_json_files(self) -> None:
         for path, contract_type in (
@@ -1236,7 +1258,10 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("/speckit.implement", readme)
         self.assertIn("class-diagram.md", readme)
         self.assertIn("contracts/sequences.md", readme)
-        self.assertIn("test-plan.md", readme)
+        self.assertNotIn("test-plan.md", readme)
+        self.assertIn("test strategy derivation", readme)
+        self.assertIn("validation decisions in `research.md`", readme)
+        self.assertIn("validation paths in `quickstart.md`", readme)
         self.assertIn("handoffs/implement", readme)
         self.assertIn("agent-native handoff orchestration", readme)
         self.assertIn("Core Agent", readme)
@@ -1265,6 +1290,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("python3 -m pip install -r requirements-dev.txt", readme)
         self.assertIn("PyYAML", requirements)
         self.assertIn("jsonschema", requirements)
+        self.assertIn("## 1.2.0", changelog)
         self.assertIn("## 1.1.0", changelog)
         self.assertIn("## 1.0.3", changelog)
         self.assertIn("agent-native handoff orchestration", changelog)
@@ -1311,6 +1337,10 @@ class PresetContractTests(unittest.TestCase):
         ]
         for term in required_terms:
             self.assertIn(term, document)
+
+        self.assertIn("research.md validation decisions", document)
+        self.assertIn("quickstart.md validation paths", document)
+        self.assertNotIn("test-plan.md", document)
 
         forbidden_terms = [
             "核心思路",

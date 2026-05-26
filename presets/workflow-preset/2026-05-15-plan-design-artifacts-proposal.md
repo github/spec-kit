@@ -1,5 +1,7 @@
 # Plan Design Artifacts Proposal
 
+> Superseded in the current preset contract: `test-plan.md` is no longer a standalone artifact. Test strategy is derived by `/speckit.tasks` from behavior contracts, interface contracts, `research.md`, and `quickstart.md`; object design and service sequencing remain optional planning artifacts.
+
 ## Purpose
 
 This proposal refines the expected output boundary of `/speckit.plan`.

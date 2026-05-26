@@ -83,10 +83,10 @@ $ARGUMENTS
 - include task text for assigned `task_ids`
 - include document headings from `context-index.json`
 - include only sections referenced by assigned task paths or vertical_capability
-- include relevant `class-diagram.md`, `contracts/sequences.md`, `test-plan.md` constraints
+- include relevant `class-diagram.md` and `contracts/sequences.md` constraints
+- include relevant `research.md` validation decisions and include relevant `quickstart.md` validation paths
 - include relevant `contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` behavior contract constraints
-- omit unrelated full `spec.md`, `plan.md`, `contracts/`, `class-diagram.md`, `test-plan.md`
-- record unresolved required context as `context_gaps`
+- omit unrelated full `spec.md`, `plan.md`, `research.md`, `contracts/`, `class-diagram.md`, and `quickstart.md`; record unresolved required context as `context_gaps`
 
 ## Path Rules
 
