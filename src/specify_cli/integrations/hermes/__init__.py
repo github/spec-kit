@@ -16,6 +16,8 @@ from pathlib import Path
 from shutil import rmtree
 from typing import Any
 
+import yaml
+
 from ..base import IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
 
@@ -29,7 +31,8 @@ class HermesIntegration(SkillsIntegration):
     Hermes discovers them globally.  A project-local marker directory
     (``.hermes/skills/`` empty) is created so extension commands (e.g.
     git) can detect Hermes as an active integration.  Uninstall removes
-    both the marker and global skills.
+    both the marker and all global ``speckit-*`` skills, matching the
+    standard integration teardown behaviour.
     """
 
     key = "hermes"
@@ -91,6 +94,14 @@ class HermesIntegration(SkillsIntegration):
         if not templates:
             return []
 
+        # Safety check: verify manifest project_root matches (standard pattern)
+        project_root_resolved = project_root.resolve()
+        if manifest.project_root != project_root_resolved:
+            raise ValueError(
+                f"manifest.project_root ({manifest.project_root}) does not match "
+                f"project_root ({project_root_resolved})"
+            )
+
         script_type = opts.get("script_type", "sh")
         arg_placeholder = (
             self.registrar_config.get("args", "$ARGUMENTS")
@@ -115,8 +126,6 @@ class HermesIntegration(SkillsIntegration):
             if raw.startswith("---"):
                 parts = raw.split("---", 2)
                 if len(parts) >= 3:
-                    import yaml
-
                     try:
                         fm = yaml.safe_load(parts[1])
                         if isinstance(fm, dict):
@@ -189,15 +198,16 @@ class HermesIntegration(SkillsIntegration):
         *,
         force: bool = False,
     ) -> tuple[list[Path], list[Path]]:
-        """Uninstall integration files and optionally clean up global skills.
+        """Uninstall integration files including global Hermes skills.
 
         Removes the managed context section from AGENTS.md, removes the
-        project-local marker directory, and delegates to
-        ``manifest.uninstall()`` for project-local tracked files.
+        project-local marker directory, delegates to
+        ``manifest.uninstall()`` for project-local tracked files, and
+        removes all ``speckit-*`` skills under ``~/.hermes/skills/``.
 
-        Global ``speckit-*`` skills under ``~/.hermes/skills/`` are only
-        removed when ``force=True`` to avoid destroying skills shared with
-        other Spec Kit projects.
+        Global skills are always removed on teardown — this matches the
+        standard integration behaviour where all files created by the
+        integration are removed on ``specify integration uninstall``.
         """
         # Remove managed context section from AGENTS.md
         self.remove_context_section(project_root)
@@ -214,17 +224,18 @@ class HermesIntegration(SkillsIntegration):
             if hermes_dir.is_dir() and not any(hermes_dir.iterdir()):
                 hermes_dir.rmdir()
 
-        # Remove global Hermes skills for speckit — only when force=True
-        # to avoid destroying skills shared with other Spec Kit projects.
-        if force:
-            global_skills_dir = self._hermes_home_skills_dir()
-            if global_skills_dir.is_dir():
-                for skill_dir in sorted(global_skills_dir.iterdir()):
-                    if skill_dir.is_dir() and skill_dir.name.startswith("speckit-"):
-                        skill_file = skill_dir / "SKILL.md"
-                        if skill_file.exists():
-                            removed.append(skill_file)
-                        rmtree(skill_dir, ignore_errors=True)
+        # Remove all global Hermes skills for speckit — these are always
+        # removed on uninstall regardless of the force flag, matching the
+        # standard behaviour where all integration files are cleaned up.
+        global_skills_dir = self._hermes_home_skills_dir()
+        if global_skills_dir.is_dir():
+            for skill_dir in sorted(global_skills_dir.iterdir()):
+                if skill_dir.is_dir() and skill_dir.name.startswith("speckit-"):
+                    try:
+                        rmtree(skill_dir)
+                        removed.append(skill_dir)
+                    except OSError:
+                        skipped.append(skill_dir)
 
         return removed, skipped
 
