@@ -197,8 +197,8 @@ class TestClaudeIntegration:
             os.chdir(project)
             runner = CliRunner()
             with (
-                patch("specify_cli._stdin_is_interactive", return_value=True),
-                patch("specify_cli.select_with_arrows", return_value="claude"),
+                patch("specify_cli.commands.init._stdin_is_interactive", return_value=True),
+                patch("specify_cli.commands.init.select_with_arrows", return_value="claude"),
             ):
                 result = runner.invoke(
                     app,
