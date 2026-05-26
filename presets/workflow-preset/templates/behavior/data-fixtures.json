@@ -1,0 +1,15 @@
+{
+  "contract_type": "speckit.behavior.data_fixtures.v1",
+  "fixtures": [
+    {
+      "id": "FIX-001",
+      "name": "<fixture name>",
+      "entities": ["entity"],
+      "required_states": {
+        "entity.field": "value"
+      },
+      "constraints": [],
+      "setup_strategy": "factory"
+    }
+  ]
+}

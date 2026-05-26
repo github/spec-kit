@@ -48,7 +48,7 @@ Reduce implementation-stage context load and reasoning drift by turning broad `/
 - Execute only task_ids
 - Read only allowed_read_paths
 - Write only allowed_write_paths
-- write receipt_path as speckit.implement.receipt.v1
+- write receipt_path as speckit.implement.receipt.v1 with validation_evidence references to relevant BDD scenario, behavior assertion, API contract, or quickstart path
 - must not edit tasks.md, create handoffs, dispatch workers
 
 ## Platform Mapping
@@ -73,7 +73,7 @@ Handoff JSON: <path>
 - Write only allowed_write_paths
 - Do not edit tasks.md
 - Do not dispatch workers
-- Write receipt_path as speckit.implement.receipt.v1
+- Write receipt_path as speckit.implement.receipt.v1 with validation_evidence references to relevant BDD scenario, behavior assertion, API contract, or quickstart path
 ```
 
 ## Planner Prompt
@@ -106,7 +106,7 @@ vertical_capability: <capability>
 - include task text for assigned `task_ids`
 - include document headings from `context-index.json`
 - include only referenced sections
-- include relevant `class-diagram.md`, `contracts/sequences.md`, `test-plan.md` constraints
+- include relevant `class-diagram.md`, `contracts/sequences.md`, `test-plan.md`, `contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` constraints
 - record unresolved required context as `context_gaps`
 
 ## Path Rules
@@ -121,5 +121,5 @@ vertical_capability: <capability>
 - mismatched `shard_id`
 - `task_ids` outside handoff
 - `completed_task_ids` outside handoff
-- empty `validation_evidence`
+- empty `validation_evidence` or missing relevant BDD scenario, behavior assertion, API contract, or quickstart path reference
 - receipt 路径不等于 handoff 中声明的 `task_status_update.receipt_path`

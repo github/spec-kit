@@ -1,0 +1,22 @@
+{
+  "contract_type": "speckit.behavior.scenario_instances.v1",
+  "scenarios": [
+    {
+      "id": "SCN-001",
+      "title": "<formal behavior title>",
+      "type": "positive",
+      "uif_path_id": "UIF-001",
+      "fixture_ids": ["FIX-001"],
+      "request_case": {
+        "id": "REQ-001"
+      },
+      "expected_response": {
+        "business_code": "SUCCESS"
+      },
+      "expected_feedback": {
+        "message": "<expected feedback>"
+      },
+      "assertion_ids": ["AST-001"]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "contract_type": "speckit.behavior.uif.expected.v1",
+  "id": "UIF-001",
+  "source": "behavior/uif.intent.json",
+  "type": "expected",
+  "start_view": {
+    "id": "VIEW-001",
+    "name": "<view name>"
+  },
+  "steps": [
+    {
+      "id": "EVT-001",
+      "type": "user_event",
+      "label": "<visible label>"
+    }
+  ],
+  "feedback_candidates": [
+    {
+      "id": "FB-001",
+      "type": "message",
+      "message": "<expected feedback>"
+    }
+  ]
+}

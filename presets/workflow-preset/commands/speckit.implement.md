@@ -57,6 +57,7 @@ $ARGUMENTS
 - read only `allowed_read_paths`
 - write only `allowed_write_paths`
 - write `task_status_update.receipt_path` as `speckit.implement.receipt.v1`
+- validation_evidence must reference the relevant BDD scenario, behavior assertion, API contract, or quickstart path when the handoff context includes behavior contracts
 - Do not edit `tasks.md`, create handoffs, dispatch workers
 
 ## Lifecycle
@@ -83,6 +84,7 @@ $ARGUMENTS
 - include document headings from `context-index.json`
 - include only sections referenced by assigned task paths or vertical_capability
 - include relevant `class-diagram.md`, `contracts/sequences.md`, `test-plan.md` constraints
+- include relevant `contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` behavior contract constraints
 - omit unrelated full `spec.md`, `plan.md`, `contracts/`, `class-diagram.md`, `test-plan.md`
 - record unresolved required context as `context_gaps`
 
@@ -117,6 +119,7 @@ $ARGUMENTS
 - `task_ids` outside handoff
 - `completed_task_ids` outside handoff
 - empty `validation_evidence`
+- behavior-contract task receipt missing evidence references to the relevant BDD scenario, behavior assertion, API contract, or quickstart path
 - receipt path does not equal `task_status_update.receipt_path`
 
 ## Dispatch Rules

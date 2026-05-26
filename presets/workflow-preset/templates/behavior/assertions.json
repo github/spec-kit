@@ -1,0 +1,11 @@
+{
+  "contract_type": "speckit.behavior.assertions.v1",
+  "assertions": [
+    {
+      "id": "AST-001",
+      "target": "entity.field",
+      "operator": "equals",
+      "expected": "value"
+    }
+  ]
+}

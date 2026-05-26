@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "speckit.behavior.data-fixtures.intent.v1.schema.json",
+  "title": "Spec Kit Data Fixtures Intent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_type", "fixtures"],
+  "properties": {
+    "contract_type": {
+      "const": "speckit.behavior.data_fixtures.intent.v1"
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "description", "required_for", "required_states"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1},
+          "required_for": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "required_states": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  }
+}

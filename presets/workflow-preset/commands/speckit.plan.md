@@ -46,9 +46,51 @@ When `plan.md` has a design artifact/navigation section, include links to:
 - Internal object design: `./class-diagram.md`
 - Service sequences: `./contracts/sequences.md`
 - Test plan: `./test-plan.md`
+- Behavior draft: `./behavior/bdd.draft.feature`
+- BDD contracts: `./contracts/bdd/`
+- Expected UIF contracts: `./contracts/uif/`
+- Behavior contracts: `./contracts/behavior/`
 - Data model: `./data-model.md`
 - Interface contracts: `./contracts/`
 - Validation path: `./quickstart.md`
+
+## Behavior-First Planning Inputs
+
+When present, consume requirement-phase behavior drafts as planning inputs:
+
+- `behavior/bdd.draft.feature`
+- `behavior/behavior-scenarios.draft.json`
+- `behavior/uif.intent.json`
+- `behavior/data-fixtures.intent.json`
+- `behavior/open-questions.json`
+
+Use these drafts to guide research decisions, fixture strategy, data-model entities, interface contracts, and quickstart validation paths.
+
+During Phase 1, if behavior drafts exist and `behavior/open-questions.json` has no blocking open questions, you must formalize them into formal behavior contracts:
+
+- `contracts/bdd/`: acceptance-level BDD contracts.
+- `contracts/uif/`: Expected UIF contracts.
+- `contracts/behavior/`: scenario instance, fixture, and assertion contracts.
+
+When formalizing BDD Draft into `contracts/bdd/*.feature`:
+
+- Preserve scenario intent and business outcome from the draft.
+- Convert ambiguous Given steps into formal fixture, actor, state, permission, or start-view conditions.
+- Convert When steps into formal user events, request cases, or system triggers aligned with UIF/API contracts.
+- Convert Then steps into formal feedback, response, business state, or assertion expectations.
+- If a step cannot be formalized without inventing information, record `N/A or blocker` instead of guessing.
+- Do not introduce independent traceability mechanisms for BDD formalization.
+
+If behavior drafts exist but cannot be formalized, write `N/A or blocker` in the affected planning artifact with the source draft path, the blocking question or missing input, and the downstream contract path that could not be produced. Do not silently skip behavior draft formalization.
+
+BDD draft reasoning must feed the normal planning outputs:
+
+- `research.md`: record the selected test level, fixture strategy, mock/external-system strategy, and error-branch validation decisions for each behavior scenario type that affects implementation.
+- `data-model.md`: model formal behavior entities when relevant, including `BehaviorScenarioInstance`, `DataFixture`, `UIFPath`, `FeedbackView`, and `BehaviorAssertion`.
+- `contracts/`: align interface contracts with BDD When steps, Expected UIF `api_call` steps, and behavior assertions.
+- `quickstart.md`: include validation paths that exercise the formal BDD/UIF/behavior contracts.
+
+Keep `plan.md` as summary/navigation for these formal behavior contracts. Product requirements stay in `spec.md`, domain details stay in `data-model.md`, interface schemas stay in `contracts/`, and validation run guidance stays in `quickstart.md`.
 
 {CORE_TEMPLATE}
 
@@ -60,4 +102,4 @@ Before finishing, the final report must list generated artifacts and state wheth
 - `contracts/sequences.md`: populated, intentionally minimal, or not applicable with reason.
 - `test-plan.md`: populated, intentionally minimal, or not applicable with reason.
 
-Report unresolved design gaps separately from implementation tasks. Do not mark the planning run complete if a design artifact contains unresolved `NEEDS CLARIFICATION` items that block task generation.
+Report unresolved design gaps separately from downstream tasks. Do not mark the planning run complete if a design artifact contains unresolved `NEEDS CLARIFICATION` items that block task generation.

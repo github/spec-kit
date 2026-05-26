@@ -3,6 +3,189 @@ from __future__ import annotations
 from typing import Any
 
 
+def _duplicate_ids(items: list[dict[str, Any]], *, key: str, context: str) -> set[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for item in items:
+        item_id = item.get(key)
+        if item_id in seen:
+            duplicates.add(item_id)
+        seen.add(item_id)
+    if duplicates:
+        duplicate = sorted(duplicates)[0]
+        raise ValueError(f"{context} duplicates {key}: {duplicate}")
+    return seen
+
+
+def _require_non_empty_list(item: dict[str, Any], *, key: str, context: str) -> None:
+    values = item.get(key)
+    item_id = item.get("id", "<unknown>")
+    if not isinstance(values, list) or not values:
+        raise ValueError(f"{context} {item_id} must include non-empty {key}")
+
+
+def _validate_expected_uif_contract(uif_contract: dict[str, Any]) -> None:
+    uif_id = uif_contract.get("id", "<unknown>")
+    steps = uif_contract.get("steps")
+    if not isinstance(steps, list) or not steps:
+        raise ValueError(f"expected UIF contract {uif_id} must include non-empty steps")
+
+    for index, step in enumerate(steps):
+        step_type = step.get("type")
+        context = f"expected UIF contract {uif_id} step {index}"
+        if step_type == "api_call":
+            api = step.get("api")
+            if not isinstance(api, dict) or not api.get("method") or not api.get("path"):
+                raise ValueError(f"{context} api_call requires api.method and api.path")
+        elif step_type == "local_route":
+            if "to" not in step or step.get("to") in ("", None):
+                raise ValueError(f"{context} local_route requires to")
+        elif step_type == "user_event":
+            if not step.get("id") and not step.get("label"):
+                raise ValueError(f"{context} user_event requires id or label")
+
+
+def _handoff_has_behavior_contract_context(handoff: dict[str, Any]) -> bool:
+    markers = (
+        "contracts/bdd/",
+        "contracts/uif/",
+        "contracts/behavior/",
+        "BehaviorScenarioInstance",
+        "BDD scenario",
+        "behavior assertion",
+    )
+    values: list[str] = []
+    for key in ("allowed_read_paths", "allowed_write_paths", "task_text"):
+        field = handoff.get(key, [])
+        if isinstance(field, list):
+            values.extend(str(item) for item in field)
+    haystack = "\n".join(values)
+    return any(marker in haystack for marker in markers)
+
+
+def _receipt_references_behavior_evidence(receipt: dict[str, Any]) -> bool:
+    markers = (
+        "SCN-",
+        "AST-",
+        "BDD",
+        "contracts/bdd/",
+        "contracts/uif/",
+        "contracts/behavior/",
+        "contracts/api/",
+        "quickstart.md",
+    )
+    evidence = "\n".join(str(item) for item in receipt.get("validation_evidence", []))
+    return any(marker in evidence for marker in markers)
+
+
+def validate_behavior_draft_contract(
+    scenarios_draft: dict[str, Any],
+    data_fixtures_intent: dict[str, Any],
+    open_questions: dict[str, Any] | None = None,
+) -> None:
+    scenarios = scenarios_draft.get("scenarios", [])
+    if not scenarios:
+        raise ValueError("behavior draft scenarios must include at least one scenario")
+
+    scenario_ids = _duplicate_ids(
+        scenarios,
+        key="id",
+        context="behavior draft scenarios",
+    )
+    for scenario in scenarios:
+        for key in ("given", "when", "then"):
+            _require_non_empty_list(
+                scenario,
+                key=key,
+                context="behavior draft scenario",
+            )
+
+    _duplicate_ids(
+        data_fixtures_intent.get("fixtures", []),
+        key="id",
+        context="behavior data fixture intents",
+    )
+
+    for fixture in data_fixtures_intent.get("fixtures", []):
+        for scenario_id in fixture.get("required_for", []):
+            if scenario_id not in scenario_ids:
+                raise ValueError(f"fixture required_for references unknown scenario: {scenario_id}")
+
+    if open_questions is None:
+        return
+
+    _duplicate_ids(
+        open_questions.get("questions", []),
+        key="id",
+        context="behavior open questions",
+    )
+    for question in open_questions.get("questions", []):
+        target = question.get("target")
+        if target and str(target).startswith("SCN-") and target not in scenario_ids:
+            raise ValueError(f"open question targets unknown scenario: {target}")
+
+
+def validate_behavior_contract_bundle(
+    scenario_instances: dict[str, Any],
+    data_fixtures: dict[str, Any],
+    assertions: dict[str, Any],
+    uif_expected_contracts: list[dict[str, Any]],
+) -> None:
+    scenarios = scenario_instances.get("scenarios", [])
+    if not scenarios:
+        raise ValueError("behavior scenario instances must include at least one scenario")
+
+    scenario_ids = _duplicate_ids(
+        scenarios,
+        key="id",
+        context="behavior scenario instances",
+    )
+    fixture_ids = _duplicate_ids(
+        data_fixtures.get("fixtures", []),
+        key="id",
+        context="behavior data fixtures",
+    )
+    assertion_ids = _duplicate_ids(
+        assertions.get("assertions", []),
+        key="id",
+        context="behavior assertions",
+    )
+    uif_path_ids = _duplicate_ids(
+        uif_expected_contracts,
+        key="id",
+        context="expected UIF contracts",
+    )
+    for uif_contract in uif_expected_contracts:
+        _validate_expected_uif_contract(uif_contract)
+
+    for scenario in scenarios:
+        _require_non_empty_list(
+            scenario,
+            key="fixture_ids",
+            context="behavior scenario instance",
+        )
+        _require_non_empty_list(
+            scenario,
+            key="assertion_ids",
+            context="behavior scenario instance",
+        )
+
+        uif_path_id = scenario.get("uif_path_id")
+        if uif_path_id not in uif_path_ids:
+            raise ValueError(f"scenario references unknown uif_path_id: {uif_path_id}")
+
+        for fixture_id in scenario.get("fixture_ids", []):
+            if fixture_id not in fixture_ids:
+                raise ValueError(f"scenario references unknown fixture: {fixture_id}")
+
+        for assertion_id in scenario.get("assertion_ids", []):
+            if assertion_id not in assertion_ids:
+                raise ValueError(f"scenario references unknown assertion: {assertion_id}")
+
+    if len(scenario_ids) != len(scenario_instances.get("scenarios", [])):
+        raise ValueError("behavior scenario instances contain duplicate ids")
+
+
 def validate_manifest_contract(manifest: dict[str, Any]) -> None:
     shard_ids = {shard["shard_id"] for shard in manifest.get("shards", [])}
     ordered_shard_ids: list[str] = []
@@ -136,6 +319,16 @@ def validate_receipt_contract(
         raise ValueError("receipt completed_task_ids outside handoff")
     if not set(receipt.get("completed_task_ids", [])).issubset(set(receipt.get("task_ids", []))):
         raise ValueError("receipt completed_task_ids outside receipt task_ids")
+
+    if not receipt.get("validation_evidence"):
+        raise ValueError("receipt validation_evidence must not be empty")
+    if _handoff_has_behavior_contract_context(
+        handoff
+    ) and not _receipt_references_behavior_evidence(receipt):
+        raise ValueError(
+            "receipt validation_evidence must reference relevant BDD scenario, "
+            "behavior assertion, API contract, or quickstart path"
+        )
 
     for path in receipt.get("changed_paths", []):
         if path not in handoff.get("allowed_write_paths", []):

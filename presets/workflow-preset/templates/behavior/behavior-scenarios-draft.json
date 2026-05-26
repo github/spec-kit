@@ -1,0 +1,15 @@
+{
+  "contract_type": "speckit.behavior.scenarios.draft.v1",
+  "feature": "<feature-name>",
+  "scenarios": [
+    {
+      "id": "SCN-001",
+      "title": "<draft behavior title>",
+      "type": "positive",
+      "given": ["FIX-001"],
+      "when": ["user_action"],
+      "then": ["expected_feedback_or_state"],
+      "source": "specify"
+    }
+  ]
+}

@@ -14,6 +14,7 @@ This repository is a Spec Kit community preset named `workflow-preset`.
 ## Development Rules
 
 - Preserve the preset contract tested by `tests/test_preset_contract.py`.
+- Follow the Extension Governance in `docs/extension-governance.md` before adding or changing preset commands, templates, schemas, validators, handoff contracts, or behavior-first artifacts.
 - Keep `/speckit.plan` and `/speckit.tasks` as core-template wrappers.
 - Keep `/speckit.implement` as a replacement command with Core Agent, Vertical Planner Agent, and Worker Agent modes.
 - Do not reintroduce Python orchestration, workflow shell dispatch, integration adapter scripts, or worker dispatch from scripts.

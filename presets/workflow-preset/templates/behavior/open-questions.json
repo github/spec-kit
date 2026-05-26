@@ -1,0 +1,12 @@
+{
+  "contract_type": "speckit.behavior.open_questions.v1",
+  "questions": [
+    {
+      "id": "Q-001",
+      "target": "SCN-001",
+      "question": "<requirement ambiguity>",
+      "reason": "<why behavior cannot be verified yet>",
+      "status": "open"
+    }
+  ]
+}

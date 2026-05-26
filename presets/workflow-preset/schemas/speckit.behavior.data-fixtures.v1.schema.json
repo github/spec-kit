@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "speckit.behavior.data-fixtures.v1.schema.json",
+  "title": "Spec Kit Behavior Data Fixtures",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_type", "fixtures"],
+  "properties": {
+    "contract_type": {
+      "const": "speckit.behavior.data_fixtures.v1"
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "entities", "required_states", "constraints", "setup_strategy"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "name": {"type": "string", "minLength": 1},
+          "entities": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "required_states": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "constraints": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "setup_strategy": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

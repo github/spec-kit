@@ -1,0 +1,18 @@
+{
+  "contract_type": "speckit.behavior.uif.intent.v1",
+  "feature": "<feature-name>",
+  "intents": [
+    {
+      "id": "UIF-INTENT-001",
+      "start_view": "<StartView>",
+      "events": [
+        {
+          "name": "user_action",
+          "label": "<visible label>"
+        }
+      ],
+      "expected_feedback": ["<message or state feedback>"],
+      "possible_transition_types": ["local_route", "api_call"]
+    }
+  ]
+}

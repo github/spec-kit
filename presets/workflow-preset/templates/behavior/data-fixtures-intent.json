@@ -1,0 +1,13 @@
+{
+  "contract_type": "speckit.behavior.data_fixtures.intent.v1",
+  "fixtures": [
+    {
+      "id": "FIX-001",
+      "description": "<required test data intent>",
+      "required_for": ["SCN-001"],
+      "required_states": {
+        "entity.field": "value"
+      }
+    }
+  ]
+}

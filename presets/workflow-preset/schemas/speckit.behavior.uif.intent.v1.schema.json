@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "speckit.behavior.uif.intent.v1.schema.json",
+  "title": "Spec Kit UIF Intent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_type", "feature", "intents"],
+  "properties": {
+    "contract_type": {
+      "const": "speckit.behavior.uif.intent.v1"
+    },
+    "feature": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "start_view",
+          "events",
+          "expected_feedback",
+          "possible_transition_types"
+        ],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "start_view": {"type": "string", "minLength": 1},
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "label"],
+              "properties": {
+                "name": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1}
+              }
+            }
+          },
+          "expected_feedback": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "possible_transition_types": {
+            "type": "array",
+            "items": {"enum": ["local_route", "api_call", "external_link", "system_event"]}
+          }
+        }
+      }
+    }
+  }
+}

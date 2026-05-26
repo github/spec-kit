@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.1.0
+
+- Tightened `/speckit.plan` BDD Draft formalization rules to improve reasoning stability without adding a traceability system.
+- Hardened behavior contract quality gates for BDD Given/When/Then, scenario fixtures, assertions, Expected UIF steps, formalization blockers, and behavior-linked validation evidence.
+- Added `/speckit.analyze` ownership for behavior-first vertical consistency across requirements, behavior drafts, contracts, and tasks.
+- Added behavior-first requirement drafts, clarification/checklist wrappers, formal behavior contract templates, JSON schemas, and validator coverage.
 - Expanded project documentation for the planning artifact capabilities and implementation-stage context-load controls that reduce reasoning drift.
 
 ## 1.0.3

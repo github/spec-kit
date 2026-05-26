@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "speckit.behavior.scenarios.draft.v1.schema.json",
+  "title": "Spec Kit Behavior Scenarios Draft",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_type", "feature", "scenarios"],
+  "properties": {
+    "contract_type": {
+      "const": "speckit.behavior.scenarios.draft.v1"
+    },
+    "feature": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "type", "given", "when", "then", "source"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "title": {"type": "string", "minLength": 1},
+          "type": {
+            "enum": ["positive", "negative", "boundary", "permission", "validation", "state_conflict"]
+          },
+          "given": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "when": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "then": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "source": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

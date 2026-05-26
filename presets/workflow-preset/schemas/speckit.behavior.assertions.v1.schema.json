@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "speckit.behavior.assertions.v1.schema.json",
+  "title": "Spec Kit Behavior Assertions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_type", "assertions"],
+  "properties": {
+    "contract_type": {
+      "const": "speckit.behavior.assertions.v1"
+    },
+    "assertions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "target", "operator", "expected"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "target": {"type": "string", "minLength": 1},
+          "operator": {"enum": ["equals", "not_equals", "contains", "exists", "matches"]},
+          "expected": {}
+        }
+      }
+    }
+  }
+}

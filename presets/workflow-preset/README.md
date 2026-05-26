@@ -1,8 +1,8 @@
 # Workflow Preset
 
-This Spec Kit community preset combines design-aware planning with agent-native handoff orchestration.
+This Spec Kit community preset combines behavior-first specification, design-aware planning, and agent-native handoff orchestration.
 
-It keeps `/speckit.plan` and `/speckit.tasks` compatible with the core workflow while adding optional design artifacts for internal object design, service sequencing, and test strategy. It replaces `/speckit.implement` with a Core Agent, Vertical Planner Agent, and Worker Agent orchestration contract that writes handoffs to disk.
+It keeps `/speckit.specify`, `/speckit.clarify`, `/speckit.checklist`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.analyze` compatible with the core workflow while adding behavior drafts, behavior testability checks, optional design artifacts for internal object design, service sequencing, and test strategy. It replaces `/speckit.implement` with a Core Agent, Vertical Planner Agent, and Worker Agent orchestration contract that writes handoffs to disk.
 
 ## Goal
 
@@ -10,6 +10,7 @@ It keeps `/speckit.plan` and `/speckit.tasks` compatible with the core workflow 
 
 The preset has two goals:
 
+- Make behavior testability explicit early by drafting BDD, UIF intent, fixture intent, and behavior questions during requirement work.
 - Preserve richer planning intent so downstream tasks and implementation do not lose object design, service-flow, or validation decisions.
 - Execute implementation through agent-native handoff orchestration so each worker receives explicit task IDs, lifecycle stage, vertical capability, context, read/write paths, validation commands, and receipt requirements.
 
@@ -17,8 +18,9 @@ The preset has two goals:
 
 Large Spec Kit features can overload the implementation phase. A single `/speckit.implement` run may need to keep product requirements, technical decisions, domain details, interface contracts, object design, service flows, test strategy, task ordering, and current code changes in one prompt. As the context grows, the agent is more likely to drift from earlier design decisions, blur task boundaries, read unrelated documents, update the wrong files, or mark tasks complete without enough validation evidence.
 
-`workflow-preset` reduces that failure mode in two complementary ways:
+`workflow-preset` reduces that failure mode in three complementary ways:
 
+- Requirement enhancement keeps draft behavior, interaction intent, fixture intent, and behavior questions beside `spec.md`.
 - Plan enhancement gives object design, service sequencing, and validation intent stable homes before tasks are generated.
 - Implement handoff orchestration slices work by lifecycle and vertical capability, then gives each Worker Agent a compact digest, scoped paths, validation commands, and a receipt contract instead of the full planning corpus.
 
@@ -26,9 +28,20 @@ The intent is not to add ceremony to simple features. The intent is to preserve 
 
 ## Capabilities
 
+Requirement capabilities:
+
+- Wraps `/speckit.specify` to produce requirement-phase behavior drafts when useful.
+- Writes `behavior/bdd.draft.feature`, `behavior/behavior-scenarios.draft.json`, `behavior/uif.intent.json`, `behavior/data-fixtures.intent.json`, and `behavior/open-questions.json`.
+- Applies BDD draft quality rules for scenario type coverage and Given/When/Then mapping.
+- Wraps `/speckit.clarify` so Given/When/Then ambiguity can drive requirement questions.
+- Wraps `/speckit.checklist` to add `checklists/behavior-testability.md`.
+- Keeps BDD Draft and UIF Intent separate from formal planning contracts.
+
 Planning capabilities:
 
 - Wraps `/speckit.plan` to produce optional/contextual design artifacts when useful.
+- Consumes behavior drafts and must formalize them into `contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` when no blocking behavior questions exist.
+- Records `N/A or blocker` when behavior drafts cannot be formalized.
 - Keeps `plan.md` focused on technical decisions and navigation.
 - Adds plan-template navigation to the core plan output.
 - Stores internal object design in `class-diagram.md`.
@@ -39,8 +52,15 @@ Planning capabilities:
 Task generation capabilities:
 
 - Wraps `/speckit.tasks` so task generation can consume the design artifacts.
+- Uses formal BDD, UIF, and behavior contracts to derive test-first fixture, acceptance test, implementation, and verification tasks.
 - Uses design artifacts to derive implementation, integration, orchestration, failure-handling, and validation tasks.
 - Preserves the existing checklist format and user-story organization.
+
+Analysis capabilities:
+
+- Wraps `/speckit.analyze` to check vertical consistency from `spec.md` through BDD/UIF intent, formal contracts, and `tasks.md`.
+- Checks that user stories, Given/When/Then steps, UIF API calls, behavior contracts, tasks, and quickstart validation paths remain traceable.
+- Treats UIF as a requirement behavior projection, formalized during planning as Expected UIF contracts.
 
 Implementation capabilities:
 
@@ -51,6 +71,7 @@ Implementation capabilities:
 - Writes `handoff-manifest.json`, one handoff JSON, one context digest, a context index, and one worker receipt per shard.
 - Defines deterministic shard, context digest, and allowed path derivation rules.
 - Keeps manifest, handoff, and receipt JSON contracts in standalone schema files.
+- Requires behavior-linked `validation_evidence` in worker receipts when behavior contracts are in handoff context.
 - Assigns every handoff a lifecycle stage and vertical capability such as `domain-model`, `api-contract`, `persistence`, `service-flow`, `ui`, `test-validation`, `documentation`, `integration`, or `cleanup`.
 - Supports direct single-shard execution with `Use handoff JSON <path>`.
 - Blocks worker execution when generated context has unresolved `context_gaps`.
@@ -66,14 +87,17 @@ Context-load controls:
 
 ## Workflow
 
-1. `/speckit.plan` keeps the core planning outputs and adds design artifacts when they help implementation.
-2. `/speckit.tasks` reads the core plan outputs plus the design artifacts and produces executable tasks.
-3. `/speckit.implement` enters Core Agent mode when no handoff path is provided.
-4. The Core Agent writes `context-index.json` and dispatches one Vertical Planner Agent per active vertical capability.
-5. Vertical Planner Agents produce shard plans, handoff drafts, context digest drafts, and allowed path derivations.
-6. The Core Agent assembles final handoffs and writes `handoff-manifest.json`.
-7. Worker Agents run only from persisted handoff JSON files and write receipts.
-8. The Core Agent reviews receipts, updates `tasks.md`, runs integration verification, and reports closeout status.
+1. `/speckit.specify` keeps the core requirements output and adds behavior drafts when they help clarify acceptance behavior.
+2. `/speckit.clarify` and `/speckit.checklist` use those drafts to surface ambiguity and testability gaps.
+3. `/speckit.plan` keeps the core planning outputs, formalizes behavior drafts into contracts, and adds design artifacts when they help implementation.
+4. `/speckit.tasks` reads the core plan outputs plus behavior and design artifacts, then produces executable tasks.
+5. `/speckit.analyze` checks vertical consistency across requirements, behavior drafts, contracts, and tasks.
+6. `/speckit.implement` enters Core Agent mode when no handoff path is provided.
+7. The Core Agent writes `context-index.json` and dispatches one Vertical Planner Agent per active vertical capability.
+8. Vertical Planner Agents produce shard plans, handoff drafts, context digest drafts, and allowed path derivations.
+9. The Core Agent assembles final handoffs and writes `handoff-manifest.json`.
+10. Worker Agents run only from persisted handoff JSON files and write receipts.
+11. The Core Agent reviews receipts, updates `tasks.md`, runs integration verification, and reports closeout status.
 
 ## Non-Goals
 
@@ -81,6 +105,7 @@ Context-load controls:
 - It does not move product requirements out of `spec.md`.
 - It does not move API or message schemas out of `contracts/`.
 - It does not replace `data-model.md`, `research.md`, or `quickstart.md`.
+- It does not infer UIF from built code; UIF remains a requirement and planning contract.
 - It does not provide a Python orchestration script, workflow shell runner, or integration adapter layer.
 - It does not allow Worker Agents to freely expand context by reading full planning documents when the digest is insufficient.
 
@@ -89,7 +114,7 @@ Context-load controls:
 Release install:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/archive/refs/tags/v1.0.3.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/archive/refs/tags/v1.1.0.zip
 ```
 
 Local development install:
@@ -100,11 +125,15 @@ specify preset add --dev /path/to/workflow-preset
 
 ## Usage
 
-Run the normal planning and task generation commands:
+Run the behavior-first workflow:
 
 ```text
+/speckit.specify
+/speckit.clarify
+/speckit.checklist
 /speckit.plan
 /speckit.tasks
+/speckit.analyze
 ```
 
 Then run agent-native orchestrated implementation:
@@ -130,6 +159,21 @@ The core planning workflow still owns its normal artifacts:
 - `specs/<feature>/quickstart.md`
 - `specs/<feature>/tasks.md`
 
+This preset adds requirement-phase behavior artifacts:
+
+- `specs/<feature>/behavior/bdd.draft.feature`
+- `specs/<feature>/behavior/behavior-scenarios.draft.json`
+- `specs/<feature>/behavior/uif.intent.json`
+- `specs/<feature>/behavior/data-fixtures.intent.json`
+- `specs/<feature>/behavior/open-questions.json`
+- `specs/<feature>/checklists/behavior-testability.md`
+
+This preset adds planning-phase formal behavior contracts:
+
+- `specs/<feature>/contracts/bdd/`
+- `specs/<feature>/contracts/uif/`
+- `specs/<feature>/contracts/behavior/`
+
 This preset adds optional/contextual planning artifacts:
 
 - `specs/<feature>/class-diagram.md`
@@ -147,6 +191,14 @@ Agent-native handoff orchestration writes implementation artifacts:
 
 Contract files packaged by the preset:
 
+- `schemas/speckit.behavior.scenarios.draft.v1.schema.json`
+- `schemas/speckit.behavior.uif.intent.v1.schema.json`
+- `schemas/speckit.behavior.data-fixtures.intent.v1.schema.json`
+- `schemas/speckit.behavior.open-questions.v1.schema.json`
+- `schemas/speckit.behavior.uif.expected.v1.schema.json`
+- `schemas/speckit.behavior.scenario-instances.v1.schema.json`
+- `schemas/speckit.behavior.data-fixtures.v1.schema.json`
+- `schemas/speckit.behavior.assertions.v1.schema.json`
 - `schemas/speckit.implement.manifest.v1.schema.json`
 - `schemas/speckit.implement.handoff.v2.schema.json`
 - `schemas/speckit.implement.receipt.v1.schema.json`
@@ -156,6 +208,10 @@ Development-only contract helpers:
 - `validators/speckit_implement_contract.py`
 
 ## Artifact Roles
+
+`behavior/bdd.draft.feature` captures requirement-phase behavior in readable Given/When/Then form. `behavior/behavior-scenarios.draft.json`, `behavior/uif.intent.json`, and `behavior/data-fixtures.intent.json` make the same draft behavior machine-readable enough for clarification, checklist, and planning.
+
+`contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` contain planning-phase formal behavior contracts. They are generated from the requirement drafts after planning has resolved fixture strategy, data model, interface contracts, and validation paths, unless planning records `N/A or blocker` for unresolved behavior questions.
 
 `class-diagram.md` captures internal implementation object structure: classes, interfaces, abstract types, composition, dependencies, references, and design pattern participants. It is the object design map that helps implementation preserve boundaries between services, adapters, repositories, strategies, factories, controllers, coordinators, and extension points.
 
@@ -262,7 +318,7 @@ specify preset remove workflow-preset
 After tagging a release, validate archive installation:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/archive/refs/tags/v1.0.3.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/archive/refs/tags/v1.1.0.zip
 ```
 
 ## Source Rationale
