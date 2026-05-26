@@ -191,6 +191,24 @@ class SkillsIntegrationTests:
             "- For each executable hook, output the following"
         )
 
+    def test_hook_note_injected_for_each_instruction_independently(self):
+        """Existing hook notes should not suppress later missing notes."""
+        content = (
+            "---\n"
+            "name: test\n"
+            "---\n\n"
+            "- When constructing slash commands from hook command names, "
+            "replace dots (`.`) with hyphens (`-`). "
+            "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
+            "- For each executable hook, output the following first block:\n"
+            "\n"
+            "- For each executable hook, output the following second block:\n"
+        )
+
+        result = SkillsIntegration._inject_hook_command_note(content)
+
+        assert result.count("replace dots (`.`) with hyphens") == 2
+
     def test_skill_body_has_content(self, tmp_path):
         """Each SKILL.md body should contain template content after the frontmatter."""
         i = get_integration(self.KEY)

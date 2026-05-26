@@ -76,14 +76,17 @@ class CodexIntegration(SkillsIntegration):
 
         Targets the line ``- For each executable hook, output the following``
         and inserts the note on the line before it, matching its indentation.
-        Skips if the note is already present.
+        Skips individual instructions that already have the note immediately
+        above them.
         """
-        if _HOOK_COMMAND_NOTE.rstrip("\n") in content:
-            return content
+        note = _HOOK_COMMAND_NOTE.rstrip("\n")
 
         def repl(m: re.Match[str]) -> str:
             indent = m.group(1)
             instruction = m.group(2)
+            previous_lines = content[:m.start()].splitlines()
+            if previous_lines and previous_lines[-1] == indent + note:
+                return m.group(0)
             # ``eol`` is empty when the regex matched via ``$`` because the
             # instruction was the final line of a file with no trailing
             # newline. Default to ``\n`` so the note never collapses onto
@@ -91,7 +94,7 @@ class CodexIntegration(SkillsIntegration):
             eol = m.group(3) or "\n"
             return (
                 indent
-                + _HOOK_COMMAND_NOTE.rstrip("\n")
+                + note
                 + eol
                 + indent
                 + instruction
@@ -99,7 +102,7 @@ class CodexIntegration(SkillsIntegration):
             )
 
         return re.sub(
-            r"(?m)^(\s*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
+            r"(?m)^([ \t]*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
             repl,
             content,
         )

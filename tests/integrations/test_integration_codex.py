@@ -71,6 +71,20 @@ class TestCodexHookCommandNote:
         twice = CodexIntegration._inject_hook_command_note(once)
         assert once == twice, "Hook note injection should be idempotent"
 
+    def test_hook_note_fills_missing_repeated_instructions(self):
+        """Already-noted hook sections should not suppress later sections."""
+        from specify_cli.integrations.codex import CodexIntegration, _HOOK_COMMAND_NOTE
+
+        content = (
+            "---\nname: test\n---\n\n"
+            f"{_HOOK_COMMAND_NOTE}"
+            "- For each executable hook, output the following based on its flag:\n"
+            "\n"
+            "  - For each executable hook, output the following based on its flag:\n"
+        )
+        result = CodexIntegration._inject_hook_command_note(content)
+        assert result.count("replace dots (`.`) with hyphens") == 2
+
     def test_hook_note_not_suppressed_by_unrelated_phrase(self):
         """Unrelated text should not trip the hook-note idempotence guard."""
         from specify_cli.integrations.codex import CodexIntegration
