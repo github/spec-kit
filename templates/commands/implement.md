@@ -212,5 +212,5 @@ Report final status with summary of completed work.
 
 - [ ] All tasks in tasks.md completed and marked `[X]`
 - [ ] Implementation validated against specification, plan, and test coverage
-- [ ] Extension hooks dispatched (if `.specify/extensions.yml` exists and has `after_implement` hooks)
+- [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
 - [ ] Completion reported to user with summary of completed work

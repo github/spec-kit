@@ -132,12 +132,6 @@ Output path to generated tasks.md and summary:
 - Suggested MVP scope (typically just User Story 1)
 - Format validation: Confirm ALL tasks follow the checklist format (checkbox, ID, labels, file paths)
 
-## Done When
-
-- [ ] tasks.md generated with all phases, task IDs, and file paths
-- [ ] Extension hooks dispatched (if `.specify/extensions.yml` exists and has `after_tasks` hooks)
-- [ ] Completion reported to user with task count, story breakdown, and MVP scope
-
 Context for task generation: {ARGS}
 
 The tasks.md should be immediately executable - each task must be specific enough that an LLM can complete it without additional context.
@@ -213,3 +207,9 @@ Every task MUST strictly follow this format:
   - Within each story: Tests (if requested) → Models → Services → Endpoints → Integration
   - Each phase should be a complete, independently testable increment
 - **Final Phase**: Polish & Cross-Cutting Concerns
+
+## Done When
+
+- [ ] tasks.md generated with all phases, task IDs, and file paths
+- [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
+- [ ] Completion reported to user with task count, story breakdown, and MVP scope

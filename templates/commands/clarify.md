@@ -255,5 +255,5 @@ Report completion (after questioning loop ends or early termination):
 ## Done When
 
 - [ ] Spec ambiguities identified and clarifications integrated into spec file
-- [ ] Extension hooks dispatched (if `.specify/extensions.yml` exists and has `after_clarify` hooks)
+- [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
 - [ ] Completion reported to user with questions answered, sections touched, and coverage summary

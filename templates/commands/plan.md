@@ -107,12 +107,6 @@ Check if `.specify/extensions.yml` exists in the project root.
 
 Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
 
-## Done When
-
-- [ ] Plan workflow executed and design artifacts generated
-- [ ] Extension hooks dispatched (if `.specify/extensions.yml` exists and has `after_plan` hooks)
-- [ ] Completion reported to user with branch, plan path, and generated artifacts
-
 ## Phases
 
 ### Phase 0: Outline & Research
@@ -162,3 +156,9 @@ Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generate
 
 - Use absolute paths for filesystem operations; use project-relative paths for references in documentation and agent context files
 - ERROR on gate failures or unresolved clarifications
+
+## Done When
+
+- [ ] Plan workflow executed and design artifacts generated
+- [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
+- [ ] Completion reported to user with branch, plan path, and generated artifacts

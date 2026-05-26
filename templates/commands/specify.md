@@ -271,12 +271,6 @@ Report completion to the user with:
 
 **NOTE:** Branch creation is handled by the `before_specify` hook (git extension). Spec directory and file creation are always handled by this core command.
 
-## Done When
-
-- [ ] Specification written to `SPEC_FILE` and validated against quality checklist
-- [ ] Extension hooks dispatched (if `.specify/extensions.yml` exists and has `after_specify` hooks)
-- [ ] Completion reported to user with feature directory, spec file path, and checklist results
-
 ## Quick Guidelines
 
 - Focus on **WHAT** users need and **WHY**.
@@ -337,3 +331,9 @@ Success criteria must be:
 - "Database can handle 1000 TPS" (implementation detail, use user-facing metric)
 - "React components render efficiently" (framework-specific)
 - "Redis cache hit rate above 80%" (technology-specific)
+
+## Done When
+
+- [ ] Specification written to `SPEC_FILE` and validated against quality checklist
+- [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
+- [ ] Completion reported to user with feature directory, spec file path, and checklist results
