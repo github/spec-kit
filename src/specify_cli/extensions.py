@@ -807,13 +807,15 @@ class ExtensionManager:
 
         Kimi is treated as a native-skills agent: if ``ai == "kimi"`` and
         ``.kimi/skills`` exists, extension installs should still propagate
-        command skills even when ``ai_skills`` is false.
+        command skills even when ``ai_skills`` is false.  For Kimi the
+        directory is **not** created on demand — it must already exist.
 
         Returns:
             The skills directory ``Path``, or ``None`` if skills were not
             enabled and no native-skills fallback applies.
         """
         from . import load_init_options, _get_skills_dir as resolve_skills_dir
+        from .shared_infra import _ensure_safe_shared_directory
 
         opts = load_init_options(self.project_root)
         if not isinstance(opts, dict):
@@ -828,7 +830,13 @@ class ExtensionManager:
             return None
 
         skills_dir = resolve_skills_dir(self.project_root, agent)
-        skills_dir.mkdir(parents=True, exist_ok=True)
+
+        if not ai_skills_enabled:
+            # Kimi native-skills fallback: use the directory only if it exists.
+            return skills_dir if skills_dir.is_dir() else None
+
+        # ai_skills is explicitly enabled — create the directory safely.
+        _ensure_safe_shared_directory(self.project_root, skills_dir)
         return skills_dir
 
     def _register_extension_skills(

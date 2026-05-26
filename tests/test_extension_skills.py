@@ -178,8 +178,8 @@ class TestExtensionManagerGetSkillsDir:
         result = manager._get_skills_dir()
         assert result is None
         # Ensure the directory was NOT created on disk
-        from specify_cli import AGENT_CONFIG
-        skills_path = no_skills_project / AGENT_CONFIG["claude"]["folder"].rstrip("/") / "skills"
+        from specify_cli import _get_skills_dir as resolve_skills_dir
+        skills_path = resolve_skills_dir(no_skills_project, "claude")
         assert not skills_path.exists()
 
     def test_returns_none_when_no_init_options(self, project_dir):
@@ -486,9 +486,8 @@ class TestExtensionSkillRegistration:
         )
 
         # Skills dir should have been created automatically
-        from specify_cli import AGENT_CONFIG
-        agent_folder = AGENT_CONFIG[ai]["folder"].rstrip("/")
-        skills_dir = project_dir / agent_folder / "skills"
+        from specify_cli import _get_skills_dir as resolve_skills_dir
+        skills_dir = resolve_skills_dir(project_dir, ai)
         assert skills_dir.is_dir()
 
         # SKILL.md files should exist
