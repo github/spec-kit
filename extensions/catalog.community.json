@@ -3160,6 +3160,48 @@
       "created_at": "2026-05-01T00:00:00Z",
       "updated_at": "2026-05-01T00:00:00Z"
     },
+    "token-budget": {
+      "name": "Token Budget",
+      "id": "token-budget",
+      "description": "Reduces LLM token consumption in Spec Kit workflows: compact artifacts in-place, scope per-phase reading, suppress prose padding, and report token usage.",
+      "author": "Tine Kondo",
+      "version": "1.0.1",
+      "download_url": "https://github.com/tinesoft/spec-kit-token-budget/archive/refs/tags/v1.0.1.zip",
+      "repository": "https://github.com/tinesoft/spec-kit-token-budget",
+      "homepage": "https://github.com/tinesoft/spec-kit-token-budget",
+      "documentation": "https://github.com/tinesoft/spec-kit-token-budget/blob/main/README.md",
+      "changelog": "https://github.com/tinesoft/spec-kit-token-budget/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "python3 + tiktoken",
+            "required": false
+          },
+          {
+            "name": "rtk",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 6
+      },
+      "tags": [
+        "tokens",
+        "budget",
+        "context",
+        "efficiency",
+        "cost-optimization"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-26T00:00:00Z",
+      "updated_at": "2026-05-26T00:00:00Z"
+    },
     "v-model": {
       "name": "V-Model Extension Pack",
       "id": "v-model",
