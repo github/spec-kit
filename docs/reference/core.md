@@ -10,7 +10,7 @@ specify init [<project_name>]
 
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
-| `--integration <key>`    | AI coding agent integration to use (e.g. `copilot`, `claude`, `gemini`). Equivalent to `--ai`; do not combine them. See the [Integrations reference](integrations.md) for all available keys |
+| `--integration <key>`    | AI coding agent integration to use (e.g. `copilot`, `claude`, `gemini`). Equivalent to `--ai <key>`; do not combine them. See the [Integrations reference](integrations.md) for all available keys |
 | `--ai <key>`             | Short alias for `--integration <key>`; do not combine with `--integration` |
 | `--integration-options`  | Options for the integration (e.g. `--integration-options="--commands-dir .myagent/cmds"`) |
 | `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                       |

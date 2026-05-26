@@ -44,7 +44,8 @@ class TestCliDiagnosticFormatting:
 
 
 def _assert_no_ai_deprecation_output(output: str) -> None:
-    lower_output = output.lower()
+    clean_output = strip_ansi(output)
+    lower_output = _normalize_cli_output(clean_output).lower()
     assert "deprecation warning" not in lower_output
     assert "no longer be available" not in lower_output
     assert "commands will no longer be available" not in lower_output
@@ -52,9 +53,9 @@ def _assert_no_ai_deprecation_output(output: str) -> None:
     assert "deprecated --ai" not in lower_output
 
     ai_related_blocks = [
-        block
-        for block in re.split(r"\n\s*\n", lower_output)
-        if "--ai" in block
+        _normalize_cli_output(block).lower()
+        for block in re.split(r"\n\s*\n", clean_output)
+        if "--ai" in block.lower()
     ]
     for block in ai_related_blocks:
         assert "deprecated" not in block
@@ -193,7 +194,7 @@ class TestInitIntegrationFlag:
 
         normalized_output = _normalize_cli_output(result.output)
         assert result.exit_code == 0, result.output
-        _assert_no_ai_deprecation_output(normalized_output)
+        _assert_no_ai_deprecation_output(result.output)
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
 
     def test_ai_generic_alias_does_not_emit_deprecation_warning(self, tmp_path):
@@ -215,7 +216,7 @@ class TestInitIntegrationFlag:
 
         normalized_output = _normalize_cli_output(result.output)
         assert result.exit_code == 0, result.output
-        _assert_no_ai_deprecation_output(normalized_output)
+        _assert_no_ai_deprecation_output(result.output)
         assert ".myagent/commands" in normalized_output
         assert (project / ".myagent" / "commands" / "speckit.plan.md").exists()
 
