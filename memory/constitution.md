@@ -15,7 +15,7 @@ Sync Impact Report
     `templates/commands/*.md` are consumed by downstream projects and remain
     unaffected — this constitution governs only spec-kit's own work)
 - Follow-up TODOs: none
-- Provenance: see GitHub Discussion #2504
+- Provenance: see https://github.com/github/spec-kit/discussions/2504
 -->
 
 # Spec Kit Constitution
@@ -39,17 +39,29 @@ SDD MUST NOT be applied as theater. Refactors, plumbing changes, dependency bump
 
 ### II. Spec-Forward, Historical Once Shipped
 
-Spec artifacts in this repository (`specs/<feature>/{spec,plan,tasks}.md`, and this constitution) are **spec-forward**: they describe work to be done, not work that has been done.
+Feature spec artifacts in this repository
+(`specs/<feature>/{spec,plan,tasks}.md`) are **spec-forward**: they describe
+work to be done, not work that has been done.
 
 Once a feature merges, its spec artifacts are a **frozen historical snapshot**. They MUST NOT be maintained as living documents that track subsequent code evolution. Drift between merged specs and current code is expected and acceptable; the spec records what the unit of work was at the time, not the present state of the codebase.
 
 When the same surface is meaningfully revisited later, the contributor MAY produce new spec artifacts under a new `specs/<feature>/` directory rather than amending the historical ones.
 
-**Rationale**: the spec-kit codebase evolves rapidly. Treating specs as living documents would create a maintenance burden out of proportion to their value. Treating them as snapshots makes them low-cost to merge and useful as evidence of "this was the unit of work, this is what shipped." This stance was established by maintainer guidance in GitHub Discussion #2504.
+**Rationale**: the spec-kit codebase evolves rapidly. Treating specs as living
+documents would create a maintenance burden out of proportion to their value.
+Treating them as snapshots makes them low-cost to merge and useful as evidence
+of "this was the unit of work, this is what shipped." This stance was
+established by maintainer guidance in
+[GitHub Discussion #2504](https://github.com/github/spec-kit/discussions/2504).
 
 ## Governance
 
-**Amendments**: changes to this constitution require a pull request explicitly identifying the amendment, its rationale, and a version bump per the policy below. Amendments that introduce or remove a principle SHOULD be discussed in a GitHub Discussion under the `Ideas` category before opening a PR.
+**Amendments**: unlike merged feature spec artifacts, this constitution is the
+current governance record and remains amendable through this section. Changes
+to this constitution require a pull request explicitly identifying the
+amendment, its rationale, and a version bump per the policy below. Amendments
+that introduce or remove a principle SHOULD be discussed in a GitHub Discussion
+under the `Ideas` category before opening a PR.
 
 **Versioning**:
 
