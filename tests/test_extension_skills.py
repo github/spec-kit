@@ -173,16 +173,23 @@ class TestExtensionManagerGetSkillsDir:
         assert result == skills_dir
 
     def test_returns_none_when_no_ai_skills(self, no_skills_project):
-        """Should return None when ai_skills is false."""
+        """Should return None when ai_skills is false and not create the dir."""
         manager = ExtensionManager(no_skills_project)
         result = manager._get_skills_dir()
         assert result is None
+        # Ensure the directory was NOT created on disk
+        from specify_cli import AGENT_CONFIG
+        skills_path = no_skills_project / AGENT_CONFIG["claude"]["folder"].rstrip("/") / "skills"
+        assert not skills_path.exists()
 
     def test_returns_none_when_no_init_options(self, project_dir):
-        """Should return None when init-options.json is missing."""
+        """Should return None when init-options.json is missing and not create any dir."""
         manager = ExtensionManager(project_dir)
         result = manager._get_skills_dir()
         assert result is None
+        # No agent skills directory should have been created
+        assert not (project_dir / ".claude" / "skills").exists()
+        assert not (project_dir / ".agents" / "skills").exists()
 
     def test_creates_skills_dir_on_demand(self, project_dir):
         """Should create skills dir when ai_skills is enabled but dir is missing."""
