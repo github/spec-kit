@@ -1123,9 +1123,7 @@ class PresetManager:
             return None
 
         skills_dir = _get_skills_dir(self.project_root, agent)
-        if not skills_dir.is_dir():
-            return None
-
+        skills_dir.mkdir(parents=True, exist_ok=True)
         return skills_dir
 
     @staticmethod

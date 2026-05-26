@@ -828,9 +828,7 @@ class ExtensionManager:
             return None
 
         skills_dir = resolve_skills_dir(self.project_root, agent)
-        if not skills_dir.is_dir():
-            return None
-
+        skills_dir.mkdir(parents=True, exist_ok=True)
         return skills_dir
 
     def _register_extension_skills(
