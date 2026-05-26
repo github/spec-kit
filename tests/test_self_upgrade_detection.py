@@ -86,10 +86,10 @@ class TestDetectionUvTool:
         monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
 
         def fake_which(name):
-            return "/usr/bin/uv" if name == "uv" else None
+            return "uv" if name == "uv" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["/usr/bin/uv", "tool", "list"]:
+            if argv[:3] == ["uv", "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -112,7 +112,7 @@ class TestDetectionUvTool:
         monkeypatch.setattr("sys.argv", ["specify"])
 
         def fake_which(name):
-            return "/usr/bin/uv" if name == "uv" else None
+            return "uv" if name == "uv" else None
 
         def fake_run(argv, *args, **kwargs):
             return subprocess.CompletedProcess(
@@ -139,11 +139,11 @@ class TestDetectionUvTool:
             if name == "specify":
                 return str(missing_specify)
             if name == "uv":
-                return "/usr/bin/uv"
+                return "uv"
             return None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["/usr/bin/uv", "tool", "list"]:
+            if argv[:3] == ["uv", "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -192,10 +192,10 @@ class TestDetectionUvTool:
         unsupported_argv0,
     ):
         def fake_which(name):
-            return "/usr/bin/uv" if name == "uv" else None
+            return "uv" if name == "uv" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["/usr/bin/uv", "tool", "list"]:
+            if argv[:3] == ["uv", "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -217,10 +217,10 @@ class TestDetectionUvTool:
         unsupported_argv0,
     ):
         def fake_which(name):
-            return "/usr/bin/uv" if name == "uv" else None
+            return "uv" if name == "uv" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["/usr/bin/uv", "tool", "list"]:
+            if argv[:3] == ["uv", "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -253,11 +253,11 @@ class TestDetectionUvTool:
             if name == "specify":
                 return str(fake_specify)
             if name == "uv":
-                return "/usr/bin/uv"
+                return "uv"
             return None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["/usr/bin/uv", "tool", "list"]:
+            if argv[:3] == ["uv", "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -320,10 +320,10 @@ class TestArgvAssemblyUvTool:
     """uv-tool installer argv shape."""
 
     def test_stable_tag_produces_expected_argv(self):
-        with patch("specify_cli._version.shutil.which", return_value="/usr/bin/uv"):
+        with patch("specify_cli._version.shutil.which", return_value="uv"):
             argv = _assemble_installer_argv(_InstallMethod.UV_TOOL, "v0.7.6")
         assert argv == [
-            "/usr/bin/uv",
+            "uv",
             "tool",
             "install",
             "specify-cli",
@@ -333,7 +333,7 @@ class TestArgvAssemblyUvTool:
         ]
 
     def test_dev_suffix_tag_embedded_literally(self):
-        with patch("specify_cli._version.shutil.which", return_value="/usr/bin/uv"):
+        with patch("specify_cli._version.shutil.which", return_value="uv"):
             argv = _assemble_installer_argv(_InstallMethod.UV_TOOL, "v0.8.0.dev0")
         assert "git+https://github.com/github/spec-kit.git@v0.8.0.dev0" in argv
         assert (
@@ -350,7 +350,7 @@ class TestBareUpgradeUvTool:
 
     def test_happy_path_end_to_end(self, uv_tool_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -373,7 +373,7 @@ class TestBareUpgradeUvTool:
         # The single `invoke` represents the single user action — no prompt.
         # If a prompt existed, runner.invoke would hang waiting for input.
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -395,7 +395,7 @@ class TestAlreadyLatestUvTool:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.6"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -410,7 +410,7 @@ class TestAlreadyLatestUvTool:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.7.dev0"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -425,7 +425,7 @@ class TestAlreadyLatestUvTool:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version._get_installed_version", return_value="release-main"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
@@ -446,7 +446,7 @@ class TestAlreadyLatestUvTool:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version._get_installed_version", return_value="release-main"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "release-main"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -461,7 +461,7 @@ class TestAlreadyLatestUvTool:
     def test_pinned_older_tag_still_runs_installer(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.shutil.which", return_value="/usr/bin/uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.6"
@@ -481,7 +481,7 @@ class TestAlreadyLatestUvTool:
     def test_pinned_rc_tag_uses_canonical_version_equality_for_noop(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.shutil.which", return_value="/usr/bin/uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
             "specify_cli._version._get_installed_version", return_value="1.0.0rc1"
         ):
             result = runner.invoke(app, ["self", "upgrade", "--tag", "v1.0.0-rc1"])
@@ -501,7 +501,7 @@ class TestDryRunUvTool:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade", "--dry-run"])
@@ -519,7 +519,7 @@ class TestDryRunUvTool:
         # --dry-run with --tag must NOT hit the network.
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
-        ), patch("specify_cli._version.shutil.which", return_value="/usr/bin/uv"), patch(
+        ), patch("specify_cli._version.shutil.which", return_value="uv"), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             result = runner.invoke(
@@ -536,7 +536,7 @@ class TestDryRunUvTool:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
             mock_urlopen.return_value = mock_urlopen_response(
                 {"tag_name": "v0.9.0;echo unsafe"}
@@ -589,10 +589,10 @@ class TestDetectionPipx:
         monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
 
         def fake_which(name):
-            return "/usr/bin/pipx" if name == "pipx" else None
+            return "pipx" if name == "pipx" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["/usr/bin/pipx", "list", "--json"]:
+            if argv[:3] == ["pipx", "list", "--json"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -616,10 +616,10 @@ class TestDetectionPipx:
         unsupported_argv0,
     ):
         def fake_which(name):
-            return "/usr/bin/pipx" if name == "pipx" else None
+            return "pipx" if name == "pipx" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["/usr/bin/pipx", "list", "--json"]:
+            if argv[:3] == ["pipx", "list", "--json"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -641,10 +641,10 @@ class TestDetectionPipx:
         unsupported_argv0,
     ):
         def fake_which(name):
-            return "/usr/bin/pipx" if name == "pipx" else None
+            return "pipx" if name == "pipx" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["/usr/bin/pipx", "list", "--json"]:
+            if argv[:3] == ["pipx", "list", "--json"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -670,20 +670,20 @@ class TestDetectionPipx:
 
         def fake_which(name):
             if name == "uv":
-                return "/usr/bin/uv"
+                return "uv"
             if name == "pipx":
-                return "/usr/bin/pipx"
+                return "pipx"
             return None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["/usr/bin/uv", "tool", "list"]:
+            if argv[:3] == ["uv", "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
                     stdout="specify-cli v0.7.6\n",
                     stderr="",
                 )
-            if argv[:3] == ["/usr/bin/pipx", "list", "--json"]:
+            if argv[:3] == ["pipx", "list", "--json"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -774,7 +774,7 @@ class TestEditableInstallMetadata:
 class TestTagValidationWhitespace:
     def test_tag_whitespace_is_trimmed_before_validation(self, uv_tool_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -793,10 +793,10 @@ class TestArgvAssemblyPipx:
     """pipx installer argv shape — pipx 1.5+ uses positional PACKAGE_SPEC, never `--spec` or `upgrade`."""
 
     def test_pipx_argv_uses_install_force_positional_not_upgrade(self):
-        with patch("specify_cli._version.shutil.which", return_value="/usr/bin/pipx"):
+        with patch("specify_cli._version.shutil.which", return_value="pipx"):
             argv = _assemble_installer_argv(_InstallMethod.PIPX, "v0.7.6")
         assert argv == [
-            "/usr/bin/pipx",
+            "pipx",
             "install",
             "--force",
             "git+https://github.com/github/spec-kit.git@v0.7.6",
@@ -814,7 +814,7 @@ class TestBareUpgradePipx:
 
     def test_happy_path(self, pipx_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/pipx"
+            "specify_cli._version.shutil.which", return_value="pipx"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -850,7 +850,7 @@ class TestDetectionShortCircuit:
 class TestDryRunPipx:
     def test_dry_run_preview_names_pipx(self, pipx_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/pipx"
+            "specify_cli._version.shutil.which", return_value="pipx"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):

@@ -756,9 +756,7 @@ def _run_installer(plan: _UpgradePlan) -> _InstallerResult:
     installer_cmd = Path(installer_name)
     if installer_cmd.is_absolute():
         if not installer_cmd.exists():
-            binary_name = _installer_binary_name(plan.method)
-            if binary_name is None or shutil.which(binary_name) != installer_name:
-                return _InstallerResult(_InstallerResultKind.MISSING)
+            return _InstallerResult(_InstallerResultKind.MISSING)
         elif not installer_cmd.is_file() or not os.access(installer_cmd, os.X_OK):
             return _InstallerResult(_InstallerResultKind.INVALID)
     elif _is_path_like_command(installer_name):

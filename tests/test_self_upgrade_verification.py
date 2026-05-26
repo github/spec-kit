@@ -33,7 +33,7 @@ class TestVerificationMismatch:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -56,7 +56,7 @@ class TestVerificationMismatch:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -78,7 +78,7 @@ class TestVerificationMismatch:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.9.0"
         ):
@@ -98,7 +98,7 @@ class TestVerificationMismatch:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -118,7 +118,7 @@ class TestVerificationMismatch:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -298,7 +298,7 @@ class TestResolutionFailures:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "release-main"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -315,7 +315,7 @@ class TestTagValidation:
     """--tag regex enforcement."""
 
     def test_valid_stable_tag(self, uv_tool_argv0, clean_environ):
-        with patch("specify_cli._version.shutil.which", return_value="/usr/bin/uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             result = runner.invoke(
@@ -325,7 +325,7 @@ class TestTagValidation:
         assert result.exit_code == 0
 
     def test_valid_dev_suffix_tag(self, uv_tool_argv0, clean_environ):
-        with patch("specify_cli._version.shutil.which", return_value="/usr/bin/uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             result = runner.invoke(
@@ -336,7 +336,7 @@ class TestTagValidation:
         assert "Target version: v0.8.0.dev0" in strip_ansi(result.output)
 
     def test_valid_rc_tag(self, uv_tool_argv0, clean_environ):
-        with patch("specify_cli._version.shutil.which", return_value="/usr/bin/uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             result = runner.invoke(
@@ -348,7 +348,7 @@ class TestTagValidation:
     def test_valid_beta_dot_tag_uses_pep440_equivalent_for_noop(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.shutil.which", return_value="/usr/bin/uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
             "specify_cli._version._get_installed_version", return_value="1.0.0b1"
         ):
             result = runner.invoke(
@@ -361,7 +361,7 @@ class TestTagValidation:
         )
 
     def test_valid_build_metadata_tag(self, uv_tool_argv0, clean_environ):
-        with patch("specify_cli._version.shutil.which", return_value="/usr/bin/uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             result = runner.invoke(
@@ -391,7 +391,7 @@ class TestUnknownCurrent:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="unknown"
         ):
@@ -413,7 +413,7 @@ class TestUnknownCurrent:
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="unknown"
         ):
@@ -439,7 +439,7 @@ class TestTokenScrubbing:
         monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
 
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -468,7 +468,7 @@ class TestTokenScrubbing:
         monkeypatch.setenv("GitHub_Token", SENTINEL_GITHUB_TOKEN)
 
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="/usr/bin/uv"
+            "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
