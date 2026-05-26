@@ -19,6 +19,10 @@ def _repo_root(tmp_path: Path) -> Path:
     (root / "tests" / "integrations").mkdir(parents=True)
     (root / "pyproject.toml").write_text("[project]\nname = \"specify-cli\"\n", encoding="utf-8")
     (root / "src" / "specify_cli" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "src" / "specify_cli" / "integrations" / "__init__.py").write_text(
+        "",
+        encoding="utf-8",
+    )
     return root
 
 
@@ -108,8 +112,8 @@ def test_scaffold_refuses_invalid_key(tmp_path):
 def test_scaffold_refuses_unknown_type(tmp_path):
     root = _repo_root(tmp_path)
 
-    with pytest.raises(ValueError, match="Unsupported integration type"):
-        scaffold_integration(root, "my-agent", "xml")
+    with pytest.raises(ValueError, match="Unsupported integration type 'xml'"):
+        scaffold_integration(root, "my-agent", " XML ")
 
 
 def test_scaffold_refuses_overwrite(tmp_path):
@@ -123,3 +127,11 @@ def test_scaffold_refuses_overwrite(tmp_path):
 def test_scaffold_requires_repo_root(tmp_path):
     with pytest.raises(ValueError, match="Spec Kit repository root"):
         scaffold_integration(tmp_path, "my-agent", "markdown")
+
+
+def test_scaffold_requires_integration_registry_file(tmp_path):
+    root = _repo_root(tmp_path)
+    (root / "src" / "specify_cli" / "integrations" / "__init__.py").unlink()
+
+    with pytest.raises(ValueError, match="Spec Kit repository root"):
+        scaffold_integration(root, "my-agent", "markdown")

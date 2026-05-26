@@ -163,6 +163,9 @@ def _is_spec_kit_repo_root(project_root: Path) -> bool:
             (project_root / "pyproject.toml").is_file(),
             (project_root / "src" / "specify_cli" / "__init__.py").is_file(),
             (project_root / "src" / "specify_cli" / "integrations").is_dir(),
+            (
+                project_root / "src" / "specify_cli" / "integrations" / "__init__.py"
+            ).is_file(),
             (project_root / "tests" / "integrations").is_dir(),
         )
     )
@@ -178,7 +181,9 @@ def scaffold_integration(
     normalized_type = integration_type.strip().lower()
     if normalized_type not in _TEMPLATES:
         supported = ", ".join(supported_integration_scaffold_types())
-        raise ValueError(f"Unsupported integration type '{integration_type}'. Use one of: {supported}.")
+        raise ValueError(
+            f"Unsupported integration type '{normalized_type}'. Use one of: {supported}."
+        )
 
     integrations_root = project_root / "src" / "specify_cli" / "integrations"
     tests_root = project_root / "tests" / "integrations"
