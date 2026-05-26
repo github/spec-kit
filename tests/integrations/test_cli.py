@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import re
 
 import pytest
 import yaml
@@ -42,6 +43,25 @@ class TestCliDiagnosticFormatting:
         )
 
 
+def _assert_no_ai_deprecation_output(output: str) -> None:
+    lower_output = output.lower()
+    assert "deprecation warning" not in lower_output
+    assert "no longer be available" not in lower_output
+    assert "commands will no longer be available" not in lower_output
+    assert "--ai is deprecated" not in lower_output
+    assert "deprecated --ai" not in lower_output
+
+    ai_related_blocks = [
+        block
+        for block in re.split(r"\n\s*\n", lower_output)
+        if "--ai" in block
+    ]
+    for block in ai_related_blocks:
+        assert "deprecated" not in block
+        assert "0.10.0" not in block
+        assert "next steps" not in block
+
+
 class TestInitIntegrationFlag:
     def test_integration_and_ai_mutually_exclusive(self, tmp_path):
         from typer.testing import CliRunner
@@ -52,6 +72,20 @@ class TestInitIntegrationFlag:
         ])
         assert result.exit_code != 0
         assert "mutually exclusive" in result.output
+
+    def test_init_help_explains_ai_alias_and_generic_options(self):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["init", "--help"])
+
+        normalized_output = _normalize_cli_output(result.output)
+        assert result.exit_code == 0, result.output
+        assert "Short alias for --integration" in normalized_output
+        assert "--ai-commands-dir" in normalized_output
+        assert "--integration generic" in normalized_output
+        assert "--integration-options" in normalized_output
 
     def test_unknown_integration_rejected(self, tmp_path):
         from typer.testing import CliRunner
@@ -141,11 +175,11 @@ class TestInitIntegrationFlag:
         assert result.exit_code == 0
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
 
-    def test_ai_emits_deprecation_warning_with_integration_replacement(self, tmp_path):
+    def test_ai_copilot_does_not_emit_deprecation_warning(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
 
-        project = tmp_path / "warn-ai"
+        project = tmp_path / "keep-ai"
         project.mkdir()
         old_cwd = os.getcwd()
         try:
@@ -159,20 +193,14 @@ class TestInitIntegrationFlag:
 
         normalized_output = _normalize_cli_output(result.output)
         assert result.exit_code == 0, result.output
-        assert "Deprecation Warning" in normalized_output
-        assert "--ai" in normalized_output
-        assert "deprecated" in normalized_output
-        assert "no longer be available" in normalized_output
-        assert "0.10.0" in normalized_output
-        assert "--integration copilot" in normalized_output
-        assert normalized_output.index("Deprecation Warning") < normalized_output.index("Next Steps")
+        _assert_no_ai_deprecation_output(normalized_output)
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
 
-    def test_ai_generic_warning_suggests_integration_options_equivalent(self, tmp_path):
+    def test_ai_generic_alias_does_not_emit_deprecation_warning(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
 
-        project = tmp_path / "warn-generic"
+        project = tmp_path / "generic-ai"
         project.mkdir()
         old_cwd = os.getcwd()
         try:
@@ -187,11 +215,8 @@ class TestInitIntegrationFlag:
 
         normalized_output = _normalize_cli_output(result.output)
         assert result.exit_code == 0, result.output
-        assert "Deprecation Warning" in normalized_output
-        assert "--integration generic" in normalized_output
-        assert "--integration-options" in normalized_output
+        _assert_no_ai_deprecation_output(normalized_output)
         assert ".myagent/commands" in normalized_output
-        assert normalized_output.index("Deprecation Warning") < normalized_output.index("Next Steps")
         assert (project / ".myagent" / "commands" / "speckit.plan.md").exists()
 
     def test_init_optional_preset_failure_reports_target_and_continues(

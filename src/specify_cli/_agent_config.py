@@ -25,8 +25,11 @@ AI_ASSISTANT_ALIASES: dict[str, str] = {
 def _build_ai_assistant_help() -> str:
     non_generic_agents = sorted(agent for agent in AGENT_CONFIG if agent != "generic")
     base_help = (
-        f"AI assistant to use: {', '.join(non_generic_agents)}, "
-        "or generic (requires --ai-commands-dir)."
+        f"Short alias for --integration. Choose: {', '.join(non_generic_agents)}, "
+        "or generic. For generic, provide a commands directory with "
+        "--ai-commands-dir; the --integration generic form can use "
+        '--integration-options="--commands-dir <dir>". Do not combine '
+        "--ai with --integration."
     )
     if not AI_ASSISTANT_ALIASES:
         return base_help

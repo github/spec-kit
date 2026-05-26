@@ -10,7 +10,8 @@ specify init [<project_name>]
 
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
-| `--integration <key>`    | AI coding agent integration to use (e.g. `copilot`, `claude`, `gemini`). See the [Integrations reference](integrations.md) for all available keys |
+| `--integration <key>`    | AI coding agent integration to use (e.g. `copilot`, `claude`, `gemini`). Equivalent to `--ai`; do not combine them. See the [Integrations reference](integrations.md) for all available keys |
+| `--ai <key>`             | Short alias for `--integration <key>`; do not combine with `--integration` |
 | `--integration-options`  | Options for the integration (e.g. `--integration-options="--commands-dir .myagent/cmds"`) |
 | `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                       |
 | `--here`                 | Initialize in the current directory instead of creating a new one        |
@@ -28,13 +29,14 @@ Creates a new Spec Kit project with the necessary directory structure, templates
 
 Use `<project_name>` to create a new directory, or `--here` (or `.`) to initialize in the current directory. If the directory already has files, use `--force` to merge without confirmation.
 
-When `--integration` is omitted, interactive terminals prompt you to choose an integration. Non-interactive sessions, such as CI or piped runs, default to GitHub Copilot; pass `--integration <key>` to choose a different integration explicitly.
+When `--integration` and `--ai` are omitted, interactive terminals prompt you to choose an integration. Non-interactive sessions, such as CI or piped runs, default to GitHub Copilot; pass `--integration <key>` or the equivalent shorter `--ai <key>` alias to choose a different integration explicitly. The two options select the same integration setting and may not be combined in the same invocation.
 
 ### Examples
 
 ```bash
 # Create a new project with an integration
 specify init my-project --integration copilot
+specify init my-project --ai copilot
 
 # Initialize in the current directory
 specify init --here --integration copilot

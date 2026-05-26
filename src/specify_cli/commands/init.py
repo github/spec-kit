@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -27,32 +26,6 @@ from .._assets import (
 )
 from .._console import StepTracker, console, select_with_arrows, show_banner
 from .._utils import check_tool, init_git_repo, is_git_repo
-
-def _build_integration_equivalent(
-    integration_key: str,
-    ai_commands_dir: str | None = None,
-) -> str:
-    parts = [f"--integration {integration_key}"]
-    if integration_key == "generic" and ai_commands_dir:
-        parts.append(
-            f'--integration-options="--commands-dir {shlex.quote(ai_commands_dir)}"'
-        )
-    return " ".join(parts)
-
-
-def _build_ai_deprecation_warning(
-    integration_key: str,
-    ai_commands_dir: str | None = None,
-) -> str:
-    replacement = _build_integration_equivalent(
-        integration_key,
-        ai_commands_dir=ai_commands_dir,
-    )
-    return (
-        "[bold]--ai[/bold] is deprecated and will no longer be available in version 0.10.0 or later.\n\n"
-        f"Use [bold]{replacement}[/bold] instead."
-    )
-
 
 def _stdin_is_interactive() -> bool:
     return sys.stdin.isatty()
@@ -111,7 +84,7 @@ def register(app: typer.Typer) -> None:
         offline: bool = typer.Option(False, "--offline", help="Deprecated (no-op). All scaffolding now uses bundled assets.", hidden=True),
         preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
         branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, …, 1000, … — expands past 999 automatically) or 'timestamp' (YYYYMMDD-HHMMSS)"),
-        integration: str = typer.Option(None, "--integration", help="Use the new integration system (e.g. --integration copilot). Mutually exclusive with --ai."),
+        integration: str = typer.Option(None, "--integration", help="Coding agent integration to use (e.g. --integration copilot). --ai is a short alias for this option; do not combine them."),
         integration_options: str = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
     ):
         """
@@ -160,7 +133,6 @@ def register(app: typer.Typer) -> None:
         from ..integration_runtime import with_integration_setting as _with_integration_setting
 
         show_banner()
-        ai_deprecation_warning: str | None = None
 
         if ai_assistant and ai_assistant.startswith("--"):
             console.print(f"[red]Error:[/red] Invalid value for --ai: '{ai_assistant}'")
@@ -196,10 +168,6 @@ def register(app: typer.Typer) -> None:
             if not resolved_integration:
                 console.print(f"[red]Error:[/red] Unknown agent '{ai_assistant}'. Choose from: {', '.join(sorted(INTEGRATION_REGISTRY))}")
                 raise typer.Exit(1)
-            ai_deprecation_warning = _build_ai_deprecation_warning(
-                resolved_integration.key,
-                ai_commands_dir=ai_commands_dir,
-            )
 
         if ai_assistant or integration:
             if ai_skills:
@@ -644,16 +612,6 @@ def register(app: typer.Typer) -> None:
                 )
                 console.print()
                 console.print(security_notice)
-
-        if ai_deprecation_warning:
-            deprecation_notice = Panel(
-                ai_deprecation_warning,
-                title="[bold red]Deprecation Warning[/bold red]",
-                border_style="red",
-                padding=(1, 2),
-            )
-            console.print()
-            console.print(deprecation_notice)
 
         if git_default_notice:
             default_change_notice = Panel(
