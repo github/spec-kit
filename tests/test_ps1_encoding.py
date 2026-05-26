@@ -36,7 +36,7 @@ def test_ps1_file_is_ascii_only(ps1_file: Path):
     """Every .ps1 file must contain only ASCII characters (PS 5.1 compat)."""
     content = ps1_file.read_bytes()
     non_ascii = [
-        (i + 1, byte)
+        (i, byte)
         for i, byte in enumerate(content)
         if byte > 127
     ]
