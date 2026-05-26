@@ -7,6 +7,7 @@ Sync Impact Report
   - Core Principles
     - I. Selective Spec-Driven Development
     - II. Spec-Forward, Historical Once Shipped
+    - III. Governance and Agent Context Separation
   - Governance
 - Removed sections: none
 - Templates requiring updates:
@@ -15,7 +16,9 @@ Sync Impact Report
     `templates/commands/*.md` are consumed by downstream projects and remain
     unaffected — this constitution governs only spec-kit's own work)
 - Follow-up TODOs: none
-- Provenance: see https://github.com/github/spec-kit/discussions/2504
+- Provenance:
+  - https://github.com/github/spec-kit/discussions/2504
+  - https://github.com/github/spec-kit/discussions/2476
 -->
 
 # Spec Kit Constitution
@@ -53,6 +56,29 @@ Treating them as snapshots makes them low-cost to merge and useful as evidence
 of "this was the unit of work, this is what shipped." This stance was
 established by maintainer guidance in
 [GitHub Discussion #2504](https://github.com/github/spec-kit/discussions/2504).
+
+### III. Governance and Agent Context Separation
+
+This constitution MUST define repository-level governance and phase-scoped SDD
+rules: when spec artifacts are warranted, how specs/plans/tasks are treated,
+and how these rules change. It MUST NOT duplicate agent-specific operating
+instructions, local workflow recipes, codebase maps, or day-to-day
+implementation conventions that belong in `AGENTS.md`,
+`.github/copilot-instructions.md`, `CLAUDE.md`, or other tool-specific context
+files.
+
+Agent context files MAY reference this constitution, but SHOULD avoid mirroring
+its rules. Conversely, this constitution MAY reference agent context files for
+operational details instead of copying them. If a rule must influence every
+normal agent interaction, it belongs in agent context; if it governs when or
+how spec artifacts and repo process are created, reviewed, or amended, it
+belongs here.
+
+**Rationale**: the constitution is loaded by Spec Kit workflows when relevant;
+it is not a catch-all context file for every LLM call. Keeping governance
+separate from agent context avoids DRY drift across multiple instruction
+surfaces. This distinction follows the concerns raised in
+[GitHub Discussion #2476](https://github.com/github/spec-kit/discussions/2476).
 
 ## Governance
 
