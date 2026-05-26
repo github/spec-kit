@@ -801,43 +801,12 @@ class ExtensionManager:
     def _get_skills_dir(self) -> Optional[Path]:
         """Return the active skills directory for extension skill registration.
 
-        Reads ``.specify/init-options.json`` to determine whether skills
-        are enabled and which agent was selected, then delegates to
-        the module-level ``_get_skills_dir()`` helper for the concrete path.
-
-        Kimi is treated as a native-skills agent: if ``ai == "kimi"`` and
-        ``.kimi/skills`` exists, extension installs should still propagate
-        command skills even when ``ai_skills`` is false.  For Kimi the
-        directory is **not** created on demand — it must already exist.
-
-        Returns:
-            The skills directory ``Path``, or ``None`` if skills were not
-            enabled and no native-skills fallback applies.
+        Delegates to :func:`resolve_active_skills_dir` which reads
+        init-options, applies the Kimi native-skills fallback, and
+        safely creates the directory when ``ai_skills`` is enabled.
         """
-        from . import load_init_options, _get_skills_dir as resolve_skills_dir
-        from .shared_infra import _ensure_safe_shared_directory
-
-        opts = load_init_options(self.project_root)
-        if not isinstance(opts, dict):
-            opts = {}
-
-        agent = opts.get("ai")
-        if not isinstance(agent, str) or not agent:
-            return None
-
-        ai_skills_enabled = bool(opts.get("ai_skills"))
-        if not ai_skills_enabled and agent != "kimi":
-            return None
-
-        skills_dir = resolve_skills_dir(self.project_root, agent)
-
-        if not ai_skills_enabled:
-            # Kimi native-skills fallback: use the directory only if it exists.
-            return skills_dir if skills_dir.is_dir() else None
-
-        # ai_skills is explicitly enabled — create the directory safely.
-        _ensure_safe_shared_directory(self.project_root, skills_dir)
-        return skills_dir
+        from . import resolve_active_skills_dir
+        return resolve_active_skills_dir(self.project_root)
 
     def _register_extension_skills(
         self,
