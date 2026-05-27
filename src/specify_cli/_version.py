@@ -74,7 +74,11 @@ def _get_installed_version() -> str:
 
 
 def _normalize_tag(tag: str) -> str:
-    """Normalize common git release-tag spellings into PEP 440 text."""
+    """Normalize common git release-tag spellings into PEP 440 text.
+
+    Any trailing text after a recognized prerelease marker is preserved; callers
+    still validate the returned value with `packaging.version.Version`.
+    """
     normalized = tag[1:] if tag.startswith("v") else tag
     prerelease_match = _PRERELEASE_TAG_PATTERN.match(normalized)
     if prerelease_match is None:
@@ -244,11 +248,9 @@ _UNRESOLVED_ENV_VAR_RE = re.compile(r"\$\w+|\$\{\w+\}|%[^%]+%")
 def _is_github_credential_env_key(key: str) -> bool:
     """Return whether an env key looks like a GitHub credential."""
     upper = key.upper()
-    return (
-        upper.startswith("GH_")
-        or upper.startswith("GITHUB_")
-        or "_GITHUB_" in upper
-    ) and upper.endswith(_GITHUB_CREDENTIAL_SUFFIXES)
+    if upper.startswith(("GH_", "GITHUB_")):
+        return True
+    return "_GITHUB_" in upper and upper.endswith(_GITHUB_CREDENTIAL_SUFFIXES)
 
 
 def _scrubbed_env() -> dict[str, str]:
@@ -1280,6 +1282,8 @@ def self_upgrade(
     target_tag = plan.target_tag
     target_version = _parse_version_text(target_tag)
     if target_version is None:
+        # _build_upgrade_plan() and _validate_tag() should reject bad targets
+        # before this point; keep this guard as a defensive invariant check.
         _emit_failure(_FAILURE_TARGET_TAG_UNPARSEABLE, plan=plan)
         raise typer.Exit(1)
     target_canonical = str(target_version)
@@ -1297,6 +1301,8 @@ def self_upgrade(
             else:
                 console.print(f"Already on latest release or newer: {plan.current_version}")
             raise typer.Exit(0)
+        # Pinned upgrades are no-ops only on an exact parseable match; an
+        # unparseable current version deliberately proceeds to installation.
         if tag is not None and current_canonical == target_canonical:
             console.print(f"Already on requested release: {target_tag}")
             raise typer.Exit(0)

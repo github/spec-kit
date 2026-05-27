@@ -1,23 +1,23 @@
 """Detection, argv assembly, and dry-run tests for `specify self upgrade`."""
 
+import importlib.metadata
+import json
+import os
+import subprocess
+from unittest.mock import patch
+
+import specify_cli
+from specify_cli import app
+
 from tests.self_upgrade_helpers import (
     _InstallMethod,
     _assemble_installer_argv,
     _completed_process,
     _detect_install_method,
-    app,
-    importlib,
-    json,
     mock_urlopen_response,
-    os,
-    patch,
     runner,
-    specify_cli,
     strip_ansi,
-    subprocess,
 )
-
-pytest_plugins = ("tests.self_upgrade_fixtures",)
 
 
 class TestDetectionUvTool:

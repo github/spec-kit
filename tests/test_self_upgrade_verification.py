@@ -1,5 +1,12 @@
 """Verification, resolution, and validation tests for `specify self upgrade`."""
 
+import urllib.error
+from unittest.mock import patch
+
+import pytest
+import specify_cli
+from specify_cli import app
+
 from tests.self_upgrade_helpers import (
     SENTINEL_GH_TOKEN,
     SENTINEL_GITHUB_TOKEN,
@@ -7,17 +14,10 @@ from tests.self_upgrade_helpers import (
     _UpgradePlan,
     _completed_process,
     _verify_upgrade,
-    app,
     mock_urlopen_response,
-    patch,
     runner,
-    specify_cli,
     strip_ansi,
-    urllib,
 )
-import pytest
-
-pytest_plugins = ("tests.self_upgrade_fixtures",)
 
 # ===========================================================================
 # Phase 6 — User Story 4: failure recovery (P2)
@@ -530,10 +530,12 @@ class TestTokenScrubbing:
 
     def test_env_scrubbing_removes_github_token_variants(self, monkeypatch):
         monkeypatch.setenv("GH_PAT", "gh-pat")
+        monkeypatch.setenv("GH_TOKEN_FILE", "gh-token-file")
         monkeypatch.setenv("GH_ENTERPRISE_TOKEN", "enterprise-gh")
         monkeypatch.setenv("GH_ENTERPRISE_SECRET", "enterprise-secret")
         monkeypatch.setenv("GH_ENTERPRISE_PRIVATE_KEY", "enterprise-key")
         monkeypatch.setenv("GITHUB_PAT", "github-pat")
+        monkeypatch.setenv("GITHUB_TOKEN_PATH", "github-token-path")
         monkeypatch.setenv("GITHUB_ENTERPRISE_TOKEN", "enterprise-github")
         monkeypatch.setenv("GITHUB_API_TOKEN", "api-token")
         monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "app-private-key")
@@ -547,10 +549,12 @@ class TestTokenScrubbing:
         env = specify_cli._version._scrubbed_env()
 
         assert "GH_PAT" not in env
+        assert "GH_TOKEN_FILE" not in env
         assert "GH_ENTERPRISE_TOKEN" not in env
         assert "GH_ENTERPRISE_SECRET" not in env
         assert "GH_ENTERPRISE_PRIVATE_KEY" not in env
         assert "GITHUB_PAT" not in env
+        assert "GITHUB_TOKEN_PATH" not in env
         assert "GITHUB_ENTERPRISE_TOKEN" not in env
         assert "GITHUB_API_TOKEN" not in env
         assert "GITHUB_APP_PRIVATE_KEY" not in env

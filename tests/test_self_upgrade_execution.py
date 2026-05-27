@@ -1,17 +1,17 @@
 """Installer execution, verification, and error-path tests for `specify self upgrade`."""
 
+import errno
+import subprocess
+from unittest.mock import patch
+
+from specify_cli import app
+
 from tests.self_upgrade_helpers import (
     _completed_process,
-    app,
-    errno,
     mock_urlopen_response,
-    patch,
     runner,
     strip_ansi,
-    subprocess,
 )
-
-pytest_plugins = ("tests.self_upgrade_fixtures",)
 
 # ===========================================================================
 # Phase 6 — User Story 4: failure recovery (P2)

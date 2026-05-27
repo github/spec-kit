@@ -1,14 +1,14 @@
 """Non-upgradable path guidance tests for `specify self upgrade`."""
 
+from unittest.mock import patch
+
+from specify_cli import app
+
 from tests.self_upgrade_helpers import (
-    app,
     mock_urlopen_response,
-    patch,
     runner,
     strip_ansi,
 )
-
-pytest_plugins = ("tests.self_upgrade_fixtures",)
 
 # ===========================================================================
 # Phase 5 — User Story 3: non-upgradable path guidance (P3)
