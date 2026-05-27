@@ -49,6 +49,7 @@ packages = ["src/specify_cli"]
 test = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "pytest-xdist>=3.5",
 ]
 
 [tool.pytest.ini_options]
@@ -60,6 +61,8 @@ addopts = [
     "-v",
     "--strict-markers",
     "--tb=short",
+    "-n=auto",
+    "--dist=worksteal",
 ]
 
 [tool.coverage.run]
