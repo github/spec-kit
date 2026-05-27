@@ -2220,7 +2220,7 @@ workflow:
 steps:
   - id: stamp
     type: shell
-    run: 'echo "RUN_ID={{ context.run_id }}"'
+    run: "echo RUN_ID={{ context.run_id }}"
 """)
         engine = WorkflowEngine(project_dir)
         state = engine.execute(definition, run_id="abc12345")
@@ -2289,7 +2289,7 @@ steps:
       target-run:
         - id: matched-branch
           type: shell
-          run: 'echo "nested-run-id={{ context.run_id }}"'
+          run: "echo nested-run-id={{ context.run_id }}"
     default:
       - id: default-branch
         type: shell
