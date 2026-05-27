@@ -203,12 +203,18 @@ Execution steps:
    - If it exists:
      1. Read the checklist file.
      2. Identify all GitHub task-list checkbox lines — lines matching `- [ ]`, `- [x]`, or `- [X]` (case-insensitive, tolerant of leading whitespace for nested items) outside of code fences. Ignore all other content (headings, notes, non-checkbox bullets, metadata).
-     3. Re-evaluate each checkbox item against the **updated** spec (the version just saved in step 7).
-     4. For each checkbox item, set its marker based solely on whether it passes against the current spec — prior state does not matter:
-        - If the item passes: set to `- [x]`.
-        - If the item does not pass: set to `- [ ]` (even if it was previously `- [x]` — spec edits can cause regressions).
-     5. Save the updated checklist file. **Only toggle the `[ ]`/`[x]` marker portion of checkbox lines.** All other file content — headings, metadata, notes, line ordering, whitespace — must remain unchanged to avoid noisy diffs.
-     6. Record the before/after pass counts as checked/total checkbox items for the Completion Report (e.g., "12/16 → 15/16 items passing").
+     3. For each checkbox line, record its current marker state (checked or unchecked) and item text into a before-snapshot list.
+     4. Re-evaluate each checkbox item against the **updated** spec (the version just saved in step 7).
+     5. For each checkbox item, update only if the checked/unchecked state actually changes:
+        - If the item now passes and was unchecked: change `[ ]` to `[x]`.
+        - If the item now fails and was checked: change `[x]`/`[X]` to `[ ]`.
+        - If the state is unchanged: leave the marker as-is (preserve existing case to avoid cosmetic diffs).
+     6. Save the updated checklist file. **Only toggle the `[ ]`/`[x]` marker portion of checkbox lines whose state changed.** All other file content — headings, metadata, notes, line ordering, whitespace — must remain unchanged to avoid noisy diffs.
+     7. Compare the before-snapshot with the current state to compute three lists for the Completion Report:
+        - **Newly passing**: items that changed from unchecked to checked.
+        - **Regressions**: items that changed from checked to unchecked.
+        - **Still unchecked**: items that remain unchecked.
+     8. Record the before/after pass counts as checked/total checkbox items (e.g., "12/16 → 15/16 items passing").
 
 Behavior rules:
 
