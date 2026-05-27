@@ -4328,7 +4328,9 @@ def extension_update(
                     if agent_name not in registrar.AGENT_CONFIGS:
                         continue
                     agent_config = registrar.AGENT_CONFIGS[agent_name]
-                    commands_dir = project_root / agent_config["dir"]
+                    commands_dir = _AgentReg._resolve_agent_dir(
+                        agent_name, agent_config, project_root
+                    )
 
                     for cmd_name in cmd_names:
                         output_name = _AgentReg._compute_output_name(agent_name, cmd_name, agent_config)
@@ -4489,7 +4491,9 @@ def extension_update(
                             if agent_name not in registrar.AGENT_CONFIGS:
                                 continue
                             agent_config = registrar.AGENT_CONFIGS[agent_name]
-                            commands_dir = project_root / agent_config["dir"]
+                            commands_dir = _AgentReg._resolve_agent_dir(
+                                agent_name, agent_config, project_root
+                            )
 
                             for cmd_name in cmd_names:
                                 output_name = _AgentReg._compute_output_name(agent_name, cmd_name, agent_config)

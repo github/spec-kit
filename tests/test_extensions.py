@@ -3744,12 +3744,19 @@ class TestExtensionUpdateCLI:
         ).read_text()
         assert restored_config_content == original_config_content
 
-    def test_update_failure_rolls_back_registry_hooks_and_commands(self, tmp_path):
+    def test_update_failure_rolls_back_registry_hooks_and_commands(self, tmp_path, monkeypatch):
         """Failed update should restore original registry, hooks, and command files."""
         from typer.testing import CliRunner
         from unittest.mock import patch
         from specify_cli import app
         import yaml
+
+        # Isolate home directory so Hermes' global ~/.hermes/skills/ doesn't
+        # interfere — without a real skills dir, Hermes is skipped during
+        # command registration, keeping the test focused on Claude/Codex/etc.
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
 
         runner = CliRunner()
         project_dir = tmp_path / "project"
@@ -3772,7 +3779,9 @@ class TestExtensionUpdateCLI:
             if agent_name not in agent_registrar.AGENT_CONFIGS:
                 continue
             agent_cfg = agent_registrar.AGENT_CONFIGS[agent_name]
-            commands_dir = project_dir / agent_cfg["dir"]
+            commands_dir = AgentRegistrar._resolve_agent_dir(
+                agent_name, agent_cfg, project_dir
+            )
             for cmd_name in cmd_names:
                 output_name = AgentRegistrar._compute_output_name(agent_name, cmd_name, agent_cfg)
                 cmd_path = commands_dir / f"{output_name}{agent_cfg['extension']}"

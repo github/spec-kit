@@ -29,7 +29,7 @@ class TestHermesIntegration(SkillsIntegrationTests):
     KEY = "hermes"
     FOLDER = ".hermes/"
     COMMANDS_SUBDIR = "skills"
-    REGISTRAR_DIR = ".hermes/skills"
+    REGISTRAR_DIR = "~/.hermes/skills"
     CONTEXT_FILE = "AGENTS.md"
 
     # -- Hermes-specific setup: skills go to ~/.hermes/skills/ -------------
