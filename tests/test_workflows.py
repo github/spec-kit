@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -373,7 +374,8 @@ class TestBuildExecArgs:
         from specify_cli.integrations.copilot import CopilotIntegration
         impl = CopilotIntegration()
         args = impl.build_exec_args("do stuff", model="claude-sonnet-4-20250514")
-        assert args[0] == "copilot"
+        expected_exec = "copilot.cmd" if os.name == "nt" else "copilot"
+        assert args[0] == expected_exec
         assert "-p" in args
         assert "--yolo" in args
         assert "--model" in args
@@ -463,6 +465,7 @@ class TestCommandStep:
         assert any("missing 'command'" in e for e in errors)
 
     def test_step_override_integration(self):
+        from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep
         from specify_cli.workflows.base import StepContext
 
@@ -474,7 +477,8 @@ class TestCommandStep:
             "integration": "gemini",
             "input": {},
         }
-        result = step.execute(config, ctx)
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+            result = step.execute(config, ctx)
         assert result.output["integration"] == "gemini"
 
     def test_step_override_model(self):
@@ -626,6 +630,7 @@ class TestPromptStep:
         assert result.output["dispatched"] is False
 
     def test_execute_with_step_integration(self):
+        from unittest.mock import patch
         from specify_cli.workflows.steps.prompt import PromptStep
         from specify_cli.workflows.base import StepContext
 
@@ -637,10 +642,12 @@ class TestPromptStep:
             "prompt": "Summarize the codebase",
             "integration": "gemini",
         }
-        result = step.execute(config, ctx)
+        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value=None):
+            result = step.execute(config, ctx)
         assert result.output["integration"] == "gemini"
 
     def test_execute_with_model(self):
+        from unittest.mock import patch
         from specify_cli.workflows.steps.prompt import PromptStep
         from specify_cli.workflows.base import StepContext
 
@@ -652,7 +659,8 @@ class TestPromptStep:
             "prompt": "hello",
             "model": "opus-4",
         }
-        result = step.execute(config, ctx)
+        with patch("specify_cli.workflows.steps.prompt.shutil.which", return_value=None):
+            result = step.execute(config, ctx)
         assert result.output["model"] == "opus-4"
 
     def test_dispatch_with_mock_cli(self, tmp_path):
@@ -1882,6 +1890,268 @@ steps:
 """)
         errors = validate_workflow(definition)
         assert any("invalid default" in e for e in errors), errors
+
+    def test_while_loop_condition_reads_latest_iteration(self, project_dir):
+        """Regression: while-loop condition must see updated step output
+        from the most recent iteration, not stale iteration-0 data.
+
+        See https://github.com/github/spec-kit/issues/2592
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        # Shell step echoes a counter via a file.
+        # Condition: exit_code != 0 means "keep looping" — but a non-zero
+        # exit code would mark the step FAILED and abort the run, so we
+        # use stdout-based comparison instead.
+        #
+        # Iteration 0: counter=1, echoes "1" → not "done" → loop continues
+        # Iteration 1: counter=2, echoes "done" → condition false → stop
+        # Without the fix, condition always reads iteration-0 stdout,
+        # so the loop runs all max_iterations.
+        import sys
+
+        counter_file = project_dir / ".counter"
+        counter_file.write_text("0", encoding="utf-8")
+        py = sys.executable
+        script_file = project_dir / "_tick.py"
+        script_file.write_text(
+            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
+            "n = int(p.read_text()) + 1; p.write_text(str(n))\n"
+            "print('done' if n >= 2 else str(n), end='')\n",
+            encoding="utf-8",
+        )
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "while-condition-update"
+  name: "While Condition Update"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: while
+    condition: "{{{{ 'done' not in steps.attempt.output.stdout }}}}"
+    max_iterations: 5
+    steps:
+      - id: attempt
+        type: shell
+        run: '"{py}" "{script_file}"'
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # The unprefixed key should reflect the latest iteration's result.
+        assert state.step_results["attempt"]["output"]["stdout"] == "done"
+        # Namespaced iteration-1 result should also exist.
+        assert "retry-loop:attempt:1" in state.step_results
+        # Counter should be 2 (iteration 0 + iteration 1), not 5.
+        assert counter_file.read_text(encoding="utf-8").strip() == "2"
+
+    def test_do_while_loop_condition_reads_latest_iteration(self, project_dir):
+        """Regression: do-while loop condition must also see updated output.
+
+        See https://github.com/github/spec-kit/issues/2592
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        import sys
+
+        counter_file = project_dir / ".counter"
+        counter_file.write_text("0", encoding="utf-8")
+        py = sys.executable
+        script_file = project_dir / "_tick.py"
+        script_file.write_text(
+            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
+            "n = int(p.read_text()) + 1; p.write_text(str(n))\n"
+            "print('done' if n >= 2 else str(n), end='')\n",
+            encoding="utf-8",
+        )
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "do-while-condition-update"
+  name: "Do While Condition Update"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: do-while
+    condition: "{{{{ 'done' not in steps.attempt.output.stdout }}}}"
+    max_iterations: 5
+    steps:
+      - id: attempt
+        type: shell
+        run: '"{py}" "{script_file}"'
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["attempt"]["output"]["stdout"] == "done"
+        assert counter_file.read_text(encoding="utf-8").strip() == "2"
+
+    def test_while_loop_runs_to_max_when_condition_stays_true(self, project_dir):
+        """While loop must still run to max_iterations when the condition
+        never becomes false — copy-back must not break this path.
+
+        See https://github.com/github/spec-kit/issues/2592
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        import sys
+
+        counter_file = project_dir / ".counter"
+        counter_file.write_text("0", encoding="utf-8")
+        py = sys.executable
+        script_file = project_dir / "_tick.py"
+        script_file.write_text(
+            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
+            "n = int(p.read_text()) + 1; p.write_text(str(n))\n"
+            "print('pending', end='')\n",
+            encoding="utf-8",
+        )
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "while-max-iterations"
+  name: "While Max Iterations"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: while
+    condition: "{{{{ 'done' not in steps.tick.output.stdout }}}}"
+    max_iterations: 3
+    steps:
+      - id: tick
+        type: shell
+        run: '"{py}" "{script_file}"'
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # All 3 iterations ran (iteration 0 + 2 loop iterations).
+        assert counter_file.read_text(encoding="utf-8").strip() == "3"
+        # Unprefixed key holds the last iteration's result.
+        assert state.step_results["tick"]["output"]["stdout"] == "pending"
+        # Namespaced keys for loop iterations exist.
+        assert "retry-loop:tick:1" in state.step_results
+        assert "retry-loop:tick:2" in state.step_results
+
+    def test_do_while_loop_runs_to_max_when_condition_stays_true(self, project_dir):
+        """Do-while loop must still run to max_iterations when the condition
+        never becomes false.
+
+        See https://github.com/github/spec-kit/issues/2592
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        import sys
+
+        counter_file = project_dir / ".counter"
+        counter_file.write_text("0", encoding="utf-8")
+        py = sys.executable
+        script_file = project_dir / "_tick.py"
+        script_file.write_text(
+            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
+            "n = int(p.read_text()) + 1; p.write_text(str(n))\n"
+            "print('pending', end='')\n",
+            encoding="utf-8",
+        )
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "do-while-max-iterations"
+  name: "Do While Max Iterations"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: do-while
+    condition: "{{{{ 'done' not in steps.tick.output.stdout }}}}"
+    max_iterations: 3
+    steps:
+      - id: tick
+        type: shell
+        run: '"{py}" "{script_file}"'
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        assert counter_file.read_text(encoding="utf-8").strip() == "3"
+        assert state.step_results["tick"]["output"]["stdout"] == "pending"
+
+    def test_while_loop_multi_step_body_inter_step_refs(self, project_dir):
+        """Multi-step loop body: step B must see step A's output from the
+        current iteration, not a stale previous one.
+
+        See https://github.com/github/spec-kit/issues/2592
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        import sys
+
+        counter_file = project_dir / ".counter"
+        counter_file.write_text("0", encoding="utf-8")
+        py = sys.executable
+
+        # Step A: increments counter file, echoes the value.
+        step_a_file = project_dir / "_step_a.py"
+        step_a_file.write_text(
+            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
+            "n = int(p.read_text()) + 1; p.write_text(str(n))\n"
+            "print(str(n), end='')\n",
+            encoding="utf-8",
+        )
+
+        # Step B uses {{ steps.step-a.output.stdout }} expression
+        # substitution in its run command so the engine resolves the
+        # aliased unprefixed key — this is the real inter-step test.
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "while-multi-step"
+  name: "While Multi Step"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: while
+    condition: "{{{{ 'done' not in steps.step-a.output.stdout }}}}"
+    max_iterations: 3
+    steps:
+      - id: step-a
+        type: shell
+        run: '"{py}" "{step_a_file}"'
+      - id: step-b
+        type: shell
+        run: "echo b-saw-{{{{ steps.step-a.output.stdout }}}}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # Both unprefixed keys reflect the latest iteration's results.
+        assert state.step_results["step-a"]["output"]["stdout"] == "3"
+        # Step B saw step A's output via expression substitution.
+        assert "b-saw-3" in state.step_results["step-b"]["output"]["stdout"]
+        # Namespaced keys exist for loop iterations.
+        assert "retry-loop:step-a:1" in state.step_results
+        assert "retry-loop:step-b:1" in state.step_results
+        assert "retry-loop:step-a:2" in state.step_results
+        assert "retry-loop:step-b:2" in state.step_results
 
 
 # ===== State Persistence Tests =====

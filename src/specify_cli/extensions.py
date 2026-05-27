@@ -801,37 +801,23 @@ class ExtensionManager:
     def _get_skills_dir(self) -> Optional[Path]:
         """Return the active skills directory for extension skill registration.
 
-        Reads ``.specify/init-options.json`` to determine whether skills
-        are enabled and which agent was selected, then delegates to
-        the module-level ``_get_skills_dir()`` helper for the concrete path.
+        Delegates to :func:`resolve_active_skills_dir` which reads
+        init-options, applies the Kimi native-skills fallback, and
+        safely creates the directory when ``ai_skills`` is enabled.
 
-        Kimi is treated as a native-skills agent: if ``ai == "kimi"`` and
-        ``.kimi/skills`` exists, extension installs should still propagate
-        command skills even when ``ai_skills`` is false.
-
-        Returns:
-            The skills directory ``Path``, or ``None`` if skills were not
-            enabled and no native-skills fallback applies.
+        Returns ``None`` (instead of raising) when the directory cannot
+        be created due to symlink, containment, or permission issues so
+        that callers can fall back gracefully.
         """
-        from . import load_init_options, _get_skills_dir as resolve_skills_dir
-
-        opts = load_init_options(self.project_root)
-        if not isinstance(opts, dict):
-            opts = {}
-
-        agent = opts.get("ai")
-        if not isinstance(agent, str) or not agent:
+        from . import resolve_active_skills_dir, _print_cli_warning
+        try:
+            return resolve_active_skills_dir(self.project_root)
+        except (ValueError, OSError) as exc:
+            _print_cli_warning(
+                "resolve", "skills directory", None, exc,
+                continuing="Continuing without skill registration.",
+            )
             return None
-
-        ai_skills_enabled = bool(opts.get("ai_skills"))
-        if not ai_skills_enabled and agent != "kimi":
-            return None
-
-        skills_dir = resolve_skills_dir(self.project_root, agent)
-        if not skills_dir.is_dir():
-            return None
-
-        return skills_dir
 
     def _register_extension_skills(
         self,

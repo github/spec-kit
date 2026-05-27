@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-15T00:00:00Z",
+  "updated_at": "2026-05-27T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -71,10 +71,10 @@
     "agent-governance": {
       "name": "Agent Governance",
       "id": "agent-governance",
-      "description": "Project-local agent governance memory and context projection.",
+      "description": "Generate agent-platform repository governance files from Spec Kit metadata.",
       "author": "bigben",
-      "version": "1.1.0",
-      "download_url": "https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v1.1.0.zip",
+      "version": "1.2.0",
+      "download_url": "https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v1.2.0.zip",
       "repository": "https://github.com/bigsmartben/spec-kit-agent-governance",
       "homepage": "https://github.com/bigsmartben/spec-kit-agent-governance",
       "documentation": "https://github.com/bigsmartben/spec-kit-agent-governance/blob/main/README.md",
@@ -84,8 +84,8 @@
         "speckit_version": ">=0.8.0",
         "tools": [
           {
-            "name": "python3",
-            "required": false
+            "name": "uv",
+            "required": true
           }
         ]
       },
@@ -103,7 +103,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-14T00:00:00Z",
-      "updated_at": "2026-05-15T00:00:00Z"
+      "updated_at": "2026-05-21T00:00:00Z"
     },
     "agent-orchestrator": {
       "name": "Intelligent Agent Orchestrator",
@@ -240,10 +240,10 @@
     "architecture-guard": {
       "name": "Architecture Guard",
       "id": "architecture-guard",
-      "description": "Continuous architecture governance for AI-assisted development. Reviews specs, plans, and code for architecture drift, producing structured refactor tasks and evolution proposals.",
+      "description": "Framework-agnostic architecture review extension for validating implementation against governance and architecture constitutions, detecting architectural drift, and generating non-blocking refactor tasks.",
       "author": "DyanGalih",
-      "version": "1.8.4",
-      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.8.4.zip",
+      "version": "1.8.9",
+      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.8.9.zip",
       "repository": "https://github.com/DyanGalih/spec-kit-architecture-guard",
       "homepage": "https://github.com/DyanGalih/spec-kit-architecture-guard",
       "documentation": "https://github.com/DyanGalih/spec-kit-architecture-guard/blob/main/README.md",
@@ -258,17 +258,18 @@
       },
       "tags": [
         "architecture",
-        "governance",
-        "drift-detection",
+        "spec-kit",
+        "review",
         "refactor",
-        "monolithic",
-        "microservices"
+        "workflow",
+        "governance",
+        "guardrails"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-05T07:26:00Z",
-      "updated_at": "2026-05-11T14:58:00Z"
+      "updated_at": "2026-05-27T00:00:00Z"
     },
     "archive": {
       "name": "Archive Extension",
@@ -1646,8 +1647,8 @@
       "id": "memorylint",
       "description": "Agent memory governance tool: Automatically audits and fixes boundary conflicts between AGENTS.md and the constitution.",
       "author": "RbBtSn0w",
-      "version": "1.3.0",
-      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/memorylint-v1.3.0/memorylint.zip",
+      "version": "1.4.0",
+      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/memorylint-v1.4.0/memorylint.zip",
       "repository": "https://github.com/RbBtSn0w/spec-kit-extensions",
       "homepage": "https://github.com/RbBtSn0w/spec-kit-extensions/tree/main/memorylint",
       "documentation": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/memorylint/README.md",
@@ -1657,8 +1658,8 @@
         "speckit_version": ">=0.5.1"
       },
       "provides": {
-        "commands": 1,
-        "hooks": 1
+        "commands": 2,
+        "hooks": 3
       },
       "tags": [
         "memory",
@@ -1671,7 +1672,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-09T00:00:00Z",
-      "updated_at": "2026-04-16T13:10:26Z"
+      "updated_at": "2026-05-24T01:06:49Z"
     },
     "multi-model-review": {
       "name": "Multi-Model Review",
@@ -1944,6 +1945,38 @@
       "stars": 0,
       "created_at": "2026-05-15T00:00:00Z",
       "updated_at": "2026-05-15T00:00:00Z"
+    },
+    "product": {
+      "name": "Product Spec Extension",
+      "id": "product",
+      "description": "Generates PRFAQ, Lean PRD, stakeholder summaries, and technical designs from engineering specs.",
+      "author": "spec-kit-product contributors",
+      "version": "0.1.3",
+      "download_url": "https://github.com/d0whc3r/spec-kit-product/releases/download/v0.1.3/product-0.1.3.zip",
+      "repository": "https://github.com/d0whc3r/spec-kit-product",
+      "homepage": "https://github.com/d0whc3r/spec-kit-product",
+      "documentation": "https://github.com/d0whc3r/spec-kit-product/blob/main/README.md",
+      "changelog": "https://github.com/d0whc3r/spec-kit-product/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 6
+      },
+      "tags": [
+        "product",
+        "spec",
+        "prd",
+        "design",
+        "documentation"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-26T00:00:00Z",
+      "updated_at": "2026-05-26T00:00:00Z"
     },
     "product-forge": {
       "name": "Product Forge",
@@ -2617,8 +2650,8 @@
       "id": "speckit-superpowers-bridge",
       "description": "Thin orchestrator between Spec Kit (design) and Superpowers (implementation). Cross-agent.",
       "author": "lihan3238",
-      "version": "0.4.1",
-      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v0.4.1/speckit-superpowers-bridge-v0.4.1.zip",
+      "version": "0.5.0",
+      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v0.5.0/speckit-superpowers-bridge-v0.5.0.zip",
       "repository": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "homepage": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "documentation": "https://github.com/lihan3238/speckit-superpowers-bridge#readme",
@@ -2659,7 +2692,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-15T00:00:00Z",
-      "updated_at": "2026-05-15T00:00:00Z"
+      "updated_at": "2026-05-20T00:00:00Z"
     },
     "speckit-utils": {
       "name": "SDD Utilities",
@@ -2729,21 +2762,21 @@
     "squad": {
       "name": "Squad Bridge",
       "id": "squad",
-      "description": "Bootstrap and synchronize a Squad agent team from your Spec Kit spec and tasks.",
+      "description": "Bootstrap and synchronize a Squad agent team from your Speckit spec and tasks.",
       "author": "jwill824",
-      "version": "1.1.0",
-      "download_url": "https://github.com/jwill824/spec-kit-squad/archive/refs/tags/v1.1.0.zip",
+      "version": "1.3.0",
+      "download_url": "https://github.com/jwill824/spec-kit-squad/archive/refs/tags/v1.3.0.zip",
       "repository": "https://github.com/jwill824/spec-kit-squad",
       "homepage": "https://github.com/jwill824/spec-kit-squad",
       "documentation": "https://github.com/jwill824/spec-kit-squad/blob/main/README.md",
       "changelog": "https://github.com/jwill824/spec-kit-squad/blob/main/docs/CHANGELOG.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.1.0",
+        "speckit_version": ">=0.8.11",
         "tools": [
           {
             "name": "@bradygaster/squad-cli",
-            "version": ">=0.1.0",
+            "version": ">=0.9.4",
             "required": true
           }
         ]
@@ -2763,7 +2796,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-29T00:00:00Z",
-      "updated_at": "2026-04-29T00:00:00Z"
+      "updated_at": "2026-05-20T00:00:00Z"
     },
     "staff-review": {
       "name": "Staff Review Extension",
@@ -2862,8 +2895,8 @@
       "id": "superb",
       "description": "Orchestrates obra/superpowers skills within the spec-kit SDD workflow. Thin bridge commands delegate to superpowers' authoritative SKILL.md files at runtime (with graceful fallback), while bridge-original commands provide spec-kit-native value. Eight commands cover the full lifecycle: intent clarification, TDD enforcement, task review, verification, critique, systematic debugging, branch completion, and review response. Hook-bound commands fire automatically; standalone commands are invoked when needed.",
       "author": "rbbtsn0w",
-      "version": "1.3.0",
-      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/superpowers-bridge-v1.3.0/superpowers-bridge.zip",
+      "version": "1.4.0",
+      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/superpowers-bridge-v1.4.0/superpowers-bridge.zip",
       "repository": "https://github.com/RbBtSn0w/spec-kit-extensions",
       "homepage": "https://github.com/RbBtSn0w/spec-kit-extensions",
       "documentation": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/superpowers-bridge/README.md",
@@ -2881,7 +2914,7 @@
       },
       "provides": {
         "commands": 8,
-        "hooks": 4
+        "hooks": 3
       },
       "tags": [
         "methodology",
@@ -2898,7 +2931,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-30T00:00:00Z",
-      "updated_at": "2026-04-16T14:08:23Z"
+      "updated_at": "2026-05-24T01:07:34Z"
     },
     "superpowers-bridge": {
       "name": "Superpowers Bridge",
@@ -2964,6 +2997,37 @@
       "stars": 0,
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
+    },
+    "team-assign": {
+      "name": "Team Assign",
+      "id": "team-assign",
+      "description": "Assign tasks.md items to human engineers, split into subtasks, and generate a per-engineer workboard",
+      "author": "tarunkumarbhati",
+      "version": "1.0.0",
+      "download_url": "https://github.com/tarunkumarbhati/spec-kit-team-assign/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/tarunkumarbhati/spec-kit-team-assign",
+      "homepage": "https://github.com/tarunkumarbhati/spec-kit-team-assign",
+      "documentation": "https://github.com/tarunkumarbhati/spec-kit-team-assign/blob/main/README.md",
+      "changelog": "https://github.com/tarunkumarbhati/spec-kit-team-assign/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 3
+      },
+      "tags": [
+        "team",
+        "assignment",
+        "process",
+        "planning",
+        "subtasks"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-20T00:00:00Z",
+      "updated_at": "2026-05-20T00:00:00Z"
     },
     "time-machine": {
       "name": "Time Machine",
@@ -3096,6 +3160,48 @@
       "stars": 0,
       "created_at": "2026-05-01T00:00:00Z",
       "updated_at": "2026-05-01T00:00:00Z"
+    },
+    "token-budget": {
+      "name": "Token Budget",
+      "id": "token-budget",
+      "description": "Reduces LLM token consumption in Spec Kit workflows: compact artifacts in-place, scope per-phase reading, suppress prose padding, and report token usage.",
+      "author": "Tine Kondo",
+      "version": "1.0.1",
+      "download_url": "https://github.com/tinesoft/spec-kit-token-budget/archive/refs/tags/v1.0.1.zip",
+      "repository": "https://github.com/tinesoft/spec-kit-token-budget",
+      "homepage": "https://github.com/tinesoft/spec-kit-token-budget",
+      "documentation": "https://github.com/tinesoft/spec-kit-token-budget/blob/main/README.md",
+      "changelog": "https://github.com/tinesoft/spec-kit-token-budget/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "python3",
+            "required": false
+          },
+          {
+            "name": "rtk",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 6
+      },
+      "tags": [
+        "tokens",
+        "budget",
+        "context",
+        "efficiency",
+        "cost-optimization"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-05-26T00:00:00Z",
+      "updated_at": "2026-05-26T00:00:00Z"
     },
     "v-model": {
       "name": "V-Model Extension Pack",

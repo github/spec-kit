@@ -173,24 +173,32 @@ class TestExtensionManagerGetSkillsDir:
         assert result == skills_dir
 
     def test_returns_none_when_no_ai_skills(self, no_skills_project):
-        """Should return None when ai_skills is false."""
+        """Should return None when ai_skills is false and not create the dir."""
         manager = ExtensionManager(no_skills_project)
         result = manager._get_skills_dir()
         assert result is None
+        # Ensure the directory was NOT created on disk
+        from specify_cli import _get_skills_dir as resolve_skills_dir
+        skills_path = resolve_skills_dir(no_skills_project, "claude")
+        assert not skills_path.exists()
 
     def test_returns_none_when_no_init_options(self, project_dir):
-        """Should return None when init-options.json is missing."""
+        """Should return None when init-options.json is missing and not create any dir."""
         manager = ExtensionManager(project_dir)
         result = manager._get_skills_dir()
         assert result is None
+        # No agent skills directory should have been created
+        assert not (project_dir / ".claude" / "skills").exists()
+        assert not (project_dir / ".agents" / "skills").exists()
 
-    def test_returns_none_when_skills_dir_missing(self, project_dir):
-        """Should return None when skills dir doesn't exist on disk."""
+    def test_creates_skills_dir_on_demand(self, project_dir):
+        """Should create skills dir when ai_skills is enabled but dir is missing."""
         _create_init_options(project_dir, ai="claude", ai_skills=True)
-        # Don't create the skills directory
+        # Don't create the skills directory — _get_skills_dir should do it
         manager = ExtensionManager(project_dir)
         result = manager._get_skills_dir()
-        assert result is None
+        assert result is not None
+        assert result.is_dir()
 
     def test_returns_kimi_skills_dir_when_ai_skills_disabled(self, project_dir):
         """Kimi should still use its native skills dir when ai_skills is false."""
@@ -459,6 +467,38 @@ class TestExtensionSkillRegistration:
         metadata = manager.registry.get(manifest.id)
         assert "speckit-missing-cmd-ext-exists" in metadata["registered_skills"]
         assert "speckit-missing-cmd-ext-ghost" not in metadata["registered_skills"]
+
+    @pytest.mark.parametrize("ai", ["claude", "codex"])
+    def test_skills_registered_when_dir_missing(self, project_dir, temp_dir, ai):
+        """Extension add should create skills dir on demand and register skills.
+
+        Regression test for https://github.com/github/spec-kit/issues/2682:
+        when an extension is installed before the agent skills directory exists,
+        skills must still be materialized (the directory is created on demand).
+        """
+        _create_init_options(project_dir, ai=ai, ai_skills=True)
+        # Deliberately do NOT create the skills directory
+        ext_dir = _create_extension_dir(temp_dir, ext_id="early-ext")
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            ext_dir, "0.1.0", register_commands=False
+        )
+
+        # Skills dir should have been created automatically
+        from specify_cli import _get_skills_dir as resolve_skills_dir
+        skills_dir = resolve_skills_dir(project_dir, ai)
+        assert skills_dir.is_dir()
+
+        # SKILL.md files should exist
+        assert (skills_dir / "speckit-early-ext-hello" / "SKILL.md").exists()
+        assert (skills_dir / "speckit-early-ext-world" / "SKILL.md").exists()
+
+        # Registry should record them
+        metadata = manager.registry.get(manifest.id)
+        assert len(metadata["registered_skills"]) == 2
+        assert "speckit-early-ext-hello" in metadata["registered_skills"]
+        assert "speckit-early-ext-world" in metadata["registered_skills"]
 
 
 # ===== Extension Skill Unregistration Tests =====

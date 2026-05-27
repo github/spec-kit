@@ -1097,36 +1097,23 @@ class PresetManager:
     def _get_skills_dir(self) -> Optional[Path]:
         """Return the active skills directory for preset skill overrides.
 
-        Reads ``.specify/init-options.json`` to determine whether skills
-        are enabled and which agent was selected, then delegates to
-        the module-level ``_get_skills_dir()`` helper for the concrete path.
+        Delegates to :func:`resolve_active_skills_dir` which reads
+        init-options, applies the Kimi native-skills fallback, and
+        safely creates the directory when ``ai_skills`` is enabled.
 
-        Kimi is treated as a native-skills agent: if ``ai == "kimi"`` and
-        ``.kimi/skills`` exists, presets should still propagate command
-        overrides to skills even when ``ai_skills`` is false.
-
-        Returns:
-            The skills directory ``Path``, or ``None`` if skills were not
-            enabled and no native-skills fallback applies.
+        Returns ``None`` (instead of raising) when the directory cannot
+        be created due to symlink, containment, or permission issues so
+        that callers can fall back gracefully.
         """
-        from . import load_init_options, _get_skills_dir
-
-        opts = load_init_options(self.project_root)
-        if not isinstance(opts, dict):
-            opts = {}
-        agent = opts.get("ai")
-        if not isinstance(agent, str) or not agent:
+        from . import resolve_active_skills_dir, _print_cli_warning
+        try:
+            return resolve_active_skills_dir(self.project_root)
+        except (ValueError, OSError) as exc:
+            _print_cli_warning(
+                "resolve", "skills directory", None, exc,
+                continuing="Continuing without skill registration.",
+            )
             return None
-
-        ai_skills_enabled = bool(opts.get("ai_skills"))
-        if not ai_skills_enabled and agent != "kimi":
-            return None
-
-        skills_dir = _get_skills_dir(self.project_root, agent)
-        if not skills_dir.is_dir():
-            return None
-
-        return skills_dir
 
     @staticmethod
     def _skill_names_for_command(cmd_name: str) -> tuple[str, str]:
@@ -1903,12 +1890,24 @@ class PresetCatalog:
             if not url:
                 continue
             self._validate_catalog_url(url)
+            raw_priority = item.get("priority", idx + 1)
+            # Reject bools explicitly: ``bool`` is a subclass of ``int`` so
+            # ``int(True)`` silently returns 1, which would let a YAML
+            # ``priority: true`` slip through as a valid priority of 1. The
+            # sibling integration-catalog reader in ``catalogs.py`` already
+            # guards this; mirror the check here so the three catalog
+            # validators stay consistent.
+            if isinstance(raw_priority, bool):
+                raise PresetValidationError(
+                    f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
+                    f"expected integer, got {raw_priority!r}"
+                )
             try:
-                priority = int(item.get("priority", idx + 1))
+                priority = int(raw_priority)
             except (TypeError, ValueError):
                 raise PresetValidationError(
                     f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
-                    f"expected integer, got {item.get('priority')!r}"
+                    f"expected integer, got {raw_priority!r}"
                 )
             raw_install = item.get("install_allowed", False)
             if isinstance(raw_install, str):

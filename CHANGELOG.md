@@ -2,6 +2,64 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.15] - 2026-05-27
+
+### Changed
+
+- Update Fiction Book Writing preset to v1.8.1 (#2714)
+- chore: update memorylint and superb to 1.4.0 (#2690)
+- fix: promote post-execution hook dispatch to H2 with directive language (#2713)
+- Add Token Budget extension to community catalog (#2712)
+- fix: create skills directory on demand during extension/preset install (#2711)
+- fix: PS 5.1 compat — replace non-ASCII chars in shipped PowerShell scripts (#2709)
+- docs: update security-governance preset to v0.3.0 (#2676)
+- Update README.md (#2675)
+- chore: release 0.8.14, begin 0.8.15.dev0 development (#2706)
+
+## [0.8.14] - 2026-05-26
+
+### Changed
+
+- Add util for windows sub-process (#2598)
+- refactor: create commands/ package and move init handler (PR-4/8) (#2615)
+- Add Product Spec Extension to community catalog (#2705)
+- fix init-options speckit version refresh (#2647)
+- chore(deps): bump github/gh-aw-actions from 0.74.8 to 0.74.9 (#2658)
+- docs: add branch naming convention to AGENTS.md and CONTRIBUTING.md (#2678)
+- chore(deps): bump actions/stale from 10.2.0 to 10.3.0 (#2657)
+- chore(deps): bump github/codeql-action from 4.35.4 to 4.35.5 (#2656)
+- chore: release 0.8.13, begin 0.8.14.dev0 development (#2669)
+
+## [0.8.13] - 2026-05-21
+
+### Changed
+
+- fix: while/do-while loop condition reads stale iteration-0 step output (#2662)
+- docs: fix directory hierarchy in README examples (#2639)
+- fix(catalogs): reject boolean priority in extension and preset catalog readers (#2589)
+- Update Agent Governance extension to v1.2.0 (#2659)
+- Add agentic workflows for community catalog submissions (#2655)
+- feat: add self-check tip to check output (#2574)
+- fix(cli): clarify exception diagnostics (#2602)
+- ci: add diff whitespace check (#2572)
+- chore: release 0.8.12, begin 0.8.13.dev0 development (#2648)
+
+## [0.8.12] - 2026-05-20
+
+### Changed
+
+- fix(codex): inject dot-to-hyphen hook command note in Codex skills (#2503)
+- Update Squad Bridge extension to v1.3.0 (#2645)
+- Update Superpowers Implementation Bridge extension to v0.5.0 (#2644)
+- Add Team Assign extension to community catalog (#2642)
+- refactor: migrate extension catalog stack parsing to shared base (#2576)
+- Update Architecture Workflow extension to v1.1.0 (#2588)
+-  fix(workflow): support integration: auto to follow project's initialized AI (#2421)
+- Add Superpowers Implementation Bridge extension to community catalog (#2586)
+- Add Interactive HTML Preview extension to community catalog (#2585)
+- chore: release 0.8.11, begin 0.8.12.dev0 development (#2584)
+- Update Agent Governance extension to v1.1.0 (#2583)
+
 ## [0.8.11] - 2026-05-15
 
 ### Changed

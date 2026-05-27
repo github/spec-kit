@@ -595,19 +595,5 @@ echo "✅ Done"
 
 ## Contribution Checklist
 
-Use this checklist before submitting a pull request for a new integration.
 
-- [ ] Subpackage created at `src/specify_cli/integrations/<key>/__init__.py`
-- [ ] All required fields defined: `key`, `config`, `registrar_config`, `context_file`
-- [ ] `requires_cli` set correctly (`True` for CLI tools, `False` for IDE plugins)
-- [ ] `key` matches the CLI executable name when `requires_cli` is `True`
-- [ ] Argument placeholder in `registrar_config["args"]` matches the agent's expected format
-- [ ] Integration imported and registered (alphabetically) in `_register_builtins()`
-- [ ] Test file created at `tests/integrations/test_integration_<key>.py`
-- [ ] All tests pass: `pytest tests/integrations/test_integration_<key>.py -v`
-- [ ] Full install/uninstall cycle verified manually with `specify init` and `specify integration uninstall`
-- [ ] Devcontainer files updated if the agent has a VS Code extension or requires a CLI install
-- [ ] This `AGENTS.md` updated if new patterns, formats, or base class behaviors were introduced
-
----
 

@@ -24,6 +24,16 @@ from ..base import IntegrationBase, IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
 
 
+def _copilot_executable() -> str:
+    """Return the executable name for Copilot CLI on this platform.
+
+    On Windows, subprocess invocation is reliable with `copilot.cmd`.
+    """
+    if os.name == "nt":
+        return "copilot.cmd"
+    return "copilot"
+
+
 def _allow_all() -> bool:
     """Return True if the Copilot CLI should run with full permissions.
 
@@ -138,7 +148,7 @@ class CopilotIntegration(IntegrationBase):
         # Controlled by SPECKIT_COPILOT_ALLOW_ALL_TOOLS env var
         # (default: enabled).  The deprecated SPECKIT_ALLOW_ALL_TOOLS
         # is also honoured as a fallback.
-        args = ["copilot", "-p", prompt]
+        args = [_copilot_executable(), "-p", prompt]
         if _allow_all():
             args.append("--yolo")
         if model:
@@ -206,7 +216,7 @@ class CopilotIntegration(IntegrationBase):
             agent_name = f"speckit.{stem}"
             prompt = args or ""
 
-        cli_args = ["copilot", "-p", prompt]
+        cli_args = [_copilot_executable(), "-p", prompt]
         if not skills_mode:
             cli_args.extend(["--agent", agent_name])
         if _allow_all():
