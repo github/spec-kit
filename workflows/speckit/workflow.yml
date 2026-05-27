@@ -24,7 +24,7 @@ requires:
       - "copilot"
       - "gemini"
       - "opencode"
-      - "alquimia"
+      - "alquimia-ai"
 
 inputs:
   spec:

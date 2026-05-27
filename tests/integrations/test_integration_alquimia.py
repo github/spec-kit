@@ -38,7 +38,7 @@ class TestAlquimiaAIIntegration:
 
     def test_setup_creates_skill_files(self, tmp_path):
         integration = get_integration("alquimia-ai")
-        manifest = IntegrationManifest("alquimia", tmp_path)
+        manifest = IntegrationManifest("alquimia-ai", tmp_path)
         created = integration.setup(tmp_path, manifest, script_type="sh")
 
         skill_files = [path for path in created if path.name == "SKILL.md"]
@@ -66,7 +66,7 @@ class TestAlquimiaAIIntegration:
 
     def test_setup_upserts_context_section(self, tmp_path):
         integration = get_integration("alquimia-ai")
-        manifest = IntegrationManifest("alquimia", tmp_path)
+        manifest = IntegrationManifest("alquimia-ai", tmp_path)
         integration.setup(tmp_path, manifest, script_type="sh")
 
         ctx_path = tmp_path / integration.context_file
@@ -120,7 +120,7 @@ class TestAlquimiaAIIntegration:
         from specify_cli import app
         from typer.testing import CliRunner
 
-        project = tmp_path / "alquimia-promote"
+        project = tmp_path / "alquimia-ai-promote"
         project.mkdir()
         old_cwd = os.getcwd()
         try:
@@ -132,7 +132,7 @@ class TestAlquimiaAIIntegration:
                     "init",
                     "--here",
                     "--ai",
-                    "alquimia",
+                    "alquimia-ai",
                     "--script",
                     "sh",
                     "--no-git",
@@ -150,15 +150,15 @@ class TestAlquimiaAIIntegration:
         init_options = json.loads(
             (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
         )
-        assert init_options["ai"] == "alquimia"
+        assert init_options["ai"] == "alquimia-ai"
         assert init_options["ai_skills"] is True
-        assert init_options["integration"] == "alquimia"
+        assert init_options["integration"] == "alquimia-ai"
 
     def test_integration_flag_creates_skill_files(self, tmp_path):
         from specify_cli import app
         from typer.testing import CliRunner
 
-        project = tmp_path / "alquimia-integration"
+        project = tmp_path / "alquimia-ai-integration"
         project.mkdir()
         old_cwd = os.getcwd()
         try:
@@ -170,7 +170,7 @@ class TestAlquimiaAIIntegration:
                     "init",
                     "--here",
                     "--integration",
-                    "alquimia",
+                    "alquimia-ai",
                     "--script",
                     "sh",
                     "--no-git",
@@ -183,13 +183,13 @@ class TestAlquimiaAIIntegration:
 
         assert result.exit_code == 0, result.output
         assert (project / ".alquimia" / "skills" / "speckit-specify" / "SKILL.md").exists()
-        assert (project / ".specify" / "integrations" / "alquimia.manifest.json").exists()
+        assert (project / ".specify" / "integrations" / "alquimia-ai.manifest.json").exists()
 
     def test_interactive_alquimia_selection_uses_integration_path(self, tmp_path):
         from specify_cli import app
         from typer.testing import CliRunner
 
-        project = tmp_path / "alquimia-interactive"
+        project = tmp_path / "alquimia-ai-interactive"
         project.mkdir()
         old_cwd = os.getcwd()
         try:
@@ -197,7 +197,7 @@ class TestAlquimiaAIIntegration:
             runner = CliRunner()
             with (
                 patch("specify_cli.commands.init._stdin_is_interactive", return_value=True),
-                patch("specify_cli.commands.init.select_with_arrows", return_value="alquimia"),
+                patch("specify_cli.commands.init.select_with_arrows", return_value="alquimia-ai"),
             ):
                 result = runner.invoke(
                     app,
@@ -216,7 +216,7 @@ class TestAlquimiaAIIntegration:
 
         assert result.exit_code == 0, result.output
         assert (project / ".specify" / "integration.json").exists()
-        assert (project / ".specify" / "integrations" / "alquimia.manifest.json").exists()
+        assert (project / ".specify" / "integrations" / "alquimia-ai.manifest.json").exists()
 
         skill_file = project / ".alquimia" / "skills" / "speckit-plan" / "SKILL.md"
         assert skill_file.exists()
@@ -227,9 +227,9 @@ class TestAlquimiaAIIntegration:
         init_options = json.loads(
             (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
         )
-        assert init_options["ai"] == "alquimia"
+        assert init_options["ai"] == "alquimia-ai"
         assert init_options["ai_skills"] is True
-        assert init_options["integration"] == "alquimia"
+        assert init_options["integration"] == "alquimia-ai"
 
     def test_alquimia_init_remains_usable_when_converter_fails(self, tmp_path):
         """Alquimia init should succeed even without install_ai_skills."""
@@ -241,7 +241,7 @@ class TestAlquimiaAIIntegration:
 
         result = runner.invoke(
             app,
-            ["init", str(target), "--ai", "alquimia", "--script", "sh", "--no-git", "--ignore-agent-tools"],
+            ["init", str(target), "--ai", "alquimia-ai", "--script", "sh", "--no-git", "--ignore-agent-tools"],
         )
 
         assert result.exit_code == 0
@@ -250,11 +250,11 @@ class TestAlquimiaAIIntegration:
     def test_alquimia_hooks_render_skill_invocation(self, tmp_path):
         from specify_cli.extensions import HookExecutor
 
-        project = tmp_path / "alquimia-hooks"
+        project = tmp_path / "alquimia-ai-hooks"
         project.mkdir()
         init_options = project / ".specify" / "init-options.json"
         init_options.parent.mkdir(parents=True, exist_ok=True)
-        init_options.write_text(json.dumps({"ai": "alquimia", "ai_skills": True}))
+        init_options.write_text(json.dumps({"ai": "alquimia-ai", "ai_skills": True}))
 
         hook_executor = HookExecutor(project)
         message = hook_executor.format_hook_message(
@@ -268,35 +268,35 @@ class TestAlquimiaAIIntegration:
             ],
         )
 
-        assert "Executing: `/speckit-plan`" in message
+        assert "Executing: `/speckit.plan`" in message
         assert "EXECUTE_COMMAND: speckit.plan" in message
-        assert "EXECUTE_COMMAND_INVOCATION: /speckit-plan" in message
+        assert "EXECUTE_COMMAND_INVOCATION: /speckit.plan" in message
 
     def test_alquimia_preset_creates_new_skill_without_commands_dir(self, tmp_path):
         from specify_cli import save_init_options
         from specify_cli.presets import PresetManager
 
-        project = tmp_path / "alquimia-preset-skill"
+        project = tmp_path / "alquimia-ai-preset-skill"
         project.mkdir()
-        save_init_options(project, {"ai": "alquimia", "ai_skills": True, "script": "sh"})
+        save_init_options(project, {"ai": "alquimia-ai", "ai_skills": True, "script": "sh"})
 
         skills_dir = project / ".alquimia" / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
 
-        preset_dir = tmp_path / "alquimia-skill-command"
+        preset_dir = tmp_path / "alquimia-ai-skill-command"
         preset_dir.mkdir()
         (preset_dir / "commands").mkdir()
         (preset_dir / "commands" / "speckit.research.md").write_text(
             "---\n"
             "description: Research workflow\n"
             "---\n\n"
-            "preset:alquimia-skill-command\n"
+            "preset:alquimia-ai-skill-command\n"
         )
         manifest_data = {
             "schema_version": "1.0",
             "preset": {
-                "id": "alquimia-skill-command",
-                "name": "Alquimia Skill Command",
+                "id": "alquimia-ai-skill-command",
+                "name": "Alquimia AI Skill Command",
                 "version": "1.0.0",
                 "description": "Test",
             },
@@ -320,12 +320,12 @@ class TestAlquimiaAIIntegration:
         skill_file = skills_dir / "speckit-research" / "SKILL.md"
         assert skill_file.exists()
         content = skill_file.read_text(encoding="utf-8")
-        assert "preset:alquimia-skill-command" in content
+        assert "preset:alquimia-ai-skill-command" in content
         assert "name: speckit-research" in content
         assert "user-invocable: true" in content
         assert "disable-model-invocation: false" in content
 
-        metadata = manager.registry.get("alquimia-skill-command")
+        metadata = manager.registry.get("alquimia-ai-skill-command")
         assert "speckit-research" in metadata.get("registered_skills", [])
 
 
@@ -335,7 +335,7 @@ class TestAlquimiaArgumentHints:
     def test_all_skills_have_hints(self, tmp_path):
         """Every generated SKILL.md must contain an argument-hint line."""
         i = get_integration("alquimia-ai")
-        m = IntegrationManifest("alquimia", tmp_path)
+        m = IntegrationManifest("alquimia-ai", tmp_path)
         created = i.setup(tmp_path, m, script_type="sh")
         skill_files = [f for f in created if f.name == "SKILL.md"]
         assert len(skill_files) > 0
@@ -348,7 +348,7 @@ class TestAlquimiaArgumentHints:
     def test_hints_match_expected_values(self, tmp_path):
         """Each skill's argument-hint must match the expected text."""
         i = get_integration("alquimia-ai")
-        m = IntegrationManifest("alquimia", tmp_path)
+        m = IntegrationManifest("alquimia-ai", tmp_path)
         created = i.setup(tmp_path, m, script_type="sh")
         skill_files = [f for f in created if f.name == "SKILL.md"]
         for f in skill_files:
@@ -368,7 +368,7 @@ class TestAlquimiaArgumentHints:
     def test_hint_is_inside_frontmatter(self, tmp_path):
         """argument-hint must appear between the --- delimiters, not in the body."""
         i = get_integration("alquimia-ai")
-        m = IntegrationManifest("alquimia", tmp_path)
+        m = IntegrationManifest("alquimia-ai", tmp_path)
         created = i.setup(tmp_path, m, script_type="sh")
         skill_files = [f for f in created if f.name == "SKILL.md"]
         for f in skill_files:
@@ -387,7 +387,7 @@ class TestAlquimiaArgumentHints:
     def test_hint_appears_after_description(self, tmp_path):
         """argument-hint must immediately follow the description line."""
         i = get_integration("alquimia-ai")
-        m = IntegrationManifest("alquimia", tmp_path)
+        m = IntegrationManifest("alquimia-ai", tmp_path)
         created = i.setup(tmp_path, m, script_type="sh")
         skill_files = [f for f in created if f.name == "SKILL.md"]
         for f in skill_files:
@@ -451,7 +451,7 @@ class TestAlquimiaDisableModelInvocation:
     def test_setup_sets_disable_model_invocation_false(self, tmp_path):
         """Generated SKILL.md files must have disable-model-invocation: false."""
         i = get_integration("alquimia-ai")
-        m = IntegrationManifest("alquimia", tmp_path)
+        m = IntegrationManifest("alquimia-ai", tmp_path)
         created = i.setup(tmp_path, m, script_type="sh")
         skill_files = [f for f in created if f.name == "SKILL.md"]
         assert len(skill_files) > 0
@@ -466,7 +466,7 @@ class TestAlquimiaDisableModelInvocation:
     def test_disable_model_invocation_not_true(self, tmp_path):
         """No Alquimia skill should have disable-model-invocation: true."""
         i = get_integration("alquimia-ai")
-        m = IntegrationManifest("alquimia", tmp_path)
+        m = IntegrationManifest("alquimia-ai", tmp_path)
         created = i.setup(tmp_path, m, script_type="sh")
         for f in created:
             if f.name != "SKILL.md":
@@ -503,7 +503,7 @@ class TestAlquimiaHookCommandNote:
     def test_hook_note_injected_in_skills_with_hooks(self, tmp_path):
         """Skills that have hook sections should get the normalization note."""
         i = get_integration("alquimia-ai")
-        m = IntegrationManifest("alquimia", tmp_path)
+        m = IntegrationManifest("alquimia-ai", tmp_path)
         created = i.setup(tmp_path, m, script_type="sh")
         specify_skill = tmp_path / ".alquimia/skills/speckit-specify/SKILL.md"
         assert specify_skill.exists()
