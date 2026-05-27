@@ -135,6 +135,21 @@ def test_env_var_multi_token_parsed_via_shlex(monkeypatch):
     ]
 
 
+def test_malformed_quoting_raises_actionable_value_error(monkeypatch):
+    """An unmatched quote in the env-var value must surface a clear
+    error naming the offending env var and showing the invalid value,
+    rather than crashing workflow dispatch with a bare shlex traceback."""
+    monkeypatch.setenv(
+        "SPECIFY_INTEGRATION_CLAUDE_EXTRA_ARGS",
+        '--flag "unterminated',
+    )
+    with pytest.raises(ValueError) as excinfo:
+        _ClaudeStub().build_exec_args("p")
+    msg = str(excinfo.value)
+    assert "SPECIFY_INTEGRATION_CLAUDE_EXTRA_ARGS" in msg
+    assert "--flag \"unterminated" in msg
+
+
 def test_env_var_empty_or_whitespace_is_noop(monkeypatch):
     """An env var set to '' or '   ' is treated as unset."""
     monkeypatch.setenv("SPECIFY_INTEGRATION_CLAUDE_EXTRA_ARGS", "   ")

@@ -164,8 +164,18 @@ class IntegrationBase(ABC):
             f"SPECIFY_INTEGRATION_{self.key.upper().replace('-', '_')}_EXTRA_ARGS"
         )
         extra = os.environ.get(env_name, "").strip()
-        if extra:
-            args.extend(shlex.split(extra))
+        if not extra:
+            return
+        try:
+            tokens = shlex.split(extra)
+        except ValueError as exc:
+            raise ValueError(
+                f"{env_name} is not parseable as a POSIX-quoted command line "
+                f"(value: {extra!r}). shlex reported: {exc}. "
+                f"Use single or double quotes to group multi-word values, e.g. "
+                f'{env_name}=\'--flag "value with spaces"\'.'
+            ) from exc
+        args.extend(tokens)
 
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
         """Build the native slash-command invocation for a Spec Kit command.
