@@ -437,13 +437,17 @@ class TestTokenScrubbing:
     ):
         monkeypatch.setenv("GH_TOKEN", SENTINEL_GH_TOKEN)
         monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
+        response = mock_urlopen_response({"tag_name": "v0.7.6"})
 
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli.authentication.http.urllib.request.build_opener"
+        ) as mock_build_opener, patch(
             "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = response
+            mock_build_opener.return_value.open.return_value = response
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(0, stdout="specify 0.7.6\n"),
@@ -466,13 +470,17 @@ class TestTokenScrubbing:
     ):
         monkeypatch.setenv("gh_token", SENTINEL_GH_TOKEN)
         monkeypatch.setenv("GitHub_Token", SENTINEL_GITHUB_TOKEN)
+        response = mock_urlopen_response({"tag_name": "v0.7.6"})
 
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli.authentication.http.urllib.request.build_opener"
+        ) as mock_build_opener, patch(
             "specify_cli._version.shutil.which", return_value="uv"
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
-            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
+            mock_urlopen.return_value = response
+            mock_build_opener.return_value.open.return_value = response
             mock_run.side_effect = [
                 _completed_process(0),
                 _completed_process(0, stdout="specify 0.7.6\n"),

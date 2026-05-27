@@ -43,6 +43,11 @@ _FAILURE_TARGET_TAG_UNPARSEABLE = "target-tag-unparseable"
 _FAILURE_INSTALLER_TIMEOUT = "installer-timeout"
 _FAILURE_INSTALLER_FAILED = "installer-failed"
 _FAILURE_VERIFICATION_MISMATCH = "verification-mismatch"
+_PRERELEASE_TAG_PATTERN = re.compile(
+    r"^(\d+\.\d+\.\d+)[-.]?(alpha|beta|a|b|rc)[-.]?(\d+)(.*)$",
+    flags=re.IGNORECASE,
+)
+_TIER3_REGISTRY_TIMEOUT_SECS = 5
 
 
 def _get_installed_version() -> str:
@@ -70,11 +75,7 @@ def _get_installed_version() -> str:
 def _normalize_tag(tag: str) -> str:
     """Normalize common git release-tag spellings into PEP 440 text."""
     normalized = tag[1:] if tag.startswith("v") else tag
-    prerelease_match = re.match(
-        r"^(\d+\.\d+\.\d+)[-.]?(alpha|beta|a|b|rc)[-.]?(\d+)(.*)$",
-        normalized,
-        flags=re.IGNORECASE,
-    )
+    prerelease_match = _PRERELEASE_TAG_PATTERN.match(normalized)
     if prerelease_match is None:
         return normalized
 
@@ -490,7 +491,7 @@ def _detect_install_method(
                     [uv_bin, "tool", "list"],
                     capture_output=True,
                     text=True,
-                    timeout=5,
+                    timeout=_TIER3_REGISTRY_TIMEOUT_SECS,
                     env=_scrubbed_env(),
                     check=False,
                 )
@@ -510,7 +511,7 @@ def _detect_install_method(
                     [pipx_bin, "list", "--json"],
                     capture_output=True,
                     text=True,
-                    timeout=5,
+                    timeout=_TIER3_REGISTRY_TIMEOUT_SECS,
                     env=_scrubbed_env(),
                     check=False,
                 )
