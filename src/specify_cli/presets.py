@@ -28,6 +28,7 @@ from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from .extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
+from .integrations.base import IntegrationBase
 
 
 def _substitute_core_template(
@@ -1058,6 +1059,9 @@ class PresetManager:
                         body = registrar.resolve_skill_placeholders(
                             selected_ai, fm, body, self.project_root
                         )
+                        body = self._resolve_skill_command_refs(
+                            body, registrar, selected_ai
+                        )
                     fm_data = registrar.build_skill_frontmatter(
                         selected_ai if isinstance(selected_ai, str) else "",
                         skill_name, desc,
@@ -1133,6 +1137,23 @@ class PresetManager:
         if title_name.startswith("speckit."):
             title_name = title_name[len("speckit."):]
         return title_name.replace(".", " ").replace("-", " ").title()
+
+    @staticmethod
+    def _resolve_skill_command_refs(
+        body: str, registrar: "CommandRegistrar", selected_ai: str
+    ) -> str:
+        """Render ``__SPECKIT_COMMAND_*__`` tokens in a skill body as invocations.
+
+        Looks up the agent's invoke separator and rewrites each
+        ``__SPECKIT_COMMAND_<NAME>__`` placeholder into the matching
+        slash-command invocation — ``/speckit-<cmd>`` for a ``-`` separator,
+        ``/speckit.<cmd>`` for ``.`` — the same rendering the command layer
+        applies via ``CommandRegistrar.register_commands()``.
+        """
+        separator = registrar.AGENT_CONFIGS.get(selected_ai, {}).get(
+            "invoke_separator", "."
+        )
+        return IntegrationBase.resolve_command_refs(body, separator)
 
     def _build_extension_skill_restore_index(self) -> Dict[str, Dict[str, Any]]:
         """Index extension-backed skill restore data by skill directory name."""
@@ -1310,6 +1331,7 @@ class PresetManager:
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root
             )
+            body = self._resolve_skill_command_refs(body, registrar, selected_ai)
 
             for target_skill_name in target_skill_names:
                 skill_subdir = skills_dir / target_skill_name
@@ -1402,6 +1424,9 @@ class PresetManager:
                     body = registrar.resolve_skill_placeholders(
                         selected_ai, frontmatter, body, self.project_root
                     )
+                    body = self._resolve_skill_command_refs(
+                        body, registrar, selected_ai
+                    )
 
                 original_desc = frontmatter.get("description", "")
                 enhanced_desc = original_desc or SKILL_DESCRIPTIONS.get(
@@ -1438,6 +1463,9 @@ class PresetManager:
                 if isinstance(selected_ai, str):
                     body = registrar.resolve_skill_placeholders(
                         selected_ai, frontmatter, body, self.project_root
+                    )
+                    body = self._resolve_skill_command_refs(
+                        body, registrar, selected_ai
                     )
 
                 command_name = extension_restore["command_name"]
