@@ -52,7 +52,11 @@ class CodexIntegration(SkillsIntegration):
         output_json: bool = True,
     ) -> list[str] | None:
         # Codex uses ``codex exec "prompt"`` for non-interactive mode.
-        args: list[str] = ["codex", "exec", prompt]
+        # Use ``self.key`` so the executable name stays coupled to the
+        # env-var lookup (which also derives from ``self.key``), matching
+        # the pattern in Devin/Opencode and avoiding drift if the key
+        # ever changes.
+        args: list[str] = [self.key, "exec", prompt]
         self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])

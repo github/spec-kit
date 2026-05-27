@@ -12,7 +12,11 @@ import os
 
 import pytest
 
-from specify_cli.integrations.base import SkillsIntegration
+from specify_cli.integrations.base import (
+    MarkdownIntegration,
+    SkillsIntegration,
+    TomlIntegration,
+)
 
 
 class _ClaudeStub(SkillsIntegration):
@@ -75,6 +79,51 @@ class _NoCliStub(SkillsIntegration):
         "extension": ".md",
     }
     context_file = "NOCLI.md"
+
+
+class _MarkdownAgentStub(MarkdownIntegration):
+    """Bare MarkdownIntegration subclass — does NOT override
+    `build_exec_args`. Locks the base implementation in
+    `MarkdownIntegration.build_exec_args` for the common case
+    (most concrete integrations: Amp, Auggie, Generic, …)."""
+
+    key = "md-agent"
+    config = {
+        "name": "Markdown agent (test stub)",
+        "folder": ".md-agent/",
+        "commands_subdir": "commands",
+        "install_url": None,
+        "requires_cli": True,
+    }
+    registrar_config = {
+        "dir": ".md-agent/commands",
+        "format": "markdown",
+        "args": "$ARGUMENTS",
+        "extension": ".md",
+    }
+    context_file = "MDAGENT.md"
+
+
+class _TomlAgentStub(TomlIntegration):
+    """Bare TomlIntegration subclass — does NOT override
+    `build_exec_args`. Locks the base implementation in
+    `TomlIntegration.build_exec_args` (Gemini, Tabnine)."""
+
+    key = "toml-agent"
+    config = {
+        "name": "TOML agent (test stub)",
+        "folder": ".toml-agent/",
+        "commands_subdir": "commands",
+        "install_url": None,
+        "requires_cli": True,
+    }
+    registrar_config = {
+        "dir": ".toml-agent/commands",
+        "format": "toml",
+        "args": "$ARGUMENTS",
+        "extension": ".toml",
+    }
+    context_file = "TOMLAGENT.md"
 
 
 @pytest.fixture(autouse=True)
@@ -187,6 +236,58 @@ def test_requires_cli_false_returns_none(monkeypatch):
     hook is never reached and no argv is built."""
     monkeypatch.setenv("SPECIFY_INTEGRATION_NO_CLI_EXTRA_ARGS", "--should-not-appear")
     assert _NoCliStub().build_exec_args("p") is None
+
+
+# ---------------------------------------------------------------------------
+# Base-class coverage
+#
+# Most integrations inherit `build_exec_args` from `MarkdownIntegration`
+# or `TomlIntegration` without overriding it. The tests above use
+# `SkillsIntegration` stubs (which share the same hook mechanism) — these
+# tests exercise the two other base implementations directly so all three
+# concrete bases are covered.
+# ---------------------------------------------------------------------------
+
+
+def test_markdown_integration_base_honours_extra_args(monkeypatch):
+    """A bare `MarkdownIntegration` subclass — which does not override
+    `build_exec_args` — must honour the env var via the base
+    implementation. Covers the most common integration pattern."""
+    monkeypatch.setenv(
+        "SPECIFY_INTEGRATION_MD_AGENT_EXTRA_ARGS", "--debug --max-tokens 100"
+    )
+    args = _MarkdownAgentStub().build_exec_args("p")
+    assert args == [
+        "md-agent",
+        "-p",
+        "p",
+        "--debug",
+        "--max-tokens",
+        "100",
+        "--output-format",
+        "json",
+    ]
+
+
+def test_toml_integration_base_honours_extra_args(monkeypatch):
+    """A bare `TomlIntegration` subclass — which does not override
+    `build_exec_args` — must honour the env var via the base
+    implementation. Covers Gemini/Tabnine-style integrations."""
+    monkeypatch.setenv(
+        "SPECIFY_INTEGRATION_TOML_AGENT_EXTRA_ARGS", "--yolo"
+    )
+    args = _TomlAgentStub().build_exec_args("p", model="gemini-pro")
+    # TomlIntegration uses `-m` for model (vs Markdown's `--model`).
+    assert args == [
+        "toml-agent",
+        "-p",
+        "p",
+        "--yolo",
+        "-m",
+        "gemini-pro",
+        "--output-format",
+        "json",
+    ]
 
 
 # ---------------------------------------------------------------------------
