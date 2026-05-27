@@ -132,6 +132,9 @@ class IntegrationManifest:
 
         Creates parent directories as needed.  Returns the absolute path
         of the written file.
+        If the path was previously marked as recovered via
+        ``record_existing(recovered=True)``, the recovered marker is
+        cleared because the bytes are now produced, not merely observed.
 
         Raises ``ValueError`` if *rel_path* resolves outside the project root.
         """
@@ -145,6 +148,9 @@ class IntegrationManifest:
 
         normalized = abs_path.relative_to(self.project_root).as_posix()
         self._files[normalized] = hashlib.sha256(content).hexdigest()
+        # ``record_file`` writes *produced* content, so any prior
+        # recovered marker for this path is no longer accurate.
+        self._recovered_files.discard(normalized)
         return abs_path
 
     def record_existing(self, rel_path: str | Path, *, recovered: bool = False) -> None:
@@ -201,6 +207,12 @@ class IntegrationManifest:
         self._files[normalized] = _sha256(abs_path)
         if recovered:
             self._recovered_files.add(normalized)
+        else:
+            # ``recovered=False`` means the caller is asserting this path is
+            # managed-baseline now, not merely observed; drop any stale
+            # recovered marker so future is_recovered() queries reflect the
+            # transition. ``discard`` is a no-op when the key is absent.
+            self._recovered_files.discard(normalized)
 
     # -- Querying ---------------------------------------------------------
 
@@ -224,15 +236,17 @@ class IntegrationManifest:
     def is_recovered(self, rel_path: str | Path) -> bool:
         """Return True if *rel_path* was recorded via ``record_existing(recovered=True)``.
 
-        Input is normalized through the same ``_validate_rel_path`` pipeline that
-        ``record_existing`` uses for its stored keys, so the two methods agree
-        on key format. Absolute paths and paths that escape the project root
-        return ``False`` (they cannot match the relative POSIX keys we store) —
-        consistent with Python's membership-predicate convention of not raising
-        on a not-in-set query.
+        Input is normalized through the same pipeline as ``record_existing``:
+        absolute paths, paths escaping the project root, AND paths containing
+        ``'..'`` segments are rejected (returned as ``False``). This mirrors
+        ``record_existing``'s canonicalization guard — such paths can never
+        appear as stored keys, so the answer is always ``False``.
         """
+        rel = Path(rel_path)
+        if rel.is_absolute() or ".." in rel.parts:
+            return False
         try:
-            abs_path = _validate_rel_path(Path(rel_path), self.project_root)
+            abs_path = _validate_rel_path(rel, self.project_root)
             normalized = abs_path.relative_to(self.project_root).as_posix()
         except ValueError:
             return False

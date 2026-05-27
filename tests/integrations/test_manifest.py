@@ -375,6 +375,37 @@ class TestManifestRecoveredFiles:
         # Don't record anything — the path is impossible to record anyway.
         assert m.is_recovered("../escape.txt") is False
 
+    def test_record_existing_clears_recovered_when_false(self, tmp_path):
+        # Finding A: re-recording the same path with recovered=False must
+        # drop the prior recovered marker (transition to managed baseline).
+        f = tmp_path / "x.txt"
+        f.write_text("v1", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        m.record_existing("x.txt", recovered=True)
+        assert m.is_recovered("x.txt") is True
+        m.record_existing("x.txt", recovered=False)
+        assert m.is_recovered("x.txt") is False
+
+    def test_record_file_clears_recovered(self, tmp_path):
+        # Finding A: record_file writes produced content; the path can no
+        # longer be considered "merely observed" once we wrote bytes.
+        (tmp_path / "y.txt").write_text("observed", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        m.record_existing("y.txt", recovered=True)
+        assert m.is_recovered("y.txt") is True
+        m.record_file("y.txt", "produced")
+        assert m.is_recovered("y.txt") is False
+
+    def test_is_recovered_rejects_dotdot_segment(self, tmp_path):
+        # Finding B: record_existing rejects ``..`` segments via the lexical
+        # pre-check; is_recovered must match that behavior and return False
+        # without raising, mirroring the canonicalization guard.
+        (tmp_path / "z.txt").write_text("v1", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        m.record_existing("z.txt", recovered=True)
+        # Same file via dotdot-normalizing path — must be False, not raise.
+        assert m.is_recovered("subdir/../z.txt") is False
+
 
 class TestRecordExistingNewGuards:
     """Coverage for the two new guards added by Copilot's 2026-05-18 review."""
