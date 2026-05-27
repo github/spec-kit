@@ -28,7 +28,7 @@ If the file does not exist, auto-commit is disabled. Exit silently.
 Look under the `auto_commit:` section in the config file you just read:
 
 1. Find the key matching the event name (e.g., `after_tasks:`).
-2. If the event key exists **and** has `enabled: true` → auto-commit is **enabled**. Use the `message` value from that key.
+2. If the event key exists **and** has `enabled: true` → auto-commit is **enabled**. Use the `message` value from that key if present; if `message` is missing or empty, fall back to the default format `"[Spec Kit] Auto-commit <before|after> <command>"`.
 3. If the event key exists **and** has `enabled: false` → auto-commit is **disabled**. Exit silently.
 4. If the event key does **not** exist at all, check `auto_commit.default`:
    - `default: true` → auto-commit is **enabled**. Use a default message `"[Spec Kit] Auto-commit <before|after> <command>"` (e.g., `after_tasks` → `"[Spec Kit] Auto-commit after tasks"`).
