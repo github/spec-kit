@@ -377,6 +377,40 @@ class TestExtensionSkillRegistration:
         assert "speckit-test-ext-hello" in written
         assert "Run this updated hello." in skill_file.read_text(encoding="utf-8")
 
+    def test_dev_skill_registration_falls_back_to_copy_when_symlink_fails(
+        self, skills_project, extension_dir, monkeypatch
+    ):
+        """Dev-mode skill registration works when Windows cannot create symlinks."""
+        project_dir, skills_dir = skills_project
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        def raise_windows_symlink_error(target, link):
+            raise OSError("A required privilege is not held by the client")
+
+        monkeypatch.setattr(
+            "specify_cli.extensions.os.symlink", raise_windows_symlink_error
+        )
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        assert "speckit-test-ext-hello" in written
+        assert skill_file.exists()
+        assert not skill_file.is_symlink()
+        assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+        assert (
+            extension_dir
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        ).exists()
+
     def test_dev_skill_registration_falls_back_to_copy_when_relpath_fails(
         self, skills_project, extension_dir, monkeypatch
     ):

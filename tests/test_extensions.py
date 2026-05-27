@@ -3666,6 +3666,53 @@ class TestExtensionAddCLI:
         else:
             assert not agent_file.is_symlink()
 
+    def test_add_dev_falls_back_to_copy_when_windows_symlinks_unavailable(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """extension add --dev should work when Windows cannot create symlinks."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+
+        def raise_windows_symlink_error(target, link):
+            raise OSError("A required privilege is not held by the client")
+
+        monkeypatch.setattr(
+            "specify_cli.agents.os.symlink", raise_windows_symlink_error
+        )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+
+        agent_file = (
+            project_dir
+            / ".github"
+            / "agents"
+            / "speckit.test-ext.hello.agent.md"
+        )
+        assert agent_file.exists()
+        assert not agent_file.is_symlink()
+        assert "Extension: test-ext" in agent_file.read_text(encoding="utf-8")
+        assert (
+            project_dir
+            / ".specify"
+            / "extensions"
+            / "test-ext"
+            / ".specify-dev"
+            / "agent-commands"
+            / "copilot"
+            / "speckit.test-ext.hello.agent.md"
+        ).exists()
+
     def test_add_by_display_name_uses_resolved_id_for_download(self, tmp_path):
         """extension add by display name should use resolved ID for download_extension()."""
         from typer.testing import CliRunner
