@@ -17,7 +17,7 @@ def _fake_argv0(monkeypatch, tmp_path, env_name, path_parts):
     monkeypatch.setenv(env_name, str(tmp_path))
     fake_dir = tmp_path.joinpath(*path_parts)
     fake_dir.mkdir(parents=True)
-    fake_specify = fake_dir / "specify"
+    fake_specify = fake_dir / ("specify.exe" if os.name == "nt" else "specify")
     fake_specify.write_text("#!/usr/bin/env python\n")
     fake_specify.chmod(0o755)
     monkeypatch.setattr("sys.argv", [str(fake_specify)])

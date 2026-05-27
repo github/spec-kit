@@ -183,6 +183,7 @@ class TestVerificationMismatch:
 
         assert verified == "0.7.6"
         assert mock_run.call_args.args[0][0] == str(uv_tool_argv0)
+        assert mock_run.call_args.kwargs["timeout"] == specify_cli._version._VERIFY_TIMEOUT_SECS
 
     def test_verify_falls_back_to_path_when_current_entrypoint_is_not_executable(
         self,
@@ -393,7 +394,18 @@ class TestTagValidation:
 
     @pytest.mark.parametrize(
         "bad_tag",
-        ["latest", "0.7.5", "main", "v7", "", "v1.2.3abc", "v1.2.3...", "v1.2.3++"],
+        [
+            "latest",
+            "0.7.5",
+            "main",
+            "v7",
+            "",
+            "v1.2.3abc",
+            "v1.2.3...",
+            "v1.2.3++",
+            "v\uff11.2.3",
+            "v1.\u0662.3",
+        ],
     )
     def test_invalid_tags_rejected(self, bad_tag, uv_tool_argv0, clean_environ):
         result = runner.invoke(app, ["self", "upgrade", "--tag", bad_tag])

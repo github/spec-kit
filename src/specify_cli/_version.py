@@ -44,10 +44,11 @@ _FAILURE_INSTALLER_TIMEOUT = "installer-timeout"
 _FAILURE_INSTALLER_FAILED = "installer-failed"
 _FAILURE_VERIFICATION_MISMATCH = "verification-mismatch"
 _PRERELEASE_TAG_PATTERN = re.compile(
-    r"^(\d+\.\d+\.\d+)[-.]?(alpha|beta|a|b|rc)[-.]?(\d+)(.*)$",
+    r"^([0-9]+\.[0-9]+\.[0-9]+)[-.]?(alpha|beta|a|b|rc)[-.]?([0-9]+)(.*)$",
     flags=re.IGNORECASE,
 )
 _TIER3_REGISTRY_TIMEOUT_SECS = 5
+_VERIFY_TIMEOUT_SECS = 10
 
 
 def _get_installed_version() -> str:
@@ -261,8 +262,8 @@ def _scrubbed_env() -> dict[str, str]:
 
 
 _TAG_REGEX = re.compile(
-    r"^v\d+\.\d+\.\d+"
-    r"(?:(?:\.?dev\d+)|(?:[-.]?(?:a|b|rc|alpha|beta)[-.]?\d+)|"
+    r"^v[0-9]+\.[0-9]+\.[0-9]+"
+    r"(?:(?:\.?dev[0-9]+)|(?:[-.]?(?:a|b|rc|alpha|beta)[-.]?[0-9]+)|"
     r"(?:\+[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*))?$"
 )
 _INVALID_TAG_MESSAGE = "Invalid --tag: expected vMAJOR.MINOR.PATCH[suffix]"
@@ -848,7 +849,7 @@ def _verify_upgrade(plan: _UpgradePlan) -> str | None:
             check=False,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=_VERIFY_TIMEOUT_SECS,
             env=_scrubbed_env(),
         )
     except (subprocess.TimeoutExpired, OSError):
