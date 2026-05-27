@@ -1,5 +1,5 @@
 ---
-description: Wrap the core planning workflow with optional class and sequence design artifacts.
+description: Wrap the core planning workflow with Phase 0 behavior projection and optional design artifacts.
 strategy: wrap
 ---
 
@@ -20,9 +20,38 @@ Store service sequences only at `contracts/sequences.md`, even when there are no
 
 Validation strategy is not a standalone planning artifact. Planning-time validation decisions belong in `research.md`; executable validation paths belong in `quickstart.md`; concrete test and verification tasks belong in `tasks.md` through the tasks command.
 
+## Phase 0 Preflight
+
+Before core research or design work, verify checklists/behavior-testability.md has passed: it must have `Gate Status: PASS` and `Blocking Items: none`.
+
+If the checklist is missing, incomplete, has `Gate Status: BLOCKED`, or lists blocking items, stop with a report-only/no-write failure before planning artifacts are generated. Report an upstream gate failure with the missing checklist item or readiness gap. Do not create or update feature files, and must not create or update behavior artifacts. Return to `/speckit.checklist` or `/speckit.clarify` instead of repairing requirements inside planning.
+
+Phase 0 preflight must not modify `spec.md`, ask clarification questions, create formal contracts, or bypass the checklist gate.
+
+## Phase 0 Behavior Projection
+
+After Phase 0 preflight passes and before core research or design work, project the accepted `spec.md` requirements into behavior drafts:
+
+- `behavior/bdd.draft.feature`: readable BDD draft scenarios.
+- `behavior/behavior-scenarios.draft.json`: structured draft scenario IDs, Given inputs, When actions, Then outcomes, and source.
+- `behavior/uif.intent.json`: interaction intent extracted from accepted requirements.
+- `behavior/data-fixtures.intent.json`: data setup intent required by draft scenarios.
+
+Phase 0 behavior projection is a projection step, not a new requirement-discovery step:
+
+- Do not discover new requirement problems.
+- Do not ask clarification questions.
+- Do not modify `spec.md`.
+- Do not generate formal contracts.
+- Do not decide test level, fixture strategy, external-system strategy, interface design, or validation commands.
+
+Structured JSON draft artifacts must follow their matching `schemas/speckit.behavior.*.schema.json` contracts.
+
+If Phase 0 cannot generate behavior drafts from a `spec.md` that passed checklist, stop with a report-only/no-write failure. Do not create or update partial behavior artifacts. The remedy is to return to `/speckit.checklist` or `/speckit.clarify`; do not invent missing requirements during planning.
+
 ## Additional Phase 1 Design Outputs
 
-During Phase 1, after core research has resolved planning unknowns and while producing design/contracts, create or update these artifacts when relevant:
+During Phase 1, after Phase 0 behavior projection and core research have resolved planning unknowns and while producing design/contracts, create or update these artifacts when relevant:
 
 1. `class-diagram.md`
    - Capture key classes, interfaces, abstract types, services, repositories, adapters, factories, strategies, controllers, and coordinators.
@@ -50,17 +79,16 @@ When `plan.md` has a design artifact/navigation section, include links to:
 
 ## Behavior-First Planning Inputs
 
-When present, consume requirement-phase behavior drafts as planning inputs:
+Use the Phase 0 behavior projection drafts as planning inputs:
 
 - `behavior/bdd.draft.feature`
 - `behavior/behavior-scenarios.draft.json`
 - `behavior/uif.intent.json`
 - `behavior/data-fixtures.intent.json`
-- `behavior/open-questions.json`
 
 Use these drafts to guide research decisions, fixture strategy, data-model entities, interface contracts, and quickstart validation paths.
 
-During Phase 1, if behavior drafts exist and `behavior/open-questions.json` has no blocking open questions, you must formalize them into formal behavior contracts:
+During Phase 1, if behavior drafts exist and checklists/behavior-testability.md has passed, you must formalize them into formal behavior contracts:
 
 - `contracts/bdd/`: acceptance-level BDD contracts.
 - `contracts/uif/`: Expected UIF contracts.
@@ -75,7 +103,7 @@ When formalizing BDD Draft into `contracts/bdd/*.feature`:
 - If a step cannot be formalized without inventing information, record `N/A or blocker` instead of guessing.
 - Do not introduce independent traceability mechanisms for BDD formalization.
 
-If behavior drafts exist but cannot be formalized, write `N/A or blocker` in the affected planning artifact with the source draft path, the blocking question or missing input, and the downstream contract path that could not be produced. Do not silently skip behavior draft formalization.
+If behavior drafts exist but cannot be formalized, write `N/A or blocker` in the affected planning artifact with the source draft path, the missing planning input, and the downstream contract path that could not be produced. Do not silently skip behavior draft formalization.
 
 BDD draft reasoning must feed the normal planning outputs:
 

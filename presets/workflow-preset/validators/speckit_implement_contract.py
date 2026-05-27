@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 
+VALID_EXECUTION_MODES = {"isolated_subagent", "manual_fresh_worker_session"}
+
+
 def _duplicate_ids(items: list[dict[str, Any]], *, key: str, context: str) -> set[str]:
     seen: set[str] = set()
     duplicates: set[str] = set()
@@ -15,6 +18,70 @@ def _duplicate_ids(items: list[dict[str, Any]], *, key: str, context: str) -> se
         duplicate = sorted(duplicates)[0]
         raise ValueError(f"{context} duplicates {key}: {duplicate}")
     return seen
+
+
+def _duplicate_values(values: list[Any], *, context: str, label: str = "value") -> None:
+    seen: set[str] = set()
+    for value in values:
+        key = str(value)
+        if key in seen:
+            raise ValueError(f"{context} duplicates {label}: {key}")
+        seen.add(key)
+
+
+def _normalized_path_parts(path: Any) -> tuple[bool, tuple[str, ...]]:
+    text = str(path).replace("\\", "/").rstrip("/")
+    is_absolute = text.startswith("/")
+    parts: list[str] = []
+    for part in text.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if parts and parts[-1] != "..":
+                parts.pop()
+            else:
+                parts.append(part)
+            continue
+        parts.append(part)
+    return is_absolute, tuple(parts)
+
+
+def _is_prefix_path(parent: tuple[str, ...], child: tuple[str, ...]) -> bool:
+    return len(parent) < len(child) and child[: len(parent)] == parent
+
+
+def _paths_overlap(left: Any, right: Any) -> bool:
+    left_absolute, left_parts = _normalized_path_parts(left)
+    right_absolute, right_parts = _normalized_path_parts(right)
+    if left_absolute != right_absolute:
+        return False
+    return (
+        left_parts == right_parts
+        or _is_prefix_path(left_parts, right_parts)
+        or _is_prefix_path(right_parts, left_parts)
+    )
+
+
+def _first_path_overlap(
+    paths: list[Any],
+    candidates: list[Any],
+) -> tuple[str, str] | None:
+    for path in paths:
+        for candidate in candidates:
+            if _paths_overlap(path, candidate):
+                return str(path), str(candidate)
+    return None
+
+
+def _find_owned_path_overlap(
+    owned_paths: list[tuple[str, str]],
+    path: Any,
+    owner: str,
+) -> tuple[str, str] | None:
+    for owned_path, owned_by in owned_paths:
+        if owned_by != owner and _paths_overlap(owned_path, path):
+            return owned_path, owned_by
+    return None
 
 
 def _require_non_empty_list(item: dict[str, Any], *, key: str, context: str) -> None:
@@ -81,7 +148,6 @@ def _receipt_references_behavior_evidence(receipt: dict[str, Any]) -> bool:
 def validate_behavior_draft_contract(
     scenarios_draft: dict[str, Any],
     data_fixtures_intent: dict[str, Any],
-    open_questions: dict[str, Any] | None = None,
 ) -> None:
     scenarios = scenarios_draft.get("scenarios", [])
     if not scenarios:
@@ -110,19 +176,6 @@ def validate_behavior_draft_contract(
         for scenario_id in fixture.get("required_for", []):
             if scenario_id not in scenario_ids:
                 raise ValueError(f"fixture required_for references unknown scenario: {scenario_id}")
-
-    if open_questions is None:
-        return
-
-    _duplicate_ids(
-        open_questions.get("questions", []),
-        key="id",
-        context="behavior open questions",
-    )
-    for question in open_questions.get("questions", []):
-        target = question.get("target")
-        if target and str(target).startswith("SCN-") and target not in scenario_ids:
-            raise ValueError(f"open question targets unknown scenario: {target}")
 
 
 def validate_behavior_contract_bundle(
@@ -187,7 +240,27 @@ def validate_behavior_contract_bundle(
 
 
 def validate_manifest_contract(manifest: dict[str, Any]) -> None:
-    shard_ids = {shard["shard_id"] for shard in manifest.get("shards", [])}
+    execution_mode = manifest.get("execution_mode")
+    if execution_mode not in VALID_EXECUTION_MODES:
+        raise ValueError(
+            "manifest execution_mode must be isolated_subagent or manual_fresh_worker_session"
+        )
+
+    shards = manifest.get("shards", [])
+    shard_ids = _duplicate_ids(shards, key="shard_id", context="manifest shards")
+    for shard in shards:
+        task_ids = shard.get("task_ids")
+        if not isinstance(task_ids, list) or not task_ids:
+            raise ValueError(
+                f"manifest shard {shard.get('shard_id', '<unknown>')} "
+                "must include non-empty task_ids"
+            )
+        _duplicate_values(
+            task_ids,
+            context=f"manifest shard {shard.get('shard_id', '<unknown>')}",
+            label="task_ids",
+        )
+
     ordered_shard_ids: list[str] = []
     for layer in manifest.get("dispatch_order", []):
         for shard_id in layer:
@@ -255,6 +328,8 @@ def validate_implement_contract(
         if receipt_path not in allowed_receipt_paths:
             raise ValueError(f"unlisted receipt: {receipt_path}")
 
+    write_path_owner: list[tuple[str, str]] = []
+    capability_owner: list[tuple[str, str]] = []
     for shard in manifest.get("shards", []):
         handoff_path = shard["handoff_path"]
         handoff = handoffs_by_path.get(handoff_path)
@@ -271,6 +346,34 @@ def validate_implement_contract(
         if handoff["task_status_update"]["receipt_path"] != shard["receipt_path"]:
             raise ValueError(f"handoff receipt_path mismatch: {handoff_path}")
 
+        for path in handoff.get("allowed_write_paths", []):
+            overlap = _find_owned_path_overlap(
+                write_path_owner,
+                path,
+                handoff["shard_id"],
+            )
+            if overlap is not None:
+                previous_path, previous = overlap
+                raise ValueError(
+                    f"allowed_write_paths overlap: {path} overlaps {previous_path} "
+                    f"in {previous} and {handoff['shard_id']}"
+                )
+            write_path_owner.append((str(path), handoff["shard_id"]))
+
+        for path in handoff.get("capability_boundary", {}).get("owns", []):
+            overlap = _find_owned_path_overlap(
+                capability_owner,
+                path,
+                handoff["shard_id"],
+            )
+            if overlap is not None:
+                previous_path, previous = overlap
+                raise ValueError(
+                    f"capability_boundary.owns overlap: {path} overlaps {previous_path} "
+                    f"in {previous} and {handoff['shard_id']}"
+                )
+            capability_owner.append((str(path), handoff["shard_id"]))
+
         receipt_path = shard["receipt_path"]
         receipt = receipts_by_path.get(receipt_path)
         if receipt is not None:
@@ -278,8 +381,21 @@ def validate_implement_contract(
 
 
 def validate_handoff_contract(handoff: dict[str, Any]) -> None:
+    if handoff.get("context_gaps"):
+        raise ValueError("context_gaps must be empty before worker dispatch")
+
+    task_ids = handoff.get("task_ids")
+    if not isinstance(task_ids, list) or not task_ids:
+        raise ValueError("handoff task_ids must not be empty")
+    _duplicate_values(task_ids, context="handoff", label="task_ids")
+
     receipt_path = handoff["task_status_update"]["receipt_path"]
-    allowed_write_paths = set(handoff.get("allowed_write_paths", []))
+    _duplicate_values(
+        handoff.get("allowed_write_paths", []),
+        context="allowed_write_paths",
+        label="path",
+    )
+    allowed_write_paths = list(handoff.get("allowed_write_paths", []))
     if receipt_path not in allowed_write_paths:
         raise ValueError("allowed_write_paths must include receipt_path")
 
@@ -291,6 +407,25 @@ def validate_handoff_contract(handoff: dict[str, Any]) -> None:
     planner_capability = handoff["planner_outputs"]["vertical_capability"]
     if planner_capability != vertical_capability:
         raise ValueError("planner_outputs vertical_capability mismatch")
+
+    capability_boundary = handoff.get("capability_boundary", {})
+    must_not_touch = list(capability_boundary.get("must_not_touch", []))
+    conflicting_write_paths = _first_path_overlap(allowed_write_paths, must_not_touch)
+    if conflicting_write_paths:
+        path, must_not_touch_path = conflicting_write_paths
+        raise ValueError(
+            "allowed_write_paths must not overlap capability_boundary.must_not_touch: "
+            f"{path} overlaps {must_not_touch_path}"
+        )
+
+    owns = list(capability_boundary.get("owns", []))
+    conflicting_owns = _first_path_overlap(owns, must_not_touch)
+    if conflicting_owns:
+        path, must_not_touch_path = conflicting_owns
+        raise ValueError(
+            "capability_boundary.owns must not overlap "
+            f"capability_boundary.must_not_touch: {path} overlaps {must_not_touch_path}"
+        )
 
     draft_source = handoff["draft_source"]
     planner_outputs = handoff["planner_outputs"]

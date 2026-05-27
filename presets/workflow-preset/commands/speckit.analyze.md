@@ -14,7 +14,7 @@ Check:
 - BDD When steps map to UIF events or API requests.
 - BDD Then steps map to feedback or behavior assertions.
 - behavior/uif.intent.json is formalized into contracts/uif/*.expected.json.
-- behavior drafts exist but formal contracts are missing, without a matching `N/A or blocker` explanation tied to `behavior/open-questions.json`.
+- behavior drafts exist but formal contracts are missing, without a matching `N/A or blocker` explanation tied to the source draft and missing planning input.
 - UIF API calls exist in contracts/api/.
 - behavior contracts cover scenarios, fixtures, and assertions.
 - tasks.md covers BDD, UIF, API, fixtures, and quickstart validation paths.

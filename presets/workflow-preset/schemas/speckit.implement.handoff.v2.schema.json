@@ -137,6 +137,7 @@
       "properties": {
         "owns": {
           "type": "array",
+          "uniqueItems": true,
           "items": {
             "type": "string",
             "minLength": 1
@@ -144,6 +145,7 @@
         },
         "depends_on": {
           "type": "array",
+          "uniqueItems": true,
           "items": {
             "type": "string",
             "minLength": 1
@@ -151,6 +153,7 @@
         },
         "must_not_touch": {
           "type": "array",
+          "uniqueItems": true,
           "items": {
             "type": "string",
             "minLength": 1
@@ -211,6 +214,8 @@
     },
     "task_ids": {
       "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
       "items": {
         "type": "string",
         "minLength": 1
@@ -232,6 +237,7 @@
     },
     "allowed_read_paths": {
       "type": "array",
+      "uniqueItems": true,
       "items": {
         "type": "string",
         "minLength": 1
@@ -239,6 +245,7 @@
     },
     "allowed_write_paths": {
       "type": "array",
+      "uniqueItems": true,
       "items": {
         "type": "string",
         "minLength": 1,

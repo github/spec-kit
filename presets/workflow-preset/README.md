@@ -2,15 +2,16 @@
 
 This Spec Kit community preset combines behavior-first specification, design-aware planning, and agent-native handoff orchestration.
 
-It keeps `/speckit.specify`, `/speckit.clarify`, `/speckit.checklist`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.analyze` compatible with the core workflow while adding behavior drafts, behavior testability checks, optional design artifacts for internal object design and service sequencing, and task-time test strategy derivation. It replaces `/speckit.implement` with a Core Agent, Vertical Planner Agent, and Worker Agent orchestration contract that writes handoffs to disk.
+It keeps `/speckit.specify`, `/speckit.clarify`, `/speckit.checklist`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.analyze` compatible with the core workflow while adding a BDD readiness gate, Phase 0 behavior projection, optional design artifacts for internal object design and service sequencing, and task-time test strategy derivation. It replaces `/speckit.implement` with a Core Agent, Vertical Planner Agent, and Worker Agent orchestration contract that writes handoffs to disk.
 
 ## Goal
 
 `workflow-preset` turns a Spec Kit feature from a single broad implementation prompt into a staged workflow with stable design context and explicit worker boundaries.
 
-The preset has two goals:
+The preset has four goals:
 
-- Make behavior testability explicit early by drafting BDD, UIF intent, fixture intent, and behavior questions during requirement work.
+- Make BDD readiness explicit before planning by checking `spec.md` for observable, verifiable behavior.
+- Project accepted requirements into BDD, UIF intent, and fixture intent drafts during `/speckit.plan` Phase 0.
 - Preserve richer planning intent so downstream tasks and implementation do not lose object design, service-flow, or validation decisions.
 - Execute implementation through agent-native handoff orchestration so each worker receives explicit task IDs, lifecycle stage, vertical capability, context, read/write paths, validation commands, and receipt requirements.
 
@@ -20,8 +21,8 @@ Large Spec Kit features can overload the implementation phase. A single `/specki
 
 `workflow-preset` reduces that failure mode in three complementary ways:
 
-- Requirement enhancement keeps draft behavior, interaction intent, fixture intent, and behavior questions beside `spec.md`.
-- Plan enhancement gives object design, service sequencing, and validation intent stable homes before tasks are generated.
+- Requirement enhancement keeps product requirements in `spec.md` and gates planning with a BDD readiness checklist.
+- Plan enhancement projects accepted behavior drafts, then gives object design, service sequencing, and validation intent stable homes before tasks are generated.
 - Implement handoff orchestration slices work by lifecycle and vertical capability, then gives each Worker Agent a compact digest, scoped paths, validation commands, and a receipt contract instead of the full planning corpus.
 
 The intent is not to add ceremony to simple features. The intent is to preserve reasoning quality when the feature is large enough that a single implementation context becomes a source of drift.
@@ -30,17 +31,19 @@ The intent is not to add ceremony to simple features. The intent is to preserve 
 
 Requirement capabilities:
 
-- Wraps `/speckit.specify` to produce requirement-phase behavior drafts when useful.
-- Writes `behavior/bdd.draft.feature`, `behavior/behavior-scenarios.draft.json`, `behavior/uif.intent.json`, `behavior/data-fixtures.intent.json`, and `behavior/open-questions.json`.
-- Applies BDD draft quality rules for scenario type coverage and Given/When/Then mapping.
-- Wraps `/speckit.clarify` so Given/When/Then ambiguity can drive requirement questions.
-- Wraps `/speckit.checklist` to add `checklists/behavior-testability.md`.
-- Keeps BDD Draft and UIF Intent separate from formal planning contracts.
+- Wraps `/speckit.specify` so it produces or updates `spec.md` only.
+- Wraps `/speckit.clarify` so it resolves requirement ambiguity in `spec.md` only.
+- Wraps `/speckit.checklist` to add `checklists/behavior-testability.md` as a BDD readiness gate.
+- Checks user stories, acceptance criteria, Given/When/Then readiness, roles, permissions, states, data, validation, boundary, exception, and state-conflict behavior directly from `spec.md`.
+- Blocks planning when readiness gaps must return to `/speckit.clarify` or `/speckit.specify`.
 
 Planning capabilities:
 
-- Wraps `/speckit.plan` to produce optional/contextual design artifacts when useful.
-- Consumes behavior drafts and must formalize them into `contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` when no blocking behavior questions exist.
+- Wraps `/speckit.plan` to run Phase 0 preflight, Phase 0 behavior projection, and optional/contextual design artifacts when useful.
+- Requires the BDD readiness gate to pass before planning.
+- Treats Phase 0 preflight failures as report-only/no-write failures.
+- Writes `behavior/bdd.draft.feature`, `behavior/behavior-scenarios.draft.json`, `behavior/uif.intent.json`, and `behavior/data-fixtures.intent.json` during Phase 0 behavior projection.
+- Consumes Phase 0 behavior drafts and must formalize them into `contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` when the BDD readiness gate has passed.
 - Records `N/A or blocker` when behavior drafts cannot be formalized.
 - Keeps `plan.md` focused on technical decisions and navigation.
 - Adds plan-template navigation to the core plan output.
@@ -88,17 +91,18 @@ Context-load controls:
 
 ## Workflow
 
-1. `/speckit.specify` keeps the core requirements output and adds behavior drafts when they help clarify acceptance behavior.
-2. `/speckit.clarify` and `/speckit.checklist` use those drafts to surface ambiguity and testability gaps.
-3. `/speckit.plan` keeps the core planning outputs, formalizes behavior drafts into contracts, and adds design artifacts when they help implementation.
-4. `/speckit.tasks` reads the core plan outputs, optional design artifacts, behavior contracts, interface contracts, `research.md`, and `quickstart.md`, then produces executable tasks with inline test level, data strategy, and evidence requirements.
-5. `/speckit.analyze` checks vertical consistency across requirements, behavior drafts, contracts, and tasks.
-6. `/speckit.implement` enters Core Agent mode when no handoff path is provided.
-7. The Core Agent writes `context-index.json` and dispatches one Vertical Planner Agent per active vertical capability.
-8. Vertical Planner Agents produce shard plans, handoff drafts, context digest drafts, and allowed path derivations.
-9. The Core Agent assembles final handoffs and writes `handoff-manifest.json`.
-10. Worker Agents run only from persisted handoff JSON files and write receipts.
-11. The Core Agent reviews receipts, updates `tasks.md`, runs integration verification, and reports closeout status.
+1. `/speckit.specify` keeps the core requirements output in `spec.md`.
+2. `/speckit.clarify` resolves requirement ambiguity in `spec.md`.
+3. `/speckit.checklist` checks BDD readiness directly from `spec.md` and blocks planning when readiness gaps remain.
+4. `/speckit.plan` runs Phase 0 preflight, performs Phase 0 behavior projection, formalizes behavior drafts into contracts, and adds design artifacts when they help implementation.
+5. `/speckit.tasks` reads the core plan outputs, optional design artifacts, behavior contracts, interface contracts, `research.md`, and `quickstart.md`, then produces executable tasks with inline test level, data strategy, and evidence requirements.
+6. `/speckit.analyze` checks vertical consistency across requirements, behavior drafts, contracts, and tasks.
+7. `/speckit.implement` enters Core Agent mode when no handoff path is provided.
+8. The Core Agent writes `context-index.json` and dispatches one Vertical Planner Agent per active vertical capability.
+9. Vertical Planner Agents produce shard plans, handoff drafts, context digest drafts, and allowed path derivations.
+10. The Core Agent assembles final handoffs and writes `handoff-manifest.json`.
+11. Worker Agents run only from persisted handoff JSON files and write receipts.
+12. The Core Agent reviews receipts, updates `tasks.md`, runs integration verification, and reports closeout status.
 
 ## Non-Goals
 
@@ -160,14 +164,16 @@ The core planning workflow still owns its normal artifacts:
 - `specs/<feature>/quickstart.md`
 - `specs/<feature>/tasks.md`
 
-This preset adds requirement-phase behavior artifacts:
+This preset adds checklist artifacts:
+
+- `specs/<feature>/checklists/behavior-testability.md`
+
+This preset adds Phase 0 behavior artifacts:
 
 - `specs/<feature>/behavior/bdd.draft.feature`
 - `specs/<feature>/behavior/behavior-scenarios.draft.json`
 - `specs/<feature>/behavior/uif.intent.json`
 - `specs/<feature>/behavior/data-fixtures.intent.json`
-- `specs/<feature>/behavior/open-questions.json`
-- `specs/<feature>/checklists/behavior-testability.md`
 
 This preset adds planning-phase formal behavior contracts:
 
@@ -194,7 +200,6 @@ Contract files packaged by the preset:
 - `schemas/speckit.behavior.scenarios.draft.v1.schema.json`
 - `schemas/speckit.behavior.uif.intent.v1.schema.json`
 - `schemas/speckit.behavior.data-fixtures.intent.v1.schema.json`
-- `schemas/speckit.behavior.open-questions.v1.schema.json`
 - `schemas/speckit.behavior.uif.expected.v1.schema.json`
 - `schemas/speckit.behavior.scenario-instances.v1.schema.json`
 - `schemas/speckit.behavior.data-fixtures.v1.schema.json`
@@ -209,9 +214,11 @@ Development-only contract helpers:
 
 ## Artifact Roles
 
-`behavior/bdd.draft.feature` captures requirement-phase behavior in readable Given/When/Then form. `behavior/behavior-scenarios.draft.json`, `behavior/uif.intent.json`, and `behavior/data-fixtures.intent.json` make the same draft behavior machine-readable enough for clarification, checklist, and planning.
+`checklists/behavior-testability.md` is the BDD readiness gate. It checks `spec.md` before planning so user stories, acceptance criteria, Given context, executable When actions, and observable Then outcomes are ready for behavior projection.
 
-`contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` contain planning-phase formal behavior contracts. They are generated from the requirement drafts after planning has resolved fixture strategy, data model, interface contracts, and validation paths, unless planning records `N/A or blocker` for unresolved behavior questions.
+`behavior/bdd.draft.feature` captures Phase 0 behavior projection in readable Given/When/Then form. `behavior/behavior-scenarios.draft.json`, `behavior/uif.intent.json`, and `behavior/data-fixtures.intent.json` make the same draft behavior machine-readable enough for planning formalization.
+
+`contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` contain planning-phase formal behavior contracts. They are generated from Phase 0 drafts after planning has resolved fixture strategy, data model, interface contracts, and validation paths, unless planning records `N/A or blocker` for missing planning input.
 
 `class-diagram.md` captures internal implementation object structure: classes, interfaces, abstract types, composition, dependencies, references, and design pattern participants. It is the object design map that helps implementation preserve boundaries between services, adapters, repositories, strategies, factories, controllers, coordinators, and extension points.
 

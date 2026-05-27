@@ -1,29 +1,16 @@
 ---
-description: Wrap core clarification with behavior-driven ambiguity checks.
+description: Wrap core clarification with spec-only ambiguity resolution.
 strategy: wrap
 ---
 
-## Behavior Clarification Policy
+## Spec-Only Clarification Policy
 
-Use `spec.md` and these behavior drafts, when present, as clarification inputs:
+Use `spec.md` as the clarification source. Ask and record clarification only for requirement ambiguity that affects product behavior, constraints, acceptance criteria, user roles, permissions, entity states, data semantics, exceptions, validation rules, or boundaries.
 
-- `behavior/bdd.draft.feature`
-- `behavior/behavior-scenarios.draft.json`
-- `behavior/uif.intent.json`
-- `behavior/data-fixtures.intent.json`
-- `behavior/open-questions.json`
-
-Review BDD draft steps for ambiguity:
-
-- Given: user role, permissions, starting view, fixture data, and entity states are explicit.
-- When: each action is executable by a user, system, or request case.
-- Then: each expected outcome has user-visible feedback, business state, error code, or assertion target.
-- Coverage: important success, rejection, validation, permission, boundary, and state-conflict behavior is covered when applicable.
-
-Write unresolved gaps to `behavior/open-questions.json`. Update `spec.md` and behavior drafts only after user-provided answers make the requirement clear.
+Do not read or update behavior draft artifacts. Do not use behavior drafts as clarification inputs, and do not open a separate behavior-question channel. Product requirements stay in `spec.md`; update `spec.md` only after user-provided answers make the requirement clear.
 
 {CORE_TEMPLATE}
 
-## Behavior Clarification Reporting
+## Clarification Reporting
 
-Before finishing, report answered questions, newly opened questions, and any behavior drafts updated from user-provided answers.
+Before finishing, report answered questions, `spec.md` sections updated, and any unresolved requirement ambiguity that still blocks checklist readiness.

@@ -36,9 +36,9 @@ adapter scripts, or worker dispatch from scripts.
 Stage ownership:
 
 - `/speckit.specify`: requirement artifacts only.
-- `/speckit.clarify`: requirement clarification and open questions only.
-- `/speckit.checklist`: checklist artifacts only.
-- `/speckit.plan`: planning artifacts and formal contracts.
+- `/speckit.clarify`: requirement clarification only.
+- `/speckit.checklist`: checklist artifacts and BDD readiness gates only.
+- `/speckit.plan`: Phase 0 behavior projection, planning artifacts, and formal contracts.
 - `/speckit.tasks`: `tasks.md` only.
 - `/speckit.analyze`: vertical consistency checks across requirements, behavior drafts, contracts, and tasks only.
 - `/speckit.implement`: implementation handoff execution only.
@@ -65,9 +65,9 @@ must not rely only on command prose to define:
 - Expected UIF contracts.
 - behavior scenario, fixture, and assertion contracts.
 
-Requirement-phase behavior drafts and planning-phase formal contracts must be
-separate artifacts with separate owners. If they are JSON, they also need
-schemas and validator coverage.
+Phase 0 behavior drafts and planning-phase formal contracts must be separate
+artifacts with separate owners. If they are JSON, they also need schemas and
+validator coverage.
 
 ## Planning Artifact Boundaries
 

@@ -198,7 +198,7 @@ specify extension info arch
 
 | 预设 | 默认状态 | 你会用它做什么 |
 | --- | --- | --- |
-| `workflow-preset` | `specify init` 默认安装 | 增强行为草稿、设计产物、任务期验证策略派生，并把 `/speckit.implement` 改成 Core/Vertical Planner/Worker 三层 handoff 编排流程。 |
+| `workflow-preset` | `specify init` 默认安装 | 增加 BDD readiness gate、Phase 0 行为投影、设计产物和任务期验证策略派生，并把 `/speckit.implement` 改成 Core/Vertical Planner/Worker 三层 handoff 编排流程。 |
 | `lean` | 手动安装 | 用更短的核心命令模板产出规格、计划、任务和实现，适合小功能、实验和低仪式感项目。 |
 | `scaffold` | 开发模板 | 给预设作者复制使用，不是普通项目必装预设。 |
 | `self-test` | 测试工具 | 用于验证预设覆盖和模板解析，主要服务仓库维护。 |
@@ -221,6 +221,8 @@ specify preset info workflow-preset
 
 `workflow-preset` v1.2.0 会保留 Spec Kit 的核心路径，但让复杂实现更容易拆分：
 
+- `/speckit.checklist` 会在规划前检查 BDD readiness，缺口回到 clarify/specify。
+- `/speckit.plan` 通过 Phase 0 把已通过质量门禁的需求投影为 BDD、UIF intent 和 fixture intent 草稿。
 - `/speckit.plan` 可以补充对象设计和服务时序等设计产物。
 - `/speckit.tasks` 不再要求独立测试策略文件，而是从行为契约、接口契约、`research.md` 和 `quickstart.md` 派生测试层级、fixture/mock/sandbox 策略和验证证据要求。
 - `/speckit.implement` 会生成 handoff manifest、Vertical Planner 输出、worker handoff、context digest 和 receipt，让多 agent 或多阶段实现更可审查。

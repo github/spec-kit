@@ -9,7 +9,7 @@
       "given": ["FIX-001"],
       "when": ["user_action"],
       "then": ["expected_feedback_or_state"],
-      "source": "specify"
+      "source": "plan-phase-0"
     }
   ]
 }
