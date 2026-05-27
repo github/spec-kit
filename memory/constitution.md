@@ -25,7 +25,7 @@ Sync Impact Report
 
 ## Scope
 
-This constitution governs work in the spec-kit repository. It does not prescribe behavior for downstream projects, which produce their own constitutions via the shipped `/constitution` workflow.
+This constitution governs work in the spec-kit repository. It does not prescribe behavior for downstream projects, which produce their own constitutions via the shipped `/speckit.constitution` workflow.
 
 ## Core Principles
 
