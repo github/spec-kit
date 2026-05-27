@@ -151,4 +151,4 @@ Ready to start? Follow the [Quick Start Guide](quickstart.md).
 
 </div>
 
-<p style="text-align: right; font-size: 0.85em; color: #6a737d;">Last updated: May 27, 2026</p>
+<p class="text-end small text-body-secondary">Last updated: May 27, 2026</p>
