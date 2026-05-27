@@ -274,7 +274,10 @@ def test_opencode_extra_args_cannot_clobber_prompt_derived_command(
 
 
 def test_copilot_integration_honours_extra_args(monkeypatch):
-    from specify_cli.integrations.copilot import CopilotIntegration
+    from specify_cli.integrations.copilot import (
+        CopilotIntegration,
+        _copilot_executable,
+    )
 
     # Disable --yolo so the argv shape stays deterministic.
     monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
@@ -282,8 +285,10 @@ def test_copilot_integration_honours_extra_args(monkeypatch):
         "SPECIFY_INTEGRATION_COPILOT_EXTRA_ARGS", "--allow-tool 'shell(echo)'"
     )
     args = CopilotIntegration().build_exec_args("p")
+    # `_copilot_executable()` returns "copilot.cmd" on Windows and
+    # "copilot" elsewhere; the test must mirror that to stay portable.
     assert args == [
-        "copilot",
+        _copilot_executable(),
         "-p",
         "p",
         "--allow-tool",
