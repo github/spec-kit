@@ -56,12 +56,8 @@ EXAMPLES:
 # Source common functions
 . "$PSScriptRoot/common.ps1"
 
-# Get feature paths and validate branch
+# Get feature paths
 $paths = Get-FeaturePathsEnv
-
-if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit:$paths.HAS_GIT)) { 
-    exit 1 
-}
 
 # If paths-only mode, output paths and exit (support combined -Json -PathsOnly)
 if ($PathsOnly) {
@@ -83,6 +79,10 @@ if ($PathsOnly) {
         Write-Output "TASKS: $($paths.TASKS)"
     }
     exit 0
+}
+
+if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit:$paths.HAS_GIT)) { 
+    exit 1 
 }
 
 # Validate required directories and files
