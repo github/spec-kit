@@ -387,7 +387,7 @@ All branches **must** follow this pattern:
 <type>/<number>-<short-slug>
 ```
 
-Where `<number>` is either an issue number or a PR number — whichever is created first.
+Where `<number>` is the issue number when work is tracked by an issue; otherwise use the PR number.
 
 | Prefix | When to use | Example |
 |---|---|---|
