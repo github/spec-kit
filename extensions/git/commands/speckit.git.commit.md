@@ -6,43 +6,50 @@ description: "Auto-commit changes after a Spec Kit command completes"
 
 Automatically stage and commit all changes after a Spec Kit command completes.
 
-## Behavior
+## Instructions
 
-This command is invoked as a hook after (or before) core commands. It:
+Follow these steps **exactly**. Do NOT skip the config file read or assume default values.
 
-1. Determines the event name from the hook context (e.g., if invoked as an `after_specify` hook, the event is `after_specify`; if `before_plan`, the event is `before_plan`)
-2. Checks `.specify/extensions/git/git-config.yml` for the `auto_commit` section
-3. Looks up the specific event key to see if auto-commit is enabled
-4. Falls back to `auto_commit.default` if no event-specific key exists
-5. Uses the per-command `message` if configured, otherwise a default message
-6. If enabled and there are uncommitted changes, runs `git add .` + `git commit`
+### Step 1 — Determine the event name
 
-## Execution
+Identify the hook event that triggered this command from the surrounding context:
+- If triggered as part of an `after_tasks` hook → event is `after_tasks`
+- If triggered as part of a `before_plan` hook → event is `before_plan`
+- The event name matches the `hooks.<event>` key from `.specify/extensions.yml`
+- If invoked manually without hook context, ask the user which event to use
 
-Determine the event name from the hook that triggered this command, then run the script:
+### Step 2 — Read the configuration file
 
-- **Bash**: `.specify/extensions/git/scripts/bash/auto-commit.sh <event_name>`
-- **PowerShell**: `.specify/extensions/git/scripts/powershell/auto-commit.ps1 <event_name>`
+**You MUST read** the file `.specify/extensions/git/git-config.yml` before deciding whether to commit. Do NOT assume its contents — the user may have changed the defaults.
 
-Replace `<event_name>` with the actual hook event (e.g., `after_specify`, `before_plan`, `after_implement`).
+If the file does not exist, auto-commit is disabled. Exit silently.
 
-## Configuration
+### Step 3 — Check whether auto-commit is enabled
 
-In `.specify/extensions/git/git-config.yml`:
+Look under the `auto_commit:` section in the config file you just read:
 
-```yaml
-auto_commit:
-  default: false          # Global toggle — set true to enable for all commands
-  after_specify:
-    enabled: true          # Override per-command
-    message: "[Spec Kit] Add specification"
-  after_plan:
-    enabled: false
-    message: "[Spec Kit] Add implementation plan"
-```
+1. Find the key matching the event name (e.g., `after_tasks:`).
+2. If the event key exists **and** has `enabled: true` → auto-commit is **enabled**. Use the `message` value from that key.
+3. If the event key exists **and** has `enabled: false` → auto-commit is **disabled**. Exit silently.
+4. If the event key does **not** exist at all, check `auto_commit.default`:
+   - `default: true` → auto-commit is **enabled**. Use a default message `"[Spec Kit] Auto-commit <event>"`.
+   - `default: false` or missing → auto-commit is **disabled**. Exit silently.
 
-## Graceful Degradation
+### Step 4 — Execute the commit (only if enabled)
 
-- If Git is not available or the current directory is not a repository: skips with a warning
-- If no config file exists: skips (disabled by default)
-- If no changes to commit: skips with a message
+If auto-commit is enabled:
+
+**Option A — Run the script** (preferred, handles edge cases):
+- **Bash (macOS/Linux)**: `.specify/extensions/git/scripts/bash/auto-commit.sh <event_name>`
+- **PowerShell (Windows)**: `.specify/extensions/git/scripts/powershell/auto-commit.ps1 <event_name>`
+
+**Option B — Run git directly** (if scripts are unavailable):
+1. Check for uncommitted changes: `git status --porcelain`
+2. If there are changes, run `git add .` then `git commit -m "<message>"`
+3. Report the result
+
+### Graceful Degradation
+
+- Git not available or not a repository → skip with a warning
+- No config file → skip silently (disabled by default)
+- No changes to commit → skip with a brief message

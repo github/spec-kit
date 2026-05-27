@@ -2833,16 +2833,18 @@ class HookExecutor:
 
             if optional:
                 lines.append(f"\n**Optional Hook**: {extension}")
+                lines.append(f"Hook event: {event_name}")
                 lines.append(f"Command: `{display_invocation}`")
                 if description:
                     lines.append(f"Description: {description}")
                 lines.append(f"\nPrompt: {prompt}")
-                lines.append(f"To execute: `{display_invocation}`")
+                lines.append(f"To execute: `{display_invocation} {event_name}`")
             else:
                 lines.append(f"\n**Automatic Hook**: {extension}")
+                lines.append(f"Hook event: {event_name}")
                 lines.append(f"Executing: `{display_invocation}`")
                 lines.append(f"EXECUTE_COMMAND: {command_text}")
-                lines.append(f"EXECUTE_COMMAND_INVOCATION: {display_invocation}")
+                lines.append(f"EXECUTE_COMMAND_INVOCATION: {display_invocation} {event_name}")
 
         return "\n".join(lines)
 

@@ -4533,9 +4533,10 @@ class TestHookInvocationRendering:
             ],
         )
 
+        assert "Hook event: before_plan" in message
         assert "Executing: `/skill:speckit-plan`" in message
         assert "EXECUTE_COMMAND: speckit.plan" in message
-        assert "EXECUTE_COMMAND_INVOCATION: /skill:speckit-plan" in message
+        assert "EXECUTE_COMMAND_INVOCATION: /skill:speckit-plan before_plan" in message
 
     def test_codex_hooks_render_dollar_skill_invocation(self, project_dir):
         """Codex projects with --ai-skills should render $speckit-* invocations."""
@@ -4573,9 +4574,10 @@ class TestHookInvocationRendering:
             ],
         )
 
+        assert "Hook event: before_tasks" in message
         assert "Executing: `/pre_tasks_test`" in message
         assert "EXECUTE_COMMAND: pre_tasks_test" in message
-        assert "EXECUTE_COMMAND_INVOCATION: /pre_tasks_test" in message
+        assert "EXECUTE_COMMAND_INVOCATION: /pre_tasks_test before_tasks" in message
 
     def test_extension_command_uses_hyphenated_skill_invocation(self, project_dir):
         """Multi-segment extension command ids should map to hyphenated skills."""
@@ -4595,9 +4597,10 @@ class TestHookInvocationRendering:
             ],
         )
 
+        assert "Hook event: after_tasks" in message
         assert "Executing: `/skill:speckit-test-ext-hello`" in message
         assert "EXECUTE_COMMAND: speckit.test-ext.hello" in message
-        assert "EXECUTE_COMMAND_INVOCATION: /skill:speckit-test-ext-hello" in message
+        assert "EXECUTE_COMMAND_INVOCATION: /skill:speckit-test-ext-hello after_tasks" in message
 
     def test_hook_executor_caches_init_options_lookup(self, project_dir, monkeypatch):
         """Init options should be loaded once per executor instance."""
@@ -4632,9 +4635,10 @@ class TestHookInvocationRendering:
             ],
         )
 
+        assert "Hook event: after_tasks" in message
         assert "Executing: `/<missing command>`" in message
         assert "EXECUTE_COMMAND: <missing command>" in message
-        assert "EXECUTE_COMMAND_INVOCATION: /<missing command>" in message
+        assert "EXECUTE_COMMAND_INVOCATION: /<missing command> after_tasks" in message
 
 
 class TestExtensionRemoveCLI:
