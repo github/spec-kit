@@ -26,6 +26,10 @@ def _raise(error_type: type[ErrorT], message: str) -> None:
     raise error_type(message)
 
 
+def _raise_from(error_type: type[ErrorT], message: str, exc: Exception) -> None:
+    raise error_type(message) from exc
+
+
 def read_response_limited(
     response,
     *,
@@ -82,12 +86,15 @@ def _safe_zip_name(name: str, *, error_type: type[ErrorT]) -> str:
 
     normalized = name.replace("\\", "/")
     path = PurePosixPath(normalized)
+    raw_parts = normalized.split("/")
+    if raw_parts and raw_parts[-1] == "":
+        raw_parts = raw_parts[:-1]
     has_windows_drive = re.match(r"^[A-Za-z]:", normalized) is not None
     if (
-        not path.parts
+        not raw_parts
         or path.is_absolute()
         or has_windows_drive
-        or any(part == ".." for part in path.parts)
+        or any(part in {"", ".", ".."} for part in raw_parts)
     ):
         _raise(
             error_type,
@@ -106,10 +113,21 @@ def safe_extract_zip(
     max_total_bytes: int = MAX_ZIP_TOTAL_BYTES,
 ) -> None:
     """Extract a ZIP archive after path, symlink, and size validation."""
-    target_root = target_dir.resolve()
+    try:
+        target_root = target_dir.resolve()
+    except OSError as exc:
+        _raise_from(error_type, f"Invalid ZIP extraction target: {target_dir}", exc)
 
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        members = zf.infolist()
+    try:
+        zf = zipfile.ZipFile(zip_path, "r")
+    except (OSError, zipfile.BadZipFile) as exc:
+        _raise_from(error_type, f"Invalid ZIP archive: {zip_path}", exc)
+
+    with zf:
+        try:
+            members = zf.infolist()
+        except zipfile.BadZipFile as exc:
+            _raise_from(error_type, f"Invalid ZIP archive: {zip_path}", exc)
         if len(members) > max_entries:
             _raise(
                 error_type,
@@ -155,21 +173,42 @@ def safe_extract_zip(
         for member, normalized_name in normalized_members:
             member_path = target_dir / normalized_name
             if member.is_dir():
-                member_path.mkdir(parents=True, exist_ok=True)
+                try:
+                    member_path.mkdir(parents=True, exist_ok=True)
+                except OSError as exc:
+                    _raise_from(
+                        error_type,
+                        f"Failed to create ZIP directory {member.filename}: {exc}",
+                        exc,
+                    )
                 continue
 
-            member_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                member_path.parent.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                _raise_from(
+                    error_type,
+                    f"Failed to create parent directory for ZIP member {member.filename}: {exc}",
+                    exc,
+                )
             written = 0
-            with zf.open(member, "r") as source, member_path.open("wb") as dest:
-                while True:
-                    chunk = source.read(READ_CHUNK_SIZE)
-                    if not chunk:
-                        break
-                    written += len(chunk)
-                    if written > max_member_bytes:
-                        _raise(
-                            error_type,
-                            f"ZIP member {member.filename} exceeds maximum size "
-                            f"of {max_member_bytes} bytes",
-                        )
-                    dest.write(chunk)
+            try:
+                with zf.open(member, "r") as source, member_path.open("wb") as dest:
+                    while True:
+                        chunk = source.read(READ_CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        written += len(chunk)
+                        if written > max_member_bytes:
+                            _raise(
+                                error_type,
+                                f"ZIP member {member.filename} exceeds maximum size "
+                                f"of {max_member_bytes} bytes",
+                            )
+                        dest.write(chunk)
+            except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
+                _raise_from(
+                    error_type,
+                    f"Failed to extract ZIP member {member.filename}: {exc}",
+                    exc,
+                )
