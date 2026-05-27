@@ -243,7 +243,9 @@ def _is_github_credential_env_key(key: str) -> bool:
     """Return whether an env key looks like a GitHub credential."""
     upper = key.upper()
     return (
-        upper.startswith("GH_") or "GITHUB" in upper
+        upper.startswith("GH_")
+        or upper.startswith("GITHUB_")
+        or "_GITHUB_" in upper
     ) and upper.endswith(_GITHUB_CREDENTIAL_SUFFIXES)
 
 

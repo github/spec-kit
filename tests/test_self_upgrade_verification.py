@@ -499,6 +499,7 @@ class TestTokenScrubbing:
         monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "app-private-key")
         monkeypatch.setenv("GITHUB_OAUTH_CLIENT_SECRET", "oauth-secret")
         monkeypatch.setenv("HOMEBREW_GITHUB_API_TOKEN", "homebrew-token")
+        monkeypatch.setenv("NOTGITHUB_TOKEN", "not-github-kept")
         monkeypatch.setenv("GHOST_API_TOKEN", "ghost-kept")
         monkeypatch.setenv("GHIDRA_API_KEY", "ghidra-kept")
         monkeypatch.setenv("UNRELATED_TOKEN", "kept")
@@ -515,6 +516,7 @@ class TestTokenScrubbing:
         assert "GITHUB_APP_PRIVATE_KEY" not in env
         assert "GITHUB_OAUTH_CLIENT_SECRET" not in env
         assert "HOMEBREW_GITHUB_API_TOKEN" not in env
+        assert env["NOTGITHUB_TOKEN"] == "not-github-kept"
         assert env["GHOST_API_TOKEN"] == "ghost-kept"
         assert env["GHIDRA_API_KEY"] == "ghidra-kept"
         assert env["UNRELATED_TOKEN"] == "kept"
