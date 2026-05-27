@@ -12,11 +12,10 @@ Follow these steps **exactly**. Do NOT skip the config file read or assume defau
 
 ### Step 1 — Determine the event name
 
-Identify the hook event that triggered this command from the surrounding context:
-- If triggered as part of an `after_tasks` hook → event is `after_tasks`
-- If triggered as part of a `before_plan` hook → event is `before_plan`
-- The event name matches the `hooks.<event>` key from `.specify/extensions.yml`
-- If invoked manually without hook context, ask the user which event to use
+Identify the hook event name to use:
+- If the invocation includes an explicit event name argument (e.g., `/speckit.git.commit after_tasks`), use it.
+- Otherwise infer it from the surrounding hook context (e.g., `after_tasks`, `before_plan`), matching `hooks.<event>` in `.specify/extensions.yml`.
+- If invoked manually with no hook context and no event argument, ask the user which event to use.
 
 ### Step 2 — Read the configuration file
 
@@ -32,7 +31,7 @@ Look under the `auto_commit:` section in the config file you just read:
 2. If the event key exists **and** has `enabled: true` → auto-commit is **enabled**. Use the `message` value from that key.
 3. If the event key exists **and** has `enabled: false` → auto-commit is **disabled**. Exit silently.
 4. If the event key does **not** exist at all, check `auto_commit.default`:
-   - `default: true` → auto-commit is **enabled**. Use a default message `"[Spec Kit] Auto-commit <event>"`.
+   - `default: true` → auto-commit is **enabled**. Use a default message `"[Spec Kit] Auto-commit <before|after> <command>"` (e.g., `after_tasks` → `"[Spec Kit] Auto-commit after tasks"`).
    - `default: false` or missing → auto-commit is **disabled**. Exit silently.
 
 ### Step 4 — Execute the commit (only if enabled)

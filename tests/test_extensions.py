@@ -4534,7 +4534,7 @@ class TestHookInvocationRendering:
         )
 
         assert "Hook event: before_plan" in message
-        assert "Executing: `/skill:speckit-plan`" in message
+        assert "Executing: `/skill:speckit-plan before_plan`" in message
         assert "EXECUTE_COMMAND: speckit.plan" in message
         assert "EXECUTE_COMMAND_INVOCATION: /skill:speckit-plan before_plan" in message
 
@@ -4575,7 +4575,7 @@ class TestHookInvocationRendering:
         )
 
         assert "Hook event: before_tasks" in message
-        assert "Executing: `/pre_tasks_test`" in message
+        assert "Executing: `/pre_tasks_test before_tasks`" in message
         assert "EXECUTE_COMMAND: pre_tasks_test" in message
         assert "EXECUTE_COMMAND_INVOCATION: /pre_tasks_test before_tasks" in message
 
@@ -4598,7 +4598,7 @@ class TestHookInvocationRendering:
         )
 
         assert "Hook event: after_tasks" in message
-        assert "Executing: `/skill:speckit-test-ext-hello`" in message
+        assert "Executing: `/skill:speckit-test-ext-hello after_tasks`" in message
         assert "EXECUTE_COMMAND: speckit.test-ext.hello" in message
         assert "EXECUTE_COMMAND_INVOCATION: /skill:speckit-test-ext-hello after_tasks" in message
 
@@ -4636,7 +4636,7 @@ class TestHookInvocationRendering:
         )
 
         assert "Hook event: after_tasks" in message
-        assert "Executing: `/<missing command>`" in message
+        assert "Executing: `/<missing command> after_tasks`" in message
         assert "EXECUTE_COMMAND: <missing command>" in message
         assert "EXECUTE_COMMAND_INVOCATION: /<missing command> after_tasks" in message
 

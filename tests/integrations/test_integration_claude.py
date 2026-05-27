@@ -270,7 +270,7 @@ class TestClaudeIntegration:
         )
 
         assert "Hook event: before_plan" in message
-        assert "Executing: `/speckit-plan`" in message
+        assert "Executing: `/speckit-plan before_plan`" in message
         assert "EXECUTE_COMMAND: speckit.plan" in message
         assert "EXECUTE_COMMAND_INVOCATION: /speckit-plan before_plan" in message
 
