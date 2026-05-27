@@ -381,25 +381,26 @@ Implementation: Extends `YamlIntegration` (parallel to `TomlIntegration`):
 
 ## Branch Naming Convention
 
-All branches **must** follow this pattern:
+Branches follow one of two patterns depending on whether an issue exists:
 
 ```
-<type>/<number>-<short-slug>
+<type>/<number>-<short-slug>   # when an issue is created first
+<type>/<short-slug>            # when no issue exists (PR-only changes)
 ```
 
-Where `<number>` is either an issue number or a PR number — whichever is created first.
+When an issue exists, include its number immediately after the prefix — this is what makes branches traceable. For small or self-contained changes that go straight to a PR without a tracking issue, omit the number.
 
 | Prefix | When to use | Example |
 |---|---|---|
 | `feat/` | New features | `feat/2342-workflow-cli-alignment` |
 | `fix/` | Bug fixes | `fix/2653-paths-only-validation` |
-| `docs/` | Documentation changes | `docs/2677-branch-naming-convention` |
+| `docs/` | Documentation changes | `docs/2677-branch-naming-convention`, `docs/update-landing-stats` |
 | `community/` | Community catalog additions | `community/2492-add-mde-extension` |
 | `chore/` | Maintenance, tooling, CI | `chore/2366-editorconfig` |
 
 **Rules:**
 
-1. Always include the issue or PR number immediately after the prefix — this is what makes branches traceable
+1. Include the issue number when one exists — this is what makes branches traceable
 2. Use kebab-case for the slug
 3. Keep the slug short — enough to identify the work without looking up the issue
 
