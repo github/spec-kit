@@ -219,6 +219,51 @@ Aggregate results from fan-out steps:
   output: {}
 ```
 
+## Error Handling
+
+By default, any step that ends in `StepStatus.FAILED` at runtime halts
+the entire run — most commonly a `shell` or `command` step exiting
+non-zero, but also any other runtime error raised during step
+execution. (Invalid workflow definitions are rejected up-front by
+`specify workflow run` before the run even starts, so structural
+validation failures never reach this code path.) Set
+`continue_on_error: true` on a step to record its result and continue
+to the next sibling step instead. When the failure was a non-zero
+exit, the exit code remains available on
+`steps.<id>.output.exit_code` so downstream `if`, `switch`, or `gate`
+steps can branch on it:
+
+```yaml
+- id: heavy-thing
+  type: command
+  integration: claude
+  command: speckit.heavy-thing
+  continue_on_error: true
+
+- id: check-result
+  type: if
+  condition: "{{ steps.heavy-thing.output.exit_code != 0 }}"
+  then:
+    - id: review
+      type: gate
+      message: "Step failed (exit {{ steps.heavy-thing.output.exit_code }}). Retry or skip?"
+      on_reject: skip
+  else:
+    - id: next-thing
+      command: speckit.next-thing
+```
+
+**Notes:**
+
+- The field must be a literal boolean (`true` / `false`); coerced
+  strings like `"true"` are rejected at validation time.
+- Gate aborts (`on_reject: abort` chosen by the operator) always halt
+  the run — `continue_on_error` does not override them. The flag is
+  for transient/expected step failures, not for overriding deliberate
+  operator decisions.
+- When the flag is omitted, behaviour is byte-equivalent to before
+  this feature.
+
 ## Expressions
 
 Workflow definitions use `{{ expression }}` syntax for dynamic values:
@@ -238,33 +283,6 @@ message: "{{ status | default('pending') }}"
 ```
 
 Supported filters: `default`, `join`, `contains`, `map`.
-
-### Runtime Context
-
-`{{ context.* }}` exposes engine-managed runtime metadata for the
-current run:
-
-| Variable | Description |
-|----------|-------------|
-| `context.run_id` | The current workflow run id (the same value Spec Kit prints as `Run ID:` at the end of `workflow run`). Auto-generated runs are 8-character hex from `uuid4`; operator-supplied ids may be any alphanumeric string with hyphens or underscores. Empty string outside a run context. |
-
-```yaml
-# Stamp telemetry events with the run id for cross-system join.
-- id: emit-event
-  type: shell
-  run: 'echo "{\"run_id\":\"{{ context.run_id }}\",\"event\":\"started\"}" >> events.jsonl'
-
-# Per-run scratch directory.
-- id: prep-scratch
-  type: shell
-  run: 'mkdir -p /tmp/run-{{ context.run_id }}'
-
-# Pass run id into a command for artifact metadata.
-- id: tag-artifact
-  command: speckit.specify
-  input:
-    args: "{{ context.run_id }}"
-```
 
 ## Input Types
 

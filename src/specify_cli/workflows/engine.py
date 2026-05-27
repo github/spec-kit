@@ -231,6 +231,20 @@ def _validate_steps(
             step_errors = step_impl.validate(step_config)
             errors.extend(step_errors)
 
+        # Validate optional `continue_on_error` field. The engine honours
+        # this on any step that returns FAILED so the pipeline can route
+        # around the failure via downstream `if`/`switch`/`gate`. The
+        # field must be a literal boolean — coercion from truthy strings
+        # is deliberately not supported so authoring mistakes surface
+        # at validation time rather than silently changing run semantics.
+        if "continue_on_error" in step_config:
+            coe = step_config["continue_on_error"]
+            if not isinstance(coe, bool):
+                errors.append(
+                    f"Step {step_id!r}: 'continue_on_error' must be a "
+                    f"boolean, got {type(coe).__name__}."
+                )
+
         # Recursively validate nested steps
         for nested_key in ("then", "else", "steps"):
             nested = step_config.get(nested_key)
@@ -622,7 +636,10 @@ class WorkflowEngine:
 
             # Handle failures
             if result.status == StepStatus.FAILED:
-                # Gate abort (output.aborted) maps to ABORTED status
+                # Gate abort (output.aborted) maps to ABORTED status.
+                # Aborts are deliberate operator decisions, so
+                # `continue_on_error` does NOT override them — that flag
+                # is for transient/expected step failures only.
                 if result.output.get("aborted"):
                     state.status = RunStatus.ABORTED
                     state.append_log(
@@ -631,15 +648,48 @@ class WorkflowEngine:
                             "step_id": step_id,
                         }
                     )
-                else:
-                    state.status = RunStatus.FAILED
+                    state.save()
+                    return
+
+                # `continue_on_error: true` lets the pipeline route
+                # around the failure instead of halting. The step
+                # result (including exit_code, stderr, status) is
+                # still recorded so downstream `if`/`switch`/`gate`
+                # steps can branch on it. Log a single, unambiguous
+                # event per failure resolution — either the run
+                # continued past it, or it halted.
+                #
+                # Use identity comparison (`is True`) rather than
+                # truthiness so that only a literal boolean enables
+                # the behaviour, even if validation was skipped.
+                # Validation rejects non-bool values at parse time,
+                # but `WorkflowEngine.execute()` does not auto-validate
+                # (see `WorkflowEngine.load_workflow`, whose docstring
+                # explicitly notes "not yet validated; call
+                # `validate_workflow()` or `engine.validate()`
+                # separately"), so a caller passing an unvalidated
+                # definition could otherwise see truthy non-bool
+                # values like the string `"true"` silently change
+                # run semantics.
+                if step_config.get("continue_on_error") is True:
                     state.append_log(
                         {
-                            "event": "step_failed",
+                            "event": "step_continue_on_error",
                             "step_id": step_id,
                             "error": result.error,
                         }
                     )
+                    state.save()
+                    continue
+
+                state.status = RunStatus.FAILED
+                state.append_log(
+                    {
+                        "event": "step_failed",
+                        "step_id": step_id,
+                        "error": result.error,
+                    }
+                )
                 state.save()
                 return
 
