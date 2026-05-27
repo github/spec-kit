@@ -533,5 +533,3 @@ class TestInstallerFailed:
         assert "Previous version was not an exact stable release tag" in out
         assert "https://github.com/github/spec-kit/releases" in out
         assert "git+https://github.com/github/spec-kit.git@v1.0.0rc1" not in out
-
-

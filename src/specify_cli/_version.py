@@ -156,11 +156,6 @@ def _stable_release_tag_for_version(version_text: str) -> str | None:
     return f"v{release[0]}.{release[1]}.{release[2]}"
 
 
-def _is_comparable_version_text(value: str) -> bool:
-    """Return whether version-like text parses under PEP 440 after tag normalization."""
-    return _parse_version_text(value) is not None
-
-
 def _render_argv(argv: list[str]) -> str:
     """Render argv as POSIX shell text, or cmd.exe-style text on Windows."""
     return subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
@@ -273,9 +268,10 @@ _INVALID_TAG_MESSAGE = "Invalid --tag: expected vMAJOR.MINOR.PATCH[suffix]"
 def _validate_tag(tag: str) -> str:
     """Validate a user-supplied --tag value.
 
-    Accepts vX.Y.Z plus optional PEP-440-ish suffix (dev0, rc1, beta.1,
-    +build.42). Rejects everything else (including bare 'latest', hash refs,
-    branch names, or a numeric version without the 'v' prefix).
+    Accepts vX.Y.Z plus optional dev, alpha/beta/rc, or build-metadata suffixes
+    (for example: v1.0.0-rc1, v0.8.0.dev0, v0.8.0+build.42). Rejects
+    everything else, including bare 'latest', hash refs, branch names, and
+    numeric versions without the 'v' prefix.
     """
     tag = tag.strip()
     if not tag:
@@ -1163,9 +1159,6 @@ def self_check() -> None:
         return
 
     # Installed is parseable AND is >= latest → "up to date" (FR-006).
-    # Also reached when the tag is unparseable (InvalidVersion) → _is_newer
-    # returns False, and the up-to-date branch is the safer default per
-    # FR-004 / test T016.
     console.print(f"[green]Up to date:[/green] {installed}")
 
 
@@ -1200,8 +1193,10 @@ def self_upgrade(
       0      success or no-op-success (already on latest, --dry-run, or
              non-upgradable path with guidance shown)
       1      target-tag resolution failure or --tag regex validation failure
-      2      verification mismatch (installer exited 0 but `specify --version`
-             does not resolve to the target tag)
+      2      verification mismatch when the installer exited 0 but
+             `specify --version` does not resolve to the target tag; if the
+             installer itself exits 2, that installer failure code is
+             propagated verbatim
       3      installer binary not found on PATH, or resolved installer path is
              missing / non-executable
       124    internal installer timeout when SPECIFY_UPGRADE_TIMEOUT_SECS is set,
