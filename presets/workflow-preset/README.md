@@ -119,7 +119,7 @@ Context-load controls:
 Release install:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/archive/refs/tags/v1.2.0.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.0/spec-kit-workflow-preset-v1.3.0.zip
 ```
 
 Local development install:
@@ -325,7 +325,7 @@ specify preset remove workflow-preset
 After tagging a release, validate archive installation:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/archive/refs/tags/v1.2.0.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.0/spec-kit-workflow-preset-v1.3.0.zip
 ```
 
 ## Source Rationale

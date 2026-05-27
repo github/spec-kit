@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.3.0
+
 - Hardened implementation handoff isolation with runtime-neutral execution modes, subagent/subsession dispatch policy, and validator checks for empty tasks, context gaps, overlapping write ownership, and must-not-touch conflicts.
 - Moved behavior draft generation from `/speckit.specify` to `/speckit.plan` Phase 0 and made `/speckit.checklist` the BDD readiness gate before planning.
 - Clarified BDD readiness gate status and Phase 0 report-only/no-write failure handling.
