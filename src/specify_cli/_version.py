@@ -10,6 +10,7 @@ at module level, keeping this layer thin and circular-import-safe).
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import time
@@ -204,11 +205,18 @@ def _read_update_check_cache(path: Path) -> dict | None:
         if not path.exists():
             return None
         data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return None
+
         checked_at = float(data.get("checked_at", 0))
+        now = time.time()
+        if not math.isfinite(checked_at) or checked_at > now:
+            return None
+        if now - checked_at > _UPDATE_CHECK_CACHE_TTL_SECONDS:
+            return None
+
         latest = data.get("latest")
         if latest is not None and not isinstance(latest, str):
-            return None
-        if time.time() - checked_at > _UPDATE_CHECK_CACHE_TTL_SECONDS:
             return None
         return data
     except Exception:

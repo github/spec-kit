@@ -206,7 +206,7 @@ def callback(
     # skip help invocations. Runs on bare `specify` too so the banner launch
     # benefits from the nudge when the user has opted in.
     if (
-        ctx.invoked_subcommand != "version"
+        ctx.invoked_subcommand not in {"version", "self"}
         and "--help" not in sys.argv
         and "-h" not in sys.argv
     ):

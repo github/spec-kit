@@ -8,6 +8,7 @@ failing any command when offline or rate-limited.
 import json
 import time
 from io import StringIO
+from typing import Any, cast
 
 from specify_cli._version import (
     _check_for_updates,
@@ -15,6 +16,22 @@ from specify_cli._version import (
     _write_update_check_cache,
 )
 
+
+class _TtyStdout(StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+class _CaptureConsole:
+    def __init__(self) -> None:
+        self._output = StringIO()
+
+    def print(self, *objects: object, sep: str = " ", end: str = "\n", **_: object) -> None:
+        self._output.write(sep.join(str(obj) for obj in objects))
+        self._output.write(end)
+
+    def getvalue(self) -> str:
+        return self._output.getvalue()
 
 
 class TestCache:
@@ -44,6 +61,22 @@ class TestCache:
         cache_file.write_text(json.dumps({"checked_at": time.time(), "latest": ["v0.7.0"]}))
         assert _read_update_check_cache(cache_file) is None
 
+    def test_non_dict_cache_returns_none(self, tmp_path):
+        cache_file = tmp_path / "version_check.json"
+        cache_file.write_text(json.dumps([{"checked_at": time.time(), "latest": "v0.7.0"}]))
+        assert _read_update_check_cache(cache_file) is None
+
+    def test_non_finite_checked_at_returns_none(self, tmp_path):
+        cache_file = tmp_path / "version_check.json"
+        for checked_at in ("nan", "inf", "-inf"):
+            cache_file.write_text(json.dumps({"checked_at": checked_at, "latest": "v0.7.0"}))
+            assert _read_update_check_cache(cache_file) is None
+
+    def test_future_checked_at_returns_none(self, tmp_path):
+        cache_file = tmp_path / "version_check.json"
+        cache_file.write_text(json.dumps({"checked_at": time.time() + 60, "latest": "v0.7.0"}))
+        assert _read_update_check_cache(cache_file) is None
+
     def test_write_round_trips(self, tmp_path):
         cache_file = tmp_path / "nested" / "version_check.json"
         _write_update_check_cache(cache_file, "v0.9.9")
@@ -69,13 +102,11 @@ class TestCheckForUpdates:
         """Force the skip-guard off so the helper runs, then capture console output."""
         # Guard returns False → helper proceeds.
         monkeypatch.setattr("specify_cli._version._should_skip_update_check", lambda: False)
-        buf = StringIO()
         import specify_cli._version
-        from rich.console import Console
-        captured = Console(file=buf, force_terminal=False, width=200)
+        captured = _CaptureConsole()
         monkeypatch.setattr(specify_cli._version, "console", captured)
         _check_for_updates()
-        return buf.getvalue()
+        return captured.getvalue()
 
     def test_prints_warning_when_newer_release_available(self, monkeypatch, tmp_path):
         monkeypatch.setattr("specify_cli._version._get_installed_version", lambda: "0.6.2")
@@ -240,7 +271,7 @@ class TestCheckForUpdates:
         """With SPECIFY_ENABLE_UPDATE_CHECK=1 and a TTY, the helper proceeds."""
         monkeypatch.setenv("SPECIFY_ENABLE_UPDATE_CHECK", "1")
         monkeypatch.delenv("CI", raising=False)
-        monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+        monkeypatch.setattr("sys.stdout", _TtyStdout())
 
         fetched = {"called": False}
 
@@ -267,7 +298,7 @@ class TestCheckForUpdates:
         """
         monkeypatch.setenv("SPECIFY_ENABLE_UPDATE_CHECK", "1")
         monkeypatch.setenv("CI", "1")
-        monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+        monkeypatch.setattr("sys.stdout", _TtyStdout())
 
         fetched = {"called": False}
 
@@ -284,3 +315,20 @@ class TestCheckForUpdates:
         _check_for_updates()
 
         assert fetched["called"] is False
+
+    def test_callback_skips_startup_update_check_for_self_subcommands(self, monkeypatch):
+        """`specify self check` does its own fetch; startup check should not run too."""
+        import specify_cli
+
+        calls = {"n": 0}
+
+        def _should_not_be_called() -> None:
+            calls["n"] += 1
+
+        monkeypatch.setattr("sys.argv", ["specify", "self", "check"])
+        monkeypatch.setattr(specify_cli, "_check_for_updates", _should_not_be_called)
+        ctx = type("ContextStub", (), {"invoked_subcommand": "self"})()
+
+        specify_cli.callback(cast(Any, ctx))
+
+        assert calls["n"] == 0
