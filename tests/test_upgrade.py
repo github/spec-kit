@@ -181,6 +181,7 @@ class TestUserStory1:
         assert "Update available" not in output
         assert "Up to date" not in output
         assert "Could not validate latest release tag from GitHub." in output
+        assert "Latest release: vX.Y.Z" in output
         assert "0.7.4" in output
         assert "not-a-version" not in output
         assert "git+https://github.com/github/spec-kit.git@vX.Y.Z" in output

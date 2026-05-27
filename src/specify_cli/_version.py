@@ -799,7 +799,10 @@ def _run_installer(plan: _UpgradePlan) -> _InstallerResult:
         raise
 
 
-_VERIFY_VERSION_LINE_RE = re.compile(r"^\s*(?:specify|specify-cli)\b(?P<rest>.*)$")
+_VERIFY_VERSION_LINE_RE = re.compile(
+    r"^\s*(?:specify|specify-cli)\b(?P<rest>.*)$",
+    flags=re.IGNORECASE,
+)
 
 
 def _parse_verify_version_output(output: str) -> str | None:
@@ -1127,6 +1130,7 @@ def self_check() -> None:
             console.print(f"Latest release: {latest_display}")
         else:
             console.print(f"Installed: {installed}")
+            console.print(f"Latest release: {latest_display}")
         console.print("[yellow]Could not validate latest release tag from GitHub.[/yellow]")
         console.print("\nManual fallback:")
         console.print(
