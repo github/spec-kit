@@ -539,10 +539,10 @@ Goose uses Block's YAML recipe format. The integration extends `YamlIntegration`
 cat .specify/integrations/mycli.manifest.json
 ```
 
-**Run with verbose output** to trace what Specify CLI is doing during install:
+**Re-run the install command** and inspect the normal CLI output for any reported errors:
 
 ```bash
-specify init my-project --integration mycli --verbose
+specify init my-project --integration mycli
 ```
 
 **Check if a CLI tool is detected** before debugging further:
