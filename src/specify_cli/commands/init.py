@@ -151,12 +151,14 @@ def register(app: typer.Typer) -> None:
         # Lazy imports to avoid circular dependency — __init__.py imports this module
         from .. import (
             _install_shared_infra_or_exit,
-            _parse_integration_options,
             _print_cli_warning,
             _update_agent_context_config_file,
-            _write_integration_json,
             ensure_executable_scripts,
             save_init_options,
+        )
+        from ..integrations._commands import (
+            _parse_integration_options,
+            _write_integration_json,
         )
         from ..integration_runtime import with_integration_setting as _with_integration_setting
 
