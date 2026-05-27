@@ -27,5 +27,6 @@ The following community-contributed presets customize how Spec Kit behaves — o
 | Spec2Cloud | Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy | 5 templates, 8 commands | — | [spec2cloud](https://github.com/Azure-Samples/Spec2Cloud) |
 | Table of Contents Navigation | Adds a navigable Table of Contents to generated spec.md, plan.md, and tasks.md documents | 3 templates, 3 commands | — | [spec-kit-preset-toc-navigation](https://github.com/Quratulain-bilal/spec-kit-preset-toc-navigation) |
 | VS Code Ask Questions | Enhances the clarify command to use `vscode/askQuestions` for batched interactive questioning. | 1 command | — | [spec-kit-presets](https://github.com/fdcastel/spec-kit-presets) |
+| Workflow Preset | Behavior-first specification, design artifacts, and agent-native handoff orchestration — adds requirement-phase behavior drafts, formal BDD/UIF/behavior contracts, optional design artifacts, and scoped implementation handoffs with Core Agent, Vertical Planner Agent, and Worker Agent modes | 23 templates, 7 commands | >=0.8.10.dev0 | [spec-kit-workflow-preset](https://github.com/bigsmartben/spec-kit-workflow-preset) |
 
 To build and publish your own preset, see the [Presets Publishing Guide](https://github.com/github/spec-kit/blob/main/presets/PUBLISHING.md).
