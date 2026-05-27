@@ -201,7 +201,7 @@ class HermesIntegration(SkillsIntegration):
         """Uninstall integration files including global Hermes skills.
 
         Removes the managed context section from AGENTS.md, removes the
-        project-local marker directory, delegates to
+        project-local marker directory (if empty), delegates to
         ``manifest.uninstall()`` for project-local tracked files, and
         removes all ``speckit-*`` skills under ``~/.hermes/skills/``.
 

@@ -176,8 +176,7 @@ class TestHermesIntegration(SkillsIntegrationTests):
         )
 
     def test_pre_existing_skills_not_removed(self, tmp_path, monkeypatch):
-        """Override: pre-existing non-speckit skills in the global dir
-        should survive Hermes uninstall."""
+        """Pre-existing non-speckit global skills should survive Hermes uninstall."""
         home = _fake_home(tmp_path)
         monkeypatch.setattr(Path, "home", lambda: home)
 
@@ -191,7 +190,12 @@ class TestHermesIntegration(SkillsIntegrationTests):
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
 
-        assert (foreign_dir / "SKILL.md").exists(), "Foreign skill was removed"
+        # Run teardown to verify foreign skill survives uninstall
+        i.teardown(tmp_path, m)
+
+        assert (foreign_dir / "SKILL.md").exists(), (
+            "Foreign skill was removed by teardown"
+        )
 
     def test_complete_file_inventory_sh(self, tmp_path, monkeypatch):
         """Override: Hermes init produces no local SKILL.md files,

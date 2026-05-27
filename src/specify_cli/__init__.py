@@ -2093,8 +2093,9 @@ def integration_switch(
                     f"run [cyan]specify integration uninstall {installed_key}[/cyan], then retry."
                 )
                 raise typer.Exit(1)
-            removed, skipped = old_manifest.uninstall(project_root, force=force)
-            current_integration.remove_context_section(project_root)
+            removed, skipped = current_integration.teardown(
+                project_root, old_manifest, force=force,
+            )
             if removed:
                 console.print(f"  Removed {len(removed)} file(s)")
             if skipped:
