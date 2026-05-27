@@ -202,12 +202,12 @@ Execution steps:
    - If it does NOT exist, skip this step silently.
    - If it exists:
      1. Read the checklist file.
-     2. Identify all GitHub task-list checkbox lines — lines matching `- [ ]` or `- [x]` outside of code fences. Ignore all other content (headings, notes, non-checkbox bullets, metadata).
+     2. Identify all GitHub task-list checkbox lines — lines matching `- [ ]`, `- [x]`, or `- [X]` (case-insensitive, tolerant of leading whitespace for nested items) outside of code fences. Ignore all other content (headings, notes, non-checkbox bullets, metadata).
      3. Re-evaluate each checkbox item against the **updated** spec (the version just saved in step 7).
      4. For each checkbox item, set its marker based solely on whether it passes against the current spec — prior state does not matter:
         - If the item passes: set to `- [x]`.
         - If the item does not pass: set to `- [ ]` (even if it was previously `- [x]` — spec edits can cause regressions).
-     5. Save the updated checklist file.
+     5. Save the updated checklist file. **Only toggle the `[ ]`/`[x]` marker portion of checkbox lines.** All other file content — headings, metadata, notes, line ordering, whitespace — must remain unchanged to avoid noisy diffs.
      6. Record the before/after pass counts as checked/total checkbox items for the Completion Report (e.g., "12/16 → 15/16 items passing").
 
 Behavior rules:
