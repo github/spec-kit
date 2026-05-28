@@ -13,8 +13,8 @@ Follow these steps **exactly**. Do NOT skip the config file read or assume defau
 ### Step 1 — Determine the event name
 
 Identify the hook event name to use:
-- If hook output is present, read it from the `"Hooks available for event '<name>'"` line emitted by Spec Kit — this is the most reliable source.
-- If the invocation includes an explicit event name argument (e.g., `/speckit.git.commit after_tasks`), use it.
+- If hook output is present, read it from the `"Hooks available for event '<name>'"` line emitted by Spec Kit. When executing from an Extension Hooks prompt, treat this line as the source of truth.
+- If the invocation includes an explicit event name argument (e.g., `/speckit.git.commit after_tasks`), use it as an override. This is optional/rare in current hook prompts.
 - If invoked manually with no hook context and no event argument, ask the user which event to use.
 
 ### Step 2 — Read the configuration file
