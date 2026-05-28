@@ -81,11 +81,11 @@ def _register_builtins() -> None:
 
     # -- Registration (alphabetical) --------------------------------------
     _register(AgyIntegration())
+    _register(AlquimiaAIIntegration())
     _register(AmpIntegration())
     _register(AuggieIntegration())
     _register(BobIntegration())
     _register(ClaudeIntegration())
-    _register(AlquimiaAIIntegration())
     _register(CodebuddyIntegration())
     _register(CodexIntegration())
     _register(CopilotIntegration())
