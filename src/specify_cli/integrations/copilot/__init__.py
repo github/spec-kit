@@ -218,7 +218,7 @@ class CopilotIntegration(IntegrationBase):
             prompt = args or ""
 
         cli_args = [_copilot_executable(), "-p", prompt]
-        # Honour SPECIFY_INTEGRATION_COPILOT_EXTRA_ARGS for real workflow
+        # Honour SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS for real workflow
         # runs.  `dispatch_command` builds cli_args inline rather than
         # going through `build_exec_args`, so the hook must be invoked
         # here too — otherwise the env var is silently ignored.
@@ -374,11 +374,7 @@ class CopilotIntegration(IntegrationBase):
         created: list[Path] = []
 
         script_type = opts.get("script_type", "sh")
-        arg_placeholder = (
-            self.registrar_config.get("args", "$ARGUMENTS")
-            if self.registrar_config
-            else "$ARGUMENTS"
-        )
+        arg_placeholder = self.registrar_config.get("args", "$ARGUMENTS")
 
         # 1. Process and write command files as .agent.md
         for src_file in templates:

@@ -1,4 +1,4 @@
-"""Tests for the per-integration `SPECIFY_INTEGRATION_<KEY>_EXTRA_ARGS` env-var hook.
+"""Tests for the per-integration `SPECKIT_INTEGRATION_<KEY>_EXTRA_ARGS` env-var hook.
 
 The hook is implemented in `IntegrationBase._apply_extra_args_env_var`
 and wired into every concrete `build_exec_args` —
@@ -128,10 +128,10 @@ class _TomlAgentStub(TomlIntegration):
 
 @pytest.fixture(autouse=True)
 def _clean_extra_args_env(monkeypatch):
-    """Strip any leaked SPECIFY_INTEGRATION_*_EXTRA_ARGS from the test
+    """Strip any leaked SPECKIT_INTEGRATION_*_EXTRA_ARGS from the test
     env so a developer's shell setting doesn't pollute results."""
     for key in list(os.environ):
-        if key.startswith("SPECIFY_INTEGRATION_") and key.endswith(
+        if key.startswith("SPECKIT_INTEGRATION_") and key.endswith(
             "_EXTRA_ARGS"
         ):
             monkeypatch.delenv(key, raising=False)
@@ -151,7 +151,7 @@ def test_env_var_set_flag_inserted_before_model_and_output_format(
     monkeypatch,
 ):
     monkeypatch.setenv(
-        "SPECIFY_INTEGRATION_CLAUDE_EXTRA_ARGS", "--dangerously-skip-permissions"
+        "SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS", "--dangerously-skip-permissions"
     )
     args = _ClaudeStub().build_exec_args("hello prompt", model="sonnet")
     assert args == [
@@ -168,7 +168,7 @@ def test_env_var_set_flag_inserted_before_model_and_output_format(
 
 def test_env_var_multi_token_parsed_via_shlex(monkeypatch):
     monkeypatch.setenv(
-        "SPECIFY_INTEGRATION_CLAUDE_EXTRA_ARGS",
+        "SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS",
         "--dangerously-skip-permissions --max-turns 3",
     )
     args = _ClaudeStub().build_exec_args("p")
@@ -189,36 +189,36 @@ def test_malformed_quoting_raises_actionable_value_error(monkeypatch):
     error naming the offending env var and showing the invalid value,
     rather than crashing workflow dispatch with a bare shlex traceback."""
     monkeypatch.setenv(
-        "SPECIFY_INTEGRATION_CLAUDE_EXTRA_ARGS",
+        "SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS",
         '--flag "unterminated',
     )
     with pytest.raises(ValueError) as excinfo:
         _ClaudeStub().build_exec_args("p")
     msg = str(excinfo.value)
-    assert "SPECIFY_INTEGRATION_CLAUDE_EXTRA_ARGS" in msg
+    assert "SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS" in msg
     assert "--flag \"unterminated" in msg
 
 
 def test_env_var_empty_or_whitespace_is_noop(monkeypatch):
     """An env var set to '' or '   ' is treated as unset."""
-    monkeypatch.setenv("SPECIFY_INTEGRATION_CLAUDE_EXTRA_ARGS", "   ")
+    monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS", "   ")
     args = _ClaudeStub().build_exec_args("p")
     assert args == ["claude", "-p", "p", "--output-format", "json"]
 
 
 def test_other_integration_env_var_ignored(monkeypatch):
-    """`SPECIFY_INTEGRATION_GEMINI_EXTRA_ARGS` set must NOT leak into
+    """`SPECKIT_INTEGRATION_GEMINI_EXTRA_ARGS` set must NOT leak into
     Claude's argv (per-integration scoping)."""
-    monkeypatch.setenv("SPECIFY_INTEGRATION_GEMINI_EXTRA_ARGS", "--gemini-only-flag")
+    monkeypatch.setenv("SPECKIT_INTEGRATION_GEMINI_EXTRA_ARGS", "--gemini-only-flag")
     args = _ClaudeStub().build_exec_args("p")
     assert args == ["claude", "-p", "p", "--output-format", "json"]
 
 
 def test_key_normalization_hyphen_to_underscore_uppercase(monkeypatch):
-    """`kiro-cli` key looks up `SPECIFY_INTEGRATION_KIRO_CLI_EXTRA_ARGS`
+    """`kiro-cli` key looks up `SPECKIT_INTEGRATION_KIRO_CLI_EXTRA_ARGS`
     (hyphens replaced with underscores, then uppercased)."""
     monkeypatch.setenv(
-        "SPECIFY_INTEGRATION_KIRO_CLI_EXTRA_ARGS", "--some-kiro-flag"
+        "SPECKIT_INTEGRATION_KIRO_CLI_EXTRA_ARGS", "--some-kiro-flag"
     )
     args = _KiroCliStub().build_exec_args("p")
     assert args == [
@@ -234,7 +234,7 @@ def test_key_normalization_hyphen_to_underscore_uppercase(monkeypatch):
 def test_requires_cli_false_returns_none(monkeypatch):
     """`requires_cli: False` short-circuits to None — the env-var
     hook is never reached and no argv is built."""
-    monkeypatch.setenv("SPECIFY_INTEGRATION_NO_CLI_EXTRA_ARGS", "--should-not-appear")
+    monkeypatch.setenv("SPECKIT_INTEGRATION_NO_CLI_EXTRA_ARGS", "--should-not-appear")
     assert _NoCliStub().build_exec_args("p") is None
 
 
@@ -254,7 +254,7 @@ def test_markdown_integration_base_honours_extra_args(monkeypatch):
     `build_exec_args` — must honour the env var via the base
     implementation. Covers the most common integration pattern."""
     monkeypatch.setenv(
-        "SPECIFY_INTEGRATION_MD_AGENT_EXTRA_ARGS", "--debug --max-tokens 100"
+        "SPECKIT_INTEGRATION_MD_AGENT_EXTRA_ARGS", "--debug --max-tokens 100"
     )
     args = _MarkdownAgentStub().build_exec_args("p")
     assert args == [
@@ -274,7 +274,7 @@ def test_toml_integration_base_honours_extra_args(monkeypatch):
     `build_exec_args` — must honour the env var via the base
     implementation. Covers Gemini/Tabnine-style integrations."""
     monkeypatch.setenv(
-        "SPECIFY_INTEGRATION_TOML_AGENT_EXTRA_ARGS", "--yolo"
+        "SPECKIT_INTEGRATION_TOML_AGENT_EXTRA_ARGS", "--yolo"
     )
     args = _TomlAgentStub().build_exec_args("p", model="gemini-pro")
     # TomlIntegration uses `-m` for model (vs Markdown's `--model`).
@@ -304,7 +304,7 @@ def test_toml_integration_base_honours_extra_args(monkeypatch):
 def test_codex_integration_honours_extra_args(monkeypatch):
     from specify_cli.integrations.codex import CodexIntegration
 
-    monkeypatch.setenv("SPECIFY_INTEGRATION_CODEX_EXTRA_ARGS", "--sandbox read-only")
+    monkeypatch.setenv("SPECKIT_INTEGRATION_CODEX_EXTRA_ARGS", "--sandbox read-only")
     args = CodexIntegration().build_exec_args("p", model="gpt-5")
     assert args == [
         "codex",
@@ -321,7 +321,7 @@ def test_codex_integration_honours_extra_args(monkeypatch):
 def test_devin_integration_honours_extra_args(monkeypatch):
     from specify_cli.integrations.devin import DevinIntegration
 
-    monkeypatch.setenv("SPECIFY_INTEGRATION_DEVIN_EXTRA_ARGS", "--no-confirm")
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DEVIN_EXTRA_ARGS", "--no-confirm")
     args = DevinIntegration().build_exec_args("p")
     assert args == ["devin", "-p", "p", "--no-confirm"]
 
@@ -329,7 +329,7 @@ def test_devin_integration_honours_extra_args(monkeypatch):
 def test_opencode_integration_honours_extra_args(monkeypatch):
     from specify_cli.integrations.opencode import OpencodeIntegration
 
-    monkeypatch.setenv("SPECIFY_INTEGRATION_OPENCODE_EXTRA_ARGS", "--quiet")
+    monkeypatch.setenv("SPECKIT_INTEGRATION_OPENCODE_EXTRA_ARGS", "--quiet")
     args = OpencodeIntegration().build_exec_args("p")
     assert args == [
         "opencode",
@@ -349,13 +349,13 @@ def test_opencode_extra_args_cannot_clobber_prompt_derived_command(
     repeated-flag CLI semantics (last value typically takes precedence).
 
     Locks against the regression where an operator setting
-    ``SPECIFY_INTEGRATION_OPENCODE_EXTRA_ARGS="--command malicious"`` could redirect
+    ``SPECKIT_INTEGRATION_OPENCODE_EXTRA_ARGS="--command malicious"`` could redirect
     a slash-prefixed prompt to a different command.
     """
     from specify_cli.integrations.opencode import OpencodeIntegration
 
     monkeypatch.setenv(
-        "SPECIFY_INTEGRATION_OPENCODE_EXTRA_ARGS", "--command operator-override"
+        "SPECKIT_INTEGRATION_OPENCODE_EXTRA_ARGS", "--command operator-override"
     )
     args = OpencodeIntegration().build_exec_args("/speckit body text")
     # Prompt-derived "--command speckit" appears AFTER the
@@ -383,7 +383,7 @@ def test_copilot_integration_honours_extra_args(monkeypatch):
     # Disable --yolo so the argv shape stays deterministic.
     monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
     monkeypatch.setenv(
-        "SPECIFY_INTEGRATION_COPILOT_EXTRA_ARGS", "--allow-tool 'shell(echo)'"
+        "SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS", "--allow-tool 'shell(echo)'"
     )
     args = CopilotIntegration().build_exec_args("p")
     # `_copilot_executable()` returns "copilot.cmd" on Windows and
@@ -431,7 +431,7 @@ class _RunCapture:
 
 def test_copilot_dispatch_command_includes_extra_args(monkeypatch):
     """Locks the bypass fix: `CopilotIntegration.dispatch_command`
-    must honour `SPECIFY_INTEGRATION_COPILOT_EXTRA_ARGS`, not just `build_exec_args`.
+    must honour `SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS`, not just `build_exec_args`.
     """
     import subprocess
 
@@ -441,7 +441,7 @@ def test_copilot_dispatch_command_includes_extra_args(monkeypatch):
     monkeypatch.setattr(subprocess, "run", capture)
     monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
     monkeypatch.setenv(
-        "SPECIFY_INTEGRATION_COPILOT_EXTRA_ARGS", "--allow-tool 'shell(echo)'"
+        "SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS", "--allow-tool 'shell(echo)'"
     )
 
     CopilotIntegration().dispatch_command(
@@ -469,7 +469,7 @@ def test_codex_dispatch_command_includes_extra_args(monkeypatch):
 
     capture = _RunCapture()
     monkeypatch.setattr(subprocess, "run", capture)
-    monkeypatch.setenv("SPECIFY_INTEGRATION_CODEX_EXTRA_ARGS", "--sandbox read-only")
+    monkeypatch.setenv("SPECKIT_INTEGRATION_CODEX_EXTRA_ARGS", "--sandbox read-only")
 
     CodexIntegration().dispatch_command(
         "speckit.plan", args="body", stream=False
