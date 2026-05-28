@@ -22,6 +22,8 @@ checkout:
   fetch-depth: 0
 
 safe-outputs:
+  noop:
+    report-as-issue: false
   create-pull-request:
     title-prefix: "[preset] "
     labels: [preset-submission, automated]
