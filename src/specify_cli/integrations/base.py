@@ -146,6 +146,28 @@ class IntegrationBase(ABC):
         """
         return None
 
+    def _resolve_executable(self) -> str:
+        """Return the executable for this integration's CLI tool.
+
+        Checks ``SPECKIT_INTEGRATION_<KEY>_EXECUTABLE`` first, allowing
+        operators to override the binary path without modifying the
+        integration configuration — useful when the tool is installed in
+        a non-standard location or a specific version must be pinned.
+        Hyphens in the integration key are replaced with underscores and
+        the key is uppercased
+        (e.g. ``kiro-cli`` → ``SPECKIT_INTEGRATION_KIRO_CLI_EXECUTABLE``).
+
+        Falls back to ``self.key`` when the env var is unset or
+        whitespace-only so existing behaviour is unchanged.
+
+        See issue #2596.
+        """
+        env_name = (
+            f"SPECKIT_INTEGRATION_{self.key.upper().replace('-', '_')}_EXECUTABLE"
+        )
+        override = os.environ.get(env_name, "").strip()
+        return override if override else self.key
+
     def _apply_extra_args_env_var(self, args: list[str]) -> None:
         """Append `SPECKIT_INTEGRATION_<KEY>_EXTRA_ARGS` env-var value to *args*.
 
@@ -895,7 +917,7 @@ class MarkdownIntegration(IntegrationBase):
     ) -> list[str] | None:
         if not self.config or not self.config.get("requires_cli"):
             return None
-        args = [self.key, "-p", prompt]
+        args = [self._resolve_executable(), "-p", prompt]
         self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])
@@ -983,7 +1005,7 @@ class TomlIntegration(IntegrationBase):
     ) -> list[str] | None:
         if not self.config or not self.config.get("requires_cli"):
             return None
-        args = [self.key, "-p", prompt]
+        args = [self._resolve_executable(), "-p", prompt]
         self._apply_extra_args_env_var(args)
         if model:
             args.extend(["-m", model])
@@ -1402,7 +1424,7 @@ class SkillsIntegration(IntegrationBase):
     ) -> list[str] | None:
         if not self.config or not self.config.get("requires_cli"):
             return None
-        args = [self.key, "-p", prompt]
+        args = [self._resolve_executable(), "-p", prompt]
         self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])

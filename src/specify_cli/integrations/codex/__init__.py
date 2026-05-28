@@ -41,7 +41,7 @@ class CodexIntegration(SkillsIntegration):
         # env-var lookup (which also derives from ``self.key``), matching
         # the pattern in Devin/Opencode and avoiding drift if the key
         # ever changes.
-        args: list[str] = [self.key, "exec", prompt]
+        args: list[str] = [self._resolve_executable(), "exec", prompt]
         self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])
