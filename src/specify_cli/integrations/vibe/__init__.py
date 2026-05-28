@@ -81,10 +81,9 @@ class VibeIntegration(SkillsIntegration):
             out.append(line)
         return "".join(out)
 
-
     def post_process_skill_content(self, content: str) -> str:
         """
-        Inject Vibe-specific frontmatter flags:
+        Inject shared hook guidance and Vibe-specific frontmatter flags:
         - user-invocable: allows the skill to be invoked by the user (not just other agents)
         """
         updated = super().post_process_skill_content(content)

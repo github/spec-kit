@@ -73,7 +73,8 @@ class TestCodexHookCommandNote:
 
     def test_hook_note_fills_missing_repeated_instructions(self):
         """Already-noted hook sections should not suppress later sections."""
-        from specify_cli.integrations.codex import CodexIntegration, _HOOK_COMMAND_NOTE
+        from specify_cli.integrations.base import _HOOK_COMMAND_NOTE
+        from specify_cli.integrations.codex import CodexIntegration
 
         content = (
             "---\nname: test\n---\n\n"
