@@ -1284,7 +1284,7 @@ class ExtensionManager:
         # Parse version specifier (e.g., ">=0.1.0,<2.0.0")
         try:
             specifier = SpecifierSet(required)
-            if current not in specifier:
+            if not specifier.contains(current, prereleases=True):
                 raise CompatibilityError(
                     f"Extension requires spec-kit {required}, "
                     f"but {speckit_version} is installed.\n"

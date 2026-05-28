@@ -710,6 +710,12 @@ class TestPresetManager:
         manifest = PresetManifest(pack_dir / "preset.yml")
         assert manager.check_compatibility(manifest, "0.1.5") is True
 
+    def test_check_compatibility_allows_prerelease_dev_version(self, pack_dir, temp_dir):
+        """Test compatibility check allows source/dev prerelease versions."""
+        manager = PresetManager(temp_dir)
+        manifest = PresetManifest(pack_dir / "preset.yml")
+        assert manager.check_compatibility(manifest, "0.8.15.dev0") is True
+
     def test_check_compatibility_invalid(self, pack_dir, temp_dir):
         """Test compatibility check with invalid specifier."""
         manager = PresetManager(temp_dir)
