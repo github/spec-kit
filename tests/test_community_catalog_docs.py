@@ -45,6 +45,59 @@ def test_community_extensions_are_sorted_by_name() -> None:
     assert names == sorted(names, key=str.casefold)
 
 
+def test_community_extensions_table_rows_are_rendered_in_sorted_order(tmp_path: Path) -> None:
+    catalog = _write_catalog(
+        tmp_path,
+        {
+            "gamma": {
+                "name": "Gamma",
+                "id": "gamma",
+                "description": "Third entry",
+                "tags": [],
+                "verified": False,
+                "repository": "",
+            },
+            "alpha": {
+                "name": "Alpha",
+                "id": "alpha",
+                "description": "First entry",
+                "tags": [],
+                "verified": True,
+                "repository": "",
+            },
+            "beta": {
+                "name": "Beta",
+                "id": "beta",
+                "description": "Second entry",
+                "tags": [],
+                "verified": False,
+                "repository": "",
+            },
+        },
+    )
+    table = render_community_extensions_table(path=catalog)
+
+    rendered_rows: list[tuple[str, str]] = []
+    for line in table.splitlines():
+        if not line.startswith("| "):
+            continue
+        if line == "| Extension | ID | Description | Tags | Verified |":
+            continue
+        if line == "| --- | --- | --- | --- | --- |":
+            continue
+        cells = [part.strip() for part in line.strip("|").split("|")]
+        assert len(cells) == 5, f"Malformed table row: {line}"
+        extension_cell = cells[0]
+        if extension_cell.startswith("[") and "](" in extension_cell:
+            extension_name = extension_cell[1:extension_cell.index("](")]
+        else:
+            extension_name = extension_cell
+        rendered_rows.append((extension_name, cells[1].strip("`")))
+
+    expected_rows = [("Alpha", "alpha"), ("Beta", "beta"), ("Gamma", "gamma")]
+    assert rendered_rows == expected_rows
+
+
 # ---------------------------------------------------------------------------
 # Edge-case tests using synthetic catalogs
 # ---------------------------------------------------------------------------
