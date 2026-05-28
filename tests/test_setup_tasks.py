@@ -92,8 +92,8 @@ def _clean_env() -> dict[str, str]:
         if key.startswith("SPECIFY_"):
             env.pop(key)
     return env
-
-
+ 
+ 
 def _run_bash_format_command(repo: Path, command_name: str) -> subprocess.CompletedProcess:
     script = repo / ".specify" / "scripts" / "bash" / "common.sh"
     return subprocess.run(
@@ -400,12 +400,12 @@ def test_setup_tasks_bash_missing_template_errors(tasks_repo: Path) -> None:
         check=False,
         env=_clean_env(),
     )
- 
+
     assert result.returncode != 0
     assert "ERROR" in result.stderr
     assert "tasks-template" in result.stderr
-
-
+ 
+ 
 @requires_bash
 def test_bash_command_hint_defaults_to_dot_without_integration_json(tasks_repo: Path) -> None:
     integration_json = tasks_repo / ".specify" / "integration.json"
@@ -587,6 +587,8 @@ def test_setup_tasks_bash_fails_custom_branch_without_feature_json(
 
     assert result.returncode != 0
     assert "Not on a feature branch" in result.stderr
+ 
+ 
 # ===========================================================================
 # POWERSHELL TESTS
 # ===========================================================================
@@ -681,8 +683,8 @@ def test_setup_tasks_ps_missing_template_errors(tasks_repo: Path) -> None:
  
     assert result.returncode != 0
     assert "tasks-template" in result.stderr.lower() or "tasks-template" in result.stdout.lower()
-
-
+ 
+ 
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
 def test_powershell_command_hint_normalizes_mixed_separators(
     tasks_repo: Path,
@@ -819,3 +821,4 @@ def test_setup_tasks_ps_fails_custom_branch_without_feature_json(
  
     assert result.returncode != 0
     assert "Not on a feature branch" in result.stderr
+ 
