@@ -6,6 +6,7 @@ failing any command when offline or rate-limited.
 """
 
 import json
+import os
 import time
 from io import StringIO
 from typing import Any, cast
@@ -92,6 +93,34 @@ class TestCache:
         data = json.loads(cache_file.read_text())
         assert data["latest"] is None
         assert float(data["checked_at"]) <= time.time()
+
+    def test_write_refuses_symlinked_cache_file(self, tmp_path):
+        # If the cache file itself is a symlink, refuse to follow it: an
+        # attacker could otherwise have us overwrite an arbitrary file the
+        # current user can write to.
+        target = tmp_path / "victim.txt"
+        target.write_text("untouched")
+        cache_file = tmp_path / "version_check.json"
+        os.symlink(target, cache_file)
+
+        _write_update_check_cache(cache_file, "v9.9.9")
+
+        assert target.read_text() == "untouched"
+
+    def test_write_refuses_symlinked_parent_dir(self, tmp_path):
+        # Same idea, but the cache *directory* is the symlink. We must not
+        # write through it into the linked-to location.
+        real_target_dir = tmp_path / "victim_dir"
+        real_target_dir.mkdir()
+        victim = real_target_dir / "version_check.json"
+
+        link_parent = tmp_path / "cache_dir"
+        os.symlink(real_target_dir, link_parent)
+        cache_file = link_parent / "version_check.json"
+
+        _write_update_check_cache(cache_file, "v9.9.9")
+
+        assert not victim.exists()
 
 
 

@@ -225,11 +225,23 @@ def _read_update_check_cache(path: Path) -> dict | None:
 
 def _write_update_check_cache(path: Path, latest: str | None) -> None:
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps({"checked_at": time.time(), "latest": latest}),
-            encoding="utf-8",
-        )
+        # Refuse to follow symlinks anywhere on the way to the cache file: an
+        # attacker (or misconfigured XDG_CACHE_HOME) could otherwise have us
+        # overwrite an arbitrary file the current user can write.
+        parent = path.parent
+        parent.mkdir(parents=True, exist_ok=True)
+        if parent.is_symlink():
+            return
+        if path.exists() and path.is_symlink():
+            return
+
+        payload = json.dumps({"checked_at": time.time(), "latest": latest}).encode("utf-8")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(str(path), flags, 0o600)
+        try:
+            os.write(fd, payload)
+        finally:
+            os.close(fd)
     except Exception:
         # Cache write failures are non-fatal.
         pass
