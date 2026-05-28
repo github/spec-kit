@@ -953,6 +953,61 @@ class TestGitExtensionAutoInstall:
         preset_registry = json.loads((project / ".specify" / "presets" / ".registry").read_text())
         assert "workflow-preset" in preset_registry["presets"]
 
+    def test_workflow_preset_registers_commands_and_composes_wrappers(self, tmp_path):
+        """workflow-preset registers commands and composes wrapped core templates."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "workflow-preset-registration"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here", "--ai", "claude", "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        preset_dir = project / ".specify" / "presets" / "workflow-preset"
+        assert (preset_dir / "preset.yml").exists()
+        assert (preset_dir / "schemas" / "speckit.implement.handoff.v2.schema.json").exists()
+        assert (preset_dir / "templates" / "behavior" / "bdd-draft.feature").exists()
+        assert (preset_dir / ".composed" / "speckit.plan.md").exists()
+        assert (preset_dir / ".composed" / "speckit.tasks.md").exists()
+        assert (preset_dir / ".composed" / "speckit.analyze.md").exists()
+
+        preset_registry = json.loads((project / ".specify" / "presets" / ".registry").read_text())
+        workflow_entry = preset_registry["presets"]["workflow-preset"]
+        expected_preset_commands = {
+            "speckit.specify",
+            "speckit.clarify",
+            "speckit.checklist",
+            "speckit.analyze",
+            "speckit.plan",
+            "speckit.tasks",
+            "speckit.implement",
+        }
+        assert set(workflow_entry["registered_commands"]["claude"]) == expected_preset_commands
+
+        plan_skill = project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
+        tasks_skill = project / ".claude" / "skills" / "speckit-tasks" / "SKILL.md"
+        implement_skill = project / ".claude" / "skills" / "speckit-implement" / "SKILL.md"
+        for skill_path in (plan_skill, tasks_skill, implement_skill):
+            assert skill_path.exists(), f"{skill_path} was not registered"
+
+        assert "Phase 0 Behavior Projection" in plan_skill.read_text(encoding="utf-8")
+        assert "test strategy derivation" in tasks_skill.read_text(encoding="utf-8").lower()
+        implement_text = implement_skill.read_text(encoding="utf-8")
+        assert "Core Agent" in implement_text
+        assert "Vertical Planner Agent" in implement_text
+        assert "Worker Agent" in implement_text
+        assert "speckit.implement.handoff.v2" in implement_text
+
     def test_no_git_keeps_community_defaults(self, tmp_path):
         """--no-git skips only git; bundled community defaults still install."""
         from typer.testing import CliRunner

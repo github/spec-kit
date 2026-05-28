@@ -1,0 +1,182 @@
+name: Workflow Preset Integration
+
+permissions:
+  contents: read
+
+on:
+  repository_dispatch:
+    types: ["workflow-preset-release"]
+  workflow_dispatch:
+    inputs:
+      preset_version:
+        description: "Workflow preset version to validate"
+        required: true
+      preset_download_url:
+        description: "Optional workflow preset release ZIP URL"
+        required: false
+      require_bundled_version_match:
+        description: "Require bundled preset version to match preset_version"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.client_payload.preset_version || github.event.client_payload.version || inputs.preset_version || 'unknown-version' }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  external-release-install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.11"
+
+      - name: Install CLI from checkout
+        run: |
+          set -euo pipefail
+          uv venv /tmp/specify-workflow-preset-venv
+          uv pip install --python /tmp/specify-workflow-preset-venv/bin/python .
+
+      - name: Resolve workflow preset release
+        id: release
+        env:
+          EVENT_PRESET_VERSION: ${{ github.event.client_payload.preset_version || github.event.client_payload.version || inputs.preset_version }}
+          EVENT_PRESET_DOWNLOAD_URL: ${{ github.event.client_payload.preset_download_url || github.event.client_payload.download_url || inputs.preset_download_url }}
+        run: |
+          set -euo pipefail
+          write_github_output() {
+            local name="$1"
+            local value="$2"
+            local delimiter
+            delimiter="ghadelim_${RANDOM}_${RANDOM}_$(date +%s%N)"
+            while printf '%s\n' "$value" | grep -Fxq "$delimiter"; do
+              delimiter="ghadelim_${RANDOM}_${RANDOM}_$(date +%s%N)"
+            done
+
+            {
+              printf '%s<<%s\n' "$name" "$delimiter"
+              printf '%s\n' "$value"
+              printf '%s\n' "$delimiter"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          preset_version="${EVENT_PRESET_VERSION}"
+          if [ -z "$preset_version" ]; then
+            echo "preset_version is required from repository_dispatch payload or workflow_dispatch input" >&2
+            exit 1
+          fi
+          if ! printf '%s\n' "$preset_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "preset_version must be a bare semantic version like 1.2.3" >&2
+            exit 1
+          fi
+
+          preset_download_url="${EVENT_PRESET_DOWNLOAD_URL}"
+          if [ -z "$preset_download_url" ]; then
+            preset_download_url="https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v${preset_version}/spec-kit-workflow-preset-v${preset_version}.zip"
+          fi
+
+          write_github_output "version" "$preset_version"
+          write_github_output "download_url" "$preset_download_url"
+
+      - name: Install and verify external workflow preset
+        env:
+          PRESET_VERSION: ${{ steps.release.outputs.version }}
+          PRESET_DOWNLOAD_URL: ${{ steps.release.outputs.download_url }}
+        run: |
+          set -euo pipefail
+          project_dir="$(mktemp -d)"
+          cd "$project_dir"
+
+          /tmp/specify-workflow-preset-venv/bin/specify init --here --ai claude --script sh --ignore-agent-tools
+          /tmp/specify-workflow-preset-venv/bin/specify preset remove workflow-preset
+          /tmp/specify-workflow-preset-venv/bin/specify preset add --from "$PRESET_DOWNLOAD_URL"
+
+          /tmp/specify-workflow-preset-venv/bin/specify preset info workflow-preset | tee preset-info.txt
+          grep -F "ID:          workflow-preset" preset-info.txt
+          grep -F "Version:     $PRESET_VERSION" preset-info.txt
+          grep -F "Status: installed" preset-info.txt
+
+          /tmp/specify-workflow-preset-venv/bin/specify preset resolve plan-template | tee preset-resolve-plan-template.txt
+          grep -F "plan-template" preset-resolve-plan-template.txt
+          grep -F "workflow-preset" preset-resolve-plan-template.txt
+
+          test -f .specify/presets/workflow-preset/preset.yml
+          test -f .specify/presets/workflow-preset/templates/plan-template.md
+          test -f .specify/presets/workflow-preset/templates/tasks-template.md
+          test -f .specify/presets/workflow-preset/commands/speckit.plan.md
+          test -f .specify/presets/workflow-preset/commands/speckit.tasks.md
+          test -f .specify/presets/workflow-preset/commands/speckit.implement.md
+
+          test -f .claude/skills/speckit-plan/SKILL.md
+          test -f .claude/skills/speckit-tasks/SKILL.md
+          test -f .claude/skills/speckit-implement/SKILL.md
+          grep -F "Core Agent" .claude/skills/speckit-implement/SKILL.md
+          grep -F "Vertical Planner Agent" .claude/skills/speckit-implement/SKILL.md
+          grep -F "Worker Agent" .claude/skills/speckit-implement/SKILL.md
+
+  bundled-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          uv sync --all-extras --dev
+
+      - name: Check bundled workflow preset version
+        env:
+          EVENT_PRESET_VERSION: ${{ github.event.client_payload.preset_version || github.event.client_payload.version || inputs.preset_version }}
+          REQUIRE_BUNDLED_VERSION_MATCH: ${{ github.event.client_payload.require_bundled_version_match || inputs.require_bundled_version_match || 'false' }}
+        run: |
+          set -euo pipefail
+          if [ "$REQUIRE_BUNDLED_VERSION_MATCH" != "true" ]; then
+            echo "Bundled preset version match check skipped."
+            exit 0
+          fi
+          if [ -z "$EVENT_PRESET_VERSION" ]; then
+            echo "preset_version is required when require_bundled_version_match is true" >&2
+            exit 1
+          fi
+          if ! printf '%s\n' "$EVENT_PRESET_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "preset_version must be a bare semantic version like 1.2.3" >&2
+            exit 1
+          fi
+
+          bundled_version="$(uv run python -c 'import yaml; data = yaml.safe_load(open("presets/workflow-preset/preset.yml", encoding="utf-8")); print(data["preset"]["version"])')"
+
+          if [ "$bundled_version" != "$EVENT_PRESET_VERSION" ]; then
+            echo "Bundled workflow-preset version '$bundled_version' does not match '$EVENT_PRESET_VERSION'" >&2
+            exit 1
+          fi
+
+      - name: Run targeted CLI integration tests
+        run: |
+          set -euo pipefail
+          uv run pytest tests/integrations/test_cli.py -k "community_extensions_and_workflow_preset_auto_installed or workflow_preset_registers" -v
+
+      - name: Run targeted preset tests
+        run: |
+          set -euo pipefail
+          uv run pytest tests/test_presets.py -k "workflow_preset or bundled_preset" -v

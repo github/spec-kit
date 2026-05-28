@@ -3477,6 +3477,48 @@ class TestBundledPresetLocator:
             assert catalog["presets"][preset_id]["bundled"] is True
             assert "download_url" not in catalog["presets"][preset_id]
 
+    def test_workflow_preset_catalog_matches_manifest(self):
+        """workflow-preset catalog entry matches bundled preset manifest."""
+        catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
+        manifest_path = Path(__file__).parent.parent / "presets" / "workflow-preset" / "preset.yml"
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+
+        entry = catalog["presets"]["workflow-preset"]
+        provided = manifest["provides"]["templates"]
+        command_count = sum(1 for item in provided if item["type"] == "command")
+        template_count = sum(1 for item in provided if item["type"] == "template")
+
+        assert entry["bundled"] is True
+        assert entry["version"] == manifest["preset"]["version"]
+        assert entry["repository"] == manifest["preset"]["repository"]
+        assert entry["requires"]["speckit_version"] == manifest["requires"]["speckit_version"]
+        assert entry["provides"]["commands"] == command_count
+        assert entry["provides"]["templates"] == template_count
+        assert entry["tags"] == manifest["tags"]
+
+    def test_workflow_preset_integration_release_payload_contract(self):
+        """Workflow preset release dispatch contract stays aligned with preset repo."""
+        workflow_path = (
+            Path(__file__).parent.parent
+            / ".github"
+            / "workflows"
+            / "workflow-preset-integration.yml"
+        )
+        workflow_text = workflow_path.read_text(encoding="utf-8")
+        workflow = yaml.safe_load(workflow_text)
+        on_config = workflow.get("on", workflow.get(True))
+
+        assert on_config["repository_dispatch"]["types"] == ["workflow-preset-release"]
+        assert "github.event.client_payload.preset_version" in workflow_text
+        assert "github.event.client_payload.preset_download_url" in workflow_text
+        assert (
+            "releases/download/v${preset_version}/"
+            "spec-kit-workflow-preset-v${preset_version}.zip"
+        ) in workflow_text
+        assert "^[0-9]+\\.[0-9]+\\.[0-9]+$" in workflow_text
+        assert "/workflow-preset.zip" not in workflow_text
+
     def test_bundled_preset_download_raises_error(self, project_dir):
         """download_pack raises PresetError for bundled presets without download_url."""
         catalog = PresetCatalog(project_dir)

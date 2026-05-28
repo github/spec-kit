@@ -17,6 +17,15 @@ DEFAULT_EXTENSION_COMMANDS = (
     "speckit.repository-governance.refresh",
 )
 DEFAULT_PRESET_ID = "workflow-preset"
+DEFAULT_PRESET_COMMANDS = (
+    "speckit.specify",
+    "speckit.clarify",
+    "speckit.checklist",
+    "speckit.analyze",
+    "speckit.plan",
+    "speckit.tasks",
+    "speckit.implement",
+)
 
 
 def _copied_extension_files(extension_id: str) -> list[str]:
@@ -91,6 +100,38 @@ def _registered_extension_command_files(
     return files
 
 
+def _registered_workflow_preset_command_files(
+    integration_key: str,
+    *,
+    skills_mode: bool = False,
+    commands_dir: str | None = None,
+) -> list[str]:
+    integration = get_integration(integration_key)
+    config = dict(integration.registrar_config)
+    if skills_mode:
+        config["dir"] = f"{integration.config['folder']}skills"
+        config["extension"] = "/SKILL.md"
+    if commands_dir is not None:
+        config["dir"] = commands_dir
+    command_dir = Path(config["dir"])
+    extension = config["extension"]
+
+    files: list[str] = []
+    for command_name in DEFAULT_PRESET_COMMANDS:
+        output_name = CommandRegistrar._compute_output_name(
+            integration_key, command_name, config
+        )
+        if extension == "/SKILL.md":
+            files.append((command_dir / output_name / "SKILL.md").as_posix())
+        else:
+            files.append((command_dir / f"{output_name}{extension}").as_posix())
+
+        if integration_key == "copilot" and not skills_mode:
+            files.append(f".github/prompts/{command_name}.prompt.md")
+
+    return files
+
+
 def bundled_community_default_files(
     integration_key: str,
     *,
@@ -115,4 +156,6 @@ def bundled_community_default_files(
                 commands_dir=commands_dir,
             )
         )
-    return sorted(files)
+        # workflow-preset wraps/replaces core commands whose output paths are already
+        # accounted for by each integration's base command inventory.
+    return sorted(set(files))

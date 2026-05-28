@@ -43,7 +43,50 @@ jobs:
           test -f .specify/extensions/preview/extension.yml
           test -f .specify/extensions/repository-governance/extension.yml
           test -f .specify/presets/workflow-preset/preset.yml
+          test -f .specify/presets/workflow-preset/templates/behavior/behavior-scenarios-draft.json
+          test -f .specify/presets/workflow-preset/templates/behavior/behavior-testability-checklist.md
+          test -f .specify/presets/workflow-preset/templates/behavior/bdd-draft.feature
+          test -f .specify/presets/workflow-preset/templates/behavior/bdd-contract.feature
+          test -f .specify/presets/workflow-preset/templates/behavior/uif-intent.json
+          test -f .specify/presets/workflow-preset/templates/behavior/uif-expected.json
+          test -f .specify/presets/workflow-preset/templates/behavior/scenario-instances.json
+          test -f .specify/presets/workflow-preset/templates/behavior/data-fixtures-intent.json
+          test -f .specify/presets/workflow-preset/templates/behavior/data-fixtures.json
+          test -f .specify/presets/workflow-preset/templates/behavior/assertions.json
+          test -f .specify/presets/workflow-preset/schemas/speckit.behavior.scenarios.draft.v1.schema.json
+          test -f .specify/presets/workflow-preset/schemas/speckit.behavior.uif.intent.v1.schema.json
+          test -f .specify/presets/workflow-preset/schemas/speckit.behavior.data-fixtures.intent.v1.schema.json
+          test -f .specify/presets/workflow-preset/schemas/speckit.behavior.uif.expected.v1.schema.json
+          test -f .specify/presets/workflow-preset/schemas/speckit.behavior.scenario-instances.v1.schema.json
+          test -f .specify/presets/workflow-preset/schemas/speckit.behavior.data-fixtures.v1.schema.json
+          test -f .specify/presets/workflow-preset/schemas/speckit.behavior.assertions.v1.schema.json
+          test -f .specify/presets/workflow-preset/schemas/speckit.implement.manifest.v1.schema.json
+          test -f .specify/presets/workflow-preset/schemas/speckit.implement.handoff.v2.schema.json
+          test -f .specify/presets/workflow-preset/schemas/speckit.implement.receipt.v1.schema.json
+          test -f .specify/presets/workflow-preset/.composed/speckit.specify.md
+          test -f .specify/presets/workflow-preset/.composed/speckit.clarify.md
+          test -f .specify/presets/workflow-preset/.composed/speckit.checklist.md
+          test -f .specify/presets/workflow-preset/.composed/speckit.analyze.md
+          test -f .specify/presets/workflow-preset/.composed/speckit.plan.md
+          test -f .specify/presets/workflow-preset/.composed/speckit.tasks.md
 
           test -f .claude/skills/speckit-arch-generate/SKILL.md
           test -f .claude/skills/speckit-preview-html/SKILL.md
           test -f .claude/skills/speckit-repository-governance-refresh/SKILL.md
+          test -f .claude/skills/speckit-specify/SKILL.md
+          test -f .claude/skills/speckit-clarify/SKILL.md
+          test -f .claude/skills/speckit-checklist/SKILL.md
+          test -f .claude/skills/speckit-analyze/SKILL.md
+          test -f .claude/skills/speckit-plan/SKILL.md
+          test -f .claude/skills/speckit-tasks/SKILL.md
+          test -f .claude/skills/speckit-implement/SKILL.md
+
+          grep -q "Phase 0 Behavior Projection" .claude/skills/speckit-plan/SKILL.md
+          grep -q "Test Strategy Derivation" .claude/skills/speckit-tasks/SKILL.md
+          grep -q "Core Agent" .claude/skills/speckit-implement/SKILL.md
+          grep -q "Vertical Planner Agent" .claude/skills/speckit-implement/SKILL.md
+          grep -q "Worker Agent" .claude/skills/speckit-implement/SKILL.md
+
+          /tmp/specify-community-smoke-venv/bin/specify preset resolve plan-template | tee resolve-plan-template.txt
+          grep -q "workflow-preset" resolve-plan-template.txt
+          grep -q "Composition chain" resolve-plan-template.txt
