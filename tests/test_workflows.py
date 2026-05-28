@@ -2336,12 +2336,15 @@ steps:
 # ===== continue_on_error Tests =====
 #
 # Locks the contract documented in workflows/README.md "Error Handling"
-# section: when an executable step fails and `continue_on_error: true`
-# is declared, the engine records the step's `output` (with `exit_code`
-# and `stderr` from the failure) and its `status` (sibling key on
-# `steps.<id>`, not nested under `output`) and continues to the next
-# sibling step instead of halting the run. Gate aborts
-# (`output.aborted`) still halt regardless of the flag.
+# section: when a step returns `StepResult(status=FAILED, ...)` and
+# `continue_on_error: true` is declared, the engine records the step's
+# `output` (with `exit_code` and `stderr` from the failure) and its
+# `status` (sibling key on `steps.<id>`, not nested under `output`)
+# and continues to the next sibling step instead of halting the run.
+# Gate aborts (`output.aborted`) still halt regardless of the flag.
+# Unhandled exceptions raised out of `step_impl.execute()` are out of
+# scope for this flag — they propagate to `WorkflowEngine.execute()`
+# and abort the run.
 
 
 class TestContinueOnError:

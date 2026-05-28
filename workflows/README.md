@@ -221,17 +221,13 @@ Aggregate results from fan-out steps:
 
 ## Error Handling
 
-By default, any step that ends in `StepStatus.FAILED` at runtime halts
-the entire run — most commonly a `shell` or `command` step exiting
-non-zero, but also any other runtime error raised during step
-execution. (Invalid workflow definitions are rejected up-front by
-`specify workflow run` before the run even starts, so structural
-validation failures never reach this code path.) Set
-`continue_on_error: true` on a step to record its result and continue
-to the next sibling step instead. When the failure was a non-zero
-exit, the exit code remains available on
-`steps.<id>.output.exit_code` so downstream `if`, `switch`, or `gate`
-steps can branch on it:
+By default, any step that returns `StepResult(status=FAILED, ...)`
+at runtime halts the entire run — most commonly a `shell` or
+`command` step exiting non-zero. Set `continue_on_error: true` on
+a step to record its result and continue to the next sibling step
+instead. When the failure was a non-zero exit, the exit code
+remains available on `steps.<id>.output.exit_code` so downstream
+`if`, `switch`, or `gate` steps can branch on it:
 
 ```yaml
 - id: heavy-thing
@@ -263,10 +259,21 @@ step in your own loop.
 
 - The field must be a literal boolean (`true` / `false`); coerced
   strings like `"true"` are rejected at validation time.
+- **Scope: returned failures only.** The flag applies to step results
+  with `status=FAILED`. Unhandled exceptions raised out of a step's
+  `execute()` method are caught one level up by `WorkflowEngine.execute()`,
+  logged as `workflow_failed`, and abort the run regardless of
+  `continue_on_error`. If a step author wants the flag to cover an
+  exceptional path, the step must catch the exception internally and
+  return `StepResult(status=FAILED, ...)` with the failure encoded in
+  `output` (e.g. `exit_code`, `stderr`, or a custom field).
 - Gate aborts (`on_reject: abort` chosen by the operator) always halt
   the run — `continue_on_error` does not override them. The flag is
   for transient/expected step failures, not for overriding deliberate
   operator decisions.
+- Structural validation runs up-front: `specify workflow run` rejects
+  invalid workflow definitions before the run is created, so
+  validation failures never reach this code path.
 - When the flag is omitted, behaviour is byte-equivalent to before
   this feature.
 
