@@ -1297,16 +1297,15 @@ class ExtensionManager:
 
         # Parse version specifier (e.g., ">=0.1.0,<2.0.0")
         try:
-            SpecifierSet(required)  # Just to validate
+            specifier = SpecifierSet(required)
+            if not specifier.contains(current, prereleases=True):
+                raise CompatibilityError(
+                    f"Extension requires spec-kit {required}, "
+                    f"but {speckit_version} is installed.\n"
+                    f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
+                )
         except InvalidSpecifier:
             raise CompatibilityError(f"Invalid version specifier: {required}")
-
-        if not version_satisfies(speckit_version, required):
-            raise CompatibilityError(
-                f"Extension requires spec-kit {required}, "
-                f"but {speckit_version} is installed.\n"
-                f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
-            )
 
         return True
 
