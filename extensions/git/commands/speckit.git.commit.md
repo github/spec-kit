@@ -13,13 +13,15 @@ Follow these steps **exactly**. Do NOT skip the config file read or assume defau
 ### Step 1 — Determine the event name
 
 Identify the hook event name to use:
+- If hook output is present, read it from the `"Hooks available for event '<name>'"` line emitted by Spec Kit — this is the most reliable source.
 - If the invocation includes an explicit event name argument (e.g., `/speckit.git.commit after_tasks`), use it.
-- Otherwise infer it from the surrounding hook context (e.g., `after_tasks`, `before_plan`), matching `hooks.<event>` in `.specify/extensions.yml`.
 - If invoked manually with no hook context and no event argument, ask the user which event to use.
 
 ### Step 2 — Read the configuration file
 
 **You MUST read** the file `.specify/extensions/git/git-config.yml` before deciding whether to commit. Do NOT assume its contents — the user may have changed the defaults.
+
+If you cannot access local files directly, ask the user to provide the contents of this file. Do NOT guess or fabricate config values.
 
 If the file does not exist, auto-commit is disabled. Exit silently.
 
