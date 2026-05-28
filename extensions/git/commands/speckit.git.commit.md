@@ -40,6 +40,8 @@ Look under the `auto_commit:` section in the config file you just read:
 
 If auto-commit is enabled:
 
+Before running either option, ensure your working directory is the project root (the directory that contains `.specify/`) so relative `.specify/extensions/...` script paths resolve correctly.
+
 **Option A — Run the script** (preferred, handles edge cases):
 - **Bash (macOS/Linux)**: `.specify/extensions/git/scripts/bash/auto-commit.sh <event_name>`
 - **PowerShell (Windows)**: `.specify/extensions/git/scripts/powershell/auto-commit.ps1 <event_name>`
