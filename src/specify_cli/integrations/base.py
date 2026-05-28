@@ -154,8 +154,8 @@ class IntegrationBase(ABC):
         integration configuration — useful when the tool is installed in
         a non-standard location or a specific version must be pinned.
         Hyphens in the integration key are replaced with underscores and
-        the key is uppercased
-        (e.g. ``kiro-cli`` → ``SPECKIT_INTEGRATION_KIRO_CLI_EXECUTABLE``).
+        the key is uppercased so that, for example, ``kiro-cli`` maps to
+        ``SPECKIT_INTEGRATION_KIRO_CLI_EXECUTABLE``.
 
         Falls back to ``self.key`` when the env var is unset or
         whitespace-only so existing behaviour is unchanged.
