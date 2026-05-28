@@ -356,10 +356,12 @@ class TestManifestRecoveredFiles:
 
     def test_is_recovered_absolute_path_returns_false(self, tmp_path):
         # Copilot round-5 finding: passing an absolute path silently returned
-        # False because the stored keys are relative POSIX strings. Now the
-        # call normalizes through ``_validate_rel_path`` which raises on
-        # absolute inputs; we catch and return False so query semantics stay
-        # exception-free.
+        # False because the stored keys are relative POSIX strings. Round-7
+        # made this explicit: ``is_recovered`` now rejects absolute paths
+        # up front via a lexical ``rel.is_absolute()`` guard and returns
+        # False without calling ``_validate_rel_path`` at all — matching
+        # ``record_existing``'s canonical-key guard so the two methods
+        # agree on which inputs can ever be stored keys.
         (tmp_path / "f.txt").write_text("x", encoding="utf-8")
         m = IntegrationManifest("test", tmp_path)
         m.record_existing("f.txt", recovered=True)
@@ -368,9 +370,14 @@ class TestManifestRecoveredFiles:
         assert m.is_recovered(abs_input) is False
 
     def test_is_recovered_escaping_path_returns_false(self, tmp_path):
-        # A relative path that resolves outside project_root cannot have been
-        # recorded; ``_validate_rel_path`` raises and ``is_recovered`` returns
-        # False rather than letting the ValueError propagate.
+        # A relative path containing ``..`` segments cannot be a stored key:
+        # Round-7 added the same lexical ``".." in rel.parts`` guard to
+        # ``is_recovered`` that ``record_existing`` already enforces, so the
+        # method returns False immediately without reaching
+        # ``_validate_rel_path``. The try/except around ``_validate_rel_path``
+        # remains as defense-in-depth for paths that pass the lexical guard
+        # but still resolve outside the project root via a symlinked
+        # ancestor.
         m = IntegrationManifest("test", tmp_path)
         # Don't record anything — the path is impossible to record anyway.
         assert m.is_recovered("../escape.txt") is False
