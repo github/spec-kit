@@ -4,7 +4,7 @@ emoji: "🧩"
 
 on:
   issues:
-    types: [opened, edited, labeled]
+    types: [labeled]
   skip-bots: [github-actions, copilot, dependabot]
 
 tools:
@@ -47,14 +47,9 @@ or update entries in the community extension catalog.
 
 ## Triggering Conditions
 
-This workflow triggers on issue events. **Only process the issue if ALL of these
-conditions are met:**
-
-1. The issue has the `extension-submission` label
-2. The issue title starts with `[Extension]:`
-
-If the issue does not meet these conditions, add a brief comment explaining that
-this workflow only processes extension submission issues, then stop.
+This workflow only triggers when the `extension-submission` label is added to an
+issue. Before processing, verify that the issue title starts with `[Extension]:`.
+If it does not, stop without commenting.
 
 ## Step 1 — Read and Parse the Issue
 
