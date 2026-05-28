@@ -88,25 +88,36 @@ def integration_list(
         console.print("[yellow]No integrations available.[/yellow]")
         return
 
-    table = Table(title="Available Integrations")
+    table = Table(title="Coding Agent Integrations")
     table.add_column("Key", style="cyan")
     table.add_column("Name")
     table.add_column("Status")
+    table.add_column("CLI Required")
     table.add_column("Multi-install Safe")
 
-    for key, integration in sorted(INTEGRATION_REGISTRY.items()):
+    for key in sorted(INTEGRATION_REGISTRY.keys()):
+        integration = INTEGRATION_REGISTRY[key]
         cfg = integration.config or {}
         name = cfg.get("name", key)
+        requires_cli = cfg.get("requires_cli", False)
         if key == default_key:
             status = "[green]installed (default)[/green]"
         elif key in installed_keys:
             status = "[green]installed[/green]"
         else:
             status = ""
-        safe = "[green]yes[/green]" if getattr(integration, "multi_install_safe", False) else "[dim]no[/dim]"
-        table.add_row(key, name, status, safe)
+        cli_req = "yes" if requires_cli else "no (IDE)"
+        safe = "yes" if getattr(integration, "multi_install_safe", False) else "no"
+        table.add_row(key, name, status, cli_req, safe)
 
     console.print(table)
+
+    if installed_keys:
+        console.print(f"\n[dim]Default integration:[/dim] [cyan]{default_key or 'none'}[/cyan]")
+        console.print(f"[dim]Installed integrations:[/dim] [cyan]{', '.join(sorted(installed_keys))}[/cyan]")
+    else:
+        console.print("\n[yellow]No integration currently installed.[/yellow]")
+        console.print("Install one with: [cyan]specify integration install <key>[/cyan]")
 
 
 @integration_app.command("use")
