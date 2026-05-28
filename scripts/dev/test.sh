@@ -53,12 +53,18 @@ fi
 cd "$REPO_ROOT"
 mkdir -p "$(dirname "$CURSOR_FILE")"
 
-# 1. Collect node ids (override addopts so collection itself is serial/quiet).
+# 1. Collect node ids.
 echo "[fast-test] collecting tests ..."
-mapfile -t NODES < <(
-    uv run pytest -o addopts= --collect-only -q "${PASSTHROUGH[@]}" \
-        2>/dev/null | grep -E '::' || true
-)
+COLLECT_ERR="$(mktemp)"
+COLLECT_OUT="$(mktemp)"
+if ! uv run pytest --collect-only -qq "${PASSTHROUGH[@]}" >"$COLLECT_OUT" 2>"$COLLECT_ERR"; then
+    echo "[fast-test] test collection failed" >&2
+    [[ -s "$COLLECT_ERR" ]] && { echo "--- collection stderr ---"; cat "$COLLECT_ERR"; } >&2
+    rm -f "$COLLECT_ERR" "$COLLECT_OUT"
+    exit 1
+fi
+mapfile -t NODES < <(grep -E '::' "$COLLECT_OUT" || true)
+rm -f "$COLLECT_ERR" "$COLLECT_OUT"
 TOTAL="${#NODES[@]}"
 if (( TOTAL == 0 )); then
     echo "[fast-test] no tests collected" >&2
@@ -69,7 +75,7 @@ fi
 START=0
 if (( RESUME )) && [[ -f "$CURSOR_FILE" ]]; then
     START="$(cat "$CURSOR_FILE")"
-    echo "[fast-test] resuming from chunk cursor: test #$START"
+    echo "[fast-test] resuming from next test index: $START"
 fi
 
 CHUNKS=$(( (TOTAL - START + CHUNK_SIZE - 1) / CHUNK_SIZE ))
@@ -85,11 +91,11 @@ while (( i < TOTAL )); do
     chunk_idx=$(( chunk_idx + 1 ))
     echo "[fast-test] chunk $chunk_idx/$CHUNKS  tests $((i+1))..$end"
 
-    PYTEST_FLAGS=(-o addopts= -n auto --dist=load --tb=short)
+    PYTEST_FLAGS=(-n auto --dist=load)
     (( BENCH )) && PYTEST_FLAGS+=(-q) || PYTEST_FLAGS+=(--no-header -q)
 
     if ! uv run pytest "${PYTEST_FLAGS[@]}" "${NODES[@]:i:CHUNK_SIZE}"; then
-        echo "[fast-test] chunk failed — cursor preserved at test #$i (use --resume to retry)"
+        echo "[fast-test] chunk failed — cursor preserved at next test index $i (use --resume to retry)"
         echo "$i" > "$CURSOR_FILE"
         exit 1
     fi
