@@ -197,6 +197,24 @@ class TestHermesIntegration(SkillsIntegrationTests):
             "Foreign skill was removed by teardown"
         )
 
+    def test_hook_sections_explain_dotted_command_conversion(self, tmp_path, monkeypatch):
+        """Override: Hermes skills live in global ~/.hermes/skills/."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        i.setup(tmp_path, m)
+        specify_skill = home / ".hermes" / "skills" / "speckit-specify" / "SKILL.md"
+        assert specify_skill.exists()
+        content = specify_skill.read_text(encoding="utf-8")
+        assert "replace dots" in content, (
+            "speckit-specify should explain dotted hook command conversion"
+        )
+        assert content.count("replace dots") == content.count(
+            "- For each executable hook, output the following"
+        )
+
     def test_complete_file_inventory_sh(self, tmp_path, monkeypatch):
         """Override: Hermes init produces no local SKILL.md files,
         only the empty .hermes/skills/ marker."""

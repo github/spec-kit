@@ -191,7 +191,7 @@ specify extension add <extension-name>
 
 For example, extensions could add Jira integration, post-implementation code review, V-Model test traceability, or project health diagnostics.
 
-See the [Extensions reference](https://github.github.io/spec-kit/reference/extensions.html) for the full command guide. Browse the [community extensions](#-community-extensions) above for what's available.
+See the [Extensions reference](https://github.github.io/spec-kit/reference/extensions.html) for the full command guide. Browse the [community extensions](https://github.github.io/spec-kit/community/extensions.html) for what's available.
 
 ### Presets — Customize Existing Workflows
 
