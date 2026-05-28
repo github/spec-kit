@@ -595,5 +595,11 @@ echo "✅ Done"
 
 ## Contribution Checklist
 
+Before opening or merging an integration PR, confirm the following:
 
-
+- [ ] Added the new integration package under `src/specify_cli/integrations/<your_agent>/`.
+- [ ] Registered the integration in `src/specify_cli/integrations/__init__.py`.
+- [ ] Added or updated tests in `tests/integrations/`.
+- [ ] Verified the install/uninstall flow works with `specify init`.
+- [ ] Updated devcontainer setup if the agent requires a VS Code extension or CLI install step.
+- [ ] Updated this guide or other relevant docs if the integration has special setup or limitations.
