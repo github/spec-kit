@@ -3518,6 +3518,10 @@ class TestBundledPresetLocator:
         ) in workflow_text
         assert "^[0-9]+\\.[0-9]+\\.[0-9]+$" in workflow_text
         assert "/workflow-preset.zip" not in workflow_text
+        assert "test -f .specify/presets/workflow-preset/templates/tasks-template.md" not in workflow_text
+        assert "specify preset resolve tasks-template" in workflow_text
+        assert 'grep -F "(top layer from: core)" preset-resolve-tasks-template.txt' in workflow_text
+        assert "test -f .specify/templates/tasks-template.md" in workflow_text
 
     def test_bundled_preset_download_raises_error(self, project_dir):
         """download_pack raises PresetError for bundled presets without download_url."""

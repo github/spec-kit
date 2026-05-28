@@ -110,9 +110,13 @@ jobs:
           grep -F "plan-template" preset-resolve-plan-template.txt
           grep -F "workflow-preset" preset-resolve-plan-template.txt
 
+          /tmp/specify-workflow-preset-venv/bin/specify preset resolve tasks-template | tee preset-resolve-tasks-template.txt
+          grep -F "tasks-template" preset-resolve-tasks-template.txt
+          grep -F "(top layer from: core)" preset-resolve-tasks-template.txt
+
           test -f .specify/presets/workflow-preset/preset.yml
           test -f .specify/presets/workflow-preset/templates/plan-template.md
-          test -f .specify/presets/workflow-preset/templates/tasks-template.md
+          test -f .specify/templates/tasks-template.md
           test -f .specify/presets/workflow-preset/commands/speckit.plan.md
           test -f .specify/presets/workflow-preset/commands/speckit.tasks.md
           test -f .specify/presets/workflow-preset/commands/speckit.implement.md
