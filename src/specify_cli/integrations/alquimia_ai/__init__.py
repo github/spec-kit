@@ -172,7 +172,7 @@ class AlquimiaAIIntegration(SkillsIntegration):
         def repl(m: re.Match[str]) -> str:
             indent = m.group(1)
             instruction = m.group(2)
-            eol = m.group(3)
+            eol = m.group(3) or '\n'
             return (
                 indent
                 + _HOOK_COMMAND_NOTE.rstrip("\n")
