@@ -7,7 +7,7 @@
 
 The following community-contributed extensions are available in [`catalog.community.json`](https://github.com/github/spec-kit/blob/main/extensions/catalog.community.json):
 
-**Categories** (common values, but any string is allowed):
+> Run `specify extension search --markdown` to regenerate this table.
 
 - `docs` — reads, validates, or generates spec artifacts
 - `code` — reviews, validates, or modifies source code
