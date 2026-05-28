@@ -37,7 +37,7 @@ ARGUMENT_HINTS: dict[str, str] = {
 class AlquimiaAIIntegration(SkillsIntegration):
     """Integration for Alquimia AI skills."""
 
-    key = "alquimia-ai"
+    key = "alquimia"
     config = {
         "name": "Alquimia AI",
         "folder": ".alquimia/",
@@ -48,7 +48,7 @@ class AlquimiaAIIntegration(SkillsIntegration):
     registrar_config = {
         "dir": ".alquimia/skills",
         "format": "markdown",
-        "args": "$ARGUMENTS",
+        "args": "{{query}}",
         "extension": "/SKILL.md",
     }
     context_file = "ALQUIMIA.md"
