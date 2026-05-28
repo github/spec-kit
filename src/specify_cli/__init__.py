@@ -3003,9 +3003,23 @@ def extension_add(
                     console.print("HTTP is only allowed for localhost URLs.")
                     raise typer.Exit(1)
 
-                # Warn about untrusted sources
-                console.print("[yellow]Warning:[/yellow] Installing from external URL.")
-                console.print("Only install extensions from sources you trust.\n")
+                # Warn about untrusted sources — default-deny confirmation
+                console.print()
+                console.print(Panel(
+                    f"[bold]You are installing an extension from an external URL that is not\n"
+                    f"listed in any of your configured extension catalogs.[/bold]\n\n"
+                    f"URL: {from_url}\n\n"
+                    f"Only install extensions from sources you trust.",
+                    title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
+                    border_style="yellow",
+                    padding=(1, 2),
+                ))
+                console.print()
+                confirm = typer.confirm("Continue with installation?", default=False)
+                if not confirm:
+                    console.print("Cancelled")
+                    raise typer.Exit(0)
+
                 console.print(f"Downloading from {from_url}...")
 
                 # Download ZIP to temp location
