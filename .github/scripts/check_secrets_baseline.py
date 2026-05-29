@@ -28,11 +28,32 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASELINE_PATH = ".secrets.baseline"
 ACK_LABEL = "secrets-baseline-change"
+
+
+@dataclass(frozen=True, order=True)
+class SecretIdentity:
+    """Comparison identity for one detect-secrets baseline entry."""
+
+    filename: str
+    line_number: str
+    secret_type: str
+    hashed_secret: str
+
+    def log_safe(self) -> str:
+        return "|".join(
+            [
+                self.filename,
+                self.line_number,
+                self.secret_type,
+                "hashed_secret=<redacted>",
+            ]
+        )
 
 
 def _read_baseline_at(ref: str) -> tuple[dict, bool]:
@@ -77,9 +98,9 @@ def _read_baseline_from_worktree() -> tuple[dict, bool]:
         )
 
 
-def _identities(baseline: dict) -> set[str]:
+def _identities(baseline: dict) -> set[SecretIdentity]:
     """Flatten detect-secrets results to a set of stable identities."""
-    ids: set[str] = set()
+    ids: set[SecretIdentity] = set()
     results = baseline.get("results", {})
     if not isinstance(results, dict):
         return ids
@@ -90,13 +111,11 @@ def _identities(baseline: dict) -> set[str]:
             if not isinstance(entry, dict):
                 continue
             ids.add(
-                "|".join(
-                    [
-                        str(filename),
-                        str(entry.get("line_number", "")),
-                        str(entry.get("type", "")),
-                        str(entry.get("hashed_secret", "")),
-                    ]
+                SecretIdentity(
+                    filename=str(filename),
+                    line_number=str(entry.get("line_number", "")),
+                    secret_type=str(entry.get("type", "")),
+                    hashed_secret=str(entry.get("hashed_secret", "")),
                 )
             )
     return ids
@@ -160,7 +179,7 @@ def main() -> int:
         file=sys.stderr,
     )
     for identity in sorted(new_ids):
-        print(f"  + {identity}", file=sys.stderr)
+        print(f"  + {identity.log_safe()}", file=sys.stderr)
     return 1
 
 

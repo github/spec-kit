@@ -364,3 +364,56 @@ class TestBanditSpecific:
         result = gate.run(base=base_sha)
 
         assert result.returncode == 0, result.stderr
+
+
+class TestSecretsSpecific:
+    """Cases that only exist for the detect-secrets gate."""
+
+    @pytest.fixture
+    def gate(self, tmp_path) -> GateHandle:
+        repo = _init_repo(tmp_path)
+        _install_script(repo, SECRETS_SCRIPT)
+        return GateHandle(config=SECRETS_GATE, repo=repo)
+
+    @staticmethod
+    def _baseline_with_hash(hashed_secret: str) -> dict:
+        return {
+            "version": "1.5.0",
+            "results": {
+                "app.py": [
+                    {
+                        "type": "Secret Keyword",
+                        "filename": "app.py",
+                        "hashed_secret": hashed_secret,
+                        "is_verified": False,
+                        "line_number": 42,
+                    }
+                ]
+            },
+        }
+
+    def test_same_location_secret_swap_fails_without_leaking_hash(
+        self, gate: GateHandle
+    ):
+        """The hash remains part of the gate identity, but not CI logs."""
+        old_hash = "old-sensitive-hash"
+        new_hash = "new-sensitive-hash"
+        base_sha = _commit_baseline(
+            gate.repo,
+            gate.config.baseline_path,
+            self._baseline_with_hash(old_hash),
+            "base",
+        )
+        _commit_baseline(
+            gate.repo,
+            gate.config.baseline_path,
+            self._baseline_with_hash(new_hash),
+            "secret swap",
+        )
+
+        result = gate.run(base=base_sha)
+
+        assert result.returncode == 1, "hashed secret diff must catch swaps"
+        assert "app.py|42|Secret Keyword|hashed_secret=<redacted>" in result.stderr
+        assert old_hash not in result.stderr
+        assert new_hash not in result.stderr
