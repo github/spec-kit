@@ -1,6 +1,7 @@
 """Tests for CursorAgentIntegration."""
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.manifest import IntegrationManifest
@@ -116,15 +117,29 @@ class TestCursorAgentCliDispatch:
     shape that the workflow runner will use.
     """
 
-    def test_requires_cli_is_true(self):
+    def test_requires_cli_is_false_for_ide_first_flow(self):
+        """``requires_cli`` must stay False so the IDE-only flow keeps working.
+
+        ``specify init --ai cursor-agent`` (without ``--ignore-agent-tools``)
+        treats ``requires_cli=True`` as a hard precheck and fails when the
+        ``cursor-agent`` CLI isn't on PATH — even though the Cursor IDE
+        / skills flow can run without it.  Workflow dispatch support is
+        signalled by overriding ``build_exec_args()`` instead, mirroring
+        ``CopilotIntegration``.
+        """
         i = get_integration("cursor-agent")
-        assert i.config.get("requires_cli") is True
+        assert i.config.get("requires_cli") is False
 
     def test_install_url_is_set(self):
         i = get_integration("cursor-agent")
         url = i.config.get("install_url")
         assert url is not None
-        assert "cursor.com" in url
+        # CodeQL: use a hostname comparison instead of a substring check
+        # to avoid the "Incomplete URL substring sanitization" warning
+        # (substring "cursor.com" can also appear in attacker-controlled
+        # positions of an arbitrary URL).
+        host = (urlparse(url).hostname or "").lower()
+        assert host == "cursor.com" or host.endswith(".cursor.com")
 
     def test_build_exec_args_default_includes_headless_flags_and_json(self):
         """Default argv emits the full headless flag set: -p --trust
@@ -171,6 +186,22 @@ class TestCursorAgentCliDispatch:
         args = i.build_exec_args("/speckit-implement", output_json=False)
         for flag in ("-p", "--trust", "--approve-mcps", "--force"):
             assert flag in args, f"missing mandatory headless flag: {flag}"
+
+    def test_build_exec_args_supports_dispatch_without_requires_cli(self):
+        """``build_exec_args`` must return argv even though ``requires_cli``
+        is ``False``.
+
+        ``CursorAgentIntegration`` opts out of the ``requires_cli`` hard
+        precheck (so ``specify init`` doesn't fail when the CLI isn't on
+        PATH) but still supports workflow dispatch.  The presence of a
+        non-``None`` argv from ``build_exec_args()`` is what the engine
+        keys off — pin that invariant.
+        """
+        i = get_integration("cursor-agent")
+        assert i.config.get("requires_cli") is False
+        argv = i.build_exec_args("/speckit-plan", output_json=False)
+        assert argv is not None
+        assert argv[0] == "cursor-agent"
 
     def test_build_command_invocation_uses_hyphenated_skill_name(self):
         """SkillsIntegration: /speckit-plan (not /speckit.plan)."""
