@@ -403,9 +403,11 @@ class SkillsIntegrationTests:
         skills_prefix = i.config["folder"].rstrip("/") + "/" + i.config.get("commands_subdir", "skills")
 
         files = []
-        # Skill files
+        # Skill files (core commands)
         for cmd in self._SKILL_COMMANDS:
             files.append(f"{skills_prefix}/speckit-{cmd}/SKILL.md")
+        # Extension-installed skill (agent-context)
+        files.append(f"{skills_prefix}/speckit-agent-context-update/SKILL.md")
         # Integration metadata
         files += [
             ".specify/init-options.json",
@@ -444,8 +446,15 @@ class SkillsIntegrationTests:
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
         ]
-        # Agent context extension config
+        # Bundled agent-context extension
+        files.append(".specify/extensions.yml")
+        files.append(".specify/extensions/.registry")
+        files.append(".specify/extensions/agent-context/README.md")
         files.append(".specify/extensions/agent-context/agent-context-config.yml")
+        files.append(".specify/extensions/agent-context/commands/speckit.agent-context.update.md")
+        files.append(".specify/extensions/agent-context/extension.yml")
+        files.append(".specify/extensions/agent-context/scripts/bash/update-agent-context.sh")
+        files.append(".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1")
         # Agent context file (if set)
         if i.context_file:
             files.append(i.context_file)

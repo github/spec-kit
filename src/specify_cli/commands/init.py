@@ -153,6 +153,7 @@ def register(app: typer.Typer) -> None:
             _install_shared_infra_or_exit,
             _parse_integration_options,
             _print_cli_warning,
+            _update_agent_context_config_file,
             _write_integration_json,
             ensure_executable_scripts,
             save_init_options,
@@ -393,6 +394,7 @@ def register(app: typer.Typer) -> None:
             ("chmod", "Ensure scripts executable"),
             ("constitution", "Constitution setup"),
             ("git", "Install git extension"),
+            ("agent-context", "Install agent-context extension"),
             ("workflow", "Install bundled workflow"),
             ("final", "Finalize"),
         ]:
@@ -505,6 +507,28 @@ def register(app: typer.Typer) -> None:
                 else:
                     tracker.skip("git", "--no-git flag")
 
+                # --- agent-context extension (bundled, auto-installed) ---
+                try:
+                    from ..extensions import ExtensionManager as _ExtMgr
+                    bundled_ac = _locate_bundled_extension("agent-context")
+                    if bundled_ac:
+                        ac_mgr = _ExtMgr(project_path)
+                        if ac_mgr.registry.is_installed("agent-context"):
+                            tracker.complete("agent-context", "already installed")
+                        else:
+                            ac_mgr.install_from_directory(
+                                bundled_ac, get_speckit_version()
+                            )
+                            tracker.complete("agent-context", "extension installed")
+                    else:
+                        tracker.skip("agent-context", "bundled extension not found")
+                except Exception as ac_err:
+                    sanitized_ac = str(ac_err).replace('\n', ' ').strip()
+                    tracker.error(
+                        "agent-context",
+                        f"extension install failed: {sanitized_ac[:120]}",
+                    )
+
                 try:
                     bundled_wf = _locate_bundled_workflow("speckit")
                     if bundled_wf:
@@ -541,7 +565,6 @@ def register(app: typer.Typer) -> None:
                     "ai": selected_ai,
                     "integration": resolved_integration.key,
                     "branch_numbering": branch_numbering or "sequential",
-                    "context_file": resolved_integration.context_file,
                     "here": here,
                     "script": selected_script,
                     "speckit_version": get_speckit_version(),
@@ -550,6 +573,15 @@ def register(app: typer.Typer) -> None:
                 if isinstance(resolved_integration, _SkillsPersist) or getattr(resolved_integration, "_skills_mode", False):
                     init_opts["ai_skills"] = True
                 save_init_options(project_path, init_opts)
+
+                # Write context_file to the agent-context extension config
+                # (not init-options.json — that is the legacy location).
+                if resolved_integration.context_file:
+                    _update_agent_context_config_file(
+                        project_path,
+                        resolved_integration.context_file,
+                        preserve_markers=False,
+                    )
 
                 if preset:
                     try:

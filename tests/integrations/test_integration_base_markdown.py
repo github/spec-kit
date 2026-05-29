@@ -253,6 +253,7 @@ class MarkdownIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     COMMAND_STEMS = [
+        "agent-context.update",
         "analyze", "checklist", "clarify", "constitution",
         "implement", "plan", "specify", "tasks", "taskstoissues",
     ]
@@ -292,8 +293,15 @@ class MarkdownIntegrationTests:
         files.append(".specify/workflows/speckit/workflow.yml")
         files.append(".specify/workflows/workflow-registry.json")
 
-        # Agent context extension config
+        # Bundled agent-context extension
+        files.append(".specify/extensions.yml")
+        files.append(".specify/extensions/.registry")
+        files.append(".specify/extensions/agent-context/README.md")
         files.append(".specify/extensions/agent-context/agent-context-config.yml")
+        files.append(".specify/extensions/agent-context/commands/speckit.agent-context.update.md")
+        files.append(".specify/extensions/agent-context/extension.yml")
+        files.append(".specify/extensions/agent-context/scripts/bash/update-agent-context.sh")
+        files.append(".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1")
 
         # Agent context file (if set)
         if i.context_file:

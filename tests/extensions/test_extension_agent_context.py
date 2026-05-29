@@ -375,3 +375,75 @@ class TestExtensionConfigWriters:
             "start": "<!-- CUSTOM -->",
             "end": "<!-- /CUSTOM -->",
         }
+
+
+# ── Deprecation warning on upsert ────────────────────────────────────────────
+
+
+class TestDeprecationWarning:
+    def test_upsert_emits_deprecation_warning(self, tmp_path, capsys):
+        """upsert_context_section must emit a deprecation notice on stdout."""
+        from tests.conftest import strip_ansi
+
+        i = _CtxIntegration()
+        _write_ext_config(tmp_path, context_file="CLAUDE.md")
+        i.upsert_context_section(tmp_path)
+        captured = capsys.readouterr()
+        plain = strip_ansi(captured.out)
+        assert "Deprecation" in plain
+        assert "v0.12.0" in plain
+        assert "agent-context" in plain
+
+    def test_upsert_no_warning_when_disabled(self, tmp_path, capsys):
+        """No deprecation warning when agent-context extension is disabled."""
+        _write_registry(tmp_path, enabled=False)
+        i = _CtxIntegration()
+        i.upsert_context_section(tmp_path)
+        captured = capsys.readouterr()
+        assert "Deprecation" not in captured.out
+
+
+# ── Corrupt / invalid extension config ───────────────────────────────────────
+
+
+class TestCorruptExtensionConfig:
+    def test_marker_resolution_with_corrupt_yaml(self, tmp_path):
+        """Corrupt YAML in agent-context-config.yml falls back to defaults."""
+        cfg_path = (
+            tmp_path / ".specify" / "extensions" / "agent-context"
+            / "agent-context-config.yml"
+        )
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(": invalid: yaml: {{{\n", encoding="utf-8")
+        i = _CtxIntegration()
+        start, end = i._resolve_context_markers(tmp_path)
+        assert start == IntegrationBase.CONTEXT_MARKER_START
+        assert end == IntegrationBase.CONTEXT_MARKER_END
+
+    def test_upsert_with_corrupt_config_uses_defaults(self, tmp_path):
+        """upsert_context_section still works when config YAML is corrupt."""
+        cfg_path = (
+            tmp_path / ".specify" / "extensions" / "agent-context"
+            / "agent-context-config.yml"
+        )
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text("not valid yaml: {{{\n", encoding="utf-8")
+        i = _CtxIntegration()
+        result = i.upsert_context_section(tmp_path)
+        assert result is not None
+        text = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+        assert IntegrationBase.CONTEXT_MARKER_START in text
+        assert IntegrationBase.CONTEXT_MARKER_END in text
+
+    def test_marker_resolution_with_non_dict_yaml(self, tmp_path):
+        """Config file containing a scalar (not a dict) falls back to defaults."""
+        cfg_path = (
+            tmp_path / ".specify" / "extensions" / "agent-context"
+            / "agent-context-config.yml"
+        )
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text("just a string\n", encoding="utf-8")
+        i = _CtxIntegration()
+        start, end = i._resolve_context_markers(tmp_path)
+        assert start == IntegrationBase.CONTEXT_MARKER_START
+        assert end == IntegrationBase.CONTEXT_MARKER_END

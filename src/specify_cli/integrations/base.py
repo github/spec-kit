@@ -659,6 +659,17 @@ class IntegrationBase(ABC):
         if not self._agent_context_extension_enabled(project_root):
             return None
 
+        from .._console import console  # local import to avoid cycles
+
+        console.print(
+            "[yellow]Deprecation:[/yellow] Inline agent-context updates during "
+            "integration setup will be disabled in v0.12.0. Context file "
+            "management has moved to the bundled [bold]agent-context[/bold] "
+            "extension. Run [cyan]specify extension disable agent-context[/cyan] "
+            "to opt out early.",
+            highlight=False,
+        )
+
         marker_start, marker_end = self._resolve_context_markers(project_root)
 
         ctx_path = project_root / self.context_file

@@ -255,7 +255,7 @@ class TestIntegrationInstall:
         assert updated["speckit_version"] == "0.8.11"
         assert updated["integration"] == "claude"
         assert updated["ai"] == "claude"
-        assert updated["context_file"] == "CLAUDE.md"
+        assert "context_file" not in updated
 
     def test_install_additional_preserves_shared_manifest(self, tmp_path):
         project = _init_project(tmp_path, "claude")
@@ -1250,7 +1250,7 @@ class TestIntegrationUpgrade:
         assert updated["speckit_version"] == "0.8.11"
         assert updated["integration"] == "gemini"
         assert updated["ai"] == "gemini"
-        assert updated["context_file"] == "GEMINI.md"
+        assert "context_file" not in updated
 
     def test_upgrade_does_not_persist_state_when_shared_infra_refresh_fails(self, tmp_path, monkeypatch):
         project = _init_project(tmp_path, "claude")
@@ -1376,11 +1376,16 @@ class TestIntegrationUpgrade:
         new_commands = sorted(canonical.glob("speckit.*.md"))
         assert len(new_commands) > 0, "Commands should exist in .opencode/commands/"
 
-        # Stale files removed from legacy dir
-        remaining = list(legacy.glob("speckit.*.md"))
-        assert len(remaining) == 0, (
-            f"Legacy .opencode/command/ should have no speckit files after upgrade, "
-            f"found: {[f.name for f in remaining]}"
+        # Stale files removed from legacy dir (extension-installed commands
+        # like agent-context.update may still appear — only check the original
+        # core command stems that should have been migrated).
+        core_remaining = [
+            f for f in legacy.glob("speckit.*.md")
+            if "agent-context" not in f.name
+        ]
+        assert len(core_remaining) == 0, (
+            f"Legacy .opencode/command/ should have no core speckit files after upgrade, "
+            f"found: {[f.name for f in core_remaining]}"
         )
 
 

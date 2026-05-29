@@ -195,6 +195,39 @@ class TestGenericIntegration:
         content = implement_file.read_text(encoding="utf-8")
         assert ".specify/memory/constitution.md" in content
 
+    @pytest.mark.parametrize(
+        "command_stem",
+        [
+            "analyze",
+            "checklist",
+            "clarify",
+            "implement",
+            "plan",
+            "specify",
+            "tasks",
+            "taskstoissues",
+        ],
+    )
+    def test_command_loads_constitution_context(self, tmp_path, command_stem):
+        """Every command except constitution must reference constitution.md."""
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        i.setup(tmp_path, m, parsed_options={"commands_dir": ".custom/cmds"})
+        cmd_file = tmp_path / ".custom" / "cmds" / f"speckit.{command_stem}.md"
+        assert cmd_file.exists(), f"Command file missing: {cmd_file.name}"
+        content = cmd_file.read_text(encoding="utf-8")
+        assert "constitution.md" in content, (
+            f"speckit.{command_stem}.md must reference constitution.md"
+        )
+
+    def test_constitution_command_exists(self, tmp_path):
+        """The constitution command itself must exist but is not required to load itself."""
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        i.setup(tmp_path, m, parsed_options={"commands_dir": ".custom/cmds"})
+        cmd_file = tmp_path / ".custom" / "cmds" / "speckit.constitution.md"
+        assert cmd_file.exists()
+
     # -- CLI --------------------------------------------------------------
 
     def test_cli_generic_without_commands_dir_fails(self, tmp_path):
@@ -266,7 +299,14 @@ class TestGenericIntegration:
             ".myagent/commands/speckit.specify.md",
             ".myagent/commands/speckit.tasks.md",
             ".myagent/commands/speckit.taskstoissues.md",
+            ".specify/extensions.yml",
+            ".specify/extensions/.registry",
+            ".specify/extensions/agent-context/README.md",
             ".specify/extensions/agent-context/agent-context-config.yml",
+            ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
+            ".specify/extensions/agent-context/extension.yml",
+            ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh",
+            ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
             ".specify/init-options.json",
             ".specify/integration.json",
             ".specify/integrations/generic.manifest.json",
@@ -323,7 +363,14 @@ class TestGenericIntegration:
             ".myagent/commands/speckit.specify.md",
             ".myagent/commands/speckit.tasks.md",
             ".myagent/commands/speckit.taskstoissues.md",
+            ".specify/extensions.yml",
+            ".specify/extensions/.registry",
+            ".specify/extensions/agent-context/README.md",
             ".specify/extensions/agent-context/agent-context-config.yml",
+            ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
+            ".specify/extensions/agent-context/extension.yml",
+            ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh",
+            ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
             ".specify/init-options.json",
             ".specify/integration.json",
             ".specify/integrations/generic.manifest.json",
