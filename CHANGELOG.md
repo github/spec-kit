@@ -2,6 +2,136 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.8.18] - 2026-05-29
+
+### Changed
+
+- Add support for SPECKIT_WORKFLOW_RUN_ID override (#2742)
+- feat: support SPECKIT_INTEGRATION_<KEY>_EXECUTABLE env var (#2743)
+- chore(deps): bump github/gh-aw-actions from 0.74.8 to 0.77.0 (#2754)
+- chore(deps): bump github/codeql-action from 4.35.5 to 4.36.0 (#2753)
+- fix: disable no-op issue reporting for catalog submission workflows (#2748)
+- Add confirmation prompt for URL-based extension installs (#2745)
+- fix: restrict community submission workflows to labeled event only (#2741)
+- feat(integrations): support SPECIFY_<KEY>_EXTRA_ARGS env var for agent subprocess flags (#2596)
+- chore: release 0.8.17, begin 0.8.18.dev0 development (#2737)
+
+## [0.8.17] - 2026-05-28
+
+### Changed
+
+- docs: consolidate Community sections in README (#2736)
+- Fix shared script command hints for integration separators (#2627)
+- docs: update security-governance preset to v0.4.0 (#2703)
+- feat(agy): enhance Google Antigravity CLI integration (#2689)
+- Fix --dev extension agent symlinks (#2554)
+- Share skills hook note post-processing (#2679)
+- feat: add Hermes Agent integration (with review fixes) (#2651)
+- Update Superpowers Implementation Bridge to v0.7.0 (#2732)
+- chore: release 0.8.16, begin 0.8.17.dev0 development (#2729)
+
+## [0.8.16] - 2026-05-27
+
+### Changed
+
+- docs: update landing page stats and branch naming convention (#2727)
+- feat(workflows): expose {{ context.run_id }} template variable (#2664)
+- fix: resolve __SPECKIT_COMMAND_*__ refs in preset skill rendering (#2717) (#2718)
+- Add Workflow Preset to community catalog (#2725)
+- fix: paths-only skips branch validation, setup-plan preserves existing plan (#2672)
+- docs: fix broken pipx homepage URLs to point to pipx.pypa.io (#2670)
+- Update Architecture Guard extension to v1.8.9 (#2723)
+- Re-validate spec quality checklist after clarify updates spec (#2715)
+- chore: release 0.8.15, begin 0.8.16.dev0 development (#2722)
+
+## [0.8.15] - 2026-05-27
+
+### Changed
+
+- Update Fiction Book Writing preset to v1.8.1 (#2714)
+- chore: update memorylint and superb to 1.4.0 (#2690)
+- fix: promote post-execution hook dispatch to H2 with directive language (#2713)
+- Add Token Budget extension to community catalog (#2712)
+- fix: create skills directory on demand during extension/preset install (#2711)
+- fix: PS 5.1 compat — replace non-ASCII chars in shipped PowerShell scripts (#2709)
+- docs: update security-governance preset to v0.3.0 (#2676)
+- Update README.md (#2675)
+- chore: release 0.8.14, begin 0.8.15.dev0 development (#2706)
+
+## [0.8.14] - 2026-05-26
+
+### Changed
+
+- Add util for windows sub-process (#2598)
+- refactor: create commands/ package and move init handler (PR-4/8) (#2615)
+- Add Product Spec Extension to community catalog (#2705)
+- fix init-options speckit version refresh (#2647)
+- chore(deps): bump github/gh-aw-actions from 0.74.8 to 0.74.9 (#2658)
+- docs: add branch naming convention to AGENTS.md and CONTRIBUTING.md (#2678)
+- chore(deps): bump actions/stale from 10.2.0 to 10.3.0 (#2657)
+- chore(deps): bump github/codeql-action from 4.35.4 to 4.35.5 (#2656)
+- chore: release 0.8.13, begin 0.8.14.dev0 development (#2669)
+
+## [0.8.13] - 2026-05-21
+
+### Changed
+
+- fix: while/do-while loop condition reads stale iteration-0 step output (#2662)
+- docs: fix directory hierarchy in README examples (#2639)
+- fix(catalogs): reject boolean priority in extension and preset catalog readers (#2589)
+- Update Agent Governance extension to v1.2.0 (#2659)
+- Add agentic workflows for community catalog submissions (#2655)
+- feat: add self-check tip to check output (#2574)
+- fix(cli): clarify exception diagnostics (#2602)
+- ci: add diff whitespace check (#2572)
+- chore: release 0.8.12, begin 0.8.13.dev0 development (#2648)
+
+## [0.8.12] - 2026-05-20
+
+### Changed
+
+- fix(codex): inject dot-to-hyphen hook command note in Codex skills (#2503)
+- Update Squad Bridge extension to v1.3.0 (#2645)
+- Update Superpowers Implementation Bridge extension to v0.5.0 (#2644)
+- Add Team Assign extension to community catalog (#2642)
+- refactor: migrate extension catalog stack parsing to shared base (#2576)
+- Update Architecture Workflow extension to v1.1.0 (#2588)
+-  fix(workflow): support integration: auto to follow project's initialized AI (#2421)
+- Add Superpowers Implementation Bridge extension to community catalog (#2586)
+- Add Interactive HTML Preview extension to community catalog (#2585)
+- chore: release 0.8.11, begin 0.8.12.dev0 development (#2584)
+- Update Agent Governance extension to v1.1.0 (#2583)
+
+## [0.8.11] - 2026-05-15
+
+### Changed
+
+- refactor: extract _version.py from __init__.py (PR-3/8) (#2550)
+- Add Time Machine extension to community catalog (#2580)
+- fix(powershell): ensure UTF-8 templates are written without BOM (#2280)
+- docs: document high-assurance spec workflow (#2518)
+- docs: fix script name in directory tree examples (#2555)
+- Fix preset skill description precedence (#2538)
+- fix(integration): clarify multi-install guidance (#2549)
+- feat: add version feature reporting (#2548)
+- Add Architecture Workflow extension to community catalog (#2565)
+- chore: release 0.8.10, begin 0.8.11.dev0 development (#2562)
+
+## [0.8.10] - 2026-05-14
+
+### Changed
+
+- docs: streamline install section and add community overview (#2561)
+- Move community extensions table from README to docs site (#2560)
+- Add Agent Governance extension to community catalog (#2559)
+- Add Reqnroll BDD extension to community catalog (#2545)
+- fix(cli): harden extension registration and discovery workflows (#2499)
+- refactor: extract _assets.py and _utils.py from __init__.py (PR-2/8) (#2543)
+- fix(opencode): use commands/ directory (plural) to match OpenCode docs (#2453)
+- refactor: extract _console.py from __init__.py (PR-1/8) (#2474)
+- Fix constitution reference in README (#2491)
+- chore: release 0.8.9, begin 0.8.10.dev0 development (#2532)
+
 ## [0.8.9] - 2026-05-12
 
 ### Changed

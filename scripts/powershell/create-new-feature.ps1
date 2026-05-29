@@ -312,7 +312,7 @@ if (-not $DryRun) {
                 if ($AllowExistingBranch) {
                     # If we're already on the branch, continue without another checkout.
                     if ($currentBranch -eq $branchName) {
-                        # Already on the target branch — nothing to do
+                        # Already on the target branch -- nothing to do
                     } else {
                         # Otherwise switch to the existing branch instead of failing.
                         $switchBranchError = git checkout -q $branchName 2>&1 | Out-String
@@ -350,7 +350,10 @@ if (-not $DryRun) {
     if (-not (Test-Path -PathType Leaf $specFile)) {
         $template = Resolve-Template -TemplateName 'spec-template' -RepoRoot $repoRoot
         if ($template -and (Test-Path $template)) {
-            Copy-Item $template $specFile -Force
+            # Read the template content and write it to the spec file with UTF-8 encoding without BOM
+            $content = [System.IO.File]::ReadAllText($template)
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($specFile, $content, $utf8NoBom)
         } else {
             New-Item -ItemType File -Path $specFile -Force | Out-Null
         }

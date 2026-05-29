@@ -1830,6 +1830,31 @@ class TestPresetCatalogMultiCatalog:
         with pytest.raises(PresetValidationError, match="Invalid priority"):
             catalog._load_catalog_config(config_path)
 
+    def test_load_catalog_config_rejects_boolean_priority(self, project_dir):
+        """A YAML ``priority: true`` is a typo, not a request for priority 1.
+
+        ``bool`` is a subclass of ``int`` in Python, so ``int(True)`` silently
+        returns ``1``. Without an explicit guard a malformed config like
+        ``priority: yes`` would be accepted as a valid priority of 1 and
+        silently change catalog ordering. The sibling integration-catalog
+        reader rejects this case (see ``catalogs.py``); the preset catalog
+        reader must stay consistent.
+        """
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [
+                {
+                    "name": "bool-priority",
+                    "url": "https://example.com/catalog.json",
+                    "priority": True,
+                }
+            ]
+        }))
+
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="Invalid priority|expected integer"):
+            catalog._load_catalog_config(config_path)
+
     def test_load_catalog_config_install_allowed_string(self, project_dir):
         """Test that install_allowed accepts string values."""
         config_path = project_dir / ".specify" / "preset-catalogs.yml"
@@ -2266,6 +2291,37 @@ class TestPresetSkills:
         )
         return skill_dir
 
+    def _create_command_preset(self, temp_dir, preset_id, command_name, description, body):
+        preset_dir = temp_dir / preset_id
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        command_file = f"{command_name}.md"
+        (preset_dir / "commands" / command_file).write_text(
+            f"---\ndescription: {description}\n---\n\n{body}\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": preset_id,
+                "name": preset_id,
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": command_name,
+                        "file": f"commands/{command_file}",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        return preset_dir
+
     def test_skill_overridden_on_preset_install(self, project_dir, temp_dir):
         """When --ai-skills was used, a preset command override should update the skill."""
         # Simulate --ai-skills having been used: write init-options + create skill
@@ -2289,6 +2345,268 @@ class TestPresetSkills:
         # Verify it was recorded in registry
         metadata = manager.registry.get("self-test")
         assert "speckit-specify" in metadata.get("registered_skills", [])
+
+    def test_register_skills_resolves_command_refs(self, project_dir, temp_dir):
+        """Preset skill overrides must resolve __SPECKIT_COMMAND_*__ tokens (issue #2717).
+
+        ``_register_skills()`` previously ran only ``resolve_skill_placeholders()``,
+        so command cross-references leaked into SKILL.md as raw placeholders
+        instead of rendering as ``/speckit-<cmd>`` like the command layer.
+        """
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "cmdref-install",
+            "speckit.specify",
+            "Override specify",
+            "Run `__SPECKIT_COMMAND_SPECIFY__` then `__SPECKIT_COMMAND_PLAN__`.\n",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
+        assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked into SKILL.md"
+        # Claude's invoke_separator is "-", so tokens render as /speckit-<cmd>.
+        assert "/speckit-specify" in content
+        assert "/speckit-plan" in content
+
+    def test_restore_skill_resolves_command_refs(self, project_dir, temp_dir):
+        """Skill restore on preset removal must also resolve command tokens (issue #2717)."""
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\n"
+            "Then run `__SPECKIT_COMMAND_PLAN__`.\n"
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "cmdref-restore",
+            "speckit.specify",
+            "Override specify",
+            "Override body\n",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.remove("cmdref-restore")
+
+        content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
+        assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked on restore"
+        assert "/speckit-plan" in content
+
+    def test_reconcile_override_skill_resolves_command_refs(self, project_dir, temp_dir):
+        """Reconcile's project-override restore must resolve command tokens (issue #2717).
+
+        When a preset that overrode a command is removed and a project override
+        becomes the winning layer, ``_reconcile_skills`` rewrites the skill from
+        the override body — which must also render ``__SPECKIT_COMMAND_*__`` tokens.
+        """
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        # Project override wins once the preset is removed; its body carries a
+        # command cross-reference token. No core template exists for "specify",
+        # so the skill is restored exclusively via the reconcile override branch.
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True, exist_ok=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Override specify\n---\n\n"
+            "Then run `__SPECKIT_COMMAND_PLAN__`.\n"
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "cmdref-reconcile",
+            "speckit.specify",
+            "Preset specify",
+            "Preset body\n",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.remove("cmdref-reconcile")
+
+        content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
+        assert "override:speckit.specify" in content, "skill should be restored from the project override"
+        assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked on reconcile"
+        assert "/speckit-plan" in content
+
+    def test_extension_restore_resolves_command_refs(self, project_dir, temp_dir):
+        """Extension-backed skill restore must resolve command tokens (issue #2717).
+
+        When a preset override is removed and the skill is restored from an
+        extension command body, ``__SPECKIT_COMMAND_*__`` tokens in that body
+        must render as slash-command invocations like the core-template path.
+        """
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-fakeext-cmd", body="original extension skill")
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Then run `__SPECKIT_COMMAND_PLAN__`.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "cmdref-ext-restore",
+            "speckit.fakeext.cmd",
+            "Override fakeext cmd",
+            "Override body\n",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.remove("cmdref-ext-restore")
+
+        content = (skills_dir / "speckit-fakeext-cmd" / "SKILL.md").read_text()
+        assert "source: extension:fakeext" in content, "skill should be restored from the extension"
+        assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked on extension restore"
+        assert "/speckit-plan" in content
+
+    def test_core_command_override_skill_uses_preset_command_description(self, project_dir, temp_dir):
+        """Preset skill overrides for core commands should keep preset frontmatter descriptions."""
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-taskstoissues")
+
+        preset_dir = temp_dir / "taskstoissues-description"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.repro.taskstoissues.md").write_text(
+            "---\n"
+            "description: COMMAND-FRONTMATTER-DESCRIPTION\n"
+            "---\n\n"
+            "# Repro command body\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "taskstoissues-description",
+                "name": "Taskstoissues Description",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.taskstoissues",
+                        "file": "commands/speckit.repro.taskstoissues.md",
+                        "description": "MANIFEST-DESCRIPTION",
+                        "replaces": "speckit.taskstoissues",
+                        "strategy": "replace",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-taskstoissues" / "SKILL.md"
+        content = skill_file.read_text()
+        assert "description: COMMAND-FRONTMATTER-DESCRIPTION" in content
+        assert "Convert tasks from tasks.md into GitHub issues." not in content
+        assert "source: preset:taskstoissues-description" in content
+
+    def test_core_skill_restore_uses_core_command_description(self, project_dir, temp_dir):
+        """Core skill restore should keep core command frontmatter descriptions."""
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-taskstoissues")
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "taskstoissues.md").write_text(
+            "---\n"
+            "description: CORE-FRONTMATTER-DESCRIPTION\n"
+            "---\n\n"
+            "core taskstoissues body\n"
+        )
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "taskstoissues-restore",
+            "speckit.taskstoissues",
+            "PRESET-FRONTMATTER-DESCRIPTION",
+            "preset taskstoissues body\n",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.remove("taskstoissues-restore")
+
+        skill_file = skills_dir / "speckit-taskstoissues" / "SKILL.md"
+        content = skill_file.read_text()
+        assert "description: CORE-FRONTMATTER-DESCRIPTION" in content
+        assert "Convert tasks from tasks.md into GitHub issues." not in content
+        assert "source: templates/commands/taskstoissues.md" in content
+        assert "core taskstoissues body" in content
+
+    def test_override_skill_reconcile_uses_override_command_description(self, project_dir, temp_dir):
+        """Override skill reconciliation should keep override frontmatter descriptions."""
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-taskstoissues")
+
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.taskstoissues.md").write_text(
+            "---\n"
+            "description: OVERRIDE-FRONTMATTER-DESCRIPTION\n"
+            "---\n\n"
+            "override taskstoissues body\n"
+        )
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "taskstoissues-reconcile",
+            "speckit.taskstoissues",
+            "PRESET-FRONTMATTER-DESCRIPTION",
+            "preset taskstoissues body\n",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-taskstoissues" / "SKILL.md"
+        content = skill_file.read_text()
+        assert "description: OVERRIDE-FRONTMATTER-DESCRIPTION" in content
+        assert "Convert tasks from tasks.md into GitHub issues." not in content
+        assert "source: override:speckit.taskstoissues" in content
+        assert "override taskstoissues body" in content
 
     def test_skill_not_updated_when_ai_skills_disabled(self, project_dir, temp_dir):
         """When --ai-skills was NOT used, preset install should not touch skills."""

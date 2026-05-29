@@ -239,6 +239,33 @@ message: "{{ status | default('pending') }}"
 
 Supported filters: `default`, `join`, `contains`, `map`.
 
+### Runtime Context
+
+`{{ context.* }}` exposes engine-managed runtime metadata for the
+current run:
+
+| Variable | Description |
+|----------|-------------|
+| `context.run_id` | The current workflow run id (the same value Spec Kit prints as `Run ID:` at the end of `workflow run`). Auto-generated runs are 8-character hex from `uuid4`; operator-supplied ids may be any alphanumeric string with hyphens or underscores. Empty string outside a run context. |
+
+```yaml
+# Stamp telemetry events with the run id for cross-system join.
+- id: emit-event
+  type: shell
+  run: 'echo "{\"run_id\":\"{{ context.run_id }}\",\"event\":\"started\"}" >> events.jsonl'
+
+# Per-run scratch directory.
+- id: prep-scratch
+  type: shell
+  run: 'mkdir -p /tmp/run-{{ context.run_id }}'
+
+# Pass run id into a command for artifact metadata.
+- id: tag-artifact
+  command: speckit.specify
+  input:
+    args: "{{ context.run_id }}"
+```
+
 ## Input Types
 
 Workflow inputs are type-checked and coerced from CLI string values:

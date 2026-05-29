@@ -11,6 +11,7 @@ Tests cover:
 
 import pytest
 import json
+import os
 import platform
 import tempfile
 import shutil
@@ -34,6 +35,18 @@ from specify_cli.extensions import (
     normalize_priority,
     version_satisfies,
 )
+
+
+def can_create_symlink(tmp_path: Path) -> bool:
+    """Return True when the current platform/user can create file symlinks."""
+    target = tmp_path / "symlink-target.txt"
+    link = tmp_path / "symlink-link.txt"
+    target.write_text("ok", encoding="utf-8")
+    try:
+        os.symlink(target, link)
+    except OSError:
+        return False
+    return link.is_symlink()
 
 
 # ===== Fixtures =====
@@ -1722,6 +1735,168 @@ Run {SCRIPT}
         assert "description: Test hello command" in content
         assert "test-ext" in content
 
+    def test_dev_register_commands_symlinks_rendered_copilot_agent(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        """Dev-mode registration should symlink agent files to rendered outputs."""
+        if not can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registered = registrar.register_commands_for_agent(
+            "copilot",
+            manifest,
+            extension_dir,
+            project_dir,
+            link_outputs=True,
+        )
+
+        assert registered == ["speckit.test-ext.hello"]
+
+        cmd_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        assert cmd_file.is_symlink()
+
+        target = cmd_file.resolve()
+        assert ".specify-dev" in target.parts
+        assert target.is_file()
+        assert "Extension: test-ext" in cmd_file.read_text(encoding="utf-8")
+
+    def test_dev_register_commands_falls_back_to_copy_when_symlink_fails(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Dev-mode registration stays functional when symlinks are unavailable."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        def raise_symlink_error(target, link):
+            raise OSError("symlink unavailable")
+
+        monkeypatch.setattr("specify_cli.agents.os.symlink", raise_symlink_error)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "copilot",
+            manifest,
+            extension_dir,
+            project_dir,
+            link_outputs=True,
+        )
+
+        cmd_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        assert cmd_file.exists()
+        assert not cmd_file.is_symlink()
+        assert "Extension: test-ext" in cmd_file.read_text(encoding="utf-8")
+        assert (
+            extension_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "copilot"
+            / "speckit.test-ext.hello.agent.md"
+        ).exists()
+
+    def test_dev_register_commands_falls_back_to_copy_when_relpath_fails(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Dev-mode registration stays functional across Windows drive roots."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        def raise_relpath_error(path, start=None):
+            raise ValueError("path is on mount 'D:', start on mount 'C:'")
+
+        monkeypatch.setattr("specify_cli.agents.os.path.relpath", raise_relpath_error)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "copilot",
+            manifest,
+            extension_dir,
+            project_dir,
+            link_outputs=True,
+        )
+
+        cmd_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        assert cmd_file.exists()
+        assert not cmd_file.is_symlink()
+        assert "Extension: test-ext" in cmd_file.read_text(encoding="utf-8")
+        assert (
+            extension_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "copilot"
+            / "speckit.test-ext.hello.agent.md"
+        ).exists()
+
+    def test_dev_register_commands_falls_back_to_copy_when_cache_write_fails(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Dev-mode registration stays functional when the dev cache is unwritable."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+        original_write_text = Path.write_text
+
+        def raise_cache_write_error(path, *args, **kwargs):
+            if ".specify-dev" in path.parts:
+                raise OSError("cache is not writable")
+            return original_write_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", raise_cache_write_error)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "copilot",
+            manifest,
+            extension_dir,
+            project_dir,
+            link_outputs=True,
+        )
+
+        cmd_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        assert cmd_file.exists()
+        assert not cmd_file.is_symlink()
+        assert "Extension: test-ext" in cmd_file.read_text(encoding="utf-8")
+        assert not (
+            extension_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "copilot"
+            / "speckit.test-ext.hello.agent.md"
+        ).exists()
+
+    def test_dev_register_commands_rejects_cache_path_traversal(self, temp_dir):
+        """Dev-mode cache writes must stay inside the agent cache root."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        source_dir = temp_dir / "extension"
+        source_dir.mkdir()
+        commands_dir = temp_dir / "commands"
+        commands_dir.mkdir()
+
+        with pytest.raises(ValueError, match="escapes directory"):
+            AgentCommandRegistrar._write_registered_output(
+                commands_dir / "safe.md",
+                "content",
+                source_dir,
+                "copilot",
+                "../escaped",
+                ".md",
+                True,
+            )
+
+        assert not (
+            source_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "escaped.md"
+        ).exists()
+
     def test_copilot_companion_prompt_created(self, extension_dir, project_dir):
         """Test that companion .prompt.md files are created in .github/prompts/."""
         agents_dir = project_dir / ".github" / "agents"
@@ -1846,7 +2021,7 @@ Run {SCRIPT}
         registrar = CommandRegistrar()
         from specify_cli.extensions import ExtensionManifest
         manifest = ExtensionManifest(ext_dir / "extension.yml")
-        registered = registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
 
         skill_subdir = skills_dir / "speckit-cleanup-ext-run"
         assert skill_subdir.exists(), "Skill subdirectory should exist after registration"
@@ -2580,7 +2755,8 @@ class TestExtensionCatalog:
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
         """download_extension passes Authorization header when a provider is configured."""
         from unittest.mock import patch, MagicMock
-        import zipfile, io
+        import zipfile
+        import io
 
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
         self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
@@ -2853,6 +3029,110 @@ class TestCatalogStack:
 
         assert len(entries) == 1
         assert entries[0].url == "http://localhost:8000/catalog.json"
+
+    @pytest.mark.parametrize(
+        "config_content", ["[]\n", "false\n", "0\n", "''\n", "- item\n"]
+    )
+    def test_load_catalog_config_rejects_non_mapping_roots(
+        self, temp_dir, config_content
+    ):
+        """Malformed roots raise ValidationError, not fallback or AttributeError."""
+        project_dir = self._make_project(temp_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        config_path.write_text(config_content, encoding="utf-8")
+
+        catalog = ExtensionCatalog(project_dir)
+
+        with pytest.raises(
+            ValidationError, match="expected a YAML mapping at the root"
+        ) as exc_info:
+            catalog.get_active_catalogs()
+        assert str(config_path) in str(exc_info.value)
+
+    def test_load_catalog_config_rejects_boolean_priority(self, temp_dir):
+        """Boolean priorities are rejected instead of being coerced to 1 or 0."""
+        import yaml as yaml_module
+
+        project_dir = self._make_project(temp_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        config_path.write_text(
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "bad-priority",
+                            "url": "https://example.com/catalog.json",
+                            "priority": True,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        with pytest.raises(
+            ValidationError, match="Invalid priority|expected integer"
+        ) as exc_info:
+            catalog.get_active_catalogs()
+        assert str(config_path) in str(exc_info.value)
+
+    def test_load_catalog_config_defaults_blank_names(self, temp_dir):
+        """Blank and null names normalize by valid catalog order."""
+        import yaml as yaml_module
+
+        project_dir = self._make_project(temp_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        config_path.write_text(
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {"name": "skipped", "url": "   "},
+                        {"name": None, "url": "https://one.example.com/catalog.json"},
+                        {"name": "   ", "url": "https://two.example.com/catalog.json"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        assert [entry.name for entry in catalog.get_active_catalogs()] == [
+            "catalog-1",
+            "catalog-2",
+        ]
+
+    @pytest.mark.parametrize(
+        ("url", "expected_detail"),
+        [
+            ("relative/catalog.json", "HTTPS"),
+            ("https:///no-host", "valid URL with a host"),
+        ],
+    )
+    def test_load_catalog_config_invalid_url_includes_context(
+        self, temp_dir, url, expected_detail
+    ):
+        """Invalid catalog URLs include the config path and entry index."""
+        import yaml as yaml_module
+
+        project_dir = self._make_project(temp_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        config_path.write_text(
+            yaml_module.dump({"catalogs": [{"name": "bad", "url": url}]}),
+            encoding="utf-8",
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        with pytest.raises(ValidationError) as exc_info:
+            catalog.get_active_catalogs()
+        message = str(exc_info.value)
+        assert "Invalid catalog URL" in message
+        assert str(config_path) in message
+        assert "index 0" in message
+        assert expected_detail in message
 
     # --- Merge conflict resolution ---
 
@@ -3353,6 +3633,86 @@ class TestExtensionIgnore:
 class TestExtensionAddCLI:
     """CLI integration tests for extension add command."""
 
+    def test_add_dev_links_copilot_agent_when_supported(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        """extension add --dev should link generated agent files when possible."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+
+        agent_file = (
+            project_dir
+            / ".github"
+            / "agents"
+            / "speckit.test-ext.hello.agent.md"
+        )
+        assert agent_file.exists()
+        if can_create_symlink(temp_dir):
+            assert agent_file.is_symlink()
+            assert ".specify-dev" in agent_file.resolve().parts
+        else:
+            assert not agent_file.is_symlink()
+
+    def test_add_dev_falls_back_to_copy_when_windows_symlinks_unavailable(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """extension add --dev should work when Windows cannot create symlinks."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+
+        def raise_windows_symlink_error(target, link):
+            raise OSError("A required privilege is not held by the client")
+
+        monkeypatch.setattr(
+            "specify_cli.agents.os.symlink", raise_windows_symlink_error
+        )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+
+        agent_file = (
+            project_dir
+            / ".github"
+            / "agents"
+            / "speckit.test-ext.hello.agent.md"
+        )
+        assert agent_file.exists()
+        assert not agent_file.is_symlink()
+        assert "Extension: test-ext" in agent_file.read_text(encoding="utf-8")
+        assert (
+            project_dir
+            / ".specify"
+            / "extensions"
+            / "test-ext"
+            / ".specify-dev"
+            / "agent-commands"
+            / "copilot"
+            / "speckit.test-ext.hello.agent.md"
+        ).exists()
+
     def test_add_by_display_name_uses_resolved_id_for_download(self, tmp_path):
         """extension add by display name should use resolved ID for download_extension()."""
         from typer.testing import CliRunner
@@ -3639,12 +3999,19 @@ class TestExtensionUpdateCLI:
         ).read_text()
         assert restored_config_content == original_config_content
 
-    def test_update_failure_rolls_back_registry_hooks_and_commands(self, tmp_path):
+    def test_update_failure_rolls_back_registry_hooks_and_commands(self, tmp_path, monkeypatch):
         """Failed update should restore original registry, hooks, and command files."""
         from typer.testing import CliRunner
         from unittest.mock import patch
         from specify_cli import app
         import yaml
+
+        # Isolate home directory so Hermes' global ~/.hermes/skills/ doesn't
+        # interfere — without a real skills dir, Hermes is skipped during
+        # command registration, keeping the test focused on Claude/Codex/etc.
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
 
         runner = CliRunner()
         project_dir = tmp_path / "project"
@@ -3667,7 +4034,9 @@ class TestExtensionUpdateCLI:
             if agent_name not in agent_registrar.AGENT_CONFIGS:
                 continue
             agent_cfg = agent_registrar.AGENT_CONFIGS[agent_name]
-            commands_dir = project_dir / agent_cfg["dir"]
+            commands_dir = AgentRegistrar._resolve_agent_dir(
+                agent_name, agent_cfg, project_dir
+            )
             for cmd_name in cmd_names:
                 output_name = AgentRegistrar._compute_output_name(agent_name, cmd_name, agent_cfg)
                 cmd_path = commands_dir / f"{output_name}{agent_cfg['extension']}"

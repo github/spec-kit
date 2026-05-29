@@ -24,6 +24,16 @@ from ..base import IntegrationBase, IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
 
 
+def _copilot_executable() -> str:
+    """Return the executable name for Copilot CLI on this platform.
+
+    On Windows, subprocess invocation is reliable with `copilot.cmd`.
+    """
+    if os.name == "nt":
+        return "copilot.cmd"
+    return "copilot"
+
+
 def _allow_all() -> bool:
     """Return True if the Copilot CLI should run with full permissions.
 
@@ -124,6 +134,18 @@ class CopilotIntegration(IntegrationBase):
             ),
         ]
 
+    def _resolve_executable(self) -> str:
+        """Return the Copilot CLI executable, respecting the env-var override.
+
+        Checks ``SPECKIT_INTEGRATION_COPILOT_EXECUTABLE`` first.  Falls
+        back to the platform-specific default from ``_copilot_executable()``
+        (``copilot.cmd`` on Windows, ``copilot`` elsewhere) so that
+        existing behaviour is preserved when the env var is unset.
+        """
+        env_name = "SPECKIT_INTEGRATION_COPILOT_EXECUTABLE"
+        override = os.environ.get(env_name, "").strip()
+        return override if override else _copilot_executable()
+
     def build_exec_args(
         self,
         prompt: str,
@@ -138,7 +160,8 @@ class CopilotIntegration(IntegrationBase):
         # Controlled by SPECKIT_COPILOT_ALLOW_ALL_TOOLS env var
         # (default: enabled).  The deprecated SPECKIT_ALLOW_ALL_TOOLS
         # is also honoured as a fallback.
-        args = ["copilot", "-p", prompt]
+        args = [self._resolve_executable(), "-p", prompt]
+        self._apply_extra_args_env_var(args)
         if _allow_all():
             args.append("--yolo")
         if model:
@@ -206,7 +229,12 @@ class CopilotIntegration(IntegrationBase):
             agent_name = f"speckit.{stem}"
             prompt = args or ""
 
-        cli_args = ["copilot", "-p", prompt]
+        cli_args = [self._resolve_executable(), "-p", prompt]
+        # Honour SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS for real workflow
+        # runs.  `dispatch_command` builds cli_args inline rather than
+        # going through `build_exec_args`, so the hook must be invoked
+        # here too — otherwise the env var is silently ignored.
+        self._apply_extra_args_env_var(cli_args)
         if not skills_mode:
             cli_args.extend(["--agent", agent_name])
         if _allow_all():
@@ -255,12 +283,13 @@ class CopilotIntegration(IntegrationBase):
         return f"speckit.{template_name}.agent.md"
 
     def post_process_skill_content(self, content: str) -> str:
-        """Inject Copilot-specific ``mode:`` field into SKILL.md frontmatter.
+        """Inject shared hook guidance and Copilot ``mode:`` frontmatter.
 
         Inserts ``mode: speckit.<stem>`` before the closing ``---`` so
         Copilot can associate the skill with its agent mode.
         """
-        lines = content.splitlines(keepends=True)
+        updated = _CopilotSkillsHelper().post_process_skill_content(content)
+        lines = updated.splitlines(keepends=True)
 
         # Extract skill name from frontmatter to derive the mode value
         dash_count = 0
@@ -274,7 +303,7 @@ class CopilotIntegration(IntegrationBase):
                 continue
             if dash_count == 1:
                 if stripped.startswith("mode:"):
-                    return content  # already present
+                    return updated  # already present
                 if stripped.startswith("name:"):
                     # Parse: name: "speckit-plan" → speckit.plan
                     val = stripped.split(":", 1)[1].strip().strip('"').strip("'")
@@ -285,7 +314,7 @@ class CopilotIntegration(IntegrationBase):
                         skill_name = val
 
         if not skill_name:
-            return content
+            return updated
 
         # Inject mode: before the closing --- of frontmatter
         out: list[str] = []

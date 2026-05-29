@@ -8,7 +8,7 @@ from unittest.mock import patch
 import yaml
 
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
-from specify_cli.integrations.base import IntegrationBase
+from specify_cli.integrations.base import IntegrationBase, SkillsIntegration
 from specify_cli.integrations.claude import ARGUMENT_HINTS
 from specify_cli.integrations.manifest import IntegrationManifest
 
@@ -197,8 +197,8 @@ class TestClaudeIntegration:
             os.chdir(project)
             runner = CliRunner()
             with (
-                patch("specify_cli._stdin_is_interactive", return_value=True),
-                patch("specify_cli.select_with_arrows", return_value="claude"),
+                patch("specify_cli.commands.init._stdin_is_interactive", return_value=True),
+                patch("specify_cli.commands.init.select_with_arrows", return_value="claude"),
             ):
                 result = runner.invoke(
                     app,
@@ -487,13 +487,15 @@ class TestClaudeDisableModelInvocation:
         assert "disable-model-invocation" not in fm
         assert "user-invocable" not in fm
 
-    def test_non_claude_post_process_is_identity(self, tmp_path):
-        """Non-Claude integrations should not modify skill content."""
-        codex = get_integration("codex")
-        if codex is None:
-            return  # codex not registered in this build
+    def test_skills_default_post_process_preserves_content_without_hooks(self, tmp_path):
+        """SkillsIntegration agents without an override preserve non-hook content."""
+        # ``agy`` is a plain SkillsIntegration with no post-process override,
+        # so it stands in for the base-class default behavior.
+        agy = get_integration("agy")
+        if agy is None:
+            return  # agy not registered in this build
         content = "---\nname: test\n---\nBody"
-        assert codex.post_process_skill_content(content) == content
+        assert agy.post_process_skill_content(content) == content
 
 
 class TestClaudeHookCommandNote:
@@ -503,7 +505,7 @@ class TestClaudeHookCommandNote:
         """Skills that have hook sections should get the normalization note."""
         i = get_integration("claude")
         m = IntegrationManifest("claude", tmp_path)
-        created = i.setup(tmp_path, m, script_type="sh")
+        i.setup(tmp_path, m, script_type="sh")
         specify_skill = tmp_path / ".claude/skills/speckit-specify/SKILL.md"
         assert specify_skill.exists()
         content = specify_skill.read_text(encoding="utf-8")
@@ -514,35 +516,54 @@ class TestClaudeHookCommandNote:
 
     def test_hook_note_not_in_skills_without_hooks(self, tmp_path):
         """Skills without hook sections should not get the note."""
-        from specify_cli.integrations.claude import ClaudeIntegration
-
         content = "---\nname: test\ndescription: test\n---\n\nNo hooks here.\n"
-        result = ClaudeIntegration._inject_hook_command_note(content)
+        result = SkillsIntegration._inject_hook_command_note(content)
         assert "replace dots" not in result
 
     def test_hook_note_idempotent(self, tmp_path):
         """Injecting the note twice should not duplicate it."""
-        from specify_cli.integrations.claude import ClaudeIntegration
-
         content = (
             "---\nname: test\n---\n\n"
             "- For each executable hook, output the following based on its flag:\n"
         )
-        once = ClaudeIntegration._inject_hook_command_note(content)
-        twice = ClaudeIntegration._inject_hook_command_note(once)
+        once = SkillsIntegration._inject_hook_command_note(content)
+        twice = SkillsIntegration._inject_hook_command_note(once)
         assert once == twice, "Hook note injection should be idempotent"
+
+    def test_hook_note_fills_missing_repeated_instructions(self, tmp_path):
+        """Already-noted hook sections should not suppress later sections."""
+        from specify_cli.integrations.base import _HOOK_COMMAND_NOTE
+
+        content = (
+            "---\nname: test\n---\n\n"
+            f"{_HOOK_COMMAND_NOTE}"
+            "- For each executable hook, output the following based on its flag:\n"
+            "\n"
+            "  - For each executable hook, output the following based on its flag:\n"
+        )
+        result = SkillsIntegration._inject_hook_command_note(content)
+        assert result.count("replace dots (`.`) with hyphens") == 2
+
+    def test_hook_note_not_suppressed_by_unrelated_phrase(self, tmp_path):
+        """Unrelated text should not trip the hook-note idempotence guard."""
+        content = (
+            "---\nname: test\n---\n\n"
+            "This paragraph says replace dots in a different context.\n"
+            "- For each executable hook, output the following based on its flag:\n"
+        )
+        result = SkillsIntegration._inject_hook_command_note(content)
+        assert "This paragraph says replace dots in a different context." in result
+        assert result.count("replace dots (`.`) with hyphens") == 1
 
     def test_hook_note_preserves_indentation(self, tmp_path):
         """The injected note should match the indentation of the target line."""
-        from specify_cli.integrations.claude import ClaudeIntegration
-
         content = (
             "---\nname: test\n---\n\n"
             "   - For each executable hook, output the following\n"
         )
-        result = ClaudeIntegration._inject_hook_command_note(content)
+        result = SkillsIntegration._inject_hook_command_note(content)
         lines = result.splitlines()
-        note_line = [l for l in lines if "replace dots" in l][0]
+        note_line = [line for line in lines if "replace dots" in line][0]
         assert note_line.startswith("   "), "Note should preserve indentation"
 
     def test_post_process_injects_all_claude_flags(self):

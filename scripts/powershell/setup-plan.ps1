@@ -33,15 +33,25 @@ if (-not (Test-FeatureJsonMatchesFeatureDir -RepoRoot $paths.REPO_ROOT -ActiveFe
 # Ensure the feature directory exists
 New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 
-# Copy plan template if it exists, otherwise note it or create empty file
-$template = Resolve-Template -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
-if ($template -and (Test-Path $template)) { 
-    Copy-Item $template $paths.IMPL_PLAN -Force
-    Write-Output "Copied plan template to $($paths.IMPL_PLAN)"
+# Copy plan template if plan doesn't already exist
+if (Test-Path $paths.IMPL_PLAN -PathType Leaf) {
+    if ($Json) {
+        [Console]::Error.WriteLine("Plan already exists at $($paths.IMPL_PLAN), skipping template copy")
+    } else {
+        Write-Output "Plan already exists at $($paths.IMPL_PLAN), skipping template copy"
+    }
 } else {
-    Write-Warning "Plan template not found"
-    # Create a basic plan file if template doesn't exist
-    New-Item -ItemType File -Path $paths.IMPL_PLAN -Force | Out-Null
+    $template = Resolve-Template -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
+    if ($template -and (Test-Path $template)) {
+        # Read the template content and write it to the implementation plan file with UTF-8 encoding without BOM
+        $content = [System.IO.File]::ReadAllText($template)
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
+    } else {
+        Write-Warning "Plan template not found"
+        # Create a basic plan file if template doesn't exist
+        New-Item -ItemType File -Path $paths.IMPL_PLAN -Force | Out-Null
+    }
 }
 
 # Output results

@@ -197,13 +197,24 @@ Execution steps:
 
 7. Write the updated spec back to `FEATURE_SPEC`.
 
-8. Report completion (after questioning loop ends or early termination):
-   - Number of questions asked & answered.
-   - Path to updated spec.
-   - Sections touched (list names).
-   - Coverage summary table listing each taxonomy category with Status: Resolved (was Partial/Missing and addressed), Deferred (exceeds question quota or better suited for planning), Clear (already sufficient), Outstanding (still Partial/Missing but low impact).
-   - If any Outstanding or Deferred remain, recommend whether to proceed to `__SPECKIT_COMMAND_PLAN__` or run `__SPECKIT_COMMAND_CLARIFY__` again later post-plan.
-   - Suggested next command.
+8. **Re-validate Spec Quality Checklist** (if it exists):
+   - Check if `FEATURE_DIR/checklists/requirements.md` exists.
+   - If it does NOT exist, skip this step silently.
+   - If it exists:
+     1. Read the checklist file.
+     2. Identify all GitHub task-list checkbox lines — lines matching `- [ ]`, `- [x]`, or `- [X]` (case-insensitive, tolerant of leading whitespace for nested items) outside of code fences. Ignore all other content (headings, notes, non-checkbox bullets, metadata).
+     3. For each checkbox line, record its current marker state (checked or unchecked) and item text into a before-snapshot list.
+     4. Re-evaluate each checkbox item against the **updated** spec (the version just saved in step 7).
+     5. For each checkbox item, update only if the checked/unchecked state actually changes:
+        - If the item now passes and was unchecked: change `[ ]` to `[x]`.
+        - If the item now fails and was checked: change `[x]`/`[X]` to `[ ]`.
+        - If the state is unchanged: leave the marker as-is (preserve existing case to avoid cosmetic diffs).
+     6. Save the updated checklist file. **Only toggle the `[ ]`/`[x]` marker portion of checkbox lines whose state changed.** All other file content — headings, metadata, notes, line ordering, whitespace — must remain unchanged to avoid noisy diffs.
+     7. Compare the before-snapshot with the current state to compute three lists for the Completion Report:
+        - **Newly passing**: items that changed from unchecked to checked.
+        - **Regressions**: items that changed from checked to unchecked.
+        - **Still unchecked**: items that remain unchecked.
+     8. Record the before/after pass counts as checked/total checkbox items (e.g., "12/16 → 15/16 items passing").
 
 Behavior rules:
 
@@ -217,17 +228,27 @@ Behavior rules:
 
 Context for prioritization: {ARGS}
 
-## Post-Execution Checks
+## Mandatory Post-Execution Hooks
 
-**Check for extension hooks (after clarification)**:
+**You MUST complete this section before reporting completion to the user.**
+
 Check if `.specify/extensions.yml` exists in the project root.
-- If it exists, read it and look for entries under the `hooks.after_clarify` key
-- If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
+- If it does not exist, or no hooks are registered under `hooks.after_clarify`, skip to the Completion Report.
+- If it exists, read it and look for entries under the `hooks.after_clarify` key.
+- If the YAML cannot be parsed or is invalid, skip hook checking silently and continue to the Completion Report.
 - Filter out hooks where `enabled` is explicitly `false`. Treat hooks without an `enabled` field as enabled by default.
 - For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
   - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
   - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
 - For each executable hook, output the following based on its `optional` flag:
+  - **Mandatory hook** (`optional: false`) — **You MUST emit `EXECUTE_COMMAND:` for each mandatory hook**:
+    ```
+    ## Extension Hooks
+
+    **Automatic Hook**: {extension}
+    Executing: `/{command}`
+    EXECUTE_COMMAND: {command}
+    ```
   - **Optional hook** (`optional: true`):
     ```
     ## Extension Hooks
@@ -239,12 +260,21 @@ Check if `.specify/extensions.yml` exists in the project root.
     Prompt: {prompt}
     To execute: `/{command}`
     ```
-  - **Mandatory hook** (`optional: false`):
-    ```
-    ## Extension Hooks
 
-    **Automatic Hook**: {extension}
-    Executing: `/{command}`
-    EXECUTE_COMMAND: {command}
-    ```
-- If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
+## Completion Report
+
+Report completion (after questioning loop ends or early termination):
+- Number of questions asked & answered.
+- Path to updated spec.
+- Sections touched (list names).
+- Spec quality checklist status (if `FEATURE_DIR/checklists/requirements.md` was re-validated): show before/after pass counts (e.g., "Spec Quality Checklist: 12/16 → 15/16 items passing") and list any items that changed state — both newly checked (unchecked → checked) and any regressions (checked → unchecked). If any items remain unchecked, list them as areas needing attention.
+- Coverage summary table listing each taxonomy category with Status: Resolved (was Partial/Missing and addressed), Deferred (exceeds question quota or better suited for planning), Clear (already sufficient), Outstanding (still Partial/Missing but low impact).
+- If any Outstanding or Deferred remain, recommend whether to proceed to `__SPECKIT_COMMAND_PLAN__` or run `__SPECKIT_COMMAND_CLARIFY__` again later post-plan.
+- Suggested next command.
+
+## Done When
+
+- [ ] Spec ambiguities identified and clarifications integrated into spec file
+- [ ] Spec quality checklist re-validated against updated spec (if `FEATURE_DIR/checklists/requirements.md` exists)
+- [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
+- [ ] Completion reported to user with questions answered, sections touched, checklist status, and coverage summary

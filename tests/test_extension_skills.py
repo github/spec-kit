@@ -11,6 +11,7 @@ Tests cover:
 """
 
 import json
+import os
 import pytest
 import tempfile
 import shutil
@@ -116,6 +117,18 @@ def _create_extension_dir(temp_dir: Path, ext_id: str = "test-ext") -> Path:
     return ext_dir
 
 
+def _can_create_symlink(temp_dir: Path) -> bool:
+    """Return True when the current platform/user can create file symlinks."""
+    target = temp_dir / "symlink-target.txt"
+    link = temp_dir / "symlink-link.txt"
+    target.write_text("ok", encoding="utf-8")
+    try:
+        os.symlink(target, link)
+    except OSError:
+        return False
+    return link.is_symlink()
+
+
 # ===== Fixtures =====
 
 @pytest.fixture
@@ -173,24 +186,32 @@ class TestExtensionManagerGetSkillsDir:
         assert result == skills_dir
 
     def test_returns_none_when_no_ai_skills(self, no_skills_project):
-        """Should return None when ai_skills is false."""
+        """Should return None when ai_skills is false and not create the dir."""
         manager = ExtensionManager(no_skills_project)
         result = manager._get_skills_dir()
         assert result is None
+        # Ensure the directory was NOT created on disk
+        from specify_cli import _get_skills_dir as resolve_skills_dir
+        skills_path = resolve_skills_dir(no_skills_project, "claude")
+        assert not skills_path.exists()
 
     def test_returns_none_when_no_init_options(self, project_dir):
-        """Should return None when init-options.json is missing."""
+        """Should return None when init-options.json is missing and not create any dir."""
         manager = ExtensionManager(project_dir)
         result = manager._get_skills_dir()
         assert result is None
+        # No agent skills directory should have been created
+        assert not (project_dir / ".claude" / "skills").exists()
+        assert not (project_dir / ".agents" / "skills").exists()
 
-    def test_returns_none_when_skills_dir_missing(self, project_dir):
-        """Should return None when skills dir doesn't exist on disk."""
+    def test_creates_skills_dir_on_demand(self, project_dir):
+        """Should create skills dir when ai_skills is enabled but dir is missing."""
         _create_init_options(project_dir, ai="claude", ai_skills=True)
-        # Don't create the skills directory
+        # Don't create the skills directory — _get_skills_dir should do it
         manager = ExtensionManager(project_dir)
         result = manager._get_skills_dir()
-        assert result is None
+        assert result is not None
+        assert result.is_dir()
 
     def test_returns_kimi_skills_dir_when_ai_skills_disabled(self, project_dir):
         """Kimi should still use its native skills dir when ai_skills is false."""
@@ -315,6 +336,149 @@ class TestExtensionSkillRegistration:
         assert "speckit-test-ext-world" in metadata["registered_skills"]
         # The pre-existing one should NOT be in registered_skills (it was skipped)
         assert "speckit-test-ext-hello" not in metadata["registered_skills"]
+
+    def test_dev_skill_symlink_refreshes_existing_cache(
+        self, skills_project, extension_dir, temp_dir
+    ):
+        """Dev-mode skill symlinks should refresh rendered cache content."""
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        project_dir, skills_dir = skills_project
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        assert skill_file.is_symlink()
+        assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+
+        (extension_dir / "commands" / "hello.md").write_text(
+            "---\n"
+            "description: \"Updated test hello command\"\n"
+            "---\n"
+            "\n"
+            "# Hello Command\n"
+            "\n"
+            "Run this updated hello.\n"
+        )
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        assert "speckit-test-ext-hello" in written
+        assert "Run this updated hello." in skill_file.read_text(encoding="utf-8")
+
+    def test_dev_skill_registration_falls_back_to_copy_when_symlink_fails(
+        self, skills_project, extension_dir, monkeypatch
+    ):
+        """Dev-mode skill registration works when Windows cannot create symlinks."""
+        project_dir, skills_dir = skills_project
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        def raise_windows_symlink_error(target, link):
+            raise OSError("A required privilege is not held by the client")
+
+        monkeypatch.setattr(
+            "specify_cli.extensions.os.symlink", raise_windows_symlink_error
+        )
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        assert "speckit-test-ext-hello" in written
+        assert skill_file.exists()
+        assert not skill_file.is_symlink()
+        assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+        assert (
+            extension_dir
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        ).exists()
+
+    def test_dev_skill_registration_falls_back_to_copy_when_relpath_fails(
+        self, skills_project, extension_dir, monkeypatch
+    ):
+        """Dev-mode skill registration stays functional across Windows drive roots."""
+        project_dir, skills_dir = skills_project
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        def raise_relpath_error(path, start=None):
+            raise ValueError("path is on mount 'D:', start on mount 'C:'")
+
+        monkeypatch.setattr(
+            "specify_cli.extensions.os.path.relpath", raise_relpath_error
+        )
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        assert "speckit-test-ext-hello" in written
+        assert skill_file.exists()
+        assert not skill_file.is_symlink()
+        assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+        assert (
+            extension_dir
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        ).exists()
+
+    def test_dev_skill_registration_falls_back_to_copy_when_cache_write_fails(
+        self, skills_project, extension_dir, monkeypatch
+    ):
+        """Dev-mode skill registration stays functional when the dev cache is unwritable."""
+        project_dir, skills_dir = skills_project
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        original_write_text = Path.write_text
+
+        def raise_cache_write_error(path, *args, **kwargs):
+            if ".specify-dev" in path.parts:
+                raise OSError("cache is not writable")
+            return original_write_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", raise_cache_write_error)
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        assert "speckit-test-ext-hello" in written
+        assert skill_file.exists()
+        assert not skill_file.is_symlink()
+        assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+        assert not (
+            extension_dir
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        ).exists()
 
     def test_registered_skills_in_registry(self, skills_project, extension_dir):
         """Registry should contain registered_skills list."""
@@ -459,6 +623,38 @@ class TestExtensionSkillRegistration:
         metadata = manager.registry.get(manifest.id)
         assert "speckit-missing-cmd-ext-exists" in metadata["registered_skills"]
         assert "speckit-missing-cmd-ext-ghost" not in metadata["registered_skills"]
+
+    @pytest.mark.parametrize("ai", ["claude", "codex"])
+    def test_skills_registered_when_dir_missing(self, project_dir, temp_dir, ai):
+        """Extension add should create skills dir on demand and register skills.
+
+        Regression test for https://github.com/github/spec-kit/issues/2682:
+        when an extension is installed before the agent skills directory exists,
+        skills must still be materialized (the directory is created on demand).
+        """
+        _create_init_options(project_dir, ai=ai, ai_skills=True)
+        # Deliberately do NOT create the skills directory
+        ext_dir = _create_extension_dir(temp_dir, ext_id="early-ext")
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            ext_dir, "0.1.0", register_commands=False
+        )
+
+        # Skills dir should have been created automatically
+        from specify_cli import _get_skills_dir as resolve_skills_dir
+        skills_dir = resolve_skills_dir(project_dir, ai)
+        assert skills_dir.is_dir()
+
+        # SKILL.md files should exist
+        assert (skills_dir / "speckit-early-ext-hello" / "SKILL.md").exists()
+        assert (skills_dir / "speckit-early-ext-world" / "SKILL.md").exists()
+
+        # Registry should record them
+        metadata = manager.registry.get(manifest.id)
+        assert len(metadata["registered_skills"]) == 2
+        assert "speckit-early-ext-hello" in metadata["registered_skills"]
+        assert "speckit-early-ext-world" in metadata["registered_skills"]
 
 
 # ===== Extension Skill Unregistration Tests =====

@@ -186,7 +186,7 @@ read_feature_json_feature_directory() {
 }
 
 # Returns 0 when .specify/feature.json lists feature_directory that exists as a directory
-# and matches the resolved active FEATURE_DIR (so /speckit.plan can skip git branch pattern checks).
+# and matches the resolved active FEATURE_DIR (so __SPECKIT_COMMAND_PLAN__ can skip git branch pattern checks).
 # Delegates parsing to read_feature_json_feature_directory, which is safe under `set -e`.
 feature_json_matches_feature_dir() {
     local repo_root="$1"
@@ -262,7 +262,7 @@ get_feature_paths() {
 
     # Resolve feature directory.  Priority:
     #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit override)
-    #   2. .specify/feature.json "feature_directory" key (persisted by /speckit.specify)
+    #   2. .specify/feature.json "feature_directory" key (persisted by __SPECKIT_COMMAND_SPECIFY__)
     #   3. Branch-name-based prefix lookup (legacy fallback)
     local feature_dir
     if [[ -n "${SPECIFY_FEATURE_DIRECTORY:-}" ]]; then
@@ -642,4 +642,3 @@ except Exception:
     printf '%s' "$content"
     return 0
 }
-

@@ -14,7 +14,9 @@ Provides:
 from __future__ import annotations
 
 import json
+import os
 import re
+import shlex
 import shutil
 from abc import ABC
 from dataclasses import dataclass
@@ -25,6 +27,12 @@ import yaml
 
 if TYPE_CHECKING:
     from .manifest import IntegrationManifest
+
+_HOOK_COMMAND_NOTE = (
+    "- When constructing slash commands from hook command names, "
+    "replace dots (`.`) with hyphens (`-`). "
+    "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +146,65 @@ class IntegrationBase(ABC):
         Subclasses for CLI-based integrations should override this.
         """
         return None
+
+    def _resolve_executable(self) -> str:
+        """Return the executable for this integration's CLI tool.
+
+        Checks ``SPECKIT_INTEGRATION_<KEY>_EXECUTABLE`` first, allowing
+        operators to override the binary path without modifying the
+        integration configuration — useful when the tool is installed in
+        a non-standard location or a specific version must be pinned.
+        Hyphens in the integration key are replaced with underscores and
+        the key is uppercased so that, for example, ``kiro-cli`` maps to
+        ``SPECKIT_INTEGRATION_KIRO_CLI_EXECUTABLE``.
+
+        Falls back to ``self.key`` when the env var is unset or
+        whitespace-only so existing behaviour is unchanged.
+
+        See issue #2596.
+        """
+        env_name = (
+            f"SPECKIT_INTEGRATION_{self.key.upper().replace('-', '_')}_EXECUTABLE"
+        )
+        override = os.environ.get(env_name, "").strip()
+        return override if override else self.key
+
+    def _apply_extra_args_env_var(self, args: list[str]) -> None:
+        """Append `SPECKIT_INTEGRATION_<KEY>_EXTRA_ARGS` env-var value to *args*.
+
+        Operators can inject extra CLI flags into the spawned agent
+        subprocess by setting an env var named for the integration key,
+        e.g. `SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS="--dangerously-skip-permissions"`.
+        The `INTEGRATION` segment scopes the variable to this subsystem
+        so it does not collide with other Spec Kit env-var namespaces.
+        Hyphens in the integration key are replaced with underscores
+        and the key is uppercased
+        (e.g. `kiro-cli` → `SPECKIT_INTEGRATION_KIRO_CLI_EXTRA_ARGS`).
+
+        Useful in CI / non-interactive contexts where the spawned agent
+        needs flags that change its prompt-handling behaviour.
+        Default behaviour (env var unset or whitespace-only) is a no-op
+        — *args* is unchanged. Multi-token values are parsed via
+        `shlex.split`.
+
+        See issue #2595.
+        """
+        env_name = (
+            f"SPECKIT_INTEGRATION_{self.key.upper().replace('-', '_')}_EXTRA_ARGS"
+        )
+        extra = os.environ.get(env_name, "").strip()
+        if not extra:
+            return
+        try:
+            tokens = shlex.split(extra)
+        except ValueError as exc:
+            raise ValueError(
+                f"{env_name} is not parseable as a POSIX-quoted command line "
+                f"(value: {extra!r}). shlex reported: {exc}. "
+                f"Use single or double quotes to group multi-word values, e.g. "
+                f'{env_name}=\'--flag "value with spaces"\'.'
+            ) from exc
+        args.extend(tokens)
 
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
         """Build the native slash-command invocation for a Spec Kit command.
@@ -951,7 +1018,8 @@ class MarkdownIntegration(IntegrationBase):
     ) -> list[str] | None:
         if not self.config or not self.config.get("requires_cli"):
             return None
-        args = [self.key, "-p", prompt]
+        args = [self._resolve_executable(), "-p", prompt]
+        self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])
         if output_json:
@@ -1038,7 +1106,8 @@ class TomlIntegration(IntegrationBase):
     ) -> list[str] | None:
         if not self.config or not self.config.get("requires_cli"):
             return None
-        args = [self.key, "-p", prompt]
+        args = [self._resolve_executable(), "-p", prompt]
+        self._apply_extra_args_env_var(args)
         if model:
             args.extend(["-m", model])
         if output_json:
@@ -1456,7 +1525,8 @@ class SkillsIntegration(IntegrationBase):
     ) -> list[str] | None:
         if not self.config or not self.config.get("requires_cli"):
             return None
-        args = [self.key, "-p", prompt]
+        args = [self._resolve_executable(), "-p", prompt]
+        self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])
         if output_json:
@@ -1492,15 +1562,53 @@ class SkillsIntegration(IntegrationBase):
             invocation = f"{invocation} {args}"
         return invocation
 
+    @staticmethod
+    def _inject_hook_command_note(content: str) -> str:
+        """Insert a dot-to-hyphen note before each hook output instruction.
+
+        Targets the line ``- For each executable hook, output the following``
+        and inserts the note on the line before it, matching its indentation.
+        Skips individual instructions that already have the note immediately
+        above them.
+        """
+        note = _HOOK_COMMAND_NOTE.rstrip("\n")
+
+        def repl(m: re.Match[str]) -> str:
+            indent = m.group(1)
+            instruction = m.group(2)
+            previous_lines = content[:m.start()].splitlines()
+            if previous_lines and previous_lines[-1] == indent + note:
+                return m.group(0)
+            # ``eol`` is empty when the regex matched via ``$`` because the
+            # instruction was the final line of a file with no trailing
+            # newline. Default to ``\n`` so the note never collapses onto
+            # the same line as the instruction.
+            eol = m.group(3) or "\n"
+            return (
+                indent
+                + note
+                + eol
+                + indent
+                + instruction
+                + eol
+            )
+
+        return re.sub(
+            r"(?m)^([ \t]*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
+            repl,
+            content,
+        )
+
     def post_process_skill_content(self, content: str) -> str:
         """Post-process a SKILL.md file's content after generation.
 
         Called by external skill generators (presets, extensions) to let
         the integration inject agent-specific frontmatter or body
-        transformations.  The default implementation returns *content*
-        unchanged.  Subclasses may override — see ``ClaudeIntegration``.
+        transformations.  The base implementation injects shared skills
+        guidance for converting dotted hook command names to hyphenated
+        slash commands.  Subclasses may override — see ``ClaudeIntegration``.
         """
-        return content
+        return self._inject_hook_command_note(content)
 
     def setup(
         self,
@@ -1602,6 +1710,8 @@ class SkillsIntegration(IntegrationBase):
                 f"---\n"
                 f"{processed_body}"
             )
+
+            skill_content = self.post_process_skill_content(skill_content)
 
             # Write speckit-<name>/SKILL.md
             skill_dir = skills_dir / skill_name
