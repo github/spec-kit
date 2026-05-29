@@ -342,7 +342,7 @@ def _save_agent_context_config(
     """Persist *config* to the agent-context extension config file."""
     path = project_root / _AGENT_CTX_EXT_CONFIG
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(config, default_flow_style=False), encoding="utf-8")
+    path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False), encoding="utf-8")
 
 
 def _update_agent_context_config_file(

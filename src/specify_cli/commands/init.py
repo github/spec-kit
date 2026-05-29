@@ -537,8 +537,6 @@ def register(app: typer.Typer) -> None:
                     sanitized_wf = str(wf_err).replace('\n', ' ').strip()
                     tracker.error("workflow", f"install failed: {sanitized_wf[:120]}")
 
-                ensure_executable_scripts(project_path, tracker=tracker)
-
                 init_opts = {
                     "ai": selected_ai,
                     "integration": resolved_integration.key,
@@ -583,8 +581,10 @@ def register(app: typer.Typer) -> None:
                     _update_agent_context_config_file(
                         project_path,
                         resolved_integration.context_file,
-                        preserve_markers=False,
+                        preserve_markers=True,
                     )
+
+                ensure_executable_scripts(project_path, tracker=tracker)
 
                 if preset:
                     try:

@@ -77,8 +77,12 @@ if ($null -eq $Options) {
     $pythonCmd = $null
     foreach ($candidate in @('python3', 'python')) {
         if (Get-Command $candidate -ErrorAction SilentlyContinue) {
-            $pythonCmd = $candidate
-            break
+            # Verify it is Python 3
+            $verOut = & $candidate --version 2>&1
+            if ($verOut -match 'Python 3') {
+                $pythonCmd = $candidate
+                break
+            }
         }
     }
 
