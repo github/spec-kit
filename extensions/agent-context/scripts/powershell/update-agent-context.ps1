@@ -140,9 +140,14 @@ if (-not $ContextFile) {
     exit 0
 }
 
-# Reject absolute paths and path traversal in context_file
-if ([System.IO.Path]::IsPathRooted($ContextFile) -or $ContextFile.Contains('..')) {
-    Write-Warning "agent-context: context_file must be a project-relative path without '..' segments; got '$ContextFile'."
+# Reject absolute paths and '..' path segments in context_file
+if ([System.IO.Path]::IsPathRooted($ContextFile)) {
+    Write-Warning "agent-context: context_file must be a project-relative path; got '$ContextFile'."
+    exit 1
+}
+$cfSegments = $ContextFile -split '[/\\]'
+if ($cfSegments -contains '..') {
+    Write-Warning "agent-context: context_file must not contain '..' path segments; got '$ContextFile'."
     exit 1
 }
 

@@ -584,7 +584,7 @@ class IntegrationBase(ABC):
         entry = extensions.get("agent-context")
         if not isinstance(entry, dict):
             return True
-        return bool(entry.get("enabled", True))
+        return entry.get("enabled", True) is not False
 
     def _resolve_context_markers(self, project_root: Path) -> tuple[str, str]:
         """Return the (start, end) context markers to use for *project_root*.
@@ -651,7 +651,8 @@ class IntegrationBase(ABC):
         when present, falling back to the class-level constants.
 
         Returns the path to the context file, or ``None`` when
-        ``context_file`` is not set.
+        ``context_file`` is not set or the ``agent-context`` extension is
+        disabled.
         """
         if not self.context_file:
             return None
