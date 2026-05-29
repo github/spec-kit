@@ -4,10 +4,10 @@
 The hooks are implemented in `IntegrationBase._apply_extra_args_env_var` and
 `IntegrationBase._resolve_executable` and wired into every concrete
 `build_exec_args` — `MarkdownIntegration`, `TomlIntegration`,
-`SkillsIntegration`, plus the overrides in Codex, Devin, Opencode and Copilot.
+`SkillsIntegration`, plus override integrations.
 These tests cover both the shared mechanisms (via `SkillsIntegration` stubs
-near the top of the file) and each override integration end-to-end (further
-down). See issues #2595 and #2596."""
+near the top of the file) and override integrations end-to-end (further down).
+See issues #2595 and #2596."""
 
 import os
 
@@ -488,9 +488,9 @@ def test_codex_dispatch_command_includes_extra_args(monkeypatch):
 # The `_resolve_executable()` method on `IntegrationBase` checks
 # `SPECKIT_INTEGRATION_<KEY>_EXECUTABLE` and, when set, substitutes that
 # value for `self.key` as the first token in argv.  The tests below lock
-# the behaviour for all integration paths:
+# the behaviour across shared and override integration paths:
 #   - the shared SkillsIntegration/MarkdownIntegration/TomlIntegration bases,
-#   - each override integration (Codex, Devin, Opencode, Copilot),
+#   - representative override integrations,
 #   - the hyphen→underscore key normalisation, and
 #   - whitespace/unset no-op guarantee.
 # ---------------------------------------------------------------------------
