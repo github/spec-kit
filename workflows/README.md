@@ -226,8 +226,9 @@ at runtime halts the entire run — most commonly a `shell` or
 `command` step exiting non-zero. Set `continue_on_error: true` on
 a step to record its result and continue to the next sibling step
 instead. When the failure was a non-zero exit, the exit code
-remains available on `steps.<id>.output.exit_code` so downstream
-`if`, `switch`, or `gate` steps can branch on it:
+remains available on `steps.<id>.output.exit_code` so a downstream
+`if` or `switch` can branch on it (or a `gate` can surface it to
+the operator via `{{ }}` interpolation in `message`):
 
 ```yaml
 - id: heavy-thing

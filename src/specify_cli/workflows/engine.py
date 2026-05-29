@@ -233,10 +233,12 @@ def _validate_steps(
 
         # Validate optional `continue_on_error` field. The engine honours
         # this on any step that returns FAILED so the pipeline can route
-        # around the failure via downstream `if`/`switch`/`gate`. The
-        # field must be a literal boolean — coercion from truthy strings
-        # is deliberately not supported so authoring mistakes surface
-        # at validation time rather than silently changing run semantics.
+        # around the failure via a downstream `if` or `switch` (or a
+        # `gate` that surfaces the failure to the operator via message
+        # interpolation). The field must be a literal boolean —
+        # coercion from truthy strings is deliberately not supported so
+        # authoring mistakes surface at validation time rather than
+        # silently changing run semantics.
         if "continue_on_error" in step_config:
             coe = step_config["continue_on_error"]
             if not isinstance(coe, bool):
@@ -654,10 +656,11 @@ class WorkflowEngine:
                 # `continue_on_error: true` lets the pipeline route
                 # around the failure instead of halting. The step
                 # result (including exit_code, stderr, status) is
-                # still recorded so downstream `if`/`switch`/`gate`
-                # steps can branch on it. Log a single, unambiguous
-                # event per failure resolution — either the run
-                # continued past it, or it halted.
+                # still recorded so a downstream `if` or `switch`
+                # can branch on it (or a `gate` can surface it to the
+                # operator via message interpolation). Log a single,
+                # unambiguous event per failure resolution — either
+                # the run continued past it, or it halted.
                 #
                 # Use identity comparison (`is True`) rather than
                 # truthiness so that only a literal boolean enables
