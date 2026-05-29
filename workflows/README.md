@@ -242,18 +242,36 @@ remains available on `steps.<id>.output.exit_code` so downstream
   then:
     - id: review
       type: gate
-      message: "Step failed (exit {{ steps.heavy-thing.output.exit_code }}). Approve to continue, or reject to skip the rest of this branch."
+      message: "Step failed (exit {{ steps.heavy-thing.output.exit_code }}). Approve to run the recovery path, or reject to leave the failure recorded and move on."
       on_reject: skip
+    - id: recover
+      type: if
+      condition: "{{ steps.review.output.choice == 'approve' }}"
+      then:
+        - id: rerun
+          command: speckit.recovery
   else:
     - id: next-thing
       command: speckit.next-thing
 ```
 
-The gate's default `options: [approve, reject]` map directly to "continue
-the run" vs. "skip the rest of this branch" — gates do not automatically
-re-run the failed step. To express a retry path, either define custom
-gate options and branch on the choice downstream, or wrap the failing
-step in your own loop.
+A few things worth knowing about that example:
+
+- Both gate options (`approve`, `reject`) return `StepStatus.COMPLETED`;
+  `on_reject: skip` controls only whether the engine aborts on reject
+  (it doesn't, with `skip`) — it does **not** auto-skip subsequent
+  sibling steps in the `then:` list. Downstream branching is the
+  workflow author's responsibility: read
+  `{{ steps.<gate-id>.output.choice }}` in a follow-up `if`, `switch`,
+  or expression, as the `recover` step above does.
+- `on_reject` has three values: `abort` (default — reject → `FAILED`
+  with `output.aborted = True`, halts the run), `skip` (reject →
+  `COMPLETED`, author handles branching as shown), and `retry`
+  (reject → `PAUSED` so the next `specify workflow resume` re-runs
+  the gate).
+- Gates do not automatically re-run the failed step. To express a
+  retry path, either define custom gate options and branch on the
+  choice downstream, or wrap the failing step in your own loop.
 
 **Notes:**
 
