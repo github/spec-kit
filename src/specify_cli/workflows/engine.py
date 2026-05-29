@@ -426,7 +426,7 @@ class WorkflowEngine:
         inputs:
             User-provided input values.
         run_id:
-            Optional run ID (auto-generated if not provided).
+            Optional run ID (uses SPECKIT_WORKFLOW_RUN_ID when set, otherwise auto-generated).
 
         Returns
         -------

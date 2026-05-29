@@ -2333,7 +2333,7 @@ steps:
         assert state.step_results["only-step"]["output"]["stdout"].strip() == "hello"
 
     def test_run_id_uses_speckit_workflow_run_id_env_override(self, project_dir, monkeypatch):
-        """When no run_id argument is provided, SPECKIT_WORKFLOW_RUN_ID overrides UUID generation."""
+        """When no run_id argument is provided, SPECKIT_WORKFLOW_RUN_ID overrides the auto-generated run ID."""
         from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
 
         monkeypatch.setenv("SPECKIT_WORKFLOW_RUN_ID", "env-run-123")
