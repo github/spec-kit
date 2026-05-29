@@ -71,7 +71,7 @@ class TestRovodevIntegration:
         entries = data["prompts"]
         assert entries
         for entry in entries:
-            assert entry["name"].startswith("speckit.")
+            assert entry["name"].startswith("speckit-")
             assert entry["description"]
             content_file = tmp_path / ".rovodev" / entry["content_file"]
             assert content_file.exists(), f"Missing prompt file {content_file}"
@@ -120,7 +120,7 @@ class TestRovodevIntegration:
         data = yaml.safe_load(prompts_manifest.read_text(encoding="utf-8"))
         names = {entry.get("name") for entry in data.get("prompts", [])}
         assert "custom.user.prompt" in names
-        assert "speckit.plan" in names
+        assert "speckit-plan" in names
 
     def test_skill_files_have_rovodev_frontmatter(self, tmp_path):
         impl = get_integration(self.KEY)

@@ -12,7 +12,7 @@ from typing import Any
 
 import yaml
 
-from ..base import SkillsIntegration
+from ..base import IntegrationBase, SkillsIntegration
 from ..manifest import IntegrationManifest
 
 
@@ -39,6 +39,20 @@ class RovodevIntegration(SkillsIntegration):
         "extension": ".prompt.md",
     }
     context_file = "AGENTS.md"
+
+    # Use dot separator so __SPECKIT_COMMAND_PLAN__ resolves to /speckit.plan
+    # inside SKILL.md content, matching the prompt catalog naming convention.
+    invoke_separator = "."
+
+    def build_command_invocation(self, command_name: str, args: str = "") -> str:
+        """Use dot-style invocations matching the prompt catalog names.
+
+        RovoDev prompts are named ``speckit.plan``, ``speckit.git.commit``,
+        etc., so cross-command refs should resolve to ``/speckit.plan``
+        rather than the hyphenated ``/speckit-plan`` that SkillsIntegration
+        normally produces.
+        """
+        return IntegrationBase.build_command_invocation(self, command_name, args)
 
 
     # -- CLI dispatch ------------------------------------------------------
@@ -122,7 +136,7 @@ class RovodevIntegration(SkillsIntegration):
             created.append(prompt_file)
 
             prompt_entries.append({
-                "name": dot_name,
+                "name": skill_name,
                 "description": f"Invoke {skill_name} skill",
                 "content_file": f"prompts/{prompt_filename}",
             })
@@ -221,7 +235,6 @@ class RovodevIntegration(SkillsIntegration):
         2. Generate prompt wrappers and ``prompts.yml``.
         """
         created = super().setup(project_root, manifest, parsed_options, **opts)
-
 
         # Generate prompt wrappers + merge prompts.yml
         prompt_files, prompt_entries = self._generate_prompt_files(
