@@ -611,7 +611,7 @@ class IntegrationBase(ABC):
         try:
             raw = config_path.read_text(encoding="utf-8")
             cfg = yaml.safe_load(raw)
-        except (OSError, ValueError, yaml.YAMLError):
+        except (OSError, UnicodeError, ValueError, yaml.YAMLError):
             return start, end
         markers = cfg.get("context_markers") if isinstance(cfg, dict) else None
         if isinstance(markers, dict):

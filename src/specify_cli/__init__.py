@@ -329,7 +329,7 @@ def _load_agent_context_config(project_root: Path) -> dict[str, Any]:
         return defaults
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError):
+    except (OSError, UnicodeError, yaml.YAMLError):
         return defaults
     if not isinstance(raw, dict):
         return defaults

@@ -566,7 +566,12 @@ def register(app: typer.Typer) -> None:
                             )
                             tracker.complete("agent-context", "extension installed")
                     else:
-                        tracker.skip("agent-context", "bundled extension not found")
+                        from ..extensions import REINSTALL_COMMAND as _ac_reinstall
+                        tracker.error(
+                            "agent-context",
+                            f"bundled extension not found — installation may be "
+                            f"incomplete. Run: {_ac_reinstall}",
+                        )
                 except Exception as ac_err:
                     sanitized_ac = str(ac_err).replace('\n', ' ').strip()
                     tracker.error(
