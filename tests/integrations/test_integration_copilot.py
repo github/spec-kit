@@ -147,6 +147,21 @@ class TestCopilotIntegration:
             assert "__SPECKIT_COMMAND_" not in content, f"{agent_file.name} has unprocessed __SPECKIT_COMMAND_*__"
             assert "\nscripts:\n" not in content
 
+    def test_specify_agent_resolves_active_spec_template(self, tmp_path):
+        """Generated specify agent must not hardcode the core spec template."""
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+        copilot.setup(tmp_path, m)
+
+        specify_file = tmp_path / ".github" / "agents" / "speckit.specify.agent.md"
+        content = specify_file.read_text(encoding="utf-8")
+
+        assert "specify preset resolve spec-template" in content
+        assert "resolved active `spec-template`" in content
+        assert "Copy `.specify/templates/spec-template.md`" not in content
+        assert "Load `.specify/templates/spec-template.md`" not in content
+
     def test_plan_references_correct_context_file(self, tmp_path):
         """The generated plan command must reference copilot's context file."""
         from specify_cli.integrations.copilot import CopilotIntegration
