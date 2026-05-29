@@ -3,9 +3,11 @@
 Cursor Agent uses the ``.cursor/skills/speckit-<name>/SKILL.md`` layout.
 Commands are deprecated; ``--skills`` defaults to ``True``.
 
-CLI dispatch via ``cursor-agent -p --trust <prompt>`` is supported so
-``specify workflow run`` can drive cursor-agent headlessly, in addition
-to the existing in-IDE skill flow.
+The IDE/skills flow is the primary path and works without the
+``cursor-agent`` CLI being installed (``requires_cli=False``).  Workflow
+dispatch via ``cursor-agent -p --trust <prompt>`` is offered as an
+opt-in capability — the presence of ``build_exec_args()`` is what
+indicates dispatch support, mirroring ``CopilotIntegration``.
 """
 
 from __future__ import annotations
@@ -20,7 +22,12 @@ class CursorAgentIntegration(SkillsIntegration):
         "folder": ".cursor/",
         "commands_subdir": "skills",
         "install_url": "https://docs.cursor.com/en/cli/overview",
-        "requires_cli": True,
+        # IDE-first integration: ``specify init --ai cursor-agent`` must
+        # work without the ``cursor-agent`` CLI installed (the IDE flow
+        # uses skills directly).  Workflow dispatch additionally requires
+        # the CLI on PATH, but that's enforced at dispatch time via
+        # ``shutil.which`` rather than as a hard ``specify init`` precheck.
+        "requires_cli": False,
     }
     registrar_config = {
         "dir": ".cursor/skills",
@@ -40,6 +47,13 @@ class CursorAgentIntegration(SkillsIntegration):
         output_json: bool = True,
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive ``cursor-agent`` execution.
+
+        Always returns argv (no ``requires_cli`` guard) so workflow
+        dispatch is supported even though the integration's ``config``
+        sets ``requires_cli=False`` to keep the IDE-only flow unblocked.
+        This mirrors ``CopilotIntegration``: dispatch support is signalled
+        by overriding ``build_exec_args()``, not by the ``requires_cli``
+        flag (which is reserved for the ``specify init`` precheck).
 
         Mandatory headless flags:
 
@@ -62,8 +76,6 @@ class CursorAgentIntegration(SkillsIntegration):
         either drops tool calls or exits non-zero on the first approval
         prompt.
         """
-        if not self.config or not self.config.get("requires_cli"):
-            return None
         args = [self.key, "-p", "--trust", "--approve-mcps", "--force", prompt]
         if model:
             args.extend(["--model", model])
