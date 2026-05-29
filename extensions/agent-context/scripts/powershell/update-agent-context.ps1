@@ -140,6 +140,12 @@ if (-not $ContextFile) {
     exit 0
 }
 
+# Reject absolute paths and path traversal in context_file
+if ([System.IO.Path]::IsPathRooted($ContextFile) -or $ContextFile.Contains('..')) {
+    Write-Warning "agent-context: context_file must be a project-relative path without '..' segments; got '$ContextFile'."
+    exit 1
+}
+
 $MarkerStart = $DefaultStart
 $MarkerEnd   = $DefaultEnd
 $cm = Get-ConfigValue -Object $Options -Key 'context_markers'

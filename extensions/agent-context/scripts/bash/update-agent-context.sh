@@ -99,6 +99,12 @@ if [[ -z "$CONTEXT_FILE" ]]; then
   exit 0
 fi
 
+# Reject absolute paths and path traversal in context_file
+if [[ "$CONTEXT_FILE" == /* ]] || [[ "$CONTEXT_FILE" == *..* ]]; then
+  echo "agent-context: context_file must be a project-relative path without '..' segments; got '$CONTEXT_FILE'." >&2
+  exit 1
+fi
+
 [[ -z "$MARKER_START" ]] && MARKER_START="$DEFAULT_START"
 [[ -z "$MARKER_END"   ]] && MARKER_END="$DEFAULT_END"
 

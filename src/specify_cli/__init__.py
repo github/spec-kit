@@ -1190,8 +1190,9 @@ def _update_init_options_for_integration(
     ``context_file`` and ``context_markers`` are stored in the agent-context
     extension config (``.specify/extensions/agent-context/agent-context-config.yml``),
     not in ``init-options.json``.  Existing user-customised markers are
-    preserved; the start/end values are only seeded from defaults when they
-    are absent or invalid.
+    always preserved when the config already exists; invalid marker values
+    are silently ignored at runtime by ``_resolve_context_markers()`` which
+    falls back to the class-level defaults.
     """
     from .integrations.base import SkillsIntegration
     opts = load_init_options(project_root)
