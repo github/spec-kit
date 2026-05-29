@@ -115,7 +115,13 @@ class TestContextMarkerResolution:
         assert end == IntegrationBase.CONTEXT_MARKER_END
 
     def test_defaults_when_markers_field_missing(self, tmp_path):
-        _write_ext_config(tmp_path, context_file="CLAUDE.md")
+        """Config file exists with context_file but no context_markers key."""
+        cfg_path = (
+            tmp_path / ".specify" / "extensions" / "agent-context"
+            / "agent-context-config.yml"
+        )
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text("context_file: CLAUDE.md\n", encoding="utf-8")
         i = _CtxIntegration()
         start, end = i._resolve_context_markers(tmp_path)
         assert start == IntegrationBase.CONTEXT_MARKER_START

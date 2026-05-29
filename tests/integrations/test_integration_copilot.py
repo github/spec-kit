@@ -644,9 +644,9 @@ class TestCopilotSkillsMode:
         assert result.exit_code == 0, f"init failed: {result.output}"
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file())
         expected = sorted([
-            # Skill files (core commands only — extension commands are not
-            # rendered as skills, they live in .specify/extensions/)
+            # Skill files (core + extension-installed agent-context command)
             *[f".github/skills/speckit-{cmd}/SKILL.md" for cmd in self._SKILL_COMMANDS],
+            ".github/skills/speckit-agent-context-update/SKILL.md",
             # Context file
             ".github/copilot-instructions.md",
             # Bundled agent-context extension
