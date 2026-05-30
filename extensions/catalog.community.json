@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-28T00:00:00Z",
+  "updated_at": "2026-05-30T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2218,8 +2218,8 @@
       "id": "reqnroll-bdd",
       "description": "Adds Reqnroll BDD planning, Gherkin generation, traceability, safe task injection, handoff, and verification to Spec Kit.",
       "author": "LoogaCY Studio",
-      "version": "1.0.0",
-      "download_url": "https://github.com/LoogacyStudio/spec-kit-reqnroll-bdd/archive/refs/tags/v1.0.0.zip",
+      "version": "1.1.0",
+      "download_url": "https://github.com/LoogacyStudio/spec-kit-reqnroll-bdd/archive/refs/tags/v1.1.0.zip",
       "repository": "https://github.com/LoogacyStudio/spec-kit-reqnroll-bdd",
       "homepage": "https://github.com/LoogacyStudio/spec-kit-reqnroll-bdd",
       "documentation": "https://github.com/LoogacyStudio/spec-kit-reqnroll-bdd#readme",
@@ -2249,7 +2249,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-13T00:00:00Z",
-      "updated_at": "2026-05-13T00:00:00Z"
+      "updated_at": "2026-05-30T00:00:00Z"
     },
     "retro": {
       "name": "Retro Extension",
