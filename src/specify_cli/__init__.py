@@ -1208,10 +1208,9 @@ def _update_init_options_for_integration(
         opts["ai_skills"] = True
     else:
         opts.pop("ai_skills", None)
-    save_init_options(project_root, opts)
 
-    # Update the agent-context extension config with the new context_file,
-    # preserving any user-customised markers.
+    # Update the agent-context extension config BEFORE init-options.json
+    # so a failure here doesn't leave init-options partially updated.
     ext_cfg_path = project_root / _AGENT_CTX_EXT_CONFIG
     if ext_cfg_path.exists():
         _update_agent_context_config_file(
@@ -1227,6 +1226,8 @@ def _update_init_options_for_integration(
             integration.context_file,
             preserve_markers=False,
         )
+
+    save_init_options(project_root, opts)
 
 
 @integration_app.command("use")
