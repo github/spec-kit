@@ -99,9 +99,13 @@ if [[ -z "$CONTEXT_FILE" ]]; then
   exit 0
 fi
 
-# Reject absolute paths and '..' path segments in context_file
-if [[ "$CONTEXT_FILE" == /* ]]; then
+# Reject absolute paths, backslash separators, and '..' path segments in context_file
+if [[ "$CONTEXT_FILE" == /* ]] || [[ "$CONTEXT_FILE" =~ ^[A-Za-z]: ]]; then
   echo "agent-context: context_file must be a project-relative path; got '$CONTEXT_FILE'." >&2
+  exit 1
+fi
+if [[ "$CONTEXT_FILE" == *\\* ]]; then
+  echo "agent-context: context_file must not contain backslash separators; got '$CONTEXT_FILE'." >&2
   exit 1
 fi
 IFS='/' read -ra _cf_parts <<< "$CONTEXT_FILE"
