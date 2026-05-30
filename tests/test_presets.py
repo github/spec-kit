@@ -2282,6 +2282,13 @@ class TestInitOptions:
         ``café`` written on a UTF-8 host becomes garbled or unreadable on
         a cp1252 host (and vice versa). Pin UTF-8 explicitly so init
         options round-trip across machines and CI.
+
+        Note: this test only meaningfully exercises the encoding pin
+        because ``save_init_options`` now writes JSON with
+        ``ensure_ascii=False`` — otherwise ``json.dumps`` would output
+        ASCII-only ``\\uXXXX`` escapes and the encoding pin would be a
+        no-op for any value here. ``test_save_writes_real_utf8_bytes``
+        below asserts that contract directly.
         """
         from specify_cli import save_init_options, load_init_options
 
@@ -2289,6 +2296,39 @@ class TestInitOptions:
 
         loaded = load_init_options(project_dir)
         assert loaded["project_name"] == value
+
+    def test_save_writes_real_utf8_bytes(self, project_dir):
+        """The on-disk file contains real UTF-8 bytes, not ``\\uXXXX`` escapes.
+
+        Pinning ``encoding="utf-8"`` on ``write_text`` only makes a
+        difference when the serialiser actually emits non-ASCII
+        characters. With ``ensure_ascii=False`` on ``json.dumps`` the
+        non-ASCII bytes hit the file, so the encoding pin is the thing
+        that decides between cp1252 garbage and clean UTF-8 on Windows.
+
+        This test pins that behaviour: the on-disk bytes are valid UTF-8
+        and contain the multi-byte encoding of ``café``, not its
+        ``\\u00e9`` escape form. Reviewers can verify that removing
+        ``ensure_ascii=False`` or ``encoding="utf-8"`` from the writer
+        breaks this test, which is what Copilot's review pointed out the
+        original round-trip test failed to do.
+        """
+        from specify_cli import save_init_options
+
+        save_init_options(project_dir, {"project_name": "café"})
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        raw = opts_file.read_bytes()
+        # 'café' in UTF-8 ends with bytes 0xC3 0xA9 ('é'). The cp1252
+        # encoding of 'é' is the single byte 0xE9. The JSON-escape form
+        # would be the 6-byte literal '\\u00e9'. We assert the UTF-8 form
+        # is present so the test pins the actual contract.
+        assert b"caf\xc3\xa9" in raw, (
+            "Expected UTF-8 bytes for 'café' in the on-disk file, "
+            f"got: {raw!r}"
+        )
+        # And the whole file decodes cleanly as UTF-8.
+        raw.decode("utf-8")
 
     def test_load_returns_empty_on_locale_corrupted_file(self, project_dir):
         """A file written in a non-UTF-8 codec falls back to {}, not crash.

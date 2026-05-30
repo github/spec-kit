@@ -3421,6 +3421,35 @@ class TestExtensionIgnore:
         # ASCII path with no matching pattern is unaffected.
         assert (dest / "docs" / "guide.md").exists()
 
+    def test_extensionignore_invalid_utf8_raises_validation_error(
+        self, temp_dir, valid_manifest_data
+    ):
+        """A non-UTF-8 ``.extensionignore`` surfaces as ``ValidationError``.
+
+        Pinning ``encoding="utf-8"`` on the reader means an
+        ``.extensionignore`` written in some other codec (cp1252, etc.)
+        now triggers ``UnicodeDecodeError`` instead of silently
+        mojibake-ing patterns. Wrap that exception as ``ValidationError``
+        with a pointer to the offending byte — the same pattern
+        ``ExtensionManifest._load_yaml`` uses for ``extension.yml`` —
+        so installation aborts with a user-friendly message instead of a
+        raw Python traceback.
+        """
+        ext_dir = self._make_extension(temp_dir, valid_manifest_data)
+        # Write an .extensionignore whose bytes are not valid UTF-8.
+        # 0xE9 is 'é' in cp1252 but an invalid lead byte in UTF-8.
+        (ext_dir / ".extensionignore").write_bytes(b"caf\xe9/\n")
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        with pytest.raises(
+            ValidationError, match=r"\.extensionignore is not valid UTF-8"
+        ):
+            manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
     def test_extensionignore_star_does_not_cross_directories(self, temp_dir, valid_manifest_data):
         """'*' should NOT match across directory boundaries (gitignore semantics)."""
         ext_dir = self._make_extension(

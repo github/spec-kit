@@ -397,14 +397,27 @@ def save_init_options(project_path: Path, options: dict[str, Any]) -> None:
     """
     dest = project_path / INIT_OPTIONS_FILE
     dest.parent.mkdir(parents=True, exist_ok=True)
-    # Pin UTF-8 explicitly: ``Path.write_text`` defaults to the system
-    # locale codec, which is cp1252 / gb2312 / cp932 on Windows. A
-    # locale-encoded write succeeds locally but produces a file a peer
-    # machine (different locale) or Unix CI cannot decode. The sibling
-    # integration-catalog writer in ``integrations/catalog.py`` already
-    # pins ``encoding="utf-8"`` for the same reason.
+    # Write JSON as real UTF-8 instead of ``\uXXXX`` escape sequences
+    # (``ensure_ascii=False``) and pin the file encoding to match.
+    #
+    # The default ``json.dumps`` output is ASCII-only — any non-ASCII
+    # character is encoded as a ``\uXXXX`` escape — so without the
+    # ``ensure_ascii=False`` flip below the encoding pin alone would be
+    # a no-op for any payload we plausibly write today. We pair the two
+    # so the on-disk bytes match a human's expectation of "this file is
+    # UTF-8" (greppable, readable in editors that don't decode JSON
+    # escapes, friendly to peers running ``cat`` or ``Get-Content``) and
+    # so the encoding pin is a real contract instead of a future hedge.
+    #
+    # ``Path.write_text`` without ``encoding=`` falls back to the system
+    # locale codec (cp1252 / gb2312 / cp932 on Windows), which would
+    # mis-encode non-ASCII bytes locally and produce a file a peer with
+    # a different locale couldn't decode. The sibling integration-
+    # catalog writer in ``integrations/catalog.py`` pins
+    # ``encoding="utf-8"`` for the same reason.
     dest.write_text(
-        json.dumps(options, indent=2, sort_keys=True), encoding="utf-8"
+        json.dumps(options, indent=2, sort_keys=True, ensure_ascii=False),
+        encoding="utf-8",
     )
 
 
@@ -419,11 +432,13 @@ def load_init_options(project_path: Path) -> dict[str, Any]:
     try:
         # Match the explicit UTF-8 used by ``save_init_options``; without
         # it ``read_text`` falls back to the system codec on Windows and
-        # raises ``UnicodeDecodeError`` on any file a peer wrote with
-        # non-ASCII content. ``UnicodeDecodeError`` is a subclass of
+        # raises ``UnicodeDecodeError`` on any file containing the
+        # multi-byte UTF-8 sequences ``save_init_options`` now writes
+        # directly. ``UnicodeDecodeError`` is a subclass of
         # ``ValueError``, not ``OSError`` / ``json.JSONDecodeError``, so
         # it must be listed explicitly here to preserve the existing
-        # "fall back to empty dict" contract.
+        # "fall back to empty dict" contract for corrupted / foreign-
+        # codec files.
         return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return {}
