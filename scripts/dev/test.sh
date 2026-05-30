@@ -31,6 +31,7 @@ RESUME=0
 RESET=0
 BENCH=0
 PASSTHROUGH=()
+RUNTIME_PASSTHROUGH=()
 
 while (( $# )); do
     case "$1" in
@@ -41,6 +42,15 @@ while (( $# )); do
         --)           shift; PASSTHROUGH+=("$@"); break ;;
         -h|--help)    sed -n '2,22p' "$0"; exit 0 ;;
         *)            PASSTHROUGH+=("$1"); shift ;;
+    esac
+done
+
+# Collection and execution do not share every pytest flag. Keep runtime
+# passthrough aligned with user intent while stripping collect-only toggles.
+for arg in "${PASSTHROUGH[@]}"; do
+    case "$arg" in
+        --collect-only|--co) ;;
+        *) RUNTIME_PASSTHROUGH+=("$arg") ;;
     esac
 done
 
@@ -74,8 +84,14 @@ fi
 # 2. Determine starting cursor.
 START=0
 if (( RESUME )) && [[ -f "$CURSOR_FILE" ]]; then
-    START="$(cat "$CURSOR_FILE")"
-    echo "[fast-test] resuming from next test index: $START"
+    RAW_START="$(tr -d '[:space:]' < "$CURSOR_FILE")"
+    if [[ "$RAW_START" =~ ^[0-9]+$ ]]; then
+        START="$RAW_START"
+        (( START > TOTAL )) && START="$TOTAL"
+        echo "[fast-test] resuming from next test index: $START"
+    else
+        echo "[fast-test] cursor file is invalid ('$RAW_START'); starting from 0" >&2
+    fi
 fi
 
 CHUNKS=$(( (TOTAL - START + CHUNK_SIZE - 1) / CHUNK_SIZE ))
@@ -94,7 +110,7 @@ while (( i < TOTAL )); do
     PYTEST_FLAGS=(-n auto --dist=load)
     (( BENCH )) && PYTEST_FLAGS+=(-q) || PYTEST_FLAGS+=(--no-header -q)
 
-    if ! uv run pytest "${PYTEST_FLAGS[@]}" "${NODES[@]:i:CHUNK_SIZE}"; then
+    if ! uv run pytest "${PYTEST_FLAGS[@]}" "${RUNTIME_PASSTHROUGH[@]}" "${NODES[@]:i:CHUNK_SIZE}"; then
         echo "[fast-test] chunk failed — cursor preserved at next test index $i (use --resume to retry)"
         echo "$i" > "$CURSOR_FILE"
         exit 1
