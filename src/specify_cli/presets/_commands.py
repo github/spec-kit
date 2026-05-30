@@ -169,10 +169,15 @@ def preset_add(
                         zip_path.write_bytes(
                             read_response_limited(
                                 response,
+                                error_type=PresetError,
                                 label=f"preset {from_url}",
                             )
                         )
-                except (urllib.error.URLError, ValueError) as e:
+                # The URL scheme is validated above, so the only failures here
+                # are network errors and an oversized body (raised as PresetError
+                # via error_type). Catching those specifically lets unrelated
+                # ValueErrors surface instead of masquerading as download errors.
+                except (urllib.error.URLError, PresetError) as e:
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
                     raise typer.Exit(1)
 

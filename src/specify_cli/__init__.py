@@ -1036,13 +1036,17 @@ def extension_add(
                     with _open_url(from_url, timeout=60) as response:
                         zip_data = _read_response_limited(
                             response,
+                            error_type=ExtensionError,
                             label=f"extension {safe_url}",
                         )
                     zip_path.write_bytes(zip_data)
 
                     # Install from downloaded ZIP
                     manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority, force=force)
-                except (urllib.error.URLError, ValueError) as e:
+                # ExtensionError covers an oversized body (via error_type) and
+                # validation failures raised by install_from_zip. Let unrelated
+                # ValueErrors surface as real errors.
+                except (urllib.error.URLError, ExtensionError) as e:
                     console.print(f"[red]Error:[/red] Failed to download from {safe_url}: {e}")
                     raise typer.Exit(1)
                 finally:

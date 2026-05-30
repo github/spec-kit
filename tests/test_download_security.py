@@ -177,6 +177,27 @@ def test_safe_extract_zip_rejects_symlinks(tmp_path):
         safe_extract_zip(zip_path, tmp_path / "out")
 
 
+def test_safe_extract_zip_rejects_symlink_without_partial_extraction(tmp_path):
+    # A symlink sitting next to benign members must be rejected before ANY
+    # file is written: validation runs over the whole member list first, so an
+    # unsafe member cannot leak a partially-extracted tree to disk.
+    zip_path = tmp_path / "mixed.zip"
+    link = zipfile.ZipInfo("evil-link")
+    link.external_attr = (stat.S_IFLNK | 0o777) << 16
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("safe/first.txt", "hello")
+        zf.writestr(link, "target")
+        zf.writestr("safe/second.txt", "world")
+
+    out_dir = tmp_path / "out"
+    with pytest.raises(ValueError, match="Unsafe symlink"):
+        safe_extract_zip(zip_path, out_dir)
+
+    # Nothing should have been written — not even the benign member that
+    # precedes the symlink in the archive.
+    assert not out_dir.exists() or not any(out_dir.rglob("*"))
+
+
 def test_safe_extract_zip_rejects_oversized_member(tmp_path):
     zip_path = tmp_path / "bad.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:

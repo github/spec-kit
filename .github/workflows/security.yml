@@ -34,6 +34,13 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      # The committed .github/security-audit-requirements.txt is generated with
+      # --universal (resolves across all interpreters/platforms) and is what
+      # push/PR runs audit. The scheduled job instead compiles per matrix
+      # entry with --python-version so it can surface advisories in wheels that
+      # only resolve on a specific interpreter (e.g. 3.11-only) — coverage the
+      # universal file may not exercise. This broadening is intentional; PR runs
+      # trade that depth for determinism against the committed snapshot.
       - name: Compile scheduled audit requirements
         if: ${{ github.event_name == 'schedule' }}
         run: |

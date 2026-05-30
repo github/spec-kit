@@ -188,6 +188,8 @@ def open_url(
     # No entry worked (or none matched) — unauthenticated fallback
     req = _make_req({})
     if effective_redirect_validator is not None:
+        # No auth is attached on this path, so the handler's host list is empty:
+        # here it runs redirect validation only, not auth stripping.
         opener = urllib.request.build_opener(_StripAuthOnRedirect((), effective_redirect_validator))
         return opener.open(req, timeout=timeout)
     return urllib.request.urlopen(req, timeout=timeout)  # noqa: S310

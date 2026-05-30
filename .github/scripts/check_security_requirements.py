@@ -18,6 +18,11 @@ def _dependency_diff_refs() -> tuple[str, str]:
     head_ref = os.environ.get("DEPENDENCY_DIFF_HEAD", "").strip() or "HEAD"
     if base_ref and not set(base_ref) <= {"0"}:
         return base_ref, head_ref
+    # Fallback when no usable base is supplied (push with an all-zero
+    # ``github.event.before``, manual dispatch, etc.). ``HEAD^`` fails on a
+    # shallow checkout or a single-commit repo; that ``git diff`` error is
+    # caught by the caller and deliberately treated as "inputs changed" so the
+    # audit runs anyway — failing safe (audit) rather than skipping silently.
     return "HEAD^", "HEAD"
 
 

@@ -28,6 +28,12 @@ def is_https_or_localhost_http(url: str) -> bool:
 
     Shared redirect-safety predicate used by the GitHub and auth HTTP redirect
     handlers so the rule (and any future tightening of it) lives in one place.
+
+    The loopback allowance is a deliberate *exact-string* match on
+    ``localhost`` / ``127.0.0.1`` / ``::1``, not an IP-range check: other
+    loopback addresses (e.g. ``127.0.0.2``) are intentionally not covered.
+    ``urlparse`` already lower-cases the hostname, so the comparison is
+    case-insensitive.
     """
     parsed = urlparse(url)
     is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
@@ -55,6 +61,12 @@ def read_response_limited(
     return fewer even when more data is pending (e.g. chunked transfer encoding),
     so a single ``read(max_bytes + 1)`` cannot enforce the bound on its own. Read
     in a loop until EOF or until one byte past the limit has been accumulated.
+
+    *max_bytes* is keyword-only. It defaults to the module-wide
+    ``MAX_DOWNLOAD_BYTES`` (50 MiB) ceiling for archive/payload downloads;
+    callers with a tighter budget (e.g. small JSON responses) should pass an
+    explicit value so the intended bound is pinned at the call site rather than
+    tracking changes to the shared default.
     """
     chunks: list[bytes] = []
     total = 0
@@ -113,6 +125,10 @@ def _safe_zip_name(name: str, *, error_type: type[ErrorT]) -> str:
     normalized = name.replace("\\", "/")
     path = PurePosixPath(normalized)
     raw_parts = normalized.split("/")
+    # Strip a single trailing empty segment, i.e. the one-slash directory
+    # marker that legitimate ZIPs use ("mydir/", "mydir/subdir/"). Anything
+    # else that produces an empty segment — consecutive slashes ("a//b") or a
+    # second trailing slash — is left in place and rejected below as malformed.
     if raw_parts and raw_parts[-1] == "":
         raw_parts = raw_parts[:-1]
     has_windows_drive = re.match(r"^[A-Za-z]:", normalized) is not None

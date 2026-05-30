@@ -35,8 +35,11 @@ def run_command(
 ) -> str | None:
     """Run a command without invoking a shell and optionally capture output.
 
-    ``shell`` remains accepted for public API compatibility, but shell
-    execution is intentionally unsupported.
+    The ``shell`` parameter is kept in the signature so existing keyword
+    callers (and the re-export from ``specify_cli``) don't raise ``TypeError``,
+    but only the default ``shell=False`` is honoured. ``shell=True`` is
+    rejected with ``ValueError`` rather than silently ignored, so the
+    unsupported mode fails loudly instead of running with a different meaning.
     """
     if shell:
         raise ValueError(
