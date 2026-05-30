@@ -7,7 +7,8 @@ import re
 import stat
 import zipfile
 from pathlib import Path, PurePosixPath
-from typing import TypeVar
+from typing import NoReturn, TypeVar
+from urllib.parse import urlparse
 
 
 ErrorT = TypeVar("ErrorT", bound=Exception)
@@ -22,11 +23,22 @@ READ_CHUNK_SIZE = 1024 * 1024
 SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
-def _raise(error_type: type[ErrorT], message: str) -> None:
+def is_https_or_localhost_http(url: str) -> bool:
+    """Return True if *url* is HTTPS, or HTTP limited to loopback hosts.
+
+    Shared redirect-safety predicate used by the GitHub and auth HTTP redirect
+    handlers so the rule (and any future tightening of it) lives in one place.
+    """
+    parsed = urlparse(url)
+    is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+    return parsed.scheme == "https" or (parsed.scheme == "http" and is_localhost)
+
+
+def _raise(error_type: type[ErrorT], message: str) -> NoReturn:
     raise error_type(message)
 
 
-def _raise_from(error_type: type[ErrorT], message: str, exc: Exception) -> None:
+def _raise_from(error_type: type[ErrorT], message: str, exc: Exception) -> NoReturn:
     raise error_type(message) from exc
 
 
@@ -37,11 +49,25 @@ def read_response_limited(
     error_type: type[ErrorT] = ValueError,
     label: str = "download",
 ) -> bytes:
-    """Read at most *max_bytes* from a response object."""
-    data = response.read(max_bytes + 1)
-    if len(data) > max_bytes:
+    """Read at most *max_bytes* from a response object.
+
+    ``response.read(n)`` is only guaranteed to return *up to* ``n`` bytes and may
+    return fewer even when more data is pending (e.g. chunked transfer encoding),
+    so a single ``read(max_bytes + 1)`` cannot enforce the bound on its own. Read
+    in a loop until EOF or until one byte past the limit has been accumulated.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    limit = max_bytes + 1
+    while total < limit:
+        chunk = response.read(min(READ_CHUNK_SIZE, limit - total))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    if total > max_bytes:
         _raise(error_type, f"{label} exceeds maximum size of {max_bytes} bytes")
-    return data
+    return b"".join(chunks)
 
 
 def normalize_sha256(value: object, *, error_type: type[ErrorT] = ValueError) -> str | None:

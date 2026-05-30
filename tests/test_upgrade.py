@@ -9,6 +9,8 @@ with local mocks. Run this module under `pytest-socket` (if installed) with
 `--disable-socket` as an extra safety net.
 """
 
+import io
+import json
 import urllib.error
 import importlib.metadata
 from unittest.mock import MagicMock, patch
@@ -35,6 +37,19 @@ SENTINEL_GITHUB_TOKEN = "SENTINEL-GITHUB-TOKEN-VALUE"
 _RATE_LIMITED_REASON = (
     "rate limited (configure ~/.specify/auth.json with a GitHub token)"
 )
+
+
+def _mock_urlopen_response(payload: dict) -> MagicMock:
+    body = json.dumps(payload).encode("utf-8")
+    resp = MagicMock()
+    # Back read() with a real stream so it advances and returns b"" at EOF,
+    # matching http.client.HTTPResponse (a fixed return_value would loop forever
+    # under read_response_limited's bounded read loop).
+    resp.read.side_effect = io.BytesIO(body).read
+    cm = MagicMock()
+    cm.__enter__.return_value = resp
+    cm.__exit__.return_value = False
+    return cm
 
 
 def _http_error(code: int, message: str = "error") -> urllib.error.HTTPError:

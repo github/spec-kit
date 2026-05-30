@@ -14,10 +14,10 @@ from __future__ import annotations
 import urllib.error
 import urllib.request
 from fnmatch import fnmatch
-from ipaddress import ip_address
 from typing import Callable
 from urllib.parse import urlparse
 
+from .._download_security import is_https_or_localhost_http
 from . import get_provider
 from .config import AuthConfigEntry, _default_config_path, find_entries_for_url, load_auth_config
 
@@ -61,24 +61,8 @@ def _hostname_in_hosts(hostname: str, hosts: tuple[str, ...]) -> bool:
 RedirectValidator = Callable[[str, str], None]
 
 
-def _is_secure_or_loopback_url(url: str) -> bool:
-    parsed = urlparse(url)
-    if not parsed.hostname:
-        return False
-    if parsed.scheme == "https":
-        return True
-    if parsed.scheme != "http":
-        return False
-    if parsed.hostname == "localhost":
-        return True
-    try:
-        return ip_address(parsed.hostname).is_loopback
-    except ValueError:
-        return False
-
-
 def _validate_strict_redirect(_old_url: str, new_url: str) -> None:
-    if not _is_secure_or_loopback_url(new_url):
+    if not is_https_or_localhost_http(new_url):
         raise urllib.error.URLError(
             "redirect target must use HTTPS with a hostname, "
             "or HTTP for localhost/loopback"

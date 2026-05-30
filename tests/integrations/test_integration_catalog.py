@@ -177,9 +177,16 @@ class TestCatalogFetch:
             def __init__(self, data, url=""):
                 self._data = json.dumps(data).encode()
                 self._url = url if isinstance(url, str) else url.full_url
+                self._pos = 0
 
-            def read(self, _size=-1):
-                return self._data
+            def read(self, size=-1):
+                # Advance a cursor and return b"" at EOF like a real stream, so
+                # read_response_limited's bounded loop terminates.
+                if size is None or size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def geturl(self):
                 return self._url
@@ -552,8 +559,17 @@ class TestIntegrationListCatalog:
             def __init__(self, data, url=""):
                 self._data = json.dumps(data).encode()
                 self._url = url if isinstance(url, str) else url.full_url
-            def read(self, _size=-1):
-                return self._data
+                self._pos = 0
+
+            def read(self, size=-1):
+                # Advance a cursor and return b"" at EOF like a real stream, so
+                # read_response_limited's bounded loop terminates.
+                if size is None or size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
+
             def geturl(self):
                 return self._url
             def __enter__(self):

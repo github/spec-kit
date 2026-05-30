@@ -3215,7 +3215,7 @@ class TestExtensionCatalog:
 
         catalog_data = {"schema_version": "1.0", "extensions": {}}
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(catalog_data).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(catalog_data).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://raw.githubusercontent.com/org/repo/main/catalog.json"
@@ -3716,7 +3716,7 @@ class TestExtensionCatalog:
         zip_bytes = zip_buf.getvalue()
 
         release_response = MagicMock()
-        release_response.read.return_value = json.dumps(
+        release_response.read.side_effect = io.BytesIO(json.dumps(
             {
                 "assets": [
                     {
@@ -3725,12 +3725,12 @@ class TestExtensionCatalog:
                     }
                 ]
             }
-        ).encode()
+        ).encode()).read
         release_response.__enter__ = lambda s: s
         release_response.__exit__ = MagicMock(return_value=False)
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -3814,7 +3814,7 @@ class TestExtensionCatalog:
         catalog = self._make_catalog(temp_dir)
         zip_bytes = b"fake zip data"
         mock_response = MagicMock()
-        mock_response.read.return_value = zip_bytes
+        mock_response.read.side_effect = io.BytesIO(zip_bytes).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         ext_info = {
@@ -3837,7 +3837,7 @@ class TestExtensionCatalog:
 
         catalog = self._make_catalog(temp_dir)
         mock_response = MagicMock()
-        mock_response.read.return_value = b"fake zip data"
+        mock_response.read.side_effect = io.BytesIO(b"fake zip data").read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         ext_info = {
@@ -5043,7 +5043,7 @@ class TestDownloadExtensionBundled:
         }
 
         mock_response = MagicMock()
-        mock_response.read.return_value = b"fake zip data"
+        mock_response.read.side_effect = io.BytesIO(b"fake zip data").read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 

@@ -4,8 +4,8 @@ Pure helpers for comparing PEP 440 versions and fetching the latest GitHub
 release tag.  The ``self_app`` Typer sub-command group is co-located here so
 all version-related logic lives in one place.
 
-Dependencies: stdlib + packaging + ._console only (no other internal imports
-at module level, keeping this layer thin and circular-import-safe).
+Dependencies: stdlib + packaging + ._console + ._download_security only
+(keeping this layer thin and circular-import-safe).
 """
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ from pathlib import Path
 import typer
 from packaging.version import InvalidVersion, Version
 
+from ._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 from ._console import console
 
 GITHUB_API_LATEST = "https://api.github.com/repos/github/spec-kit/releases/latest"
@@ -111,7 +112,6 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     On anything else — including a malformed response body — the exception
     propagates; there is no catch-all (research D-006).
     """
-    from ._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
     from .authentication.http import open_url
 
     try:

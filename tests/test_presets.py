@@ -1524,7 +1524,7 @@ class TestPresetCatalog:
 
         catalog_data = {"schema_version": "1.0", "presets": {}}
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(catalog_data).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(catalog_data).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://raw.githubusercontent.com/org/repo/main/presets/catalog.json"
@@ -1980,7 +1980,7 @@ class TestPresetCatalog:
         zip_bytes = zip_buf.getvalue()
 
         release_response = MagicMock()
-        release_response.read.return_value = json.dumps(
+        release_response.read.side_effect = io.BytesIO(json.dumps(
             {
                 "assets": [
                     {
@@ -1989,12 +1989,12 @@ class TestPresetCatalog:
                     }
                 ]
             }
-        ).encode()
+        ).encode()).read
         release_response.__enter__ = lambda s: s
         release_response.__exit__ = MagicMock(return_value=False)
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -2120,7 +2120,7 @@ class TestPresetCatalog:
         catalog = PresetCatalog(project_dir)
         zip_bytes = b"fake zip data"
         mock_response = MagicMock()
-        mock_response.read.return_value = zip_bytes
+        mock_response.read.side_effect = io.BytesIO(zip_bytes).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         pack_info = {
@@ -2144,7 +2144,7 @@ class TestPresetCatalog:
 
         catalog = PresetCatalog(project_dir)
         mock_response = MagicMock()
-        mock_response.read.return_value = b"fake zip data"
+        mock_response.read.side_effect = io.BytesIO(b"fake zip data").read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         pack_info = {

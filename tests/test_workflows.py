@@ -3814,9 +3814,16 @@ class TestWorkflowCatalog:
         class _FakeResponse:
             def __init__(self):
                 self._data = json.dumps({"workflows": []}).encode()
+                self._pos = 0
 
-            def read(self, _size=-1):
-                return self._data
+            def read(self, size=-1):
+                # Advance a cursor and return b"" at EOF like a real stream, so
+                # read_response_limited's bounded loop terminates.
+                if size is None or size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def geturl(self):
                 return entry.url

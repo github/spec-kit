@@ -18,6 +18,10 @@ if TYPE_CHECKING:
 _ADO_RESOURCE_ID = "499b84ac-1321-427f-aa17-267ca6975798"
 
 
+class _TokenResponseTooLarge(Exception):
+    """Raised when an Azure AD token response exceeds the bounded read limit."""
+
+
 class AzureDevOpsAuth(AuthProvider):
     """Azure DevOps authentication provider.
 
@@ -115,10 +119,19 @@ class AzureDevOpsAuth(AuthProvider):
                     read_response_limited(
                         resp,
                         max_bytes=MAX_JSON_METADATA_BYTES,
-                        label="Azure DevOps OAuth token response",
+                        error_type=_TokenResponseTooLarge,
+                        label="Azure DevOps token response",
                     ).decode("utf-8")
                 )
                 token = payload.get("access_token", "").strip()
                 return token or None
-        except (urllib.error.URLError, OSError, _json.JSONDecodeError, KeyError):
+        except (
+            urllib.error.URLError,
+            OSError,
+            _json.JSONDecodeError,
+            _TokenResponseTooLarge,
+        ):
+            # Network failure, malformed JSON, or an oversized response — fall
+            # through to the next strategy. Unrelated programming errors (other
+            # ValueErrors, KeyErrors) intentionally propagate so they surface.
             return None

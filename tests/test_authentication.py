@@ -14,6 +14,7 @@ Covers:
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 
@@ -497,7 +498,7 @@ class TestAzureDevOpsAuth:
             tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
         )
         mock_resp = MagicMock()
-        mock_resp.read.return_value = b'{"access_token": "ad-acquired-token"}'
+        mock_resp.read.side_effect = io.BytesIO(b'{"access_token": "ad-acquired-token"}').read
         mock_resp.__enter__ = lambda s: s
         mock_resp.__exit__ = MagicMock(return_value=False)
         with patch("urllib.request.urlopen", return_value=mock_resp):
@@ -864,7 +865,7 @@ class TestFetchLatestReleaseTagDelegation:
             captured["request"] = req
             body = _json.dumps({"tag_name": "v9.9.9"}).encode()
             resp = MagicMock()
-            resp.read.return_value = body
+            resp.read.side_effect = io.BytesIO(body).read
             cm = MagicMock()
             cm.__enter__.return_value = resp
             cm.__exit__.return_value = False
