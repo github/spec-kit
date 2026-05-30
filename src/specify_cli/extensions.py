@@ -2012,7 +2012,7 @@ class ExtensionCatalog(CatalogStackBase):
 
             # Validate catalog structure
             if "schema_version" not in catalog_data or "extensions" not in catalog_data:
-                raise ExtensionError("Invalid catalog format")
+                raise ExtensionError(f"Invalid catalog format from {catalog_url}")
 
             # Save to cache
             self.cache_dir.mkdir(parents=True, exist_ok=True)

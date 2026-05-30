@@ -1895,7 +1895,7 @@ class PresetCatalog:
             "schema_version" not in catalog_data
             or "presets" not in catalog_data
         ):
-            raise PresetError("Invalid preset catalog format")
+            raise PresetError(f"Invalid preset catalog format from {url}")
         if not isinstance(catalog_data.get("presets"), dict):
             raise PresetError(
                 f"Invalid preset catalog format from {url}: "
@@ -2199,7 +2199,7 @@ class PresetCatalog:
                 "schema_version" not in catalog_data
                 or "presets" not in catalog_data
             ):
-                raise PresetError("Invalid preset catalog format")
+                raise PresetError(f"Invalid preset catalog format from {catalog_url}")
 
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             self.cache_file.write_text(json.dumps(catalog_data, indent=2))
