@@ -798,7 +798,7 @@ class TestExtensionManager:
         manager = ExtensionManager(project_dir)
 
         # Install once
-        manifest1 = manager.install_from_directory(
+        manager.install_from_directory(
             extension_dir, "0.1.0", register_commands=False
         )
         assert manager.registry.is_installed("test-ext")

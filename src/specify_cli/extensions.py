@@ -1225,8 +1225,12 @@ class ExtensionManager:
             # Clear any stale backup from a previous remove so that only the
             # backup produced by the current remove() call is restored later.
             backup_config_dir = self.extensions_dir / ".backup" / manifest.id
-            if backup_config_dir.exists():
+            if backup_config_dir.is_dir():
                 shutil.rmtree(backup_config_dir)
+            elif backup_config_dir.exists():
+                # Handle the unlikely case of a file or symlink at the
+                # backup path (e.g. from manual user intervention).
+                backup_config_dir.unlink()
             did_remove = self.remove(manifest.id)
 
         # Install extension
@@ -1261,7 +1265,7 @@ class ExtensionManager:
         # so unexpected artifacts in .backup/ are not resurrected.
         if did_remove:
             backup_config_dir = self.extensions_dir / ".backup" / manifest.id
-            if backup_config_dir.exists():
+            if backup_config_dir.is_dir():
                 for cfg_file in backup_config_dir.iterdir():
                     if cfg_file.is_file() and (
                         cfg_file.name.endswith("-config.yml") or
@@ -1269,6 +1273,9 @@ class ExtensionManager:
                     ):
                         shutil.copy2(cfg_file, dest_dir / cfg_file.name)
                 shutil.rmtree(backup_config_dir)
+            elif backup_config_dir.exists():
+                # Defensive: remove unexpected non-directory at backup path.
+                backup_config_dir.unlink()
 
         # Update registry
         self.registry.add(manifest.id, {
