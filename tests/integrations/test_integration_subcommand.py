@@ -93,6 +93,7 @@ class TestIntegrationList:
         # Should show multiple integrations
         assert "claude" in result.output
         assert "gemini" in result.output
+        assert "zed" in result.output
 
     def test_list_shows_multi_install_safe_status(self, tmp_path):
         project = _init_project(tmp_path, "claude")
