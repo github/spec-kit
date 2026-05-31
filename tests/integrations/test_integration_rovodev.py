@@ -20,8 +20,8 @@ class TestRovodevIntegration:
         assert impl.key == self.KEY
         assert impl.config["folder"] == ".rovodev/"
         assert impl.config["commands_subdir"] == "skills"
-        assert impl.registrar_config["dir"] == ".rovodev/prompts"
-        assert impl.registrar_config["extension"] == ".prompt.md"
+        assert impl.registrar_config["dir"] == ".rovodev/skills"
+        assert impl.registrar_config["extension"] == "/SKILL.md"
         assert impl.context_file == "AGENTS.md"
 
     def test_inherited_command_filename_for_base_compatibility(self):
@@ -52,7 +52,7 @@ class TestRovodevIntegration:
         assert skills_dir.is_dir()
 
         templates = impl.list_command_templates()
-        prompt_files = sorted(prompts_dir.glob("speckit.*.prompt.md"))
+        prompt_files = sorted(prompts_dir.glob("speckit-*.prompt.md"))
         skill_dirs = sorted(d for d in skills_dir.iterdir() if d.is_dir() and d.name.startswith("speckit-"))
         assert len(prompt_files) == len(templates)
         assert len(skill_dirs) == len(templates)
@@ -81,17 +81,10 @@ class TestRovodevIntegration:
         manifest = IntegrationManifest(self.KEY, tmp_path)
         impl.setup(tmp_path, manifest)
 
-        prompt_file = tmp_path / ".rovodev" / "prompts" / "speckit.plan.prompt.md"
+        prompt_file = tmp_path / ".rovodev" / "prompts" / "speckit-plan.prompt.md"
         content = prompt_file.read_text(encoding="utf-8")
         assert content == "use skill speckit-plan $ARGUMENTS\n"
 
-    def test_skill_name_conversion_handles_multi_segment_names(self):
-        impl = get_integration(self.KEY)
-        assert impl._skill_name_to_dot_name("speckit-plan") == "speckit.plan"
-        assert (
-            impl._skill_name_to_dot_name("speckit-git-commit")
-            == "speckit.git.commit"
-        )
 
     def test_prompts_manifest_merge_preserves_user_entries(self, tmp_path):
         impl = get_integration(self.KEY)
@@ -224,7 +217,7 @@ class TestRovodevIntegration:
 
         prompts_manifest = project / ".rovodev" / "prompts.yml"
         assert prompts_manifest.exists()
-        prompt_files = sorted((project / ".rovodev" / "prompts").glob("speckit.*.prompt.md"))
+        prompt_files = sorted((project / ".rovodev" / "prompts").glob("speckit-*.prompt.md"))
         skills_dir = project / ".rovodev" / "skills"
         skill_dirs = sorted(d for d in skills_dir.iterdir() if d.is_dir() and d.name.startswith("speckit-"))
         assert len(prompt_files) == 9

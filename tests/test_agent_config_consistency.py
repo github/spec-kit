@@ -287,24 +287,23 @@ class TestAgentConfigConsistency:
     # --- RovoDev consistency checks ---
 
     def test_rovodev_in_agent_config(self):
-        """AGENT_CONFIG should include rovodev with prompt-based scaffold metadata."""
+        """AGENT_CONFIG should include rovodev with skills-based scaffold metadata."""
         assert "rovodev" in AGENT_CONFIG
         assert AGENT_CONFIG["rovodev"]["folder"] == ".rovodev/"
         assert AGENT_CONFIG["rovodev"]["commands_subdir"] == "skills"
         assert AGENT_CONFIG["rovodev"]["requires_cli"] is True
 
     def test_rovodev_in_extension_registrar(self):
-        """CommandRegistrar.AGENT_CONFIGS should include rovodev prompt wrapper metadata."""
+        """CommandRegistrar.AGENT_CONFIGS should include rovodev skill scaffold metadata."""
         cfg = CommandRegistrar.AGENT_CONFIGS
 
         assert "rovodev" in cfg
         rovodev_cfg = cfg["rovodev"]
-        assert rovodev_cfg["dir"] == ".rovodev/prompts"
+        assert rovodev_cfg["dir"] == ".rovodev/skills"
         assert rovodev_cfg["format"] == "markdown"
         assert rovodev_cfg["args"] == "$ARGUMENTS"
-        assert rovodev_cfg["extension"] == ".prompt.md"
+        assert rovodev_cfg["extension"] == "/SKILL.md"
 
     def test_ai_help_includes_rovodev(self):
         """CLI help text for --ai should include rovodev."""
         assert "rovodev" in AI_ASSISTANT_HELP
-

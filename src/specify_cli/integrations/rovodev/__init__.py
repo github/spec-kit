@@ -12,7 +12,7 @@ from typing import Any
 
 import yaml
 
-from ..base import IntegrationBase, SkillsIntegration
+from ..base import SkillsIntegration
 from ..manifest import IntegrationManifest
 
 
@@ -29,31 +29,16 @@ class RovodevIntegration(SkillsIntegration):
         "name": "RovoDev ACLI",
         "folder": ".rovodev/",
         "commands_subdir": "skills",
-        "install_url": "https://www.atlassian.com/software/rovo",
+        "install_url": "https://www.atlassian.com/software/rovo-dev",
         "requires_cli": True,
     }
     registrar_config = {
-        "dir": ".rovodev/prompts",
+        "dir": ".rovodev/skills",
         "format": "markdown",
         "args": "$ARGUMENTS",
-        "extension": ".prompt.md",
+        "extension": "/SKILL.md",
     }
     context_file = "AGENTS.md"
-
-    # Use dot separator so __SPECKIT_COMMAND_PLAN__ resolves to /speckit.plan
-    # inside SKILL.md content, matching the prompt catalog naming convention.
-    invoke_separator = "."
-
-    def build_command_invocation(self, command_name: str, args: str = "") -> str:
-        """Use dot-style invocations matching the prompt catalog names.
-
-        RovoDev prompts are named ``speckit.plan``, ``speckit.git.commit``,
-        etc., so cross-command refs should resolve to ``/speckit.plan``
-        rather than the hyphenated ``/speckit-plan`` that SkillsIntegration
-        normally produces.
-        """
-        return IntegrationBase.build_command_invocation(self, command_name, args)
-
 
     # -- CLI dispatch ------------------------------------------------------
 
@@ -87,13 +72,8 @@ class RovodevIntegration(SkillsIntegration):
     # -- Prompt wrapper + manifest generation ------------------------------
 
     @staticmethod
-    def _render_prompt_wrapper(command_name: str) -> str:
-        return f"use skill {command_name} $ARGUMENTS\n"
-
-    @staticmethod
-    def _skill_name_to_dot_name(skill_name: str) -> str:
-        """Convert ``speckit-git-commit`` to ``speckit.git.commit``."""
-        return skill_name.replace("-", ".")
+    def _render_prompt_wrapper(skill_name: str) -> str:
+        return f"use skill {skill_name} $ARGUMENTS\n"
 
     def _generate_prompt_files(
         self,
@@ -103,7 +83,7 @@ class RovodevIntegration(SkillsIntegration):
     ) -> tuple[list[Path], list[dict[str, str]]]:
         """Create thin prompt wrappers for each SKILL.md.
 
-        Derives the skill name from the parent directory
+        Skill name is derived from the parent directory name
         (e.g. ``.rovodev/skills/speckit-plan/SKILL.md`` → ``speckit-plan``).
 
         Returns (created_files, prompt_entries) where prompt_entries are
@@ -119,16 +99,13 @@ class RovodevIntegration(SkillsIntegration):
             if skill_path.name != "SKILL.md":
                 continue
 
-            # Skill name is the parent directory name (e.g. speckit-plan)
             skill_name = skill_path.parent.name
             if not skill_name:
                 continue
 
-            dot_name = self._skill_name_to_dot_name(skill_name)
-            prompt_filename = f"{dot_name}.prompt.md"
-            prompt_content = self._render_prompt_wrapper(skill_name)
+            prompt_filename = f"{skill_name}.prompt.md"
             prompt_file = self.write_file_and_record(
-                prompt_content,
+                self._render_prompt_wrapper(skill_name),
                 prompts_dir / prompt_filename,
                 project_root,
                 manifest,
@@ -232,7 +209,8 @@ class RovodevIntegration(SkillsIntegration):
 
         1. ``SkillsIntegration.setup()`` generates skill files and
            upserts the context section.
-        2. Generate prompt wrappers and ``prompts.yml``.
+        2. Generates prompt wrappers and ``prompts.yml`` for each skill
+           created in step 1.
         """
         created = super().setup(project_root, manifest, parsed_options, **opts)
 
@@ -249,4 +227,3 @@ class RovodevIntegration(SkillsIntegration):
             created.append(manifest_file)
 
         return created
-
