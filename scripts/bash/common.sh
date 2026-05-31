@@ -720,4 +720,3 @@ except Exception:
     printf '%s' "$content"
     return 0
 }
-

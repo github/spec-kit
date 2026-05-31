@@ -114,7 +114,7 @@ def _run_powershell_format_command(repo: Path, command_name: str) -> subprocess.
             exe,
             "-NoProfile",
             "-Command",
-            '$common = $args[0]; $commandName = $args[1]; . $common; Format-SpecKitCommand -CommandName $commandName -RepoRoot (Get-Location).Path',
+            '& { param($common, $commandName) . $common; Format-SpecKitCommand -CommandName $commandName -RepoRoot (Get-Location).Path }',
             str(script),
             command_name,
         ],
@@ -588,7 +588,6 @@ def test_setup_tasks_bash_fails_custom_branch_without_feature_json(
     assert result.returncode != 0
     assert "Not on a feature branch" in result.stderr
  
- 
 # ===========================================================================
 # POWERSHELL TESTS
 # ===========================================================================
@@ -821,4 +820,3 @@ def test_setup_tasks_ps_fails_custom_branch_without_feature_json(
  
     assert result.returncode != 0
     assert "Not on a feature branch" in result.stderr
- 
