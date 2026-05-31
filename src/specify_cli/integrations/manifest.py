@@ -169,6 +169,12 @@ class IntegrationManifest:
                 non-file path cannot be silently recorded — its hash would
                 be meaningless and ``check_modified``/``uninstall`` would
                 treat the entry as permanently broken.
+            OSError: if the underlying filesystem call (``is_symlink``,
+                ``is_file``, or the file-read used to compute the hash)
+                fails — for example a ``PermissionError`` on the path.
+                Callers should be prepared to handle ``OSError`` (and its
+                subclasses such as ``PermissionError``) in addition to
+                ``ValueError``.
         """
         rel = Path(rel_path)
         # Cheap lexical pre-check first so absolute / parent-traversal paths
@@ -423,6 +429,10 @@ class IntegrationManifest:
                 "list of string paths"
             )
         inst._recovered_files = set(recovered)
+        # Drop any recovered_files entries that don't correspond to tracked
+        # files — defensive against externally-edited or partially-corrupted
+        # manifests. Inconsistent state self-corrects on next save().
+        inst._recovered_files &= set(inst._files.keys())
 
         stored_key = data.get("integration", "")
         if stored_key and stored_key != key:

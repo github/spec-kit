@@ -297,6 +297,24 @@ class TestManifestLoadValidation:
         with pytest.raises(ValueError, match="invalid JSON"):
             IntegrationManifest.load("bad", tmp_path)
 
+    def test_load_filters_recovered_files_not_in_files(self, tmp_path):
+        # Finding B (Round-9): a recovered_files entry referencing a path
+        # not present in files indicates an internally-inconsistent manifest
+        # (e.g. external edit). load() filters those entries silently so the
+        # manifest self-heals on next save(); is_recovered then returns the
+        # truthful False for the orphan.
+        path = tmp_path / ".specify" / "integrations" / "test.manifest.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({
+            "integration": "test",
+            "files": {"kept.txt": "abc123"},
+            "recovered_files": ["kept.txt", "orphan.txt"],
+        }), encoding="utf-8")
+        m = IntegrationManifest.load("test", tmp_path)
+        assert m.recovered_files == {"kept.txt"}
+        assert m.is_recovered("kept.txt") is True
+        assert m.is_recovered("orphan.txt") is False
+
 
 class TestManifestRecoveredFiles:
     """Coverage for the ``recovered_files`` channel added in #2483.
