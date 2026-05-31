@@ -154,7 +154,7 @@ class RovodevIntegration(SkillsIntegration):
         """
         generated_by_name = {e["name"]: e for e in generated if e.get("name")}
 
-        merged: list[dict[str, str]] = []
+        merged: list[dict[str, Any]] = []
         seen: set[str] = set()
 
         for entry in existing:
