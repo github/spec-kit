@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 import specify_cli
 from specify_cli import app
 
@@ -499,7 +501,9 @@ class TestAlreadyLatestUvTool:
         assert result.exit_code == 0
         out = strip_ansi(result.output)
         assert "Already on latest release" not in out
-        assert "Upgrading specify-cli 0.7.6 → v0.7.5 via uv tool:" in out
+        # A pinned older tag is a downgrade and must be labelled as such.
+        assert "Downgrading specify-cli 0.7.6 → v0.7.5 via uv tool:" in out
+        assert "Upgrading specify-cli" not in out
         assert mock_run.call_count == 2
 
     def test_pinned_rc_tag_uses_canonical_version_equality_for_noop(
@@ -729,20 +733,18 @@ class TestDetectionPipx:
 
 
 class TestEditableInstallMetadata:
+    @pytest.mark.skipif(
+        not hasattr(importlib.metadata, "InvalidMetadataError"),
+        reason=(
+            "importlib.metadata.InvalidMetadataError does not exist on this "
+            "Python; _editable_direct_url_path only catches it when present, so "
+            "fabricating it would exercise a path that cannot fire in production"
+        ),
+    )
     def test_editable_marker_false_when_metadata_is_invalid(self):
-        invalid_metadata_error = getattr(importlib.metadata, "InvalidMetadataError", None)
-        if invalid_metadata_error is None:
-            class _FakeInvalidMetadataError(Exception):
-                pass
+        invalid_metadata_error = importlib.metadata.InvalidMetadataError
 
-            invalid_metadata_error = _FakeInvalidMetadataError
-
-        with patch.object(
-            importlib.metadata,
-            "InvalidMetadataError",
-            invalid_metadata_error,
-            create=True,
-        ), patch(
+        with patch(
             "importlib.metadata.distribution",
             side_effect=invalid_metadata_error("bad metadata"),
         ):

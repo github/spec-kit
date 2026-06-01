@@ -24,7 +24,6 @@ import urllib.request
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 import typer
 from packaging.version import InvalidVersion, Version
@@ -244,7 +243,14 @@ class _DetectionSignals:
     resolved_method: _InstallMethod
 
 
-_GITHUB_CREDENTIAL_SUFFIXES = ("_TOKEN", "_SECRET", "_KEY", "_PAT")
+_GITHUB_CREDENTIAL_SUFFIXES = (
+    "_TOKEN",
+    "_SECRET",
+    "_KEY",
+    "_PAT",
+    "_PASSWORD",
+    "_CREDENTIALS",
+)
 _UNRESOLVED_ENV_VAR_RE = re.compile(r"\$\w+|\$\{\w+\}|%[^%]+%")
 
 
@@ -260,9 +266,11 @@ def _is_github_credential_env_key(key: str) -> bool:
       ``GITHUB_REPOSITORY``) the installer subprocess does not consume.
     - Otherwise the key is scrubbed only when it contains an underscore-delimited
       ``_GITHUB_`` segment *and* ends with a credential suffix
-      (``_TOKEN``/``_SECRET``/``_KEY``/``_PAT``) — e.g. ``HOMEBREW_GITHUB_API_TOKEN``.
-      Un-delimited variants such as a hypothetical ``GITHUBTOKEN`` are not matched
-      by this branch; no real tool sets such a name.
+      (``_TOKEN``/``_SECRET``/``_KEY``/``_PAT``/``_PASSWORD``/``_CREDENTIALS``) —
+      e.g. ``HOMEBREW_GITHUB_API_TOKEN``. Un-delimited variants such as a
+      hypothetical ``GITHUBTOKEN`` are not matched by this branch; no real tool
+      sets such a name. Only these recognized shapes are scrubbed — this is not
+      blanket coverage of every conceivable secret name.
     """
     upper = key.upper()
     if upper.startswith(("GH_", "GITHUB_")):
@@ -1205,7 +1213,7 @@ def self_upgrade(
         help="Print the preview (method, current, target, installer argv) and "
         "exit 0 without launching the installer subprocess.",
     ),
-    tag: Optional[str] = typer.Option(
+    tag: str | None = typer.Option(
         None,
         "--tag",
         help="Pin the target version (vX.Y.Z[suffix]). Without --tag, the "
@@ -1339,10 +1347,20 @@ def self_upgrade(
             raise typer.Exit(0)
 
     # One-line pre-execution notice so the user sees exactly what will run
-    # before the installer's own output starts streaming.
+    # before the installer's own output starts streaming. A pinned target older
+    # than the installed version is a downgrade — say so explicitly so
+    # `--tag <older>` does not masquerade as a forward upgrade.
+    installed_version = _parse_version_text(plan.current_version)
+    verb = (
+        "Downgrading"
+        if tag is not None
+        and installed_version is not None
+        and target_version < installed_version
+        else "Upgrading"
+    )
     argv_str = _render_argv(plan.installer_argv) if plan.installer_argv else ""
     console.print(
-        f"Upgrading specify-cli {plan.current_version} → {plan.target_tag} "
+        f"{verb} specify-cli {plan.current_version} → {plan.target_tag} "
         f"via {_method_label(plan.method)}: {argv_str}",
         soft_wrap=True,
     )

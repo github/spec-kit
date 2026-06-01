@@ -386,7 +386,10 @@ class TestInstallerMissing:
         ), patch("specify_cli._version.subprocess.run", side_effect=transient_error):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
-        assert result.exit_code != 3
+        # Transient/unknown OSErrors are re-raised rather than mapped to the
+        # invalid-installer exit 3, so the CLI surfaces them as an uncaught
+        # error: exit code 1 with the original OSError preserved.
+        assert result.exit_code == 1
         assert isinstance(result.exception, OSError)
 
 
