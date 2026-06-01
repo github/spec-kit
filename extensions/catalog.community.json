@@ -2081,6 +2081,38 @@
       "created_at": "2026-04-01T00:00:00Z",
       "updated_at": "2026-04-01T00:00:00Z"
     },
+    "rag-azure-builder": {
+      "name": "RAG Azure Builder",
+      "id": "rag-azure-builder",
+      "description": "Spec Kit extension for onboarding and operating an Azure RAG stack with guided workflows.",
+      "author": "Sertxito",
+      "version": "1.2.0",
+      "download_url": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder/archive/refs/tags/v1.2.0.zip",
+      "repository": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder",
+      "homepage": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder",
+      "documentation": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder#readme",
+      "changelog": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 0
+      },
+      "tags": [
+        "azure",
+        "rag",
+        "search",
+        "onboarding",
+        "cost-optimization"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-01T00:00:00Z",
+      "updated_at": "2026-06-01T00:00:00Z"
+    },
     "ralph": {
       "name": "Ralph Loop",
       "id": "ralph",
