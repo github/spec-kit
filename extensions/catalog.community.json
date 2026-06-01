@@ -1727,7 +1727,7 @@
     "multi-sites": {
       "name": "Multi-Sites Spec Kit",
       "id": "multi-sites",
-      "description": "Multi-site aware specify command with per-site spec folders, auto-increment, and Drupal support",
+      "description": "Adds a multi-site-aware /speckit.specify workflow with per-site spec folders, independent auto-increment counters, and Drupal layout support",
       "author": "teeyo",
       "version": "1.0.0",
       "download_url": "https://github.com/teeyo/spec-kit-multi-sites/archive/refs/tags/v1.0.0.zip",
