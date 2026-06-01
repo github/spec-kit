@@ -1575,14 +1575,13 @@ class TestPrefixBash:
         ).stdout.strip()
         assert current == "feature/010-pre-exist"
 
-    def test_prefix_trailing_slash_optional(self, git_repo: Path):
-        """Passing 'feature/' (with trailing slash) works identically to 'feature'."""
+    def test_prefix_rejects_trailing_slash(self, git_repo: Path):
+        """Passing 'feature/' (with trailing slash) is rejected — no slashes allowed."""
         result = run_script(
-            git_repo, "--prefix", "feature/", "--short-name", "slash", "Trailing slash"
+            git_repo, "--dry-run", "--prefix", "feature/", "--short-name", "slash", "Trailing slash"
         )
-        assert result.returncode == 0, result.stderr
-        branch = _parse_branch_from_stdout(result.stdout)
-        assert branch == "feature/001-slash", f"expected feature/001-slash, got: {branch}"
+        assert result.returncode != 0
+        assert "must not contain slashes" in result.stderr
 
     def test_prefix_whitespace_trimmed(self, git_repo: Path):
         """Whitespace around prefix value is trimmed."""
@@ -1595,12 +1594,12 @@ class TestPrefixBash:
 
     @pytest.mark.parametrize("prefix", ["/", "//", "///", "////"], ids=["single", "double", "triple", "quad"])
     def test_prefix_rejects_slash_only(self, git_repo: Path, prefix: str):
-        """Slash-only values produce an empty segment after trimming the trailing '/'."""
+        """Slash-only values are rejected — no slashes allowed at all."""
         result = run_script(
             git_repo, "--dry-run", "--prefix", prefix, "--short-name", "bad", "Bad prefix"
         )
         assert result.returncode != 0
-        assert "non-slash" in result.stderr.lower() or "single segment" in result.stderr.lower()
+        assert "must not contain slashes" in result.stderr
 
     def test_prefix_rejects_embedded_slash(self, git_repo: Path):
         """Multi-segment prefix like 'feat/fix' is rejected."""
@@ -1608,7 +1607,7 @@ class TestPrefixBash:
             git_repo, "--dry-run", "--prefix", "feat/fix", "--short-name", "bad", "Bad prefix"
         )
         assert result.returncode != 0
-        assert "single segment" in result.stderr
+        assert "must not contain slashes" in result.stderr
 
     def test_prefix_rejects_whitespace_only(self, git_repo: Path):
         """Whitespace-only prefix value is rejected."""
@@ -1678,7 +1677,7 @@ class TestPrefixPowerShell:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "bugfix/001-fix"
-        assert "specs/001-fix/spec.md" in data["SPEC_FILE"]
+        assert "specs/001-fix/spec.md" in data["SPEC_FILE"].replace("\\", "/")
         assert "bugfix" not in data["SPEC_FILE"]
 
     def test_ps_prefix_with_timestamp(self, ps_git_repo: Path):
@@ -1755,7 +1754,8 @@ class TestPrefixPowerShell:
             ps_git_repo, "-DryRun", "-Prefix", "feat/fix", "-ShortName", "bad", "Bad"
         )
         assert result.returncode != 0
-        assert "single segment" in result.stderr.lower() or "single segment" in result.stdout.lower()
+        combined = (result.stderr + result.stdout).lower()
+        assert "must not contain slashes" in combined
 
     @pytest.mark.parametrize("prefix", ["/", "//", "///", "////"], ids=["single", "double", "triple", "quad"])
     def test_ps_prefix_rejects_slash_only(self, ps_git_repo: Path, prefix: str):
@@ -1765,16 +1765,16 @@ class TestPrefixPowerShell:
         )
         assert result.returncode != 0
         combined = (result.stderr + result.stdout).lower()
-        assert "non-slash" in combined or "single segment" in combined
+        assert "must not contain slashes" in combined
 
-    def test_ps_prefix_trailing_slash_optional(self, ps_git_repo: Path):
-        """PowerShell: trailing slash is normalized."""
+    def test_ps_prefix_rejects_trailing_slash(self, ps_git_repo: Path):
+        """PowerShell: trailing slash is rejected — no slashes allowed."""
         result = run_ps_script(
-            ps_git_repo, "-Prefix", "feature/", "-ShortName", "slash", "Trailing slash"
+            ps_git_repo, "-DryRun", "-Prefix", "feature/", "-ShortName", "slash", "Trailing slash"
         )
-        assert result.returncode == 0, result.stderr
-        branch = _parse_branch_from_stdout(result.stdout)
-        assert branch == "feature/001-slash"
+        assert result.returncode != 0
+        combined = (result.stderr + result.stdout).lower()
+        assert "must not contain slashes" in combined
 
 
 @requires_bash
@@ -1898,7 +1898,7 @@ class TestPrefixExtensionBash:
             ext_git_repo, "--dry-run", "--prefix", "feat/fix", "--short-name", "bad", "Bad"
         )
         assert result.returncode != 0
-        assert "single segment" in result.stderr
+        assert "must not contain slashes" in result.stderr
 
     @pytest.mark.parametrize("prefix", ["/", "//", "///", "////"], ids=["single", "double", "triple", "quad"])
     def test_ext_prefix_rejects_slash_only(self, ext_git_repo: Path, prefix: str):
@@ -1907,4 +1907,4 @@ class TestPrefixExtensionBash:
             ext_git_repo, "--dry-run", "--prefix", prefix, "--short-name", "bad", "Bad"
         )
         assert result.returncode != 0
-        assert "non-slash" in result.stderr.lower() or "single segment" in result.stderr.lower()
+        assert "must not contain slashes" in result.stderr
