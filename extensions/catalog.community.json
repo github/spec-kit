@@ -1247,7 +1247,7 @@
       "updated_at": "2026-03-17T00:00:00Z"
     },
     "linear": {
-      "name": "spec-kit-linear",
+      "name": "Linear Integration",
       "id": "linear",
       "description": "Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional).",
       "author": "Ash Brener",
