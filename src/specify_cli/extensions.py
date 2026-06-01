@@ -1874,10 +1874,15 @@ class ExtensionCatalog(CatalogStackBase):
         # through to the network fetch path so the cache gets refreshed.
         if is_valid:
             try:
-                cached_data = json.loads(cache_file.read_text())
+                cached_data = json.loads(cache_file.read_text(encoding="utf-8"))
                 self._validate_catalog_payload(cached_data, entry.url)
                 return cached_data
-            except (json.JSONDecodeError, ExtensionError):
+            except (json.JSONDecodeError, OSError, UnicodeError, ExtensionError):
+                # Cache is best-effort: a JSON-decode failure, an OS-level
+                # read failure (permissions / disk / handle limit), or a
+                # text-encoding failure on a cache file written by an older
+                # client all fall through to the network fetch path. Only
+                # the network failure is surfaced to the caller.
                 pass
 
         # Fetch from network
@@ -1994,15 +1999,23 @@ class ExtensionCatalog(CatalogStackBase):
         Raises:
             ExtensionError: If catalog cannot be fetched
         """
-        # Check cache first unless force refresh
-        if not force_refresh and self.is_cache_valid():
-            try:
-                return json.loads(self.cache_file.read_text())
-            except json.JSONDecodeError:
-                pass  # Fall through to network fetch
-
         # Fetch from network
         catalog_url = self.get_catalog_url()
+
+        # Check cache first unless force refresh. Match the
+        # ``_fetch_single_catalog`` cache contract: a poisoned or
+        # unreadable cache silently falls through to a network refetch
+        # rather than crashing the caller. ``_validate_catalog_payload``
+        # is reused here so a cache written by an older client
+        # (pre-validation) is rejected and refreshed instead of returning
+        # the stale malformed payload.
+        if not force_refresh and self.is_cache_valid():
+            try:
+                cached_data = json.loads(self.cache_file.read_text(encoding="utf-8"))
+                self._validate_catalog_payload(cached_data, catalog_url)
+                return cached_data
+            except (json.JSONDecodeError, OSError, UnicodeError, ExtensionError):
+                pass  # Fall through to network fetch
 
         try:
             import urllib.error
@@ -2010,9 +2023,10 @@ class ExtensionCatalog(CatalogStackBase):
             with self._open_url(catalog_url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
-            # Validate catalog structure
-            if "schema_version" not in catalog_data or "extensions" not in catalog_data:
-                raise ExtensionError(f"Invalid catalog format from {catalog_url}")
+            # Validate catalog structure. Reuses the same helper as
+            # ``_fetch_single_catalog`` so all three branches (root type,
+            # missing keys, nested-mapping type) stay consistent.
+            self._validate_catalog_payload(catalog_data, catalog_url)
 
             # Save to cache
             self.cache_dir.mkdir(parents=True, exist_ok=True)

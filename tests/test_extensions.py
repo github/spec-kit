@@ -2692,6 +2692,86 @@ class TestExtensionCatalog:
         # The poisoned cache was discarded and the network payload returned.
         assert result == valid
 
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            # Root is not a JSON object.
+            [],
+            "oops",
+            42,
+            None,
+            # Root is fine but ``extensions`` is the wrong type.
+            {"schema_version": "1.0", "extensions": []},
+            {"schema_version": "1.0", "extensions": "oops"},
+            {"schema_version": "1.0", "extensions": None},
+        ],
+    )
+    def test_fetch_catalog_rejects_malformed_payload(self, temp_dir, payload):
+        """Legacy ``fetch_catalog`` reuses the same shape-validation helper.
+
+        Before this change ``fetch_catalog`` only checked key presence — so
+        a payload like ``42`` would crash with
+        ``TypeError: argument of type 'int' is not iterable`` during the
+        ``"schema_version" in catalog_data`` check, and an entry mapping
+        of the wrong type would crash downstream. Reusing
+        ``_validate_catalog_payload`` keeps the network-side behaviour of
+        the legacy single-catalog method consistent with the multi-catalog
+        ``_fetch_single_catalog`` path.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(ExtensionError, match="Invalid catalog format"):
+                catalog.fetch_catalog(force_refresh=True)
+
+    def test_fetch_catalog_recovers_from_unreadable_cache(self, temp_dir):
+        """An unreadable / wrong-encoded cache file silently refetches.
+
+        The cache contract is best-effort: a JSON-decode failure, an OS
+        read failure (permissions / disk / handle limit), or an invalid
+        text encoding on a cache file written by an older client must
+        all fall through to the network fetch rather than crash the
+        caller. Covers Copilot's review point that the previous
+        ``except (json.JSONDecodeError,)`` was too narrow.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        # Write invalid UTF-8 bytes to the cache file so ``read_text``
+        # raises ``UnicodeDecodeError`` (a subclass of ``UnicodeError``).
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_bytes(b"\xff\xfe\x00not-utf-8")
+        catalog.cache_metadata_file.write_text(
+            json.dumps(
+                {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        valid = {
+            "schema_version": "1.0",
+            "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog.fetch_catalog(force_refresh=False)
+
+        # Recovered via network rather than crashing on the unreadable cache.
+        assert result == valid
+
     def test_get_merged_extensions_skips_non_mapping_entries(self, temp_dir):
         """Per-entry guard: one malformed entry shouldn't poison the merge.
 
