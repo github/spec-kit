@@ -3086,9 +3086,11 @@ def extension_add(
     # actually see and respond to the confirmation (the Rich status
     # spinner overwrites the typer.confirm prompt line, making it appear
     # as though the command is hung).
-    if from_url:
+    # Guard with ``not dev`` so that --dev + --from does not show a
+    # confusing confirmation for a URL that will be ignored.
+    if from_url and not dev:
         from urllib.parse import urlparse
-        from rich.markup import escape as rich_escape
+        from rich.markup import escape as _escape_markup
 
         parsed = urlparse(from_url)
         is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
@@ -3098,12 +3100,14 @@ def extension_add(
             console.print("HTTP is only allowed for localhost URLs.")
             raise typer.Exit(1)
 
+        safe_url = _escape_markup(from_url)
+
         # Warn about untrusted sources — default-deny confirmation
         console.print()
         console.print(Panel(
             f"[bold]You are installing an extension from an external URL that is not\n"
             f"listed in any of your configured extension catalogs.[/bold]\n\n"
-            f"URL: {rich_escape(from_url)}\n\n"
+            f"URL: {safe_url}\n\n"
             f"Only install extensions from sources you trust.",
             title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
             border_style="yellow",
@@ -3140,7 +3144,9 @@ def extension_add(
                 import urllib.request
                 import urllib.error
 
-                console.print(f"Downloading from {from_url}...")
+                from rich.markup import escape as _escape_markup
+
+                console.print(f"Downloading from {_escape_markup(from_url)}...")
 
                 # Download ZIP to temp location
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
