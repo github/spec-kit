@@ -2768,17 +2768,33 @@ class TestExtensionCatalog:
             zf.writestr("extension.yml", "id: test-ext\nname: Test\nversion: 1.0.0\n")
         zip_bytes = zip_buf.getvalue()
 
-        mock_response = MagicMock()
-        mock_response.read.return_value = zip_bytes
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        release_response = MagicMock()
+        release_response.read.return_value = json.dumps(
+            {
+                "assets": [
+                    {
+                        "name": "test-ext.zip",
+                        "url": "https://api.github.com/repos/org/repo/releases/assets/1",
+                    }
+                ]
+            }
+        ).encode()
+        release_response.__enter__ = lambda s: s
+        release_response.__exit__ = MagicMock(return_value=False)
 
-        captured = {}
+        asset_response = MagicMock()
+        asset_response.read.return_value = zip_bytes
+        asset_response.__enter__ = lambda s: s
+        asset_response.__exit__ = MagicMock(return_value=False)
+
+        captured = []
         mock_opener = MagicMock()
 
         def fake_open(req, timeout=None):
-            captured["req"] = req
-            return mock_response
+            captured.append(req)
+            if req.full_url.endswith("/releases/tags/v1"):
+                return release_response
+            return asset_response
 
         mock_opener.open.side_effect = fake_open
 
@@ -2793,7 +2809,11 @@ class TestExtensionCatalog:
              patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             catalog.download_extension("test-ext", target_dir=temp_dir)
 
-        assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/tags/v1"
+        assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[1].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
+        assert captured[1].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[1].get_header("Accept") == "application/octet-stream"
 
 
 

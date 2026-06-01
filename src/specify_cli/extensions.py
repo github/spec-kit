@@ -1728,13 +1728,51 @@ class ExtensionCatalog(CatalogStackBase):
         from specify_cli.authentication.http import build_request
         return build_request(url)
 
-    def _open_url(self, url: str, timeout: int = 10):
+    def _open_url(
+        self,
+        url: str,
+        timeout: int = 10,
+        extra_headers: Optional[Dict[str, str]] = None,
+    ):
         """Open a URL with provider-based auth, trying each configured provider.
 
         Delegates to :func:`specify_cli.authentication.http.open_url`.
         """
         from specify_cli.authentication.http import open_url
-        return open_url(url, timeout)
+        return open_url(url, timeout, extra_headers=extra_headers)
+
+    def _resolve_github_release_asset_api_url(
+        self,
+        download_url: str,
+        timeout: int = 60,
+    ) -> Optional[str]:
+        """Resolve a GitHub browser release asset URL to its API asset URL."""
+        import urllib.error
+        from urllib.parse import unquote, urlparse
+
+        parsed = urlparse(download_url)
+        if parsed.hostname != "github.com":
+            return None
+
+        parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
+        if len(parts) < 6 or parts[2:4] != ["releases", "download"]:
+            return None
+
+        owner, repo, tag = parts[0], parts[1], parts[4]
+        asset_name = "/".join(parts[5:])
+        release_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+
+        try:
+            with self._open_url(release_url, timeout=timeout) as response:
+                release_data = json.loads(response.read())
+        except (urllib.error.URLError, json.JSONDecodeError):
+            return None
+
+        for asset in release_data.get("assets", []):
+            if asset.get("name") == asset_name and asset.get("url"):
+                return str(asset["url"])
+
+        return None
 
     def get_active_catalogs(self) -> List[CatalogEntry]:
         """Get the ordered list of active catalogs.
@@ -2134,9 +2172,15 @@ class ExtensionCatalog(CatalogStackBase):
         zip_filename = f"{extension_id}-{version}.zip"
         zip_path = target_dir / zip_filename
 
+        extra_headers = None
+        resolved_download_url = self._resolve_github_release_asset_api_url(download_url)
+        if resolved_download_url:
+            download_url = resolved_download_url
+            extra_headers = {"Accept": "application/octet-stream"}
+
         # Download the ZIP file
         try:
-            with self._open_url(download_url, timeout=60) as response:
+            with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
                 zip_data = response.read()
 
             zip_path.write_bytes(zip_data)
