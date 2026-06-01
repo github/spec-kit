@@ -40,6 +40,8 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset({
 })
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
 
+DEFAULT_HOOK_PRIORITY = 10
+
 REINSTALL_COMMAND = "uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git"
 
 
@@ -106,6 +108,15 @@ def normalize_priority(value: Any, default: int = 10) -> int:
     except (TypeError, ValueError):
         return default
     return priority if priority >= 1 else default
+
+
+def coerce_hook_entries(hook_config: Any) -> List[Any]:
+    """Return a hook event's config as a list of entries.
+
+    A hook event may be declared as a single mapping or a list of mappings.
+    Both shapes are normalized to a list so callers can iterate uniformly.
+    """
+    return hook_config if isinstance(hook_config, list) else [hook_config]
 
 
 @dataclass
@@ -214,17 +225,36 @@ class ExtensionManifest:
                 "Extension must provide at least one command or hook"
             )
 
-        # Validate hook values (if present)
+        # Validate hook values (if present).
+        # Each event is a single mapping or a list of mappings.
         if hooks:
             for hook_name, hook_config in hooks.items():
-                if not isinstance(hook_config, dict):
+                if isinstance(hook_config, list) and not hook_config:
                     raise ValidationError(
-                        f"Invalid hook '{hook_name}': expected a mapping"
+                        f"Invalid hook '{hook_name}': list must contain at least one entry"
                     )
-                if not hook_config.get("command"):
-                    raise ValidationError(
-                        f"Hook '{hook_name}' missing required 'command' field"
-                    )
+                for entry in coerce_hook_entries(hook_config):
+                    if not isinstance(entry, dict):
+                        raise ValidationError(
+                            f"Invalid hook '{hook_name}': "
+                            "expected a mapping or list of mappings"
+                        )
+                    if not entry.get("command"):
+                        raise ValidationError(
+                            f"Hook '{hook_name}' missing required 'command' field"
+                        )
+                    if "priority" in entry:
+                        priority = entry["priority"]
+                        if not isinstance(priority, int) or isinstance(priority, bool):
+                            raise ValidationError(
+                                f"Hook '{hook_name}' has invalid 'priority': "
+                                "must be an integer"
+                            )
+                        if priority < 1:
+                            raise ValidationError(
+                                f"Hook '{hook_name}' has invalid 'priority': "
+                                "must be >= 1"
+                            )
 
         # Validate commands; track renames so hook references can be rewritten.
         rename_map: Dict[str, str] = {}
@@ -274,28 +304,30 @@ class ExtensionManifest:
         # an alias-form ref (ext.cmd → speckit.ext.cmd).  Always emit a warning when
         # the reference is changed so extension authors know to update the manifest.
         for hook_name, hook_data in self.data.get("hooks", {}).items():
-            if not isinstance(hook_data, dict):
-                raise ValidationError(
-                    f"Hook '{hook_name}' must be a mapping, got {type(hook_data).__name__}"
-                )
-            command_ref = hook_data.get("command")
-            if not isinstance(command_ref, str):
-                continue
-            # Step 1: apply any rename from the auto-correction pass.
-            after_rename = rename_map.get(command_ref, command_ref)
-            # Step 2: lift alias-form '{ext_id}.cmd' to canonical 'speckit.{ext_id}.cmd'.
-            parts = after_rename.split(".")
-            if len(parts) == 2 and parts[0] == ext["id"]:
-                final_ref = f"speckit.{ext['id']}.{parts[1]}"
-            else:
-                final_ref = after_rename
-            if final_ref != command_ref:
-                hook_data["command"] = final_ref
-                self.warnings.append(
-                    f"Hook '{hook_name}' referenced command '{command_ref}'; "
-                    f"updated to canonical form '{final_ref}'. "
-                    f"The extension author should update the manifest."
-                )
+            for entry in coerce_hook_entries(hook_data):
+                if not isinstance(entry, dict):
+                    raise ValidationError(
+                        f"Hook '{hook_name}' must be a mapping or list of mappings, "
+                        f"got {type(entry).__name__}"
+                    )
+                command_ref = entry.get("command")
+                if not isinstance(command_ref, str):
+                    continue
+                # Step 1: apply any rename from the auto-correction pass.
+                after_rename = rename_map.get(command_ref, command_ref)
+                # Step 2: lift alias-form '{ext_id}.cmd' to canonical 'speckit.{ext_id}.cmd'.
+                parts = after_rename.split(".")
+                if len(parts) == 2 and parts[0] == ext["id"]:
+                    final_ref = f"speckit.{ext['id']}.{parts[1]}"
+                else:
+                    final_ref = after_rename
+                if final_ref != command_ref:
+                    entry["command"] = final_ref
+                    self.warnings.append(
+                        f"Hook '{hook_name}' referenced command '{command_ref}'; "
+                        f"updated to canonical form '{final_ref}'. "
+                        f"The extension author should update the manifest."
+                    )
 
     @staticmethod
     def _try_correct_command_name(name: str, ext_id: str) -> Optional[str]:
@@ -2626,29 +2658,33 @@ class HookExecutor:
                 config["hooks"][hook_name] = []
                 changed = True
 
-            # Add hook entry
-            hook_entry = {
-                "extension": manifest.id,
-                "command": hook_config.get("command"),
-                "enabled": True,
-                "optional": hook_config.get("optional", True),
-                "prompt": hook_config.get(
-                    "prompt", f"Execute {hook_config.get('command')}?"
-                ),
-                "description": hook_config.get("description", ""),
-                "condition": hook_config.get("condition"),
-            }
+            # Key by command to dedup within the manifest (last wins).
+            # Dict preserves insertion order for stable priority ties.
+            new_entries: Dict[str, Dict[str, Any]] = {}
+            for entry in coerce_hook_entries(hook_config):
+                command = entry.get("command")
+                if not command:
+                    continue
+                new_entries[command] = {
+                    "extension": manifest.id,
+                    "command": command,
+                    "enabled": True,
+                    "optional": entry.get("optional", True),
+                    "priority": entry.get("priority", DEFAULT_HOOK_PRIORITY),
+                    "prompt": entry.get("prompt", f"Execute {command}?"),
+                    "description": entry.get("description", ""),
+                    "condition": entry.get("condition"),
+                }
 
-            # Deduplicate: remove all existing entries for this extension on this
-            # hook event, then append the single canonical entry. This prevents
-            # multiple hooks firing when hand-edited or older versions leave
-            # duplicate entries behind. (Feedback from review)
+            # Purge then re-add all of this extension's entries for the event.
+            # A reinstall with a changed shape (single<->list or a shorter list)
+            # then leaves no orphaned entries behind.
             original_list = config["hooks"][hook_name]
             deduped = [
                 h for h in original_list
                 if not (isinstance(h, dict) and h.get("extension") == manifest.id)
             ]
-            deduped.append(hook_entry)
+            deduped.extend(new_entries.values())
             if deduped != original_list:
                 config["hooks"][hook_name] = deduped
                 changed = True
@@ -2696,19 +2732,26 @@ class HookExecutor:
         self.save_project_config(config)
 
     def get_hooks_for_event(self, event_name: str) -> List[Dict[str, Any]]:
-        """Get all registered hooks for a specific event.
+        """Get all enabled hooks for a specific event, sorted by priority ascending.
+
+        Lower ``priority`` runs first. Ties keep insertion order via a stable
+        sort. Missing or corrupted on-disk priorities fall back to the default.
 
         Args:
             event_name: Name of the event (e.g., 'after_tasks')
 
         Returns:
-            List of hook configurations
+            List of enabled hook configurations sorted by priority.
         """
         config = self.get_project_config()
         hooks = config.get("hooks", {}).get(event_name, [])
 
         # Filter to enabled hooks only
-        return [h for h in hooks if h.get("enabled", True)]
+        enabled = [h for h in hooks if h.get("enabled", True)]
+        return sorted(
+            enabled,
+            key=lambda h: normalize_priority(h.get("priority"), DEFAULT_HOOK_PRIORITY),
+        )
 
     def should_execute_hook(self, hook: Dict[str, Any]) -> bool:
         """Determine if a hook should be executed based on its condition.
