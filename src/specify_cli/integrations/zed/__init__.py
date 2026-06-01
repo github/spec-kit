@@ -1,4 +1,4 @@
-"""Zed editor integration. — skills-based agent.
+"""Zed editor integration — skills-based agent.
 
 Zed uses the ``.agents/skills/speckit-<name>/SKILL.md`` layout so Spec Kit
 commands are exposed as project-local skills that can be invoked from Zed's

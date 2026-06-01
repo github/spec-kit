@@ -727,6 +727,7 @@ def register(app: typer.Typer) -> None:
         copilot_skill_mode = selected_ai == "copilot" and _is_skills_integration
         devin_skill_mode = selected_ai == "devin"
         zed_skill_mode = selected_ai == "zed" and _is_skills_integration
+        cline_skill_mode = selected_ai == "cline"
         native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode or trae_skill_mode or cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode or zed_skill_mode
 
         if codex_skill_mode and not ai_skills:
@@ -753,7 +754,7 @@ def register(app: typer.Typer) -> None:
                 return f"/speckit-{name}"
             if kimi_skill_mode:
                 return f"/skill:speckit-{name}"
-            if cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode or zed_skill_mode:
+            if cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode or zed_skill_mode or cline_skill_mode:
                 return f"/speckit-{name}"
             return f"/speckit.{name}"
 

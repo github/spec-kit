@@ -186,7 +186,8 @@ class TestIntegrationInstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        normalized = " ".join(result.output.split())
+        output = strip_ansi(result.output)
+        normalized = " ".join(output.split())
         assert "already installed" in normalized
         assert "specify integration use codex" in normalized
         assert "specify integration upgrade codex" in normalized

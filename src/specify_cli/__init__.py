@@ -3082,6 +3082,43 @@ def extension_add(
     manager = ExtensionManager(project_root)
     speckit_version = get_speckit_version()
 
+    # Prompt for URL-based installs BEFORE the spinner so the user can
+    # actually see and respond to the confirmation (the Rich status
+    # spinner overwrites the typer.confirm prompt line, making it appear
+    # as though the command is hung).
+    # Guard with ``not dev`` so that --dev + --from does not show a
+    # confusing confirmation for a URL that will be ignored.
+    if from_url and not dev:
+        from urllib.parse import urlparse
+        from rich.markup import escape as _escape_markup
+
+        parsed = urlparse(from_url)
+        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+
+        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+            console.print("[red]Error:[/red] URL must use HTTPS for security.")
+            console.print("HTTP is only allowed for localhost URLs.")
+            raise typer.Exit(1)
+
+        safe_url = _escape_markup(from_url)
+
+        # Warn about untrusted sources — default-deny confirmation
+        console.print()
+        console.print(Panel(
+            f"[bold]You are installing an extension from an external URL that is not\n"
+            f"listed in any of your configured extension catalogs.[/bold]\n\n"
+            f"URL: {safe_url}\n\n"
+            f"Only install extensions from sources you trust.",
+            title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
+            border_style="yellow",
+            padding=(1, 2),
+        ))
+        console.print()
+        confirm = typer.confirm("Continue with installation?", default=False)
+        if not confirm:
+            console.print("Cancelled")
+            raise typer.Exit(0)
+
     try:
         with console.status(f"[cyan]Installing extension: {extension}[/cyan]"):
             if dev:
@@ -3104,37 +3141,9 @@ def extension_add(
 
             elif from_url:
                 # Install from URL (ZIP file)
-                import urllib.request
                 import urllib.error
-                from urllib.parse import urlparse
 
-                # Validate URL
-                parsed = urlparse(from_url)
-                is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-
-                if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
-                    console.print("[red]Error:[/red] URL must use HTTPS for security.")
-                    console.print("HTTP is only allowed for localhost URLs.")
-                    raise typer.Exit(1)
-
-                # Warn about untrusted sources — default-deny confirmation
-                console.print()
-                console.print(Panel(
-                    f"[bold]You are installing an extension from an external URL that is not\n"
-                    f"listed in any of your configured extension catalogs.[/bold]\n\n"
-                    f"URL: {from_url}\n\n"
-                    f"Only install extensions from sources you trust.",
-                    title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
-                    border_style="yellow",
-                    padding=(1, 2),
-                ))
-                console.print()
-                confirm = typer.confirm("Continue with installation?", default=False)
-                if not confirm:
-                    console.print("Cancelled")
-                    raise typer.Exit(0)
-
-                console.print(f"Downloading from {from_url}...")
+                console.print(f"Downloading from {safe_url}...")
 
                 # Download ZIP to temp location
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
@@ -3151,7 +3160,7 @@ def extension_add(
                     # Install from downloaded ZIP
                     manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
                 except urllib.error.URLError as e:
-                    console.print(f"[red]Error:[/red] Failed to download from {from_url}: {e}")
+                    console.print(f"[red]Error:[/red] Failed to download from {safe_url}: {e}")
                     raise typer.Exit(1)
                 finally:
                     # Clean up downloaded ZIP
@@ -3232,9 +3241,17 @@ def extension_add(
         for warning in manifest.warnings:
             console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {warning}")
 
+        is_cline = load_init_options(project_root).get("ai") == "cline"
+
+        if is_cline:
+            from specify_cli.integrations.cline import format_cline_command_name
+
         console.print("\n[bold cyan]Provided commands:[/bold cyan]")
         for cmd in manifest.commands:
-            console.print(f"  • {cmd['name']} - {cmd.get('description', '')}")
+            cmd_name = cmd['name']
+            if is_cline:
+                cmd_name = format_cline_command_name(cmd_name)
+            console.print(f"  • {cmd_name} - {cmd.get('description', '')}")
 
         # Report agent skills registration
         reg_meta = manager.registry.get(manifest.id)
