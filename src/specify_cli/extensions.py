@@ -2662,6 +2662,8 @@ class HookExecutor:
             # Dict preserves insertion order for stable priority ties.
             new_entries: Dict[str, Dict[str, Any]] = {}
             for entry in coerce_hook_entries(hook_config):
+                if not isinstance(entry, dict):
+                    continue
                 command = entry.get("command")
                 if not command:
                     continue
@@ -2670,7 +2672,9 @@ class HookExecutor:
                     "command": command,
                     "enabled": True,
                     "optional": entry.get("optional", True),
-                    "priority": entry.get("priority", DEFAULT_HOOK_PRIORITY),
+                    "priority": normalize_priority(
+                        entry.get("priority"), DEFAULT_HOOK_PRIORITY
+                    ),
                     "prompt": entry.get("prompt", f"Execute {command}?"),
                     "description": entry.get("description", ""),
                     "condition": entry.get("condition"),

@@ -483,7 +483,7 @@ class TestExtensionManifest:
         ]
 
         manifest_path = temp_dir / "extension.yml"
-        with open(manifest_path, 'w') as f:
+        with open(manifest_path, 'w', encoding="utf-8") as f:
             yaml.dump(valid_manifest_data, f)
 
         manifest = ExtensionManifest(manifest_path)
@@ -505,7 +505,7 @@ class TestExtensionManifest:
         ]
 
         manifest_path = temp_dir / "extension.yml"
-        with open(manifest_path, 'w') as f:
+        with open(manifest_path, 'w', encoding="utf-8") as f:
             yaml.dump(valid_manifest_data, f)
 
         with pytest.raises(
@@ -530,7 +530,7 @@ class TestExtensionManifest:
         ]
 
         manifest_path = temp_dir / "extension.yml"
-        with open(manifest_path, 'w') as f:
+        with open(manifest_path, 'w', encoding="utf-8") as f:
             yaml.dump(valid_manifest_data, f)
 
         manifest = ExtensionManifest(manifest_path)
@@ -550,7 +550,7 @@ class TestExtensionManifest:
         valid_manifest_data["hooks"]["after_tasks"] = []
 
         manifest_path = temp_dir / "extension.yml"
-        with open(manifest_path, 'w') as f:
+        with open(manifest_path, 'w', encoding="utf-8") as f:
             yaml.dump(valid_manifest_data, f)
 
         with pytest.raises(ValidationError, match="must contain at least one entry"):
@@ -566,26 +566,26 @@ class TestExtensionManifest:
             "command": "speckit.test-ext.hello",
             "priority": "high",
         }
-        with open(manifest_path, 'w') as f:
+        with open(manifest_path, 'w', encoding="utf-8") as f:
             yaml.dump(valid_manifest_data, f)
         with pytest.raises(ValidationError, match="invalid 'priority'.*integer"):
             ExtensionManifest(manifest_path)
 
         valid_manifest_data["hooks"]["after_tasks"]["priority"] = 0
-        with open(manifest_path, 'w') as f:
+        with open(manifest_path, 'w', encoding="utf-8") as f:
             yaml.dump(valid_manifest_data, f)
         with pytest.raises(ValidationError, match="invalid 'priority'.*>= 1"):
             ExtensionManifest(manifest_path)
 
         # bool is a subclass of int, so it must be rejected explicitly.
         valid_manifest_data["hooks"]["after_tasks"]["priority"] = True
-        with open(manifest_path, 'w') as f:
+        with open(manifest_path, 'w', encoding="utf-8") as f:
             yaml.dump(valid_manifest_data, f)
         with pytest.raises(ValidationError, match="invalid 'priority'.*integer"):
             ExtensionManifest(manifest_path)
 
         valid_manifest_data["hooks"]["after_tasks"]["priority"] = 5
-        with open(manifest_path, 'w') as f:
+        with open(manifest_path, 'w', encoding="utf-8") as f:
             yaml.dump(valid_manifest_data, f)
         manifest = ExtensionManifest(manifest_path)
         assert manifest.hooks["after_tasks"]["priority"] == 5
@@ -4879,6 +4879,20 @@ class TestHookExecutorRegistration:
                         {"optional": True},
                     ]
                 },
+            )
+        )
+
+        entries = executor.get_project_config()["hooks"]["after_tasks"]
+        assert [e["command"] for e in entries] == ["speckit.ext-a.go"]
+
+    def test_register_hooks_skips_non_dict_entry(self, project_dir):
+        """A non-dict entry in a hook list is skipped rather than crashing
+        (defensive; validated manifests never reach this state)."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest(
+                "ext-a",
+                {"after_tasks": [{"command": "speckit.ext-a.go"}, "not-a-mapping"]},
             )
         )
 
