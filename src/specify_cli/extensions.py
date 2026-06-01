@@ -1746,15 +1746,23 @@ class ExtensionCatalog(CatalogStackBase):
         download_url: str,
         timeout: int = 60,
     ) -> Optional[str]:
-        """Resolve a GitHub browser release asset URL to its API asset URL."""
+        """Resolve a GitHub release asset URL to its API asset URL."""
         import urllib.error
         from urllib.parse import unquote, urlparse
 
         parsed = urlparse(download_url)
+        parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
+        if (
+            parsed.hostname == "api.github.com"
+            and len(parts) >= 6
+            and parts[:1] == ["repos"]
+            and parts[3:5] == ["releases", "assets"]
+        ):
+            return download_url
+
         if parsed.hostname != "github.com":
             return None
 
-        parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
         if len(parts) < 6 or parts[2:4] != ["releases", "download"]:
             return None
 
