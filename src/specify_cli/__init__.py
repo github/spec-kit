@@ -3088,6 +3088,7 @@ def extension_add(
     # as though the command is hung).
     if from_url:
         from urllib.parse import urlparse
+        from rich.markup import escape as rich_escape
 
         parsed = urlparse(from_url)
         is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
@@ -3102,7 +3103,7 @@ def extension_add(
         console.print(Panel(
             f"[bold]You are installing an extension from an external URL that is not\n"
             f"listed in any of your configured extension catalogs.[/bold]\n\n"
-            f"URL: {from_url}\n\n"
+            f"URL: {rich_escape(from_url)}\n\n"
             f"Only install extensions from sources you trust.",
             title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
             border_style="yellow",
