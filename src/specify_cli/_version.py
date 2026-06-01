@@ -1173,7 +1173,10 @@ def self_check() -> None:
         console.print(f"  pipx install --force {_manual_source_spec(manual_tag)}")
         return
 
-    # Installed is parseable AND is >= latest → "up to date" (FR-006).
+    # Reached only when manual_tag parsed cleanly — the unparseable-latest case
+    # already returned at the `manual_tag is None` branch above — and installed
+    # is parseable AND >= latest → "up to date" (FR-006). Do not reintroduce an
+    # InvalidVersion-fallback assumption here.
     console.print(f"[green]Up to date:[/green] {installed}")
 
 
@@ -1296,10 +1299,13 @@ def self_upgrade(
     if plan.current_version != "unknown":
         current_version = _parse_version_text(plan.current_version)
         current_canonical = str(current_version) if current_version is not None else ""
-        # Both arguments are pre-canonicalized so the ordering check matches
-        # the exact-equality check used for pinned targets below.
-        if tag is None and current_version is not None and not _is_newer(
-            target_canonical, current_canonical
+        # target_version and current_version are already Version instances here,
+        # so compare them directly instead of re-parsing the canonical strings
+        # through _is_newer; the empty-current case stays explicit via the
+        # `current_version is not None` guard rather than being swallowed by an
+        # InvalidVersion catch.
+        if tag is None and current_version is not None and not (
+            target_version > current_version
         ):
             if current_canonical == target_canonical:
                 console.print(f"Already on latest release: {target_tag}")

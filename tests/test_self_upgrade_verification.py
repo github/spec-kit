@@ -578,3 +578,28 @@ class TestTokenScrubbing:
         assert env["GHOST_API_TOKEN"] == "ghost-kept"
         assert env["GHIDRA_API_KEY"] == "ghidra-kept"
         assert env["UNRELATED_TOKEN"] == "kept"
+
+    def test_env_scrubbing_strips_noncredential_github_vars_by_design(
+        self, monkeypatch
+    ):
+        # The scrub is intentionally broad: every GH_/GITHUB_-prefixed name is
+        # removed from the installer subprocess env, including non-credential
+        # context vars. This is a deliberate fail-safe so credential-adjacent
+        # names that lack a recognized suffix (e.g. GH_TOKEN_FILE,
+        # GITHUB_TOKEN_PATH, asserted above) can never leak. The installer
+        # (`uv tool install` / `pipx install` of a public package) does not
+        # consume routing/context vars like GITHUB_REPOSITORY, so nothing the
+        # subprocess needs is lost by stripping them.
+        monkeypatch.setenv("GH_HOST", "github.example.com")
+        monkeypatch.setenv("GH_CONFIG_DIR", "/home/u/.config/gh")
+        monkeypatch.setenv("GITHUB_REPOSITORY", "github/spec-kit")
+        monkeypatch.setenv("GITHUB_WORKSPACE", "/home/runner/work")
+        monkeypatch.setenv("GITHUB_USER", "octocat")
+
+        env = specify_cli._version._scrubbed_env()
+
+        assert "GH_HOST" not in env
+        assert "GH_CONFIG_DIR" not in env
+        assert "GITHUB_REPOSITORY" not in env
+        assert "GITHUB_WORKSPACE" not in env
+        assert "GITHUB_USER" not in env
