@@ -380,7 +380,6 @@ format_speckit_command() {
     command_name="${command_name#speckit.}"
     command_name="${command_name#speckit-}"
     command_name="${command_name//./$separator}"
-    command_name="${command_name//-/$separator}"
 
     printf '/speckit%s%s\n' "$separator" "$command_name"
 }

@@ -402,7 +402,7 @@ function Format-SpecKitCommand {
     } elseif ($name.StartsWith('speckit-')) {
         $name = $name.Substring(8)
     }
-    $name = $name -replace '[.-]', $separator
+    $name = $name -replace '\.', $separator
 
     return "/speckit$separator$name"
 }

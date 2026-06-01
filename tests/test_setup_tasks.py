@@ -446,6 +446,16 @@ def test_bash_command_hint_normalizes_mixed_separators(tasks_repo: Path) -> None
 
 
 @requires_bash
+def test_bash_command_hint_preserves_hyphens_inside_segments(tasks_repo: Path) -> None:
+    _write_integration_state(tasks_repo, "copilot", ".")
+
+    result = _run_bash_format_command(tasks_repo, "speckit.jira.sync-status")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit.jira.sync-status"
+
+
+@requires_bash
 def test_bash_command_hint_caches_invoke_separator_per_process(tasks_repo: Path) -> None:
     _write_integration_state(tasks_repo, "claude", "-")
     script = tasks_repo / ".specify" / "scripts" / "bash" / "common.sh"
@@ -701,6 +711,18 @@ def test_powershell_command_hint_normalizes_mixed_separators(
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "/speckit-git-commit"
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+def test_powershell_command_hint_preserves_hyphens_inside_segments(
+    tasks_repo: Path,
+) -> None:
+    _write_integration_state(tasks_repo, "copilot", ".")
+
+    result = _run_powershell_format_command(tasks_repo, "speckit.jira.sync-status")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit.jira.sync-status"
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
