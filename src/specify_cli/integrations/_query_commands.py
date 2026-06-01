@@ -72,11 +72,11 @@ def integration_list(
             safe = ""
             if eid in INTEGRATION_REGISTRY:
                 reg_integ = INTEGRATION_REGISTRY[eid]
-                safe = "[green]yes[/green]" if getattr(reg_integ, "multi_install_safe", False) else "[dim]no[/dim]"
+                safe = "yes" if getattr(reg_integ, "multi_install_safe", False) else "no"
             table.add_row(
                 eid,
                 entry.get("name", eid),
-                entry.get("version", "?"),
+                entry.get("version", ""),
                 cat_name,
                 status,
                 safe,
