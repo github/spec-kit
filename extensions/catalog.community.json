@@ -1724,6 +1724,37 @@
       "created_at": "2026-05-04T02:51:52Z",
       "updated_at": "2026-05-04T02:51:52Z"
     },
+    "multi-sites": {
+      "name": "Multi-Sites Spec Kit",
+      "id": "multi-sites",
+      "description": "Multi-site aware specify command with per-site spec folders, auto-increment, and Drupal support",
+      "author": "teeyo",
+      "version": "1.0.0",
+      "download_url": "https://github.com/teeyo/spec-kit-multi-sites/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/teeyo/spec-kit-multi-sites",
+      "homepage": "https://github.com/teeyo/spec-kit-multi-sites",
+      "documentation": "https://github.com/teeyo/spec-kit-multi-sites/blob/main/README.md",
+      "changelog": "https://github.com/teeyo/spec-kit-multi-sites/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "multi-site",
+        "drupal",
+        "workflow",
+        "process"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-01T00:00:00Z",
+      "updated_at": "2026-06-01T00:00:00Z"
+    },
     "onboard": {
       "name": "Onboard",
       "id": "onboard",
