@@ -2017,7 +2017,7 @@
       "repository": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder",
       "homepage": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder",
       "documentation": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder#readme",
-      "changelog": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder/blob/v1.2.0/CHANGELOG.md",
+      "changelog": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder/blob/main/CHANGELOG.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
