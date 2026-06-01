@@ -4,6 +4,7 @@ import importlib.metadata
 import json
 import os
 import subprocess
+from pathlib import Path
 from unittest.mock import patch
 
 import specify_cli
@@ -313,7 +314,10 @@ class TestArgv0Resolution:
         ), patch("pathlib.Path.resolve", side_effect=OSError("bad path")):
             result = specify_cli._version._resolved_argv0_path("specify")
 
-        assert str(result) == "/broken/specify"
+        # Compare as Path objects: on Windows the same logical path renders
+        # with backslashes, so a raw string compare against the POSIX form
+        # would spuriously fail.
+        assert result == Path("/broken/specify")
 
 
 class TestArgvAssemblyUvTool:

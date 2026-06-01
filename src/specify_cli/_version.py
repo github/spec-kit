@@ -263,10 +263,14 @@ def _scrubbed_env() -> dict[str, str]:
     }
 
 
+# vMAJOR.MINOR.PATCH, then an optional dev/prerelease segment, then an
+# optional build-metadata segment. The two trailing segments are independent
+# so they can compose (e.g. v1.0.0-rc1+build.42) — matching PEP 440 /semver,
+# which the Version() check below then enforces canonically.
 _TAG_REGEX = re.compile(
     r"^v[0-9]+\.[0-9]+\.[0-9]+"
-    r"(?:(?:\.?dev[0-9]+)|(?:[-.]?(?:a|b|rc|alpha|beta)[-.]?[0-9]+)|"
-    r"(?:\+[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*))?$"
+    r"(?:(?:\.?dev[0-9]+)|(?:[-.]?(?:a|b|rc|alpha|beta)[-.]?[0-9]+))?"
+    r"(?:\+[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)?$"
 )
 _INVALID_TAG_MESSAGE = "Invalid --tag: expected vMAJOR.MINOR.PATCH[suffix]"
 
@@ -274,8 +278,9 @@ _INVALID_TAG_MESSAGE = "Invalid --tag: expected vMAJOR.MINOR.PATCH[suffix]"
 def _validate_tag(tag: str) -> str:
     """Validate a user-supplied --tag value.
 
-    Accepts vX.Y.Z plus optional dev, alpha/beta/rc, or build-metadata suffixes
-    (for example: v1.0.0-rc1, v0.8.0.dev0, v0.8.0+build.42). Rejects
+    Accepts vX.Y.Z plus an optional dev or alpha/beta/rc suffix and/or an
+    optional build-metadata suffix, which may combine (for example:
+    v1.0.0-rc1, v0.8.0.dev0, v0.8.0+build.42, v1.0.0-rc1+build.42). Rejects
     everything else, including bare 'latest', hash refs, branch names, and
     numeric versions without the 'v' prefix.
     """

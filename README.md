@@ -179,7 +179,7 @@ Essential commands for the Spec-Driven Development workflow:
 | `/speckit.taskstoissues` | `speckit-taskstoissues`| Convert generated task lists into GitHub issues for tracking and execution |
 | `/speckit.implement`     | `speckit-implement`    | Execute all tasks to build the feature according to the plan               |
 
-#### Optional Commands
+### Optional Commands
 
 Additional commands for enhanced quality and validation:
 

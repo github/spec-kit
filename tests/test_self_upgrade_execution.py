@@ -9,6 +9,7 @@ from specify_cli import app
 from tests.self_upgrade_helpers import (
     _completed_process,
     mock_urlopen_response,
+    requires_posix,
     runner,
     strip_ansi,
 )
@@ -73,6 +74,7 @@ class TestInstallerMissing:
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 0
 
+    @requires_posix
     def test_relative_installer_path_does_not_require_path_lookup(
         self, monkeypatch, uv_tool_argv0, clean_environ, tmp_path
     ):
@@ -105,6 +107,7 @@ class TestInstallerMissing:
         assert result.exit_code == 0
         assert mock_run.call_args.args[0][0] == "./uv"
 
+    @requires_posix
     def test_relative_installer_path_missing_gets_path_specific_message(
         self, monkeypatch, uv_tool_argv0, clean_environ, tmp_path
     ):
@@ -191,6 +194,7 @@ class TestInstallerMissing:
             in strip_ansi(result.output)
         )
 
+    @requires_posix
     def test_relative_installer_path_not_executable_gets_path_specific_message(
         self, monkeypatch, uv_tool_argv0, clean_environ, tmp_path
     ):

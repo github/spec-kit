@@ -392,6 +392,20 @@ class TestTagValidation:
         assert result.exit_code == 0
         assert "Target version: v0.8.0+build.42" in strip_ansi(result.output)
 
+    def test_valid_prerelease_with_build_metadata_tag(
+        self, uv_tool_argv0, clean_environ
+    ):
+        # Prerelease and build-metadata suffixes compose (PEP 440 / semver).
+        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+            "specify_cli._version._get_installed_version", return_value="0.7.5"
+        ):
+            result = runner.invoke(
+                app,
+                ["self", "upgrade", "--dry-run", "--tag", "v1.0.0-rc1+build.42"],
+            )
+        assert result.exit_code == 0
+        assert "Target version: v1.0.0-rc1+build.42" in strip_ansi(result.output)
+
     @pytest.mark.parametrize(
         "bad_tag",
         [
