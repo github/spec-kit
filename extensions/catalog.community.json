@@ -1249,7 +1249,7 @@
     "linear": {
       "name": "spec-kit-linear",
       "id": "linear",
-      "description": "Mirror spec-kit feature directories into Linear (filesystem -> Linear, reconcile-based, unidirectional).",
+      "description": "Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional).",
       "author": "Ash Brener",
       "version": "0.2.0",
       "download_url": "https://github.com/ashbrener/spec-kit-linear/archive/refs/tags/v0.2.0.zip",
