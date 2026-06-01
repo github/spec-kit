@@ -408,6 +408,26 @@ class TestAlreadyLatestUvTool:
         assert "Already on latest release: v0.7.6" in strip_ansi(result.output)
         assert mock_run.call_count == 0
 
+    def test_trailing_zero_equivalent_version_reports_latest_not_newer(
+        self, uv_tool_argv0, clean_environ
+    ):
+        # Version("1.0") == Version("1.0.0") under packaging even though their
+        # canonical strings differ. The no-op message must use Version equality
+        # so this prints "Already on latest release", not "... or newer".
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.subprocess.run"
+        ) as mock_run, patch(
+            "specify_cli._version.shutil.which", return_value="uv"
+        ), patch("specify_cli._version._get_installed_version", return_value="1.0"):
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v1.0.0"})
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        assert result.exit_code == 0
+        out = strip_ansi(result.output)
+        assert "Already on latest release: v1.0.0" in out
+        assert "or newer" not in out
+        assert mock_run.call_count == 0
+
     def test_dev_build_ahead_of_release_reports_newer_noop(
         self, uv_tool_argv0, clean_environ
     ):

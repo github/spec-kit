@@ -127,7 +127,10 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
             return tag, None
     except urllib.error.HTTPError as e:
         # Order matters: HTTPError is a subclass of URLError.
-        if e.code == 403:
+        # 403 (primary rate limit / abuse detection) and 429 (Too Many Requests /
+        # secondary rate limit) both get the actionable "configure a token" hint;
+        # every other status is surfaced verbatim as "HTTP {code}".
+        if e.code in (403, 429):
             return None, _RESOLUTION_FAILURE_RATE_LIMITED
         return None, f"{_RESOLUTION_FAILURE_HTTP_PREFIX}{e.code}"
     except (urllib.error.URLError, OSError):
@@ -246,7 +249,21 @@ _UNRESOLVED_ENV_VAR_RE = re.compile(r"\$\w+|\$\{\w+\}|%[^%]+%")
 
 
 def _is_github_credential_env_key(key: str) -> bool:
-    """Return whether an env key looks like a GitHub credential."""
+    """Return whether an env key should be scrubbed as a GitHub credential.
+
+    Matching contract (case-insensitive):
+
+    - Any key with a ``GH_`` or ``GITHUB_`` prefix is scrubbed unconditionally.
+      This is deliberately broad: it catches credential-adjacent names that lack
+      a recognized suffix (e.g. ``GH_TOKEN_FILE``, ``GITHUB_TOKEN_PATH``) at the
+      cost of also dropping benign context vars (``GH_HOST``,
+      ``GITHUB_REPOSITORY``) the installer subprocess does not consume.
+    - Otherwise the key is scrubbed only when it contains an underscore-delimited
+      ``_GITHUB_`` segment *and* ends with a credential suffix
+      (``_TOKEN``/``_SECRET``/``_KEY``/``_PAT``) — e.g. ``HOMEBREW_GITHUB_API_TOKEN``.
+      Un-delimited variants such as a hypothetical ``GITHUBTOKEN`` are not matched
+      by this branch; no real tool sets such a name.
+    """
     upper = key.upper()
     if upper.startswith(("GH_", "GITHUB_")):
         return True
@@ -1294,27 +1311,30 @@ def self_upgrade(
         # before this point; keep this guard as a defensive invariant check.
         _emit_failure(_FAILURE_TARGET_TAG_UNPARSEABLE, plan=plan)
         raise typer.Exit(1)
-    target_canonical = str(target_version)
-
     if plan.current_version != "unknown":
         current_version = _parse_version_text(plan.current_version)
-        current_canonical = str(current_version) if current_version is not None else ""
-        # target_version and current_version are already Version instances here,
-        # so compare them directly instead of re-parsing the canonical strings
-        # through _is_newer; the empty-current case stays explicit via the
-        # `current_version is not None` guard rather than being swallowed by an
-        # InvalidVersion catch.
+        # target_version and current_version are Version instances here, so use
+        # packaging's ordering/equality directly rather than comparing canonical
+        # strings: Version("1.0") == Version("1.0.0") yet their str() forms
+        # differ, so canonical-string equality would misreport equal versions as
+        # "or newer". The unparseable-current case stays explicit via the
+        # `current_version is not None` guard.
         if tag is None and current_version is not None and not (
             target_version > current_version
         ):
-            if current_canonical == target_canonical:
+            if target_version == current_version:
                 console.print(f"Already on latest release: {target_tag}")
             else:
                 console.print(f"Already on latest release or newer: {plan.current_version}")
             raise typer.Exit(0)
-        # Pinned upgrades are no-ops only on an exact parseable match; an
-        # unparseable current version deliberately proceeds to installation.
-        if tag is not None and current_canonical == target_canonical:
+        # Pinned upgrades are no-ops only on an exact parseable match — the same
+        # Version equality used by the unpinned branch above; an unparseable
+        # current version deliberately proceeds to installation.
+        if (
+            tag is not None
+            and current_version is not None
+            and target_version == current_version
+        ):
             console.print(f"Already on requested release: {target_tag}")
             raise typer.Exit(0)
 
@@ -1362,11 +1382,13 @@ def self_upgrade(
     # pre-upgrade module, so importlib.metadata would lie. A fresh `specify
     # --version` is the only signal that the new binary is actually live.
     verified = _verify_upgrade(plan)
-    if (
-        verified is None
-        or _canonicalize_version_text(plan.target_tag)
-        != _canonicalize_version_text(verified)
-    ):
+    # Compare as Version instances, not canonical strings: _canonicalize_version_text
+    # falls back to _normalize_tag() on unparseable input, so two raw strings could
+    # coincidentally match. Requiring a parseable verified version that equals the
+    # (already-parsed) target makes a non-version verifier result a mismatch (exit 2)
+    # rather than a silently-masked "success".
+    verified_version = _parse_version_text(verified) if verified is not None else None
+    if verified_version is None or verified_version != target_version:
         _emit_failure(
             _FAILURE_VERIFICATION_MISMATCH,
             plan=plan,

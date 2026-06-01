@@ -313,6 +313,35 @@ class TestResolutionFailures:
         assert result.exit_code == 1
         assert "Upgrade aborted: HTTP 500" in strip_ansi(result.output)
 
+    @pytest.mark.parametrize(
+        "code, expected",
+        [
+            # 429 (Too Many Requests / secondary rate limit) gets the same
+            # actionable token hint as 403; other statuses surface verbatim.
+            (
+                429,
+                "Upgrade aborted: rate limited (configure ~/.specify/auth.json "
+                "with a GitHub token)",
+            ),
+            (404, "Upgrade aborted: HTTP 404"),
+            (502, "Upgrade aborted: HTTP 502"),
+        ],
+    )
+    def test_http_error_categorization(
+        self, code, expected, uv_tool_argv0, clean_environ
+    ):
+        err = urllib.error.HTTPError(
+            url="https://api.github.com",
+            code=code,
+            msg="err",
+            hdrs={},  # type: ignore[arg-type]
+            fp=None,
+        )
+        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=err):
+            result = runner.invoke(app, ["self", "upgrade"])
+        assert result.exit_code == 1
+        assert expected in strip_ansi(result.output)
+
     def test_unparseable_resolved_release_tag_exits_1_without_traceback(
         self, uv_tool_argv0, clean_environ
     ):
