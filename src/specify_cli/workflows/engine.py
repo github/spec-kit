@@ -232,7 +232,7 @@ def _validate_steps(
             errors.extend(step_errors)
 
         # Validate optional `continue_on_error` field. The engine honours
-        # this on any step that returns FAILED so the pipeline can route
+        # this on any step that returns StepStatus.FAILED so the pipeline can route
         # around the failure via a downstream `if` or `switch` (or a
         # `gate` that surfaces the failure to the operator via message
         # interpolation). The field must be a literal boolean —

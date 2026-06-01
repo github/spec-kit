@@ -2336,7 +2336,7 @@ steps:
 # ===== continue_on_error Tests =====
 #
 # Locks the contract documented in workflows/README.md "Error Handling"
-# section: when a step returns `StepResult(status=FAILED, ...)` and
+# section: when a step returns `StepResult(status=StepStatus.FAILED, ...)` and
 # `continue_on_error: true` is declared, the engine records the step's
 # `output` (with `exit_code` and `stderr` from the failure) and its
 # `status` (sibling key on `steps.<id>`, not nested under `output`)
@@ -2352,7 +2352,7 @@ class TestContinueOnError:
 
     def test_undeclared_failure_halts_run(self, project_dir):
         """Default behaviour (no `continue_on_error`): a failing step
-        halts the workflow run with `status == FAILED`.
+        halts the workflow run with `status == StepStatus.FAILED`.
 
         Locks the byte-equivalent default — workflows that do not
         declare the flag must behave exactly as before this feature.
@@ -2419,7 +2419,7 @@ steps:
 
     def test_declared_but_step_succeeded_is_noop(self, project_dir):
         """`continue_on_error: true` on a step that succeeds is a
-        no-op — the flag only changes behaviour on FAILED status.
+        no-op — the flag only changes behaviour on StepStatus.FAILED status.
         """
         from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
         from specify_cli.workflows.base import RunStatus
@@ -2505,7 +2505,7 @@ steps:
 
         # Force the gate step into interactive mode and feed a "reject"
         # choice so the abort path actually runs in the test env
-        # (default behaviour returns PAUSED when stdin is not a TTY).
+        # (default behaviour returns StepStatus.PAUSED when stdin is not a TTY).
         # Swap sys.stdin itself for a stub: setattr on the real
         # TextIOWrapper's `isatty` method is not assignable under some
         # runners (e.g. pytest with capture disabled).

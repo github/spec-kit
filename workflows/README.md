@@ -221,7 +221,7 @@ Aggregate results from fan-out steps:
 
 ## Error Handling
 
-By default, any step that returns `StepResult(status=FAILED, ...)`
+By default, any step that returns `StepResult(status=StepStatus.FAILED, ...)`
 at runtime halts the entire run — most commonly a `shell` or
 `command` step exiting non-zero. Set `continue_on_error: true` on
 a step to record its result and continue to the next sibling step
@@ -265,10 +265,10 @@ A few things worth knowing about that example:
   workflow author's responsibility: read
   `{{ steps.<gate-id>.output.choice }}` in a follow-up `if`, `switch`,
   or expression, as the `recover` step above does.
-- `on_reject` has three values: `abort` (default — reject → `FAILED`
+- `on_reject` has three values: `abort` (default — reject → `StepStatus.FAILED`
   with `output.aborted = True`, halts the run), `skip` (reject →
-  `COMPLETED`, author handles branching as shown), and `retry`
-  (reject → `PAUSED` so the next `specify workflow resume` re-runs
+  `StepStatus.COMPLETED`, author handles branching as shown), and `retry`
+  (reject → `StepStatus.PAUSED` so the next `specify workflow resume` re-runs
   the gate).
 - Gates do not automatically re-run the failed step. To express a
   retry path, either define custom gate options and branch on the
@@ -279,12 +279,12 @@ A few things worth knowing about that example:
 - The field must be a literal boolean (`true` / `false`); coerced
   strings like `"true"` are rejected at validation time.
 - **Scope: returned failures only.** The flag applies to step results
-  with `status=FAILED`. Unhandled exceptions raised out of a step's
+  with `status=StepStatus.FAILED`. Unhandled exceptions raised out of a step's
   `execute()` method are caught one level up by `WorkflowEngine.execute()`,
   logged as `workflow_failed`, and abort the run regardless of
   `continue_on_error`. If a step author wants the flag to cover an
   exceptional path, the step must catch the exception internally and
-  return `StepResult(status=FAILED, ...)` with the failure encoded in
+  return `StepResult(status=StepStatus.FAILED, ...)` with the failure encoded in
   `output` (e.g. `exit_code`, `stderr`, or a custom field).
 - Gate aborts (`on_reject: abort` chosen by the operator) always halt
   the run — `continue_on_error` does not override them. The flag is
