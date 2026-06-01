@@ -3807,6 +3807,67 @@ class TestExtensionAddCLI:
         assert "bundled with spec-kit" in result.output
         assert "reinstall" in result.output.lower()
 
+    def test_add_from_url_prompts_before_spinner(self, tmp_path):
+        """Confirm prompt for --from <url> must fire before the console.status spinner.
+
+        Regression test for #2783: typer.confirm() inside console.status()
+        was overwritten by the Rich spinner, making the command appear hung.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        call_order: list[str] = []
+
+        original_status = MagicMock()
+
+        def record_status(*args, **kwargs):
+            call_order.append("spinner")
+            return original_status
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.console.status", side_effect=record_status), \
+             patch("typer.confirm", side_effect=lambda *a, **kw: (call_order.append("confirm"), False)[-1]):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert "confirm" in call_order, "confirm prompt was never called"
+        # The confirm must fire BEFORE the spinner is entered
+        if "spinner" in call_order:
+            assert call_order.index("confirm") < call_order.index("spinner"), \
+                f"confirm must precede spinner, got: {call_order}"
+        assert result.exit_code == 0  # user declined → clean exit
+
+    def test_add_from_url_cancel_exits_cleanly(self, tmp_path):
+        """Declining the --from <url> confirmation should exit with code 0."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=False):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0
+        assert "Cancelled" in result.output
+
 
 class TestDownloadExtensionBundled:
     """Tests for download_extension handling of bundled extensions."""
