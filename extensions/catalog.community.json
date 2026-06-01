@@ -1246,6 +1246,39 @@
       "created_at": "2026-03-17T00:00:00Z",
       "updated_at": "2026-03-17T00:00:00Z"
     },
+    "linear": {
+      "name": "spec-kit-linear",
+      "id": "linear",
+      "description": "Mirror spec-kit feature directories into Linear (filesystem -> Linear, reconcile-based, unidirectional).",
+      "author": "Ash Brener",
+      "version": "0.2.0",
+      "download_url": "https://github.com/ashbrener/spec-kit-linear/archive/refs/tags/v0.2.0.zip",
+      "repository": "https://github.com/ashbrener/spec-kit-linear",
+      "homepage": "https://github.com/ashbrener/spec-kit-linear",
+      "documentation": "https://github.com/ashbrener/spec-kit-linear/blob/main/README.md",
+      "changelog": "https://github.com/ashbrener/spec-kit-linear/releases",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 6
+      },
+      "tags": [
+        "issue-tracking",
+        "linear",
+        "tasks-sync",
+        "lifecycle-mirror",
+        "memory",
+        "cross-repo"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-01T00:00:00Z",
+      "updated_at": "2026-06-01T00:00:00Z"
+    },
     "m365": {
       "name": "Microsoft 365 Integration",
       "id": "m365",
