@@ -134,6 +134,18 @@ class CopilotIntegration(IntegrationBase):
             ),
         ]
 
+    def _resolve_executable(self) -> str:
+        """Return the Copilot CLI executable, respecting the env-var override.
+
+        Checks ``SPECKIT_INTEGRATION_COPILOT_EXECUTABLE`` first.  Falls
+        back to the platform-specific default from ``_copilot_executable()``
+        (``copilot.cmd`` on Windows, ``copilot`` elsewhere) so that
+        existing behaviour is preserved when the env var is unset.
+        """
+        env_name = "SPECKIT_INTEGRATION_COPILOT_EXECUTABLE"
+        override = os.environ.get(env_name, "").strip()
+        return override if override else _copilot_executable()
+
     def build_exec_args(
         self,
         prompt: str,
@@ -148,7 +160,7 @@ class CopilotIntegration(IntegrationBase):
         # Controlled by SPECKIT_COPILOT_ALLOW_ALL_TOOLS env var
         # (default: enabled).  The deprecated SPECKIT_ALLOW_ALL_TOOLS
         # is also honoured as a fallback.
-        args = [_copilot_executable(), "-p", prompt]
+        args = [self._resolve_executable(), "-p", prompt]
         self._apply_extra_args_env_var(args)
         if _allow_all():
             args.append("--yolo")
@@ -217,7 +229,7 @@ class CopilotIntegration(IntegrationBase):
             agent_name = f"speckit.{stem}"
             prompt = args or ""
 
-        cli_args = [_copilot_executable(), "-p", prompt]
+        cli_args = [self._resolve_executable(), "-p", prompt]
         # Honour SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS for real workflow
         # runs.  `dispatch_command` builds cli_args inline rather than
         # going through `build_exec_args`, so the hook must be invoked

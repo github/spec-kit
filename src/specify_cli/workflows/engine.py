@@ -11,6 +11,7 @@ The engine is the orchestrator that:
 from __future__ import annotations
 
 import json
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -425,7 +426,7 @@ class WorkflowEngine:
         inputs:
             User-provided input values.
         run_id:
-            Optional run ID (auto-generated if not provided).
+            Optional run ID (uses SPECKIT_WORKFLOW_RUN_ID when set, otherwise auto-generated).
 
         Returns
         -------
@@ -433,8 +434,14 @@ class WorkflowEngine:
         """
         from . import STEP_REGISTRY
 
+        effective_run_id = run_id
+        if effective_run_id is None:
+            env_run_id = os.environ.get("SPECKIT_WORKFLOW_RUN_ID", "").strip()
+            if env_run_id:
+                effective_run_id = env_run_id
+
         state = RunState(
-            run_id=run_id,
+            run_id=effective_run_id,
             workflow_id=definition.id,
             project_root=self.project_root,
         )

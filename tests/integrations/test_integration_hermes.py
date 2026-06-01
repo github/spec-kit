@@ -241,10 +241,15 @@ class TestHermesIntegration(SkillsIntegrationTests):
             p.relative_to(project).as_posix()
             for p in project.rglob("*") if p.is_file()
         )
-        # Ensure no .hermes/skills/speckit-*/SKILL.md in project dir
-        hermes_skill_files = [f for f in actual if f.startswith(".hermes/skills/speckit-")]
+        # Ensure no core .hermes/skills/speckit-*/SKILL.md in project dir
+        # (extension-installed skills like agent-context-update may appear)
+        hermes_skill_files = [
+            f for f in actual
+            if f.startswith(".hermes/skills/speckit-")
+            and "agent-context" not in f
+        ]
         assert hermes_skill_files == [], (
-            f"Expected no local SKILL.md files, found: {hermes_skill_files}"
+            f"Expected no local core SKILL.md files, found: {hermes_skill_files}"
         )
         # Ensure the marker exists (empty dir won't appear in file listing)
         assert (project / ".hermes" / "skills").is_dir()
@@ -274,9 +279,15 @@ class TestHermesIntegration(SkillsIntegrationTests):
             p.relative_to(project).as_posix()
             for p in project.rglob("*") if p.is_file()
         )
-        hermes_skill_files = [f for f in actual if f.startswith(".hermes/skills/speckit-")]
+        # Ensure no core .hermes/skills/speckit-*/SKILL.md in project dir
+        # (extension-installed skills like agent-context-update may appear)
+        hermes_skill_files = [
+            f for f in actual
+            if f.startswith(".hermes/skills/speckit-")
+            and "agent-context" not in f
+        ]
         assert hermes_skill_files == [], (
-            f"Expected no local SKILL.md files, found: {hermes_skill_files}"
+            f"Expected no local core SKILL.md files, found: {hermes_skill_files}"
         )
         assert (project / ".hermes" / "skills").is_dir()
 
@@ -342,6 +353,10 @@ class TestHermesAutoPromote:
         assert (home / ".hermes" / "skills" / "speckit-plan" / "SKILL.md").exists()
         # Local marker should exist
         assert (target / ".hermes" / "skills").is_dir()
-        # No SKILL.md files in project-local dir
-        local_skills = list((target / ".hermes" / "skills").iterdir())
+        # No core SKILL.md files in project-local dir
+        # (extension-installed skills like agent-context-update may appear)
+        local_skills = [
+            d for d in (target / ".hermes" / "skills").iterdir()
+            if "agent-context" not in d.name
+        ]
         assert local_skills == [], f"Local skills dir should be empty, got: {local_skills}"

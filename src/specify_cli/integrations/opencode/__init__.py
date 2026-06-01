@@ -28,7 +28,7 @@ class OpencodeIntegration(MarkdownIntegration):
         model: str | None = None,
         output_json: bool = True,
     ) -> list[str] | None:
-        args = [self.key, "run"]
+        args = [self._resolve_executable(), "run"]
         # Apply operator-injected extra args before the prompt-derived
         # --command and the canonical --format/-m flags so Spec Kit's
         # later appends remain authoritative under repeated-flag CLI

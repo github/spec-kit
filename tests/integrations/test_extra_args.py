@@ -1,12 +1,13 @@
-"""Tests for the per-integration `SPECKIT_INTEGRATION_<KEY>_EXTRA_ARGS` env-var hook.
+"""Tests for the per-integration `SPECKIT_INTEGRATION_<KEY>_EXTRA_ARGS` and
+`SPECKIT_INTEGRATION_<KEY>_EXECUTABLE` env-var hooks.
 
-The hook is implemented in `IntegrationBase._apply_extra_args_env_var`
-and wired into every concrete `build_exec_args` —
-`MarkdownIntegration`, `TomlIntegration`, `SkillsIntegration`, plus the
-overrides in Codex, Devin, Opencode and Copilot. These tests cover both
-the shared mechanism (via `SkillsIntegration` stubs near the top of the
-file) and each override integration end-to-end (further down). See
-issue #2595."""
+The hooks are implemented in `IntegrationBase._apply_extra_args_env_var` and
+`IntegrationBase._resolve_executable` and wired into every concrete
+`build_exec_args` — `MarkdownIntegration`, `TomlIntegration`,
+`SkillsIntegration`, plus override integrations.
+These tests cover both the shared mechanisms (via `SkillsIntegration` stubs
+near the top of the file) and override integrations end-to-end (further down).
+See issues #2595 and #2596."""
 
 import os
 
@@ -128,11 +129,12 @@ class _TomlAgentStub(TomlIntegration):
 
 @pytest.fixture(autouse=True)
 def _clean_extra_args_env(monkeypatch):
-    """Strip any leaked SPECKIT_INTEGRATION_*_EXTRA_ARGS from the test
-    env so a developer's shell setting doesn't pollute results."""
+    """Strip any leaked SPECKIT_INTEGRATION_*_EXTRA_ARGS and
+    SPECKIT_INTEGRATION_*_EXECUTABLE vars from the test env so a
+    developer's shell setting doesn't pollute results."""
     for key in list(os.environ):
-        if key.startswith("SPECKIT_INTEGRATION_") and key.endswith(
-            "_EXTRA_ARGS"
+        if key.startswith("SPECKIT_INTEGRATION_") and (
+            key.endswith("_EXTRA_ARGS") or key.endswith("_EXECUTABLE")
         ):
             monkeypatch.delenv(key, raising=False)
 
@@ -478,3 +480,159 @@ def test_codex_dispatch_command_includes_extra_args(monkeypatch):
     assert capture.captured_args is not None
     assert "--sandbox" in capture.captured_args
     assert "read-only" in capture.captured_args
+
+
+# ---------------------------------------------------------------------------
+# SPECKIT_INTEGRATION_<KEY>_EXECUTABLE tests
+#
+# The `_resolve_executable()` method on `IntegrationBase` checks
+# `SPECKIT_INTEGRATION_<KEY>_EXECUTABLE` and, when set, substitutes that
+# value for `self.key` as the first token in argv.  The tests below lock
+# the behaviour across shared and override integration paths:
+#   - the shared SkillsIntegration/MarkdownIntegration/TomlIntegration bases,
+#   - representative override integrations,
+#   - the hyphen→underscore key normalisation, and
+#   - whitespace/unset no-op guarantee.
+# ---------------------------------------------------------------------------
+
+
+def test_executable_env_var_unset_uses_key():
+    """Default: no override → executable is the integration key."""
+    args = _ClaudeStub().build_exec_args("p")
+    assert args[0] == "claude"
+
+
+def test_executable_env_var_replaces_first_argv_token(monkeypatch):
+    """Setting the env var substitutes the executable name in argv."""
+    monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "/opt/claude/bin/claude")
+    args = _ClaudeStub().build_exec_args("hello")
+    assert args[0] == "/opt/claude/bin/claude"
+    assert args[1:] == ["-p", "hello", "--output-format", "json"]
+
+
+def test_executable_env_var_whitespace_only_falls_back_to_key(monkeypatch):
+    """Whitespace-only value is treated as unset → falls back to self.key."""
+    monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "   ")
+    args = _ClaudeStub().build_exec_args("p")
+    assert args[0] == "claude"
+
+
+def test_executable_env_var_key_normalization_hyphen_to_underscore(monkeypatch):
+    """`kiro-cli` key maps to `SPECKIT_INTEGRATION_KIRO_CLI_EXECUTABLE`."""
+    monkeypatch.setenv("SPECKIT_INTEGRATION_KIRO_CLI_EXECUTABLE", "/usr/local/bin/kiro-cli")
+    args = _KiroCliStub().build_exec_args("p")
+    assert args[0] == "/usr/local/bin/kiro-cli"
+
+
+def test_executable_env_var_other_integration_ignored(monkeypatch):
+    """`SPECKIT_INTEGRATION_GEMINI_EXECUTABLE` must NOT affect Claude."""
+    monkeypatch.setenv("SPECKIT_INTEGRATION_GEMINI_EXECUTABLE", "/custom/gemini")
+    args = _ClaudeStub().build_exec_args("p")
+    assert args[0] == "claude"
+
+
+def test_executable_env_var_markdown_integration(monkeypatch):
+    """MarkdownIntegration base honours the executable env var."""
+    monkeypatch.setenv("SPECKIT_INTEGRATION_MD_AGENT_EXECUTABLE", "/custom/md-agent")
+    args = _MarkdownAgentStub().build_exec_args("p")
+    assert args[0] == "/custom/md-agent"
+
+
+def test_executable_env_var_toml_integration(monkeypatch):
+    """TomlIntegration base honours the executable env var."""
+    monkeypatch.setenv("SPECKIT_INTEGRATION_TOML_AGENT_EXECUTABLE", "/custom/toml-agent")
+    args = _TomlAgentStub().build_exec_args("p")
+    assert args[0] == "/custom/toml-agent"
+
+
+def test_executable_env_var_requires_cli_false_returns_none(monkeypatch):
+    """`requires_cli: False` still returns None even when executable is set."""
+    monkeypatch.setenv("SPECKIT_INTEGRATION_NO_CLI_EXECUTABLE", "/custom/no-cli")
+    assert _NoCliStub().build_exec_args("p") is None
+
+
+def test_executable_env_var_codex_integration(monkeypatch):
+    """CodexIntegration honours the executable env var."""
+    from specify_cli.integrations.codex import CodexIntegration
+
+    monkeypatch.setenv("SPECKIT_INTEGRATION_CODEX_EXECUTABLE", "/opt/codex")
+    args = CodexIntegration().build_exec_args("p")
+    assert args[0] == "/opt/codex"
+    assert args[1] == "exec"
+
+
+def test_executable_env_var_devin_integration(monkeypatch):
+    """DevinIntegration honours the executable env var."""
+    from specify_cli.integrations.devin import DevinIntegration
+
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DEVIN_EXECUTABLE", "/opt/devin")
+    args = DevinIntegration().build_exec_args("p")
+    assert args[0] == "/opt/devin"
+
+
+def test_executable_env_var_opencode_integration(monkeypatch):
+    """OpencodeIntegration honours the executable env var."""
+    from specify_cli.integrations.opencode import OpencodeIntegration
+
+    monkeypatch.setenv("SPECKIT_INTEGRATION_OPENCODE_EXECUTABLE", "/opt/opencode")
+    args = OpencodeIntegration().build_exec_args("p")
+    assert args[0] == "/opt/opencode"
+    assert args[1] == "run"
+
+
+def test_executable_env_var_copilot_integration(monkeypatch):
+    """CopilotIntegration honours the executable env var, overriding the
+    platform-specific default from `_copilot_executable()`."""
+    from specify_cli.integrations.copilot import CopilotIntegration
+
+    monkeypatch.setenv("SPECKIT_INTEGRATION_COPILOT_EXECUTABLE", "/opt/copilot")
+    monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
+    args = CopilotIntegration().build_exec_args("p")
+    assert args[0] == "/opt/copilot"
+
+
+def test_executable_env_var_copilot_unset_uses_platform_default(monkeypatch):
+    """When `SPECKIT_INTEGRATION_COPILOT_EXECUTABLE` is unset, Copilot
+    falls back to the platform-specific default from `_copilot_executable()`."""
+    from specify_cli.integrations.copilot import CopilotIntegration, _copilot_executable
+
+    monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
+    args = CopilotIntegration().build_exec_args("p")
+    assert args[0] == _copilot_executable()
+
+
+def test_executable_env_var_copilot_dispatch_command(monkeypatch):
+    """CopilotIntegration.dispatch_command honours the executable env var."""
+    import subprocess
+
+    from specify_cli.integrations.copilot import CopilotIntegration
+
+    capture = _RunCapture()
+    monkeypatch.setattr(subprocess, "run", capture)
+    monkeypatch.setenv("SPECKIT_INTEGRATION_COPILOT_EXECUTABLE", "/opt/copilot")
+    monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
+
+    CopilotIntegration().dispatch_command("speckit.plan", args="body", stream=False)
+
+    assert capture.captured_args is not None
+    assert capture.captured_args[0] == "/opt/copilot"
+
+
+def test_executable_and_extra_args_both_honoured(monkeypatch):
+    """Both the executable override and extra args env vars can be set
+    simultaneously — they are independent hooks."""
+    monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "/opt/claude")
+    monkeypatch.setenv(
+        "SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS", "--dangerously-skip-permissions"
+    )
+    args = _ClaudeStub().build_exec_args("hello", model="sonnet")
+    assert args == [
+        "/opt/claude",
+        "-p",
+        "hello",
+        "--dangerously-skip-permissions",
+        "--model",
+        "sonnet",
+        "--output-format",
+        "json",
+    ]

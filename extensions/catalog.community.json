@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-29T00:00:00Z",
+  "updated_at": "2026-06-02T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1246,6 +1246,39 @@
       "created_at": "2026-03-17T00:00:00Z",
       "updated_at": "2026-03-17T00:00:00Z"
     },
+    "linear": {
+      "name": "Linear Integration",
+      "id": "linear",
+      "description": "Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional).",
+      "author": "Ash Brener",
+      "version": "0.2.0",
+      "download_url": "https://github.com/ashbrener/spec-kit-linear/archive/refs/tags/v0.2.0.zip",
+      "repository": "https://github.com/ashbrener/spec-kit-linear",
+      "homepage": "https://github.com/ashbrener/spec-kit-linear",
+      "documentation": "https://github.com/ashbrener/spec-kit-linear/blob/main/README.md",
+      "changelog": "https://github.com/ashbrener/spec-kit-linear/releases",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 6
+      },
+      "tags": [
+        "issue-tracking",
+        "linear",
+        "tasks-sync",
+        "lifecycle-mirror",
+        "memory",
+        "cross-repo"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-01T00:00:00Z",
+      "updated_at": "2026-06-01T00:00:00Z"
+    },
     "m365": {
       "name": "Microsoft 365 Integration",
       "id": "m365",
@@ -1724,6 +1757,37 @@
       "created_at": "2026-05-04T02:51:52Z",
       "updated_at": "2026-05-04T02:51:52Z"
     },
+    "multi-sites": {
+      "name": "Multi-Sites Spec Kit",
+      "id": "multi-sites",
+      "description": "Multi-site aware specify command with per-site spec folders, auto-increment, and Drupal support",
+      "author": "teeyo",
+      "version": "1.0.0",
+      "download_url": "https://github.com/teeyo/spec-kit-multi-sites/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/teeyo/spec-kit-multi-sites",
+      "homepage": "https://github.com/teeyo/spec-kit-multi-sites",
+      "documentation": "https://github.com/teeyo/spec-kit-multi-sites/blob/main/README.md",
+      "changelog": "https://github.com/teeyo/spec-kit-multi-sites/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "multi-site",
+        "drupal",
+        "workflow",
+        "process"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-01T00:00:00Z",
+      "updated_at": "2026-06-01T00:00:00Z"
+    },
     "onboard": {
       "name": "Onboard",
       "id": "onboard",
@@ -1950,12 +2014,12 @@
       "name": "Product Spec Extension",
       "id": "product",
       "description": "Generates PRFAQ, Lean PRD, stakeholder summaries, and technical designs from engineering specs.",
-      "author": "spec-kit-product contributors",
-      "version": "0.1.3",
-      "download_url": "https://github.com/d0whc3r/spec-kit-product/releases/download/v0.1.3/product-0.1.3.zip",
+      "author": "d0whc3r",
+      "version": "0.8.3",
+      "download_url": "https://github.com/d0whc3r/spec-kit-product/releases/download/v0.8.3/product-0.8.3.zip",
       "repository": "https://github.com/d0whc3r/spec-kit-product",
-      "homepage": "https://github.com/d0whc3r/spec-kit-product",
-      "documentation": "https://github.com/d0whc3r/spec-kit-product/blob/main/README.md",
+      "homepage": "https://d0whc3r.github.io/spec-kit-product/",
+      "documentation": "https://github.com/d0whc3r/spec-kit-product/wiki",
       "changelog": "https://github.com/d0whc3r/spec-kit-product/blob/main/CHANGELOG.md",
       "license": "MIT",
       "requires": {
@@ -1963,20 +2027,30 @@
       },
       "provides": {
         "commands": 4,
-        "hooks": 6
+        "hooks": 3
       },
       "tags": [
-        "product",
-        "spec",
-        "prd",
         "design",
-        "documentation"
+        "documentation",
+        "jtbd",
+        "lean-prd",
+        "planning",
+        "prd",
+        "prfaq",
+        "product",
+        "product-management",
+        "requirements",
+        "spec",
+        "spec-kit",
+        "spec-kit-extension",
+        "stakeholder",
+        "technical-design"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-26T00:00:00Z",
-      "updated_at": "2026-05-26T00:00:00Z"
+      "updated_at": "2026-06-01T00:00:00Z"
     },
     "product-forge": {
       "name": "Product Forge",
@@ -2039,6 +2113,38 @@
       "stars": 0,
       "created_at": "2026-04-01T00:00:00Z",
       "updated_at": "2026-04-01T00:00:00Z"
+    },
+    "rag-azure-builder": {
+      "name": "RAG Azure Builder",
+      "id": "rag-azure-builder",
+      "description": "Spec Kit extension for onboarding and operating an Azure RAG stack with guided workflows.",
+      "author": "Sertxito",
+      "version": "1.2.0",
+      "download_url": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder/archive/refs/tags/v1.2.0.zip",
+      "repository": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder",
+      "homepage": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder",
+      "documentation": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder#readme",
+      "changelog": "https://github.com/Sertxito/spec-kit-extension-rag-azure-builder/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 0
+      },
+      "tags": [
+        "azure",
+        "rag",
+        "search",
+        "onboarding",
+        "cost-optimization"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-01T00:00:00Z",
+      "updated_at": "2026-06-01T00:00:00Z"
     },
     "ralph": {
       "name": "Ralph Loop",
@@ -2218,8 +2324,8 @@
       "id": "reqnroll-bdd",
       "description": "Adds Reqnroll BDD planning, Gherkin generation, traceability, safe task injection, handoff, and verification to Spec Kit.",
       "author": "LoogaCY Studio",
-      "version": "1.0.0",
-      "download_url": "https://github.com/LoogacyStudio/spec-kit-reqnroll-bdd/archive/refs/tags/v1.0.0.zip",
+      "version": "1.1.0",
+      "download_url": "https://github.com/LoogacyStudio/spec-kit-reqnroll-bdd/archive/refs/tags/v1.1.0.zip",
       "repository": "https://github.com/LoogacyStudio/spec-kit-reqnroll-bdd",
       "homepage": "https://github.com/LoogacyStudio/spec-kit-reqnroll-bdd",
       "documentation": "https://github.com/LoogacyStudio/spec-kit-reqnroll-bdd#readme",
@@ -2249,7 +2355,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-13T00:00:00Z",
-      "updated_at": "2026-05-13T00:00:00Z"
+      "updated_at": "2026-05-30T00:00:00Z"
     },
     "retro": {
       "name": "Retro Extension",

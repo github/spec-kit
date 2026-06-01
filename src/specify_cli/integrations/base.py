@@ -13,6 +13,7 @@ Provides:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -145,6 +146,28 @@ class IntegrationBase(ABC):
         Subclasses for CLI-based integrations should override this.
         """
         return None
+
+    def _resolve_executable(self) -> str:
+        """Return the executable for this integration's CLI tool.
+
+        Checks ``SPECKIT_INTEGRATION_<KEY>_EXECUTABLE`` first, allowing
+        operators to override the binary path without modifying the
+        integration configuration — useful when the tool is installed in
+        a non-standard location or a specific version must be pinned.
+        Hyphens in the integration key are replaced with underscores and
+        the key is uppercased so that, for example, ``kiro-cli`` maps to
+        ``SPECKIT_INTEGRATION_KIRO_CLI_EXECUTABLE``.
+
+        Falls back to ``self.key`` when the env var is unset or
+        whitespace-only so existing behaviour is unchanged.
+
+        See issue #2596.
+        """
+        env_name = (
+            f"SPECKIT_INTEGRATION_{self.key.upper().replace('-', '_')}_EXECUTABLE"
+        )
+        override = os.environ.get(env_name, "").strip()
+        return override if override else self.key
 
     def _apply_extra_args_env_var(self, args: list[str]) -> None:
         """Append `SPECKIT_INTEGRATION_<KEY>_EXTRA_ARGS` env-var value to *args*.
@@ -527,6 +550,91 @@ class IntegrationBase(ABC):
             lines.append(f"at {plan_path}")
         return "\n".join(lines)
 
+    @staticmethod
+    def _agent_context_extension_enabled(project_root: Path) -> bool:
+        """Return whether the bundled ``agent-context`` extension is enabled.
+
+        The extension is the single source of truth for managing coding
+        agent context/instruction files (e.g. ``CLAUDE.md``,
+        ``.github/copilot-instructions.md``).
+
+        Returns ``True`` (enabled) when:
+        - the extension registry does not exist (legacy project, backwards
+          compatibility), or
+        - the registry has no ``agent-context`` entry (older project layout
+          predating the extension), or
+        - the entry is present and not explicitly disabled.
+
+        Returns ``False`` only when an entry exists with ``enabled: false``.
+        """
+        registry_path = (
+            project_root / ".specify" / "extensions" / ".registry"
+        )
+        if not registry_path.exists():
+            return True
+        try:
+            data = json.loads(registry_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError):
+            return True
+        if not isinstance(data, dict):
+            return True
+        extensions = data.get("extensions")
+        if not isinstance(extensions, dict):
+            return True
+        entry = extensions.get("agent-context")
+        if not isinstance(entry, dict):
+            return True
+        return entry.get("enabled", True) is not False
+
+    def _resolve_context_markers(self, project_root: Path) -> tuple[str, str]:
+        """Return the (start, end) context markers to use for *project_root*.
+
+        Reads ``context_markers.start`` / ``context_markers.end`` from the
+        agent-context extension config
+        (``.specify/extensions/agent-context/agent-context-config.yml``)
+        when present.  Falls back to the class-level constants
+        ``CONTEXT_MARKER_START`` / ``CONTEXT_MARKER_END`` when the file is
+        missing, the section is absent, or the values are not non-empty
+        strings.
+        """
+        from .._console import console  # local import to avoid cycles
+
+        start = self.CONTEXT_MARKER_START
+        end = self.CONTEXT_MARKER_END
+        config_path = (
+            project_root
+            / ".specify"
+            / "extensions"
+            / "agent-context"
+            / "agent-context-config.yml"
+        )
+        try:
+            raw = config_path.read_text(encoding="utf-8")
+            cfg = yaml.safe_load(raw)
+        except (OSError, UnicodeError, ValueError, yaml.YAMLError):
+            return start, end
+        markers = cfg.get("context_markers") if isinstance(cfg, dict) else None
+        if isinstance(markers, dict):
+            cm_start = markers.get("start")
+            cm_end = markers.get("end")
+            s_valid = isinstance(cm_start, str) and cm_start
+            e_valid = isinstance(cm_end, str) and cm_end
+            if not s_valid and cm_start is not None:
+                console.print(
+                    f"[yellow]agent-context: ignoring invalid context_markers.start "
+                    f"({cm_start!r}), using default[/yellow]"
+                )
+            if not e_valid and cm_end is not None:
+                console.print(
+                    f"[yellow]agent-context: ignoring invalid context_markers.end "
+                    f"({cm_end!r}), using default[/yellow]"
+                )
+            if s_valid:
+                start = cm_start  # type: ignore[assignment]
+            if e_valid:
+                end = cm_end  # type: ignore[assignment]
+        return start, end
+
     def upsert_context_section(
         self,
         project_root: Path,
@@ -535,34 +643,54 @@ class IntegrationBase(ABC):
         """Create or update the managed section in the agent context file.
 
         If the context file does not exist it is created with just the
-        managed section.  If it exists, the content between
-        ``<!-- SPECKIT START -->`` and ``<!-- SPECKIT END -->`` markers
-        is replaced (or appended when no markers are found).
+        managed section.  If it exists, the content between the configured
+        start/end markers (default ``<!-- SPECKIT START -->`` /
+        ``<!-- SPECKIT END -->``) is replaced, or appended when no markers
+        are found. Markers are read from the agent-context extension config
+        (``.specify/extensions/agent-context/agent-context-config.yml``)
+        when present, falling back to the class-level constants.
 
         Returns the path to the context file, or ``None`` when
-        ``context_file`` is not set.
+        ``context_file`` is not set or the ``agent-context`` extension is
+        disabled.
         """
         if not self.context_file:
             return None
 
+        if not self._agent_context_extension_enabled(project_root):
+            return None
+
+        from .._console import console  # local import to avoid cycles
+
+        console.print(
+            "[yellow]Deprecation:[/yellow] Inline agent-context updates during "
+            "integration setup will be disabled in v0.12.0. Context file "
+            "management has moved to the bundled [bold]agent-context[/bold] "
+            "extension. Run [cyan]specify extension disable agent-context[/cyan] "
+            "to opt out early.",
+            highlight=False,
+        )
+
+        marker_start, marker_end = self._resolve_context_markers(project_root)
+
         ctx_path = project_root / self.context_file
         section = (
-            f"{self.CONTEXT_MARKER_START}\n"
+            f"{marker_start}\n"
             f"{self._build_context_section(plan_path)}\n"
-            f"{self.CONTEXT_MARKER_END}\n"
+            f"{marker_end}\n"
         )
 
         if ctx_path.exists():
             content = ctx_path.read_text(encoding="utf-8-sig")
-            start_idx = content.find(self.CONTEXT_MARKER_START)
+            start_idx = content.find(marker_start)
             end_idx = content.find(
-                self.CONTEXT_MARKER_END,
+                marker_end,
                 start_idx if start_idx != -1 else 0,
             )
 
             if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
                 # Replace existing section (include the end marker + newline)
-                end_of_marker = end_idx + len(self.CONTEXT_MARKER_END)
+                end_of_marker = end_idx + len(marker_end)
                 # Consume trailing line ending (CRLF or LF)
                 if end_of_marker < len(content) and content[end_of_marker] == "\r":
                     end_of_marker += 1
@@ -574,7 +702,7 @@ class IntegrationBase(ABC):
                 new_content = content[:start_idx] + section
             elif end_idx != -1:
                 # Corrupted: end marker without start — replace BOF through end marker
-                end_of_marker = end_idx + len(self.CONTEXT_MARKER_END)
+                end_of_marker = end_idx + len(marker_end)
                 if end_of_marker < len(content) and content[end_of_marker] == "\r":
                     end_of_marker += 1
                 if end_of_marker < len(content) and content[end_of_marker] == "\n":
@@ -608,20 +736,27 @@ class IntegrationBase(ABC):
         """Remove the managed section from the agent context file.
 
         Returns ``True`` if the section was found and removed.  If the
-        file becomes empty (or whitespace-only) after removal it is
-        deleted.
+        file becomes empty (or whitespace-only) after removal it is deleted.
+        Markers are read from the agent-context extension config
+        (``.specify/extensions/agent-context/agent-context-config.yml``)
+        when present, falling back to the class-level constants.
         """
         if not self.context_file:
+            return False
+
+        if not self._agent_context_extension_enabled(project_root):
             return False
 
         ctx_path = project_root / self.context_file
         if not ctx_path.exists():
             return False
 
+        marker_start, marker_end = self._resolve_context_markers(project_root)
+
         content = ctx_path.read_text(encoding="utf-8-sig")
-        start_idx = content.find(self.CONTEXT_MARKER_START)
+        start_idx = content.find(marker_start)
         end_idx = content.find(
-            self.CONTEXT_MARKER_END,
+            marker_end,
             start_idx if start_idx != -1 else 0,
         )
 
@@ -632,7 +767,7 @@ class IntegrationBase(ABC):
             return False
 
         removal_start = start_idx
-        removal_end = end_idx + len(self.CONTEXT_MARKER_END)
+        removal_end = end_idx + len(marker_end)
 
         # Consume trailing line ending (CRLF or LF)
         if removal_end < len(content) and content[removal_end] == "\r":
@@ -895,7 +1030,7 @@ class MarkdownIntegration(IntegrationBase):
     ) -> list[str] | None:
         if not self.config or not self.config.get("requires_cli"):
             return None
-        args = [self.key, "-p", prompt]
+        args = [self._resolve_executable(), "-p", prompt]
         self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])
@@ -983,7 +1118,7 @@ class TomlIntegration(IntegrationBase):
     ) -> list[str] | None:
         if not self.config or not self.config.get("requires_cli"):
             return None
-        args = [self.key, "-p", prompt]
+        args = [self._resolve_executable(), "-p", prompt]
         self._apply_extra_args_env_var(args)
         if model:
             args.extend(["-m", model])
@@ -1402,7 +1537,7 @@ class SkillsIntegration(IntegrationBase):
     ) -> list[str] | None:
         if not self.config or not self.config.get("requires_cli"):
             return None
-        args = [self.key, "-p", prompt]
+        args = [self._resolve_executable(), "-p", prompt]
         self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])
