@@ -305,13 +305,20 @@ def _validate_tag(tag: str) -> str:
 
     Accepts vX.Y.Z plus an optional dev or alpha/beta/rc suffix and/or an
     optional build-metadata suffix, which may combine (for example:
-    v1.0.0-rc1, v0.8.0.dev0, v0.8.0+build.42, v1.0.0-rc1+build.42). Rejects
-    everything else, including bare 'latest', hash refs, branch names, and
-    numeric versions without the 'v' prefix.
+    v1.0.0-rc1, v0.8.0.dev0, v0.8.0+build.42, v1.0.0-rc1+build.42). An
+    uppercase ``V`` prefix is accepted and folded to the canonical lowercase
+    ``v``. Rejects everything else, including bare 'latest', hash refs, branch
+    names, and numeric versions without the 'v' prefix.
     """
     tag = tag.strip()
     if not tag:
         raise typer.BadParameter(_INVALID_TAG_MESSAGE)
+    # Fold a leading uppercase `V` (a common paste) to the canonical lowercase
+    # `v`. The remainder stays case-sensitive on purpose: the validated tag is
+    # used verbatim as a git ref, which is case-sensitive on GitHub, so we must
+    # not rewrite label/build-metadata casing into a ref that may not exist.
+    if tag[:1] == "V":
+        tag = "v" + tag[1:]
     if not _TAG_REGEX.match(tag):
         raise typer.BadParameter(_INVALID_TAG_MESSAGE)
     try:

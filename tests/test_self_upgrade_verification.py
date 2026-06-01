@@ -421,6 +421,21 @@ class TestTagValidation:
         assert result.exit_code == 0
         assert "Target version: v0.8.0+build.42" in strip_ansi(result.output)
 
+    def test_uppercase_v_prefix_is_folded_to_lowercase(
+        self, uv_tool_argv0, clean_environ
+    ):
+        # A pasted uppercase `V` prefix is accepted and normalized to `v` so
+        # the git ref matches the canonical lowercase release tag.
+        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+            "specify_cli._version._get_installed_version", return_value="0.7.5"
+        ):
+            result = runner.invoke(
+                app,
+                ["self", "upgrade", "--dry-run", "--tag", "V0.7.6"],
+            )
+        assert result.exit_code == 0
+        assert "Target version: v0.7.6" in strip_ansi(result.output)
+
     def test_valid_prerelease_with_build_metadata_tag(
         self, uv_tool_argv0, clean_environ
     ):
