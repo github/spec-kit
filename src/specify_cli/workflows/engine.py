@@ -491,8 +491,19 @@ class WorkflowEngine:
         state.save()
         return state
 
-    def resume(self, run_id: str) -> RunState:
-        """Resume a paused or failed workflow run."""
+    def resume(
+        self,
+        run_id: str,
+        inputs: dict[str, Any] | None = None,
+    ) -> RunState:
+        """Resume a paused or failed workflow run.
+
+        When ``inputs`` is provided, the values are merged over the run's
+        persisted inputs and re-resolved through the same typed validation
+        path used by :meth:`execute`, so the resumed step sees updated
+        workflow inputs. Keys not supplied keep their persisted values; an
+        empty/``None`` ``inputs`` leaves the run's inputs unchanged.
+        """
         state = RunState.load(run_id, self.project_root)
         if state.status not in (RunStatus.PAUSED, RunStatus.FAILED):
             msg = f"Cannot resume run {run_id!r} with status {state.status.value!r}."
@@ -507,6 +518,12 @@ class WorkflowEngine:
             definition = WorkflowDefinition.from_yaml(run_copy)
         else:
             definition = self.load_workflow(state.workflow_id)
+
+        # Merge any newly-supplied inputs over the persisted ones and
+        # re-validate through the same typing path as the initial run.
+        if inputs:
+            merged = {**state.inputs, **inputs}
+            state.inputs = self._resolve_inputs(definition, merged)
 
         # Restore context
         context = StepContext(

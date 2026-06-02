@@ -2726,3 +2726,118 @@ steps:
         assert state.status == RunStatus.COMPLETED
         assert "do-plan" in state.step_results
         assert "do-specify" not in state.step_results
+
+
+class TestResumeWithInputs:
+    """Test that `workflow resume` can accept updated workflow inputs."""
+
+    _WF_CMD = """
+schema_version: "1.0"
+workflow:
+  id: "resume-cmd-wf"
+  name: "Resume Cmd WF"
+  version: "1.0.0"
+inputs:
+  cmd:
+    type: string
+    default: "exit 1"
+steps:
+  - id: s
+    type: shell
+    run: "{{ inputs.cmd }}"
+"""
+
+    _WF_NUM = """
+schema_version: "1.0"
+workflow:
+  id: "resume-num-wf"
+  name: "Resume Num WF"
+  version: "1.0.0"
+inputs:
+  count:
+    type: number
+    default: 1
+steps:
+  - id: gate
+    type: gate
+    message: "Review"
+    options: [approve, reject]
+"""
+
+    def _engine(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+        return WorkflowEngine(project_dir)
+
+    def test_resume_with_input_reruns_step_with_new_value(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string(self._WF_CMD)
+        engine = self._engine(project_dir)
+
+        state = engine.execute(definition)
+        assert state.status == RunStatus.FAILED  # "exit 1" fails
+
+        resumed = engine.resume(state.run_id, {"cmd": "exit 0"})
+        assert resumed.status == RunStatus.COMPLETED
+        assert resumed.inputs["cmd"] == "exit 0"
+
+    def test_resume_without_input_preserves_inputs(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string(self._WF_CMD)
+        engine = self._engine(project_dir)
+
+        state = engine.execute(definition)
+        assert state.status == RunStatus.FAILED
+
+        resumed = engine.resume(state.run_id)
+        assert resumed.status == RunStatus.FAILED  # still "exit 1"
+        assert resumed.inputs["cmd"] == "exit 1"
+
+    def test_resume_merges_and_coerces_typed_input(self, project_dir):
+        import json as _json
+        from specify_cli.workflows.engine import WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string(self._WF_NUM)
+        engine = self._engine(project_dir)
+
+        state = engine.execute(definition)
+        assert state.status == RunStatus.PAUSED
+
+        resumed = engine.resume(state.run_id, {"count": "5"})
+        assert resumed.inputs["count"] == 5  # coerced string -> number
+
+        inputs_file = (
+            project_dir / ".specify" / "workflows" / "runs" / state.run_id / "inputs.json"
+        )
+        assert _json.loads(inputs_file.read_text())["inputs"]["count"] == 5
+
+    def test_resume_invalid_typed_input_raises(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string(self._WF_NUM)
+        engine = self._engine(project_dir)
+
+        state = engine.execute(definition)
+        with pytest.raises(ValueError):
+            engine.resume(state.run_id, {"count": "not-a-number"})
+
+    def test_cli_resume_input_invalid_format_errors(self, project_dir):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string(self._WF_NUM)
+        state = self._engine(project_dir).execute(definition)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["workflow", "resume", state.run_id, "--input", "bogus"]
+            )
+        assert result.exit_code == 1
+        assert "Invalid input format" in result.stdout
