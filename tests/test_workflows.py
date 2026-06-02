@@ -822,6 +822,115 @@ class TestGateStep:
         })
         assert any("on_reject" in e for e in errors)
 
+    def test_interactive_prompt_renders_show_file(self, tmp_path, monkeypatch, capsys):
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        review = tmp_path / "spec.md"
+        review.write_text("LINE-ONE\nLINE-TWO\n", encoding="utf-8")
+
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
+
+        step = GateStep()
+        config = {
+            "id": "review",
+            "message": "Review the spec.",
+            "show_file": str(review),
+            "options": ["approve", "reject"],
+        }
+        result = step.execute(config, StepContext())
+        out = capsys.readouterr().out
+
+        assert "LINE-ONE" in out and "LINE-TWO" in out
+        assert str(review) in out
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["choice"] == "approve"
+
+    def test_interactive_prompt_missing_show_file_does_not_crash(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        missing = tmp_path / "does-not-exist.md"
+
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
+
+        step = GateStep()
+        config = {
+            "id": "review",
+            "message": "Review.",
+            "show_file": str(missing),
+            "options": ["approve", "reject"],
+        }
+        result = step.execute(config, StepContext())
+        out = capsys.readouterr().out
+
+        assert "could not read file" in out
+        assert result.status == StepStatus.COMPLETED
+
+    def test_non_interactive_show_file_still_pauses_without_reading(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        review = tmp_path / "spec.md"
+        review.write_text("CONTENT\n", encoding="utf-8")
+
+        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+
+        step = GateStep()
+        config = {
+            "id": "review",
+            "message": "Review.",
+            "show_file": str(review),
+            "options": ["approve", "reject"],
+        }
+        result = step.execute(config, StepContext())
+        assert result.status == StepStatus.PAUSED
+        assert result.output["show_file"] == str(review)
+
+    def test_read_show_file_empty(self, tmp_path):
+        from specify_cli.workflows.steps.gate import GateStep
+
+        empty = tmp_path / "empty.md"
+        empty.write_text("", encoding="utf-8")
+        assert GateStep._read_show_file(str(empty)) == ["(file is empty)"]
+
+    def test_read_show_file_truncates_large_file(self, tmp_path):
+        from specify_cli.workflows.steps.gate import GateStep
+
+        big = tmp_path / "big.md"
+        big.write_text(
+            "\n".join(f"line{i}" for i in range(GateStep.MAX_SHOW_FILE_LINES + 50)),
+            encoding="utf-8",
+        )
+        rendered = GateStep._read_show_file(str(big))
+        # MAX_SHOW_FILE_LINES content lines + one truncation notice line.
+        assert len(rendered) == GateStep.MAX_SHOW_FILE_LINES + 1
+        assert "truncated" in rendered[-1]
+
+    def test_templated_show_file_resolving_to_non_string_is_coerced(self):
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        # A single-expression template can resolve to a non-string (e.g. a
+        # number from a prior step); it must be coerced to str, not skipped.
+        step = GateStep()
+        ctx = StepContext(steps={"prev": {"output": {"ref": 123}}})
+        config = {
+            "id": "review",
+            "message": "Review.",
+            "show_file": "{{ steps.prev.output.ref }}",
+            "options": ["approve", "reject"],
+        }
+        result = step.execute(config, ctx)  # non-interactive -> PAUSED
+        assert result.status == StepStatus.PAUSED
+        assert result.output["show_file"] == "123"
+
 
 class TestIfThenStep:
     """Test the if/then/else step type."""

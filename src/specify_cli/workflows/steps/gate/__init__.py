@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Any
 
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
@@ -23,6 +24,10 @@ class GateStep(StepBase):
 
     type_key = "gate"
 
+    #: Maximum number of ``show_file`` lines rendered at the prompt, so a
+    #: large file cannot flood the terminal before the choice.
+    MAX_SHOW_FILE_LINES = 200
+
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         message = config.get("message", "Review required.")
         if isinstance(message, str) and "{{" in message:
@@ -32,8 +37,14 @@ class GateStep(StepBase):
         on_reject = config.get("on_reject", "abort")
 
         show_file = config.get("show_file")
-        if show_file and isinstance(show_file, str) and "{{" in show_file:
+        if isinstance(show_file, str) and "{{" in show_file:
             show_file = evaluate_expression(show_file, context)
+        # ``evaluate_expression`` can return a non-string for a single
+        # expression (e.g. a number from a prior step), and a literal
+        # non-string is also possible; coerce so it is rendered rather
+        # than silently skipped at the prompt.
+        if show_file is not None:
+            show_file = str(show_file)
 
         output = {
             "message": message,
@@ -48,7 +59,7 @@ class GateStep(StepBase):
             return StepResult(status=StepStatus.PAUSED, output=output)
 
         # Interactive: prompt the user
-        choice = self._prompt(message, options)
+        choice = self._prompt(message, options, show_file)
         output["choice"] = choice
 
         if choice in ("reject", "abort"):
@@ -68,10 +79,20 @@ class GateStep(StepBase):
         return StepResult(status=StepStatus.COMPLETED, output=output)
 
     @staticmethod
-    def _prompt(message: str, options: list[str]) -> str:
-        """Display gate message and prompt for a choice."""
+    def _prompt(message: str, options: list[str], show_file: str | None = None) -> str:
+        """Display gate message and prompt for a choice.
+
+        When ``show_file`` names a readable file, its contents are shown
+        before the options so the operator can review the material the
+        gate refers to.
+        """
         print("\n  ┌─ Gate ─────────────────────────────────────")
         print(f"  │ {message}")
+        if show_file:
+            print("  │")
+            print(f"  │ {show_file}:")
+            for line in GateStep._read_show_file(show_file):
+                print(f"  │   {line}")
         print("  │")
         for i, opt in enumerate(options, 1):
             print(f"  │  [{i}] {opt}")
@@ -89,6 +110,34 @@ class GateStep(StepBase):
             if raw.lower() in [o.lower() for o in options]:
                 return next(o for o in options if o.lower() == raw.lower())
             print(f"  Invalid choice. Enter 1-{len(options)} or an option name.")
+
+    @staticmethod
+    def _read_show_file(show_file: str) -> list[str]:
+        """Return the lines of ``show_file`` for display.
+
+        Reads at most ``MAX_SHOW_FILE_LINES`` lines so a large file cannot
+        flood the prompt, and returns a short notice instead of raising
+        when the file is missing or cannot be decoded, so a misconfigured
+        path never breaks the interactive prompt.
+        """
+        lines: list[str] = []
+        truncated = False
+        try:
+            with Path(show_file).open(encoding="utf-8") as handle:
+                for line in handle:
+                    if len(lines) >= GateStep.MAX_SHOW_FILE_LINES:
+                        truncated = True
+                        break
+                    lines.append(line.rstrip("\n"))
+        except (OSError, UnicodeDecodeError) as exc:
+            return [f"(could not read file: {exc})"]
+        if not lines and not truncated:
+            return ["(file is empty)"]
+        if truncated:
+            lines.append(
+                f"… (output truncated at {GateStep.MAX_SHOW_FILE_LINES} lines)"
+            )
+        return lines
 
     def validate(self, config: dict[str, Any]) -> list[str]:
         errors = super().validate(config)
