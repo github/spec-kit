@@ -185,6 +185,20 @@ class TestGenericIntegration:
         )
         assert "__CONTEXT_FILE__" not in content
 
+    def test_plan_defines_quickstart_as_validation_guide(self, tmp_path):
+        """The generated plan command should keep quickstart.md out of implementation scope."""
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        i.setup(tmp_path, m, parsed_options={"commands_dir": ".custom/cmds"})
+        plan_file = tmp_path / ".custom" / "cmds" / "speckit.plan.md"
+        assert plan_file.exists()
+        content = plan_file.read_text(encoding="utf-8")
+
+        assert "Create quickstart validation guide" in content
+        assert "runnable validation scenarios" in content
+        assert "Do not include full implementation code" in content
+        assert "implementation details belong in `tasks.md` and the implementation phase" in content
+
     def test_implement_loads_constitution_context(self, tmp_path):
         """The generated implement command should load constitution governance context."""
         i = get_integration("generic")
