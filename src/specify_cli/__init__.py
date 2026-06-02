@@ -4780,6 +4780,17 @@ def workflow_catalog_remove(
 
 
 def main():
+    # On Windows the default stdout/stderr code page (e.g. cp1252) cannot encode
+    # the Rich banner and box-drawing glyphs, so the CLI crashes with
+    # UnicodeEncodeError whenever output is not a UTF-8 TTY (piped, redirected to
+    # a file, or running under a legacy code page). Force UTF-8 with graceful
+    # replacement so output degrades instead of aborting. No-op on POSIX.
+    if sys.platform == "win32":
+        for _stream in (sys.stdout, sys.stderr):
+            try:
+                _stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError, OSError):
+                pass
     app()
 
 if __name__ == "__main__":
