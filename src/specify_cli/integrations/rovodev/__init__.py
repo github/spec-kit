@@ -131,7 +131,7 @@ class RovodevIntegration(SkillsIntegration):
             return []
         try:
             data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except yaml.YAMLError:
+        except (yaml.YAMLError, OSError, UnicodeError):
             return []
         if not isinstance(data, dict):
             return []
