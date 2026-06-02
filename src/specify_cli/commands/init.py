@@ -113,6 +113,7 @@ def register(app: typer.Typer) -> None:
         branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, …, 1000, … — expands past 999 automatically) or 'timestamp' (YYYYMMDD-HHMMSS)"),
         integration: str = typer.Option(None, "--integration", help="Use the new integration system (e.g. --integration copilot). Mutually exclusive with --ai."),
         integration_options: str = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
+        workflow: str = typer.Option(None, "--workflow", help="Run a workflow YAML file after project initialization"),
     ):
         """
         Initialize a new Specify project.
@@ -672,6 +673,45 @@ def register(app: typer.Typer) -> None:
 
         console.print(tracker.render())
         console.print("\n[bold green]Project ready.[/bold green]")
+
+        if workflow:
+            workflow_path = Path(workflow)
+            if not workflow_path.is_absolute():
+                workflow_path = Path.cwd() / workflow_path
+            if not workflow_path.exists():
+                console.print(f"[red]Error:[/red] Workflow file not found: {workflow}")
+                raise typer.Exit(1)
+            console.print(f"\n[bold cyan]Running post-init workflow:[/bold cyan] {workflow}")
+            try:
+                from ..workflows.engine import WorkflowEngine
+                engine = WorkflowEngine(project_path)
+                engine.on_step_start = lambda sid, label: console.print(f"  ▸ [{sid}] {label} …")
+                definition = engine.load_workflow(str(workflow_path))
+                errors = engine.validate(definition)
+                if errors:
+                    console.print("[red]Workflow validation failed:[/red]")
+                    for err in errors:
+                        console.print(f"  • {err}")
+                    raise typer.Exit(1)
+                state = engine.execute(definition)
+                status_colors = {
+                    "completed": "green",
+                    "paused": "yellow",
+                    "failed": "red",
+                    "aborted": "red",
+                }
+                color = status_colors.get(state.status.value, "white")
+                console.print(f"\n[{color}]Workflow status: {state.status.value}[/{color}]")
+                if state.status.value == "paused":
+                    console.print(f"\nResume with: [cyan]specify workflow resume {state.run_id}[/cyan]")
+                elif state.status.value in ("failed", "aborted"):
+                    console.print("[red]Post-init workflow did not complete successfully.[/red]")
+                    raise typer.Exit(1)
+            except (typer.Exit, SystemExit):
+                raise
+            except Exception as wf_exc:
+                console.print(f"[red]Post-init workflow failed:[/red] {wf_exc}")
+                raise typer.Exit(1)
 
         agent_config = AGENT_CONFIG.get(selected_ai)
         if agent_config:
