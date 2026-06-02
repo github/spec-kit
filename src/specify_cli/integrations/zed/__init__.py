@@ -7,7 +7,7 @@ slash-command menu.
 
 from __future__ import annotations
 
-from ..base import IntegrationOption, SkillsIntegration
+from ..base import SkillsIntegration
 
 
 class ZedIntegration(SkillsIntegration):
@@ -31,11 +31,4 @@ class ZedIntegration(SkillsIntegration):
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
-        return [
-            IntegrationOption(
-                "--skills",
-                is_flag=True,
-                default=True,
-                help="Install as agent skills (default for Zed)",
-            ),
-        ]
+        return []

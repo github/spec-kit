@@ -728,7 +728,7 @@ def register(app: typer.Typer) -> None:
         cursor_agent_skill_mode = selected_ai == "cursor-agent" and (ai_skills or _is_skills_integration)
         copilot_skill_mode = selected_ai == "copilot" and _is_skills_integration
         devin_skill_mode = selected_ai == "devin"
-        zed_skill_mode = selected_ai == "zed" and _is_skills_integration
+        zed_skill_mode = selected_ai == "zed" and (ai_skills or _is_skills_integration)
         cline_skill_mode = selected_ai == "cline"
         native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode or trae_skill_mode or cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode or zed_skill_mode
 

@@ -2492,18 +2492,16 @@ class HookExecutor:
         skill_name = self._skill_name_from_command(command_id)
         if codex_skill_mode and skill_name:
             return f"${skill_name}"
-        if claude_skill_mode and skill_name:
-            return f"/{skill_name}"
         if kimi_skill_mode and skill_name:
             return f"/skill:{skill_name}"
-        if cursor_skill_mode and skill_name:
-            return f"/{skill_name}"
-        if zed_skill_mode and skill_name:
-            return f"/{skill_name}"
         if cline_mode:
             from .integrations.cline import format_cline_command_name
 
             return f"/{format_cline_command_name(command_id)}"
+
+        # Slash-skill integrations (Claude, Cursor, Zed…)
+        if skill_name and (claude_skill_mode or cursor_skill_mode or zed_skill_mode):
+            return f"/{skill_name}"
 
         return f"/{command_id}"
 

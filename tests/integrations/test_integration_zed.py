@@ -14,6 +14,12 @@ class TestZedIntegration(SkillsIntegrationTests):
     REGISTRAR_DIR = ".agents/skills"
     CONTEXT_FILE = "AGENTS.md"
 
+    def test_options_include_skills_flag(self):
+        """Zed is always skills-based; no --skills option needed."""
+        i = get_integration(self.KEY)
+        skills_opts = [o for o in i.options() if o.name == "--skills"]
+        assert len(skills_opts) == 0
+
     def test_requires_cli_is_false(self):
         """Zed is IDE-based; requires_cli must remain False."""
         i = get_integration(self.KEY)
