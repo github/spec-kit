@@ -761,7 +761,28 @@ class ExtensionManager:
         if not ignore_file.exists():
             return None
 
-        lines: List[str] = ignore_file.read_text().splitlines()
+        # Pin UTF-8 explicitly: ``Path.read_text`` defaults to the system
+        # locale codec on Windows (cp1252 / gb2312 / cp932), which silently
+        # corrupts multibyte patterns when the file is shared across
+        # machines with different locales. The next line already
+        # normalises backslashes "so Windows-authored files work" — the
+        # codebase already expects Windows authors to write this file.
+        #
+        # A file that is not valid UTF-8 is a user-authoring mistake, so
+        # surface it as ``ValidationError`` with a pointer to the offending
+        # byte — the same pattern ``ExtensionManifest._load_yaml`` uses
+        # for ``extension.yml`` (see ``UnicodeDecodeError`` handler in
+        # this module). Without the wrap, the raw ``UnicodeDecodeError``
+        # would abort installation with a Python traceback instead of a
+        # clear message naming the file.
+        try:
+            raw = ignore_file.read_text(encoding="utf-8")
+        except UnicodeDecodeError as e:
+            raise ValidationError(
+                f".extensionignore is not valid UTF-8: {ignore_file} "
+                f"({e.reason} at byte {e.start})"
+            )
+        lines: List[str] = raw.splitlines()
 
         # Normalise backslashes in patterns so Windows-authored files work
         normalised: List[str] = []
@@ -1728,13 +1749,59 @@ class ExtensionCatalog(CatalogStackBase):
         from specify_cli.authentication.http import build_request
         return build_request(url)
 
-    def _open_url(self, url: str, timeout: int = 10):
+    def _open_url(
+        self,
+        url: str,
+        timeout: int = 10,
+        extra_headers: Optional[Dict[str, str]] = None,
+    ):
         """Open a URL with provider-based auth, trying each configured provider.
 
         Delegates to :func:`specify_cli.authentication.http.open_url`.
         """
         from specify_cli.authentication.http import open_url
-        return open_url(url, timeout)
+        return open_url(url, timeout, extra_headers=extra_headers)
+
+    def _resolve_github_release_asset_api_url(
+        self,
+        download_url: str,
+        timeout: int = 60,
+    ) -> Optional[str]:
+        """Resolve a GitHub release asset URL to its API asset URL."""
+        import urllib.error
+        from urllib.parse import unquote, urlparse
+
+        parsed = urlparse(download_url)
+        parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
+        if (
+            parsed.hostname == "api.github.com"
+            and len(parts) >= 6
+            and parts[:1] == ["repos"]
+            and parts[3:5] == ["releases", "assets"]
+        ):
+            return download_url
+
+        if parsed.hostname != "github.com":
+            return None
+
+        if len(parts) < 6 or parts[2:4] != ["releases", "download"]:
+            return None
+
+        owner, repo, tag = parts[0], parts[1], parts[4]
+        asset_name = "/".join(parts[5:])
+        release_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+
+        try:
+            with self._open_url(release_url, timeout=timeout) as response:
+                release_data = json.loads(response.read())
+        except (urllib.error.URLError, json.JSONDecodeError):
+            return None
+
+        for asset in release_data.get("assets", []):
+            if asset.get("name") == asset_name and asset.get("url"):
+                return str(asset["url"])
+
+        return None
 
     def get_active_catalogs(self) -> List[CatalogEntry]:
         """Get the ordered list of active catalogs.
@@ -2134,9 +2201,15 @@ class ExtensionCatalog(CatalogStackBase):
         zip_filename = f"{extension_id}-{version}.zip"
         zip_path = target_dir / zip_filename
 
+        extra_headers = None
+        resolved_download_url = self._resolve_github_release_asset_api_url(download_url)
+        if resolved_download_url:
+            download_url = resolved_download_url
+            extra_headers = {"Accept": "application/octet-stream"}
+
         # Download the ZIP file
         try:
-            with self._open_url(download_url, timeout=60) as response:
+            with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
                 zip_data = response.read()
 
             zip_path.write_bytes(zip_data)

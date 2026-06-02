@@ -219,6 +219,83 @@ Aggregate results from fan-out steps:
   output: {}
 ```
 
+## Error Handling
+
+By default, any step that returns `StepResult(status=StepStatus.FAILED, ...)`
+at runtime halts the entire run — most commonly a `shell` or
+`command` step exiting non-zero. Set `continue_on_error: true` on
+a step to record its result and continue to the next sibling step
+instead. When the failure was a non-zero exit, the exit code
+remains available on `steps.<id>.output.exit_code` so a downstream
+`if` or `switch` can branch on it (or a `gate` can surface it to
+the operator via `{{ }}` interpolation in `message`):
+
+```yaml
+- id: heavy-thing
+  type: command
+  integration: claude
+  command: speckit.heavy-thing
+  continue_on_error: true
+
+- id: check-result
+  type: if
+  condition: "{{ steps.heavy-thing.output.exit_code != 0 }}"
+  then:
+    - id: review
+      type: gate
+      message: "Step failed (exit {{ steps.heavy-thing.output.exit_code }}). Approve to run the recovery path, or reject to leave the failure recorded and move on."
+      on_reject: skip
+    - id: recover
+      type: if
+      condition: "{{ steps.review.output.choice == 'approve' }}"
+      then:
+        - id: rerun
+          command: speckit.recovery
+  else:
+    - id: next-thing
+      command: speckit.next-thing
+```
+
+A few things worth knowing about that example:
+
+- Both gate options (`approve`, `reject`) return `StepStatus.COMPLETED`;
+  `on_reject: skip` controls only whether the engine aborts on reject
+  (it doesn't, with `skip`) — it does **not** auto-skip subsequent
+  sibling steps in the `then:` list. Downstream branching is the
+  workflow author's responsibility: read
+  `{{ steps.<gate-id>.output.choice }}` in a follow-up `if`, `switch`,
+  or expression, as the `recover` step above does.
+- `on_reject` has three values: `abort` (default — reject → `StepStatus.FAILED`
+  with `output.aborted = True`, halts the run), `skip` (reject →
+  `StepStatus.COMPLETED`, author handles branching as shown), and `retry`
+  (reject → `StepStatus.PAUSED` so the next `specify workflow resume` re-runs
+  the gate).
+- Gates do not automatically re-run the failed step. To express a
+  retry path, either define custom gate options and branch on the
+  choice downstream, or wrap the failing step in your own loop.
+
+**Notes:**
+
+- The field must be a literal boolean (`true` / `false`); coerced
+  strings like `"true"` are rejected at validation time.
+- **Scope: returned failures only.** The flag applies to step results
+  with `status=StepStatus.FAILED`. Unhandled exceptions raised out of a step's
+  `execute()` method are caught one level up by `WorkflowEngine.execute()`,
+  logged as `workflow_failed`, and abort the run regardless of
+  `continue_on_error`. If a step author wants the flag to cover an
+  exceptional path, the step must catch the exception internally and
+  return `StepResult(status=StepStatus.FAILED, ...)` with the failure encoded in
+  `output` (e.g. `exit_code`, `stderr`, or a custom field).
+- Gate aborts (`on_reject: abort` chosen by the operator) always halt
+  the run — `continue_on_error` does not override them. The flag is
+  for transient/expected step failures, not for overriding deliberate
+  operator decisions.
+- Structural validation runs up-front: `specify workflow run` rejects
+  invalid workflow definitions before the run is created, so
+  validation failures never reach this code path.
+- When the flag is omitted, behaviour is byte-equivalent to before
+  this feature.
+
 ## Expressions
 
 Workflow definitions use `{{ expression }}` syntax for dynamic values:

@@ -2804,17 +2804,33 @@ class TestExtensionCatalog:
             zf.writestr("extension.yml", "id: test-ext\nname: Test\nversion: 1.0.0\n")
         zip_bytes = zip_buf.getvalue()
 
-        mock_response = MagicMock()
-        mock_response.read.return_value = zip_bytes
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        release_response = MagicMock()
+        release_response.read.return_value = json.dumps(
+            {
+                "assets": [
+                    {
+                        "name": "test-ext.zip",
+                        "url": "https://api.github.com/repos/org/repo/releases/assets/1",
+                    }
+                ]
+            }
+        ).encode()
+        release_response.__enter__ = lambda s: s
+        release_response.__exit__ = MagicMock(return_value=False)
 
-        captured = {}
+        asset_response = MagicMock()
+        asset_response.read.return_value = zip_bytes
+        asset_response.__enter__ = lambda s: s
+        asset_response.__exit__ = MagicMock(return_value=False)
+
+        captured = []
         mock_opener = MagicMock()
 
         def fake_open(req, timeout=None):
-            captured["req"] = req
-            return mock_response
+            captured.append(req)
+            if req.full_url.endswith("/releases/tags/v1"):
+                return release_response
+            return asset_response
 
         mock_opener.open.side_effect = fake_open
 
@@ -2829,7 +2845,56 @@ class TestExtensionCatalog:
              patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             catalog.download_extension("test-ext", target_dir=temp_dir)
 
-        assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/tags/v1"
+        assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[1].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
+        assert captured[1].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[1].get_header("Accept") == "application/octet-stream"
+
+    def test_download_extension_accepts_direct_github_rest_asset_url(self, temp_dir, monkeypatch):
+        """download_extension can use a GitHub REST release asset URL directly."""
+        from unittest.mock import patch, MagicMock
+        import zipfile
+        import io
+
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
+        catalog = self._make_catalog(temp_dir)
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("extension.yml", "id: test-ext\nname: Test\nversion: 1.0.0\n")
+        zip_bytes = zip_buf.getvalue()
+
+        asset_response = MagicMock()
+        asset_response.read.return_value = zip_bytes
+        asset_response.__enter__ = lambda s: s
+        asset_response.__exit__ = MagicMock(return_value=False)
+
+        captured = []
+        mock_opener = MagicMock()
+
+        def fake_open(req, timeout=None):
+            captured.append(req)
+            return asset_response
+
+        mock_opener.open.side_effect = fake_open
+
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://api.github.com/repos/org/repo/releases/assets/1",
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
+            catalog.download_extension("test-ext", target_dir=temp_dir)
+
+        assert len(captured) == 1
+        assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
+        assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[0].get_header("Accept") == "application/octet-stream"
 
 
 
@@ -3358,9 +3423,13 @@ class TestExtensionIgnore:
                 else:
                     p.write_text(content)
 
-        # Write .extensionignore
+        # Write .extensionignore. Pinned to UTF-8 so non-ASCII patterns
+        # in tests (see ``test_extensionignore_utf8_patterns``) survive
+        # the round-trip on Windows runners with non-UTF-8 default locales.
         if ignore_content is not None:
-            (ext_dir / ".extensionignore").write_text(ignore_content)
+            (ext_dir / ".extensionignore").write_text(
+                ignore_content, encoding="utf-8"
+            )
 
         return ext_dir
 
@@ -3589,6 +3658,73 @@ class TestExtensionIgnore:
         dest = proj_dir / ".specify" / "extensions" / "test-ext"
         assert (dest / "docs" / "guide.md").exists()
         assert not (dest / "docs" / "internal" / "draft.md").exists()
+
+    def test_extensionignore_utf8_patterns(self, temp_dir, valid_manifest_data):
+        """Non-ASCII patterns in .extensionignore work on every locale.
+
+        ``Path.read_text`` defaults to the system locale codec on Windows
+        (cp1252 / gb2312 / cp932). Without an explicit ``encoding="utf-8"``,
+        a pattern like ``ドキュメント/`` written by a UTF-8 host becomes
+        mojibake on a cp1252 host and silently fails to match — leaking
+        files the author intended to exclude. The existing
+        ``test_extensionignore_windows_backslash_patterns`` already shows
+        the codebase treats this as a Windows-author-friendly file; UTF-8
+        is part of that same contract.
+        """
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={
+                "ドキュメント/private.md": "secret",
+                "ドキュメント/public.md": "public",
+                "docs/guide.md": "# Guide",
+                "café/résumé.txt": "draft",
+            },
+            ignore_content="ドキュメント/\ncafé/\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        # Multibyte patterns excluded.
+        assert not (dest / "ドキュメント").exists()
+        assert not (dest / "café").exists()
+        # ASCII path with no matching pattern is unaffected.
+        assert (dest / "docs" / "guide.md").exists()
+
+    def test_extensionignore_invalid_utf8_raises_validation_error(
+        self, temp_dir, valid_manifest_data
+    ):
+        """A non-UTF-8 ``.extensionignore`` surfaces as ``ValidationError``.
+
+        Pinning ``encoding="utf-8"`` on the reader means an
+        ``.extensionignore`` written in some other codec (cp1252, etc.)
+        now triggers ``UnicodeDecodeError`` instead of silently
+        mojibake-ing patterns. Wrap that exception as ``ValidationError``
+        with a pointer to the offending byte — the same pattern
+        ``ExtensionManifest._load_yaml`` uses for ``extension.yml`` —
+        so installation aborts with a user-friendly message instead of a
+        raw Python traceback.
+        """
+        ext_dir = self._make_extension(temp_dir, valid_manifest_data)
+        # Write an .extensionignore whose bytes are not valid UTF-8.
+        # 0xE9 is 'é' in cp1252 but an invalid lead byte in UTF-8.
+        (ext_dir / ".extensionignore").write_bytes(b"caf\xe9/\n")
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        with pytest.raises(
+            ValidationError, match=r"\.extensionignore is not valid UTF-8"
+        ):
+            manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
     def test_extensionignore_star_does_not_cross_directories(self, temp_dir, valid_manifest_data):
         """'*' should NOT match across directory boundaries (gitignore semantics)."""
