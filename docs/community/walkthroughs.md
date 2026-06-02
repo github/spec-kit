@@ -5,6 +5,8 @@
 
 See Spec-Driven Development in action across different scenarios with these community-contributed walkthroughs:
 
+- **[Hands-off orchestration example](hands-off-orchestration.md)** — Shows an artifact-first flow that runs specify, clarify, plan, checklist, tasks, and analyze, then stops before issue creation or implementation unless the user explicitly opts in.
+
 - **[Greenfield .NET CLI tool](https://github.com/mnriem/spec-kit-dotnet-cli-demo)** — Builds a Timezone Utility as a .NET single-binary CLI tool from a blank directory, covering the full spec-kit workflow: constitution, specify, plan, tasks, and multi-pass implement using GitHub Copilot agents.
 
 - **[Greenfield Spring Boot + React platform](https://github.com/mnriem/spec-kit-spring-react-demo)** — Builds an LLM performance analytics platform (REST API, graphs, iteration tracking) from scratch using Spring Boot, embedded React, PostgreSQL, and Docker Compose, with a clarify step and a cross-artifact consistency analysis pass included.
