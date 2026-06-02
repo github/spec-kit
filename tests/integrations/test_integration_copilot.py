@@ -792,3 +792,9 @@ class TestCopilotSkillsMode:
         assert "/speckit.plan" not in result.output, (
             f"Should not show /speckit.plan in skills mode:\n{result.output}"
         )
+        assert "before /speckit-plan" in result.output, (
+            f"Checklist guidance should align with docs and run before planning:\n{result.output}"
+        )
+        assert "after /speckit-plan" not in result.output, (
+            f"Checklist guidance should not say it runs after planning:\n{result.output}"
+        )
