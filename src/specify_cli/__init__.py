@@ -628,6 +628,12 @@ preset_app.add_typer(preset_catalog_app, name="catalog")
 from .integrations._commands import register as _register_integration_cmds  # noqa: E402
 _register_integration_cmds(app)
 
+# Re-exported from integrations/_helpers.py to preserve the public import surface.
+from .integrations._helpers import (  # noqa: E402
+    _clear_init_options_for_integration as _clear_init_options_for_integration,
+    _update_init_options_for_integration as _update_init_options_for_integration,
+)
+
 
 def _require_specify_project() -> Path:
     """Return the current project root if it is a spec-kit project, else exit."""
