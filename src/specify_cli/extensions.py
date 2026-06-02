@@ -761,7 +761,28 @@ class ExtensionManager:
         if not ignore_file.exists():
             return None
 
-        lines: List[str] = ignore_file.read_text().splitlines()
+        # Pin UTF-8 explicitly: ``Path.read_text`` defaults to the system
+        # locale codec on Windows (cp1252 / gb2312 / cp932), which silently
+        # corrupts multibyte patterns when the file is shared across
+        # machines with different locales. The next line already
+        # normalises backslashes "so Windows-authored files work" — the
+        # codebase already expects Windows authors to write this file.
+        #
+        # A file that is not valid UTF-8 is a user-authoring mistake, so
+        # surface it as ``ValidationError`` with a pointer to the offending
+        # byte — the same pattern ``ExtensionManifest._load_yaml`` uses
+        # for ``extension.yml`` (see ``UnicodeDecodeError`` handler in
+        # this module). Without the wrap, the raw ``UnicodeDecodeError``
+        # would abort installation with a Python traceback instead of a
+        # clear message naming the file.
+        try:
+            raw = ignore_file.read_text(encoding="utf-8")
+        except UnicodeDecodeError as e:
+            raise ValidationError(
+                f".extensionignore is not valid UTF-8: {ignore_file} "
+                f"({e.reason} at byte {e.start})"
+            )
+        lines: List[str] = raw.splitlines()
 
         # Normalise backslashes in patterns so Windows-authored files work
         normalised: List[str] = []
@@ -801,42 +822,29 @@ class ExtensionManager:
     def _get_skills_dir(self) -> Optional[Path]:
         """Return the active skills directory for extension skill registration.
 
-        Reads ``.specify/init-options.json`` to determine whether skills
-        are enabled and which agent was selected, then delegates to
-        the module-level ``_get_skills_dir()`` helper for the concrete path.
+        Delegates to :func:`resolve_active_skills_dir` which reads
+        init-options, applies the Kimi native-skills fallback, and
+        safely creates the directory when ``ai_skills`` is enabled.
 
-        Kimi is treated as a native-skills agent: if ``ai == "kimi"`` and
-        ``.kimi/skills`` exists, extension installs should still propagate
-        command skills even when ``ai_skills`` is false.
-
-        Returns:
-            The skills directory ``Path``, or ``None`` if skills were not
-            enabled and no native-skills fallback applies.
+        Returns ``None`` (instead of raising) when the directory cannot
+        be created due to symlink, containment, or permission issues so
+        that callers can fall back gracefully.
         """
-        from . import load_init_options, _get_skills_dir as resolve_skills_dir
-
-        opts = load_init_options(self.project_root)
-        if not isinstance(opts, dict):
-            opts = {}
-
-        agent = opts.get("ai")
-        if not isinstance(agent, str) or not agent:
+        from . import resolve_active_skills_dir, _print_cli_warning
+        try:
+            return resolve_active_skills_dir(self.project_root)
+        except (ValueError, OSError) as exc:
+            _print_cli_warning(
+                "resolve", "skills directory", None, exc,
+                continuing="Continuing without skill registration.",
+            )
             return None
-
-        ai_skills_enabled = bool(opts.get("ai_skills"))
-        if not ai_skills_enabled and agent != "kimi":
-            return None
-
-        skills_dir = resolve_skills_dir(self.project_root, agent)
-        if not skills_dir.is_dir():
-            return None
-
-        return skills_dir
 
     def _register_extension_skills(
         self,
         manifest: ExtensionManifest,
         extension_dir: Path,
+        link_outputs: bool = False,
     ) -> List[str]:
         """Generate SKILL.md files for extension commands as agent skills.
 
@@ -848,6 +856,8 @@ class ExtensionManager:
         Args:
             manifest: Extension manifest.
             extension_dir: Installed extension directory.
+            link_outputs: If True, create dev-mode symlinks for rendered
+                skill files when supported by the OS.
 
         Returns:
             List of skill names that were created (for registry storage).
@@ -900,9 +910,18 @@ class ExtensionManager:
             # Check if skill already exists before creating the directory
             skill_subdir = skills_dir / skill_name
             skill_file = skill_subdir / "SKILL.md"
-            if skill_file.exists():
-                # Do not overwrite user-customized skills
-                continue
+            cache_root = extension_dir / ".specify-dev" / "extension-skills"
+            cache_file = cache_root / skill_name / "SKILL.md"
+            CommandRegistrar._ensure_inside(cache_file, cache_root)
+            if skill_file.exists() or skill_file.is_symlink():
+                # Do not overwrite user-customized skills, but allow dev-mode
+                # symlinks that point back to this extension's generated cache
+                # to be refreshed on a subsequent dev install.
+                if not (
+                    link_outputs
+                    and self._is_expected_dev_symlink(skill_file, cache_file)
+                ):
+                    continue
 
             # Create skill directory; track whether we created it so we can clean
             # up safely if reading the source file subsequently fails.
@@ -954,10 +973,34 @@ class ExtensionManager:
                     skill_content
                 )
 
-            skill_file.write_text(skill_content, encoding="utf-8")
+            if link_outputs:
+                try:
+                    cache_file.parent.mkdir(parents=True, exist_ok=True)
+                    cache_file.write_text(skill_content, encoding="utf-8")
+                    if skill_file.exists() or skill_file.is_symlink():
+                        skill_file.unlink()
+                    target = os.path.relpath(cache_file, skill_file.parent)
+                    os.symlink(target, skill_file)
+                except (OSError, ValueError):
+                    if skill_file.is_symlink():
+                        skill_file.unlink()
+                    skill_file.write_text(skill_content, encoding="utf-8")
+            else:
+                skill_file.write_text(skill_content, encoding="utf-8")
             written.append(skill_name)
 
         return written
+
+    @staticmethod
+    def _is_expected_dev_symlink(skill_file: Path, cache_file: Path) -> bool:
+        """Return True when an existing skill file links to its dev cache."""
+        if not skill_file.is_symlink():
+            return False
+
+        try:
+            return skill_file.resolve(strict=False) == cache_file.resolve(strict=False)
+        except OSError:
+            return False
 
     def _unregister_extension_skills(
         self,
@@ -1129,6 +1172,7 @@ class ExtensionManager:
         speckit_version: str,
         register_commands: bool = True,
         priority: int = 10,
+        link_commands: bool = False,
     ) -> ExtensionManifest:
         """Install extension from a local directory.
 
@@ -1137,6 +1181,8 @@ class ExtensionManager:
             speckit_version: Current spec-kit version
             register_commands: If True, register commands with AI agents
             priority: Resolution priority (lower = higher precedence, default 10)
+            link_commands: If True, register rendered agent artifacts as
+                symlinks to a dev cache when supported by the OS.
 
         Returns:
             Installed extension manifest
@@ -1180,12 +1226,14 @@ class ExtensionManager:
             registrar = CommandRegistrar()
             # Register for all detected agents
             registered_commands = registrar.register_commands_for_all_agents(
-                manifest, dest_dir, self.project_root
+                manifest, dest_dir, self.project_root, link_outputs=link_commands
             )
 
         # Auto-register extension commands as agent skills when --ai-skills
         # was used during project initialisation (feature parity).
-        registered_skills = self._register_extension_skills(manifest, dest_dir)
+        registered_skills = self._register_extension_skills(
+            manifest, dest_dir, link_outputs=link_commands
+        )
 
         # Register hooks and update installed list in extensions.yml
         hook_executor = HookExecutor(self.project_root)
@@ -1621,7 +1669,8 @@ class CommandRegistrar:
         agent_name: str,
         manifest: ExtensionManifest,
         extension_dir: Path,
-        project_root: Path
+        project_root: Path,
+        link_outputs: bool = False,
     ) -> List[str]:
         """Register extension commands for a specific agent."""
         if agent_name not in self.AGENT_CONFIGS:
@@ -1629,20 +1678,23 @@ class CommandRegistrar:
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
         return self._registrar.register_commands(
             agent_name, manifest.commands, manifest.id, extension_dir, project_root,
-            context_note=context_note
+            context_note=context_note,
+            link_outputs=link_outputs,
         )
 
     def register_commands_for_all_agents(
         self,
         manifest: ExtensionManifest,
         extension_dir: Path,
-        project_root: Path
+        project_root: Path,
+        link_outputs: bool = False,
     ) -> Dict[str, List[str]]:
         """Register extension commands for all detected agents."""
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
         return self._registrar.register_commands_for_all_agents(
             manifest.commands, manifest.id, extension_dir, project_root,
-            context_note=context_note
+            context_note=context_note,
+            link_outputs=link_outputs,
         )
 
     def unregister_commands(
@@ -1657,10 +1709,13 @@ class CommandRegistrar:
         self,
         manifest: ExtensionManifest,
         extension_dir: Path,
-        project_root: Path
+        project_root: Path,
+        link_outputs: bool = False,
     ) -> List[str]:
         """Register extension commands for Claude Code agent."""
-        return self.register_commands_for_agent("claude", manifest, extension_dir, project_root)
+        return self.register_commands_for_agent(
+            "claude", manifest, extension_dir, project_root, link_outputs=link_outputs
+        )
 
 
 class ExtensionCatalog(CatalogStackBase):
@@ -2379,6 +2434,7 @@ class HookExecutor:
         claude_skill_mode = selected_ai == "claude" and bool(init_options.get("ai_skills"))
         kimi_skill_mode = selected_ai == "kimi"
         cursor_skill_mode = selected_ai == "cursor-agent" and bool(init_options.get("ai_skills"))
+        cline_mode = selected_ai == "cline"
 
         skill_name = self._skill_name_from_command(command_id)
         if codex_skill_mode and skill_name:
@@ -2389,6 +2445,10 @@ class HookExecutor:
             return f"/skill:{skill_name}"
         if cursor_skill_mode and skill_name:
             return f"/{skill_name}"
+        if cline_mode:
+            from .integrations.cline import format_cline_command_name
+
+            return f"/{format_cline_command_name(command_id)}"
 
         return f"/{command_id}"
 

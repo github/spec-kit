@@ -52,6 +52,7 @@ def _register_builtins() -> None:
     from .auggie import AuggieIntegration
     from .bob import BobIntegration
     from .claude import ClaudeIntegration
+    from .cline import ClineIntegration
     from .codebuddy import CodebuddyIntegration
     from .codex import CodexIntegration
     from .copilot import CopilotIntegration
@@ -61,6 +62,7 @@ def _register_builtins() -> None:
     from .gemini import GeminiIntegration
     from .generic import GenericIntegration
     from .goose import GooseIntegration
+    from .hermes import HermesIntegration
     from .iflow import IflowIntegration
     from .junie import JunieIntegration
     from .kilocode import KilocodeIntegration
@@ -84,6 +86,7 @@ def _register_builtins() -> None:
     _register(AuggieIntegration())
     _register(BobIntegration())
     _register(ClaudeIntegration())
+    _register(ClineIntegration())
     _register(CodebuddyIntegration())
     _register(CodexIntegration())
     _register(CopilotIntegration())
@@ -93,6 +96,7 @@ def _register_builtins() -> None:
     _register(GeminiIntegration())
     _register(GenericIntegration())
     _register(GooseIntegration())
+    _register(HermesIntegration())
     _register(IflowIntegration())
     _register(JunieIntegration())
     _register(KilocodeIntegration())

@@ -28,6 +28,7 @@ from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from .extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
+from .integrations.base import IntegrationBase
 
 
 def _substitute_core_template(
@@ -1058,6 +1059,9 @@ class PresetManager:
                         body = registrar.resolve_skill_placeholders(
                             selected_ai, fm, body, self.project_root
                         )
+                        body = self._resolve_skill_command_refs(
+                            body, registrar, selected_ai
+                        )
                     fm_data = registrar.build_skill_frontmatter(
                         selected_ai if isinstance(selected_ai, str) else "",
                         skill_name, desc,
@@ -1097,36 +1101,23 @@ class PresetManager:
     def _get_skills_dir(self) -> Optional[Path]:
         """Return the active skills directory for preset skill overrides.
 
-        Reads ``.specify/init-options.json`` to determine whether skills
-        are enabled and which agent was selected, then delegates to
-        the module-level ``_get_skills_dir()`` helper for the concrete path.
+        Delegates to :func:`resolve_active_skills_dir` which reads
+        init-options, applies the Kimi native-skills fallback, and
+        safely creates the directory when ``ai_skills`` is enabled.
 
-        Kimi is treated as a native-skills agent: if ``ai == "kimi"`` and
-        ``.kimi/skills`` exists, presets should still propagate command
-        overrides to skills even when ``ai_skills`` is false.
-
-        Returns:
-            The skills directory ``Path``, or ``None`` if skills were not
-            enabled and no native-skills fallback applies.
+        Returns ``None`` (instead of raising) when the directory cannot
+        be created due to symlink, containment, or permission issues so
+        that callers can fall back gracefully.
         """
-        from . import load_init_options, _get_skills_dir
-
-        opts = load_init_options(self.project_root)
-        if not isinstance(opts, dict):
-            opts = {}
-        agent = opts.get("ai")
-        if not isinstance(agent, str) or not agent:
+        from . import resolve_active_skills_dir, _print_cli_warning
+        try:
+            return resolve_active_skills_dir(self.project_root)
+        except (ValueError, OSError) as exc:
+            _print_cli_warning(
+                "resolve", "skills directory", None, exc,
+                continuing="Continuing without skill registration.",
+            )
             return None
-
-        ai_skills_enabled = bool(opts.get("ai_skills"))
-        if not ai_skills_enabled and agent != "kimi":
-            return None
-
-        skills_dir = _get_skills_dir(self.project_root, agent)
-        if not skills_dir.is_dir():
-            return None
-
-        return skills_dir
 
     @staticmethod
     def _skill_names_for_command(cmd_name: str) -> tuple[str, str]:
@@ -1146,6 +1137,23 @@ class PresetManager:
         if title_name.startswith("speckit."):
             title_name = title_name[len("speckit."):]
         return title_name.replace(".", " ").replace("-", " ").title()
+
+    @staticmethod
+    def _resolve_skill_command_refs(
+        body: str, registrar: "CommandRegistrar", selected_ai: str
+    ) -> str:
+        """Render ``__SPECKIT_COMMAND_*__`` tokens in a skill body as invocations.
+
+        Looks up the agent's invoke separator and rewrites each
+        ``__SPECKIT_COMMAND_<NAME>__`` placeholder into the matching
+        slash-command invocation — ``/speckit-<cmd>`` for a ``-`` separator,
+        ``/speckit.<cmd>`` for ``.`` — the same rendering the command layer
+        applies via ``CommandRegistrar.register_commands()``.
+        """
+        separator = registrar.AGENT_CONFIGS.get(selected_ai, {}).get(
+            "invoke_separator", "."
+        )
+        return IntegrationBase.resolve_command_refs(body, separator)
 
     def _build_extension_skill_restore_index(self) -> Dict[str, Dict[str, Any]]:
         """Index extension-backed skill restore data by skill directory name."""
@@ -1323,6 +1331,7 @@ class PresetManager:
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root
             )
+            body = self._resolve_skill_command_refs(body, registrar, selected_ai)
 
             for target_skill_name in target_skill_names:
                 skill_subdir = skills_dir / target_skill_name
@@ -1415,6 +1424,9 @@ class PresetManager:
                     body = registrar.resolve_skill_placeholders(
                         selected_ai, frontmatter, body, self.project_root
                     )
+                    body = self._resolve_skill_command_refs(
+                        body, registrar, selected_ai
+                    )
 
                 original_desc = frontmatter.get("description", "")
                 enhanced_desc = original_desc or SKILL_DESCRIPTIONS.get(
@@ -1451,6 +1463,9 @@ class PresetManager:
                 if isinstance(selected_ai, str):
                     body = registrar.resolve_skill_placeholders(
                         selected_ai, frontmatter, body, self.project_root
+                    )
+                    body = self._resolve_skill_command_refs(
+                        body, registrar, selected_ai
                     )
 
                 command_name = extension_restore["command_name"]

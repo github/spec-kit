@@ -48,7 +48,8 @@ class DevinIntegration(SkillsIntegration):
         stdout instead of structured JSON. ``requires_cli=True`` is
         kept on the integration for tool detection.
         """
-        args = [self.key, "-p", prompt]
+        args = [self._resolve_executable(), "-p", prompt]
+        self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])
         return args

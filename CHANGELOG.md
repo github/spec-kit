@@ -2,6 +2,104 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.9.1] - 2026-06-02
+
+### Changed
+
+- fix(cli): pin UTF-8 encoding on init-options and .extensionignore I/O (#2686)
+- docs: list Hermes in supported integrations table (#2768)
+- fix(copilot): resolve active spec template (#2765)
+- fix: add missing agent-context extension entries to Cline _expected_files (#2797)
+- Add spec-kit-linear extension to community catalog (#2795)
+- feat: add native Cline integration (#2508)
+- Update workflow-preset community catalog entry (#2756)
+- chore: release 0.9.0, begin 0.9.1.dev0 development (#2794)
+- Add RAG Azure Builder extension to community catalog (#2793)
+
+## [0.9.0] - 2026-06-01
+
+### Changed
+
+- chore: recompile workflow lock files (#2774)
+- Add Multi-Sites Spec Kit extension to community catalog (#2791)
+- Update Product Spec Extension to v0.8.3 (#2790)
+- Publish May 2026 Newsletter (#2787)
+- fix: move URL install confirmation prompt before spinner (#2783) (#2784)
+- Update Reqnroll BDD extension to v1.1.0 (#2775)
+- Extract agent context updates into bundled agent-context extension (#2546)
+- chore(deps): bump actions/setup-dotnet from 5.2.0 to 5.3.0 (#2755)
+- chore: release 0.8.18, begin 0.8.19.dev0 development (#2766)
+
+## [0.8.18] - 2026-05-29
+
+### Changed
+
+- Add support for SPECKIT_WORKFLOW_RUN_ID override (#2742)
+- feat: support SPECKIT_INTEGRATION_<KEY>_EXECUTABLE env var (#2743)
+- chore(deps): bump github/gh-aw-actions from 0.74.8 to 0.77.0 (#2754)
+- chore(deps): bump github/codeql-action from 4.35.5 to 4.36.0 (#2753)
+- fix: disable no-op issue reporting for catalog submission workflows (#2748)
+- Add confirmation prompt for URL-based extension installs (#2745)
+- fix: restrict community submission workflows to labeled event only (#2741)
+- feat(integrations): support SPECIFY_<KEY>_EXTRA_ARGS env var for agent subprocess flags (#2596)
+- chore: release 0.8.17, begin 0.8.18.dev0 development (#2737)
+
+## [0.8.17] - 2026-05-28
+
+### Changed
+
+- docs: consolidate Community sections in README (#2736)
+- Fix shared script command hints for integration separators (#2627)
+- docs: update security-governance preset to v0.4.0 (#2703)
+- feat(agy): enhance Google Antigravity CLI integration (#2689)
+- Fix --dev extension agent symlinks (#2554)
+- Share skills hook note post-processing (#2679)
+- feat: add Hermes Agent integration (with review fixes) (#2651)
+- Update Superpowers Implementation Bridge to v0.7.0 (#2732)
+- chore: release 0.8.16, begin 0.8.17.dev0 development (#2729)
+
+## [0.8.16] - 2026-05-27
+
+### Changed
+
+- docs: update landing page stats and branch naming convention (#2727)
+- feat(workflows): expose {{ context.run_id }} template variable (#2664)
+- fix: resolve __SPECKIT_COMMAND_*__ refs in preset skill rendering (#2717) (#2718)
+- Add Workflow Preset to community catalog (#2725)
+- fix: paths-only skips branch validation, setup-plan preserves existing plan (#2672)
+- docs: fix broken pipx homepage URLs to point to pipx.pypa.io (#2670)
+- Update Architecture Guard extension to v1.8.9 (#2723)
+- Re-validate spec quality checklist after clarify updates spec (#2715)
+- chore: release 0.8.15, begin 0.8.16.dev0 development (#2722)
+
+## [0.8.15] - 2026-05-27
+
+### Changed
+
+- Update Fiction Book Writing preset to v1.8.1 (#2714)
+- chore: update memorylint and superb to 1.4.0 (#2690)
+- fix: promote post-execution hook dispatch to H2 with directive language (#2713)
+- Add Token Budget extension to community catalog (#2712)
+- fix: create skills directory on demand during extension/preset install (#2711)
+- fix: PS 5.1 compat — replace non-ASCII chars in shipped PowerShell scripts (#2709)
+- docs: update security-governance preset to v0.3.0 (#2676)
+- Update README.md (#2675)
+- chore: release 0.8.14, begin 0.8.15.dev0 development (#2706)
+
+## [0.8.14] - 2026-05-26
+
+### Changed
+
+- Add util for windows sub-process (#2598)
+- refactor: create commands/ package and move init handler (PR-4/8) (#2615)
+- Add Product Spec Extension to community catalog (#2705)
+- fix init-options speckit version refresh (#2647)
+- chore(deps): bump github/gh-aw-actions from 0.74.8 to 0.74.9 (#2658)
+- docs: add branch naming convention to AGENTS.md and CONTRIBUTING.md (#2678)
+- chore(deps): bump actions/stale from 10.2.0 to 10.3.0 (#2657)
+- chore(deps): bump github/codeql-action from 4.35.4 to 4.35.5 (#2656)
+- chore: release 0.8.13, begin 0.8.14.dev0 development (#2669)
+
 ## [0.8.13] - 2026-05-21
 
 ### Changed

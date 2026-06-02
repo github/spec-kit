@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -332,6 +333,44 @@ class TestExpressions:
         result = evaluate_expression("{{ steps.tasks.output.task_list[0].file }}", ctx)
         assert result == "a.md"
 
+    def test_context_run_id_resolves(self):
+        """``{{ context.run_id }}`` resolves to ``StepContext.run_id``.
+
+        Locks the contract from issue #2590: workflow templates can
+        reference the engine-assigned run id for telemetry, artifact
+        metadata, or per-run scratch isolation.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(run_id="a1b2c3d4")
+        assert evaluate_expression("{{ context.run_id }}", ctx) == "a1b2c3d4"
+
+    def test_context_run_id_defaults_to_empty_when_unset(self):
+        """``{{ context.run_id }}`` resolves to ``""`` when no run is
+        active (dry-run, validation, ad-hoc evaluator usage) rather
+        than raising — workflows referencing the variable never error
+        outside a run context.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        # No run_id set on the context.
+        ctx = StepContext()
+        assert evaluate_expression("{{ context.run_id }}", ctx) == ""
+
+    def test_context_run_id_string_interpolation(self):
+        """Run id interpolates inside a larger template string — the
+        common pattern for stamping shell commands and artifact paths
+        with the run id.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(run_id="deadbeef")
+        result = evaluate_expression("RUN_ID={{ context.run_id }}", ctx)
+        assert result == "RUN_ID=deadbeef"
+
 
 # ===== Integration Dispatch Tests =====
 
@@ -373,7 +412,8 @@ class TestBuildExecArgs:
         from specify_cli.integrations.copilot import CopilotIntegration
         impl = CopilotIntegration()
         args = impl.build_exec_args("do stuff", model="claude-sonnet-4-20250514")
-        assert args[0] == "copilot"
+        expected_exec = "copilot.cmd" if os.name == "nt" else "copilot"
+        assert args[0] == expected_exec
         assert "-p" in args
         assert "--yolo" in args
         assert "--model" in args
@@ -480,6 +520,7 @@ class TestCommandStep:
         assert result.output["integration"] == "gemini"
 
     def test_step_override_model(self):
+        from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep
         from specify_cli.workflows.base import StepContext
 
@@ -491,10 +532,12 @@ class TestCommandStep:
             "model": "opus-4",
             "input": {},
         }
-        result = step.execute(config, ctx)
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+            result = step.execute(config, ctx)
         assert result.output["model"] == "opus-4"
 
     def test_options_merge(self):
+        from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep
         from specify_cli.workflows.base import StepContext
 
@@ -506,7 +549,8 @@ class TestCommandStep:
             "options": {"thinking-budget": 32768},
             "input": {},
         }
-        result = step.execute(config, ctx)
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+            result = step.execute(config, ctx)
         assert result.output["options"]["max-tokens"] == 8000
         assert result.output["options"]["thinking-budget"] == 32768
 
@@ -2150,6 +2194,489 @@ steps:
         assert "retry-loop:step-b:1" in state.step_results
         assert "retry-loop:step-a:2" in state.step_results
         assert "retry-loop:step-b:2" in state.step_results
+
+
+# ===== context.run_id Tests =====
+#
+# End-to-end coverage for the `{{ context.run_id }}` template
+# variable introduced in issue #2590. Locks resolution inside the
+# three step types the acceptance criteria called out — shell `run:`,
+# command `input.args:`, and switch `expression:` — plus the
+# "workflow doesn't reference it" backward-compat path.
+
+
+class TestContextRunId:
+    """End-to-end tests for `{{ context.run_id }}` in workflow YAML."""
+
+    def test_shell_run_resolves_run_id(self, project_dir):
+        """`run: "echo {{ context.run_id }}"` substitutes the
+        engine-assigned run id into the spawned shell, and the
+        same value appears on `state.run_id`.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "stamp-run-id"
+  name: "Stamp Run Id"
+  version: "1.0.0"
+steps:
+  - id: stamp
+    type: shell
+    run: "echo RUN_ID={{ context.run_id }}"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition, run_id="abc12345")
+
+        assert state.run_id == "abc12345"
+        stdout = state.step_results["stamp"]["output"]["stdout"]
+        assert stdout.strip() == "RUN_ID=abc12345"
+
+    def test_command_input_args_resolves_run_id(self, project_dir):
+        """`input.args: "{{ context.run_id }}"` is resolved by
+        `CommandStep` and recorded in step output, even when CLI
+        dispatch is unavailable (no integration installed). Covers
+        the artifact-metadata use case from the issue.
+        """
+        from unittest.mock import patch
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "command-stamp"
+  name: "Command Stamp"
+  version: "1.0.0"
+  integration: claude
+steps:
+  - id: tag-artifact
+    command: speckit.specify
+    input:
+      args: "{{ context.run_id }}"
+""")
+        engine = WorkflowEngine(project_dir)
+        with patch(
+            "specify_cli.workflows.steps.command.shutil.which",
+            return_value=None,
+        ):
+            state = engine.execute(definition, run_id="cafef00d")
+
+        # Even when dispatch fails (no CLI), the resolved input is
+        # recorded so downstream observers see the run id in artifact
+        # metadata.
+        assert state.step_results["tag-artifact"]["output"]["input"]["args"] == "cafef00d"
+
+    def test_switch_expression_matches_on_run_id(self, project_dir):
+        """`switch` over `{{ context.run_id }}` matches against case
+        keys, and the nested branch can ALSO reference
+        `{{ context.run_id }}`. Demonstrates the run id is a
+        first-class value in the expression engine (not just a
+        string-interpolation token) AND that it propagates into
+        nested step execution via the recursive `_execute_steps`
+        traversal.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "switch-on-run-id"
+  name: "Switch On Run Id"
+  version: "1.0.0"
+steps:
+  - id: route
+    type: switch
+    expression: "{{ context.run_id }}"
+    cases:
+      target-run:
+        - id: matched-branch
+          type: shell
+          run: "echo nested-run-id={{ context.run_id }}"
+    default:
+      - id: default-branch
+        type: shell
+        run: "echo defaulted"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition, run_id="target-run")
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["route"]["output"]["matched_case"] == "target-run"
+        assert "matched-branch" in state.step_results
+        assert "default-branch" not in state.step_results
+        # The nested branch sees the same run id — propagation through
+        # recursive `_execute_steps` is intact.
+        nested_stdout = state.step_results["matched-branch"]["output"]["stdout"]
+        assert nested_stdout.strip() == "nested-run-id=target-run"
+
+    def test_workflow_without_context_reference_unchanged(self, project_dir):
+        """Workflows that do not reference `{{ context.run_id }}`
+        continue to run exactly as before. Locks the byte-equivalent
+        default required by the issue's acceptance criteria.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "no-context-ref"
+  name: "No Context Ref"
+  version: "1.0.0"
+steps:
+  - id: only-step
+    type: shell
+    run: "echo hello"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["only-step"]["output"]["stdout"].strip() == "hello"
+
+    def test_run_id_uses_speckit_workflow_run_id_env_override(self, project_dir, monkeypatch):
+        """When no run_id argument is provided, SPECKIT_WORKFLOW_RUN_ID overrides the auto-generated run ID."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        monkeypatch.setenv("SPECKIT_WORKFLOW_RUN_ID", "env-run-123")
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "env-run-id"
+  name: "Env Run Id"
+  version: "1.0.0"
+steps:
+  - id: stamp
+    type: shell
+    run: "echo {{ context.run_id }}"
+""")
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        assert state.run_id == "env-run-123"
+        assert state.step_results["stamp"]["output"]["stdout"].strip() == "env-run-123"
+
+    def test_run_id_arg_takes_precedence_over_env_override(self, project_dir, monkeypatch):
+        """Explicit run_id keeps existing precedence over SPECKIT_WORKFLOW_RUN_ID."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        monkeypatch.setenv("SPECKIT_WORKFLOW_RUN_ID", "env-run-123")
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "explicit-run-id"
+  name: "Explicit Run Id"
+  version: "1.0.0"
+steps:
+  - id: stamp
+    type: shell
+    run: "echo {{ context.run_id }}"
+""")
+        state = WorkflowEngine(project_dir).execute(definition, run_id="explicit-456")
+
+        assert state.run_id == "explicit-456"
+        assert state.step_results["stamp"]["output"]["stdout"].strip() == "explicit-456"
+
+
+# ===== continue_on_error Tests =====
+#
+# Locks the contract documented in workflows/README.md "Error Handling"
+# section: when a step returns `StepResult(status=StepStatus.FAILED, ...)` and
+# `continue_on_error: true` is declared, the engine records the step's
+# `output` (with `exit_code` and `stderr` from the failure) and its
+# `status` (sibling key on `steps.<id>`, not nested under `output`)
+# and continues to the next sibling step instead of halting the run.
+# Gate aborts (`output.aborted`) still halt regardless of the flag.
+# Unhandled exceptions raised out of `step_impl.execute()` are out of
+# scope for this flag — they propagate to `WorkflowEngine.execute()`
+# and abort the run.
+
+
+class TestContinueOnError:
+    """Test the `continue_on_error` step-level field."""
+
+    def test_undeclared_failure_halts_run(self, project_dir):
+        """Default behaviour (no `continue_on_error`): a failing step
+        halts the workflow run with `status == StepStatus.FAILED`.
+
+        Locks the byte-equivalent default — workflows that do not
+        declare the flag must behave exactly as before this feature.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "halt-on-fail"
+  name: "Halt On Fail"
+  version: "1.0.0"
+steps:
+  - id: fail-step
+    type: shell
+    run: "exit 7"
+  - id: after
+    type: shell
+    run: "echo should-not-run"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.FAILED
+        assert "fail-step" in state.step_results
+        assert state.step_results["fail-step"]["output"]["exit_code"] == 7
+        # Subsequent step never executes when the flag is absent.
+        assert "after" not in state.step_results
+
+    def test_declared_and_fired_continues_run(self, project_dir):
+        """`continue_on_error: true` + failing step: the run keeps
+        going, the failed step's result is recorded, and the
+        downstream step runs.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "continue-past-fail"
+  name: "Continue Past Fail"
+  version: "1.0.0"
+steps:
+  - id: flaky-step
+    type: shell
+    run: "exit 42"
+    continue_on_error: true
+  - id: after
+    type: shell
+    run: "echo did-run"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # Failed step's exit_code is preserved so downstream branching
+        # can inspect it.
+        assert state.step_results["flaky-step"]["output"]["exit_code"] == 42
+        assert state.step_results["flaky-step"]["status"] == "failed"
+        # Downstream step ran successfully.
+        assert state.step_results["after"]["output"]["exit_code"] == 0
+
+    def test_declared_but_step_succeeded_is_noop(self, project_dir):
+        """`continue_on_error: true` on a step that succeeds is a
+        no-op — the flag only changes behaviour on StepStatus.FAILED status.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "flag-but-success"
+  name: "Flag But Success"
+  version: "1.0.0"
+steps:
+  - id: ok-step
+    type: shell
+    run: "echo ok"
+    continue_on_error: true
+  - id: after
+    type: shell
+    run: "echo done"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["ok-step"]["status"] == "completed"
+        assert state.step_results["ok-step"]["output"]["exit_code"] == 0
+        assert state.step_results["after"]["output"]["exit_code"] == 0
+
+    def test_if_branch_routes_around_failure(self, project_dir):
+        """End-to-end: `continue_on_error` + `if` cleanly routes around
+        a failure. The recovery branch runs; the success branch does
+        not.
+
+        Mirrors the canonical usage pattern from the original feature
+        discussion in issue #2591.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "route-around"
+  name: "Route Around Failure"
+  version: "1.0.0"
+steps:
+  - id: heavy-thing
+    type: shell
+    run: "exit 1"
+    continue_on_error: true
+  - id: check-result
+    type: if
+    condition: "{{ steps.heavy-thing.output.exit_code != 0 }}"
+    then:
+      - id: recovery
+        type: shell
+        run: "echo recovery-ran"
+    else:
+      - id: happy-path
+        type: shell
+        run: "echo happy-path-ran"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        assert "recovery" in state.step_results
+        assert "happy-path" not in state.step_results
+
+    def test_gate_abort_still_halts_with_continue_on_error(
+        self, project_dir, monkeypatch
+    ):
+        """`continue_on_error` does NOT override a deliberate gate
+        abort. `output.aborted` always halts the run with
+        `status == ABORTED`.
+
+        Aborts are explicit operator decisions; continue_on_error
+        is for transient/expected step failures only.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.steps import gate as gate_module
+
+        # Force the gate step into interactive mode and feed a "reject"
+        # choice so the abort path actually runs in the test env
+        # (default behaviour returns StepStatus.PAUSED when stdin is not a TTY).
+        # Swap sys.stdin itself for a stub: setattr on the real
+        # TextIOWrapper's `isatty` method is not assignable under some
+        # runners (e.g. pytest with capture disabled).
+        class _TTYStdin:
+            def isatty(self) -> bool:
+                return True
+
+        monkeypatch.setattr(gate_module.sys, "stdin", _TTYStdin())
+        monkeypatch.setattr(
+            GateStep, "_prompt", staticmethod(lambda _msg, _opts: "reject")
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "gate-abort-halts"
+  name: "Gate Abort Halts"
+  version: "1.0.0"
+steps:
+  - id: gate-step
+    type: gate
+    message: "Approve?"
+    options: [approve, reject]
+    on_reject: abort
+    continue_on_error: true
+  - id: should-not-run
+    type: shell
+    run: "echo nope"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.ABORTED
+        assert "should-not-run" not in state.step_results
+
+    def test_validation_rejects_non_bool_continue_on_error(self):
+        """`continue_on_error` must be a literal boolean; coerced
+        strings like `"true"` are rejected at validation time so
+        authoring mistakes surface before execution.
+        """
+        from specify_cli.workflows.engine import (
+            WorkflowDefinition,
+            validate_workflow,
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "bad-coe"
+  name: "Bad COE"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    type: shell
+    run: "true"
+    continue_on_error: "true"
+""")
+        errors = validate_workflow(definition)
+        assert any(
+            "continue_on_error" in e and "boolean" in e for e in errors
+        ), errors
+
+    def test_validation_accepts_bool_continue_on_error(self):
+        """Boolean values pass validation cleanly."""
+        from specify_cli.workflows.engine import (
+            WorkflowDefinition,
+            validate_workflow,
+        )
+
+        for value in (True, False):
+            yaml_value = "true" if value else "false"
+            definition = WorkflowDefinition.from_string(f"""
+schema_version: "1.0"
+workflow:
+  id: "good-coe"
+  name: "Good COE"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    type: shell
+    run: "true"
+    continue_on_error: {yaml_value}
+""")
+            errors = validate_workflow(definition)
+            assert errors == [], errors
+
+    def test_engine_ignores_truthy_non_bool_continue_on_error(self, project_dir):
+        """Defense-in-depth: even if a caller bypasses
+        `validate_workflow()` and feeds the engine a definition with
+        `continue_on_error: "true"` (a string), the engine must NOT
+        honour the flag — only a literal boolean enables the
+        behaviour. `WorkflowEngine.execute()` does not auto-validate
+        (the `WorkflowEngine.load_workflow` docstring explicitly
+        notes the definition is "not yet validated; call
+        `validate_workflow()` or `engine.validate()` separately"),
+        so the engine guards against truthy non-bool values itself
+        via an identity check rather than truthiness.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        # Bypass `validate_workflow()` — execute() is what would
+        # be called by a caller that skipped validation.
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "string-coe"
+  name: "String COE"
+  version: "1.0.0"
+steps:
+  - id: fail-step
+    type: shell
+    run: "exit 1"
+    continue_on_error: "true"
+  - id: should-not-run
+    type: shell
+    run: "echo should-not-run"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        # String "true" is truthy but not a literal boolean, so the
+        # engine must treat the step as a halting failure.
+        assert state.status == RunStatus.FAILED
+        assert "should-not-run" not in state.step_results
 
 
 # ===== State Persistence Tests =====

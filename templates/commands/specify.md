@@ -91,7 +91,8 @@ Given that feature description, do this:
 
    **Create the directory and spec file**:
    - `mkdir -p SPECIFY_FEATURE_DIRECTORY`
-   - Copy `templates/spec-template.md` to `SPECIFY_FEATURE_DIRECTORY/spec.md` as the starting point
+   - Resolve the active `spec-template` through the Spec Kit preset/template resolution stack (equivalent to `specify preset resolve spec-template`)
+   - Copy the resolved `spec-template` file to `SPECIFY_FEATURE_DIRECTORY/spec.md` as the starting point
    - Set `SPEC_FILE` to `SPECIFY_FEATURE_DIRECTORY/spec.md`
    - Persist the resolved path to `.specify/feature.json`:
      ```json
@@ -107,9 +108,11 @@ Given that feature description, do this:
    - The spec directory name and the git branch name are independent — they may be the same but that is the user's choice
    - The spec directory and file are always created by this command, never by the hook
 
-4. Load `templates/spec-template.md` to understand required sections.
+4. Load the resolved active `spec-template` file to understand required sections.
 
-5. Follow this execution flow:
+5. **IF EXISTS**: Load `/memory/constitution.md` for project principles and governance constraints.
+
+6. Follow this execution flow:
     1. Parse user description from arguments
        If empty: ERROR "No feature description provided"
     2. Extract key concepts from description
@@ -183,7 +186,7 @@ Given that feature description, do this:
 
    c. **Handle Validation Results**:
 
-      - **If all items pass**: Mark checklist complete and proceed to step 8
+      - **If all items pass**: Mark checklist complete and proceed to the Mandatory Post-Execution Hooks section
 
       - **If items fail (excluding [NEEDS CLARIFICATION])**:
         1. List the failing items and specific issues
@@ -228,40 +231,46 @@ Given that feature description, do this:
 
    d. **Update Checklist**: After each validation iteration, update the checklist file with current pass/fail status
 
-8. **Report completion** to the user with:
-   - `SPECIFY_FEATURE_DIRECTORY` — the feature directory path
-   - `SPEC_FILE` — the spec file path
-   - Checklist results summary
-   - Readiness for the next phase (`__SPECKIT_COMMAND_CLARIFY__` or `__SPECKIT_COMMAND_PLAN__`)
+## Mandatory Post-Execution Hooks
 
-9. **Check for extension hooks**: After reporting completion, check if `.specify/extensions.yml` exists in the project root.
-   - If it exists, read it and look for entries under the `hooks.after_specify` key
-   - If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
-   - Filter out hooks where `enabled` is explicitly `false`. Treat hooks without an `enabled` field as enabled by default.
-   - For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
-     - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
-     - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
-   - For each executable hook, output the following based on its `optional` flag:
-     - **Optional hook** (`optional: true`):
-       ```
-       ## Extension Hooks
+**You MUST complete this section before reporting completion to the user.**
 
-       **Optional Hook**: {extension}
-       Command: `/{command}`
-       Description: {description}
+Check if `.specify/extensions.yml` exists in the project root.
+- If it does not exist, or no hooks are registered under `hooks.after_specify`, skip to the Completion Report.
+- If it exists, read it and look for entries under the `hooks.after_specify` key.
+- If the YAML cannot be parsed or is invalid, skip hook checking silently and continue to the Completion Report.
+- Filter out hooks where `enabled` is explicitly `false`. Treat hooks without an `enabled` field as enabled by default.
+- For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
+  - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
+  - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
+- For each executable hook, output the following based on its `optional` flag:
+  - **Mandatory hook** (`optional: false`) — **You MUST emit `EXECUTE_COMMAND:` for each mandatory hook**:
+    ```
+    ## Extension Hooks
 
-       Prompt: {prompt}
-       To execute: `/{command}`
-       ```
-     - **Mandatory hook** (`optional: false`):
-       ```
-       ## Extension Hooks
+    **Automatic Hook**: {extension}
+    Executing: `/{command}`
+    EXECUTE_COMMAND: {command}
+    ```
+  - **Optional hook** (`optional: true`):
+    ```
+    ## Extension Hooks
 
-       **Automatic Hook**: {extension}
-       Executing: `/{command}`
-       EXECUTE_COMMAND: {command}
-       ```
-   - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
+    **Optional Hook**: {extension}
+    Command: `/{command}`
+    Description: {description}
+
+    Prompt: {prompt}
+    To execute: `/{command}`
+    ```
+
+## Completion Report
+
+Report completion to the user with:
+- `SPECIFY_FEATURE_DIRECTORY` — the feature directory path
+- `SPEC_FILE` — the spec file path
+- Checklist results summary
+- Readiness for the next phase (`__SPECKIT_COMMAND_CLARIFY__` or `__SPECKIT_COMMAND_PLAN__`)
 
 **NOTE:** Branch creation is handled by the `before_specify` hook (git extension). Spec directory and file creation are always handled by this core command.
 
@@ -325,3 +334,9 @@ Success criteria must be:
 - "Database can handle 1000 TPS" (implementation detail, use user-facing metric)
 - "React components render efficiently" (framework-specific)
 - "Redis cache hit rate above 80%" (technology-specific)
+
+## Done When
+
+- [ ] Specification written to `SPEC_FILE` and validated against quality checklist
+- [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
+- [ ] Completion reported to user with feature directory, spec file path, and checklist results

@@ -176,6 +176,39 @@ class SkillsIntegrationTests:
                 f"skills agents must use /speckit-<name>"
             )
 
+    def test_hook_sections_explain_dotted_command_conversion(self, tmp_path):
+        """Generated skills with hook sections must explain dotted command conversion."""
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        i.setup(tmp_path, m)
+        specify_skill = i.skills_dest(tmp_path) / "speckit-specify" / "SKILL.md"
+        assert specify_skill.exists()
+        content = specify_skill.read_text(encoding="utf-8")
+        assert "replace dots" in content, (
+            "speckit-specify should explain dotted hook command conversion"
+        )
+        assert content.count("replace dots") == content.count(
+            "- For each executable hook, output the following"
+        )
+
+    def test_hook_note_injected_for_each_instruction_independently(self):
+        """Existing hook notes should not suppress later missing notes."""
+        content = (
+            "---\n"
+            "name: test\n"
+            "---\n\n"
+            "- When constructing slash commands from hook command names, "
+            "replace dots (`.`) with hyphens (`-`). "
+            "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
+            "- For each executable hook, output the following first block:\n"
+            "\n"
+            "- For each executable hook, output the following second block:\n"
+        )
+
+        result = SkillsIntegration._inject_hook_command_note(content)
+
+        assert result.count("replace dots (`.`) with hyphens") == 2
+
     def test_skill_body_has_content(self, tmp_path):
         """Each SKILL.md body should contain template content after the frontmatter."""
         i = get_integration(self.KEY)
@@ -324,8 +357,8 @@ class SkillsIntegrationTests:
         assert skills_dir.is_dir(), f"Skills directory {skills_dir} not created"
 
     def test_init_options_includes_context_file(self, tmp_path):
-        """init-options.json must include context_file for the active integration."""
-        import json
+        """agent-context extension config must include context_file for the active integration."""
+        import yaml
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -341,10 +374,11 @@ class SkillsIntegrationTests:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        opts = json.loads((project / ".specify" / "init-options.json").read_text())
+        ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
+        ext_cfg = yaml.safe_load(ext_cfg_path.read_text(encoding="utf-8")) if ext_cfg_path.exists() else {}
         i = get_integration(self.KEY)
-        assert opts.get("context_file") == i.context_file, (
-            f"Expected context_file={i.context_file!r}, got {opts.get('context_file')!r}"
+        assert ext_cfg.get("context_file") == i.context_file, (
+            f"Expected context_file={i.context_file!r}, got {ext_cfg.get('context_file')!r}"
         )
 
     # -- IntegrationOption ------------------------------------------------
@@ -369,9 +403,11 @@ class SkillsIntegrationTests:
         skills_prefix = i.config["folder"].rstrip("/") + "/" + i.config.get("commands_subdir", "skills")
 
         files = []
-        # Skill files
+        # Skill files (core commands)
         for cmd in self._SKILL_COMMANDS:
             files.append(f"{skills_prefix}/speckit-{cmd}/SKILL.md")
+        # Extension-installed skill (agent-context)
+        files.append(f"{skills_prefix}/speckit-agent-context-update/SKILL.md")
         # Integration metadata
         files += [
             ".specify/init-options.json",
@@ -410,6 +446,15 @@ class SkillsIntegrationTests:
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
         ]
+        # Bundled agent-context extension
+        files.append(".specify/extensions.yml")
+        files.append(".specify/extensions/.registry")
+        files.append(".specify/extensions/agent-context/README.md")
+        files.append(".specify/extensions/agent-context/agent-context-config.yml")
+        files.append(".specify/extensions/agent-context/commands/speckit.agent-context.update.md")
+        files.append(".specify/extensions/agent-context/extension.yml")
+        files.append(".specify/extensions/agent-context/scripts/bash/update-agent-context.sh")
+        files.append(".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1")
         # Agent context file (if set)
         if i.context_file:
             files.append(i.context_file)

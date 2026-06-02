@@ -312,7 +312,7 @@ if (-not $DryRun) {
                 if ($AllowExistingBranch) {
                     # If we're already on the branch, continue without another checkout.
                     if ($currentBranch -eq $branchName) {
-                        # Already on the target branch — nothing to do
+                        # Already on the target branch -- nothing to do
                     } else {
                         # Otherwise switch to the existing branch instead of failing.
                         $switchBranchError = git checkout -q $branchName 2>&1 | Out-String

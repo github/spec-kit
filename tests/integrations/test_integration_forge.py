@@ -330,7 +330,7 @@ class TestForgeCommandRegistrar:
         assert "speckit.my-extension.example" in registered
         
         # Check the generated file has hyphenated name in frontmatter
-        forge_cmd = tmp_path / ".forge" / "commands" / "speckit.my-extension.example.md"
+        forge_cmd = tmp_path / ".forge" / "commands" / "speckit-my-extension-example.md"
         assert forge_cmd.exists()
         
         content = forge_cmd.read_text(encoding="utf-8")
@@ -378,7 +378,7 @@ class TestForgeCommandRegistrar:
         )
         
         # Check the alias file has hyphenated name in frontmatter
-        alias_file = tmp_path / ".forge" / "commands" / "speckit.my-extension.ex.md"
+        alias_file = tmp_path / ".forge" / "commands" / "speckit-my-extension-ex.md"
         assert alias_file.exists()
         
         content = alias_file.read_text(encoding="utf-8")
@@ -467,7 +467,7 @@ class TestForgeCommandRegistrar:
 
         assert "speckit.git.feature" in registered
 
-        forge_cmd = tmp_path / ".forge" / "commands" / "speckit.git.feature.md"
+        forge_cmd = tmp_path / ".forge" / "commands" / "speckit-git-feature.md"
         assert forge_cmd.exists(), "Expected Forge command file was not created"
 
         content = forge_cmd.read_text(encoding="utf-8")

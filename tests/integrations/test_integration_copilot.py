@@ -147,6 +147,21 @@ class TestCopilotIntegration:
             assert "__SPECKIT_COMMAND_" not in content, f"{agent_file.name} has unprocessed __SPECKIT_COMMAND_*__"
             assert "\nscripts:\n" not in content
 
+    def test_specify_agent_resolves_active_spec_template(self, tmp_path):
+        """Generated specify agent must not hardcode the core spec template."""
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+        copilot.setup(tmp_path, m)
+
+        specify_file = tmp_path / ".github" / "agents" / "speckit.specify.agent.md"
+        content = specify_file.read_text(encoding="utf-8")
+
+        assert "specify preset resolve spec-template" in content
+        assert "resolved active `spec-template`" in content
+        assert "Copy `.specify/templates/spec-template.md`" not in content
+        assert "Load `.specify/templates/spec-template.md`" not in content
+
     def test_plan_references_correct_context_file(self, tmp_path):
         """The generated plan command must reference copilot's context file."""
         from specify_cli.integrations.copilot import CopilotIntegration
@@ -178,6 +193,7 @@ class TestCopilotIntegration:
         assert result.exit_code == 0
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file())
         expected = sorted([
+            ".github/agents/speckit.agent-context.update.agent.md",
             ".github/agents/speckit.analyze.agent.md",
             ".github/agents/speckit.checklist.agent.md",
             ".github/agents/speckit.clarify.agent.md",
@@ -187,6 +203,7 @@ class TestCopilotIntegration:
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
             ".github/agents/speckit.taskstoissues.agent.md",
+            ".github/prompts/speckit.agent-context.update.prompt.md",
             ".github/prompts/speckit.analyze.prompt.md",
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
@@ -198,6 +215,14 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.taskstoissues.prompt.md",
             ".vscode/settings.json",
             ".github/copilot-instructions.md",
+            ".specify/extensions.yml",
+            ".specify/extensions/.registry",
+            ".specify/extensions/agent-context/README.md",
+            ".specify/extensions/agent-context/agent-context-config.yml",
+            ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
+            ".specify/extensions/agent-context/extension.yml",
+            ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh",
+            ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
             ".specify/integration.json",
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
@@ -238,6 +263,7 @@ class TestCopilotIntegration:
         assert result.exit_code == 0
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file())
         expected = sorted([
+            ".github/agents/speckit.agent-context.update.agent.md",
             ".github/agents/speckit.analyze.agent.md",
             ".github/agents/speckit.checklist.agent.md",
             ".github/agents/speckit.clarify.agent.md",
@@ -247,6 +273,7 @@ class TestCopilotIntegration:
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
             ".github/agents/speckit.taskstoissues.agent.md",
+            ".github/prompts/speckit.agent-context.update.prompt.md",
             ".github/prompts/speckit.analyze.prompt.md",
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
@@ -258,6 +285,14 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.taskstoissues.prompt.md",
             ".vscode/settings.json",
             ".github/copilot-instructions.md",
+            ".specify/extensions.yml",
+            ".specify/extensions/.registry",
+            ".specify/extensions/agent-context/README.md",
+            ".specify/extensions/agent-context/agent-context-config.yml",
+            ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
+            ".specify/extensions/agent-context/extension.yml",
+            ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh",
+            ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
             ".specify/integration.json",
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
@@ -404,6 +439,20 @@ class TestCopilotSkillsMode:
         updated = copilot.post_process_skill_content(content)
         assert "mode: speckit.plan" in updated
 
+    def test_post_process_skill_content_injects_hook_note(self):
+        """post_process_skill_content() should inject shared hook guidance."""
+        copilot = self._make_copilot()
+        content = (
+            "---\n"
+            'name: "speckit-specify"\n'
+            'description: "Specify workflow"\n'
+            "---\n"
+            "\n- For each executable hook, output the following\n"
+        )
+        updated = copilot.post_process_skill_content(content)
+        assert "replace dots" in updated
+        assert "mode: speckit.specify" in updated
+
     def test_post_process_idempotent(self):
         """post_process_skill_content() must be idempotent."""
         copilot = self._make_copilot()
@@ -433,6 +482,14 @@ class TestCopilotSkillsMode:
             skill_dir_name = f.parent.name
             stem = skill_dir_name.removeprefix("speckit-")
             assert fm["mode"] == f"speckit.{stem}"
+
+    def test_skills_hook_sections_explain_dotted_command_conversion(self, tmp_path):
+        """Generated skills with hook sections should include shared hook guidance."""
+        copilot = self._make_copilot()
+        self._setup_skills(copilot, tmp_path)
+        specify_skill = tmp_path / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        content = specify_skill.read_text(encoding="utf-8")
+        assert "replace dots" in content
 
     # -- Template processing ----------------------------------------------
 
@@ -602,10 +659,20 @@ class TestCopilotSkillsMode:
         assert result.exit_code == 0, f"init failed: {result.output}"
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file())
         expected = sorted([
-            # Skill files
+            # Skill files (core + extension-installed agent-context command)
             *[f".github/skills/speckit-{cmd}/SKILL.md" for cmd in self._SKILL_COMMANDS],
+            ".github/skills/speckit-agent-context-update/SKILL.md",
             # Context file
             ".github/copilot-instructions.md",
+            # Bundled agent-context extension
+            ".specify/extensions.yml",
+            ".specify/extensions/.registry",
+            ".specify/extensions/agent-context/README.md",
+            ".specify/extensions/agent-context/agent-context-config.yml",
+            ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
+            ".specify/extensions/agent-context/extension.yml",
+            ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh",
+            ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
             # Integration metadata
             ".specify/init-options.json",
             ".specify/integration.json",
