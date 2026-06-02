@@ -93,8 +93,8 @@ class CompatibilityError(ExtensionError):
 def normalize_priority(value: Any, default: int = 10) -> int:
     """Normalize a stored priority value for sorting and display.
 
-    Corrupted registry data may contain missing, non-numeric, or non-positive
-    values. In those cases, fall back to the default priority.
+    Corrupted registry data may contain missing, non-numeric, non-positive, or
+    boolean values. In those cases, fall back to the default priority.
 
     Args:
         value: Priority value to normalize (may be int, str, None, etc.)
@@ -103,6 +103,8 @@ def normalize_priority(value: Any, default: int = 10) -> int:
     Returns:
         Normalized priority as positive integer (>= 1)
     """
+    if isinstance(value, bool):
+        return default
     try:
         priority = int(value)
     except (TypeError, ValueError):
@@ -2624,9 +2626,6 @@ class HookExecutor:
         # Always ensure the extension is in the installed list
         self.register_extension(manifest.id)
 
-        if not hasattr(manifest, "hooks") or not manifest.hooks:
-            return
-
         config = self.get_project_config()
 
         # Ensure config is a dict (defensive)
@@ -2672,8 +2671,8 @@ class HookExecutor:
                 config["hooks"][hook_name] = []
                 changed = True
 
-            # Key by command to dedup within the manifest (last wins).
-            # Dict preserves insertion order for stable priority ties.
+            # Key by command to dedup within the manifest. Deleting before
+            # re-insert moves a duplicate to the end so "last wins" also breaks ties.
             new_entries: Dict[str, Dict[str, Any]] = {}
             for entry in coerce_hook_entries(hook_config):
                 if not isinstance(entry, dict):
@@ -2681,6 +2680,8 @@ class HookExecutor:
                 command = entry.get("command")
                 if not command:
                     continue
+                if command in new_entries:
+                    del new_entries[command]
                 new_entries[command] = {
                     "extension": manifest.id,
                     "command": command,

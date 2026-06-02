@@ -191,6 +191,12 @@ class TestNormalizePriority:
         assert normalize_priority(None, default=20) == 20
         assert normalize_priority("invalid", default=1) == 1
 
+    def test_boolean_returns_default(self):
+        """Booleans fall back to the default rather than acting as int 0/1."""
+        assert normalize_priority(True) == 10
+        assert normalize_priority(False) == 10
+        assert normalize_priority(True, default=5) == 5
+
 
 # ===== ExtensionManifest Tests =====
 
@@ -4925,6 +4931,65 @@ class TestHookExecutorRegistration:
         assert [e["command"] for e in hooks["after_tasks"]] == ["speckit.ext-a.tasks"]
         assert [e["command"] for e in hooks["after_plan"]] == ["speckit.ext-b.plan"]
         assert "after_implement" not in hooks
+
+    def test_register_hooks_dropping_all_hooks_purges_orphans(self, project_dir):
+        """Reinstalling with an empty hooks mapping still purges this
+        extension's entries, scoped to this extension."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest("ext-a", {"after_tasks": {"command": "speckit.ext-a.go"}})
+        )
+        executor.register_hooks(
+            _StubManifest("ext-b", {"after_tasks": {"command": "speckit.ext-b.go"}})
+        )
+
+        executor.register_hooks(_StubManifest("ext-a", {}))
+
+        hooks = executor.get_project_config()["hooks"]
+        assert [e["command"] for e in hooks["after_tasks"]] == ["speckit.ext-b.go"]
+
+    def test_register_hooks_empty_hooks_purge_survives_corrupt_entry(self, project_dir):
+        """A corrupt non-dict entry already on disk does not break the
+        empty-hooks orphan purge; it is dropped and valid entries survive."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest("ext-a", {"after_tasks": {"command": "speckit.ext-a.go"}})
+        )
+        executor.register_hooks(
+            _StubManifest("ext-b", {"after_tasks": {"command": "speckit.ext-b.go"}})
+        )
+        config = executor.get_project_config()
+        config["hooks"]["after_tasks"].append("corrupt-non-dict-entry")
+        executor.save_project_config(config)
+
+        executor.register_hooks(_StubManifest("ext-a", {}))
+
+        hooks = executor.get_project_config()["hooks"]
+        assert [e["command"] for e in hooks["after_tasks"]] == ["speckit.ext-b.go"]
+
+    def test_register_hooks_duplicate_command_moves_to_end(self, project_dir):
+        """A command repeated in one manifest keeps the last value and the last
+        insertion position, so equal-priority tie order is 'last wins'."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest(
+                "ext-a",
+                {
+                    "after_tasks": [
+                        {"command": "speckit.ext-a.dup", "description": "first"},
+                        {"command": "speckit.ext-a.other"},
+                        {"command": "speckit.ext-a.dup", "description": "last"},
+                    ]
+                },
+            )
+        )
+
+        entries = executor.get_project_config()["hooks"]["after_tasks"]
+        assert [e["command"] for e in entries] == [
+            "speckit.ext-a.other",
+            "speckit.ext-a.dup",
+        ]
+        assert entries[-1]["description"] == "last"
 
     def test_register_hooks_preserves_other_extensions(self, project_dir):
         """Re-registering one extension must not disturb another extension's
