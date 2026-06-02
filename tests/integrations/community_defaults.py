@@ -21,6 +21,7 @@ DEFAULT_PRESET_COMMANDS = (
     "speckit.specify",
     "speckit.clarify",
     "speckit.checklist",
+    "speckit.constitution",
     "speckit.analyze",
     "speckit.plan",
     "speckit.tasks",

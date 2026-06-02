@@ -116,14 +116,18 @@ jobs:
 
           test -f .specify/presets/workflow-preset/preset.yml
           test -f .specify/presets/workflow-preset/templates/plan-template.md
+          test -f .specify/presets/workflow-preset/templates/constitution-template.md
           test -f .specify/templates/tasks-template.md
+          test -f .specify/presets/workflow-preset/commands/speckit.constitution.md
           test -f .specify/presets/workflow-preset/commands/speckit.plan.md
           test -f .specify/presets/workflow-preset/commands/speckit.tasks.md
           test -f .specify/presets/workflow-preset/commands/speckit.implement.md
 
+          test -f .claude/skills/speckit-constitution/SKILL.md
           test -f .claude/skills/speckit-plan/SKILL.md
           test -f .claude/skills/speckit-tasks/SKILL.md
           test -f .claude/skills/speckit-implement/SKILL.md
+          grep -F "Change Scope Granularity" .claude/skills/speckit-constitution/SKILL.md
           grep -F "Core Agent" .claude/skills/speckit-implement/SKILL.md
           grep -F "Vertical Planner Agent" .claude/skills/speckit-implement/SKILL.md
           grep -F "Worker Agent" .claude/skills/speckit-implement/SKILL.md

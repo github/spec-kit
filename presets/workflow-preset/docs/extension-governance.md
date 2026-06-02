@@ -35,6 +35,7 @@ adapter scripts, or worker dispatch from scripts.
 
 Stage ownership:
 
+- `/speckit.constitution`: constitution governance and project principles only.
 - `/speckit.specify`: requirement artifacts only.
 - `/speckit.clarify`: requirement clarification only.
 - `/speckit.checklist`: checklist artifacts and BDD readiness gates only.

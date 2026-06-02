@@ -3,6 +3,10 @@ description: Wrap task generation with optional design artifact awareness.
 strategy: wrap
 ---
 
+## Change Scope Granularity
+
+Preserve the planned `M + U` scope in task text when deriving implementation, validation, and integration tasks. Do not generate handoff fields or `allowed_write_paths`.
+
 ## Additional Design Inputs
 
 When present, treat these files as optional task-generation inputs under FEATURE_DIR:

@@ -976,7 +976,9 @@ class TestGitExtensionAutoInstall:
         preset_dir = project / ".specify" / "presets" / "workflow-preset"
         assert (preset_dir / "preset.yml").exists()
         assert (preset_dir / "schemas" / "speckit.implement.handoff.v2.schema.json").exists()
+        assert (preset_dir / "templates" / "constitution-template.md").exists()
         assert (preset_dir / "templates" / "behavior" / "bdd-draft.feature").exists()
+        assert (preset_dir / ".composed" / "speckit.constitution.md").exists()
         assert (preset_dir / ".composed" / "speckit.plan.md").exists()
         assert (preset_dir / ".composed" / "speckit.tasks.md").exists()
         assert (preset_dir / ".composed" / "speckit.analyze.md").exists()
@@ -987,6 +989,7 @@ class TestGitExtensionAutoInstall:
             "speckit.specify",
             "speckit.clarify",
             "speckit.checklist",
+            "speckit.constitution",
             "speckit.analyze",
             "speckit.plan",
             "speckit.tasks",
@@ -995,11 +998,13 @@ class TestGitExtensionAutoInstall:
         assert set(workflow_entry["registered_commands"]["claude"]) == expected_preset_commands
 
         plan_skill = project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
+        constitution_skill = project / ".claude" / "skills" / "speckit-constitution" / "SKILL.md"
         tasks_skill = project / ".claude" / "skills" / "speckit-tasks" / "SKILL.md"
         implement_skill = project / ".claude" / "skills" / "speckit-implement" / "SKILL.md"
-        for skill_path in (plan_skill, tasks_skill, implement_skill):
+        for skill_path in (plan_skill, constitution_skill, tasks_skill, implement_skill):
             assert skill_path.exists(), f"{skill_path} was not registered"
 
+        assert "Change Scope Granularity" in constitution_skill.read_text(encoding="utf-8")
         assert "Phase 0 Behavior Projection" in plan_skill.read_text(encoding="utf-8")
         assert "test strategy derivation" in tasks_skill.read_text(encoding="utf-8").lower()
         implement_text = implement_skill.read_text(encoding="utf-8")

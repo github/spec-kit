@@ -53,6 +53,7 @@ jobs:
           test -f .specify/presets/workflow-preset/templates/behavior/data-fixtures-intent.json
           test -f .specify/presets/workflow-preset/templates/behavior/data-fixtures.json
           test -f .specify/presets/workflow-preset/templates/behavior/assertions.json
+          test -f .specify/presets/workflow-preset/templates/constitution-template.md
           test -f .specify/presets/workflow-preset/schemas/speckit.behavior.scenarios.draft.v1.schema.json
           test -f .specify/presets/workflow-preset/schemas/speckit.behavior.uif.intent.v1.schema.json
           test -f .specify/presets/workflow-preset/schemas/speckit.behavior.data-fixtures.intent.v1.schema.json
@@ -66,6 +67,7 @@ jobs:
           test -f .specify/presets/workflow-preset/.composed/speckit.specify.md
           test -f .specify/presets/workflow-preset/.composed/speckit.clarify.md
           test -f .specify/presets/workflow-preset/.composed/speckit.checklist.md
+          test -f .specify/presets/workflow-preset/.composed/speckit.constitution.md
           test -f .specify/presets/workflow-preset/.composed/speckit.analyze.md
           test -f .specify/presets/workflow-preset/.composed/speckit.plan.md
           test -f .specify/presets/workflow-preset/.composed/speckit.tasks.md
@@ -76,11 +78,13 @@ jobs:
           test -f .claude/skills/speckit-specify/SKILL.md
           test -f .claude/skills/speckit-clarify/SKILL.md
           test -f .claude/skills/speckit-checklist/SKILL.md
+          test -f .claude/skills/speckit-constitution/SKILL.md
           test -f .claude/skills/speckit-analyze/SKILL.md
           test -f .claude/skills/speckit-plan/SKILL.md
           test -f .claude/skills/speckit-tasks/SKILL.md
           test -f .claude/skills/speckit-implement/SKILL.md
 
+          grep -q "Change Scope Granularity" .claude/skills/speckit-constitution/SKILL.md
           grep -q "Phase 0 Behavior Projection" .claude/skills/speckit-plan/SKILL.md
           grep -q "Test Strategy Derivation" .claude/skills/speckit-tasks/SKILL.md
           grep -q "Core Agent" .claude/skills/speckit-implement/SKILL.md

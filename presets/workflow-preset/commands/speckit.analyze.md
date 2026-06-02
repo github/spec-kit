@@ -3,6 +3,10 @@ description: Wrap core analysis with behavior-first vertical consistency checks.
 strategy: wrap
 ---
 
+## Change Scope Granularity
+
+Check that tasks preserve the planned `M + U` scope. Report missing, widened, or ambiguous scope boundaries as blockers.
+
 ## Behavior Vertical Consistency
 
 Analyze whether the feature artifacts close the `spec -> BDD/UIF intent -> contracts -> tasks` loop. This command checks planning consistency only; it does not inspect implementation code or infer interaction flows from built code.

@@ -641,7 +641,7 @@ class TestIntegrationUpgrade:
         assert tracked_files, "Manifest should track at least one file"
         target_rel = next(
             rel for rel in tracked_files
-            if rel.endswith("speckit.constitution.agent.md")
+            if rel.endswith("speckit.taskstoissues.agent.md")
         )
         target_file = project / target_rel
         assert target_file.exists(), f"Tracked file {target_rel} should exist"

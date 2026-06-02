@@ -3,7 +3,7 @@ schema_version: "1.0"
 preset:
   id: "workflow-preset"
   name: "Workflow Preset"
-  version: "1.3.0"
+  version: "1.3.1"
   description: "Behavior-first specification, design artifacts, and agent-native handoff orchestration"
   author: "bigsmartben"
   repository: "https://github.com/bigsmartben/spec-kit-workflow-preset"
@@ -19,6 +19,13 @@ provides:
       file: "templates/plan-template.md"
       description: "Add design artifact navigation to the plan template"
       replaces: "plan-template"
+      strategy: "wrap"
+
+    - type: "template"
+      name: "constitution-template"
+      file: "templates/constitution-template.md"
+      description: "Add change scope granularity governance to the constitution template"
+      replaces: "constitution-template"
       strategy: "wrap"
 
     - type: "command"
@@ -40,6 +47,13 @@ provides:
       file: "commands/speckit.checklist.md"
       description: "Wrap core checklist generation with BDD readiness gate"
       replaces: "speckit.checklist"
+      strategy: "wrap"
+
+    - type: "command"
+      name: "speckit.constitution"
+      file: "commands/speckit.constitution.md"
+      description: "Wrap core constitution updates with change scope granularity governance"
+      replaces: "speckit.constitution"
       strategy: "wrap"
 
     - type: "command"

@@ -3,6 +3,12 @@ description: Wrap the core planning workflow with Phase 0 behavior projection an
 strategy: wrap
 ---
 
+## Change Scope Granularity
+
+Apply the constitution's Change Scope Granularity principle.
+
+During planning, lock the change scope to `M + U`: module/capability plus design object. Do not lock operation-level implementation details or concrete write paths.
+
 ## Design Artifact Policy
 
 This preset preserves the core planning workflow and adds optional/contextual design artifacts for features that need more structure than `plan.md` should carry.

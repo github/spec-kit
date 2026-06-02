@@ -29,7 +29,7 @@
     "workflow-preset": {
       "name": "Workflow Preset",
       "id": "workflow-preset",
-      "version": "1.3.0",
+      "version": "1.3.1",
       "description": "Behavior-first specification, design artifacts, and agent-native handoff orchestration",
       "author": "bigsmartben",
       "repository": "https://github.com/bigsmartben/spec-kit-workflow-preset",
@@ -39,8 +39,8 @@
         "speckit_version": ">=0.8.10.dev0"
       },
       "provides": {
-        "commands": 7,
-        "templates": 21
+        "commands": 8,
+        "templates": 22
       },
       "tags": [
         "behavior",

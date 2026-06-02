@@ -14,6 +14,8 @@ Optional runtime hint: `agent-runtime=<spec-kit-integration-key>`.
 - Only Vertical Planner Agents may produce shard plans and digest drafts.
 - Only Core Agent may write final `handoff-manifest.json` and commit `tasks.md`.
 - Only Worker Agents may execute implementation handoffs.
+## Change Scope Granularity
+Map planned `U` design objects to concrete source, test, fixture, configuration, and receipt paths before worker execution. If the mapping is ambiguous, record `context_gaps`; do not widen to repository scope or broad module scope.
 ## Isolation Policy
 - Manifest `execution_mode`: `isolated_subagent` or `manual_fresh_worker_session`.
 - Use `isolated_subagent` only for runtimes with isolated subagent/subsession execution.
