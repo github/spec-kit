@@ -4,7 +4,7 @@
 
 **Define what to build before building it — with any AI coding agent.**
 
-Spec Kit is a toolkit for [Spec-Driven Development](concepts/sdd.md) (SDD), a methodology that puts specifications at the center of AI-assisted software development. Instead of jumping straight to code, you describe *what* to build, refine it through structured phases, and let your AI coding agent implement it.
+Spec Kit is a toolkit for [Spec-Driven Development](concepts/sdd.md) (SDD), a methodology that puts specifications at the center of AI-assisted software development. Instead of jumping straight to code, you describe _what_ to build, refine it through structured phases, and let your AI coding agent implement it.
 
 <a href="installation.md" class="btn btn-primary btn-lg">Install Spec Kit</a>&nbsp;
 <a href="quickstart.md" class="btn btn-outline-primary btn-lg">Quick Start</a>
@@ -90,7 +90,7 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
     <span class="stat-label">Contributors</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">30</span>
+    <span class="stat-number">31</span>
     <span class="stat-label">Integrations</span>
   </div>
   <div class="stat-item">
