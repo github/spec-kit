@@ -426,8 +426,8 @@ class TestCopilotSkillsMode:
 
     # -- Copilot-specific post-processing ---------------------------------
 
-    def test_post_process_skill_content_injects_mode(self):
-        """post_process_skill_content() should inject mode: field."""
+    def test_post_process_skill_content_does_not_inject_mode(self):
+        """post_process_skill_content() should not inject unsupported mode field."""
         copilot = self._make_copilot()
         content = (
             "---\n"
@@ -437,10 +437,10 @@ class TestCopilotSkillsMode:
             "\nBody content\n"
         )
         updated = copilot.post_process_skill_content(content)
-        assert "mode: speckit.plan" in updated
+        assert "mode:" not in updated
 
     def test_post_process_skill_content_injects_hook_note(self):
-        """post_process_skill_content() should inject shared hook guidance."""
+        """post_process_skill_content() should only inject shared hook guidance."""
         copilot = self._make_copilot()
         content = (
             "---\n"
@@ -451,7 +451,7 @@ class TestCopilotSkillsMode:
         )
         updated = copilot.post_process_skill_content(content)
         assert "replace dots" in updated
-        assert "mode: speckit.specify" in updated
+        assert "mode:" not in updated
 
     def test_post_process_idempotent(self):
         """post_process_skill_content() must be idempotent."""
@@ -467,8 +467,8 @@ class TestCopilotSkillsMode:
         second = copilot.post_process_skill_content(first)
         assert first == second
 
-    def test_skills_have_mode_in_frontmatter(self, tmp_path):
-        """Generated SKILL.md files should have mode: field from post-processing."""
+    def test_skills_omit_mode_frontmatter(self, tmp_path):
+        """Generated SKILL.md files should omit unsupported mode field."""
         copilot = self._make_copilot()
         created, _ = self._setup_skills(copilot, tmp_path)
         skill_files = [f for f in created if f.name == "SKILL.md"]
@@ -477,11 +477,7 @@ class TestCopilotSkillsMode:
             content = f.read_text(encoding="utf-8")
             parts = content.split("---", 2)
             fm = yaml.safe_load(parts[1])
-            assert "mode" in fm, f"{f} frontmatter missing 'mode'"
-            # mode should be speckit.<stem>
-            skill_dir_name = f.parent.name
-            stem = skill_dir_name.removeprefix("speckit-")
-            assert fm["mode"] == f"speckit.{stem}"
+            assert "mode" not in fm, f"{f} frontmatter contains unsupported 'mode'"
 
     def test_skills_hook_sections_explain_dotted_command_conversion(self, tmp_path):
         """Generated skills with hook sections should include shared hook guidance."""

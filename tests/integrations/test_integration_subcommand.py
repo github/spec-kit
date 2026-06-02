@@ -898,12 +898,9 @@ class TestIntegrationSwitch:
         assert copilot_git_feature.exists(), "Git extension skill should exist for Copilot skills mode"
         assert not copilot_agent_file.exists(), "Copilot skills mode should not create extension .agent.md files"
 
-        # Verify Copilot-specific frontmatter: mode field should map from
-        # skill name (speckit-git-feature) back to dot notation (speckit.git-feature)
+        # Verify Copilot skills do not use unsupported mode frontmatter.
         skill_content = copilot_git_feature.read_text(encoding="utf-8")
-        assert "mode: speckit.git-feature" in skill_content, (
-            "Copilot skill frontmatter should contain mode mapped from skill name"
-        )
+        assert "mode:" not in skill_content
 
         registry = json.loads(
             (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")

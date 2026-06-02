@@ -283,58 +283,8 @@ class CopilotIntegration(IntegrationBase):
         return f"speckit.{template_name}.agent.md"
 
     def post_process_skill_content(self, content: str) -> str:
-        """Inject shared hook guidance and Copilot ``mode:`` frontmatter.
-
-        Inserts ``mode: speckit.<stem>`` before the closing ``---`` so
-        Copilot can associate the skill with its agent mode.
-        """
-        updated = _CopilotSkillsHelper().post_process_skill_content(content)
-        lines = updated.splitlines(keepends=True)
-
-        # Extract skill name from frontmatter to derive the mode value
-        dash_count = 0
-        skill_name = ""
-        for line in lines:
-            stripped = line.rstrip("\n\r")
-            if stripped == "---":
-                dash_count += 1
-                if dash_count == 2:
-                    break
-                continue
-            if dash_count == 1:
-                if stripped.startswith("mode:"):
-                    return updated  # already present
-                if stripped.startswith("name:"):
-                    # Parse: name: "speckit-plan" → speckit.plan
-                    val = stripped.split(":", 1)[1].strip().strip('"').strip("'")
-                    # Convert speckit-plan → speckit.plan
-                    if val.startswith("speckit-"):
-                        skill_name = "speckit." + val[len("speckit-"):]
-                    else:
-                        skill_name = val
-
-        if not skill_name:
-            return updated
-
-        # Inject mode: before the closing --- of frontmatter
-        out: list[str] = []
-        dash_count = 0
-        injected = False
-        for line in lines:
-            stripped = line.rstrip("\n\r")
-            if stripped == "---":
-                dash_count += 1
-                if dash_count == 2 and not injected:
-                    if line.endswith("\r\n"):
-                        eol = "\r\n"
-                    elif line.endswith("\n"):
-                        eol = "\n"
-                    else:
-                        eol = ""
-                    out.append(f"mode: {skill_name}{eol}")
-                    injected = True
-            out.append(line)
-        return "".join(out)
+        """Inject shared hook guidance for Copilot skills."""
+        return _CopilotSkillsHelper().post_process_skill_content(content)
 
     def setup(
         self,
