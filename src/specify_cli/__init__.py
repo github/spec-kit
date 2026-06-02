@@ -6162,14 +6162,17 @@ def workflow_step_add(
         # Clean up if the rename hasn't moved tmp_path yet (i.e. on any failure).
         shutil.rmtree(tmp_path, ignore_errors=True)
 
+    step_name = info.get("name") or step_id
+    step_version = info.get("version") or step_meta.get("version") or "0.0.0"
+
     # Register in step registry
     registry = StepRegistry(project_root)
     try:
         registry.add(
             step_id,
             {
-                "name": info.get("name", step_id),
-                "version": info.get("version", step_meta.get("version", "0.0.0")),
+                "name": step_name,
+                "version": step_version,
                 "description": info.get("description", step_meta.get("description", "")),
                 "author": info.get("author", step_meta.get("author", "")),
                 "source": "catalog",
@@ -6186,7 +6189,7 @@ def workflow_step_add(
         raise typer.Exit(1)
 
     console.print(
-        f"[green]✓[/green] Step type '{info.get('name', step_id)}' ({step_id}) installed"
+        f"[green]✓[/green] Step type '{step_name}' ({step_id}) installed"
     )
     console.print(
         "  Use [cyan]specify workflow step list[/cyan] to verify the installation."
