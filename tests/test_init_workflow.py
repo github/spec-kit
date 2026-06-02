@@ -1,9 +1,7 @@
 """Tests for --workflow flag on specify init."""
 
-import json
 import os
 
-import pytest
 import yaml
 
 
