@@ -2652,6 +2652,20 @@ class HookExecutor:
                         config["hooks"][h_name] = sanitized_h_list
                         changed = True
 
+        # Purge this extension's entries from events the new manifest no longer
+        # declares, so dropping an event on reinstall leaves no orphans.
+        declared_events = set(manifest.hooks.keys())
+        for h_name in list(config["hooks"].keys()):
+            if h_name in declared_events:
+                continue
+            kept = [
+                h for h in config["hooks"][h_name]
+                if not (isinstance(h, dict) and h.get("extension") == manifest.id)
+            ]
+            if kept != config["hooks"][h_name]:
+                config["hooks"][h_name] = kept
+                changed = True
+
         # Register each hook
         for hook_name, hook_config in manifest.hooks.items():
             if hook_name not in config["hooks"] or not isinstance(config["hooks"][hook_name], list):
@@ -2692,6 +2706,11 @@ class HookExecutor:
             if deduped != original_list:
                 config["hooks"][hook_name] = deduped
                 changed = True
+
+        non_empty = {name: hooks for name, hooks in config["hooks"].items() if hooks}
+        if non_empty != config["hooks"]:
+            config["hooks"] = non_empty
+            changed = True
 
         if changed:
             self.save_project_config(config)

@@ -4899,6 +4899,33 @@ class TestHookExecutorRegistration:
         entries = executor.get_project_config()["hooks"]["after_tasks"]
         assert [e["command"] for e in entries] == ["speckit.ext-a.go"]
 
+    def test_register_hooks_purges_dropped_event_orphans(self, project_dir):
+        """Re-registering without an event it previously declared purges this
+        extension's entries from that event, scoped to this extension."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest(
+                "ext-a",
+                {
+                    "after_tasks": {"command": "speckit.ext-a.tasks"},
+                    "after_plan": {"command": "speckit.ext-a.plan"},
+                    "after_implement": {"command": "speckit.ext-a.impl"},
+                },
+            )
+        )
+        executor.register_hooks(
+            _StubManifest("ext-b", {"after_plan": {"command": "speckit.ext-b.plan"}})
+        )
+
+        executor.register_hooks(
+            _StubManifest("ext-a", {"after_tasks": {"command": "speckit.ext-a.tasks"}})
+        )
+
+        hooks = executor.get_project_config()["hooks"]
+        assert [e["command"] for e in hooks["after_tasks"]] == ["speckit.ext-a.tasks"]
+        assert [e["command"] for e in hooks["after_plan"]] == ["speckit.ext-b.plan"]
+        assert "after_implement" not in hooks
+
     def test_register_hooks_preserves_other_extensions(self, project_dir):
         """Re-registering one extension must not disturb another extension's
         entries on the same event."""
