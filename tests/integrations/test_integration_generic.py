@@ -199,10 +199,10 @@ class TestGenericIntegration:
         "command_stem",
         [
             "analyze",
-            "checklist",
             "clarify",
             "implement",
             "plan",
+            "checklist",
             "specify",
             "tasks",
             "taskstoissues",

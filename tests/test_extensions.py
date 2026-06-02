@@ -782,6 +782,71 @@ class TestExtensionManager:
         assert (ext_dir / "extension.yml").exists()
         assert (ext_dir / "commands" / "hello.md").exists()
 
+    def test_install_from_directory_explicitly_recovers_active_skills_dir(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Extension install should explicitly request active skills-dir recovery."""
+        captured = {}
+
+        def fake_register_all(
+            self,
+            manifest,
+            extension_dir,
+            project_root,
+            link_outputs=False,
+            create_missing_active_skills_dir=False,
+        ):
+            captured["create_missing_active_skills_dir"] = (
+                create_missing_active_skills_dir
+            )
+            return {}
+
+        monkeypatch.setattr(
+            CommandRegistrar,
+            "register_commands_for_all_agents",
+            fake_register_all,
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=True)
+
+        assert captured["create_missing_active_skills_dir"] is True
+
+    def test_command_registrar_default_does_not_recover_active_skills_dir(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """The extension wrapper should preserve the core registrar's conservative default."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        captured = {}
+
+        def fake_register_all(
+            self,
+            commands,
+            source_id,
+            source_dir,
+            project_root,
+            context_note=None,
+            link_outputs=False,
+            create_missing_active_skills_dir=False,
+        ):
+            captured["create_missing_active_skills_dir"] = (
+                create_missing_active_skills_dir
+            )
+            return {}
+
+        monkeypatch.setattr(
+            AgentCommandRegistrar,
+            "register_commands_for_all_agents",
+            fake_register_all,
+        )
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_all_agents(manifest, extension_dir, project_dir)
+
+        assert captured["create_missing_active_skills_dir"] is False
+
     def test_install_duplicate(self, extension_dir, project_dir):
         """Test installing already installed extension."""
         manager = ExtensionManager(project_dir)
@@ -4722,6 +4787,26 @@ class TestHookInvocationRendering:
 
         assert execution["command"] == "speckit.tasks"
         assert execution["invocation"] == "$speckit-tasks"
+
+    def test_non_boolean_ai_skills_keeps_default_hook_invocation(self, project_dir):
+        """Corrupted truthy ai_skills values should not enable skill invocation."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(
+            json.dumps({"ai": "codex", "ai_skills": "false"}), encoding="utf-8"
+        )
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "speckit.tasks",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "speckit.tasks"
+        assert execution["invocation"] == "/speckit.tasks"
 
     def test_cline_hooks_render_hyphenated_invocation(self, project_dir):
         """Cline projects should render /speckit-* invocations."""

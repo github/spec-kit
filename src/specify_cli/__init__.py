@@ -86,6 +86,12 @@ from ._agent_config import (
     DEFAULT_INIT_INTEGRATION as DEFAULT_INIT_INTEGRATION,
     SCRIPT_TYPE_CHOICES as SCRIPT_TYPE_CHOICES,
 )
+from ._init_options import (
+    INIT_OPTIONS_FILE as INIT_OPTIONS_FILE,
+    is_ai_skills_enabled as _is_ai_skills_enabled,
+    load_init_options as load_init_options,
+    save_init_options as save_init_options,
+)
 
 app = typer.Typer(
     name="specify",
@@ -259,65 +265,6 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             for f in failures:
                 console.print(f"  - {f}")
 
-INIT_OPTIONS_FILE = ".specify/init-options.json"
-
-
-def save_init_options(project_path: Path, options: dict[str, Any]) -> None:
-    """Persist the CLI options used during ``specify init``.
-
-    Writes a small JSON file to ``.specify/init-options.json`` so that
-    later operations (e.g. preset install) can adapt their behaviour
-    without scanning the filesystem.
-    """
-    dest = project_path / INIT_OPTIONS_FILE
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    # Write JSON as real UTF-8 instead of ``\uXXXX`` escape sequences
-    # (``ensure_ascii=False``) and pin the file encoding to match.
-    #
-    # The default ``json.dumps`` output is ASCII-only — any non-ASCII
-    # character is encoded as a ``\uXXXX`` escape — so without the
-    # ``ensure_ascii=False`` flip below the encoding pin alone would be
-    # a no-op for any payload we plausibly write today. We pair the two
-    # so the on-disk bytes match a human's expectation of "this file is
-    # UTF-8" (greppable, readable in editors that don't decode JSON
-    # escapes, friendly to peers running ``cat`` or ``Get-Content``) and
-    # so the encoding pin is a real contract instead of a future hedge.
-    #
-    # ``Path.write_text`` without ``encoding=`` falls back to the system
-    # locale codec (cp1252 / gb2312 / cp932 on Windows), which would
-    # mis-encode non-ASCII bytes locally and produce a file a peer with
-    # a different locale couldn't decode. The sibling integration-
-    # catalog writer in ``integrations/catalog.py`` pins
-    # ``encoding="utf-8"`` for the same reason.
-    dest.write_text(
-        json.dumps(options, indent=2, sort_keys=True, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
-def load_init_options(project_path: Path) -> dict[str, Any]:
-    """Load the init options previously saved by ``specify init``.
-
-    Returns an empty dict if the file does not exist or cannot be parsed.
-    """
-    path = project_path / INIT_OPTIONS_FILE
-    if not path.exists():
-        return {}
-    try:
-        # Match the explicit UTF-8 used by ``save_init_options``; without
-        # it ``read_text`` falls back to the system codec on Windows and
-        # raises ``UnicodeDecodeError`` on any file containing the
-        # multi-byte UTF-8 sequences ``save_init_options`` now writes
-        # directly. ``UnicodeDecodeError`` is a subclass of
-        # ``ValueError``, not ``OSError`` / ``json.JSONDecodeError``, so
-        # it must be listed explicitly here to preserve the existing
-        # "fall back to empty dict" contract for corrupted / foreign-
-        # codec files.
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-        return {}
-
-
 # ---------------------------------------------------------------------------
 # Agent-context extension config helpers
 # ---------------------------------------------------------------------------
@@ -401,10 +348,10 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
     """Return the active skills directory, creating it on demand when enabled.
 
     Reads ``.specify/init-options.json`` to determine whether skills are
-    enabled and which agent was selected.  When ``ai_skills`` is true the
-    directory is created safely (symlink/containment checks); when false
-    only Kimi's native-skills fallback is honoured (directory must already
-    exist).
+    enabled and which agent was selected.  Only ``ai_skills`` set to boolean
+    ``True`` creates the directory safely (symlink/containment checks); when
+    ``ai_skills`` is not boolean ``True``, only Kimi's native-skills fallback
+    is honoured, and the native skills directory must already exist.
 
     Returns:
         The skills directory ``Path``, or ``None`` if skills are not active.
@@ -425,14 +372,15 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
     if not isinstance(agent, str) or not agent:
         return None
 
-    ai_skills_enabled = bool(opts.get("ai_skills"))
+    ai_skills_enabled = _is_ai_skills_enabled(opts)
     if not ai_skills_enabled and agent != "kimi":
         return None
 
     skills_dir = _get_skills_dir(project_root, agent)
 
     if not ai_skills_enabled:
-        # Kimi native-skills fallback: use the directory only if it exists.
+        # Kimi native-skills fallback when ai_skills is not boolean True:
+        # use the native skills directory only if it already exists.
         if not skills_dir.is_dir():
             return None
         _ensure_safe_shared_directory(
@@ -441,7 +389,7 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
         )
         return skills_dir
 
-    # ai_skills is explicitly enabled — create the directory safely.
+    # ai_skills is boolean True: create the directory safely.
     _ensure_safe_shared_directory(
         project_root, skills_dir, context="agent skills directory",
     )

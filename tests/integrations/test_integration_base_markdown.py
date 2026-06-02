@@ -254,8 +254,8 @@ class MarkdownIntegrationTests:
 
     COMMAND_STEMS = [
         "agent-context.update",
-        "analyze", "checklist", "clarify", "constitution",
-        "implement", "plan", "specify", "tasks", "taskstoissues",
+        "analyze", "clarify", "constitution", "implement",
+        "plan", "checklist", "specify", "tasks", "taskstoissues",
     ]
 
     def _expected_files(self, script_variant: str) -> list[str]:

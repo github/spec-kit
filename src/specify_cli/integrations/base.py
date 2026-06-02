@@ -34,6 +34,21 @@ _HOOK_COMMAND_NOTE = (
     "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
 )
 
+_CORE_COMMAND_TEMPLATE_ORDER = (
+    "analyze",
+    "clarify",
+    "constitution",
+    "implement",
+    "plan",
+    "checklist",
+    "specify",
+    "tasks",
+    "taskstoissues",
+)
+_CORE_COMMAND_TEMPLATE_RANK = {
+    command: index for index, command in enumerate(_CORE_COMMAND_TEMPLATE_ORDER)
+}
+
 
 # ---------------------------------------------------------------------------
 # IntegrationOption
@@ -345,11 +360,19 @@ class IntegrationBase(ABC):
         return None
 
     def list_command_templates(self) -> list[Path]:
-        """Return sorted list of command template files from the shared directory."""
+        """Return ordered list of command template files from the shared directory."""
         cmd_dir = self.shared_commands_dir()
         if not cmd_dir or not cmd_dir.is_dir():
             return []
-        return sorted(f for f in cmd_dir.iterdir() if f.is_file() and f.suffix == ".md")
+        return sorted(
+            (f for f in cmd_dir.iterdir() if f.is_file() and f.suffix == ".md"),
+            key=lambda f: (
+                _CORE_COMMAND_TEMPLATE_RANK.get(
+                    f.stem, len(_CORE_COMMAND_TEMPLATE_ORDER)
+                ),
+                f.name,
+            ),
+        )
 
     def command_filename(self, template_name: str) -> str:
         """Return the destination filename for a command template.
