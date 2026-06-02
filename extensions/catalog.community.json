@@ -2055,7 +2055,7 @@
     "product-forge": {
       "name": "Product Forge",
       "id": "product-forge",
-      "description": "Full product lifecycle from research to release — express/lite/standard/v-model tracks, living spec + traceability, structured journeys -> E2E, monorepo, and selectable doc-structure strategies",
+      "description": "Full product lifecycle from research to release — express/lite/standard/v-model tracks, living spec + traceability, structured journeys → E2E, monorepo, and selectable doc-structure strategies",
       "author": "VaiYav",
       "version": "1.6.0",
       "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.6.0.zip",
