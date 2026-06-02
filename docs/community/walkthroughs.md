@@ -1,11 +1,17 @@
 # Community Walkthroughs
 
-> [!NOTE]
-> Community walkthroughs are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. Review their content before following along and use at your own discretion.
+## Spec Kit Examples
 
-See Spec-Driven Development in action across different scenarios with these community-contributed walkthroughs:
+These examples are maintained in the Spec Kit documentation:
 
 - **[Hands-off orchestration example](hands-off-orchestration.md)** — Shows an artifact-first flow that runs specify, clarify, plan, checklist, tasks, and analyze, then stops before issue creation or implementation unless the user explicitly opts in.
+
+## Community Walkthroughs
+
+> [!NOTE]
+> External community walkthroughs are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. Review their content before following along and use at your own discretion.
+
+See Spec-Driven Development in action across different scenarios with these community-contributed walkthroughs:
 
 - **[Greenfield .NET CLI tool](https://github.com/mnriem/spec-kit-dotnet-cli-demo)** — Builds a Timezone Utility as a .NET single-binary CLI tool from a blank directory, covering the full spec-kit workflow: constitution, specify, plan, tasks, and multi-pass implement using GitHub Copilot agents.
 

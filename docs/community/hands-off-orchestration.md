@@ -14,7 +14,7 @@ The key rule is that the agent stops after analysis unless the user explicitly a
 
 - Generate and review artifacts before creating issues or writing code.
 - Ask the user when a product decision is required.
-- Loop back to the earlier stage when a later stage finds stale, incomplete, or inconsistent artifacts.
+- Loop back to an earlier stage when a later stage finds stale, incomplete, or inconsistent artifacts.
 - Do not run `/speckit.taskstoissues` unless the user explicitly requests issue creation.
 - Do not run `/speckit.implement` unless the user explicitly requests implementation.
 
@@ -46,11 +46,11 @@ Do not implement tasks unless I explicitly ask for implementation.
 After reviewing the generated artifacts, continue with one of these explicit prompts:
 
 ```text
-Create GitHub issues from the generated tasks, but do not implement them.
+Run /speckit.taskstoissues to create GitHub issues from the generated tasks, but do not implement them.
 ```
 
 ```text
-Implement the generated tasks now.
+Run /speckit.implement to implement the generated tasks now.
 ```
 
 Keeping issue creation and implementation as separate follow-up prompts makes the default flow safe for planning, design review, and handoff scenarios.
