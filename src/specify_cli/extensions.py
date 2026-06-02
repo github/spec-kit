@@ -1855,14 +1855,28 @@ class ExtensionCatalog(CatalogStackBase):
             is_valid = False
             if not force_refresh and cache_file.exists() and cache_meta_file.exists():
                 try:
-                    metadata = json.loads(cache_meta_file.read_text())
+                    metadata = json.loads(
+                        cache_meta_file.read_text(encoding="utf-8")
+                    )
                     cached_at = datetime.fromisoformat(metadata.get("cached_at", ""))
                     if cached_at.tzinfo is None:
                         cached_at = cached_at.replace(tzinfo=timezone.utc)
                     age = (datetime.now(timezone.utc) - cached_at).total_seconds()
                     is_valid = age < self.CACHE_DURATION
-                except (json.JSONDecodeError, ValueError, KeyError, TypeError):
-                    # If metadata is invalid or missing expected fields, treat cache as invalid
+                except (
+                    json.JSONDecodeError,
+                    OSError,
+                    UnicodeError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                ):
+                    # Cache validity is best-effort: invalid/missing metadata
+                    # fields, an unreadable metadata file (permissions / disk),
+                    # or a wrongly-encoded metadata file (written by a tool
+                    # using the system locale codec) all degrade to "cache
+                    # invalid" so the caller falls through to a network
+                    # refetch instead of crashing.
                     pass
 
         # Use cache if valid. A previously-cached payload must clear the
@@ -1892,13 +1906,23 @@ class ExtensionCatalog(CatalogStackBase):
 
             self._validate_catalog_payload(catalog_data, entry.url)
 
-            # Save to cache
+            # Save to cache. Both files are explicitly UTF-8 to match the
+            # ``read_text(encoding="utf-8")`` on the read side and the
+            # ``integrations/catalog.py:193-203`` precedent. Without this,
+            # platforms whose default encoding isn't UTF-8 would write
+            # locale-encoded bytes that the read path can't decode, forcing
+            # an unnecessary network refetch on every invocation.
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(json.dumps(catalog_data, indent=2))
-            cache_meta_file.write_text(json.dumps({
-                "cached_at": datetime.now(timezone.utc).isoformat(),
-                "catalog_url": entry.url,
-            }, indent=2))
+            cache_file.write_text(
+                json.dumps(catalog_data, indent=2), encoding="utf-8"
+            )
+            cache_meta_file.write_text(
+                json.dumps({
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": entry.url,
+                }, indent=2),
+                encoding="utf-8",
+            )
 
             return catalog_data
 
@@ -1971,6 +1995,12 @@ class ExtensionCatalog(CatalogStackBase):
     def is_cache_valid(self) -> bool:
         """Check if cached catalog is still valid.
 
+        Returns ``False`` for any read/decoding failure on the metadata
+        file (missing fields, malformed JSON, permissions / disk errors,
+        wrong text encoding) so callers fall through to a network refetch
+        instead of crashing. Treating cache validity as best-effort
+        matches the contract used by the per-URL cache check below.
+
         Returns:
             True if cache exists and is within cache duration
         """
@@ -1978,13 +2008,22 @@ class ExtensionCatalog(CatalogStackBase):
             return False
 
         try:
-            metadata = json.loads(self.cache_metadata_file.read_text())
+            metadata = json.loads(
+                self.cache_metadata_file.read_text(encoding="utf-8")
+            )
             cached_at = datetime.fromisoformat(metadata.get("cached_at", ""))
             if cached_at.tzinfo is None:
                 cached_at = cached_at.replace(tzinfo=timezone.utc)
             age_seconds = (datetime.now(timezone.utc) - cached_at).total_seconds()
             return age_seconds < self.CACHE_DURATION
-        except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+        except (
+            json.JSONDecodeError,
+            OSError,
+            UnicodeError,
+            ValueError,
+            KeyError,
+            TypeError,
+        ):
             return False
 
     def fetch_catalog(self, force_refresh: bool = False) -> Dict[str, Any]:
@@ -1999,16 +2038,19 @@ class ExtensionCatalog(CatalogStackBase):
         Raises:
             ExtensionError: If catalog cannot be fetched
         """
-        # Fetch from network
         catalog_url = self.get_catalog_url()
 
-        # Check cache first unless force refresh. Match the
+        # Check the cache first unless ``force_refresh`` was requested,
+        # then fall through to a network fetch. Match the
         # ``_fetch_single_catalog`` cache contract: a poisoned or
         # unreadable cache silently falls through to a network refetch
         # rather than crashing the caller. ``_validate_catalog_payload``
         # is reused here so a cache written by an older client
         # (pre-validation) is rejected and refreshed instead of returning
-        # the stale malformed payload.
+        # the stale malformed payload. ``is_cache_valid`` itself swallows
+        # OSError/UnicodeError on the metadata read, so a cache-validity
+        # check can't crash this method before the read-side fallback
+        # runs.
         if not force_refresh and self.is_cache_valid():
             try:
                 cached_data = json.loads(self.cache_file.read_text(encoding="utf-8"))
@@ -2028,16 +2070,25 @@ class ExtensionCatalog(CatalogStackBase):
             # missing keys, nested-mapping type) stay consistent.
             self._validate_catalog_payload(catalog_data, catalog_url)
 
-            # Save to cache
+            # Save to cache. Explicit UTF-8 on both writes mirrors the
+            # ``read_text(encoding="utf-8")`` on the read side and the
+            # ``integrations/catalog.py:193-203`` precedent — otherwise
+            # platforms whose default encoding isn't UTF-8 would write
+            # locale-encoded bytes the read path can't decode, forcing an
+            # unnecessary refetch on every invocation.
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            self.cache_file.write_text(json.dumps(catalog_data, indent=2))
+            self.cache_file.write_text(
+                json.dumps(catalog_data, indent=2), encoding="utf-8"
+            )
 
             # Save cache metadata
             metadata = {
                 "cached_at": datetime.now(timezone.utc).isoformat(),
                 "catalog_url": catalog_url,
             }
-            self.cache_metadata_file.write_text(json.dumps(metadata, indent=2))
+            self.cache_metadata_file.write_text(
+                json.dumps(metadata, indent=2), encoding="utf-8"
+            )
 
             return catalog_data
 

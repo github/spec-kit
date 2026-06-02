@@ -2772,6 +2772,81 @@ class TestExtensionCatalog:
         # Recovered via network rather than crashing on the unreadable cache.
         assert result == valid
 
+    def test_fetch_catalog_recovers_from_unreadable_metadata(self, temp_dir):
+        """A wrongly-encoded metadata file degrades to a cache miss.
+
+        ``is_cache_valid`` is consulted *before* the cache payload is
+        read; if the metadata file itself can't be decoded (e.g. it was
+        written on a Windows host whose default codec isn't UTF-8) the
+        validity check must return ``False`` rather than propagate
+        ``UnicodeDecodeError``. Without that guard, a corrupted metadata
+        file would crash every invocation instead of falling through to
+        a network refetch.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text("{}", encoding="utf-8")
+        # Bytes that are not valid UTF-8 — ``read_text(encoding="utf-8")``
+        # will raise ``UnicodeDecodeError`` (subclass of ``UnicodeError``).
+        catalog.cache_metadata_file.write_bytes(b"\xff\xfe\x00bad")
+
+        # is_cache_valid must absorb the decode failure, not crash.
+        assert catalog.is_cache_valid() is False
+
+        valid = {
+            "schema_version": "1.0",
+            "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog.fetch_catalog(force_refresh=False)
+
+        assert result == valid
+
+    def test_fetch_catalog_writes_cache_as_utf8(self, temp_dir):
+        """Cache + metadata are written with explicit UTF-8 encoding.
+
+        On platforms whose default text encoding is not UTF-8 (Windows
+        with a non-UTF-8 ANSI codepage, some CI images), a bare
+        ``write_text`` would emit locale-encoded bytes that the
+        UTF-8-only read path can't decode, forcing a refetch on every
+        invocation. Asserting on raw bytes catches the drift directly
+        instead of relying on the round-trip working by accident.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        # A non-ASCII string in the payload makes the encoding choice
+        # observable at the byte level — UTF-8 encodes "é" as 0xC3 0xA9.
+        payload = {
+            "schema_version": "1.0",
+            "extensions": {
+                "café": {"name": "Café", "version": "1.0.0"},
+            },
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode("utf-8")
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            catalog.fetch_catalog(force_refresh=True)
+
+        # Cache round-trips via the UTF-8 read path used in production.
+        cached = json.loads(catalog.cache_file.read_text(encoding="utf-8"))
+        assert "café" in cached["extensions"]
+        # Metadata also UTF-8 — confirms both writes were updated.
+        meta = json.loads(
+            catalog.cache_metadata_file.read_text(encoding="utf-8")
+        )
+        assert "cached_at" in meta
+
     def test_get_merged_extensions_skips_non_mapping_entries(self, temp_dir):
         """Per-entry guard: one malformed entry shouldn't poison the merge.
 

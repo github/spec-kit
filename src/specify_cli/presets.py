@@ -2051,7 +2051,7 @@ class PresetCatalog:
         if not cache_file.exists() or not metadata_file.exists():
             return False
         try:
-            metadata = json.loads(metadata_file.read_text())
+            metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
             cached_at = datetime.fromisoformat(metadata.get("cached_at", ""))
             if cached_at.tzinfo is None:
                 cached_at = cached_at.replace(tzinfo=timezone.utc)
@@ -2059,7 +2059,19 @@ class PresetCatalog:
                 datetime.now(timezone.utc) - cached_at
             ).total_seconds()
             return age_seconds < self.CACHE_DURATION
-        except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+        except (
+            json.JSONDecodeError,
+            OSError,
+            UnicodeError,
+            ValueError,
+            KeyError,
+            TypeError,
+        ):
+            # Cache validity is best-effort: invalid/missing fields, an
+            # unreadable metadata file (permissions / disk), or a wrongly
+            # encoded one (written by a tool using the system locale
+            # codec) all degrade to "cache invalid" so the caller falls
+            # through to a network refetch instead of crashing.
             return False
 
     def _fetch_single_catalog(self, entry: PresetCatalogEntry, force_refresh: bool = False) -> Dict[str, Any]:
@@ -2102,13 +2114,23 @@ class PresetCatalog:
 
             self._validate_catalog_payload(catalog_data, entry.url)
 
+            # Both files are written explicitly as UTF-8 to match the
+            # ``read_text(encoding="utf-8")`` on the read side and the
+            # ``integrations/catalog.py:193-203`` precedent. Without this,
+            # platforms whose default encoding isn't UTF-8 would write
+            # locale-encoded bytes the read path can't decode, forcing an
+            # unnecessary refetch on every invocation.
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(json.dumps(catalog_data, indent=2))
+            cache_file.write_text(
+                json.dumps(catalog_data, indent=2), encoding="utf-8"
+            )
             metadata = {
                 "cached_at": datetime.now(timezone.utc).isoformat(),
                 "catalog_url": entry.url,
             }
-            metadata_file.write_text(json.dumps(metadata, indent=2))
+            metadata_file.write_text(
+                json.dumps(metadata, indent=2), encoding="utf-8"
+            )
 
             return catalog_data
 
@@ -2155,6 +2177,12 @@ class PresetCatalog:
     def is_cache_valid(self) -> bool:
         """Check if cached catalog is still valid.
 
+        Returns ``False`` for any read/decoding failure on the metadata
+        file (missing fields, malformed JSON, permissions / disk errors,
+        wrong text encoding) so callers fall through to a network refetch
+        instead of crashing. Treating cache validity as best-effort
+        matches the contract used by ``_is_url_cache_valid`` above.
+
         Returns:
             True if cache exists and is within cache duration
         """
@@ -2162,7 +2190,9 @@ class PresetCatalog:
             return False
 
         try:
-            metadata = json.loads(self.cache_metadata_file.read_text())
+            metadata = json.loads(
+                self.cache_metadata_file.read_text(encoding="utf-8")
+            )
             cached_at = datetime.fromisoformat(metadata.get("cached_at", ""))
             if cached_at.tzinfo is None:
                 cached_at = cached_at.replace(tzinfo=timezone.utc)
@@ -2170,7 +2200,14 @@ class PresetCatalog:
                 datetime.now(timezone.utc) - cached_at
             ).total_seconds()
             return age_seconds < self.CACHE_DURATION
-        except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+        except (
+            json.JSONDecodeError,
+            OSError,
+            UnicodeError,
+            ValueError,
+            KeyError,
+            TypeError,
+        ):
             return False
 
     def fetch_catalog(self, force_refresh: bool = False) -> Dict[str, Any]:
@@ -2218,15 +2255,23 @@ class PresetCatalog:
             # missing keys, nested-mapping type) stay consistent.
             self._validate_catalog_payload(catalog_data, catalog_url)
 
+            # Save to cache. Explicit UTF-8 on both writes mirrors the
+            # ``read_text(encoding="utf-8")`` on the read side and the
+            # ``integrations/catalog.py:193-203`` precedent — otherwise
+            # platforms whose default encoding isn't UTF-8 would write
+            # locale-encoded bytes the read path can't decode, forcing an
+            # unnecessary refetch on every invocation.
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            self.cache_file.write_text(json.dumps(catalog_data, indent=2))
+            self.cache_file.write_text(
+                json.dumps(catalog_data, indent=2), encoding="utf-8"
+            )
 
             metadata = {
                 "cached_at": datetime.now(timezone.utc).isoformat(),
                 "catalog_url": catalog_url,
             }
             self.cache_metadata_file.write_text(
-                json.dumps(metadata, indent=2)
+                json.dumps(metadata, indent=2), encoding="utf-8"
             )
 
             return catalog_data
