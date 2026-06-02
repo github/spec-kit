@@ -4174,11 +4174,37 @@ workflow_catalog_app = typer.Typer(
 workflow_app.add_typer(workflow_catalog_app, name="catalog")
 
 
+def _workflow_run_payload(state: Any) -> dict[str, Any]:
+    """Machine-readable summary of a run/resume outcome."""
+    return {
+        "run_id": state.run_id,
+        "workflow_id": state.workflow_id,
+        "status": state.status.value,
+        "current_step_id": state.current_step_id,
+        "current_step_index": state.current_step_index,
+    }
+
+
+def _emit_workflow_json(payload: dict[str, Any]) -> None:
+    """Write a workflow payload as machine-readable JSON to stdout.
+
+    Uses the builtin ``print`` rather than ``console.print`` so Rich
+    markup interpretation, syntax highlighting, and line-wrapping can
+    never alter the emitted JSON.
+    """
+    print(json.dumps(payload, indent=2))
+
+
 @workflow_app.command("run")
 def workflow_run(
     source: str = typer.Argument(..., help="Workflow ID or YAML file path"),
     input_values: list[str] | None = typer.Option(
         None, "--input", "-i", help="Input values as key=value pairs"
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the run outcome as a single JSON object instead of formatted text.",
     ),
 ):
     """Run a workflow from an installed ID or local YAML path."""
@@ -4186,7 +4212,8 @@ def workflow_run(
 
     project_root = _require_specify_project()
     engine = WorkflowEngine(project_root)
-    engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
+    if not json_output:
+        engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
     try:
         definition = engine.load_workflow(source)
@@ -4215,8 +4242,9 @@ def workflow_run(
             key, _, value = kv.partition("=")
             inputs[key.strip()] = value.strip()
 
-    console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
-    console.print(f"[dim]Version: {definition.version}[/dim]\n")
+    if not json_output:
+        console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
+        console.print(f"[dim]Version: {definition.version}[/dim]\n")
 
     try:
         state = engine.execute(definition, inputs)
@@ -4226,6 +4254,10 @@ def workflow_run(
     except Exception as exc:
         console.print(f"[red]Workflow failed:[/red] {exc}")
         raise typer.Exit(1)
+
+    if json_output:
+        _emit_workflow_json(_workflow_run_payload(state))
+        return
 
     status_colors = {
         "completed": "green",
@@ -4244,13 +4276,19 @@ def workflow_run(
 @workflow_app.command("resume")
 def workflow_resume(
     run_id: str = typer.Argument(..., help="Run ID to resume"),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the resume outcome as a single JSON object instead of formatted text.",
+    ),
 ):
     """Resume a paused or failed workflow run."""
     from .workflows.engine import WorkflowEngine
 
     project_root = _require_specify_project()
     engine = WorkflowEngine(project_root)
-    engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
+    if not json_output:
+        engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
     try:
         state = engine.resume(run_id)
@@ -4263,6 +4301,10 @@ def workflow_resume(
     except Exception as exc:
         console.print(f"[red]Resume failed:[/red] {exc}")
         raise typer.Exit(1)
+
+    if json_output:
+        _emit_workflow_json(_workflow_run_payload(state))
+        return
 
     status_colors = {
         "completed": "green",
@@ -4277,6 +4319,11 @@ def workflow_resume(
 @workflow_app.command("status")
 def workflow_status(
     run_id: str | None = typer.Argument(None, help="Run ID to inspect (shows all if omitted)"),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit run status as a single JSON object instead of formatted text.",
+    ),
 ):
     """Show workflow run status."""
     from .workflows.engine import WorkflowEngine
@@ -4291,6 +4338,22 @@ def workflow_status(
         except FileNotFoundError:
             console.print(f"[red]Error:[/red] Run not found: {run_id}")
             raise typer.Exit(1)
+
+        if json_output:
+            payload = {
+                "run_id": state.run_id,
+                "workflow_id": state.workflow_id,
+                "status": state.status.value,
+                "created_at": state.created_at,
+                "updated_at": state.updated_at,
+                "current_step_id": state.current_step_id,
+                "steps": {
+                    sid: sd.get("status", "unknown")
+                    for sid, sd in state.step_results.items()
+                },
+            }
+            _emit_workflow_json(payload)
+            return
 
         status_colors = {
             "completed": "green",
@@ -4319,6 +4382,22 @@ def workflow_status(
                 console.print(f"    [{sc}]●[/{sc}] {step_id}: {s}")
     else:
         runs = engine.list_runs()
+
+        if json_output:
+            payload = {
+                "runs": [
+                    {
+                        "run_id": r["run_id"],
+                        "workflow_id": r.get("workflow_id"),
+                        "status": r.get("status", "unknown"),
+                        "updated_at": r.get("updated_at"),
+                    }
+                    for r in runs
+                ]
+            }
+            _emit_workflow_json(payload)
+            return
+
         if not runs:
             console.print("[yellow]No workflow runs found.[/yellow]")
             return

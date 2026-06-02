@@ -11,6 +11,7 @@ specify workflow run <source>
 | Option              | Description                                              |
 | ------------------- | -------------------------------------------------------- |
 | `-i` / `--input`    | Pass input values as `key=value` (repeatable)            |
+| `--json`            | Emit the run outcome as a single JSON object             |
 
 Runs a workflow from a catalog ID, URL, or local file path. Inputs declared by the workflow can be provided via `--input` or will be prompted interactively.
 
@@ -18,6 +19,22 @@ Example:
 
 ```bash
 specify workflow run speckit -i spec="Build a kanban board with drag-and-drop task management" -i scope=full
+```
+
+With `--json`, a single machine-readable object is printed instead of formatted text (the default output is unchanged when the flag is omitted):
+
+```bash
+specify workflow run wf.yml --json
+```
+
+```json
+{
+  "run_id": "662bf791",
+  "workflow_id": "wf",
+  "status": "paused",
+  "current_step_id": "review",
+  "current_step_index": 0
+}
 ```
 
 > **Note:** All workflow commands require a project already initialized with `specify init`.
@@ -28,6 +45,10 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 specify workflow resume <run_id>
 ```
 
+| Option              | Description                                              |
+| ------------------- | -------------------------------------------------------- |
+| `--json`            | Emit the resume outcome as a single JSON object          |
+
 Resumes a paused or failed workflow run from the exact step where it stopped. Useful after responding to a gate step or fixing an issue that caused a failure.
 
 ## Workflow Status
@@ -35,6 +56,10 @@ Resumes a paused or failed workflow run from the exact step where it stopped. Us
 ```bash
 specify workflow status [<run_id>]
 ```
+
+| Option              | Description                                              |
+| ------------------- | -------------------------------------------------------- |
+| `--json`            | Emit run status (or the runs list) as a JSON object      |
 
 Shows the status of a specific run, or lists all runs if no ID is given. Run states: `created`, `running`, `completed`, `paused`, `failed`, `aborted`.
 
