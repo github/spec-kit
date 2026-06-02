@@ -87,7 +87,14 @@ class TestInitIntegrationFlag:
 
         opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
         assert opts["integration"] == "copilot"
-        assert opts["context_file"] == ".github/copilot-instructions.md"
+        # context_file lives in the agent-context extension config, not init-options.json
+        assert "context_file" not in opts
+
+        import yaml as _yaml
+        ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
+        assert ext_cfg_path.exists(), "agent-context extension config must be created on init"
+        ext_cfg = _yaml.safe_load(ext_cfg_path.read_text(encoding="utf-8"))
+        assert ext_cfg["context_file"] == ".github/copilot-instructions.md"
 
         assert (project / ".specify" / "integrations" / "copilot.manifest.json").exists()
 
@@ -323,6 +330,7 @@ class TestInitIntegrationFlag:
     def test_shared_infra_skip_warning_displayed(self, tmp_path, capsys):
         """Console warning is displayed when files are skipped."""
         from specify_cli import _install_shared_infra
+        from tests.conftest import strip_ansi
 
         project = tmp_path / "warn-test"
         project.mkdir()
