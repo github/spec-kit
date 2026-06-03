@@ -1748,40 +1748,61 @@ class TestPresetCatalog:
 
         assert result == valid
 
-    def test_fetch_catalog_writes_cache_as_utf8(self, project_dir):
-        """Cache + metadata are written with explicit UTF-8 encoding.
+    def test_fetch_catalog_writes_cache_as_utf8(self, project_dir, monkeypatch):
+        """Cache + metadata writes pass ``encoding="utf-8"``, observably.
 
-        On platforms whose default text encoding is not UTF-8, a bare
-        ``write_text`` would emit locale-encoded bytes that the
-        UTF-8-only read path can't decode, forcing a refetch on every
-        invocation. Asserting on a round-trip with non-ASCII content
-        catches the drift directly.
+        The earlier version of this test claimed to assert UTF-8 at the
+        byte level but actually only round-tripped a non-ASCII string
+        through ``json.dumps`` and ``read_text(encoding="utf-8")``.
+        Because ``json.dumps`` defaults to ``ensure_ascii=True``, "café"
+        was serialized as the all-ASCII escape ``caf\\u00e9`` before it
+        ever reached ``write_text`` — the bytes on disk were identical
+        regardless of the encoding kwarg. The drift Copilot's review
+        flagged wasn't actually being caught.
+
+        Fix: directly observe the ``encoding`` argument passed to every
+        ``write_text`` call made against the cache directory. This is
+        the production code's encoding choice, which is exactly what
+        the regression guard cares about.
         """
         from unittest.mock import patch, MagicMock
+        from pathlib import Path as _PathCls
 
         catalog = PresetCatalog(project_dir)
-        # A non-ASCII string in the payload makes the encoding choice
-        # observable at the byte level — UTF-8 encodes "é" as 0xC3 0xA9.
         payload = {
             "schema_version": "1.0",
-            "presets": {
-                "café": {"name": "Café", "version": "1.0.0"},
-            },
+            "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps(payload).encode("utf-8")
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
+        # Record every ``write_text`` call's encoding kwarg so the
+        # assertion observes the production writer's argument directly.
+        recorded: list[dict] = []
+        real_write_text = _PathCls.write_text
+
+        def recording_write_text(self, data, *args, **kwargs):
+            recorded.append(
+                {"path": str(self), "encoding": kwargs.get("encoding")}
+            )
+            return real_write_text(self, data, *args, **kwargs)
+
+        monkeypatch.setattr(_PathCls, "write_text", recording_write_text)
+
         with patch.object(catalog, "_open_url", return_value=mock_response):
             catalog.fetch_catalog(force_refresh=True)
 
-        cached = json.loads(catalog.cache_file.read_text(encoding="utf-8"))
-        assert "café" in cached["presets"]
-        meta = json.loads(
-            catalog.cache_metadata_file.read_text(encoding="utf-8")
-        )
-        assert "cached_at" in meta
+        cache_writes = [
+            r for r in recorded if str(catalog.cache_dir) in r["path"]
+        ]
+        assert cache_writes, "fetch_catalog made no writes to the cache dir"
+        for record in cache_writes:
+            assert record["encoding"] == "utf-8", (
+                f"write_text on {record['path']} used encoding "
+                f"{record['encoding']!r}; expected 'utf-8'"
+            )
 
     def test_get_merged_packs_skips_non_mapping_entries(self, project_dir):
         """Per-entry guard: one malformed entry shouldn't poison the merge.
