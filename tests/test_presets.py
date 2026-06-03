@@ -4262,7 +4262,7 @@ class TestBundledPresetLocator:
     def test_preset_add_from_url_rejects_insecure_redirect(self, project_dir, monkeypatch):
         """URL installs reject redirects from HTTPS to non-loopback HTTP."""
         import typer
-        from specify_cli import preset_add
+        from specify_cli.presets._commands import preset_add
 
         class FakeResponse(io.BytesIO):
             def __enter__(self):
@@ -4317,7 +4317,7 @@ class TestBundledPresetLocator:
     def test_preset_add_from_url_redirect_error_describes_disallowed_url(self, project_dir, monkeypatch, capsys):
         """Redirect rejection message covers hostless HTTPS, not only non-HTTPS URLs."""
         import typer
-        from specify_cli import preset_add
+        from specify_cli.presets._commands import preset_add
 
         class FakeResponse(io.BytesIO):
             def __enter__(self):
@@ -4347,7 +4347,7 @@ class TestBundledPresetLocator:
 
     def test_preset_add_from_url_streams_download_to_zip(self, project_dir, monkeypatch):
         """URL installs stream response bytes to disk before installing the ZIP."""
-        from specify_cli import preset_add
+        from specify_cli.presets._commands import preset_add
 
         class FakeResponse(io.BytesIO):
             def __init__(self, data):
