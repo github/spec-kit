@@ -922,6 +922,22 @@ class TestGateStep:
         assert len(rendered) == 1
         assert rendered[0].startswith("(could not read file:")
 
+    def test_interactive_non_string_message_renders(self, monkeypatch, capsys):
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        # A YAML numeric literal reaches the prompt as a non-string; it must
+        # render rather than crash on the multi-line split.
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
+
+        step = GateStep()
+        config = {"id": "review", "message": 123, "options": ["approve", "reject"]}
+        result = step.execute(config, StepContext())
+        out = capsys.readouterr().out
+        assert "123" in out
+        assert result.status == StepStatus.COMPLETED
+
     def test_templated_show_file_resolving_to_non_string_is_coerced(self):
         from specify_cli.workflows.steps.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus

@@ -106,7 +106,9 @@ class GateStep(StepBase):
         been folded in); each line is rendered inside the gate box.
         """
         print("\n  ┌─ Gate ─────────────────────────────────────")
-        for line in message.split("\n"):
+        # ``str(...)`` so a non-string message (e.g. a YAML numeric literal)
+        # renders rather than raising on ``.split``.
+        for line in str(message).split("\n"):
             print(f"  │ {line}" if line else "  │")
         print("  │")
         for i, opt in enumerate(options, 1):
