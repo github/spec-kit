@@ -298,7 +298,15 @@ class RunState:
         workflow_id: str = "",
         project_root: Path | None = None,
     ) -> None:
-        self.run_id = run_id or str(uuid.uuid4())[:8]
+        # ``run_id is None`` (omitted) → auto-generate. An explicit empty
+        # string is *not* the same as "omitted" and must be validated like
+        # any other caller-provided value — otherwise ``__init__("")``
+        # would silently substitute a UUID while ``load("")`` rejects, and
+        # the two entry points would diverge on the empty-string vector.
+        if run_id is None:
+            self.run_id = str(uuid.uuid4())[:8]
+        else:
+            self.run_id = run_id
         self._validate_run_id(self.run_id)
         self.workflow_id = workflow_id
         self.project_root = project_root or Path(".")
