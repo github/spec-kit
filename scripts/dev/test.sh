@@ -35,7 +35,14 @@ RUNTIME_PASSTHROUGH=()
 
 while (( $# )); do
     case "$1" in
-        --chunk-size) CHUNK_SIZE="$2"; shift 2 ;;
+        --chunk-size)
+            if (( $# < 2 )); then
+                echo "[fast-test] --chunk-size requires a value" >&2
+                exit 1
+            fi
+            CHUNK_SIZE="$2"
+            shift 2
+            ;;
         --resume)     RESUME=1; shift ;;
         --reset)      RESET=1;  shift ;;
         --bench)      BENCH=1;  shift ;;
@@ -44,6 +51,11 @@ while (( $# )); do
         *)            PASSTHROUGH+=("$1"); shift ;;
     esac
 done
+
+if ! [[ "$CHUNK_SIZE" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[fast-test] --chunk-size must be a positive integer (got '$CHUNK_SIZE')" >&2
+    exit 1
+fi
 
 # Collection and execution do not share every pytest flag. Keep runtime
 # passthrough aligned with user intent while stripping collect-only toggles.
@@ -73,7 +85,10 @@ if ! uv run pytest --collect-only -qq "${PASSTHROUGH[@]}" >"$COLLECT_OUT" 2>"$CO
     rm -f "$COLLECT_ERR" "$COLLECT_OUT"
     exit 1
 fi
-mapfile -t NODES < <(grep -E '::' "$COLLECT_OUT" || true)
+NODES=()
+while IFS= read -r node; do
+    NODES+=("$node")
+done < <(grep -E '::' "$COLLECT_OUT" || true)
 rm -f "$COLLECT_ERR" "$COLLECT_OUT"
 TOTAL="${#NODES[@]}"
 if (( TOTAL == 0 )); then
@@ -92,6 +107,12 @@ if (( RESUME )) && [[ -f "$CURSOR_FILE" ]]; then
     else
         echo "[fast-test] cursor file is invalid ('$RAW_START'); starting from 0" >&2
     fi
+fi
+
+if (( START >= TOTAL )); then
+    echo "[fast-test] nothing to resume (cursor at end: $START/$TOTAL)"
+    rm -f "$CURSOR_FILE"
+    exit 0
 fi
 
 CHUNKS=$(( (TOTAL - START + CHUNK_SIZE - 1) / CHUNK_SIZE ))
