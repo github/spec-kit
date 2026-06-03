@@ -83,20 +83,23 @@ class GateStep(StepBase):
         return StepResult(status=StepStatus.COMPLETED, output=output)
 
     @classmethod
-    def _compose_prompt(cls, message: str, show_file: str | None) -> str:
+    def _compose_prompt(cls, message: object, show_file: str | None) -> str:
         """Build the gate's display text.
 
+        ``message`` may be a non-string (e.g. a YAML numeric literal that
+        ``execute`` does not coerce), so it is rendered through ``str``.
         When ``show_file`` names a file, its contents (read safely, see
         ``_read_show_file``) are appended below the message so the operator
-        can review the referenced material before choosing. Returns a
-        possibly multi-line string that ``_prompt`` renders inside the box.
+        can review the referenced material before choosing. Always returns a
+        ``str`` — possibly multi-line — for ``_prompt`` to render in the box.
         """
+        text = str(message)
         if not show_file:
-            return message
+            return text
         body = "\n".join(
             [f"{show_file}:", *(f"  {line}" for line in cls._read_show_file(show_file))]
         )
-        return f"{message}\n\n{body}"
+        return f"{text}\n\n{body}"
 
     @staticmethod
     def _prompt(message: str, options: list[str]) -> str:
@@ -106,9 +109,7 @@ class GateStep(StepBase):
         been folded in); each line is rendered inside the gate box.
         """
         print("\n  ┌─ Gate ─────────────────────────────────────")
-        # ``str(...)`` so a non-string message (e.g. a YAML numeric literal)
-        # renders rather than raising on ``.split``.
-        for line in str(message).split("\n"):
+        for line in message.split("\n"):
             print(f"  │ {line}" if line else "  │")
         print("  │")
         for i, opt in enumerate(options, 1):

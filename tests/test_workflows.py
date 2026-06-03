@@ -784,6 +784,29 @@ class TestShellStep:
         assert any("missing 'run'" in e for e in errors)
 
 
+class _StubStdin:
+    """Stdin stub with a fixed ``isatty`` result.
+
+    Swapped in via the gate module's ``sys.stdin`` rather than
+    ``setattr(sys.stdin, "isatty", …)`` because ``TextIOWrapper.isatty``
+    is not assignable under some runners (e.g. pytest with capture
+    disabled), and because forcing the value keeps interactive/non-
+    interactive tests deterministic regardless of how the suite is run.
+    """
+
+    def __init__(self, tty: bool):
+        self._tty = tty
+
+    def isatty(self) -> bool:
+        return self._tty
+
+
+def _force_gate_stdin(monkeypatch, *, tty: bool):
+    from specify_cli.workflows.steps import gate as gate_module
+
+    monkeypatch.setattr(gate_module.sys, "stdin", _StubStdin(tty=tty))
+
+
 class TestGateStep:
     """Test the gate step type."""
 
@@ -829,7 +852,7 @@ class TestGateStep:
         review = tmp_path / "spec.md"
         review.write_text("LINE-ONE\nLINE-TWO\n", encoding="utf-8")
 
-        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        _force_gate_stdin(monkeypatch, tty=True)
         monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
 
         step = GateStep()
@@ -855,7 +878,7 @@ class TestGateStep:
 
         missing = tmp_path / "does-not-exist.md"
 
-        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        _force_gate_stdin(monkeypatch, tty=True)
         monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
 
         step = GateStep()
@@ -880,7 +903,17 @@ class TestGateStep:
         review = tmp_path / "spec.md"
         review.write_text("CONTENT\n", encoding="utf-8")
 
-        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+        _force_gate_stdin(monkeypatch, tty=False)
+        # The non-interactive path must not read the file; hard-fail if it does.
+        monkeypatch.setattr(
+            GateStep,
+            "_read_show_file",
+            staticmethod(
+                lambda _p: (_ for _ in ()).throw(
+                    AssertionError("show_file read on the non-interactive path")
+                )
+            ),
+        )
 
         step = GateStep()
         config = {
@@ -928,7 +961,7 @@ class TestGateStep:
 
         # A YAML numeric literal reaches the prompt as a non-string; it must
         # render rather than crash on the multi-line split.
-        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        _force_gate_stdin(monkeypatch, tty=True)
         monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
 
         step = GateStep()
@@ -938,12 +971,15 @@ class TestGateStep:
         assert "123" in out
         assert result.status == StepStatus.COMPLETED
 
-    def test_templated_show_file_resolving_to_non_string_is_coerced(self):
+    def test_templated_show_file_resolving_to_non_string_is_coerced(self, monkeypatch):
         from specify_cli.workflows.steps.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         # A single-expression template can resolve to a non-string (e.g. a
         # number from a prior step); it must be coerced to str, not skipped.
+        # Force a non-TTY so the path stays non-interactive (-> PAUSED) and
+        # cannot block on input under a real terminal.
+        _force_gate_stdin(monkeypatch, tty=False)
         step = GateStep()
         ctx = StepContext(steps={"prev": {"output": {"ref": 123}}})
         config = {
