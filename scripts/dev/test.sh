@@ -79,7 +79,7 @@ mkdir -p "$(dirname "$CURSOR_FILE")"
 echo "[fast-test] collecting tests ..."
 COLLECT_ERR="$(mktemp)"
 COLLECT_OUT="$(mktemp)"
-if ! uv run pytest --collect-only -qq "${PASSTHROUGH[@]}" >"$COLLECT_OUT" 2>"$COLLECT_ERR"; then
+if ! uv run pytest --collect-only -q "${PASSTHROUGH[@]}" >"$COLLECT_OUT" 2>"$COLLECT_ERR"; then
     echo "[fast-test] test collection failed" >&2
     [[ -s "$COLLECT_ERR" ]] && { echo "--- collection stderr ---"; cat "$COLLECT_ERR"; } >&2
     rm -f "$COLLECT_ERR" "$COLLECT_OUT"
