@@ -6160,6 +6160,11 @@ def workflow_step_add(
             )
             extra_files = {}
         for rel_path, file_url in (extra_files or {}).items():
+            if not isinstance(rel_path, str):
+                console.print(
+                    "[red]Error:[/red] Catalog entry 'extra_files' contains a non-string path key"
+                )
+                raise typer.Exit(1)
             if rel_path in ("step.yml", "__init__.py"):
                 continue  # already written above
             # Resolve both destination and base to handle any symlinks in tmp_path itself,

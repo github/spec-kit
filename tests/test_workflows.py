@@ -2511,3 +2511,53 @@ class TestWorkflowStepAddCLI:
 
         assert result.exit_code != 0
         assert "Refusing to use symlinked step directory" in result.output
+
+    def test_add_rejects_non_string_extra_files_key(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+
+        def _fake_get_step_info(self, step_id):
+            return {
+                "id": step_id,
+                "name": "Test Step",
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+                "extra_files": {
+                    123: "https://example.com/helper.py",
+                },
+            }
+
+        class _FakeResponse:
+            def __init__(self, url: str):
+                self.url = url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                if self.url.endswith("/step.yml"):
+                    return b"step:\n  type_key: my-step\n"
+                return b""
+
+            def geturl(self):
+                return self.url
+
+        def _fake_open_url(url, timeout=30):
+            return _FakeResponse(url)
+
+        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
+        monkeypatch.setattr(auth_http, "open_url", _fake_open_url)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
+
+        assert result.exit_code != 0
+        assert "contains a non-string path key" in result.output
