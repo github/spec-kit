@@ -115,6 +115,7 @@ class IntegrationManifest:
         self.project_root = project_root.resolve()
         self.version = version
         self._files: dict[str, str] = {}  # rel_path → sha256 hex
+        self._recovered_files: set[str] = set()
         self._installed_at: str = ""
 
     # -- Manifest file location -------------------------------------------
@@ -131,6 +132,9 @@ class IntegrationManifest:
 
         Creates parent directories as needed.  Returns the absolute path
         of the written file.
+        If the path was previously marked as recovered via
+        ``record_existing(recovered=True)``, the recovered marker is
+        cleared because the bytes are now produced, not merely observed.
 
         Raises ``ValueError`` if *rel_path* resolves outside the project root.
         """
@@ -144,17 +148,77 @@ class IntegrationManifest:
 
         normalized = abs_path.relative_to(self.project_root).as_posix()
         self._files[normalized] = hashlib.sha256(content).hexdigest()
+        # ``record_file`` writes *produced* content, so any prior
+        # recovered marker for this path is no longer accurate.
+        self._recovered_files.discard(normalized)
         return abs_path
 
-    def record_existing(self, rel_path: str | Path) -> None:
-        """Record the hash of an already-existing file at *rel_path*.
+    def record_existing(self, rel_path: str | Path, *, recovered: bool = False) -> None:
+        """Record the hash of an already-existing regular file at *rel_path*.
 
-        Raises ``ValueError`` if *rel_path* resolves outside the project root.
+        When ``recovered=True``, the path is also marked in the manifest's
+        ``recovered_files`` list to signal that the file's on-disk hash was
+        *observed* during install (because the file already existed and was not
+        overwritten), not *produced* by the install. Future ``refresh_managed``
+        runs should consult ``is_recovered`` before treating the recorded hash
+        as a managed baseline.
+
+        Raises:
+            ValueError: if *rel_path* resolves outside the project root, is
+                a symlink, or is not a regular file. A directory or other
+                non-file path cannot be silently recorded — its hash would
+                be meaningless and ``check_modified``/``uninstall`` would
+                treat the entry as permanently broken.
+            OSError: if the underlying filesystem call (``is_symlink``,
+                ``is_file``, or the file-read used to compute the hash)
+                fails — for example a ``PermissionError`` on the path.
+                Callers should be prepared to handle ``OSError`` (and its
+                subclasses such as ``PermissionError``) in addition to
+                ``ValueError``.
         """
         rel = Path(rel_path)
+        # Cheap lexical pre-check first so absolute / parent-traversal paths
+        # don't trigger a filesystem stat outside the project root before
+        # ``_validate_rel_path`` raises. ``_validate_rel_path`` produces the
+        # canonical error messages used elsewhere.
+        if rel.is_absolute() or ".." in rel.parts:
+            _validate_rel_path(rel, self.project_root)
+            # _validate_rel_path raised for any actually-escaping path. If we reach
+            # here the path normalizes inside root (e.g. ``dir/../file.txt``).
+            # Reject anyway: manifest keys must be canonical so ``check_modified``
+            # and ``uninstall`` cannot key the same file under two paths.
+            raise ValueError(
+                f"Manifest paths must be canonical; '..' segments are not "
+                f"allowed (got {rel})"
+            )
+        # Walk each path component before resolution so a symlinked ancestor
+        # (e.g. ``linked_dir/file.txt`` where ``linked_dir`` is a symlink)
+        # cannot be silently followed by ``_validate_rel_path().resolve()``
+        # down to a target outside the project root. ``_ensure_safe_manifest_directory``
+        # uses the same pattern.
+        _walk = self.project_root
+        for part in rel.parts:
+            _walk = _walk / part
+            if _walk.is_symlink():
+                raise ValueError(
+                    f"Refusing to record symlinked manifest path: {rel} "
+                    f"(symlinked at {_walk.relative_to(self.project_root).as_posix()})"
+                )
         abs_path = _validate_rel_path(rel, self.project_root)
+        if not abs_path.is_file():
+            raise ValueError(
+                f"Manifest path is not a regular file: {rel}"
+            )
         normalized = abs_path.relative_to(self.project_root).as_posix()
         self._files[normalized] = _sha256(abs_path)
+        if recovered:
+            self._recovered_files.add(normalized)
+        else:
+            # ``recovered=False`` means the caller is asserting this path is
+            # managed-baseline now, not merely observed; drop any stale
+            # recovered marker so future is_recovered() queries reflect the
+            # transition. ``discard`` is a no-op when the key is absent.
+            self._recovered_files.discard(normalized)
 
     # -- Querying ---------------------------------------------------------
 
@@ -162,6 +226,37 @@ class IntegrationManifest:
     def files(self) -> dict[str, str]:
         """Return a copy of the ``{rel_path: sha256}`` mapping."""
         return dict(self._files)
+
+    @property
+    def recovered_files(self) -> set[str]:
+        """Return a copy of the set of paths recorded with ``recovered=True``.
+
+        These entries had their hashes observed (not produced) during install
+        because the file already existed on disk and the install skipped it.
+        Their on-disk bytes may be user customizations — callers that would
+        overwrite based on hash equality (e.g. ``refresh_managed``) MUST check
+        ``is_recovered`` first.
+        """
+        return set(self._recovered_files)
+
+    def is_recovered(self, rel_path: str | Path) -> bool:
+        """Return True if *rel_path* was recorded via ``record_existing(recovered=True)``.
+
+        Input is normalized through the same pipeline as ``record_existing``:
+        absolute paths, paths escaping the project root, AND paths containing
+        ``'..'`` segments are rejected (returned as ``False``). This mirrors
+        ``record_existing``'s canonicalization guard — such paths can never
+        appear as stored keys, so the answer is always ``False``.
+        """
+        rel = Path(rel_path)
+        if rel.is_absolute() or ".." in rel.parts:
+            return False
+        try:
+            abs_path = _validate_rel_path(rel, self.project_root)
+            normalized = abs_path.relative_to(self.project_root).as_posix()
+        except ValueError:
+            return False
+        return normalized in self._recovered_files
 
     def check_modified(self) -> list[str]:
         """Return relative paths of tracked files whose content changed on disk."""
@@ -269,6 +364,11 @@ class IntegrationManifest:
             "version": self.version,
             "installed_at": self._installed_at,
             "files": self._files,
+            **(
+                {"recovered_files": sorted(self._recovered_files)}
+                if self._recovered_files
+                else {}
+            ),
         }
         path = self.manifest_path
         content = json.dumps(data, indent=2) + "\n"
@@ -319,6 +419,20 @@ class IntegrationManifest:
         inst.version = data.get("version", "")
         inst._installed_at = data.get("installed_at", "")
         inst._files = files
+
+        recovered = data.get("recovered_files", [])
+        if not isinstance(recovered, list) or not all(
+            isinstance(p, str) for p in recovered
+        ):
+            raise ValueError(
+                f"Integration manifest 'recovered_files' at {path} must be a "
+                "list of string paths"
+            )
+        inst._recovered_files = set(recovered)
+        # Drop any recovered_files entries that don't correspond to tracked
+        # files — defensive against externally-edited or partially-corrupted
+        # manifests. Inconsistent state self-corrects on next save().
+        inst._recovered_files &= set(inst._files.keys())
 
         stored_key = data.get("integration", "")
         if stored_key and stored_key != key:

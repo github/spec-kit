@@ -242,9 +242,9 @@ class TestIntegrationInstall:
         opts["speckit_version"] = "0.6.1"
         init_options.write_text(json.dumps(opts), encoding="utf-8")
 
-        import specify_cli
+        import specify_cli.integrations._commands as _int_cmds
 
-        monkeypatch.setattr(specify_cli, "get_speckit_version", lambda: "0.8.11")
+        monkeypatch.setattr(_int_cmds, "get_speckit_version", lambda: "0.8.11")
 
         result = _run_in_project(project, [
             "integration", "install", "codex",
@@ -898,11 +898,10 @@ class TestIntegrationSwitch:
         assert copilot_git_feature.exists(), "Git extension skill should exist for Copilot skills mode"
         assert not copilot_agent_file.exists(), "Copilot skills mode should not create extension .agent.md files"
 
-        # Verify Copilot-specific frontmatter: mode field should map from
-        # skill name (speckit-git-feature) back to dot notation (speckit.git-feature)
+        # Verify Copilot skill frontmatter does NOT contain mode: — VS Code Copilot does not support it
         skill_content = copilot_git_feature.read_text(encoding="utf-8")
-        assert "mode: speckit.git-feature" in skill_content, (
-            "Copilot skill frontmatter should contain mode mapped from skill name"
+        assert "mode:" not in skill_content, (
+            "Copilot skill frontmatter must not contain unsupported 'mode' field"
         )
 
         registry = json.loads(
@@ -1210,9 +1209,9 @@ class TestIntegrationUpgrade:
         opts["speckit_version"] = "0.6.1"
         init_options.write_text(json.dumps(opts), encoding="utf-8")
 
-        import specify_cli
+        import specify_cli.integrations._commands as _int_cmds
 
-        monkeypatch.setattr(specify_cli, "get_speckit_version", lambda: "0.8.11")
+        monkeypatch.setattr(_int_cmds, "get_speckit_version", lambda: "0.8.11")
 
         result = _run_in_project(project, [
             "integration", "upgrade", "claude",
@@ -1236,9 +1235,9 @@ class TestIntegrationUpgrade:
         opts["speckit_version"] = "0.6.1"
         init_options.write_text(json.dumps(opts), encoding="utf-8")
 
-        import specify_cli
+        import specify_cli.integrations._commands as _int_cmds
 
-        monkeypatch.setattr(specify_cli, "get_speckit_version", lambda: "0.8.11")
+        monkeypatch.setattr(_int_cmds, "get_speckit_version", lambda: "0.8.11")
 
         result = _run_in_project(project, [
             "integration", "upgrade", "claude",
@@ -1472,7 +1471,7 @@ class TestScriptTypeValidation:
 class TestParseIntegrationOptionsEqualsForm:
     def test_equals_form_parsed(self):
         """--commands-dir=./x should be parsed the same as --commands-dir ./x."""
-        from specify_cli import _parse_integration_options
+        from specify_cli.integrations._commands import _parse_integration_options
         from specify_cli.integrations import get_integration
 
         integration = get_integration("generic")

@@ -24,18 +24,20 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 With `--json`, a single machine-readable object is printed instead of formatted text (the default output is unchanged when the flag is omitted):
 
 ```bash
-specify workflow run wf.yml --json
+specify workflow run my-pipeline.yml --json
 ```
 
 ```json
 {
   "run_id": "662bf791",
-  "workflow_id": "wf",
+  "workflow_id": "build-and-review",
   "status": "paused",
   "current_step_id": "review",
   "current_step_index": 0
 }
 ```
+
+`workflow_id` is the `workflow.id` declared inside the YAML, not the file name. The object is printed exactly as shown — pretty-printed with two-space indentation, on plain stdout with no Rich markup — so it always parses.
 
 > **Note:** All workflow commands require a project already initialized with `specify init`.
 
@@ -47,9 +49,16 @@ specify workflow resume <run_id>
 
 | Option              | Description                                              |
 | ------------------- | -------------------------------------------------------- |
+| `-i` / `--input`    | Updated input values as `key=value` (repeatable)         |
 | `--json`            | Emit the resume outcome as a single JSON object          |
 
 Resumes a paused or failed workflow run from the exact step where it stopped. Useful after responding to a gate step or fixing an issue that caused a failure.
+
+Supplied `--input` values are merged over the run's stored inputs and re-validated against the workflow's input types, then the blocked step is re-run with the updated values. This lets a run continue with information that only became available after it paused, or with a corrected value after a failure:
+
+```bash
+specify workflow resume <run_id> --input cmd="exit 0"
+```
 
 ## Workflow Status
 

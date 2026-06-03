@@ -2,6 +2,34 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.9.2] - 2026-06-02
+
+### Changed
+
+- Update agent parity governance preset catalog entry (#2777)
+- fix: resolve GitHub release asset API URL for private repo extension downloads (#2792)
+- fix: remove unsupported mode: frontmatter from Copilot skills mode (fixes #2799) (#2819)
+- refactor(integrations): co-locate integration commands in integrations/ domain dir (PR-5/8) (#2720)
+- Update Product Forge extension to v1.6.0 (#2820)
+- feat(workflows): add continue_on_error step field for non-halting failures (#2663)
+- chore: add .editorconfig for consistent code formatting (#2366)
+- fix(shared-infra): record skipped files in speckit.manifest.json (#2483)
+- chore: release 0.9.1, begin 0.9.2.dev0 development (#2818)
+
+## [0.9.1] - 2026-06-02
+
+### Changed
+
+- fix(cli): pin UTF-8 encoding on init-options and .extensionignore I/O (#2686)
+- docs: list Hermes in supported integrations table (#2768)
+- fix(copilot): resolve active spec template (#2765)
+- fix: add missing agent-context extension entries to Cline _expected_files (#2797)
+- Add spec-kit-linear extension to community catalog (#2795)
+- feat: add native Cline integration (#2508)
+- Update workflow-preset community catalog entry (#2756)
+- chore: release 0.9.0, begin 0.9.1.dev0 development (#2794)
+- Add RAG Azure Builder extension to community catalog (#2793)
+
 ## [0.9.0] - 2026-06-01
 
 ### Changed

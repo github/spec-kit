@@ -88,6 +88,8 @@ specify version
 
 This helps verify you are running the official Spec Kit build from GitHub, not an unrelated package with the same name.
 
+**Stay current:** Run `specify self check` periodically to learn whether a newer release is available — it is read-only and never modifies your installation. When you are ready to upgrade, follow the [Upgrade Guide](./upgrade.md).
+
 After initialization, you should see the following commands available in your coding agent:
 
 - `/speckit.specify` - Create specifications
