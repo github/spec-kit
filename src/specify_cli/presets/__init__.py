@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Dict, List, Any
 
 if TYPE_CHECKING:
-    from .agents import CommandRegistrar
+    from ..agents import CommandRegistrar
 from datetime import datetime, timezone
 import re
 
@@ -27,9 +27,9 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
-from .extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
-from .integrations.base import IntegrationBase
-from ._init_options import is_ai_skills_enabled
+from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
+from .._init_options import is_ai_skills_enabled
+from ..integrations.base import IntegrationBase
 
 
 def _substitute_core_template(
@@ -676,7 +676,7 @@ class PresetManager:
                 commands_to_register.append(cmd)
 
         try:
-            from .agents import CommandRegistrar
+            from ..agents import CommandRegistrar
         except ImportError:
             return {}
 
@@ -692,7 +692,7 @@ class PresetManager:
             registered_commands: Dict mapping agent names to command name lists
         """
         try:
-            from .agents import CommandRegistrar
+            from ..agents import CommandRegistrar
         except ImportError:
             return
 
@@ -715,7 +715,7 @@ class PresetManager:
             return
 
         try:
-            from .agents import CommandRegistrar
+            from ..agents import CommandRegistrar
         except ImportError:
             return
 
@@ -767,7 +767,7 @@ class PresetManager:
                         ext_manifest_path = ext_dir / "extension.yml"
                         if ext_manifest_path.exists():
                             try:
-                                from .extensions import ExtensionManifest
+                                from ..extensions import ExtensionManifest
                                 ext_manifest = ExtensionManifest(ext_manifest_path)
                                 # Filter to only the command being reconciled
                                 matching_cmds = [
@@ -891,7 +891,7 @@ class PresetManager:
         # Load aliases from extension manifest when the winning layer is an extension
         if source_id and not source_id.startswith("preset:"):
             try:
-                from .extensions import ExtensionManifest
+                from ..extensions import ExtensionManifest
                 for ext_dir in (self.project_root / ".specify" / "extensions").iterdir():
                     if not ext_dir.is_dir():
                         continue
@@ -1042,8 +1042,8 @@ class PresetManager:
                 skill_subdir.mkdir(parents=True, exist_ok=True)
                 skill_file = skill_subdir / "SKILL.md"
                 try:
-                    from .agents import CommandRegistrar
-                    from . import SKILL_DESCRIPTIONS, load_init_options
+                    from ..agents import CommandRegistrar
+                    from .. import SKILL_DESCRIPTIONS, load_init_options
                     registrar = CommandRegistrar()
                     content = top_layer["path"].read_text(encoding="utf-8")
                     fm, body = registrar.parse_frontmatter(content)
@@ -1075,7 +1075,7 @@ class PresetManager:
                         f"# Speckit {skill_title} Skill\n\n{body}\n"
                     )
                     # Apply integration post-processing (e.g. Claude flags)
-                    from .integrations import get_integration
+                    from ..integrations import get_integration
                     integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
                     if integration is not None and hasattr(integration, "post_process_skill_content"):
                         skill_content = integration.post_process_skill_content(skill_content)
@@ -1110,7 +1110,7 @@ class PresetManager:
         be created due to symlink, containment, or permission issues so
         that callers can fall back gracefully.
         """
-        from . import resolve_active_skills_dir, _print_cli_warning
+        from .. import resolve_active_skills_dir, _print_cli_warning
         try:
             return resolve_active_skills_dir(self.project_root)
         except (ValueError, OSError) as exc:
@@ -1158,7 +1158,7 @@ class PresetManager:
 
     def _build_extension_skill_restore_index(self) -> Dict[str, Dict[str, Any]]:
         """Index extension-backed skill restore data by skill directory name."""
-        from .extensions import ExtensionManifest, ValidationError
+        from ..extensions import ExtensionManifest, ValidationError
 
         resolver = PresetResolver(self.project_root)
         extensions_dir = self.project_root / ".specify" / "extensions"
@@ -1253,9 +1253,9 @@ class PresetManager:
         if not skills_dir:
             return []
 
-        from . import SKILL_DESCRIPTIONS, load_init_options
-        from .agents import CommandRegistrar
-        from .integrations import get_integration
+        from .. import SKILL_DESCRIPTIONS, load_init_options
+        from ..agents import CommandRegistrar
+        from ..integrations import get_integration
 
         init_opts = load_init_options(self.project_root)
         if not isinstance(init_opts, dict):
@@ -1382,9 +1382,9 @@ class PresetManager:
         if not skills_dir:
             return
 
-        from . import SKILL_DESCRIPTIONS, load_init_options
-        from .agents import CommandRegistrar
-        from .integrations import get_integration
+        from .. import SKILL_DESCRIPTIONS, load_init_options
+        from ..agents import CommandRegistrar
+        from ..integrations import get_integration
 
         # Locate core command templates from the project's installed templates
         core_templates_dir = self.project_root / ".specify" / "templates" / "commands"
@@ -1712,7 +1712,7 @@ class PresetManager:
         if registered_skills:
             self._unregister_skills(registered_skills, pack_dir)
             try:
-                from .agents import CommandRegistrar
+                from ..agents import CommandRegistrar
             except ImportError:
                 CommandRegistrar = None
             if CommandRegistrar is not None:
@@ -2450,7 +2450,7 @@ class PresetCatalog:
 
         # Bundled presets without a download URL must be installed locally
         if pack_info.get("bundled") and not pack_info.get("download_url"):
-            from .extensions import REINSTALL_COMMAND
+            from ..extensions import REINSTALL_COMMAND
             raise PresetError(
                 f"Preset '{pack_id}' is bundled with spec-kit and has no download URL. "
                 f"It should be installed from the local package. "
@@ -2769,7 +2769,7 @@ class PresetResolver:
         if not self.extensions_dir.exists():
             return None
 
-        from .extensions import ExtensionManifest, ValidationError
+        from ..extensions import ExtensionManifest, ValidationError
 
         for _priority, ext_id, _metadata in self._get_all_extensions_by_priority():
             ext_dir = self.extensions_dir / ext_id
@@ -2995,7 +2995,7 @@ class PresetResolver:
                 ext_manifest_path = ext_dir / "extension.yml"
                 if ext_manifest_path.exists():
                     try:
-                        from .extensions import ExtensionManifest, ValidationError as ExtValidationError
+                        from ..extensions import ExtensionManifest, ValidationError as ExtValidationError
                         ext_manifest = ExtensionManifest(ext_manifest_path)
                         for cmd in ext_manifest.commands:
                             if cmd.get("name") == template_name:
