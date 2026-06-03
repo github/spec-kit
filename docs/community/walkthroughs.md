@@ -4,7 +4,7 @@
 
 These examples are maintained in the Spec Kit documentation:
 
-- **[Hands-off orchestration example](hands-off-orchestration.md)** — Shows an artifact-first flow that runs specify, clarify, plan, checklist, tasks, and analyze, then stops before issue creation or implementation unless the user explicitly opts in.
+- **[Hands-off orchestration example](hands-off-orchestration.md)** — Shows an artifact-first flow that runs specify, clarify, checklist, plan, tasks, and analyze, then stops before issue creation or implementation unless the user explicitly opts in.
 
 ## Community Walkthroughs
 

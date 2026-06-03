@@ -5,16 +5,20 @@ This example shows how to ask an AI coding agent to run a hands-off, artifact-fi
 Use this pattern when you want a repeatable planning pass that produces reviewed artifacts first:
 
 ```text
-/speckit.specify -> /speckit.clarify -> /speckit.plan -> /speckit.checklist -> /speckit.tasks -> /speckit.analyze
+/speckit.specify -> /speckit.clarify -> /speckit.checklist -> /speckit.plan -> /speckit.tasks -> /speckit.analyze
 ```
 
 The key rule is that the agent stops after analysis unless the user explicitly asks it to continue.
+
+> [!NOTE]
+> This conservative example uses only `README.md` and `DESIGN.md` as in-repo guidance sources unless the user explicitly provides more context.
 
 ## Guardrails
 
 - Generate and review artifacts before creating issues or writing code.
 - Ask the user when a product decision is required.
 - Loop back to an earlier stage when a later stage finds stale, incomplete, or inconsistent artifacts.
+- Use only `README.md` and `DESIGN.md` as in-repo guidance sources unless the user explicitly provides more context.
 - Do not run `/speckit.taskstoissues` unless the user explicitly requests issue creation.
 - Do not run `/speckit.implement` unless the user explicitly requests implementation.
 
@@ -31,12 +35,13 @@ Follow this sequence:
 
 1. Run /speckit.specify for the requested feature.
 2. Run /speckit.clarify to identify ambiguity. If a real product decision is required, stop and ask me before continuing.
-3. Run /speckit.plan after the specification is clear enough to plan.
-4. Run /speckit.checklist and fix requirement-quality gaps by looping back to /speckit.clarify or /speckit.specify as needed.
+3. Run /speckit.checklist and fix requirement-quality gaps by looping back to /speckit.clarify or /speckit.specify as needed.
+4. Run /speckit.plan after the specification passes the requirements checklist.
 5. Run /speckit.tasks after the plan and checklist are consistent.
 6. Run /speckit.analyze to check cross-artifact consistency.
 7. Stop after analysis and report the generated artifacts, open questions, and recommended next step.
 
+Use only README.md and DESIGN.md as in-repo guidance sources unless I explicitly provide more context.
 Do not create GitHub issues unless I explicitly ask for issue creation.
 Do not implement tasks unless I explicitly ask for implementation.
 ```
