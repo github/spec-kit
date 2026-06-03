@@ -4,7 +4,7 @@
 
 - **Linux/macOS** (or Windows; PowerShell scripts now supported without WSL)
 - AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Codebuddy CLI](https://www.codebuddy.ai/cli), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Pi Coding Agent](https://pi.dev)
-- [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pypa.github.io/pipx/) for persistent installation
+- [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pipx.pypa.io/) for persistent installation
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
 
@@ -94,7 +94,10 @@ After initialization, you should see the following commands available in your co
 - `/speckit.plan` - Generate implementation plans  
 - `/speckit.tasks` - Break down into actionable tasks
 
-The `.specify/scripts` directory will contain both `.sh` and `.ps1` scripts.
+Scripts are installed into a variant subdirectory matching the chosen script type:
+
+- `.specify/scripts/bash/` — contains `.sh` scripts (default on Linux/macOS)
+- `.specify/scripts/powershell/` — contains `.ps1` scripts (default on Windows)
 
 ## Troubleshooting
 

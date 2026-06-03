@@ -37,7 +37,10 @@ class CodexIntegration(SkillsIntegration):
         output_json: bool = True,
     ) -> list[str] | None:
         # Codex uses ``codex exec "prompt"`` for non-interactive mode.
-        args: list[str] = ["codex", "exec", prompt]
+        # Resolve argv[0] via the shared executable resolver so operators can
+        # override the binary with SPECKIT_INTEGRATION_CODEX_EXECUTABLE.
+        args: list[str] = [self._resolve_executable(), "exec", prompt]
+        self._apply_extra_args_env_var(args)
         if model:
             args.extend(["--model", model])
         if output_json:

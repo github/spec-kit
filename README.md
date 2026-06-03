@@ -22,10 +22,7 @@
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
 - [⚡ Get Started](#-get-started)
 - [📽️ Video Overview](#️-video-overview)
-- [🧩 Community Extensions](#-community-extensions)
-- [🎨 Community Presets](#-community-presets)
-- [🚶 Community Walkthroughs](#-community-walkthroughs)
-- [🛠️ Community Friends](#️-community-friends)
+- [🌍 Community](#-community)
 - [🤖 Supported AI Coding Agent Integrations](#-supported-ai-coding-agent-integrations)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [🧩 Making Spec Kit Your Own: Extensions & Presets](#-making-spec-kit-your-own-extensions--presets)
@@ -35,7 +32,7 @@
 - [🔧 Prerequisites](#-prerequisites)
 - [📖 Learn More](#-learn-more)
 - [📋 Detailed Process](#-detailed-process)
-- [ Support](#-support)
+- [💬 Support](#-support)
 - [🙏 Acknowledgements](#-acknowledgements)
 - [📄 License](#-license)
 
@@ -112,31 +109,19 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 
 [![Spec Kit video header](/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
 
-## 🧩 Community Extensions
+## 🌍 Community
 
-Community-contributed extensions add new commands, hooks, and capabilities to Spec Kit. See the full list on the [Community Extensions](https://github.github.io/spec-kit/community/extensions.html) page.
+Explore community-contributed resources on the [Spec Kit docs site](https://github.github.io/spec-kit/):
 
-> [!NOTE]
-> Community extensions are independently created and maintained by their respective authors. Maintainers only verify that catalog entries are complete and correctly formatted — they do **not review, audit, endorse, or support the extension code itself**. Review extension source code before installation and use at your own discretion.
-
-To submit your own extension, see the [Extension Publishing Guide](extensions/EXTENSION-PUBLISHING-GUIDE.md).
-
-## 🎨 Community Presets
-
-Community-contributed presets customize how Spec Kit behaves — overriding templates, commands, and terminology without changing any tooling. See the full list on the [Community Presets](https://github.github.io/spec-kit/community/presets.html) page.
+- [Extensions](https://github.github.io/spec-kit/community/extensions.html) — commands, hooks, and capabilities
+- [Presets](https://github.github.io/spec-kit/community/presets.html) — template and terminology overrides
+- [Walkthroughs](https://github.github.io/spec-kit/community/walkthroughs.html) — end-to-end SDD scenarios
+- [Friends](https://github.github.io/spec-kit/community/friends.html) — projects that extend or build on Spec Kit
 
 > [!NOTE]
-> Community presets are third-party contributions and are not maintained by the Spec Kit team. Review them carefully before use, and see the docs page above for the full disclaimer.
+> Community contributions are independently created and maintained by their respective authors. Review source code before installation and use at your own discretion.
 
-To submit your own preset, see the [Presets Publishing Guide](presets/PUBLISHING.md).
-
-## 🚶 Community Walkthroughs
-
-See Spec-Driven Development in action across different scenarios with community-contributed walkthroughs; find the full list on the [Community Walkthroughs](https://github.github.io/spec-kit/community/walkthroughs.html) page.
-
-## 🛠️ Community Friends
-
-Community projects that extend, visualize, or build on Spec Kit. See the full list on the [Community Friends](https://github.github.io/spec-kit/community/friends.html) page.
+Want to contribute? See the [Extension Publishing Guide](extensions/EXTENSION-PUBLISHING-GUIDE.md) or the [Presets Publishing Guide](presets/PUBLISHING.md).
 
 ## 🤖 Supported AI Coding Agent Integrations
 
@@ -206,7 +191,7 @@ specify extension add <extension-name>
 
 For example, extensions could add Jira integration, post-implementation code review, V-Model test traceability, or project health diagnostics.
 
-See the [Extensions reference](https://github.github.io/spec-kit/reference/extensions.html) for the full command guide. Browse the [community extensions](#-community-extensions) above for what's available.
+See the [Extensions reference](https://github.github.io/spec-kit/reference/extensions.html) for the full command guide. Browse the [community extensions](https://github.github.io/spec-kit/community/extensions.html) for what's available.
 
 ### Presets — Customize Existing Workflows
 
@@ -281,7 +266,7 @@ Our research and experimentation focus on:
 
 - **Linux/macOS/Windows**
 - [Supported](#-supported-ai-coding-agent-integrations) AI coding agent.
-- [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pypa.github.io/pipx/) for persistent installation
+- [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pipx.pypa.io/) for persistent installation
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
 
@@ -400,22 +385,24 @@ The produced specification should contain a set of user stories and functional r
 At this stage, your project folder contents should resemble the following:
 
 ```text
-└── .specify
-    ├── memory
-    │  └── constitution.md
-    ├── scripts
-    │  ├── check-prerequisites.sh
-    │  ├── common.sh
-    │  ├── create-new-feature.sh
-    │  ├── setup-plan.sh
-    │  └── update-claude-md.sh
-    ├── specs
-    │  └── 001-create-taskify
-    │      └── spec.md
-    └── templates
-        ├── plan-template.md
-        ├── spec-template.md
-        └── tasks-template.md
+.
+├── .specify
+│   ├── memory
+│   │   └── constitution.md
+│   ├── scripts
+│   │   └── bash
+│   │       ├── check-prerequisites.sh
+│   │       ├── common.sh
+│   │       ├── create-new-feature.sh
+│   │       ├── setup-plan.sh
+│   │       └── setup-tasks.sh
+│   └── templates
+│       ├── plan-template.md
+│       ├── spec-template.md
+│       └── tasks-template.md
+└── specs
+    └── 001-create-taskify
+        └── spec.md
 ```
 
 ### **STEP 3:** Functional specification clarification (required before planning)
@@ -462,29 +449,31 @@ The output of this step will include a number of implementation detail documents
 ```text
 .
 ├── CLAUDE.md
-├── memory
-│  └── constitution.md
-├── scripts
-│  ├── check-prerequisites.sh
-│  ├── common.sh
-│  ├── create-new-feature.sh
-│  ├── setup-plan.sh
-│  └── update-claude-md.sh
-├── specs
-│  └── 001-create-taskify
-│      ├── contracts
-│      │  ├── api-spec.json
-│      │  └── signalr-spec.md
-│      ├── data-model.md
-│      ├── plan.md
-│      ├── quickstart.md
-│      ├── research.md
-│      └── spec.md
-└── templates
-    ├── CLAUDE-template.md
-    ├── plan-template.md
-    ├── spec-template.md
-    └── tasks-template.md
+├── .specify
+│   ├── memory
+│   │   └── constitution.md
+│   ├── scripts
+│   │   └── bash
+│   │       ├── check-prerequisites.sh
+│   │       ├── common.sh
+│   │       ├── create-new-feature.sh
+│   │       ├── setup-plan.sh
+│   │       └── setup-tasks.sh
+│   └── templates
+│       ├── CLAUDE-template.md
+│       ├── plan-template.md
+│       ├── spec-template.md
+│       └── tasks-template.md
+└── specs
+    └── 001-create-taskify
+        ├── contracts
+        │   ├── api-spec.json
+        │   └── signalr-spec.md
+        ├── data-model.md
+        ├── plan.md
+        ├── quickstart.md
+        ├── research.md
+        └── spec.md
 ```
 
 Check the `research.md` document to ensure that the right tech stack is used, based on your instructions. You can ask Claude Code to refine it if any of the components stand out, or even have it check the locally-installed version of the platform/framework you want to use (e.g., .NET).
@@ -577,7 +566,7 @@ Once the implementation is complete, test the application and resolve any runtim
 
 ---
 
-##  Support
+## 💬 Support
 
 For support, please open a [GitHub issue](https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
 

@@ -1,0 +1,15 @@
+# Coding Agent Context Extension Configuration
+# These values are populated automatically by `specify init` and
+# `specify integration use` / `specify integration install`.
+
+# Path (relative to the project root) to the coding agent context file
+# managed by this extension (e.g. CLAUDE.md, AGENTS.md,
+# .github/copilot-instructions.md). Set automatically from the active
+# integration and regenerated during `specify init` or integration switches.
+context_file: ""
+
+# Delimiters for the managed Spec Kit section.
+# Edit these to use custom markers.
+context_markers:
+  start: "<!-- SPECKIT START -->"
+  end: "<!-- SPECKIT END -->"

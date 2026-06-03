@@ -177,7 +177,24 @@ def _register_builtins() -> None:
 
 Set `context_file` on the integration class. The base integration setup creates or updates the managed Spec Kit section in that file, and uninstall removes the managed section when appropriate.
 
-Only add custom setup logic when the agent needs non-standard behavior. Most integrations do not need wrapper scripts or separate context-update dispatch code.
+The managed section is owned by the bundled `agent-context` extension (`extensions/agent-context/`). All configuration flows through the extension's own config file at `.specify/extensions/agent-context/agent-context-config.yml`:
+
+```yaml
+# Path to the coding agent context file managed by this extension
+context_file: CLAUDE.md
+
+# Delimiters for the managed Spec Kit section
+context_markers:
+  start: "<!-- SPECKIT START -->"
+  end: "<!-- SPECKIT END -->"
+```
+
+- `context_file` is written automatically from the integration's class attribute when `specify init` or `specify integration use` is run.
+- `context_markers.{start,end}` defaults to `IntegrationBase.CONTEXT_MARKER_START` / `CONTEXT_MARKER_END`. Users who want custom markers edit `agent-context-config.yml` directly — both the Python layer (`upsert_context_section()` / `remove_context_section()`) and the bundled scripts (`extensions/agent-context/scripts/bash/update-agent-context.sh` and `.ps1`) read from this single source of truth.
+
+Users can opt out entirely with `specify extension disable agent-context`; while disabled, Spec Kit skips context-file creation, updates, and removal (the gates are inside `upsert_context_section()` and `remove_context_section()`).
+
+Only add custom setup logic when the agent needs non-standard behavior. Integrations no longer require per-agent thin wrapper scripts or shared context-update dispatcher scripts — the `agent-context` extension is fully generic.
 
 ### 5. Test it
 
@@ -379,10 +396,37 @@ Implementation: Extends `YamlIntegration` (parallel to `TomlIntegration`):
 4. Uses `yaml.safe_dump()` for header fields to ensure proper escaping
 5. Sets `context_file = "AGENTS.md"` so the base setup manages the Spec Kit context section there
 
+## Branch Naming Convention
+
+Branches follow one of two patterns depending on whether an issue exists:
+
+```
+<type>/<number>-<short-slug>   # when an issue is created first
+<type>/<short-slug>            # when no issue exists (PR-only changes)
+```
+
+When an issue exists, include its number immediately after the prefix — this is what makes branches traceable. For small or self-contained changes that go straight to a PR without a tracking issue, omit the number.
+
+| Prefix | When to use | Example |
+|---|---|---|
+| `feat/` | New features | `feat/2342-workflow-cli-alignment` |
+| `fix/` | Bug fixes | `fix/2653-paths-only-validation` |
+| `docs/` | Documentation changes | `docs/2677-branch-naming-convention`, `docs/update-landing-stats` |
+| `community/` | Community catalog additions | `community/2492-add-mde-extension` |
+| `chore/` | Maintenance, tooling, CI | `chore/2366-editorconfig` |
+
+**Rules:**
+
+1. Include the issue number when one exists — this is what makes branches traceable
+2. Use kebab-case for the slug
+3. Keep the slug short — enough to identify the work without looking up the issue
+
+---
+
 ## Common Pitfalls
 
 1. **Using shorthand keys for CLI-based integrations**: For CLI-based integrations (`requires_cli: True`), the `key` must match the executable name (e.g., `"cursor-agent"` not `"cursor"`). `shutil.which(key)` is used for CLI tool checks — mismatches require special-case mappings. IDE-based integrations (`requires_cli: False`) are not subject to this constraint.
-2. **Forgetting update scripts**: Both bash and PowerShell thin wrappers and the shared context-update scripts must be updated.
+2. **Forgetting context configuration**: The bundled `agent-context` extension reads from `.specify/extensions/agent-context/agent-context-config.yml`. New integrations only need to set `context_file` on the class — markers and dispatcher scripts are managed centrally.
 3. **Incorrect `requires_cli` value**: Set to `True` only for agents that have a CLI tool; set to `False` for IDE-based agents.
 4. **Wrong argument format**: Use `$ARGUMENTS` for Markdown agents, `{{args}}` for TOML agents.
 5. **Skipping registration**: The import and `_register()` call in `_register_builtins()` must both be added.
