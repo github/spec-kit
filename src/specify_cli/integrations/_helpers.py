@@ -7,8 +7,8 @@ from typing import Any
 
 import typer
 
-from .._agent_config import SCRIPT_TYPE_CHOICES
 from .._console import console
+from ..script_types import SCRIPT_TYPE_CHOICES, normalize_script_type
 from ..integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
     resolve_integration_options as _resolve_integration_options_impl,
@@ -161,9 +161,10 @@ class _SharedTemplateRefreshError(RuntimeError):
 
 def _normalize_script_type(script_type: str, source: str) -> str:
     """Normalize and validate a script type from CLI/config sources."""
-    normalized = script_type.strip().lower()
-    if normalized in SCRIPT_TYPE_CHOICES:
-        return normalized
+    try:
+        return normalize_script_type(script_type)
+    except ValueError:
+        pass
     console.print(
         f"[red]Error:[/red] Invalid script type {script_type!r} from {source}. "
         f"Expected one of: {', '.join(sorted(SCRIPT_TYPE_CHOICES.keys()))}."

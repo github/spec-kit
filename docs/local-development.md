@@ -2,7 +2,7 @@
 
 This guide shows how to iterate on the `specify` CLI locally without publishing a release or committing to `main` first.
 
-> Scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants. The CLI auto-selects based on OS unless you pass `--script sh|ps`.
+> Scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants. The CLI auto-selects based on OS unless you pass `--script sh|ps|both`.
 
 ## 1. Clone and Switch Branches
 
@@ -163,7 +163,7 @@ rm -rf .venv dist build *.egg-info
 | `ModuleNotFoundError: typer` | Run `uv pip install -e .` |
 | Scripts not executable (Linux) | Re-run init or `chmod +x scripts/*.sh` |
 | Git step skipped | You passed `--no-git` or Git not installed |
-| Wrong script type downloaded | Pass `--script sh` or `--script ps` explicitly |
+| Wrong script type downloaded | Pass `--script sh`, `--script ps`, or `--script both` explicitly |
 | TLS errors on corporate network | Configure your environment's certificate store or proxy. The `--skip-tls` flag is deprecated and has no effect. |
 
 ## 13. Next Steps

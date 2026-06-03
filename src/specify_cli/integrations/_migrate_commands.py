@@ -10,6 +10,7 @@ from ..integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
     with_integration_setting as _with_integration_setting,
 )
+from ..script_types import script_render_type
 from ..integration_state import (
     dedupe_integration_keys as _dedupe_integration_keys,
     default_integration_key as _default_integration_key,
@@ -40,7 +41,7 @@ from ._helpers import (
 @integration_app.command("switch")
 def integration_switch(
     target: str = typer.Argument(help="Integration key to switch to"),
-    script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
+    script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or both (default: from init-options.json or platform default)"),
     force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall of the previous integration"),
     refresh_shared_infra: bool = typer.Option(False, "--refresh-shared-infra", help="Also overwrite shared infrastructure files even if you customized them (otherwise customizations are preserved)"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the target integration'),
@@ -123,6 +124,7 @@ def integration_switch(
         raise typer.Exit(0)
 
     selected_script = _resolve_script_type(project_root, script)
+    render_script = script_render_type(selected_script)
 
     # Phase 1: Uninstall current integration (if any)
     if installed_key:
@@ -254,7 +256,7 @@ def integration_switch(
         target_integration.setup(
             project_root, manifest,
             parsed_options=parsed_options,
-            script_type=selected_script,
+            script_type=render_script,
             raw_options=raw_options,
         )
         manifest.save()
@@ -340,7 +342,7 @@ def integration_switch(
 def integration_upgrade(
     key: str | None = typer.Argument(None, help="Integration key to upgrade (default: current integration)"),
     force: bool = typer.Option(False, "--force", help="Force upgrade even if files are modified"),
-    script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
+    script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or both (default: from init-options.json or platform default)"),
     integration_options: str | None = typer.Option(None, "--integration-options", help="Options for the integration"),
 ):
     """Upgrade an integration by reinstalling with diff-aware file handling.
@@ -394,6 +396,7 @@ def integration_upgrade(
         raise typer.Exit(1)
 
     selected_script = _resolve_integration_script_type(project_root, current, key, script)
+    render_script = script_render_type(selected_script)
 
     # Build parsed options from --integration-options so the integration
     # can determine its effective invoke separator before shared infra
@@ -435,7 +438,7 @@ def integration_upgrade(
             project_root,
             new_manifest,
             parsed_options=parsed_options,
-            script_type=selected_script,
+            script_type=render_script,
             raw_options=raw_options,
         )
         settings = _with_integration_setting(

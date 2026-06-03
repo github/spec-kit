@@ -62,12 +62,14 @@ Auto behavior:
 - Windows default: `ps`
 - Other OS default: `sh`
 - Interactive mode: you'll be prompted unless you pass `--script`
+- Cross-platform opt-in: pass `--script both` to install both variants
 
 Force a specific script type:
 
 ```bash
 specify init <project_name> --script sh
 specify init <project_name> --script ps
+specify init <project_name> --script both
 ```
 
 ### Ignore Agent Tools Check
@@ -94,10 +96,11 @@ After initialization, you should see the following commands available in your co
 - `/speckit.plan` - Generate implementation plans  
 - `/speckit.tasks` - Break down into actionable tasks
 
-Scripts are installed into a variant subdirectory matching the chosen script type:
+Scripts are installed into variant subdirectories matching the chosen script type:
 
 - `.specify/scripts/bash/` — contains `.sh` scripts (default on Linux/macOS)
 - `.specify/scripts/powershell/` — contains `.ps1` scripts (default on Windows)
+- `--script both` installs both directories while generated agent commands use the OS-default primary script
 
 ## Troubleshooting
 

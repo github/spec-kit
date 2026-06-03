@@ -1,7 +1,6 @@
 """specify init command."""
 from __future__ import annotations
 
-import os
 import shlex
 import shutil
 import sys
@@ -17,7 +16,6 @@ from .._agent_config import (
     AI_ASSISTANT_ALIASES,
     AI_ASSISTANT_HELP,
     DEFAULT_INIT_INTEGRATION,
-    SCRIPT_TYPE_CHOICES,
 )
 from .._assets import (
     _locate_bundled_extension,
@@ -26,6 +24,12 @@ from .._assets import (
     get_speckit_version,
 )
 from .._console import StepTracker, console, select_with_arrows, show_banner
+from ..script_types import (
+    SCRIPT_TYPE_CHOICES,
+    default_script_type,
+    normalize_script_type,
+    script_render_type,
+)
 from .._utils import check_tool, init_git_repo, is_git_repo
 
 def _build_integration_equivalent(
@@ -99,7 +103,7 @@ def register(app: typer.Typer) -> None:
         project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
         ai_assistant: str = typer.Option(None, "--ai", help=AI_ASSISTANT_HELP),
         ai_commands_dir: str = typer.Option(None, "--ai-commands-dir", help="Directory for agent command files (required with --ai generic, e.g. .myagent/commands/)"),
-        script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
+        script_type: str = typer.Option(None, "--script", help="Script type to use: sh, ps, or both"),
         ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for coding agent tools like Claude Code"),
         no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
         here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
@@ -365,17 +369,19 @@ def register(app: typer.Typer) -> None:
                     raise typer.Exit(1)
 
         if script_type:
-            if script_type not in SCRIPT_TYPE_CHOICES:
+            try:
+                selected_script = normalize_script_type(script_type)
+            except ValueError:
                 console.print(f"[red]Error:[/red] Invalid script type '{script_type}'. Choose from: {', '.join(SCRIPT_TYPE_CHOICES.keys())}")
                 raise typer.Exit(1)
-            selected_script = script_type
         else:
-            default_script = "ps" if os.name == "nt" else "sh"
+            default_script = default_script_type()
 
             if _stdin_is_interactive():
                 selected_script = select_with_arrows(SCRIPT_TYPE_CHOICES, "Choose script type (or press Enter)", default_script)
             else:
                 selected_script = default_script
+        render_script = script_render_type(selected_script)
 
         console.print(f"[cyan]Selected coding agent integration:[/cyan] {selected_ai}")
         console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
@@ -426,7 +432,7 @@ def register(app: typer.Typer) -> None:
                 resolved_integration.setup(
                     project_path, manifest,
                     parsed_options=integration_parsed_options or None,
-                    script_type=selected_script,
+                    script_type=render_script,
                     raw_options=integration_options,
                 )
                 manifest.save()

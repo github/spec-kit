@@ -1451,8 +1451,9 @@ class TestScriptTypeValidation:
         assert result.exit_code != 0
         assert "Invalid script type" in result.output
 
-    def test_valid_script_types_accepted(self, tmp_path):
-        """Both 'sh' and 'ps' should be accepted."""
+    @pytest.mark.parametrize("script_type", ["sh", "ps", "both"])
+    def test_valid_script_types_accepted(self, tmp_path, script_type):
+        """All supported script types should be accepted."""
         project = tmp_path / "proj"
         project.mkdir()
         (project / ".specify").mkdir()
@@ -1461,7 +1462,7 @@ class TestScriptTypeValidation:
             os.chdir(project)
             result = runner.invoke(app, [
                 "integration", "install", "claude",
-                "--script", "sh",
+                "--script", script_type,
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)

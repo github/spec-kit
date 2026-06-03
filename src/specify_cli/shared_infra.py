@@ -9,6 +9,7 @@ from typing import Any
 
 from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest
+from .script_types import script_install_variants
 
 
 class SymlinkedSharedPathError(ValueError):
@@ -262,6 +263,10 @@ def install_shared_infra(
 ) -> bool:
     """Install shared scripts and templates into *project_path*.
 
+    ``script_type`` may be ``"sh"``, ``"ps"``, or ``"both"``.  The
+    ``"both"`` mode installs both script variant directories while still
+    processing templates once.
+
     When ``refresh_managed`` is True, files whose on-disk hash still matches
     the previously recorded manifest hash are overwritten with the bundled
     version. Files whose hash diverges are treated as user customizations and
@@ -345,57 +350,59 @@ def install_shared_infra(
     if scripts_src.is_dir():
         dest_scripts = project_path / ".specify" / "scripts"
         if _ensure_or_bucket_dir(dest_scripts):
-            variant_dir = "bash" if script_type == "sh" else "powershell"
-            variant_src = scripts_src / variant_dir
-            if variant_src.is_dir():
-                dest_variant = dest_scripts / variant_dir
-                if _ensure_or_bucket_dir(dest_variant):
-                    for src_path in variant_src.rglob("*"):
-                        if not src_path.is_file():
-                            continue
+            variant_dirs = {"sh": "bash", "ps": "powershell"}
+            for variant in script_install_variants(script_type):
+                variant_dir = variant_dirs[variant]
+                variant_src = scripts_src / variant_dir
+                if variant_src.is_dir():
+                    dest_variant = dest_scripts / variant_dir
+                    if _ensure_or_bucket_dir(dest_variant):
+                        for src_path in variant_src.rglob("*"):
+                            if not src_path.is_file():
+                                continue
 
-                        rel_path = src_path.relative_to(variant_src)
-                        dst_path = dest_variant / rel_path
-                        rel = dst_path.relative_to(project_path).as_posix()
-                        if not _safe_dest_or_bucket(dst_path, rel, parent_must_exist=False):
-                            continue
-                        write, bucket = _decide_overwrite(rel, dst_path)
-                        if not write:
-                            if bucket == "preserved":
-                                preserved_user_files.append(rel)
-                            else:
-                                skipped_files.append(rel)
-                                # Record the existing-on-disk file in the manifest so a
-                                # fresh manifest run against an already-populated
-                                # ``.specify/`` tree does not silently drop it (#2107).
-                                # ``prior_hashes`` is the function-scope snapshot taken
-                                # at entry, so this membership check is O(1) and avoids
-                                # the repeated ``dict(self._files)`` copy that
-                                # ``manifest.files`` performs on every access.
-                                if dst_path.is_file() and rel not in prior_hashes:
-                                    try:
-                                        manifest.record_existing(rel, recovered=True)
-                                    except (OSError, ValueError) as exc:
-                                        # Tolerate races / permission issues / non-file
-                                        # collisions so one weird path does not abort
-                                        # the whole install.
-                                        console.print(
-                                            f"[yellow]⚠[/yellow]  could not record {rel} in manifest: {exc}"
-                                        )
-                            continue
+                            rel_path = src_path.relative_to(variant_src)
+                            dst_path = dest_variant / rel_path
+                            rel = dst_path.relative_to(project_path).as_posix()
+                            if not _safe_dest_or_bucket(dst_path, rel, parent_must_exist=False):
+                                continue
+                            write, bucket = _decide_overwrite(rel, dst_path)
+                            if not write:
+                                if bucket == "preserved":
+                                    preserved_user_files.append(rel)
+                                else:
+                                    skipped_files.append(rel)
+                                    # Record the existing-on-disk file in the manifest so a
+                                    # fresh manifest run against an already-populated
+                                    # ``.specify/`` tree does not silently drop it (#2107).
+                                    # ``prior_hashes`` is the function-scope snapshot taken
+                                    # at entry, so this membership check is O(1) and avoids
+                                    # the repeated ``dict(self._files)`` copy that
+                                    # ``manifest.files`` performs on every access.
+                                    if dst_path.is_file() and rel not in prior_hashes:
+                                        try:
+                                            manifest.record_existing(rel, recovered=True)
+                                        except (OSError, ValueError) as exc:
+                                            # Tolerate races / permission issues / non-file
+                                            # collisions so one weird path does not abort
+                                            # the whole install.
+                                            console.print(
+                                                f"[yellow]⚠[/yellow]  could not record {rel} in manifest: {exc}"
+                                            )
+                                continue
 
-                        if not _ensure_or_bucket_dir(dst_path.parent):
-                            continue
-                        content = src_path.read_text(encoding="utf-8")
-                        content = IntegrationBase.resolve_command_refs(content, invoke_separator)
-                        planned_copies.append(
-                            (
-                                dst_path,
-                                rel,
-                                content.encode("utf-8"),
-                                src_path.stat().st_mode & 0o777,
+                            if not _ensure_or_bucket_dir(dst_path.parent):
+                                continue
+                            content = src_path.read_text(encoding="utf-8")
+                            content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+                            planned_copies.append(
+                                (
+                                    dst_path,
+                                    rel,
+                                    content.encode("utf-8"),
+                                    src_path.stat().st_mode & 0o777,
+                                )
                             )
-                        )
 
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
     if templates_src.is_dir():

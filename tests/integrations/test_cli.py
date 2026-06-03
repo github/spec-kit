@@ -108,6 +108,57 @@ class TestInitIntegrationFlag:
         shared_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
         assert shared_manifest.exists()
 
+    def test_integration_copilot_script_both_installs_both_variants(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.script_types import script_render_type
+
+        runner = CliRunner()
+        project = tmp_path / "both-init"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "init", "--here", "--integration", "copilot", "--script", "both", "--no-git",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+        assert (project / ".specify" / "scripts" / "bash" / "common.sh").exists()
+        assert (project / ".specify" / "scripts" / "powershell" / "common.ps1").exists()
+
+        shared_manifest = json.loads(
+            (project / ".specify" / "integrations" / "speckit.manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        files = shared_manifest["files"]
+        assert ".specify/scripts/bash/common.sh" in files
+        assert ".specify/scripts/powershell/common.ps1" in files
+
+        plan_agent = (
+            project / ".github" / "agents" / "speckit.plan.agent.md"
+        ).read_text(encoding="utf-8")
+        primary = script_render_type("both")
+        if primary == "ps":
+            assert ".specify/scripts/powershell/setup-plan.ps1 -Json" in plan_agent
+            assert ".specify/scripts/bash/setup-plan.sh" not in plan_agent
+        else:
+            assert ".specify/scripts/bash/setup-plan.sh --json" in plan_agent
+            assert ".specify/scripts/powershell/setup-plan.ps1" not in plan_agent
+
+        init_opts = json.loads(
+            (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
+        )
+        assert init_opts["script"] == "both"
+
+        integration_state = json.loads(
+            (project / ".specify" / "integration.json").read_text(encoding="utf-8")
+        )
+        assert integration_state["integration_settings"]["copilot"]["script"] == "both"
+
     def test_noninteractive_init_defaults_to_copilot(self, tmp_path, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app
@@ -296,6 +347,45 @@ class TestInitIntegrationFlag:
         # Other shared files should still be installed
         assert (scripts_dir / "setup-plan.sh").exists()
         assert (templates_dir / "plan-template.md").exists()
+
+    def test_shared_infra_both_records_both_variants_without_overwrite(self, tmp_path):
+        """Both mode installs/records bash and PowerShell while preserving files."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "both-shared-infra"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        bash_dir = project / ".specify" / "scripts" / "bash"
+        ps_dir = project / ".specify" / "scripts" / "powershell"
+        bash_dir.mkdir(parents=True)
+        ps_dir.mkdir(parents=True)
+        bash_custom = "# custom bash common\n"
+        ps_custom = "# custom ps common\n"
+        (bash_dir / "common.sh").write_text(bash_custom, encoding="utf-8")
+        (ps_dir / "common.ps1").write_text(ps_custom, encoding="utf-8")
+
+        _install_shared_infra(project, "both", force=False)
+
+        assert (bash_dir / "common.sh").read_text(encoding="utf-8") == bash_custom
+        assert (ps_dir / "common.ps1").read_text(encoding="utf-8") == ps_custom
+        assert (bash_dir / "setup-plan.sh").exists()
+        assert (ps_dir / "setup-plan.ps1").exists()
+
+        manifest = json.loads(
+            (project / ".specify" / "integrations" / "speckit.manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        files = manifest["files"]
+        assert ".specify/scripts/bash/common.sh" in files
+        assert ".specify/scripts/bash/setup-plan.sh" in files
+        assert ".specify/scripts/powershell/common.ps1" in files
+        assert ".specify/scripts/powershell/setup-plan.ps1" in files
+        assert set(manifest["recovered_files"]) >= {
+            ".specify/scripts/bash/common.sh",
+            ".specify/scripts/powershell/common.ps1",
+        }
 
     def test_shared_infra_overwrites_existing_files_with_force(self, tmp_path):
         """Pre-existing shared files ARE overwritten when force=True."""

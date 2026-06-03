@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .script_types import SCRIPT_TYPE_CHOICES as SCRIPT_TYPE_CHOICES
+
 
 def _build_agent_config() -> dict[str, dict[str, Any]]:
     from .integrations import INTEGRATION_REGISTRY
@@ -41,5 +43,3 @@ def _build_ai_assistant_help() -> str:
 
 
 AI_ASSISTANT_HELP: str = _build_ai_assistant_help()
-
-SCRIPT_TYPE_CHOICES: dict[str, str] = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}

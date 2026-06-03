@@ -57,7 +57,7 @@ specify integration install <key>
 
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
-| `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                        |
+| `--script sh\|ps\|both`  | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `both` to install both variants |
 | `--force`                | Opt in to installing alongside integrations that are not declared multi-install safe |
 | `--integration-options`  | Integration-specific options (e.g. `--integration-options="--commands-dir .myagent/cmds"`) |
 
@@ -93,7 +93,7 @@ specify integration switch <key>
 
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
-| `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                        |
+| `--script sh\|ps\|both`  | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `both` to install both variants |
 | `--force`                | Force removal of modified files during uninstall; when the target is already installed, overwrite managed shared templates while changing the default |
 | `--integration-options`  | Options for the target integration when it is not already installed      |
 
@@ -120,7 +120,7 @@ specify integration upgrade [<key>]
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
 | `--force`                | Overwrite files even if they have been modified                          |
-| `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                        |
+| `--script sh\|ps\|both`  | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `both` to install both variants |
 | `--integration-options`  | Options for the integration                                              |
 
 Reinstalls an installed integration with updated templates and commands (e.g., after upgrading Spec Kit). Defaults to the default integration; if a key is provided, it must be one of the installed integrations. Detects locally modified files and blocks the upgrade unless `--force` is used. Stale files from the previous install that are no longer needed are removed automatically. Shared templates stay aligned with the default integration even when upgrading a non-default integration.

@@ -12,7 +12,7 @@ specify init [<project_name>]
 | ------------------------ | ------------------------------------------------------------------------ |
 | `--integration <key>`    | AI coding agent integration to use (e.g. `copilot`, `claude`, `gemini`). See the [Integrations reference](integrations.md) for all available keys |
 | `--integration-options`  | Options for the integration (e.g. `--integration-options="--commands-dir .myagent/cmds"`) |
-| `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                       |
+| `--script sh\|ps\|both`  | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `both` to install both variants |
 | `--here`                 | Initialize in the current directory instead of creating a new one        |
 | `--force`                | Force merge/overwrite when initializing in an existing directory         |
 | `--no-git`               | Skip git repository initialization                                       |
@@ -44,6 +44,9 @@ specify init --here --force --integration copilot
 
 # Use PowerShell scripts (Windows/cross-platform)
 specify init my-project --integration copilot --script ps
+
+# Install both Bash and PowerShell scripts for mixed-OS teams
+specify init my-project --integration copilot --script both
 
 # Skip git initialization
 specify init my-project --integration copilot --no-git
