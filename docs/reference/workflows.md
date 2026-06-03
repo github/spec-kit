@@ -20,7 +20,7 @@ Example:
 specify workflow run speckit -i spec="Build a kanban board with drag-and-drop task management" -i scope=full
 ```
 
-> **Note:** Most workflow commands require a project already initialized with `specify init`. The exception is `specify workflow run <local-file.yml|yaml>`, which can run outside a project; in that case, run state is stored under the current directory's `.specify/workflows/runs/<run_id>/`.
+> **Note:** Most workflow commands require a project already initialized with `specify init`. The exception is `specify workflow run <local-file.{yml,yaml}>`, which can run outside a project; in that case, run state is stored under the current directory's `.specify/workflows/runs/<run_id>/`.
 
 ## Resume a Workflow
 

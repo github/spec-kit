@@ -58,6 +58,7 @@ class TestWorkflowRunWithoutProject:
         home_dir = tmp_path / "home"
         home_dir.mkdir()
         monkeypatch.setenv("HOME", str(home_dir))
+        monkeypatch.setenv("USERPROFILE", str(home_dir))
 
         workflow_file = home_dir / "test-workflow.YML"
         workflow_content = {
