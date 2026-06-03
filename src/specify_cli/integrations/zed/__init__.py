@@ -7,7 +7,7 @@ slash-command menu.
 
 from __future__ import annotations
 
-from ..base import SkillsIntegration
+from ..base import IntegrationOption, SkillsIntegration
 
 
 class ZedIntegration(SkillsIntegration):
