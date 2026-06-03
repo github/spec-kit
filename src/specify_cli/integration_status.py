@@ -138,6 +138,15 @@ def _safe_manifest_file(
     if rel_path.is_absolute() or ".." in rel_path.parts:
         return None
     candidate = project_root / rel_path
+    if not project_root_is_resolved:
+        walk = project_root
+        for part in rel_path.parts[:-1]:
+            walk = walk / part
+            try:
+                if walk.is_symlink():
+                    return None
+            except OSError:
+                return None
     try:
         candidate_parent = (
             candidate.parent.resolve(strict=False)
