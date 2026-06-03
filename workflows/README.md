@@ -78,7 +78,7 @@ specify workflow run speckit \
 
 ## Step Types
 
-Workflows support 10 built-in step types:
+Workflows support 11 built-in step types:
 
 ### Command Steps (default)
 
@@ -112,6 +112,24 @@ Run a shell command and capture output:
 - id: run-tests
   type: shell
   run: "cd {{ inputs.project_dir }} && npm test"
+```
+
+### Init Steps
+
+Bootstrap a project the same way `specify init` does — scaffolding
+templates, scripts, shared infrastructure, and the selected coding agent
+integration. Runs non-interactively (defaults to `--ignore-agent-tools`)
+and resolves the integration from the step config or the workflow default:
+
+```yaml
+- id: bootstrap
+  type: init
+  here: true                 # or: project: my-project
+  integration: copilot       # Optional: defaults to workflow integration
+  script: sh                 # Optional: sh or ps
+  no_git: true               # Optional
+  force: false               # Optional: merge into a non-empty directory
+  preset: healthcare-compliance   # Optional preset ID
 ```
 
 ### Gate Steps

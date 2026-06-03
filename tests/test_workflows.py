@@ -101,7 +101,7 @@ class TestStepRegistry:
 
         expected = {
             "command", "shell", "prompt", "gate", "if", "switch",
-            "while", "do-while", "fan-out", "fan-in",
+            "while", "do-while", "fan-out", "fan-in", "init",
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 
@@ -977,6 +977,97 @@ def _force_gate_stdin(monkeypatch, *, tty: bool):
     from specify_cli.workflows.steps import gate as gate_module
 
     monkeypatch.setattr(gate_module, "sys", _FakeSys(tty=tty))
+
+
+class TestInitStep:
+    """Test the init step type."""
+
+    def test_builds_here_argv_and_bootstraps(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        config = {"id": "bootstrap", "here": True, "script": "sh", "no_git": True}
+        result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["exit_code"] == 0
+        argv = result.output["argv"]
+        assert argv[0] == "init"
+        assert "--here" in argv
+        assert "--integration" in argv and "copilot" in argv
+        assert "--ignore-agent-tools" in argv
+        assert (tmp_path / ".specify").is_dir()
+
+    def test_default_integration_falls_back_to_workflow_default(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {"id": "bootstrap", "here": True, "script": "sh", "no_git": True}, ctx
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["integration"] == "copilot"
+
+    def test_project_name_creates_subdirectory(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {
+                "id": "bootstrap",
+                "project": "demo",
+                "script": "sh",
+                "no_git": True,
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert (tmp_path / "demo" / ".specify").is_dir()
+
+    def test_invalid_integration_fails(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(project_root=str(tmp_path))
+        result = step.execute(
+            {
+                "id": "bootstrap",
+                "here": True,
+                "integration": "no-such-agent",
+                "script": "sh",
+                "no_git": True,
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert result.output["exit_code"] != 0
+        assert result.error is not None
+
+    def test_validate_rejects_bad_script(self):
+        from specify_cli.workflows.steps.init import InitStep
+
+        step = InitStep()
+        errors = step.validate({"id": "bootstrap", "script": "bogus"})
+        assert any("'script' must be 'sh' or 'ps'" in e for e in errors)
+
+    def test_validate_accepts_valid(self):
+        from specify_cli.workflows.steps.init import InitStep
+
+        step = InitStep()
+        assert step.validate({"id": "bootstrap", "script": "sh"}) == []
 
 
 class TestGateStep:
