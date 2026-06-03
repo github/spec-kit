@@ -84,7 +84,7 @@ def test_scaffold_type_templates(
     assert f'"commands_subdir": "{commands_subdir}"' in content
     assert f'"args": "{args}"' in content
     assert f'"extension": "{extension}"' in content
-    assert "multi_install_safe = True" in content
+    assert "multi_install_safe = False" in content
 
 
 def test_dev_integration_scaffold_rejects_unknown_type_before_scaffolding(tmp_path, monkeypatch):
