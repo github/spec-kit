@@ -403,10 +403,10 @@ class WorkflowEngine:
         ValueError:
             If the workflow YAML is invalid.
         """
-        path = Path(source)
+        path = Path(source).expanduser()
 
         # Try as a direct file path first
-        if path.suffix in (".yml", ".yaml") and path.exists():
+        if path.suffix.lower() in (".yml", ".yaml") and path.exists():
             return WorkflowDefinition.from_yaml(path)
 
         # Try as an installed workflow ID
