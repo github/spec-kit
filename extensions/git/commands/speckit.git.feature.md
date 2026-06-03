@@ -54,10 +54,10 @@ Generate a concise short name (2-4 words) for the branch:
 
 Run the appropriate script based on your platform:
 
-- **Bash**: `.specify/extensions/git/scripts/bash/create-new-feature.sh --json --prefix "<prefix>" --short-name "<short-name>" "<feature description>"`
-- **Bash (timestamp)**: `.specify/extensions/git/scripts/bash/create-new-feature.sh --json --prefix "<prefix>" --timestamp --short-name "<short-name>" "<feature description>"`
-- **PowerShell**: `.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json -Prefix "<prefix>" -ShortName "<short-name>" "<feature description>"`
-- **PowerShell (timestamp)**: `.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json -Prefix "<prefix>" -Timestamp -ShortName "<short-name>" "<feature description>"`
+ - **Bash**: `.specify/extensions/git/scripts/bash/create-new-feature.sh --json [--prefix "<prefix>"] --short-name "<short-name>" "<feature description>"`
+ - **Bash (timestamp)**: `.specify/extensions/git/scripts/bash/create-new-feature.sh --json [--prefix "<prefix>"] --timestamp --short-name "<short-name>" "<feature description>"`
+ - **PowerShell**: `.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json [-Prefix "<prefix>"] -ShortName "<short-name>" "<feature description>"`
+ - **PowerShell (timestamp)**: `.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json [-Prefix "<prefix>"] -Timestamp -ShortName "<short-name>" "<feature description>"`
 
 If no prefix is needed, omit `--prefix` / `-Prefix` entirely.
 
