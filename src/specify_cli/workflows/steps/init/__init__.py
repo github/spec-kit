@@ -14,6 +14,9 @@ from typing import Any
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
 
+#: Valid ``script`` values, mirroring ``specify init --script``.
+VALID_SCRIPT_TYPES = ("sh", "ps")
+
 
 class InitStep(StepBase):
     """Bootstrap a project, equivalent to running ``specify init``.
@@ -170,9 +173,10 @@ class InitStep(StepBase):
             os.chdir(prev_cwd)
 
         stdout = result.output or ""
-        # click >= 8.2 captures stderr separately; older versions mix it in.
+        # click >= 8.2 captures stderr separately; older versions mix it into
+        # stdout and raise when ``result.stderr`` is accessed.
         try:
-            stderr = result.stderr if result.stderr_bytes is not None else ""
+            stderr = result.stderr or ""
         except (ValueError, AttributeError):
             stderr = ""
 
@@ -185,8 +189,13 @@ class InitStep(StepBase):
     def validate(self, config: dict[str, Any]) -> list[str]:
         errors = super().validate(config)
         script = config.get("script")
-        if isinstance(script, str) and "{{" not in script and script not in ("sh", "ps"):
+        if (
+            isinstance(script, str)
+            and "{{" not in script
+            and script not in VALID_SCRIPT_TYPES
+        ):
             errors.append(
-                f"Init step {config.get('id', '?')!r}: 'script' must be 'sh' or 'ps'."
+                f"Init step {config.get('id', '?')!r}: 'script' must be "
+                f"{' or '.join(repr(s) for s in VALID_SCRIPT_TYPES)}."
             )
         return errors
