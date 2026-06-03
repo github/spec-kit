@@ -2734,6 +2734,13 @@ def workflow_run(
         # When running a YAML file directly, use cwd as project root
         # without requiring a .specify/ project directory.
         project_root = Path.cwd()
+        specify_dir = project_root / ".specify"
+        if specify_dir.is_symlink():
+            console.print("[red]Error:[/red] Refusing to use symlinked .specify path in current directory")
+            raise typer.Exit(1)
+        if specify_dir.exists() and not specify_dir.is_dir():
+            console.print("[red]Error:[/red] .specify path exists but is not a directory")
+            raise typer.Exit(1)
     else:
         project_root = _require_specify_project()
 

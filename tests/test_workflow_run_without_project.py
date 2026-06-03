@@ -2,6 +2,7 @@
 
 import os
 
+import pytest
 import yaml
 
 
@@ -163,3 +164,75 @@ class TestWorkflowRunWithoutProject:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"workflow run failed unexpectedly: {result.output}"
         assert "Status: failed" in result.output
+
+    def test_workflow_run_yaml_rejects_symlinked_specify_dir(self, tmp_path):
+        """Running local YAML should fail when .specify is a symlink."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        workflow_file = tmp_path / "test-workflow.yml"
+        workflow_content = {
+            "schema_version": "1.0",
+            "workflow": {
+                "id": "symlink-test",
+                "name": "Symlink Test",
+                "version": "1.0.0",
+                "description": "A workflow for symlink guard testing",
+            },
+            "steps": [{"id": "noop", "type": "shell", "run": "echo done"}],
+        }
+        workflow_file.write_text(yaml.dump(workflow_content), encoding="utf-8")
+
+        target_dir = tmp_path / "real-specify-dir"
+        target_dir.mkdir()
+        try:
+            (tmp_path / ".specify").symlink_to(target_dir, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks are not available in this environment")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            result = runner.invoke(app, [
+                "workflow", "run", str(workflow_file),
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code != 0
+        assert "Refusing to use symlinked .specify path in current directory" in result.output
+
+    def test_workflow_run_yaml_rejects_non_directory_specify_path(self, tmp_path):
+        """Running local YAML should fail when .specify is not a directory."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        workflow_file = tmp_path / "test-workflow.yml"
+        workflow_content = {
+            "schema_version": "1.0",
+            "workflow": {
+                "id": "nondir-test",
+                "name": "Non-directory Test",
+                "version": "1.0.0",
+                "description": "A workflow for non-directory guard testing",
+            },
+            "steps": [{"id": "noop", "type": "shell", "run": "echo done"}],
+        }
+        workflow_file.write_text(yaml.dump(workflow_content), encoding="utf-8")
+        (tmp_path / ".specify").write_text("not a directory", encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            result = runner.invoke(app, [
+                "workflow", "run", str(workflow_file),
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code != 0
+        assert ".specify path exists but is not a directory" in result.output
