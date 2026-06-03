@@ -108,11 +108,23 @@ class IntegrationManifest:
         key:          Integration identifier (e.g. ``"copilot"``).
         project_root: Absolute path to the project directory.
         version:      CLI version string recorded in the manifest.
+        resolve_project_root: Resolve ``project_root`` before using it.
     """
 
-    def __init__(self, key: str, project_root: Path, version: str = "") -> None:
+    def __init__(
+        self,
+        key: str,
+        project_root: Path,
+        version: str = "",
+        *,
+        resolve_project_root: bool = True,
+    ) -> None:
         self.key = key
-        self.project_root = project_root.resolve()
+        self.project_root = (
+            project_root.resolve()
+            if resolve_project_root
+            else project_root.absolute()
+        )
         self.version = version
         self._files: dict[str, str] = {}  # rel_path → sha256 hex
         self._recovered_files: set[str] = set()
@@ -387,12 +399,18 @@ class IntegrationManifest:
         return path
 
     @classmethod
-    def load(cls, key: str, project_root: Path) -> IntegrationManifest:
+    def load(
+        cls,
+        key: str,
+        project_root: Path,
+        *,
+        resolve_project_root: bool = True,
+    ) -> IntegrationManifest:
         """Load an existing manifest from disk.
 
         Raises ``FileNotFoundError`` if the manifest does not exist.
         """
-        inst = cls(key, project_root)
+        inst = cls(key, project_root, resolve_project_root=resolve_project_root)
         path = inst.manifest_path
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
