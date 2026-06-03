@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import Any
 
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
+
+#: C0 control characters except tab — stripped from ``show_file`` content so a
+#: file containing ANSI escapes (e.g. ``\x1b[2J``) cannot clear the screen or
+#: spoof the prompt/options when its lines are printed to the terminal.
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
 
 class GateStep(StepBase):
@@ -139,6 +145,9 @@ class GateStep(StepBase):
         so a misconfigured ``show_file`` never breaks the interactive
         prompt. ``ValueError`` covers paths the OS rejects outright (e.g.
         an embedded NUL byte), which ``Path.open`` raises before any I/O.
+
+        Control characters are stripped from each line so file content
+        cannot inject ANSI escape sequences into the terminal.
         """
         lines: list[str] = []
         truncated = False
@@ -148,7 +157,7 @@ class GateStep(StepBase):
                     if len(lines) >= GateStep.MAX_SHOW_FILE_LINES:
                         truncated = True
                         break
-                    lines.append(line.rstrip("\n"))
+                    lines.append(_CONTROL_CHARS.sub("", line.rstrip("\n")))
         except (OSError, UnicodeDecodeError, ValueError) as exc:
             return [f"(could not read file: {exc})"]
         if not lines and not truncated:

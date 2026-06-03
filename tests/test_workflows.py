@@ -810,6 +810,14 @@ def _force_gate_stdin(monkeypatch, *, tty: bool):
 class TestGateStep:
     """Test the gate step type."""
 
+    @pytest.fixture(autouse=True)
+    def _non_tty_stdin_by_default(self, monkeypatch):
+        # Default every gate test to a non-TTY stdin so none can drop into
+        # the interactive prompt and block on input() when the suite runs
+        # with a real TTY. Interactive tests opt back in with
+        # _force_gate_stdin(monkeypatch, tty=True).
+        _force_gate_stdin(monkeypatch, tty=False)
+
     def test_execute_returns_paused(self):
         from specify_cli.workflows.steps.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -903,7 +911,7 @@ class TestGateStep:
         review = tmp_path / "spec.md"
         review.write_text("CONTENT\n", encoding="utf-8")
 
-        _force_gate_stdin(monkeypatch, tty=False)
+        # stdin defaults to non-TTY via the autouse fixture.
         # The non-interactive path must not read the file; hard-fail if it does.
         monkeypatch.setattr(
             GateStep,
@@ -955,6 +963,17 @@ class TestGateStep:
         assert len(rendered) == 1
         assert rendered[0].startswith("(could not read file:")
 
+    def test_read_show_file_strips_control_chars(self, tmp_path):
+        from specify_cli.workflows.steps.gate import GateStep
+
+        # A file with ANSI/control bytes must not inject escapes into the
+        # terminal; ESC and other C0 controls are stripped, tab is kept.
+        f = tmp_path / "ansi.md"
+        f.write_text("a\x1b[2Jb\tc\x07d\n", encoding="utf-8")
+        rendered = GateStep._read_show_file(str(f))
+        assert rendered == ["a[2Jb\tcd"]
+        assert "\x1b" not in rendered[0] and "\x07" not in rendered[0]
+
     def test_interactive_non_string_message_renders(self, monkeypatch, capsys):
         from specify_cli.workflows.steps.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -971,15 +990,14 @@ class TestGateStep:
         assert "123" in out
         assert result.status == StepStatus.COMPLETED
 
-    def test_templated_show_file_resolving_to_non_string_is_coerced(self, monkeypatch):
+    def test_templated_show_file_resolving_to_non_string_is_coerced(self):
         from specify_cli.workflows.steps.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         # A single-expression template can resolve to a non-string (e.g. a
         # number from a prior step); it must be coerced to str, not skipped.
-        # Force a non-TTY so the path stays non-interactive (-> PAUSED) and
-        # cannot block on input under a real terminal.
-        _force_gate_stdin(monkeypatch, tty=False)
+        # stdin defaults to non-TTY via the autouse fixture, so the path
+        # stays non-interactive (-> PAUSED) and cannot block on input.
         step = GateStep()
         ctx = StepContext(steps={"prev": {"output": {"ref": 123}}})
         config = {
