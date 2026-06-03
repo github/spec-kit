@@ -913,6 +913,15 @@ class TestGateStep:
         assert len(rendered) == GateStep.MAX_SHOW_FILE_LINES + 1
         assert "truncated" in rendered[-1]
 
+    def test_read_show_file_invalid_path_does_not_raise(self):
+        from specify_cli.workflows.steps.gate import GateStep
+
+        # An embedded NUL byte makes the OS reject the path with ValueError
+        # before any I/O; it must degrade to a notice, not crash the prompt.
+        rendered = GateStep._read_show_file("bad\x00path.md")
+        assert len(rendered) == 1
+        assert rendered[0].startswith("(could not read file:")
+
     def test_templated_show_file_resolving_to_non_string_is_coerced(self):
         from specify_cli.workflows.steps.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
