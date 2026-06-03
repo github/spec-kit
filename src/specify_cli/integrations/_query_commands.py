@@ -1,4 +1,4 @@
-"""specify integration list/use/search/info + catalog list/add/remove command handlers."""
+"""specify integration list/status/use/search/info + catalog list/add/remove command handlers."""
 from __future__ import annotations
 
 import json
