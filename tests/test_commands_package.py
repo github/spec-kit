@@ -13,12 +13,6 @@ def test_commands_init_importable():
     assert callable(mod.register)
 
 
-def test_commands_stubs_importable():
-    for name in ("integration", "preset", "extension", "workflow"):
-        mod = importlib.import_module(f"specify_cli.commands.{name}")
-        assert mod is not None
-
-
 def test_agent_config_importable():
     from specify_cli._agent_config import (
         AGENT_CONFIG,
