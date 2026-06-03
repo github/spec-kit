@@ -2761,7 +2761,7 @@ def _stdout_to_stderr_when(active: bool):
 
     Suppressing the banner and the step-start callback is not enough to
     keep a ``--json`` stream clean: individual steps may still write to
-    stdout while the engine runs — the gate step ``print``\\s its prompt,
+    stdout while the engine runs — the gate step prints its prompt,
     and the prompt step runs a subprocess that inherits the process's
     stdout file descriptor. Either would corrupt the single JSON object.
 

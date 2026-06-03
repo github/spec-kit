@@ -3147,7 +3147,7 @@ steps:
 
     def test_json_redirect_keeps_stdout_clean(self, capfd):
         # While a workflow runs under --json, steps can still write to stdout:
-        # the gate step ``print``\s its prompt and the prompt step runs a
+        # the gate step prints its prompt and the prompt step runs a
         # subprocess that inherits the stdout fd. Both must be redirected to
         # stderr so the JSON object on stdout stays parseable. capfd captures
         # at the file-descriptor level, so it sees the subprocess output too.
