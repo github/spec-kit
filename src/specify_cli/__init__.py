@@ -26,6 +26,7 @@ Or install globally:
     specify init --here
 """
 
+import contextlib
 import os
 import sys
 import zipfile
@@ -2754,6 +2755,36 @@ def _emit_workflow_json(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, indent=2))
 
 
+@contextlib.contextmanager
+def _stdout_to_stderr_when(active: bool):
+    """Redirect everything written to stdout onto stderr while *active*.
+
+    Suppressing the banner and the step-start callback is not enough to
+    keep a ``--json`` stream clean: individual steps may still write to
+    stdout while the engine runs — the gate step ``print``\\s its prompt,
+    and the prompt step runs a subprocess that inherits the process's
+    stdout file descriptor. Either would corrupt the single JSON object.
+
+    Redirecting at the file-descriptor level (``dup2``) captures both
+    Python-level writes and inherited-fd subprocess output, so step
+    progress lands on stderr (still visible to a human) while stdout
+    carries only the emitted JSON. A no-op when *active* is false.
+    """
+    if not active:
+        yield
+        return
+    sys.stdout.flush()
+    saved_stdout_fd = os.dup(1)
+    try:
+        os.dup2(2, 1)  # fd 1 (stdout) now points at fd 2 (stderr)
+        with contextlib.redirect_stdout(sys.stderr):
+            yield
+    finally:
+        sys.stdout.flush()
+        os.dup2(saved_stdout_fd, 1)  # restore the real stdout
+        os.close(saved_stdout_fd)
+
+
 @workflow_app.command("run")
 def workflow_run(
     source: str = typer.Argument(..., help="Workflow ID or YAML file path"),
@@ -2799,7 +2830,8 @@ def workflow_run(
         console.print(f"[dim]Version: {definition.version}[/dim]\n")
 
     try:
-        state = engine.execute(definition, inputs)
+        with _stdout_to_stderr_when(json_output):
+            state = engine.execute(definition, inputs)
     except ValueError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
@@ -2848,7 +2880,8 @@ def workflow_resume(
     inputs = _parse_input_values(input_values)
 
     try:
-        state = engine.resume(run_id, inputs or None)
+        with _stdout_to_stderr_when(json_output):
+            state = engine.resume(run_id, inputs or None)
     except FileNotFoundError:
         console.print(f"[red]Error:[/red] Run not found: {run_id}")
         raise typer.Exit(1)

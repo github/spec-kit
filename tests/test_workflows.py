@@ -3145,6 +3145,40 @@ steps:
         assert resumed["run_id"] == rid
         assert resumed["status"] == "paused"
 
+    def test_json_redirect_keeps_stdout_clean(self, capfd):
+        # While a workflow runs under --json, steps can still write to stdout:
+        # the gate step ``print``\s its prompt and the prompt step runs a
+        # subprocess that inherits the stdout fd. Both must be redirected to
+        # stderr so the JSON object on stdout stays parseable. capfd captures
+        # at the file-descriptor level, so it sees the subprocess output too.
+        import subprocess
+        import sys as _sys
+        from specify_cli import _stdout_to_stderr_when
+
+        print("STDOUT_BEFORE")
+        with _stdout_to_stderr_when(True):
+            print("PY_LEAK")  # Python-level write (gate-style)
+            subprocess.run(  # inherited-fd write (prompt-style)
+                [_sys.executable, "-c", "print('SUBPROC_LEAK')"],
+                check=True,
+            )
+        print("STDOUT_AFTER")
+
+        out, err = capfd.readouterr()
+        # stdout keeps only what was written outside the guarded block.
+        assert "STDOUT_BEFORE" in out and "STDOUT_AFTER" in out
+        assert "PY_LEAK" not in out and "SUBPROC_LEAK" not in out
+        # The step output is preserved on stderr, not discarded.
+        assert "PY_LEAK" in err and "SUBPROC_LEAK" in err
+
+    def test_json_redirect_inactive_is_noop(self, capfd):
+        from specify_cli import _stdout_to_stderr_when
+
+        with _stdout_to_stderr_when(False):
+            print("VISIBLE_ON_STDOUT")
+        out, _ = capfd.readouterr()
+        assert "VISIBLE_ON_STDOUT" in out
+
 
 class TestResumeWithInputs:
     """Test that `workflow resume` can accept updated workflow inputs."""
