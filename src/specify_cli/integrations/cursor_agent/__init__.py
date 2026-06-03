@@ -5,9 +5,9 @@ Commands are deprecated; ``--skills`` defaults to ``True``.
 
 The IDE/skills flow is the primary path and works without the
 ``cursor-agent`` CLI being installed (``requires_cli=False``).  Workflow
-dispatch via ``cursor-agent -p --trust <prompt>`` is offered as an
-opt-in capability — the presence of ``build_exec_args()`` is what
-indicates dispatch support, mirroring ``CopilotIntegration``.
+dispatch via ``cursor-agent -p --trust --approve-mcps --force <prompt>``
+is offered as an opt-in capability — the presence of ``build_exec_args()``
+is what indicates dispatch support, mirroring ``CopilotIntegration``.
 """
 
 from __future__ import annotations
