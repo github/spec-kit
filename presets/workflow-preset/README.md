@@ -119,7 +119,7 @@ Context-load controls:
 Release install:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.1/spec-kit-workflow-preset-v1.3.1.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.2/spec-kit-workflow-preset-v1.3.2.zip
 ```
 
 Local development install:
@@ -321,12 +321,14 @@ This repository owns preset artifact health:
 - run `tests/test_preset_contract.py`;
 - build `spec-kit-workflow-preset-v<version>.zip`;
 - smoke-install this checkout with a `specify` CLI built from `bigsmartben/spec-kit`;
-- publish or confirm the release artifact for a tag;
-- send a `workflow-preset-release` `repository_dispatch` event to `bigsmartben/spec-kit` on tag releases or manual runs with `dispatch_fork=true`.
+- publish or confirm the release artifact for a tag or manual release run;
+- create or update a `workflow-preset-release-v<version>` integration PR in `bigsmartben/spec-kit` on tag releases or manual runs with `create_integration_pr=true`.
 
-The dispatch step requires a repository secret named `SPEC_KIT_FORK_DISPATCH_TOKEN` with permission to call `repos/bigsmartben/spec-kit/dispatches`. If a tag release or manual `dispatch_fork=true` run reaches the handoff without that secret, the workflow fails fast instead of skipping dispatch.
+Manual release runs default to the next patch version when `version` is omitted. For example, a `preset.yml` version of `1.3.1` defaults to release version `1.3.2`.
 
-This repository stops after the artifact and dispatch handoff. It does not open pull requests to `github/spec-kit`. The `bigsmartben/spec-kit` fork owns downstream integration validation, core compatibility fixes, catalog resolver checks, and any later community catalog PR flow.
+The integration PR step requires a repository secret named `SPEC_KIT_FORK_PR_TOKEN` with permission to push branches and open pull requests in `bigsmartben/spec-kit`. If a tag release or manual `create_integration_pr=true` run reaches that step without the secret, the workflow fails fast instead of skipping integration PR creation.
+
+This repository owns the release artifact and the fork integration PR. It does not open pull requests to `github/spec-kit`. The `bigsmartben/spec-kit` fork owns downstream integration validation, core compatibility fixes, catalog resolver checks, and any later community catalog PR flow.
 
 Validate local installation:
 
@@ -339,7 +341,7 @@ specify preset remove workflow-preset
 After tagging a release, validate archive installation:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.1/spec-kit-workflow-preset-v1.3.1.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.2/spec-kit-workflow-preset-v1.3.2.zip
 ```
 
 ## Source Rationale

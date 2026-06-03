@@ -43,6 +43,7 @@ Map planned `U` design objects to concrete source, test, fixture, configuration,
 - produce shard plans, handoff drafts, context digest drafts
 - derive `allowed_read_paths`, `allowed_write_paths`
 - record `planner_outputs`, `draft_source`
+- mark final review shards with `task_type: code_review`
 - must not execute implementation, write final `handoff-manifest.json`, dispatch workers, update `tasks.md`
 ## Worker Agent
 - single handoff only
@@ -57,9 +58,11 @@ Map planned `U` design objects to concrete source, test, fixture, configuration,
 - write only `allowed_write_paths`
 - write `task_status_update.receipt_path` as `speckit.implement.receipt.v1`
 - validation_evidence must reference the relevant BDD scenario, behavior assertion, API contract, or quickstart path when the handoff context includes behavior contracts
+- Code review tasks must echo `task_type: code_review`, write `review_conclusion.checked_sources`, `consistency_repairs`, and `deferred_validation_todos` when applicable
+- repair design, sequence, or contract drift only inside `allowed_write_paths`; real e2e cannot run becomes a todo
 - Do not edit `tasks.md`, create handoffs, dispatch workers
 ## Lifecycle
-`intake` -> `context_indexing` -> `vertical_planning` -> `manifest_assembly` -> `worker_dispatch` -> `worker_execution` -> `receipt_review` -> `task_commit` -> `integration_verification` -> `closeout`
+`intake` -> `context_indexing` -> `vertical_planning` -> `manifest_assembly` -> `worker_dispatch` -> `worker_execution` -> `receipt_review` -> `code_review` -> `task_commit` -> `integration_verification` -> `closeout`
 ## Vertical Capabilities
 `domain-model`, `api-contract`, `persistence`, `service-flow`, `ui`, `cli`, `test-validation`, `documentation`, `integration`, `cleanup`
 ## Shard Rules
@@ -99,11 +102,19 @@ Map planned `U` design objects to concrete source, test, fixture, configuration,
 - receipt: `schemas/speckit.implement.receipt.v1.schema.json`
 ## Receipt Rejection
 - mismatched `shard_id`
+- mismatched `task_type`
 - `task_ids` outside handoff
 - `completed_task_ids` outside handoff
 - empty `validation_evidence`
 - behavior-contract task receipt missing evidence references to the relevant BDD scenario, behavior assertion, API contract, or quickstart path
 - receipt path does not equal `task_status_update.receipt_path`
+## Code Review Receipts
+- require `task_type: code_review` and `review_conclusion.checked_sources` from `allowed_read_paths` or `context_digest_path`
+- require quickstart/contract validation command evidence when `validation_commands` are declared
+- approved receipts must not contain unresolved critical/high findings
+- approved receipts are invalid when real e2e cannot run
+- `consistency_repairs` changed paths must stay inside `allowed_write_paths`
+- `deferred_validation_todos` lists missing environment, quickstart path, and commands when real e2e cannot run
 ## Dispatch Rules
 - no `context_gaps`
 - satisfied lifecycle dependencies

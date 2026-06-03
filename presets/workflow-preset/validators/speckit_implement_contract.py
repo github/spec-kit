@@ -145,6 +145,39 @@ def _receipt_references_behavior_evidence(receipt: dict[str, Any]) -> bool:
     return any(marker in evidence for marker in markers)
 
 
+def _handoff_is_code_review_task(handoff: dict[str, Any]) -> bool:
+    if handoff.get("task_type") == "code_review":
+        return True
+    text = "\n".join(str(item) for item in handoff.get("task_text", []))
+    normalized = text.lower().replace("-", " ")
+    return "code review" in normalized
+
+
+def _receipt_defers_real_e2e(receipt: dict[str, Any]) -> bool:
+    evidence = "\n".join(str(item) for item in receipt.get("validation_evidence", []))
+    normalized = evidence.lower().replace("-", " ")
+    return (
+        "real e2e" in normalized
+        and any(
+            marker in normalized
+            for marker in ("deferred", "cannot run", "unavailable", "missing")
+        )
+    )
+
+
+def _code_review_checked_source_allowed(handoff: dict[str, Any], source: Any) -> bool:
+    allowed_sources = list(handoff.get("allowed_read_paths", []))
+    context_digest_path = handoff.get("context_digest_path")
+    if context_digest_path:
+        allowed_sources.append(context_digest_path)
+    return any(_paths_overlap(source, allowed_source) for allowed_source in allowed_sources)
+
+
+def _receipt_mentions_any_command(receipt: dict[str, Any], commands: list[Any]) -> bool:
+    evidence = "\n".join(str(item) for item in receipt.get("validation_evidence", []))
+    return any(str(command) in evidence for command in commands)
+
+
 def validate_behavior_draft_contract(
     scenarios_draft: dict[str, Any],
     data_fixtures_intent: dict[str, Any],
@@ -447,6 +480,9 @@ def validate_receipt_contract(
     if "shard_id" in handoff and receipt.get("shard_id") != handoff["shard_id"]:
         raise ValueError("receipt shard_id does not match handoff")
 
+    if receipt.get("task_type") != handoff.get("task_type"):
+        raise ValueError("receipt task_type does not match handoff")
+
     handoff_task_ids = set(handoff.get("task_ids", []))
     if not set(receipt.get("task_ids", [])).issubset(handoff_task_ids):
         raise ValueError("receipt task_ids outside handoff")
@@ -468,3 +504,59 @@ def validate_receipt_contract(
     for path in receipt.get("changed_paths", []):
         if path not in handoff.get("allowed_write_paths", []):
             raise ValueError(f"receipt changed path outside allowed_write_paths: {path}")
+
+    if _handoff_is_code_review_task(handoff):
+        if receipt.get("task_type") != "code_review":
+            raise ValueError("code review receipt must declare task_type code_review")
+
+        if not isinstance(receipt.get("review_conclusion"), dict):
+            raise ValueError("code review receipt must include review_conclusion")
+
+        review_conclusion = receipt["review_conclusion"]
+        checked_sources = review_conclusion.get("checked_sources")
+        if not isinstance(checked_sources, list) or not checked_sources:
+            raise ValueError("code review receipt must include checked_sources")
+        for source in checked_sources:
+            if not _code_review_checked_source_allowed(handoff, source):
+                raise ValueError(
+                    "code review checked_sources must come from allowed_read_paths "
+                    f"or context_digest_path: {source}"
+                )
+
+        validation_commands = list(handoff.get("validation_commands", []))
+        if validation_commands and not _receipt_mentions_any_command(
+            receipt,
+            validation_commands,
+        ):
+            raise ValueError(
+                "code review validation_evidence must include quickstart/contract "
+                "validation command evidence"
+            )
+
+        for repair in receipt.get("consistency_repairs", []):
+            for path in repair.get("changed_paths", []):
+                if path not in handoff.get("allowed_write_paths", []):
+                    raise ValueError(
+                        "consistency repair changed path outside allowed_write_paths: "
+                        f"{path}"
+                    )
+
+        review_status = review_conclusion.get("status")
+        for finding in review_conclusion.get("findings", []):
+            unresolved_high = (
+                finding.get("severity") in {"critical", "high"}
+                and finding.get("resolution") in {"todo", "blocked"}
+            )
+            if review_status == "approved" and unresolved_high:
+                raise ValueError(
+                    "approved code review receipt must not include unresolved "
+                    "critical/high findings"
+                )
+
+        e2e_deferred = _receipt_defers_real_e2e(receipt)
+        if e2e_deferred and not receipt.get("deferred_validation_todos"):
+            raise ValueError(
+                "code review receipt must include deferred_validation_todos when real e2e is deferred"
+            )
+        if e2e_deferred and review_status == "approved":
+            raise ValueError("code review receipt cannot be approved when real e2e is deferred")

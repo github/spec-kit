@@ -57,4 +57,10 @@ Behavior task derivation must be explicit:
 - For each UIF api_call, create the backend/API or contract task that provides the declared method and path.
 - For each quickstart validation path, create a validation task that can collect evidence for the relevant scenario IDs and assertions.
 
+## Final Code Review
+
+When generating `tasks.md`, append the final phase after user-story tasks in the same checklist format. Add code review tasks that check design, sequence, and contract consistency against `class-diagram.md`, `contracts/sequences.md`, `contracts/`, `research.md`, and `quickstart.md`, plus real e2e environment readiness.
+
+Code review task evidence must require a `speckit.implement.receipt.v1` review receipt with `task_type: code_review`, `review_conclusion.checked_sources`, plus `review_conclusion` and, when applicable, `consistency_repairs` and `deferred_validation_todos`. The task text must require quickstart/contract validation command evidence and state that implementation drift from the plan, sequences, or contracts is repaired during `/speckit.implement` when the repair path is authorized; real e2e environment gaps are recorded as todos instead of treated as passing evidence.
+
 {CORE_TEMPLATE}
