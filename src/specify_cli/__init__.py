@@ -2728,7 +2728,7 @@ def workflow_run(
     from .workflows.engine import WorkflowEngine
 
     source_path = Path(source).expanduser()
-    is_file_source = source_path.suffix.lower() in (".yml", ".yaml") and source_path.exists()
+    is_file_source = source_path.suffix.lower() in (".yml", ".yaml") and source_path.is_file()
 
     if is_file_source:
         # When running a YAML file directly, use cwd as project root

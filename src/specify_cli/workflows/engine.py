@@ -406,7 +406,7 @@ class WorkflowEngine:
         path = Path(source).expanduser()
 
         # Try as a direct file path first
-        if path.suffix.lower() in (".yml", ".yaml") and path.exists():
+        if path.suffix.lower() in (".yml", ".yaml") and path.is_file():
             return WorkflowDefinition.from_yaml(path)
 
         # Try as an installed workflow ID
