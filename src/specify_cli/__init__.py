@@ -1680,7 +1680,7 @@ def extension_add(
                     raise typer.Exit(1)
 
                 if force:
-                    console.print(f"[yellow]--force:[/yellow] Reinstalling from [cyan]{source_path}[/cyan]...")
+                    console.print(f"[yellow]--force:[/yellow] Installing from [cyan]{source_path}[/cyan] (will overwrite if already installed)...")
 
                 manifest = manager.install_from_directory(
                     source_path,
