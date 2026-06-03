@@ -178,7 +178,7 @@ def test_setup_tasks_bash_core_template_resolved(tasks_repo: Path) -> None:
     setup-tasks.sh --json should exit 0 and return an absolute, existing
     TASKS_TEMPLATE path pointing to the core template.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
  
     result = subprocess.run(
@@ -205,7 +205,7 @@ def test_setup_tasks_bash_override_wins(tasks_repo: Path) -> None:
     When an override exists at .specify/templates/overrides/tasks-template.md,
     setup-tasks.sh --json must return the override path, not the core path.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     # Create the override
     overrides_dir = tasks_repo / ".specify" / "templates" / "overrides"
@@ -242,7 +242,7 @@ def test_setup_tasks_bash_extension_wins_over_core(tasks_repo: Path) -> None:
     When an extension template exists, setup-tasks.sh --json must resolve
     tasks-template.md from the extension before falling back to the core path.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     # FIX: real extension layout is .specify/extensions/<id>/templates/<name>.md
     extension_dir = (
@@ -280,7 +280,7 @@ def test_setup_tasks_bash_preset_wins_over_extension(tasks_repo: Path) -> None:
     When both preset and extension templates exist, setup-tasks.sh --json must
     resolve the preset path because presets outrank extensions.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     # FIX: real extension layout is .specify/extensions/<id>/templates/<name>.md
     extension_dir = (
@@ -324,7 +324,7 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
     When two presets both provide tasks-template.md, the one listed first in
     .specify/presets/.registry wins.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     # resolve_template reads .specify/presets/.registry as a JSON object with a
     # "presets" map where each entry has a numeric "priority" (lower = higher
@@ -384,7 +384,7 @@ def test_setup_tasks_bash_missing_template_errors(tasks_repo: Path) -> None:
     When tasks-template.md is absent from all locations, setup-tasks.sh must
     exit non-zero and print a helpful ERROR message to stderr.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     # Remove the core template so no template exists anywhere
     core = tasks_repo / ".specify" / "templates" / "tasks-template.md"
@@ -609,7 +609,7 @@ def test_setup_tasks_ps_core_template_resolved(tasks_repo: Path) -> None:
     setup-tasks.ps1 -Json should exit 0 and return an absolute, existing
     TASKS_TEMPLATE path.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
  
@@ -637,7 +637,7 @@ def test_setup_tasks_ps_override_wins(tasks_repo: Path) -> None:
     When an override exists at .specify/templates/overrides/tasks-template.md,
     setup-tasks.ps1 -Json must return the override path, not the core path.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     overrides_dir = tasks_repo / ".specify" / "templates" / "overrides"
     overrides_dir.mkdir(parents=True, exist_ok=True)
@@ -673,7 +673,7 @@ def test_setup_tasks_ps_missing_template_errors(tasks_repo: Path) -> None:
     When tasks-template.md is absent from all locations, setup-tasks.ps1 must
     exit non-zero and write a helpful error to stderr.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     core = tasks_repo / ".specify" / "templates" / "tasks-template.md"
     core.unlink()
