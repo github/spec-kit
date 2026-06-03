@@ -11,6 +11,7 @@ Tests cover:
 """
 
 import pytest
+import io
 import json
 import tempfile
 import shutil
@@ -18,6 +19,7 @@ import warnings
 import zipfile
 from pathlib import Path
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import yaml
 
@@ -4256,6 +4258,85 @@ class TestBundledPresetLocator:
         assert result.exit_code == 0, result.output
         assert "Lean Workflow" in result.output
         assert "installed" in result.output.lower()
+
+    def test_preset_add_from_url_rejects_insecure_redirect(self, project_dir, monkeypatch):
+        """URL installs reject redirects from HTTPS to non-loopback HTTP."""
+        import typer
+        from specify_cli import preset_add
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "http://example.com/preset.zip"
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
+        monkeypatch.setattr("specify_cli.authentication.http.open_url", lambda url, timeout: FakeResponse(b"zip"))
+
+        installed = False
+
+        def fake_install_from_zip(self, zip_path, speckit_version, priority=10):
+            nonlocal installed
+            installed = True
+
+        monkeypatch.setattr(PresetManager, "install_from_zip", fake_install_from_zip)
+
+        with pytest.raises(typer.Exit) as exc_info:
+            preset_add(preset_id=None, from_url="https://example.com/preset.zip", dev=None, priority=10)
+
+        assert exc_info.value.exit_code == 1
+        assert installed is False
+
+    def test_preset_add_from_url_streams_download_to_zip(self, project_dir, monkeypatch):
+        """URL installs stream response bytes to disk before installing the ZIP."""
+        from specify_cli import preset_add
+
+        class FakeResponse(io.BytesIO):
+            def __init__(self, data):
+                super().__init__(data)
+                self.read_sizes = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "https://example.com/preset.zip"
+
+            def read(self, size=-1):
+                assert size not in (-1, None)
+                self.read_sizes.append(size)
+                return super().read(size)
+
+        response = FakeResponse(b"zip-bytes")
+        installed = {}
+
+        def fake_install_from_zip(self, zip_path, speckit_version, priority=10):
+            installed["zip_bytes"] = Path(zip_path).read_bytes()
+            installed["speckit_version"] = speckit_version
+            installed["priority"] = priority
+            return SimpleNamespace(name="Test Preset", version="1.0.0")
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
+        monkeypatch.setattr("specify_cli.authentication.http.open_url", lambda url, timeout: response)
+        monkeypatch.setattr(PresetManager, "install_from_zip", fake_install_from_zip)
+
+        preset_add(preset_id=None, from_url="https://example.com/preset.zip", dev=None, priority=7)
+
+        assert response.read_sizes
+        assert installed == {
+            "zip_bytes": b"zip-bytes",
+            "speckit_version": "0.6.0",
+            "priority": 7,
+        }
 
     def test_bundled_preset_in_catalog(self):
         """Verify the lean preset is listed in catalog.json with bundled marker."""
