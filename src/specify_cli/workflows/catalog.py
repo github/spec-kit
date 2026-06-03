@@ -645,14 +645,16 @@ class StepRegistry:
 
     def add(self, step_id: str, metadata: dict[str, Any]) -> None:
         """Add or update an installed step entry."""
+        import copy
         from datetime import datetime, timezone
 
         existing = self.data["steps"].get(step_id, {})
-        metadata["installed_at"] = existing.get(
+        metadata_to_store = copy.deepcopy(metadata)
+        metadata_to_store["installed_at"] = existing.get(
             "installed_at", datetime.now(timezone.utc).isoformat()
         )
-        metadata["updated_at"] = datetime.now(timezone.utc).isoformat()
-        self.data["steps"][step_id] = metadata
+        metadata_to_store["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self.data["steps"][step_id] = metadata_to_store
         self.save()
 
     def remove(self, step_id: str) -> bool:
@@ -1069,9 +1071,16 @@ class StepCatalog:
         )
         data["catalogs"] = catalogs
 
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(
+                    data, f, default_flow_style=False, sort_keys=False, allow_unicode=True
+                )
+        except OSError as exc:
+            raise StepValidationError(
+                f"Failed to write catalog config {config_path}: {exc}"
+            ) from exc
 
     def remove_catalog(self, index: int) -> str:
         """Remove a catalog source by index (0-based). Returns the removed name."""
@@ -1103,8 +1112,15 @@ class StepCatalog:
         removed = catalogs.pop(index)
         data["catalogs"] = catalogs
 
-        with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(
+                    data, f, default_flow_style=False, sort_keys=False, allow_unicode=True
+                )
+        except OSError as exc:
+            raise StepValidationError(
+                f"Failed to write catalog config {config_path}: {exc}"
+            ) from exc
 
         if isinstance(removed, dict):
             return removed.get("name", f"catalog-{index + 1}")

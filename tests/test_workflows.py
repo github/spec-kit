@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -1862,6 +1863,23 @@ class TestStepRegistryCustom:
         assert entry["name"] == "Deploy"
         assert "installed_at" in entry
 
+    def test_add_does_not_mutate_input_metadata(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        metadata = {
+            "name": "Deploy",
+            "type_key": "deploy",
+            "nested": {"key": "original"},
+        }
+
+        registry.add("deploy", metadata)
+
+        assert "installed_at" not in metadata
+        assert "updated_at" not in metadata
+        metadata["nested"]["key"] = "changed-after-add"
+        assert registry.get("deploy")["nested"]["key"] == "original"
+
     def test_remove(self, project_dir):
         from specify_cli.workflows.catalog import StepRegistry
 
@@ -2084,6 +2102,41 @@ class TestStepCatalog:
 
         catalog = StepCatalog(project_dir)
         with pytest.raises(StepValidationError, match="No step catalog config file found"):
+            catalog.remove_catalog(0)
+
+    def test_add_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        import builtins
+
+        catalog = StepCatalog(project_dir)
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        real_open = builtins.open
+
+        def _raising_open(file, mode="r", *args, **kwargs):
+            if Path(file) == config_path and "w" in mode:
+                raise OSError("simulated write failure")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _raising_open)
+        with pytest.raises(StepValidationError, match="Failed to write catalog config"):
+            catalog.add_catalog("https://example.com/new-steps.json", "my-steps")
+
+    def test_remove_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        import builtins
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog("https://example.com/s1.json", "first")
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        real_open = builtins.open
+
+        def _raising_open(file, mode="r", *args, **kwargs):
+            if Path(file) == config_path and "w" in mode:
+                raise OSError("simulated write failure")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _raising_open)
+        with pytest.raises(StepValidationError, match="Failed to write catalog config"):
             catalog.remove_catalog(0)
 
     def test_get_catalog_configs(self, project_dir):
@@ -2410,3 +2463,51 @@ class TestWorkflowStepRemoveCLI:
         assert not step_dir.exists()
         registry2 = StepRegistry(project_dir)
         assert not registry2.is_installed("my-step")
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_remove_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        outside = project_dir.parent / "outside-steps"
+        outside.mkdir(parents=True, exist_ok=True)
+        steps_link = project_dir / ".specify" / "workflows" / "steps"
+        steps_link.symlink_to(outside, target_is_directory=True)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "remove", "my-step"])
+
+        assert result.exit_code != 0
+        assert "Refusing to use symlinked step directory" in result.output
+
+
+class TestWorkflowStepAddCLI:
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_add_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog
+
+        monkeypatch.chdir(project_dir)
+        outside = project_dir.parent / "outside-steps"
+        outside.mkdir(parents=True, exist_ok=True)
+        steps_link = project_dir / ".specify" / "workflows" / "steps"
+        steps_link.symlink_to(outside, target_is_directory=True)
+
+        def _fake_get_step_info(self, step_id):
+            return {
+                "id": step_id,
+                "name": "Test Step",
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+            }
+
+        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
+
+        assert result.exit_code != 0
+        assert "Refusing to use symlinked step directory" in result.output

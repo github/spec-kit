@@ -5959,6 +5959,37 @@ def _validate_step_id_or_exit(step_id: str) -> None:
         raise typer.Exit(1)
 
 
+def _resolve_steps_base_dir_or_exit(project_root: Path) -> Path:
+    """Resolve .specify/workflows/steps while refusing symlinked parent directories."""
+    project_root_resolved = project_root.resolve()
+    steps_base_dir_unresolved = project_root / ".specify" / "workflows" / "steps"
+
+    current = project_root
+    for part in (".specify", "workflows", "steps"):
+        current = current / part
+        if current.is_symlink():
+            console.print(
+                f"[red]Error:[/red] Refusing to use symlinked step directory '{current}'"
+            )
+            raise typer.Exit(1)
+        if current.exists() and not current.is_dir():
+            console.print(
+                f"[red]Error:[/red] Step directory path is not a directory: '{current}'"
+            )
+            raise typer.Exit(1)
+
+    steps_base_dir = steps_base_dir_unresolved.resolve()
+    try:
+        steps_base_dir.relative_to(project_root_resolved)
+    except ValueError:
+        console.print(
+            f"[red]Error:[/red] Step directory escapes project root: '{steps_base_dir}'"
+        )
+        raise typer.Exit(1)
+
+    return steps_base_dir
+
+
 @workflow_step_app.command("add")
 def workflow_step_add(
     step_id: str = typer.Argument(..., help="Step type ID from catalog"),
@@ -6046,7 +6077,7 @@ def workflow_step_add(
 
     _validate_step_id_or_exit(step_id)
 
-    steps_base_dir = (project_root / ".specify" / "workflows" / "steps").resolve()
+    steps_base_dir = _resolve_steps_base_dir_or_exit(project_root)
     step_dir = (steps_base_dir / step_id).resolve()
     # Defense-in-depth: ensure the resolved directory is a direct child of
     # steps_base_dir even after symlink resolution.
@@ -6210,7 +6241,7 @@ def workflow_step_remove(
     registry = StepRegistry(project_root)
     in_registry = registry.is_installed(step_id)
 
-    steps_base_dir = (project_root / ".specify" / "workflows" / "steps").resolve()
+    steps_base_dir = _resolve_steps_base_dir_or_exit(project_root)
     step_dir = (steps_base_dir / step_id).resolve()
     # Defense-in-depth: even though _validate_step_id_or_exit rejects path
     # separators, ensure that the resolved directory is a single child of
