@@ -2486,7 +2486,7 @@ class HookExecutor:
         claude_skill_mode = selected_ai == "claude" and bool(init_options.get("ai_skills"))
         kimi_skill_mode = selected_ai == "kimi"
         cursor_skill_mode = selected_ai == "cursor-agent" and bool(init_options.get("ai_skills"))
-        zed_skill_mode = selected_ai == "zed" and bool(init_options.get("ai_skills"))
+        zed_skill_mode = selected_ai == "zed"
         cline_mode = selected_ai == "cline"
 
         skill_name = self._skill_name_from_command(command_id)

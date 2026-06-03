@@ -55,3 +55,66 @@ class TestZedHookInvocations:
         assert "Executing: `/speckit-plan`" in message
         assert "EXECUTE_COMMAND: speckit.plan" in message
         assert "EXECUTE_COMMAND_INVOCATION: /speckit-plan" in message
+
+    def test_init_persists_ai_skills_for_zed(self, tmp_path):
+        """specify init --integration zed must persist ai_skills: true,
+        so HookExecutor renders slash-skill invocations without manual
+        init-options manipulation."""
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.extensions import HookExecutor
+
+        project = tmp_path / "zed-init-test"
+        project.mkdir()
+        old_cwd = None
+        try:
+            import os
+
+            old_cwd = os.getcwd()
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    "zed",
+                    "--script",
+                    "sh",
+                    "--no-git",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            if old_cwd is not None:
+                os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        opts_path = project / ".specify" / "init-options.json"
+        assert opts_path.exists()
+        opts = json.loads(opts_path.read_text(encoding="utf-8"))
+        assert opts.get("ai") == "zed"
+        assert opts.get("ai_skills") is True, (
+            f"init must persist ai_skills=true for Zed, got: {opts.get('ai_skills')}"
+        )
+
+        hook_executor = HookExecutor(project)
+        message = hook_executor.format_hook_message(
+            "before_plan",
+            [
+                {
+                    "extension": "test-ext",
+                    "command": "speckit.plan",
+                    "optional": False,
+                }
+            ],
+        )
+        assert "Executing: `/speckit-plan`" in message, (
+            "Hook rendering must produce /speckit-plan for Zed without hint injection\n"
+            f"Got message: {message}"
+        )
+        assert "EXECUTE_COMMAND_INVOCATION: /speckit-plan" in message
