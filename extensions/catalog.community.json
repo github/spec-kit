@@ -3312,7 +3312,7 @@
     "trace": {
       "name": "Spec Trace",
       "id": "trace",
-      "description": "Build a requirement \u2192 test traceability matrix from spec.md and the test suite \u2014 surface untested requirements and orphan tests",
+      "description": "Build a requirement → test traceability matrix from spec.md and the test suite — surface untested requirements and orphan tests",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-trace/archive/refs/tags/v1.0.0.zip",
