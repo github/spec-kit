@@ -6160,13 +6160,29 @@ def workflow_step_add(
             )
             extra_files = {}
         for rel_path, file_url in (extra_files or {}).items():
-            if not isinstance(rel_path, str):
+            if not isinstance(rel_path, str) or not rel_path.strip():
                 console.print(
-                    "[red]Error:[/red] Catalog entry 'extra_files' contains a non-string path key"
+                    "[red]Error:[/red] Catalog entry 'extra_files' contains an "
+                    "empty or non-string path key"
                 )
                 raise typer.Exit(1)
             if rel_path in ("step.yml", "__init__.py"):
                 continue  # already written above
+            # Reject dot-path segments ('', '.', '..') that would refer to the
+            # package directory itself (IsADirectoryError) or escape it.
+            rel_parts = Path(rel_path).parts
+            if not rel_parts or any(seg in ("", ".", "..") for seg in rel_parts):
+                console.print(
+                    f"[red]Error:[/red] extra_files path '{rel_path}' is not a "
+                    "valid relative file path"
+                )
+                raise typer.Exit(1)
+            if not isinstance(file_url, str) or not file_url.strip():
+                console.print(
+                    f"[red]Error:[/red] extra_files entry '{rel_path}' has an "
+                    "empty or non-string URL"
+                )
+                raise typer.Exit(1)
             # Resolve both destination and base to handle any symlinks in tmp_path itself,
             # ensuring the traversal check is robust even on non-canonical paths.
             resolved_base = tmp_path.resolve()

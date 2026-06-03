@@ -610,9 +610,23 @@ class StepRegistry:
         self.registry_path = self.steps_dir / self.REGISTRY_FILE
         self.data = self._load()
 
+    def _has_symlinked_parent(self) -> bool:
+        """Return True if any directory under .specify/workflows/steps is a symlink."""
+        current = self.project_root
+        for part in (".specify", "workflows", "steps"):
+            current = current / part
+            if current.is_symlink():
+                return True
+        return False
+
     def _load(self) -> dict[str, Any]:
         """Load registry from disk or create default."""
         default_registry: dict[str, Any] = {"schema_version": self.SCHEMA_VERSION, "steps": {}}
+        # Defense-in-depth: refuse to read the registry if any parent directory
+        # under .specify/workflows/steps is a symlink, which could redirect the
+        # read outside the project root.
+        if self._has_symlinked_parent():
+            return default_registry
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, encoding="utf-8") as f:

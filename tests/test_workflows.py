@@ -1981,6 +1981,24 @@ class TestStepRegistryCustom:
         registry2.add("deploy", {"name": "Deploy", "type_key": "deploy"})
         assert registry2.is_installed("deploy")
 
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_registry_load_refuses_symlinked_steps_dir(self, project_dir):
+        """A symlinked steps directory must not be read from (defense-in-depth)."""
+        from specify_cli.workflows.catalog import StepRegistry
+        import json as _json
+
+        outside = project_dir.parent / "outside-steps"
+        outside.mkdir(parents=True, exist_ok=True)
+        (outside / "step-registry.json").write_text(
+            _json.dumps({"schema_version": "1.0", "steps": {"evil": {}}}),
+            encoding="utf-8",
+        )
+        steps_link = project_dir / ".specify" / "workflows" / "steps"
+        steps_link.symlink_to(outside, target_is_directory=True)
+
+        registry = StepRegistry(project_dir)
+        assert registry.list() == {}
+
 
 # ===== Step Catalog Tests =====
 
@@ -2560,4 +2578,111 @@ class TestWorkflowStepAddCLI:
         result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
 
         assert result.exit_code != 0
-        assert "contains a non-string path key" in result.output
+        assert "non-string path key" in result.output
+
+    @pytest.mark.parametrize(
+        "rel_path,expected",
+        [
+            ("", "empty or non-string path key"),
+            (".", "not a valid relative file path"),
+            ("..", "not a valid relative file path"),
+            ("sub/../x", "not a valid relative file path"),
+        ],
+    )
+    def test_add_rejects_invalid_extra_files_path(
+        self, project_dir, monkeypatch, rel_path, expected
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+
+        def _fake_get_step_info(self, step_id):
+            return {
+                "id": step_id,
+                "name": "Test Step",
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+                "extra_files": {rel_path: "https://example.com/helper.py"},
+            }
+
+        class _FakeResponse:
+            def __init__(self, url: str):
+                self.url = url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                if self.url.endswith("/step.yml"):
+                    return b"step:\n  type_key: my-step\n"
+                return b""
+
+            def geturl(self):
+                return self.url
+
+        def _fake_open_url(url, timeout=30):
+            return _FakeResponse(url)
+
+        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
+        monkeypatch.setattr(auth_http, "open_url", _fake_open_url)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
+
+        assert result.exit_code != 0
+        assert expected in result.output
+
+    def test_add_rejects_non_string_extra_files_url(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+
+        def _fake_get_step_info(self, step_id):
+            return {
+                "id": step_id,
+                "name": "Test Step",
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+                "extra_files": {"helper.py": None},
+            }
+
+        class _FakeResponse:
+            def __init__(self, url: str):
+                self.url = url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                if self.url.endswith("/step.yml"):
+                    return b"step:\n  type_key: my-step\n"
+                return b""
+
+            def geturl(self):
+                return self.url
+
+        def _fake_open_url(url, timeout=30):
+            return _FakeResponse(url)
+
+        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
+        monkeypatch.setattr(auth_http, "open_url", _fake_open_url)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
+
+        assert result.exit_code != 0
+        assert "empty or non-string URL" in result.output
