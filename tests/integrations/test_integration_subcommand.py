@@ -3,7 +3,6 @@
 import json
 import os
 
-import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app

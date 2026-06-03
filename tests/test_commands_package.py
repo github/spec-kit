@@ -29,7 +29,7 @@ def test_agent_config_importable():
 
 
 def test_agent_config_re_exported_from_init():
-    from specify_cli import AGENT_CONFIG, AI_ASSISTANT_ALIASES, AI_ASSISTANT_HELP, SCRIPT_TYPE_CHOICES
+    from specify_cli import AGENT_CONFIG, SCRIPT_TYPE_CHOICES
     assert isinstance(AGENT_CONFIG, dict)
     assert "sh" in SCRIPT_TYPE_CHOICES
 
