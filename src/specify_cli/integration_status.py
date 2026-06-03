@@ -95,6 +95,38 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _strip_extended_length_prefix(path: Path) -> Path:
+    """Drop the Windows ``\\\\?\\`` extended-length prefix for path comparison.
+
+    ``os.readlink`` and ``Path.resolve`` can return extended-length paths on
+    Windows (e.g. ``\\\\?\\C:\\proj``). Comparing such a path against a plain
+    ``C:\\proj`` root via :meth:`Path.relative_to` would spuriously fail, so we
+    normalise both sides through this helper before containment checks.
+    """
+    raw = str(path)
+    if raw.startswith("\\\\?\\UNC\\"):
+        return Path("\\\\" + raw[len("\\\\?\\UNC\\"):])
+    if raw.startswith("\\\\?\\"):
+        return Path(raw[len("\\\\?\\"):])
+    return path
+
+
+def _is_within_project(project_root_resolved: Path, candidate: Path) -> bool:
+    """Return ``True`` when *candidate* stays within *project_root_resolved*.
+
+    Both paths are stripped of any Windows extended-length prefix first so that
+    a target produced by ``os.readlink`` (which may be ``\\\\?\\``-prefixed) is
+    still recognised as living inside an unprefixed project root.
+    """
+    try:
+        _strip_extended_length_prefix(candidate).relative_to(
+            _strip_extended_length_prefix(project_root_resolved)
+        )
+    except ValueError:
+        return False
+    return True
+
+
 def _safe_manifest_file(
     project_root: Path,
     project_root_resolved: Path,
@@ -112,8 +144,9 @@ def _safe_manifest_file(
             if project_root_is_resolved
             else candidate.parent.absolute()
         )
-        candidate_parent.relative_to(project_root_resolved)
-    except (OSError, RuntimeError, ValueError):
+    except (OSError, RuntimeError):
+        return None
+    if not _is_within_project(project_root_resolved, candidate_parent):
         return None
     return candidate
 
@@ -142,8 +175,9 @@ def _tracked_symlink_manifest_status(
             if project_root_is_resolved
             else target_path.parent.absolute()
         )
-        contained_parent.relative_to(project_root_resolved)
-    except (OSError, RuntimeError, ValueError):
+    except (OSError, RuntimeError):
+        return "invalid"
+    if not _is_within_project(project_root_resolved, contained_parent):
         return "invalid"
 
     try:

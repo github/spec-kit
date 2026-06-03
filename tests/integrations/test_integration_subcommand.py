@@ -692,6 +692,31 @@ class TestIntegrationStatus:
         assert invalid == []
         assert valid == ["tracked.md"]
 
+    def test_strip_extended_length_prefix_normalizes_windows_paths(self):
+        from specify_cli.integration_status import _strip_extended_length_prefix
+
+        # Build the prefixed strings explicitly so the test is meaningful on
+        # every platform (POSIX won't parse backslash separators, but the
+        # helper operates on the string form).
+        bs = "\\"
+        plain = f"C:{bs}proj"
+        assert str(_strip_extended_length_prefix(Path(f"{bs}{bs}?{bs}{plain}"))) == plain
+        unc = f"{bs}{bs}server{bs}share"
+        assert str(_strip_extended_length_prefix(Path(f"{bs}{bs}?{bs}UNC{bs}server{bs}share"))) == unc
+        # Paths without the prefix are returned unchanged.
+        assert _strip_extended_length_prefix(Path("relative/path")) == Path("relative/path")
+
+    def test_is_within_project_tolerates_extended_length_prefix(self):
+        from specify_cli.integration_status import _is_within_project
+
+        # A readlink result on POSIX never carries the prefix, so an in-project
+        # child is contained and an outside path is not. The Windows
+        # prefix-stripping branch is exercised by the dangling-symlink tests on
+        # Windows CI; here we lock in the cross-platform containment contract.
+        root = Path("/tmp/project").resolve()
+        assert _is_within_project(root, root / "child")
+        assert not _is_within_project(root, Path("/tmp/other").resolve())
+
     def test_status_reports_unsafe_manifest_paths_without_hashing_them(self, tmp_path, copilot_project):
         outside = tmp_path / "outside"
         outside.mkdir()
