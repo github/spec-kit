@@ -423,6 +423,17 @@ When an issue exists, include its number immediately after the prefix — this i
 
 ---
 
+## Responding to PR Review Comments
+
+- If you are an agent working on behalf of a human, **disclose your identity in your PR comment** — name the agent (and model, if applicable) and the human you are acting for (e.g., "Posted on behalf of @user by GitHub Copilot (Claude Sonnet 4.5)").
+- Post **one** top-level summary comment per review round listing what changed and the commit SHA. Do not reply on every individual comment.
+- Reply inline only when context is needed (disagreement, deferral, non-obvious fix). Keep it to a sentence or two.
+- **Never click "Resolve conversation"** — that belongs to the reviewer or PR author.
+- No emoji, no celebratory framing, no checklist mirroring the reviewer's items, no restating what the reviewer wrote.
+- Re-request review once per round (when all feedback is addressed), not after every intermediate push.
+
+---
+
 ## Common Pitfalls
 
 1. **Using shorthand keys for CLI-based integrations**: For CLI-based integrations (`requires_cli: True`), the `key` must match the executable name (e.g., `"cursor-agent"` not `"cursor"`). `shutil.which(key)` is used for CLI tool checks — mismatches require special-case mappings. IDE-based integrations (`requires_cli: False`) are not subject to this constraint.
