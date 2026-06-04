@@ -46,6 +46,17 @@ COLLECT_FILTERED=""
 CHUNK_NODES=()
 XDIST_IGNORED=0
 
+print_help() {
+    awk '
+        /^# Usage:/ {printing=1}
+        printing {
+            if ($0 !~ /^#/) {exit}
+            sub(/^# ?/, "", $0)
+            print
+        }
+    ' "$0"
+}
+
 while (( $# )); do
     case "$1" in
         --chunk-size)
@@ -82,17 +93,6 @@ mktemp_file() {
     fi
     echo "[fast-test] mktemp failed; set TMPDIR or install a compatible mktemp" >&2
     return 1
-}
-
-print_help() {
-    awk '
-        /^# Usage:/ {printing=1}
-        printing {
-            if ($0 !~ /^#/) {exit}
-            sub(/^# ?/, "", $0)
-            print
-        }
-    ' "$0"
 }
 
 # Collection and execution do not share every pytest flag. Keep runtime
@@ -176,16 +176,8 @@ else
         if [[ -f "$LOCK_DIR/pid" ]]; then
             PID_CONTENTS="$(tr -d '[:space:]' < "$LOCK_DIR/pid" 2>/dev/null || true)"
             if [[ "$PID_CONTENTS" =~ ^[0-9]+$ ]] && kill -0 "$PID_CONTENTS" 2>/dev/null; then
-                if command -v ps >/dev/null 2>&1; then
-                    CMDLINE="$(ps -p "$PID_CONTENTS" -o args= 2>/dev/null || true)"
-                    if [[ -z "$CMDLINE" || "$CMDLINE" == *"$LOCK_NAME"* ]]; then
-                        echo "[fast-test] another run is active (lock: $LOCK_DIR)" >&2
-                        exit 1
-                    fi
-                else
-                    echo "[fast-test] another run is active (lock: $LOCK_DIR)" >&2
-                    exit 1
-                fi
+                echo "[fast-test] another run is active (lock: $LOCK_DIR)" >&2
+                exit 1
             fi
             echo "[fast-test] removing stale lock (pid: ${PID_CONTENTS:-unknown})" >&2
         fi
