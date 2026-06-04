@@ -2716,6 +2716,112 @@ class TestRunState:
         with pytest.raises(FileNotFoundError):
             RunState.load("nonexistent", project_dir)
 
+    @pytest.mark.parametrize(
+        "malicious_run_id",
+        [
+            # Parent-directory traversal — the classic path-escape vector.
+            "../escape",
+            "..",
+            "../../etc/passwd",
+            # Embedded path separators — both POSIX and Windows.
+            "foo/bar",
+            "foo\\bar",
+            # Leading non-alphanumeric characters that the existing
+            # pattern's anchor blocks (would be mistaken for CLI flags
+            # or hidden files in shell completions / error messages).
+            ".hidden",
+            "-flag",
+            # NUL byte — some filesystems treat the prefix as a valid
+            # path and silently truncate at the NUL.
+            "foo\x00bar",
+            # Empty string — degenerate case, matches no file but the
+            # validator should reject it before any I/O.
+            "",
+        ],
+    )
+    def test_load_rejects_path_traversal(self, project_dir, malicious_run_id):
+        """``RunState.load`` validates ``run_id`` before touching the
+        filesystem.
+
+        Without this guard, a value like ``../escape`` passed via
+        ``specify workflow resume`` would interpolate path-traversal
+        segments into the lookup path. ``state_path.exists()`` would
+        probe arbitrary paths the process can read (a file-existence
+        oracle) and ``json.load`` would happily parse attacker-planted
+        JSON from outside ``.specify/workflows/runs/``. The check must
+        fire *before* the path is built — ``__init__``'s identical
+        regex on ``state_data["run_id"]`` fires too late.
+        """
+        from specify_cli.workflows.engine import RunState
+
+        # Plant a state.json *outside* the legitimate ``runs/`` directory
+        # at the location ``../escape`` would traverse to, so a missing
+        # guard would surface as a successful load rather than a
+        # ``FileNotFoundError`` (which would be ambiguous with the
+        # not-found case).
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        attacker_dir = project_dir / ".specify" / "workflows" / "escape"
+        attacker_dir.mkdir(exist_ok=True)
+        (attacker_dir / "state.json").write_text(
+            json.dumps(
+                {
+                    "run_id": "pwned",
+                    "workflow_id": "attacker-owned",
+                    "status": "created",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="Invalid run_id"):
+            RunState.load(malicious_run_id, project_dir)
+
+    @pytest.mark.parametrize(
+        "bad_run_id",
+        [
+            # One vector per category from ``test_load_rejects_path_traversal``
+            # — enough to prove both entry points agree without re-running
+            # the full attack matrix here.
+            "../escape",    # parent-directory traversal
+            "foo/bar",      # embedded path separator
+            ".hidden",      # leading non-alphanumeric
+            "",             # empty / degenerate
+        ],
+    )
+    def test_init_and_load_share_validation(self, project_dir, bad_run_id):
+        """``__init__`` *and* ``load`` reject the same malformed IDs.
+
+        The two entry points must stay in sync — drift would let an ID
+        slip in via one path that the other would reject, producing
+        confusing crashes mid-workflow. The previous version of this
+        test only exercised ``__init__`` and ``_validate_run_id`` (the
+        shared helper), so a regression in ``load`` — e.g. someone
+        deleting the ``cls._validate_run_id(run_id)`` call there — could
+        slip through despite ``__init__`` and the helper staying
+        aligned. We now hit ``load`` directly with the same vector so
+        any drift between the two call sites is caught by this test.
+        """
+        from specify_cli.workflows.engine import RunState
+
+        # ``__init__`` rejects up front.
+        with pytest.raises(ValueError, match="Invalid run_id"):
+            RunState(run_id=bad_run_id)
+
+        # The shared helper rejects the value too (sanity check that the
+        # ``__init__`` rejection came from the validator, not some
+        # unrelated constructor failure).
+        with pytest.raises(ValueError, match="Invalid run_id"):
+            RunState._validate_run_id(bad_run_id)
+
+        # And ``load`` rejects it *before* touching the filesystem. This
+        # is the assertion the previous version was missing: without it,
+        # a regression in ``load`` (e.g. forgetting to call the
+        # validator before building the path) would not be caught even
+        # though ``__init__`` and the helper still agreed.
+        with pytest.raises(ValueError, match="Invalid run_id"):
+            RunState.load(bad_run_id, project_dir)
+
     def test_append_log(self, project_dir):
         from specify_cli.workflows.engine import RunState
 
@@ -3026,3 +3132,118 @@ steps:
         assert state.status == RunStatus.COMPLETED
         assert "do-plan" in state.step_results
         assert "do-specify" not in state.step_results
+
+
+class TestResumeWithInputs:
+    """Test that `workflow resume` can accept updated workflow inputs."""
+
+    _WF_CMD = """
+schema_version: "1.0"
+workflow:
+  id: "resume-cmd-wf"
+  name: "Resume Cmd WF"
+  version: "1.0.0"
+inputs:
+  cmd:
+    type: string
+    default: "exit 1"
+steps:
+  - id: s
+    type: shell
+    run: "{{ inputs.cmd }}"
+"""
+
+    _WF_NUM = """
+schema_version: "1.0"
+workflow:
+  id: "resume-num-wf"
+  name: "Resume Num WF"
+  version: "1.0.0"
+inputs:
+  count:
+    type: number
+    default: 1
+steps:
+  - id: gate
+    type: gate
+    message: "Review"
+    options: [approve, reject]
+"""
+
+    def _engine(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowEngine
+        return WorkflowEngine(project_dir)
+
+    def test_resume_with_input_reruns_step_with_new_value(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string(self._WF_CMD)
+        engine = self._engine(project_dir)
+
+        state = engine.execute(definition)
+        assert state.status == RunStatus.FAILED  # "exit 1" fails
+
+        resumed = engine.resume(state.run_id, {"cmd": "exit 0"})
+        assert resumed.status == RunStatus.COMPLETED
+        assert resumed.inputs["cmd"] == "exit 0"
+
+    def test_resume_without_input_preserves_inputs(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string(self._WF_CMD)
+        engine = self._engine(project_dir)
+
+        state = engine.execute(definition)
+        assert state.status == RunStatus.FAILED
+
+        resumed = engine.resume(state.run_id)
+        assert resumed.status == RunStatus.FAILED  # still "exit 1"
+        assert resumed.inputs["cmd"] == "exit 1"
+
+    def test_resume_merges_and_coerces_typed_input(self, project_dir):
+        import json as _json
+        from specify_cli.workflows.engine import WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string(self._WF_NUM)
+        engine = self._engine(project_dir)
+
+        state = engine.execute(definition)
+        assert state.status == RunStatus.PAUSED
+
+        resumed = engine.resume(state.run_id, {"count": "5"})
+        assert resumed.inputs["count"] == 5  # coerced string -> number
+
+        inputs_file = (
+            project_dir / ".specify" / "workflows" / "runs" / state.run_id / "inputs.json"
+        )
+        assert _json.loads(inputs_file.read_text())["inputs"]["count"] == 5
+
+    def test_resume_invalid_typed_input_raises(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string(self._WF_NUM)
+        engine = self._engine(project_dir)
+
+        state = engine.execute(definition)
+        with pytest.raises(ValueError):
+            engine.resume(state.run_id, {"count": "not-a-number"})
+
+    def test_cli_resume_input_invalid_format_errors(self, project_dir):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string(self._WF_NUM)
+        state = self._engine(project_dir).execute(definition)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["workflow", "resume", state.run_id, "--input", "bogus"]
+            )
+        assert result.exit_code == 1
+        assert "Invalid input format" in result.stdout

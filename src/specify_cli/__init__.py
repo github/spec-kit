@@ -1611,6 +1611,7 @@ def extension_add(
     extension: str = typer.Argument(help="Extension name or path"),
     dev: bool = typer.Option(False, "--dev", help="Install from local directory"),
     from_url: Optional[str] = typer.Option(None, "--from", help="Install from custom URL"),
+    force: bool = typer.Option(False, "--force", help="Overwrite if already installed"),
     priority: int = typer.Option(10, "--priority", help="Resolution priority (lower = higher precedence, default 10)"),
 ):
     """Install an extension."""
@@ -1624,6 +1625,9 @@ def extension_add(
 
     manager = ExtensionManager(project_root)
     speckit_version = get_speckit_version()
+
+    if force:
+        console.print("[yellow]--force:[/yellow] Will overwrite if already installed")
 
     # Prompt for URL-based installs BEFORE the spinner so the user can
     # actually see and respond to the confirmation (the Rich status
@@ -1675,11 +1679,15 @@ def extension_add(
                     console.print(f"[red]Error:[/red] No extension.yml found in {source_path}")
                     raise typer.Exit(1)
 
+                if force:
+                    console.print(f"[yellow]--force:[/yellow] Installing from [cyan]{source_path}[/cyan] (will overwrite if already installed)...")
+
                 manifest = manager.install_from_directory(
                     source_path,
                     speckit_version,
                     priority=priority,
                     link_commands=True,
+                    force=force
                 )
 
             elif from_url:
@@ -1701,7 +1709,7 @@ def extension_add(
                     zip_path.write_bytes(zip_data)
 
                     # Install from downloaded ZIP
-                    manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
+                    manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority, force=force)
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download from {safe_url}: {e}")
                     raise typer.Exit(1)
@@ -1714,7 +1722,9 @@ def extension_add(
                 # Try bundled extensions first (shipped with spec-kit)
                 bundled_path = _locate_bundled_extension(extension)
                 if bundled_path is not None:
-                    manifest = manager.install_from_directory(bundled_path, speckit_version, priority=priority)
+                    manifest = manager.install_from_directory(
+                        bundled_path, speckit_version, priority=priority, force=force
+                    )
                 else:
                     # Install from catalog (also resolves display names to IDs)
                     catalog = ExtensionCatalog(project_root)
@@ -1735,7 +1745,9 @@ def extension_add(
                     if resolved_id != extension:
                         bundled_path = _locate_bundled_extension(resolved_id)
                         if bundled_path is not None:
-                            manifest = manager.install_from_directory(bundled_path, speckit_version, priority=priority)
+                            manifest = manager.install_from_directory(
+                                bundled_path, speckit_version, priority=priority, force=force
+                            )
 
                     if bundled_path is None:
                         # Bundled extensions without a download URL must come from the local package
@@ -1771,7 +1783,7 @@ def extension_add(
 
                         try:
                             # Install from downloaded ZIP
-                            manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
+                            manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority, force=force)
                         finally:
                             # Clean up downloaded ZIP
                             if zip_path.exists():
@@ -2717,6 +2729,22 @@ workflow_catalog_app = typer.Typer(
 workflow_app.add_typer(workflow_catalog_app, name="catalog")
 
 
+def _parse_input_values(input_values: list[str] | None) -> dict[str, Any]:
+    """Parse repeated ``key=value`` CLI inputs into a dict.
+
+    Shared by ``workflow run`` and ``workflow resume``. Exits with an error
+    on any entry missing ``=``.
+    """
+    inputs: dict[str, Any] = {}
+    for kv in input_values or []:
+        if "=" not in kv:
+            console.print(f"[red]Error:[/red] Invalid input format: {kv!r} (expected key=value)")
+            raise typer.Exit(1)
+        key, _, value = kv.partition("=")
+        inputs[key.strip()] = value.strip()
+    return inputs
+
+
 @workflow_app.command("run")
 def workflow_run(
     source: str = typer.Argument(..., help="Workflow ID or YAML file path"),
@@ -2749,14 +2777,7 @@ def workflow_run(
         raise typer.Exit(1)
 
     # Parse inputs
-    inputs: dict[str, Any] = {}
-    if input_values:
-        for kv in input_values:
-            if "=" not in kv:
-                console.print(f"[red]Error:[/red] Invalid input format: {kv!r} (expected key=value)")
-                raise typer.Exit(1)
-            key, _, value = kv.partition("=")
-            inputs[key.strip()] = value.strip()
+    inputs = _parse_input_values(input_values)
 
     console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
     console.print(f"[dim]Version: {definition.version}[/dim]\n")
@@ -2787,6 +2808,9 @@ def workflow_run(
 @workflow_app.command("resume")
 def workflow_resume(
     run_id: str = typer.Argument(..., help="Run ID to resume"),
+    input_values: list[str] | None = typer.Option(
+        None, "--input", "-i", help="Updated input values as key=value pairs"
+    ),
 ):
     """Resume a paused or failed workflow run."""
     from .workflows.engine import WorkflowEngine
@@ -2795,8 +2819,10 @@ def workflow_resume(
     engine = WorkflowEngine(project_root)
     engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
+    inputs = _parse_input_values(input_values)
+
     try:
-        state = engine.resume(run_id)
+        state = engine.resume(run_id, inputs or None)
     except FileNotFoundError:
         console.print(f"[red]Error:[/red] Run not found: {run_id}")
         raise typer.Exit(1)
@@ -3323,6 +3349,17 @@ def workflow_catalog_remove(
 
 
 def main():
+    # On Windows the default stdout/stderr code page (e.g. cp1252) cannot encode
+    # the Rich banner and box-drawing glyphs, so the CLI crashes with
+    # UnicodeEncodeError whenever output is not a UTF-8 TTY (piped, redirected to
+    # a file, or running under a legacy code page). Force UTF-8 with graceful
+    # replacement so output degrades instead of aborting. No-op on POSIX.
+    if sys.platform == "win32":
+        for _stream in (sys.stdout, sys.stderr):
+            try:
+                _stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError, OSError):
+                pass
     app()
 
 if __name__ == "__main__":

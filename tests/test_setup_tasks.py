@@ -13,8 +13,10 @@ from tests.conftest import requires_bash
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
 SETUP_TASKS_SH = PROJECT_ROOT / "scripts" / "bash" / "setup-tasks.sh"
+CHECK_PREREQ_SH = PROJECT_ROOT / "scripts" / "bash" / "check-prerequisites.sh"
 COMMON_PS = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
 SETUP_TASKS_PS = PROJECT_ROOT / "scripts" / "powershell" / "setup-tasks.ps1"
+CHECK_PREREQ_PS = PROJECT_ROOT / "scripts" / "powershell" / "check-prerequisites.ps1"
 TASKS_TEMPLATE = PROJECT_ROOT / "templates" / "tasks-template.md"
  
 HAS_PWSH = shutil.which("pwsh") is not None
@@ -30,6 +32,7 @@ def _install_bash_scripts(repo: Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     shutil.copy(COMMON_SH, d / "common.sh")
     shutil.copy(SETUP_TASKS_SH, d / "setup-tasks.sh")
+    shutil.copy(CHECK_PREREQ_SH, d / "check-prerequisites.sh")
  
  
 def _install_ps_scripts(repo: Path) -> None:
@@ -37,6 +40,7 @@ def _install_ps_scripts(repo: Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     shutil.copy(COMMON_PS, d / "common.ps1")
     shutil.copy(SETUP_TASKS_PS, d / "setup-tasks.ps1")
+    shutil.copy(CHECK_PREREQ_PS, d / "check-prerequisites.ps1")
  
  
 def _install_core_tasks_template(repo: Path) -> None:
@@ -57,6 +61,25 @@ def _minimal_feature(repo: Path) -> Path:
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
     (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
     return feat
+
+
+def _write_integration_state(repo: Path, integration: str = "claude", separator: str = "-") -> None:
+    specify_dir = repo / ".specify"
+    specify_dir.mkdir(parents=True, exist_ok=True)
+    state = {
+        "integration": integration,
+        "default_integration": integration,
+        "installed_integrations": [integration],
+        "integration_settings": {
+            integration: {
+                "invoke_separator": separator,
+            },
+        },
+    }
+    (specify_dir / "integration.json").write_text(
+        json.dumps(state),
+        encoding="utf-8",
+    )
  
  
 def _clean_env() -> dict[str, str]:
@@ -71,6 +94,38 @@ def _clean_env() -> dict[str, str]:
     return env
  
  
+def _run_bash_format_command(repo: Path, command_name: str) -> subprocess.CompletedProcess:
+    script = repo / ".specify" / "scripts" / "bash" / "common.sh"
+    return subprocess.run(
+        ["bash", "-c", 'source "$1"; format_speckit_command "$2" "$PWD"', "bash", str(script), command_name],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+
+def _run_powershell_format_command(repo: Path, command_name: str) -> subprocess.CompletedProcess:
+    script = repo / ".specify" / "scripts" / "powershell" / "common.ps1"
+    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    return subprocess.run(
+        [
+            exe,
+            "-NoProfile",
+            "-Command",
+            '& { param($common, $commandName) . $common; Format-SpecKitCommand -CommandName $commandName -RepoRoot (Get-Location).Path }',
+            str(script),
+            command_name,
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+
 def _git_init(repo: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     subprocess.run(
@@ -123,7 +178,7 @@ def test_setup_tasks_bash_core_template_resolved(tasks_repo: Path) -> None:
     setup-tasks.sh --json should exit 0 and return an absolute, existing
     TASKS_TEMPLATE path pointing to the core template.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
  
     result = subprocess.run(
@@ -150,7 +205,7 @@ def test_setup_tasks_bash_override_wins(tasks_repo: Path) -> None:
     When an override exists at .specify/templates/overrides/tasks-template.md,
     setup-tasks.sh --json must return the override path, not the core path.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     # Create the override
     overrides_dir = tasks_repo / ".specify" / "templates" / "overrides"
@@ -187,7 +242,7 @@ def test_setup_tasks_bash_extension_wins_over_core(tasks_repo: Path) -> None:
     When an extension template exists, setup-tasks.sh --json must resolve
     tasks-template.md from the extension before falling back to the core path.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     # FIX: real extension layout is .specify/extensions/<id>/templates/<name>.md
     extension_dir = (
@@ -225,7 +280,7 @@ def test_setup_tasks_bash_preset_wins_over_extension(tasks_repo: Path) -> None:
     When both preset and extension templates exist, setup-tasks.sh --json must
     resolve the preset path because presets outrank extensions.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     # FIX: real extension layout is .specify/extensions/<id>/templates/<name>.md
     extension_dir = (
@@ -269,7 +324,7 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
     When two presets both provide tasks-template.md, the one listed first in
     .specify/presets/.registry wins.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     # resolve_template reads .specify/presets/.registry as a JSON object with a
     # "presets" map where each entry has a numeric "priority" (lower = higher
@@ -329,7 +384,7 @@ def test_setup_tasks_bash_missing_template_errors(tasks_repo: Path) -> None:
     When tasks-template.md is absent from all locations, setup-tasks.sh must
     exit non-zero and print a helpful ERROR message to stderr.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     # Remove the core template so no template exists anywhere
     core = tasks_repo / ".specify" / "templates" / "tasks-template.md"
@@ -345,12 +400,138 @@ def test_setup_tasks_bash_missing_template_errors(tasks_repo: Path) -> None:
         check=False,
         env=_clean_env(),
     )
- 
+
     assert result.returncode != 0
     assert "ERROR" in result.stderr
     assert "tasks-template" in result.stderr
  
  
+@requires_bash
+def test_bash_command_hint_defaults_to_dot_without_integration_json(tasks_repo: Path) -> None:
+    integration_json = tasks_repo / ".specify" / "integration.json"
+    if integration_json.exists():
+        integration_json.unlink()
+
+    result = _run_bash_format_command(tasks_repo, "plan")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit.plan"
+
+
+@requires_bash
+def test_bash_command_hint_rejects_invalid_invoke_separator(tasks_repo: Path) -> None:
+    _write_integration_state(tasks_repo, "claude", "/")
+
+    result = _run_bash_format_command(tasks_repo, "plan")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit.plan"
+
+
+@requires_bash
+def test_bash_command_hint_normalizes_mixed_separators(tasks_repo: Path) -> None:
+    _write_integration_state(tasks_repo, "copilot", ".")
+
+    result = _run_bash_format_command(tasks_repo, "/speckit-git.commit")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit.git.commit"
+
+    _write_integration_state(tasks_repo, "claude", "-")
+
+    result = _run_bash_format_command(tasks_repo, "speckit.git-commit")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit-git-commit"
+
+
+@requires_bash
+def test_bash_command_hint_preserves_hyphens_inside_segments(tasks_repo: Path) -> None:
+    _write_integration_state(tasks_repo, "copilot", ".")
+
+    result = _run_bash_format_command(tasks_repo, "speckit.jira.sync-status")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit.jira.sync-status"
+
+
+@requires_bash
+def test_bash_command_hint_caches_invoke_separator_per_process(tasks_repo: Path) -> None:
+    _write_integration_state(tasks_repo, "claude", "-")
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "common.sh"
+    dot_state = {
+        "integration": "copilot",
+        "default_integration": "copilot",
+        "installed_integrations": ["copilot"],
+        "integration_settings": {"copilot": {"invoke_separator": "."}},
+    }
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; format_speckit_command plan "$PWD"; printf "%s" "$2" > .specify/integration.json; format_speckit_command tasks "$PWD"',
+            "bash",
+            str(script),
+            json.dumps(dot_state),
+        ],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["/speckit-plan", "/speckit-tasks"]
+
+
+@requires_bash
+def test_setup_tasks_bash_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -> None:
+    _write_integration_state(tasks_repo, "claude", "-")
+    feat = tasks_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True, exist_ok=True)
+    (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
+
+    result = subprocess.run(
+        ["bash", str(script), "--json"],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode != 0
+    assert "Run /speckit-plan first" in result.stderr
+    assert "/speckit.plan" not in result.stderr
+
+
+@requires_bash
+def test_check_prerequisites_bash_uses_invoke_separator_in_tasks_hint(
+    tasks_repo: Path,
+) -> None:
+    _write_integration_state(tasks_repo, "claude", "-")
+    _minimal_feature(tasks_repo)
+
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+
+    result = subprocess.run(
+        ["bash", str(script), "--require-tasks"],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode != 0
+    assert "Run /speckit-tasks first" in result.stderr
+    assert "/speckit.tasks" not in result.stderr
+
+
 @requires_bash
 def test_setup_tasks_bash_passes_custom_branch_when_feature_json_valid(
     tasks_repo: Path,
@@ -413,10 +594,9 @@ def test_setup_tasks_bash_fails_custom_branch_without_feature_json(
         check=False,
         env=_clean_env(),
     )
- 
+
     assert result.returncode != 0
     assert "Not on a feature branch" in result.stderr
- 
  
 # ===========================================================================
 # POWERSHELL TESTS
@@ -429,7 +609,7 @@ def test_setup_tasks_ps_core_template_resolved(tasks_repo: Path) -> None:
     setup-tasks.ps1 -Json should exit 0 and return an absolute, existing
     TASKS_TEMPLATE path.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
  
@@ -457,7 +637,7 @@ def test_setup_tasks_ps_override_wins(tasks_repo: Path) -> None:
     When an override exists at .specify/templates/overrides/tasks-template.md,
     setup-tasks.ps1 -Json must return the override path, not the core path.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     overrides_dir = tasks_repo / ".specify" / "templates" / "overrides"
     overrides_dir.mkdir(parents=True, exist_ok=True)
@@ -493,7 +673,7 @@ def test_setup_tasks_ps_missing_template_errors(tasks_repo: Path) -> None:
     When tasks-template.md is absent from all locations, setup-tasks.ps1 must
     exit non-zero and write a helpful error to stderr.
     """
-    feat = _minimal_feature(tasks_repo)
+    _minimal_feature(tasks_repo)
  
     core = tasks_repo / ".specify" / "templates" / "tasks-template.md"
     core.unlink()
@@ -514,6 +694,87 @@ def test_setup_tasks_ps_missing_template_errors(tasks_repo: Path) -> None:
     assert "tasks-template" in result.stderr.lower() or "tasks-template" in result.stdout.lower()
  
  
+@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+def test_powershell_command_hint_normalizes_mixed_separators(
+    tasks_repo: Path,
+) -> None:
+    _write_integration_state(tasks_repo, "copilot", ".")
+
+    result = _run_powershell_format_command(tasks_repo, "/speckit-git.commit")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit.git.commit"
+
+    _write_integration_state(tasks_repo, "claude", "-")
+
+    result = _run_powershell_format_command(tasks_repo, "speckit.git-commit")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit-git-commit"
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+def test_powershell_command_hint_preserves_hyphens_inside_segments(
+    tasks_repo: Path,
+) -> None:
+    _write_integration_state(tasks_repo, "copilot", ".")
+
+    result = _run_powershell_format_command(tasks_repo, "speckit.jira.sync-status")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit.jira.sync-status"
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+def test_setup_tasks_ps_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -> None:
+    _write_integration_state(tasks_repo, "claude", "-")
+    feat = tasks_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True, exist_ok=True)
+    (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+
+    script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
+    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-Json"],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    output = result.stderr + result.stdout
+    assert result.returncode != 0
+    assert "Run /speckit-plan first" in output
+    assert "/speckit.plan" not in output
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+def test_check_prerequisites_ps_uses_invoke_separator_in_tasks_hint(
+    tasks_repo: Path,
+) -> None:
+    _write_integration_state(tasks_repo, "claude", "-")
+    _minimal_feature(tasks_repo)
+
+    script = tasks_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-RequireTasks"],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    output = result.stderr + result.stdout
+    assert result.returncode != 0
+    assert "Run /speckit-tasks first" in output
+    assert "/speckit.tasks" not in output
+
+
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
 def test_setup_tasks_ps_passes_custom_branch_when_feature_json_valid(
     tasks_repo: Path,
@@ -581,4 +842,3 @@ def test_setup_tasks_ps_fails_custom_branch_without_feature_json(
  
     assert result.returncode != 0
     assert "Not on a feature branch" in result.stderr
- 

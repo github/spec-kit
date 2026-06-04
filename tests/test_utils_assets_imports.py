@@ -1,7 +1,6 @@
 """Regression guard: utility and asset symbols importable from specify_cli."""
 from specify_cli import (
-    run_command, check_tool, is_git_repo, init_git_repo,
-    handle_vscode_settings, merge_json_files,
+    check_tool, is_git_repo, merge_json_files,
     get_speckit_version,
     CLAUDE_LOCAL_PATH, CLAUDE_NPM_LOCAL_PATH,
 )
