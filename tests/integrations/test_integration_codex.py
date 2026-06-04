@@ -71,6 +71,34 @@ class TestCodexHookCommandNote:
         twice = CodexIntegration._inject_hook_command_note(once)
         assert once == twice, "Hook note injection should be idempotent"
 
+    def test_hook_note_fills_missing_repeated_instructions(self):
+        """Already-noted hook sections should not suppress later sections."""
+        from specify_cli.integrations.base import _HOOK_COMMAND_NOTE
+        from specify_cli.integrations.codex import CodexIntegration
+
+        content = (
+            "---\nname: test\n---\n\n"
+            f"{_HOOK_COMMAND_NOTE}"
+            "- For each executable hook, output the following based on its flag:\n"
+            "\n"
+            "  - For each executable hook, output the following based on its flag:\n"
+        )
+        result = CodexIntegration._inject_hook_command_note(content)
+        assert result.count("replace dots (`.`) with hyphens") == 2
+
+    def test_hook_note_not_suppressed_by_unrelated_phrase(self):
+        """Unrelated text should not trip the hook-note idempotence guard."""
+        from specify_cli.integrations.codex import CodexIntegration
+
+        content = (
+            "---\nname: test\n---\n\n"
+            "This paragraph says replace dots in a different context.\n"
+            "- For each executable hook, output the following based on its flag:\n"
+        )
+        result = CodexIntegration._inject_hook_command_note(content)
+        assert "This paragraph says replace dots in a different context." in result
+        assert result.count("replace dots (`.`) with hyphens") == 1
+
     def test_hook_note_preserves_indentation(self):
         """The injected note should match the indentation of the target line."""
         from specify_cli.integrations.codex import CodexIntegration
@@ -81,7 +109,7 @@ class TestCodexHookCommandNote:
         )
         result = CodexIntegration._inject_hook_command_note(content)
         lines = result.splitlines()
-        note_line = [l for l in lines if "replace dots" in l][0]
+        note_line = [line for line in lines if "replace dots" in line][0]
         assert note_line.startswith("   "), "Note should preserve indentation"
 
     def test_hook_note_when_instruction_is_final_line_without_newline(self):
@@ -102,11 +130,11 @@ class TestCodexHookCommandNote:
         result = CodexIntegration._inject_hook_command_note(content)
         lines = result.splitlines()
         note_line_idx = next(
-            i for i, l in enumerate(lines) if "replace dots" in l
+            i for i, line in enumerate(lines) if "replace dots" in line
         )
         instruction_line_idx = next(
-            i for i, l in enumerate(lines)
-            if l.lstrip().startswith("- For each executable hook")
+            i for i, line in enumerate(lines)
+            if line.lstrip().startswith("- For each executable hook")
         )
         assert note_line_idx < instruction_line_idx, (
             "Note must appear before the instruction"

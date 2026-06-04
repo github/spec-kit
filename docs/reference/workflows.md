@@ -28,7 +28,17 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 specify workflow resume <run_id>
 ```
 
+| Option              | Description                                              |
+| ------------------- | -------------------------------------------------------- |
+| `-i` / `--input`    | Updated input values as `key=value` (repeatable)         |
+
 Resumes a paused or failed workflow run from the exact step where it stopped. Useful after responding to a gate step or fixing an issue that caused a failure.
+
+Supplied `--input` values are merged over the run's stored inputs and re-validated against the workflow's input types, then the blocked step is re-run with the updated values. This lets a run continue with information that only became available after it paused, or with a corrected value after a failure:
+
+```bash
+specify workflow resume <run_id> --input cmd="exit 0"
+```
 
 ## Workflow Status
 

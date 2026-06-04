@@ -21,6 +21,15 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "anthropic"]
     },
+    "cline": {
+      "id": "cline",
+      "name": "Cline",
+      "version": "1.0.0",
+      "description": "Cline IDE integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide"]
+    },
     "copilot": {
       "id": "copilot",
       "name": "GitHub Copilot",
@@ -281,6 +290,15 @@
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
+    },
+    "hermes": {
+      "id": "hermes",
+      "name": "Hermes Agent",
+      "version": "1.0.0",
+      "description": "Hermes Agent skills-based integration by Nous Research",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills"]
     }
   }
 }

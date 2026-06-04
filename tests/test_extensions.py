@@ -11,6 +11,7 @@ Tests cover:
 
 import pytest
 import json
+import os
 import platform
 import tempfile
 import shutil
@@ -34,6 +35,18 @@ from specify_cli.extensions import (
     normalize_priority,
     version_satisfies,
 )
+
+
+def can_create_symlink(tmp_path: Path) -> bool:
+    """Return True when the current platform/user can create file symlinks."""
+    target = tmp_path / "symlink-target.txt"
+    link = tmp_path / "symlink-link.txt"
+    target.write_text("ok", encoding="utf-8")
+    try:
+        os.symlink(target, link)
+    except OSError:
+        return False
+    return link.is_symlink()
 
 
 # ===== Fixtures =====
@@ -780,6 +793,102 @@ class TestExtensionManager:
         with pytest.raises(ExtensionError, match="already installed"):
             manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
 
+    def test_install_force_reinstall(self, extension_dir, project_dir):
+        """Test force-reinstalling an already-installed extension."""
+        manager = ExtensionManager(project_dir)
+
+        # Install once
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+        assert manager.registry.is_installed("test-ext")
+
+        # Force-reinstall
+        manifest2 = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False, force=True
+        )
+
+        assert manifest2.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+        # Check extension directory was recreated
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        assert ext_dir.exists()
+        assert (ext_dir / "extension.yml").exists()
+        assert (ext_dir / "commands" / "hello.md").exists()
+
+    def test_install_force_config_preserved(self, extension_dir, project_dir):
+        """Test that config files are preserved when force-reinstalling."""
+        manager = ExtensionManager(project_dir)
+
+        # Install once
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        # Create a config file in the installed extension directory
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("test: config")
+
+        # Force-reinstall
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False, force=True
+        )
+
+        # Config file should still exist after reinstall
+        new_config = ext_dir / "test-ext-config.yml"
+        assert new_config.exists()
+        assert new_config.read_text() == "test: config"
+
+    def test_install_force_without_existing(self, extension_dir, project_dir):
+        """Test force-install when extension is NOT already installed (works normally)."""
+        manager = ExtensionManager(project_dir)
+
+        manifest = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False, force=True
+        )
+
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+
+    def test_install_zip_force_reinstall(self, extension_dir, project_dir):
+        """Test force-reinstalling from ZIP when already installed."""
+        import zipfile
+        import tempfile
+
+        manager = ExtensionManager(project_dir)
+
+        # Install once from directory
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        # Create a ZIP of the extension in a temp directory (not NamedTemporaryFile,
+        # which can fail on Windows due to file locking).
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = Path(tmpdir) / "test-ext.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                for f in extension_dir.rglob("*"):
+                    if f.is_file():
+                        zf.write(f, f.relative_to(extension_dir))
+
+            # Force-reinstall from ZIP
+            manifest = manager.install_from_zip(
+                zip_path, "0.1.0", force=True
+            )
+
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        assert ext_dir.exists()
+
+    def test_install_duplicate_error_mentions_force(self, extension_dir, project_dir):
+        """Test that duplicate install error message suggests --force."""
+        manager = ExtensionManager(project_dir)
+
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        with pytest.raises(ExtensionError, match="--force"):
+            manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
     def test_install_rejects_extension_id_in_core_namespace(self, temp_dir, project_dir):
         """Install should reject extension IDs that shadow core commands."""
         import yaml
@@ -1302,6 +1411,42 @@ $ARGUMENTS
         assert not (skills_dir / "speckit-specify" / "SKILL.md").exists()
         assert not (skills_dir / "speckit-shortcut" / "SKILL.md").exists()
 
+    def test_unregister_commands_handles_legacy_dot_notated_files(self, project_dir):
+        """Unregister should clean up both legacy dot-notated and new hyphenated files."""
+        # 1. Mock an agent that uses hyphenated/formatted names (e.g. Cline)
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+        registrar = AgentCommandRegistrar()
+
+        # We'll use "cline" since it has format_name
+        assert "cline" in registrar.AGENT_CONFIGS
+        cline_config = registrar.AGENT_CONFIGS["cline"]
+        cline_dir = project_dir / cline_config["dir"]
+        cline_dir.mkdir(parents=True, exist_ok=True)
+
+        # 2. Create both legacy and new files
+        # Command name: speckit.git.commit
+        # Formatted name: speckit-git-commit
+        cmd_name = "speckit.git.commit"
+        formatted_name = "speckit-git-commit"
+
+        legacy_file = cline_dir / f"{cmd_name}.md"
+        formatted_file = cline_dir / f"{formatted_name}.md"
+
+        legacy_file.write_text("legacy body")
+        formatted_file.write_text("formatted body")
+
+        assert legacy_file.exists()
+        assert formatted_file.exists()
+
+        # 3. Call unregister
+        registrar.unregister_commands({"cline": [cmd_name]}, project_dir)
+
+        # 4. Verify both are gone
+        assert not legacy_file.exists(), "Legacy dot-notated file should be removed"
+        assert (
+            not formatted_file.exists()
+        ), "Formatted hyphenated file should be removed"
+
     def test_register_commands_for_all_agents_distinguishes_codex_from_amp(self, extension_dir, project_dir):
         """A Codex project under .agents/skills should not implicitly activate Amp."""
         skills_dir = project_dir / ".agents" / "skills"
@@ -1721,6 +1866,168 @@ Run {SCRIPT}
         content = cmd_file.read_text()
         assert "description: Test hello command" in content
         assert "test-ext" in content
+
+    def test_dev_register_commands_symlinks_rendered_copilot_agent(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        """Dev-mode registration should symlink agent files to rendered outputs."""
+        if not can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registered = registrar.register_commands_for_agent(
+            "copilot",
+            manifest,
+            extension_dir,
+            project_dir,
+            link_outputs=True,
+        )
+
+        assert registered == ["speckit.test-ext.hello"]
+
+        cmd_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        assert cmd_file.is_symlink()
+
+        target = cmd_file.resolve()
+        assert ".specify-dev" in target.parts
+        assert target.is_file()
+        assert "Extension: test-ext" in cmd_file.read_text(encoding="utf-8")
+
+    def test_dev_register_commands_falls_back_to_copy_when_symlink_fails(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Dev-mode registration stays functional when symlinks are unavailable."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        def raise_symlink_error(target, link):
+            raise OSError("symlink unavailable")
+
+        monkeypatch.setattr("specify_cli.agents.os.symlink", raise_symlink_error)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "copilot",
+            manifest,
+            extension_dir,
+            project_dir,
+            link_outputs=True,
+        )
+
+        cmd_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        assert cmd_file.exists()
+        assert not cmd_file.is_symlink()
+        assert "Extension: test-ext" in cmd_file.read_text(encoding="utf-8")
+        assert (
+            extension_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "copilot"
+            / "speckit.test-ext.hello.agent.md"
+        ).exists()
+
+    def test_dev_register_commands_falls_back_to_copy_when_relpath_fails(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Dev-mode registration stays functional across Windows drive roots."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        def raise_relpath_error(path, start=None):
+            raise ValueError("path is on mount 'D:', start on mount 'C:'")
+
+        monkeypatch.setattr("specify_cli.agents.os.path.relpath", raise_relpath_error)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "copilot",
+            manifest,
+            extension_dir,
+            project_dir,
+            link_outputs=True,
+        )
+
+        cmd_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        assert cmd_file.exists()
+        assert not cmd_file.is_symlink()
+        assert "Extension: test-ext" in cmd_file.read_text(encoding="utf-8")
+        assert (
+            extension_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "copilot"
+            / "speckit.test-ext.hello.agent.md"
+        ).exists()
+
+    def test_dev_register_commands_falls_back_to_copy_when_cache_write_fails(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Dev-mode registration stays functional when the dev cache is unwritable."""
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+        original_write_text = Path.write_text
+
+        def raise_cache_write_error(path, *args, **kwargs):
+            if ".specify-dev" in path.parts:
+                raise OSError("cache is not writable")
+            return original_write_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", raise_cache_write_error)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "copilot",
+            manifest,
+            extension_dir,
+            project_dir,
+            link_outputs=True,
+        )
+
+        cmd_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        assert cmd_file.exists()
+        assert not cmd_file.is_symlink()
+        assert "Extension: test-ext" in cmd_file.read_text(encoding="utf-8")
+        assert not (
+            extension_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "copilot"
+            / "speckit.test-ext.hello.agent.md"
+        ).exists()
+
+    def test_dev_register_commands_rejects_cache_path_traversal(self, temp_dir):
+        """Dev-mode cache writes must stay inside the agent cache root."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        source_dir = temp_dir / "extension"
+        source_dir.mkdir()
+        commands_dir = temp_dir / "commands"
+        commands_dir.mkdir()
+
+        with pytest.raises(ValueError, match="escapes directory"):
+            AgentCommandRegistrar._write_registered_output(
+                commands_dir / "safe.md",
+                "content",
+                source_dir,
+                "copilot",
+                "../escaped",
+                ".md",
+                True,
+            )
+
+        assert not (
+            source_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "escaped.md"
+        ).exists()
 
     def test_copilot_companion_prompt_created(self, extension_dir, project_dir):
         """Test that companion .prompt.md files are created in .github/prompts/."""
@@ -2593,17 +2900,33 @@ class TestExtensionCatalog:
             zf.writestr("extension.yml", "id: test-ext\nname: Test\nversion: 1.0.0\n")
         zip_bytes = zip_buf.getvalue()
 
-        mock_response = MagicMock()
-        mock_response.read.return_value = zip_bytes
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        release_response = MagicMock()
+        release_response.read.return_value = json.dumps(
+            {
+                "assets": [
+                    {
+                        "name": "test-ext.zip",
+                        "url": "https://api.github.com/repos/org/repo/releases/assets/1",
+                    }
+                ]
+            }
+        ).encode()
+        release_response.__enter__ = lambda s: s
+        release_response.__exit__ = MagicMock(return_value=False)
 
-        captured = {}
+        asset_response = MagicMock()
+        asset_response.read.return_value = zip_bytes
+        asset_response.__enter__ = lambda s: s
+        asset_response.__exit__ = MagicMock(return_value=False)
+
+        captured = []
         mock_opener = MagicMock()
 
         def fake_open(req, timeout=None):
-            captured["req"] = req
-            return mock_response
+            captured.append(req)
+            if req.full_url.endswith("/releases/tags/v1"):
+                return release_response
+            return asset_response
 
         mock_opener.open.side_effect = fake_open
 
@@ -2618,7 +2941,56 @@ class TestExtensionCatalog:
              patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             catalog.download_extension("test-ext", target_dir=temp_dir)
 
-        assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/tags/v1"
+        assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[1].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
+        assert captured[1].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[1].get_header("Accept") == "application/octet-stream"
+
+    def test_download_extension_accepts_direct_github_rest_asset_url(self, temp_dir, monkeypatch):
+        """download_extension can use a GitHub REST release asset URL directly."""
+        from unittest.mock import patch, MagicMock
+        import zipfile
+        import io
+
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
+        catalog = self._make_catalog(temp_dir)
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("extension.yml", "id: test-ext\nname: Test\nversion: 1.0.0\n")
+        zip_bytes = zip_buf.getvalue()
+
+        asset_response = MagicMock()
+        asset_response.read.return_value = zip_bytes
+        asset_response.__enter__ = lambda s: s
+        asset_response.__exit__ = MagicMock(return_value=False)
+
+        captured = []
+        mock_opener = MagicMock()
+
+        def fake_open(req, timeout=None):
+            captured.append(req)
+            return asset_response
+
+        mock_opener.open.side_effect = fake_open
+
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://api.github.com/repos/org/repo/releases/assets/1",
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
+            catalog.download_extension("test-ext", target_dir=temp_dir)
+
+        assert len(captured) == 1
+        assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
+        assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[0].get_header("Accept") == "application/octet-stream"
 
 
 
@@ -3147,9 +3519,13 @@ class TestExtensionIgnore:
                 else:
                     p.write_text(content)
 
-        # Write .extensionignore
+        # Write .extensionignore. Pinned to UTF-8 so non-ASCII patterns
+        # in tests (see ``test_extensionignore_utf8_patterns``) survive
+        # the round-trip on Windows runners with non-UTF-8 default locales.
         if ignore_content is not None:
-            (ext_dir / ".extensionignore").write_text(ignore_content)
+            (ext_dir / ".extensionignore").write_text(
+                ignore_content, encoding="utf-8"
+            )
 
         return ext_dir
 
@@ -3379,6 +3755,73 @@ class TestExtensionIgnore:
         assert (dest / "docs" / "guide.md").exists()
         assert not (dest / "docs" / "internal" / "draft.md").exists()
 
+    def test_extensionignore_utf8_patterns(self, temp_dir, valid_manifest_data):
+        """Non-ASCII patterns in .extensionignore work on every locale.
+
+        ``Path.read_text`` defaults to the system locale codec on Windows
+        (cp1252 / gb2312 / cp932). Without an explicit ``encoding="utf-8"``,
+        a pattern like ``ドキュメント/`` written by a UTF-8 host becomes
+        mojibake on a cp1252 host and silently fails to match — leaking
+        files the author intended to exclude. The existing
+        ``test_extensionignore_windows_backslash_patterns`` already shows
+        the codebase treats this as a Windows-author-friendly file; UTF-8
+        is part of that same contract.
+        """
+        ext_dir = self._make_extension(
+            temp_dir,
+            valid_manifest_data,
+            extra_files={
+                "ドキュメント/private.md": "secret",
+                "ドキュメント/public.md": "public",
+                "docs/guide.md": "# Guide",
+                "café/résumé.txt": "draft",
+            },
+            ignore_content="ドキュメント/\ncafé/\n",
+        )
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        dest = proj_dir / ".specify" / "extensions" / "test-ext"
+        # Multibyte patterns excluded.
+        assert not (dest / "ドキュメント").exists()
+        assert not (dest / "café").exists()
+        # ASCII path with no matching pattern is unaffected.
+        assert (dest / "docs" / "guide.md").exists()
+
+    def test_extensionignore_invalid_utf8_raises_validation_error(
+        self, temp_dir, valid_manifest_data
+    ):
+        """A non-UTF-8 ``.extensionignore`` surfaces as ``ValidationError``.
+
+        Pinning ``encoding="utf-8"`` on the reader means an
+        ``.extensionignore`` written in some other codec (cp1252, etc.)
+        now triggers ``UnicodeDecodeError`` instead of silently
+        mojibake-ing patterns. Wrap that exception as ``ValidationError``
+        with a pointer to the offending byte — the same pattern
+        ``ExtensionManifest._load_yaml`` uses for ``extension.yml`` —
+        so installation aborts with a user-friendly message instead of a
+        raw Python traceback.
+        """
+        ext_dir = self._make_extension(temp_dir, valid_manifest_data)
+        # Write an .extensionignore whose bytes are not valid UTF-8.
+        # 0xE9 is 'é' in cp1252 but an invalid lead byte in UTF-8.
+        (ext_dir / ".extensionignore").write_bytes(b"caf\xe9/\n")
+
+        proj_dir = temp_dir / "project"
+        proj_dir.mkdir()
+        (proj_dir / ".specify").mkdir()
+
+        manager = ExtensionManager(proj_dir)
+        with pytest.raises(
+            ValidationError, match=r"\.extensionignore is not valid UTF-8"
+        ):
+            manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
     def test_extensionignore_star_does_not_cross_directories(self, temp_dir, valid_manifest_data):
         """'*' should NOT match across directory boundaries (gitignore semantics)."""
         ext_dir = self._make_extension(
@@ -3457,6 +3900,86 @@ class TestExtensionIgnore:
 
 class TestExtensionAddCLI:
     """CLI integration tests for extension add command."""
+
+    def test_add_dev_links_copilot_agent_when_supported(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        """extension add --dev should link generated agent files when possible."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+
+        agent_file = (
+            project_dir
+            / ".github"
+            / "agents"
+            / "speckit.test-ext.hello.agent.md"
+        )
+        assert agent_file.exists()
+        if can_create_symlink(temp_dir):
+            assert agent_file.is_symlink()
+            assert ".specify-dev" in agent_file.resolve().parts
+        else:
+            assert not agent_file.is_symlink()
+
+    def test_add_dev_falls_back_to_copy_when_windows_symlinks_unavailable(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """extension add --dev should work when Windows cannot create symlinks."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+
+        def raise_windows_symlink_error(target, link):
+            raise OSError("A required privilege is not held by the client")
+
+        monkeypatch.setattr(
+            "specify_cli.agents.os.symlink", raise_windows_symlink_error
+        )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+
+        agent_file = (
+            project_dir
+            / ".github"
+            / "agents"
+            / "speckit.test-ext.hello.agent.md"
+        )
+        assert agent_file.exists()
+        assert not agent_file.is_symlink()
+        assert "Extension: test-ext" in agent_file.read_text(encoding="utf-8")
+        assert (
+            project_dir
+            / ".specify"
+            / "extensions"
+            / "test-ext"
+            / ".specify-dev"
+            / "agent-commands"
+            / "copilot"
+            / "speckit.test-ext.hello.agent.md"
+        ).exists()
 
     def test_add_by_display_name_uses_resolved_id_for_download(self, tmp_path):
         """extension add by display name should use resolved ID for download_extension()."""
@@ -3551,6 +4074,67 @@ class TestExtensionAddCLI:
         assert result.exit_code != 0
         assert "bundled with spec-kit" in result.output
         assert "reinstall" in result.output.lower()
+
+    def test_add_from_url_prompts_before_spinner(self, tmp_path):
+        """Confirm prompt for --from <url> must fire before the console.status spinner.
+
+        Regression test for #2783: typer.confirm() inside console.status()
+        was overwritten by the Rich spinner, making the command appear hung.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        call_order: list[str] = []
+
+        original_status = MagicMock()
+
+        def record_status(*args, **kwargs):
+            call_order.append("spinner")
+            return original_status
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.console.status", side_effect=record_status), \
+             patch("typer.confirm", side_effect=lambda *a, **kw: (call_order.append("confirm"), False)[-1]):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert "confirm" in call_order, "confirm prompt was never called"
+        # The confirm must fire BEFORE the spinner is entered
+        if "spinner" in call_order:
+            assert call_order.index("confirm") < call_order.index("spinner"), \
+                f"confirm must precede spinner, got: {call_order}"
+        assert result.exit_code == 0  # user declined → clean exit
+
+    def test_add_from_url_cancel_exits_cleanly(self, tmp_path):
+        """Declining the --from <url> confirmation should exit with code 0."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=False):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0
+        assert "Cancelled" in result.output
 
 
 class TestDownloadExtensionBundled:
@@ -3744,12 +4328,19 @@ class TestExtensionUpdateCLI:
         ).read_text()
         assert restored_config_content == original_config_content
 
-    def test_update_failure_rolls_back_registry_hooks_and_commands(self, tmp_path):
+    def test_update_failure_rolls_back_registry_hooks_and_commands(self, tmp_path, monkeypatch):
         """Failed update should restore original registry, hooks, and command files."""
         from typer.testing import CliRunner
         from unittest.mock import patch
         from specify_cli import app
         import yaml
+
+        # Isolate home directory so Hermes' global ~/.hermes/skills/ doesn't
+        # interfere — without a real skills dir, Hermes is skipped during
+        # command registration, keeping the test focused on Claude/Codex/etc.
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
 
         runner = CliRunner()
         project_dir = tmp_path / "project"
@@ -3772,7 +4363,9 @@ class TestExtensionUpdateCLI:
             if agent_name not in agent_registrar.AGENT_CONFIGS:
                 continue
             agent_cfg = agent_registrar.AGENT_CONFIGS[agent_name]
-            commands_dir = project_dir / agent_cfg["dir"]
+            commands_dir = AgentRegistrar._resolve_agent_dir(
+                agent_name, agent_cfg, project_dir
+            )
             for cmd_name in cmd_names:
                 output_name = AgentRegistrar._compute_output_name(agent_name, cmd_name, agent_cfg)
                 cmd_path = commands_dir / f"{output_name}{agent_cfg['extension']}"
@@ -4291,6 +4884,43 @@ class TestHookInvocationRendering:
         assert execution["command"] == "speckit.tasks"
         assert execution["invocation"] == "$speckit-tasks"
 
+    def test_cline_hooks_render_hyphenated_invocation(self, project_dir):
+        """Cline projects should render /speckit-* invocations."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "cline"}))
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "speckit.tasks",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "speckit.tasks"
+        assert execution["invocation"] == "/speckit-tasks"
+
+    def test_cline_hooks_render_extension_command(self, project_dir):
+        """Cline projects should render /speckit-my-ext-cmd for extension hooks."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "cline"}))
+
+        hook_executor = HookExecutor(project_dir)
+        # Test with a non-speckit. command
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "my-extension.do-something",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "my-extension.do-something"
+        assert execution["invocation"] == "/speckit-my-extension-do-something"
+
     def test_non_skill_command_keeps_slash_invocation(self, project_dir):
         """Custom hook commands should keep slash invocation style."""
         init_options = project_dir / ".specify" / "init-options.json"
@@ -4426,3 +5056,223 @@ class TestExtensionRemoveCLI:
             )
 
         assert "2 commands" in result.output
+
+
+class TestClineExtensionHyphenation:
+    """Test that Cline integration uses hyphenated commands and frontmatter references."""
+
+    def _setup_mock_extension(self, tmp_path, ai_name):
+        import yaml
+        import json
+
+        # 1. Setup mock project
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.write_text(json.dumps({"ai": ai_name}), encoding="utf-8")
+
+        if ai_name == "cline":
+            commands_dest_dir = project_dir / ".clinerules" / "workflows"
+        else:
+            commands_dest_dir = project_dir / ".agents" / "commands"
+        commands_dest_dir.mkdir(parents=True, exist_ok=True)
+
+        # 2. Setup mock extension directory
+        ext_dir = tmp_path / "mock-ext"
+        ext_dir.mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "mock-ext",
+                "name": "Mock Extension",
+                "version": "1.0.0",
+                "description": f"Mock extension for {ai_name} tests",
+                "author": "Tester",
+                "repository": "https://github.com/test/mock-ext",
+                "license": "MIT",
+            },
+            "requires": {
+                "speckit_version": ">=0.1.0",
+            },
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.mock-ext.hello",
+                        "file": "commands/hello.md",
+                        "description": "Test hello command",
+                        "aliases": ["speckit.mock-ext.greet"]
+                    }
+                ]
+            }
+        }
+
+        with open(ext_dir / "extension.yml", "w", encoding="utf-8") as f:
+            yaml.dump(manifest_data, f)
+
+        commands_dir = ext_dir / "commands"
+        commands_dir.mkdir()
+
+        # Command file with dotted speckit references in frontmatter and body
+        cmd_content = """---
+description: "Test hello command"
+agent: speckit.tasks
+handoffs:
+  - agent: speckit.iterate.start
+    message: "Hand off to start"
+---
+
+# Test Hello Command
+
+Please refer to speckit.mock-ext.greet for instructions.
+$ARGUMENTS
+"""
+        (commands_dir / "hello.md").write_text(cmd_content, encoding="utf-8")
+
+        return project_dir, ext_dir, commands_dest_dir
+
+    def test_cline_extension_hyphenation(self, tmp_path):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.agents import CommandRegistrar
+
+        project_dir, ext_dir, cline_workflows_dir = self._setup_mock_extension(tmp_path, "cline")
+
+        # 3. Run specify extension add
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["extension", "add", str(ext_dir), "--dev"], catch_exceptions=False
+            )
+
+        # Verify CLI printed hyphenated commands
+        # Note: We assert that the primary command 'speckit-mock-ext-hello' is printed,
+        # but we do not assert that the alias 'speckit-mock-ext-greet' is printed in the console
+        # because manifest.commands only lists primary commands.
+        assert "speckit-mock-ext-hello" in result.output
+        assert "speckit.mock-ext.hello" not in result.output
+
+        # Verify on-disk command names are hyphenated
+        hello_file = cline_workflows_dir / "speckit-mock-ext-hello.md"
+        greet_file = cline_workflows_dir / "speckit-mock-ext-greet.md"
+
+        assert hello_file.exists()
+        assert greet_file.exists()
+
+        # Verify frontmatter in the generated files is recursively hyphenated
+        hello_text = hello_file.read_text(encoding="utf-8")
+        hello_fm, hello_body = CommandRegistrar.parse_frontmatter(hello_text)
+        assert hello_fm["agent"] == "speckit-tasks"
+        assert hello_fm["handoffs"][0]["agent"] == "speckit-iterate-start"
+
+        # Verify body references are hyphenated for Cline
+        assert "speckit-mock-ext-greet" in hello_body
+        assert "speckit.mock-ext.greet" not in hello_body
+
+    def test_non_cline_extension_no_hyphenation(self, tmp_path):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.agents import CommandRegistrar
+
+        project_dir, ext_dir, claude_commands_dir = self._setup_mock_extension(tmp_path, "claude")
+
+        # 3. Run specify extension add
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app, ["extension", "add", str(ext_dir), "--dev"], catch_exceptions=False
+            )
+
+        # Verify CLI printed dotted commands
+        # Note: We assert that the primary command 'speckit.mock-ext.hello' is printed,
+        # but we do not assert that the alias 'speckit.mock-ext.greet' is printed in the console
+        # because manifest.commands only lists primary commands.
+        assert "speckit.mock-ext.hello" in result.output
+        assert "speckit-mock-ext-hello" not in result.output
+
+        # Verify on-disk command names are dotted
+        hello_file = claude_commands_dir / "speckit.mock-ext.hello.md"
+        greet_file = claude_commands_dir / "speckit.mock-ext.greet.md"
+
+        assert hello_file.exists()
+        assert greet_file.exists()
+
+        # Verify frontmatter references are still dotted
+        hello_text = hello_file.read_text(encoding="utf-8")
+        hello_fm, hello_body = CommandRegistrar.parse_frontmatter(hello_text)
+        assert hello_fm["agent"] == "speckit.tasks"
+        assert hello_fm["handoffs"][0]["agent"] == "speckit.iterate.start"
+
+        # Verify body references are still dotted for non-Cline
+        assert "speckit.mock-ext.greet" in hello_body
+        assert "speckit-mock-ext-greet" not in hello_body
+
+
+class TestExtensionForceCLI:
+    """CLI tests for `specify extension add --dev --force`."""
+
+    def _create_minimal_extension(self, base_dir: str | Path, ext_id: str = "test-ext") -> Path:
+        """Create a minimal extension directory with manifest."""
+        import yaml
+
+        ext_dir = Path(base_dir) / ext_id
+        ext_dir.mkdir(parents=True, exist_ok=True)
+        (ext_dir / "commands").mkdir()
+
+        manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": ext_id,
+                "name": "Test Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": f"speckit.{ext_id}.hello",
+                        "file": "commands/hello.md",
+                        "description": "Test command",
+                    }
+                ]
+            },
+        }
+
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest))
+        (ext_dir / "commands" / "hello.md").write_text(
+            "---\ndescription: Test\n---\n\nHello $ARGUMENTS\n"
+        )
+        return ext_dir
+
+    def test_add_dev_force_reinstall(self, tmp_path):
+        """extension add --dev --force should reinstall without error."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        ext_src = self._create_minimal_extension(tmp_path)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            # First install
+            result1 = runner.invoke(
+                app, ["extension", "add", str(ext_src), "--dev"], catch_exceptions=False
+            )
+            assert result1.exit_code == 0, strip_ansi(result1.output)
+            assert "installed" in strip_ansi(result1.output)
+
+            # Force reinstall
+            result2 = runner.invoke(
+                app, ["extension", "add", str(ext_src), "--dev", "--force"], catch_exceptions=False
+            )
+            assert result2.exit_code == 0, strip_ansi(result2.output)
+            assert "installed" in strip_ansi(result2.output)

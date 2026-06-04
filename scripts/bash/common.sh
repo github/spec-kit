@@ -186,7 +186,7 @@ read_feature_json_feature_directory() {
 }
 
 # Returns 0 when .specify/feature.json lists feature_directory that exists as a directory
-# and matches the resolved active FEATURE_DIR (so /speckit.plan can skip git branch pattern checks).
+# and matches the resolved active FEATURE_DIR (so __SPECKIT_COMMAND_PLAN__ can skip git branch pattern checks).
 # Delegates parsing to read_feature_json_feature_directory, which is safe under `set -e`.
 feature_json_matches_feature_dir() {
     local repo_root="$1"
@@ -262,7 +262,7 @@ get_feature_paths() {
 
     # Resolve feature directory.  Priority:
     #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit override)
-    #   2. .specify/feature.json "feature_directory" key (persisted by /speckit.specify)
+    #   2. .specify/feature.json "feature_directory" key (persisted by __SPECKIT_COMMAND_SPECIFY__)
     #   3. Branch-name-based prefix lookup (legacy fallback)
     local feature_dir
     if [[ -n "${SPECIFY_FEATURE_DIRECTORY:-}" ]]; then
@@ -305,6 +305,83 @@ get_feature_paths() {
 # Check if jq is available for safe JSON construction
 has_jq() {
     command -v jq >/dev/null 2>&1
+}
+
+get_invoke_separator() {
+    local repo_root="${1:-$(get_repo_root)}"
+    if [[ "${_SPECIFY_INVOKE_SEPARATOR_CACHE_REPO_ROOT:-}" == "$repo_root" && -n "${_SPECIFY_INVOKE_SEPARATOR_CACHE_VALUE:-}" ]]; then
+        printf '%s\n' "$_SPECIFY_INVOKE_SEPARATOR_CACHE_VALUE"
+        return 0
+    fi
+
+    local integration_json="$repo_root/.specify/integration.json"
+    local separator="."
+    local parsed_with_jq=0
+
+    if [[ -f "$integration_json" ]]; then
+        if command -v jq >/dev/null 2>&1; then
+            local jq_separator
+            if jq_separator=$(jq -r '(.default_integration // .integration // "") as $k | if $k == "" then "." else (.integration_settings[$k].invoke_separator // ".") end' "$integration_json" 2>/dev/null); then
+                parsed_with_jq=1
+                case "$jq_separator" in
+                    "."|"-") separator="$jq_separator" ;;
+                esac
+            fi
+        fi
+
+        if [[ "$parsed_with_jq" -eq 0 ]] && command -v python3 >/dev/null 2>&1; then
+            if separator=$(python3 - "$integration_json" <<'PY' 2>/dev/null
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        state = json.load(fh)
+    key = state.get("default_integration") or state.get("integration") or ""
+    settings = state.get("integration_settings")
+    separator = "."
+    if isinstance(key, str) and isinstance(settings, dict):
+        entry = settings.get(key)
+        if isinstance(entry, dict) and entry.get("invoke_separator") in {".", "-"}:
+            separator = entry["invoke_separator"]
+    print(separator)
+except Exception:
+    print(".")
+PY
+); then
+                case "$separator" in
+                    "."|"-") ;;
+                    *) separator="." ;;
+                esac
+            else
+                separator="."
+            fi
+        fi
+    fi
+
+    _SPECIFY_INVOKE_SEPARATOR_CACHE_REPO_ROOT="$repo_root"
+    _SPECIFY_INVOKE_SEPARATOR_CACHE_VALUE="$separator"
+    printf '%s\n' "$separator"
+}
+
+format_speckit_command() {
+    local command_name="$1"
+    local repo_root="${2:-$(get_repo_root)}"
+    local separator
+    if [[ "${_SPECIFY_INVOKE_SEPARATOR_CACHE_REPO_ROOT:-}" == "$repo_root" && -n "${_SPECIFY_INVOKE_SEPARATOR_CACHE_VALUE:-}" ]]; then
+        separator="$_SPECIFY_INVOKE_SEPARATOR_CACHE_VALUE"
+    else
+        separator=$(get_invoke_separator "$repo_root")
+        _SPECIFY_INVOKE_SEPARATOR_CACHE_REPO_ROOT="$repo_root"
+        _SPECIFY_INVOKE_SEPARATOR_CACHE_VALUE="$separator"
+    fi
+
+    command_name="${command_name#/}"
+    command_name="${command_name#speckit.}"
+    command_name="${command_name#speckit-}"
+    command_name="${command_name//./$separator}"
+
+    printf '/speckit%s%s\n' "$separator" "$command_name"
 }
 
 # Escape a string for safe embedding in a JSON value (fallback when jq is unavailable).
@@ -642,4 +719,3 @@ except Exception:
     printf '%s' "$content"
     return 0
 }
-

@@ -151,11 +151,14 @@ def register(app: typer.Typer) -> None:
         # Lazy imports to avoid circular dependency — __init__.py imports this module
         from .. import (
             _install_shared_infra_or_exit,
-            _parse_integration_options,
             _print_cli_warning,
-            _write_integration_json,
+            _update_agent_context_config_file,
             ensure_executable_scripts,
             save_init_options,
+        )
+        from ..integrations._commands import (
+            _parse_integration_options,
+            _write_integration_json,
         )
         from ..integration_runtime import with_integration_setting as _with_integration_setting
 
@@ -394,6 +397,7 @@ def register(app: typer.Typer) -> None:
             ("constitution", "Constitution setup"),
             ("git", "Install git extension"),
             ("workflow", "Install bundled workflow"),
+            ("agent-context", "Install agent-context extension"),
             ("final", "Finalize"),
         ]:
             tracker.add(key, label)
@@ -535,13 +539,10 @@ def register(app: typer.Typer) -> None:
                     sanitized_wf = str(wf_err).replace('\n', ' ').strip()
                     tracker.error("workflow", f"install failed: {sanitized_wf[:120]}")
 
-                ensure_executable_scripts(project_path, tracker=tracker)
-
                 init_opts = {
                     "ai": selected_ai,
                     "integration": resolved_integration.key,
                     "branch_numbering": branch_numbering or "sequential",
-                    "context_file": resolved_integration.context_file,
                     "here": here,
                     "script": selected_script,
                     "speckit_version": get_speckit_version(),
@@ -550,6 +551,47 @@ def register(app: typer.Typer) -> None:
                 if isinstance(resolved_integration, _SkillsPersist) or getattr(resolved_integration, "_skills_mode", False):
                     init_opts["ai_skills"] = True
                 save_init_options(project_path, init_opts)
+
+                # --- agent-context extension (bundled, auto-installed) ---
+                # Installed after init-options.json is written so that skill
+                # registration can read ai_skills + integration key.
+                try:
+                    from ..extensions import ExtensionManager as _ExtMgr
+                    bundled_ac = _locate_bundled_extension("agent-context")
+                    if bundled_ac:
+                        ac_mgr = _ExtMgr(project_path)
+                        if ac_mgr.registry.is_installed("agent-context"):
+                            tracker.complete("agent-context", "already installed")
+                        else:
+                            ac_mgr.install_from_directory(
+                                bundled_ac, get_speckit_version()
+                            )
+                            tracker.complete("agent-context", "extension installed")
+                    else:
+                        from ..extensions import REINSTALL_COMMAND as _ac_reinstall
+                        tracker.error(
+                            "agent-context",
+                            f"bundled extension not found — installation may be "
+                            f"incomplete. Run: {_ac_reinstall}",
+                        )
+                except Exception as ac_err:
+                    sanitized_ac = str(ac_err).replace('\n', ' ').strip()
+                    tracker.error(
+                        "agent-context",
+                        f"extension install failed: {sanitized_ac[:120]}",
+                    )
+
+                # Write context_file to the agent-context extension config
+                # AFTER the extension install (which copies the template config
+                # with an empty context_file).
+                if resolved_integration.context_file:
+                    _update_agent_context_config_file(
+                        project_path,
+                        resolved_integration.context_file,
+                        preserve_markers=True,
+                    )
+
+                ensure_executable_scripts(project_path, tracker=tracker)
 
                 if preset:
                     try:
@@ -686,6 +728,7 @@ def register(app: typer.Typer) -> None:
         cursor_agent_skill_mode = selected_ai == "cursor-agent" and (ai_skills or _is_skills_integration)
         copilot_skill_mode = selected_ai == "copilot" and _is_skills_integration
         devin_skill_mode = selected_ai == "devin"
+        cline_skill_mode = selected_ai == "cline"
         native_skill_mode = codex_skill_mode or claude_skill_mode or kimi_skill_mode or agy_skill_mode or trae_skill_mode or cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode
 
         if codex_skill_mode and not ai_skills:
@@ -709,7 +752,7 @@ def register(app: typer.Typer) -> None:
                 return f"/speckit-{name}"
             if kimi_skill_mode:
                 return f"/skill:speckit-{name}"
-            if cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode:
+            if cursor_agent_skill_mode or copilot_skill_mode or devin_skill_mode or cline_skill_mode:
                 return f"/speckit-{name}"
             return f"/speckit.{name}"
 

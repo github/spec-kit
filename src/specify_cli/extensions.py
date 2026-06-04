@@ -761,7 +761,28 @@ class ExtensionManager:
         if not ignore_file.exists():
             return None
 
-        lines: List[str] = ignore_file.read_text().splitlines()
+        # Pin UTF-8 explicitly: ``Path.read_text`` defaults to the system
+        # locale codec on Windows (cp1252 / gb2312 / cp932), which silently
+        # corrupts multibyte patterns when the file is shared across
+        # machines with different locales. The next line already
+        # normalises backslashes "so Windows-authored files work" — the
+        # codebase already expects Windows authors to write this file.
+        #
+        # A file that is not valid UTF-8 is a user-authoring mistake, so
+        # surface it as ``ValidationError`` with a pointer to the offending
+        # byte — the same pattern ``ExtensionManifest._load_yaml`` uses
+        # for ``extension.yml`` (see ``UnicodeDecodeError`` handler in
+        # this module). Without the wrap, the raw ``UnicodeDecodeError``
+        # would abort installation with a Python traceback instead of a
+        # clear message naming the file.
+        try:
+            raw = ignore_file.read_text(encoding="utf-8")
+        except UnicodeDecodeError as e:
+            raise ValidationError(
+                f".extensionignore is not valid UTF-8: {ignore_file} "
+                f"({e.reason} at byte {e.start})"
+            )
+        lines: List[str] = raw.splitlines()
 
         # Normalise backslashes in patterns so Windows-authored files work
         normalised: List[str] = []
@@ -823,6 +844,7 @@ class ExtensionManager:
         self,
         manifest: ExtensionManifest,
         extension_dir: Path,
+        link_outputs: bool = False,
     ) -> List[str]:
         """Generate SKILL.md files for extension commands as agent skills.
 
@@ -834,6 +856,8 @@ class ExtensionManager:
         Args:
             manifest: Extension manifest.
             extension_dir: Installed extension directory.
+            link_outputs: If True, create dev-mode symlinks for rendered
+                skill files when supported by the OS.
 
         Returns:
             List of skill names that were created (for registry storage).
@@ -886,9 +910,18 @@ class ExtensionManager:
             # Check if skill already exists before creating the directory
             skill_subdir = skills_dir / skill_name
             skill_file = skill_subdir / "SKILL.md"
-            if skill_file.exists():
-                # Do not overwrite user-customized skills
-                continue
+            cache_root = extension_dir / ".specify-dev" / "extension-skills"
+            cache_file = cache_root / skill_name / "SKILL.md"
+            CommandRegistrar._ensure_inside(cache_file, cache_root)
+            if skill_file.exists() or skill_file.is_symlink():
+                # Do not overwrite user-customized skills, but allow dev-mode
+                # symlinks that point back to this extension's generated cache
+                # to be refreshed on a subsequent dev install.
+                if not (
+                    link_outputs
+                    and self._is_expected_dev_symlink(skill_file, cache_file)
+                ):
+                    continue
 
             # Create skill directory; track whether we created it so we can clean
             # up safely if reading the source file subsequently fails.
@@ -940,10 +973,34 @@ class ExtensionManager:
                     skill_content
                 )
 
-            skill_file.write_text(skill_content, encoding="utf-8")
+            if link_outputs:
+                try:
+                    cache_file.parent.mkdir(parents=True, exist_ok=True)
+                    cache_file.write_text(skill_content, encoding="utf-8")
+                    if skill_file.exists() or skill_file.is_symlink():
+                        skill_file.unlink()
+                    target = os.path.relpath(cache_file, skill_file.parent)
+                    os.symlink(target, skill_file)
+                except (OSError, ValueError):
+                    if skill_file.is_symlink():
+                        skill_file.unlink()
+                    skill_file.write_text(skill_content, encoding="utf-8")
+            else:
+                skill_file.write_text(skill_content, encoding="utf-8")
             written.append(skill_name)
 
         return written
+
+    @staticmethod
+    def _is_expected_dev_symlink(skill_file: Path, cache_file: Path) -> bool:
+        """Return True when an existing skill file links to its dev cache."""
+        if not skill_file.is_symlink():
+            return False
+
+        try:
+            return skill_file.resolve(strict=False) == cache_file.resolve(strict=False)
+        except OSError:
+            return False
 
     def _unregister_extension_skills(
         self,
@@ -1115,6 +1172,8 @@ class ExtensionManager:
         speckit_version: str,
         register_commands: bool = True,
         priority: int = 10,
+        link_commands: bool = False,
+        force: bool = False,
     ) -> ExtensionManifest:
         """Install extension from a local directory.
 
@@ -1123,6 +1182,10 @@ class ExtensionManager:
             speckit_version: Current spec-kit version
             register_commands: If True, register commands with AI agents
             priority: Resolution priority (lower = higher precedence, default 10)
+            link_commands: If True, register rendered agent artifacts as
+                symlinks to a dev cache when supported by the OS.
+            force: If True and extension is already installed, remove it first
+                   before proceeding with installation
 
         Returns:
             Installed extension manifest
@@ -1144,13 +1207,33 @@ class ExtensionManager:
 
         # Check if already installed
         if self.registry.is_installed(manifest.id):
-            raise ExtensionError(
-                f"Extension '{manifest.id}' is already installed. "
-                f"Use 'specify extension remove {manifest.id}' first."
-            )
+            if not force:
+                raise ExtensionError(
+                    f"Extension '{manifest.id}' is already installed. "
+                    f"Use 'specify extension remove {manifest.id}' first, "
+                    f"or retry with --force to overwrite."
+                )
 
         # Reject manifests that would shadow core commands or installed extensions.
         self._validate_install_conflicts(manifest)
+
+        # Remove existing installation AFTER all validations pass so that a
+        # validation failure doesn't leave the user with a half-uninstalled
+        # extension (configs stranded in .backup/).
+        did_remove = False
+        if force and self.registry.is_installed(manifest.id):
+            # Clear any stale backup from a previous remove so that only the
+            # backup produced by the current remove() call is restored later.
+            backup_config_dir = self.extensions_dir / ".backup" / manifest.id
+            # Check is_symlink first: is_dir() follows symlinks so a
+            # symlink-to-directory would pass, but rmtree() raises on them.
+            if backup_config_dir.is_symlink():
+                backup_config_dir.unlink()
+            elif backup_config_dir.is_dir():
+                shutil.rmtree(backup_config_dir)
+            elif backup_config_dir.exists():
+                backup_config_dir.unlink()
+            did_remove = self.remove(manifest.id)
 
         # Install extension
         dest_dir = self.extensions_dir / manifest.id
@@ -1166,16 +1249,38 @@ class ExtensionManager:
             registrar = CommandRegistrar()
             # Register for all detected agents
             registered_commands = registrar.register_commands_for_all_agents(
-                manifest, dest_dir, self.project_root
+                manifest, dest_dir, self.project_root, link_outputs=link_commands
             )
 
         # Auto-register extension commands as agent skills when --ai-skills
         # was used during project initialisation (feature parity).
-        registered_skills = self._register_extension_skills(manifest, dest_dir)
+        registered_skills = self._register_extension_skills(
+            manifest, dest_dir, link_outputs=link_commands
+        )
 
         # Register hooks and update installed list in extensions.yml
         hook_executor = HookExecutor(self.project_root)
         hook_executor.register_hooks(manifest)
+
+        # Restore config files from backup when --force triggered a removal.
+        # Only restore *.yml config files to match what remove() backs up,
+        # so unexpected artifacts in .backup/ are not resurrected.
+        if did_remove:
+            backup_config_dir = self.extensions_dir / ".backup" / manifest.id
+            # is_symlink first: is_dir() follows symlinks, but rmtree()
+            # raises on them — and we shouldn't follow symlinks to restore.
+            if backup_config_dir.is_symlink():
+                backup_config_dir.unlink()
+            elif backup_config_dir.is_dir():
+                for cfg_file in backup_config_dir.iterdir():
+                    if cfg_file.is_file() and not cfg_file.is_symlink() and (
+                        cfg_file.name.endswith("-config.yml") or
+                        cfg_file.name.endswith("-config.local.yml")
+                    ):
+                        shutil.copy2(cfg_file, dest_dir / cfg_file.name)
+                shutil.rmtree(backup_config_dir)
+            elif backup_config_dir.exists():
+                backup_config_dir.unlink()
 
         # Update registry
         self.registry.add(manifest.id, {
@@ -1195,6 +1300,7 @@ class ExtensionManager:
         zip_path: Path,
         speckit_version: str,
         priority: int = 10,
+        force: bool = False,
     ) -> ExtensionManifest:
         """Install extension from ZIP file.
 
@@ -1202,6 +1308,8 @@ class ExtensionManager:
             zip_path: Path to extension ZIP file
             speckit_version: Current spec-kit version
             priority: Resolution priority (lower = higher precedence, default 10)
+            force: If True and extension is already installed, remove it first
+                   before proceeding with installation
 
         Returns:
             Installed extension manifest
@@ -1248,7 +1356,9 @@ class ExtensionManager:
                 raise ValidationError("No extension.yml found in ZIP file")
 
             # Install from extracted directory
-            return self.install_from_directory(extension_dir, speckit_version, priority=priority)
+            return self.install_from_directory(
+                extension_dir, speckit_version, priority=priority, force=force
+            )
 
     def remove(self, extension_id: str, keep_config: bool = False) -> bool:
         """Remove an installed extension.
@@ -1607,7 +1717,8 @@ class CommandRegistrar:
         agent_name: str,
         manifest: ExtensionManifest,
         extension_dir: Path,
-        project_root: Path
+        project_root: Path,
+        link_outputs: bool = False,
     ) -> List[str]:
         """Register extension commands for a specific agent."""
         if agent_name not in self.AGENT_CONFIGS:
@@ -1615,20 +1726,23 @@ class CommandRegistrar:
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
         return self._registrar.register_commands(
             agent_name, manifest.commands, manifest.id, extension_dir, project_root,
-            context_note=context_note
+            context_note=context_note,
+            link_outputs=link_outputs,
         )
 
     def register_commands_for_all_agents(
         self,
         manifest: ExtensionManifest,
         extension_dir: Path,
-        project_root: Path
+        project_root: Path,
+        link_outputs: bool = False,
     ) -> Dict[str, List[str]]:
         """Register extension commands for all detected agents."""
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
         return self._registrar.register_commands_for_all_agents(
             manifest.commands, manifest.id, extension_dir, project_root,
-            context_note=context_note
+            context_note=context_note,
+            link_outputs=link_outputs,
         )
 
     def unregister_commands(
@@ -1643,10 +1757,13 @@ class CommandRegistrar:
         self,
         manifest: ExtensionManifest,
         extension_dir: Path,
-        project_root: Path
+        project_root: Path,
+        link_outputs: bool = False,
     ) -> List[str]:
         """Register extension commands for Claude Code agent."""
-        return self.register_commands_for_agent("claude", manifest, extension_dir, project_root)
+        return self.register_commands_for_agent(
+            "claude", manifest, extension_dir, project_root, link_outputs=link_outputs
+        )
 
 
 class ExtensionCatalog(CatalogStackBase):
@@ -1680,13 +1797,59 @@ class ExtensionCatalog(CatalogStackBase):
         from specify_cli.authentication.http import build_request
         return build_request(url)
 
-    def _open_url(self, url: str, timeout: int = 10):
+    def _open_url(
+        self,
+        url: str,
+        timeout: int = 10,
+        extra_headers: Optional[Dict[str, str]] = None,
+    ):
         """Open a URL with provider-based auth, trying each configured provider.
 
         Delegates to :func:`specify_cli.authentication.http.open_url`.
         """
         from specify_cli.authentication.http import open_url
-        return open_url(url, timeout)
+        return open_url(url, timeout, extra_headers=extra_headers)
+
+    def _resolve_github_release_asset_api_url(
+        self,
+        download_url: str,
+        timeout: int = 60,
+    ) -> Optional[str]:
+        """Resolve a GitHub release asset URL to its API asset URL."""
+        import urllib.error
+        from urllib.parse import unquote, urlparse
+
+        parsed = urlparse(download_url)
+        parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
+        if (
+            parsed.hostname == "api.github.com"
+            and len(parts) >= 6
+            and parts[:1] == ["repos"]
+            and parts[3:5] == ["releases", "assets"]
+        ):
+            return download_url
+
+        if parsed.hostname != "github.com":
+            return None
+
+        if len(parts) < 6 or parts[2:4] != ["releases", "download"]:
+            return None
+
+        owner, repo, tag = parts[0], parts[1], parts[4]
+        asset_name = "/".join(parts[5:])
+        release_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+
+        try:
+            with self._open_url(release_url, timeout=timeout) as response:
+                release_data = json.loads(response.read())
+        except (urllib.error.URLError, json.JSONDecodeError):
+            return None
+
+        for asset in release_data.get("assets", []):
+            if asset.get("name") == asset_name and asset.get("url"):
+                return str(asset["url"])
+
+        return None
 
     def get_active_catalogs(self) -> List[CatalogEntry]:
         """Get the ordered list of active catalogs.
@@ -2086,9 +2249,15 @@ class ExtensionCatalog(CatalogStackBase):
         zip_filename = f"{extension_id}-{version}.zip"
         zip_path = target_dir / zip_filename
 
+        extra_headers = None
+        resolved_download_url = self._resolve_github_release_asset_api_url(download_url)
+        if resolved_download_url:
+            download_url = resolved_download_url
+            extra_headers = {"Accept": "application/octet-stream"}
+
         # Download the ZIP file
         try:
-            with self._open_url(download_url, timeout=60) as response:
+            with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
                 zip_data = response.read()
 
             zip_path.write_bytes(zip_data)
@@ -2365,6 +2534,7 @@ class HookExecutor:
         claude_skill_mode = selected_ai == "claude" and bool(init_options.get("ai_skills"))
         kimi_skill_mode = selected_ai == "kimi"
         cursor_skill_mode = selected_ai == "cursor-agent" and bool(init_options.get("ai_skills"))
+        cline_mode = selected_ai == "cline"
 
         skill_name = self._skill_name_from_command(command_id)
         if codex_skill_mode and skill_name:
@@ -2375,6 +2545,10 @@ class HookExecutor:
             return f"/skill:{skill_name}"
         if cursor_skill_mode and skill_name:
             return f"/{skill_name}"
+        if cline_mode:
+            from .integrations.cline import format_cline_command_name
+
+            return f"/{format_cline_command_name(command_id)}"
 
         return f"/{command_id}"
 
@@ -2616,7 +2790,7 @@ class HookExecutor:
 
         if not isinstance(config, dict):
             config = {}
-            # We don't save yet, as there are no hooks to unregister, 
+            # We don't save yet, as there are no hooks to unregister,
             # but unregister_extension above might have already saved a normalized config.
             return
 

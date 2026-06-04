@@ -165,7 +165,7 @@ function Test-FeatureBranch {
 }
 
 # True when .specify/feature.json pins an existing feature directory that matches the
-# active FEATURE_DIR from Get-FeaturePathsEnv (so /speckit.plan can skip git branch pattern checks).
+# active FEATURE_DIR from Get-FeaturePathsEnv (so __SPECKIT_COMMAND_PLAN__ can skip git branch pattern checks).
 function Test-FeatureJsonMatchesFeatureDir {
     param(
         [Parameter(Mandatory = $true)][string]$RepoRoot,
@@ -288,7 +288,7 @@ function Get-FeaturePathsEnv {
 
     # Resolve feature directory.  Priority:
     #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit override)
-    #   2. .specify/feature.json "feature_directory" key (persisted by /speckit.specify)
+    #   2. .specify/feature.json "feature_directory" key (persisted by __SPECKIT_COMMAND_SPECIFY__)
     #   3. Branch-name-based prefix lookup (same as scripts/bash/common.sh)
     $featureJson = Join-Path $repoRoot '.specify/feature.json'
     if ($env:SPECIFY_FEATURE_DIRECTORY) {
@@ -353,6 +353,58 @@ function Test-DirHasFiles {
         Write-Output "  [FAIL] $Description"
         return $false
     }
+}
+
+function Get-InvokeSeparator {
+    param([string]$RepoRoot = (Get-RepoRoot))
+
+    if ($null -eq $script:SpecKitInvokeSeparatorCache) {
+        $script:SpecKitInvokeSeparatorCache = @{}
+    }
+    if ($script:SpecKitInvokeSeparatorCache.ContainsKey($RepoRoot)) {
+        return $script:SpecKitInvokeSeparatorCache[$RepoRoot]
+    }
+
+    $separator = '.'
+    $integrationJson = Join-Path $RepoRoot '.specify/integration.json'
+    if (Test-Path -LiteralPath $integrationJson -PathType Leaf) {
+        try {
+            $state = Get-Content -LiteralPath $integrationJson -Raw | ConvertFrom-Json
+            $key = if ($state.default_integration) { [string]$state.default_integration } elseif ($state.integration) { [string]$state.integration } else { '' }
+            if ($key -and $state.integration_settings) {
+                $settingProperty = $state.integration_settings.PSObject.Properties[$key]
+                if ($settingProperty) {
+                    $setting = $settingProperty.Value
+                    if ($setting -and ($setting.invoke_separator -eq '.' -or $setting.invoke_separator -eq '-')) {
+                        $separator = [string]$setting.invoke_separator
+                    }
+                }
+            }
+        } catch {
+            $separator = '.'
+        }
+    }
+
+    $script:SpecKitInvokeSeparatorCache[$RepoRoot] = $separator
+    return $separator
+}
+
+function Format-SpecKitCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$CommandName,
+        [string]$RepoRoot = (Get-RepoRoot)
+    )
+
+    $separator = Get-InvokeSeparator -RepoRoot $RepoRoot
+    $name = $CommandName.TrimStart('/')
+    if ($name.StartsWith('speckit.')) {
+        $name = $name.Substring(8)
+    } elseif ($name.StartsWith('speckit-')) {
+        $name = $name.Substring(8)
+    }
+    $name = $name -replace '\.', $separator
+
+    return "/speckit$separator$name"
 }
 
 # Find a usable Python 3 executable (python3, python, or py -3).

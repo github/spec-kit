@@ -152,7 +152,7 @@ class YamlIntegrationTests:
             content = f.read_text(encoding="utf-8")
             # Strip trailing source comment before parsing
             lines = content.split("\n")
-            yaml_lines = [l for l in lines if not l.startswith("# Source:")]
+            yaml_lines = [ln for ln in lines if not ln.startswith("# Source:")]
             try:
                 parsed = yaml.safe_load("\n".join(yaml_lines))
             except Exception as exc:
@@ -183,7 +183,7 @@ class YamlIntegrationTests:
         content = cmd_files[0].read_text(encoding="utf-8")
         # Strip source comment for parsing
         lines = content.split("\n")
-        yaml_lines = [l for l in lines if not l.startswith("# Source:")]
+        yaml_lines = [ln for ln in lines if not ln.startswith("# Source:")]
         parsed = yaml.safe_load("\n".join(yaml_lines))
 
         assert "description:" not in parsed["prompt"]
@@ -336,8 +336,8 @@ class YamlIntegrationTests:
         assert len(commands) > 0, f"No command files in {cmd_dir}"
 
     def test_init_options_includes_context_file(self, tmp_path):
-        """init-options.json must include context_file for the active integration."""
-        import json
+        """agent-context extension config must include context_file for the active integration."""
+        import yaml
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -353,15 +353,17 @@ class YamlIntegrationTests:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        opts = json.loads((project / ".specify" / "init-options.json").read_text())
+        ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
+        ext_cfg = yaml.safe_load(ext_cfg_path.read_text(encoding="utf-8")) if ext_cfg_path.exists() else {}
         i = get_integration(self.KEY)
-        assert opts.get("context_file") == i.context_file, (
-            f"Expected context_file={i.context_file!r}, got {opts.get('context_file')!r}"
+        assert ext_cfg.get("context_file") == i.context_file, (
+            f"Expected context_file={i.context_file!r}, got {ext_cfg.get('context_file')!r}"
         )
 
     # -- Complete file inventory ------------------------------------------
 
     COMMAND_STEMS = [
+        "agent-context.update",
         "analyze",
         "checklist",
         "clarify",
@@ -421,6 +423,16 @@ class YamlIntegrationTests:
         # Bundled workflow
         files.append(".specify/workflows/speckit/workflow.yml")
         files.append(".specify/workflows/workflow-registry.json")
+
+        # Bundled agent-context extension
+        files.append(".specify/extensions.yml")
+        files.append(".specify/extensions/.registry")
+        files.append(".specify/extensions/agent-context/README.md")
+        files.append(".specify/extensions/agent-context/agent-context-config.yml")
+        files.append(".specify/extensions/agent-context/commands/speckit.agent-context.update.md")
+        files.append(".specify/extensions/agent-context/extension.yml")
+        files.append(".specify/extensions/agent-context/scripts/bash/update-agent-context.sh")
+        files.append(".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1")
 
         # Agent context file (if set)
         if i.context_file:

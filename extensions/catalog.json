@@ -3,6 +3,20 @@
   "updated_at": "2026-04-10T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json",
   "extensions": {
+    "agent-context": {
+      "name": "Coding Agent Context",
+      "id": "agent-context",
+      "version": "1.0.0",
+      "description": "Manages coding agent context/instruction files (e.g., CLAUDE.md, copilot-instructions.md) with project-specific plan references and configurable markers",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "bundled": true,
+      "tags": [
+        "agent",
+        "context",
+        "core"
+      ]
+    },
     "git": {
       "name": "Git Branching Workflow",
       "id": "git",

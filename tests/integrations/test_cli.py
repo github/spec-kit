@@ -87,7 +87,14 @@ class TestInitIntegrationFlag:
 
         opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
         assert opts["integration"] == "copilot"
-        assert opts["context_file"] == ".github/copilot-instructions.md"
+        # context_file lives in the agent-context extension config, not init-options.json
+        assert "context_file" not in opts
+
+        import yaml as _yaml
+        ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
+        assert ext_cfg_path.exists(), "agent-context extension config must be created on init"
+        ext_cfg = _yaml.safe_load(ext_cfg_path.read_text(encoding="utf-8"))
+        assert ext_cfg["context_file"] == ".github/copilot-instructions.md"
 
         assert (project / ".specify" / "integrations" / "copilot.manifest.json").exists()
 
@@ -323,6 +330,7 @@ class TestInitIntegrationFlag:
     def test_shared_infra_skip_warning_displayed(self, tmp_path, capsys):
         """Console warning is displayed when files are skipped."""
         from specify_cli import _install_shared_infra
+        from tests.conftest import strip_ansi
 
         project = tmp_path / "warn-test"
         project.mkdir()
@@ -923,7 +931,23 @@ class TestGitExtensionAutoInstall:
 
 
 class TestSharedInfraCommandRefs:
-    """Verify _install_shared_infra resolves __SPECKIT_COMMAND_*__ in page templates."""
+    """Verify _install_shared_infra resolves __SPECKIT_COMMAND_*__ in shared infra."""
+
+    @staticmethod
+    def _combined_script_content(project, script_type):
+        script_dir = "bash" if script_type == "sh" else "powershell"
+        suffix = "sh" if script_type == "sh" else "ps1"
+        names = [
+            f"check-prerequisites.{suffix}",
+            f"common.{suffix}",
+            f"setup-tasks.{suffix}",
+        ]
+        return "\n".join(
+            (project / ".specify" / "scripts" / script_dir / name).read_text(
+                encoding="utf-8"
+            )
+            for name in names
+        )
 
     def test_dot_separator_in_page_templates(self, tmp_path):
         """Markdown agents get /speckit.<name> in page templates."""
@@ -968,6 +992,46 @@ class TestSharedInfraCommandRefs:
         assert "__SPECKIT_COMMAND_" not in content
         assert "/speckit-tasks" in content
 
+    @pytest.mark.parametrize("script_type", ["sh", "ps"])
+    def test_dot_separator_in_shared_scripts(self, tmp_path, script_type):
+        """Markdown agents get /speckit.<name> in shared script hints."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / f"dot-script-{script_type}"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        _install_shared_infra(project, script_type, invoke_separator=".")
+
+        content = self._combined_script_content(project, script_type)
+        assert "__SPECKIT_COMMAND_" not in content
+        assert "/speckit.specify" in content
+        assert "/speckit.plan" in content
+        assert "/speckit.tasks" in content
+        assert "/speckit-specify" not in content
+        assert "/speckit-plan" not in content
+        assert "/speckit-tasks" not in content
+
+    @pytest.mark.parametrize("script_type", ["sh", "ps"])
+    def test_hyphen_separator_in_shared_scripts(self, tmp_path, script_type):
+        """Skills agents get /speckit-<name> in shared script hints."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / f"hyphen-script-{script_type}"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        _install_shared_infra(project, script_type, invoke_separator="-")
+
+        content = self._combined_script_content(project, script_type)
+        assert "__SPECKIT_COMMAND_" not in content
+        assert "/speckit-specify" in content
+        assert "/speckit-plan" in content
+        assert "/speckit-tasks" in content
+        assert "/speckit.specify" not in content
+        assert "/speckit.plan" not in content
+        assert "/speckit.tasks" not in content
+
     def test_full_init_claude_resolves_page_templates(self, tmp_path):
         """Full CLI init with Claude (skills agent) produces hyphen refs in page templates."""
         from typer.testing import CliRunner
@@ -995,6 +1059,10 @@ class TestSharedInfraCommandRefs:
         assert "/speckit-plan" in content, "Claude (skills) should use /speckit-plan"
         assert "__SPECKIT_COMMAND_" not in content
 
+        script_content = self._combined_script_content(project, "sh")
+        assert "/speckit-specify" in script_content
+        assert "/speckit.specify" not in script_content
+
     def test_full_init_copilot_resolves_page_templates(self, tmp_path):
         """Full CLI init with Copilot (markdown agent) produces dot refs in page templates."""
         from typer.testing import CliRunner
@@ -1021,6 +1089,10 @@ class TestSharedInfraCommandRefs:
         content = plan.read_text(encoding="utf-8")
         assert "/speckit.plan" in content, "Copilot (markdown) should use /speckit.plan"
         assert "__SPECKIT_COMMAND_" not in content
+
+        script_content = self._combined_script_content(project, "sh")
+        assert "/speckit.specify" in script_content
+        assert "/speckit-specify" not in script_content
 
     def test_full_init_copilot_skills_resolves_page_templates(self, tmp_path):
         """Full CLI init with Copilot --skills produces hyphen refs in page templates."""
@@ -1050,6 +1122,10 @@ class TestSharedInfraCommandRefs:
         assert "/speckit-plan" in content, "Copilot --skills should use /speckit-plan"
         assert "/speckit.plan" not in content, "dot-notation leaked into Copilot skills page template"
         assert "__SPECKIT_COMMAND_" not in content
+
+        script_content = self._combined_script_content(project, "sh")
+        assert "/speckit-specify" in script_content
+        assert "/speckit.specify" not in script_content
 
 
 class TestIntegrationCatalogDiscoveryCLI:
