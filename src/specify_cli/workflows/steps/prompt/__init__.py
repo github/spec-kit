@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -116,12 +115,10 @@ class PromptStep(StepBase):
 
         exec_args = impl.build_exec_args(prompt, model=model, output_json=False)
 
-        # Check if the CLI tool is actually installed.
-        # Try the integration key first (covers most agents), then fall back
-        # to exec_args[0] for agents whose executable differs.
-        cli_path = shutil.which(impl.key)
-        fallback_cli_path = shutil.which(exec_args[0]) if exec_args else None
-        if cli_path is None and fallback_cli_path is None:
+        # Check if the CLI tool is actually installed via the integration's
+        # own availability check (honours custom executables, dual binaries,
+        # and non-PATH install paths).  See issue #2597.
+        if not impl.is_cli_available():
             return None
 
         # Prompt dispatch executes exec_args directly; require a non-empty argv.

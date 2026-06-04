@@ -10,6 +10,7 @@ from unittest.mock import patch, MagicMock
 from typer.testing import CliRunner
 
 from specify_cli import app, check_tool
+from specify_cli.integrations import get_integration
 from tests.conftest import strip_ansi
 
 
@@ -119,6 +120,98 @@ class TestCheckToolOther:
 
         with patch("shutil.which", side_effect=fake_which):
             assert check_tool("rovodev") is True
+
+
+class TestIsCliAvailable:
+    """Integration.is_cli_available() must encode correct detection logic."""
+
+    def test_rovodev_cli_executable_is_acli(self):
+        """RovodevIntegration.cli_executable should return 'acli'."""
+        impl = get_integration("rovodev")
+        assert impl.cli_executable == "acli"
+
+    def test_rovodev_is_cli_available_uses_acli(self):
+        """RovodevIntegration.is_cli_available() checks for 'acli', not 'rovodev'."""
+        impl = get_integration("rovodev")
+
+        with patch("shutil.which", side_effect=lambda name: "/usr/bin/acli" if name == "acli" else None):
+            assert impl.is_cli_available() is True
+
+        with patch("shutil.which", return_value=None):
+            assert impl.is_cli_available() is False
+
+    def test_kiro_is_cli_available_accepts_kiro_cli(self):
+        """KiroCliIntegration.is_cli_available() returns True for 'kiro-cli' binary."""
+        impl = get_integration("kiro-cli")
+
+        with patch("shutil.which", side_effect=lambda name: "/usr/bin/kiro-cli" if name == "kiro-cli" else None):
+            assert impl.is_cli_available() is True
+
+    def test_kiro_is_cli_available_accepts_legacy_kiro(self):
+        """KiroCliIntegration.is_cli_available() accepts the legacy 'kiro' binary."""
+        impl = get_integration("kiro-cli")
+
+        with patch("shutil.which", side_effect=lambda name: "/usr/bin/kiro" if name == "kiro" else None):
+            assert impl.is_cli_available() is True
+
+    def test_kiro_is_cli_available_false_when_neither(self):
+        """KiroCliIntegration.is_cli_available() returns False when neither binary exists."""
+        impl = get_integration("kiro-cli")
+
+        with patch("shutil.which", return_value=None):
+            assert impl.is_cli_available() is False
+
+    def test_claude_is_cli_available_local_path(self, tmp_path):
+        """ClaudeIntegration.is_cli_available() finds claude via local path."""
+        impl = get_integration("claude")
+        fake_claude = tmp_path / "claude"
+        fake_claude.touch()
+        fake_missing = tmp_path / "nonexistent" / "claude"
+
+        with patch("specify_cli._utils.CLAUDE_LOCAL_PATH", fake_claude), \
+             patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
+             patch("shutil.which", return_value=None):
+            assert impl.is_cli_available() is True
+
+    def test_claude_is_cli_available_npm_local_path(self, tmp_path):
+        """ClaudeIntegration.is_cli_available() finds claude via npm-local path."""
+        impl = get_integration("claude")
+        fake_npm = tmp_path / "node_modules" / ".bin" / "claude"
+        fake_npm.parent.mkdir(parents=True)
+        fake_npm.touch()
+        fake_missing = tmp_path / "nonexistent" / "claude"
+
+        with patch("specify_cli._utils.CLAUDE_LOCAL_PATH", fake_missing), \
+             patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", fake_npm), \
+             patch("shutil.which", return_value=None):
+            assert impl.is_cli_available() is True
+
+    def test_claude_is_cli_available_path(self, tmp_path):
+        """ClaudeIntegration.is_cli_available() finds claude via PATH."""
+        impl = get_integration("claude")
+        fake_missing = tmp_path / "nonexistent" / "claude"
+
+        with patch("specify_cli._utils.CLAUDE_LOCAL_PATH", fake_missing), \
+             patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
+             patch("shutil.which", return_value="/usr/local/bin/claude"):
+            assert impl.is_cli_available() is True
+
+    def test_claude_is_cli_available_not_found(self, tmp_path):
+        """ClaudeIntegration.is_cli_available() returns False when not installed."""
+        impl = get_integration("claude")
+        fake_missing = tmp_path / "nonexistent" / "claude"
+
+        with patch("specify_cli._utils.CLAUDE_LOCAL_PATH", fake_missing), \
+             patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", fake_missing), \
+             patch("shutil.which", return_value=None):
+            assert impl.is_cli_available() is False
+
+    def test_default_integration_uses_key(self):
+        """Integrations without an override use key as cli_executable."""
+        # Use a non-CLI integration to test the default; any MarkdownIntegration
+        # without a cli_executable override works.
+        impl = get_integration("gemini")
+        assert impl.cli_executable == impl.key
 
 
 class TestCheckTip:

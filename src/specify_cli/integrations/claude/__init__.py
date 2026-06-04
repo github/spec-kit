@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,27 @@ class ClaudeIntegration(SkillsIntegration):
     }
     context_file = "CLAUDE.md"
     multi_install_safe = True
+
+    def is_cli_available(self) -> bool:
+        """Return ``True`` if the Claude Code CLI is installed.
+
+        Claude Code can be installed in multiple locations, not all of
+        which are on ``PATH``:
+
+        1. ``~/.claude/local/claude``                  — ``claude migrate-installer``
+        2. ``~/.claude/local/node_modules/.bin/claude`` — npm-local install (nvm)
+        3. Anywhere on ``PATH``                        — global npm install
+
+        See issues #123, #550, and #2597.
+        """
+        import specify_cli._utils as _utils_mod
+
+        if (
+            _utils_mod.CLAUDE_LOCAL_PATH.is_file()
+            or _utils_mod.CLAUDE_NPM_LOCAL_PATH.is_file()
+        ):
+            return True
+        return shutil.which(self.cli_executable) is not None
 
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:
