@@ -111,7 +111,6 @@ def callback(
         console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
         console.print()
 
-
 def _refresh_shared_templates(
     project_path: Path,
     *,
