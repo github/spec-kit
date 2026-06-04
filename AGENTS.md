@@ -425,7 +425,7 @@ When an issue exists, include its number immediately after the prefix — this i
 
 ## Responding to PR Review Comments
 
-- If you are an agent working on behalf of a human, **disclose your identity in your PR comment** — name the agent (and model, if applicable) and the human you are acting for (e.g., "Posted on behalf of @user by GitHub Copilot (Claude Sonnet 4.5)").
+- If you are an agent working on behalf of a human, **disclose your identity in your PR comment** — name the agent (and model, if applicable) and the human you are acting for (e.g., "Posted on behalf of @user by GitHub Copilot (model: <name-if-known>)").
 - Post **one** top-level summary comment per review round listing what changed and the commit SHA. Do not reply on every individual comment.
 - Reply inline only when context is needed (disagreement, deferral, non-obvious fix). Keep it to a sentence or two.
 - **Never click "Resolve conversation"** — that belongs to the reviewer or PR author.
