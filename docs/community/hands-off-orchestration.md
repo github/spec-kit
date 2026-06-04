@@ -8,7 +8,7 @@ Use this pattern when you want a repeatable planning pass that produces reviewed
 /speckit.specify -> /speckit.clarify -> /speckit.checklist -> /speckit.plan -> /speckit.tasks -> /speckit.analyze
 ```
 
-This ordering matches the [Quick Start Guide](../quickstart.md) workflow, where `/speckit.checklist` is a requirements-quality gate before `/speckit.plan` (if you are following a workflow that runs `/speckit.plan` before `/speckit.checklist`, swap those two steps).
+This ordering matches the [Quick Start Guide](../quickstart.md) recommended workflow, where `/speckit.checklist` is a requirements-quality gate before `/speckit.plan`.
 
 The key rule is that the agent stops after analysis unless the user explicitly asks it to continue.
 
