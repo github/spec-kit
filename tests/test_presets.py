@@ -3524,6 +3524,71 @@ class TestBundledPresetLocator:
         assert 'grep -F "(top layer from: core)" preset-resolve-tasks-template.txt' in workflow_text
         assert "test -f .specify/templates/tasks-template.md" in workflow_text
 
+    def test_community_smoke_checks_wheel_assets_and_extension_dev_reinstall(self):
+        """Community smoke validates wheel assets and extension dev reinstall skills."""
+        workflow_path = (
+            Path(__file__).parent.parent
+            / ".github"
+            / "workflows"
+            / "community-smoke.yml"
+        )
+        workflow_text = workflow_path.read_text(encoding="utf-8")
+        workflow = yaml.safe_load(workflow_text)
+        on_config = workflow.get("on", workflow.get(True))
+        steps = workflow["jobs"]["init-smoke"]["steps"]
+        runs_by_name = {
+            step["name"]: step["run"]
+            for step in steps
+            if "name" in step and "run" in step
+        }
+        build_run = runs_by_name["Build CLI wheel from checkout"]
+        install_run = runs_by_name["Install CLI from built wheel"]
+        verify_run = runs_by_name["Verify bundled init defaults"]
+
+        assert "pull_request" in on_config
+        assert "uv build --wheel --out-dir /tmp/specify-community-smoke-dist" in build_run
+        assert (
+            "uv pip install --python /tmp/specify-community-smoke-venv/bin/python "
+            "/tmp/specify-community-smoke-dist/*.whl"
+        ) in install_run
+        assert (
+            'manifest = yaml.safe_load(Path(".specify/presets/workflow-preset/preset.yml")'
+            '.read_text(encoding="utf-8"))'
+        ) in verify_run
+        assert (
+            'registry = json.loads(Path(".specify/presets/.registry").read_text(encoding="utf-8"))'
+        ) in verify_run
+        assert 'manifest_version == "1.3.1"' in verify_run
+        assert 'registry_version == "1.3.1"' in verify_run
+        assert "registry_version == manifest_version" in verify_run
+        assert (
+            'for extension_id in arch preview repository-governance; do'
+            in verify_run
+        )
+        assert (
+            '/tmp/specify-community-smoke-venv/bin/specify extension remove "$extension_id" --force'
+            in verify_run
+        )
+        assert "test ! -d .claude/skills/speckit-arch-generate" in verify_run
+        assert "test ! -d .claude/skills/speckit-arch-reverse" in verify_run
+        assert "test ! -d .claude/skills/speckit-preview-html" in verify_run
+        assert (
+            "test ! -d .claude/skills/speckit-repository-governance-refresh"
+            in verify_run
+        )
+        assert (
+            '/tmp/specify-community-smoke-venv/bin/specify extension add "$GITHUB_WORKSPACE/extensions/$extension_id" --dev'
+            in verify_run
+        )
+        assert (
+            'test -f .claude/skills/speckit-arch-generate/SKILL.md'
+            in verify_run
+        )
+        assert (
+            'test -f .claude/skills/speckit-repository-governance-refresh/SKILL.md'
+            in verify_run
+        )
+
     def test_bundled_preset_download_raises_error(self, project_dir):
         """download_pack raises PresetError for bundled presets without download_url."""
         catalog = PresetCatalog(project_dir)

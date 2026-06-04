@@ -68,6 +68,24 @@ def _powershell_script_arg(exe: str, script: Path) -> str:
     return str(script)
 
 
+def _run_powershell(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+    env = _clean_env()
+    env.setdefault("NO_COLOR", "1")
+    result = subprocess.run(
+        args,
+        cwd=cwd,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    return subprocess.CompletedProcess(
+        result.args,
+        result.returncode,
+        result.stdout.decode("utf-8", errors="replace"),
+        result.stderr.decode("utf-8", errors="replace"),
+    )
+
+
 @pytest.fixture
 def arch_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "proj"
@@ -150,13 +168,9 @@ def test_setup_arch_bash_preserves_existing_files(arch_repo: Path) -> None:
 def test_setup_arch_powershell_creates_all_artifacts_and_json(arch_repo: Path) -> None:
     script = arch_repo / ".specify" / "extensions" / "arch" / "scripts" / "powershell" / "setup-arch.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
-    result = subprocess.run(
+    result = _run_powershell(
         [exe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", _powershell_script_arg(exe, script), "-Json"],
         cwd=arch_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_clean_env(),
     )
 
     assert result.returncode == 0, result.stderr + result.stdout
