@@ -2595,20 +2595,12 @@ class HookExecutor:
 
         init_options = self._load_init_options()
         selected_ai = init_options.get("ai")
-        codex_skill_mode = selected_ai == "codex" and bool(
-            init_options.get("ai_skills")
-        )
-        claude_skill_mode = selected_ai == "claude" and bool(
-            init_options.get("ai_skills")
-        )
+        ai_skills = bool(init_options.get("ai_skills"))
+
+        codex_skill_mode = selected_ai == "codex" and ai_skills
+        claude_skill_mode = selected_ai == "claude" and ai_skills
         kimi_skill_mode = selected_ai == "kimi"
-        cursor_skill_mode = selected_ai == "cursor-agent" and bool(
-            init_options.get("ai_skills")
-        )
-        zed_skill_mode = selected_ai == "zed"
-        trae_skill_mode = selected_ai == "trae"
-        agy_skill_mode = selected_ai == "agy"
-        devin_skill_mode = selected_ai == "devin"
+        cursor_skill_mode = selected_ai == "cursor-agent" and ai_skills
         cline_mode = selected_ai == "cline"
 
         skill_name = self._skill_name_from_command(command_id)
@@ -2621,17 +2613,17 @@ class HookExecutor:
 
             return f"/{format_cline_command_name(command_id)}"
 
-        # Slash-skill integrations
-        # - Claude/Cursor: conditional on ai_skills flag
-        # - Zed/Agy/Devin/Trae: always skills-based
-        if skill_name and (
-            claude_skill_mode
-            or cursor_skill_mode
-            or zed_skill_mode
-            or agy_skill_mode
-            or devin_skill_mode
-            or trae_skill_mode
-        ):
+        # Agents that use /speckit-<name> (slash-skills invocation):
+        # - Unconditional: agy, devin, trae, zed
+        # - Conditional on ai_skills: claude, cursor-agent
+        always_slash: frozenset[str] = frozenset({"agy", "devin", "trae", "zed"})
+        conditional_slash: frozenset[str] = frozenset({"claude", "cursor-agent"})
+
+        use_slash = selected_ai in always_slash or (
+            selected_ai in conditional_slash and ai_skills
+        )
+
+        if skill_name and use_slash:
             return f"/{skill_name}"
 
         return f"/{command_id}"
