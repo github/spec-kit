@@ -74,10 +74,6 @@ mktemp_file() {
         printf '%s\n' "$tmp"
         return 0
     fi
-    if tmp="$(mktemp "${TMPDIR:-/tmp}/fast-test.XXXXXX" 2>/dev/null)"; then
-        printf '%s\n' "$tmp"
-        return 0
-    fi
     echo "[fast-test] mktemp failed; set TMPDIR or install a compatible mktemp" >&2
     return 1
 }
@@ -209,7 +205,11 @@ while (( i < TOTAL )); do
     echo "[fast-test] chunk $chunk_idx/$CHUNKS  tests $((i+1))..$end"
 
     PYTEST_FLAGS=(-n auto --dist=load)
-    (( BENCH )) && PYTEST_FLAGS+=(-q) || PYTEST_FLAGS+=(--no-header -q)
+    if (( BENCH )); then
+        PYTEST_FLAGS+=(--no-header -q)
+    else
+        PYTEST_FLAGS+=(--no-header)
+    fi
 
     if ! "${PYTEST_CMD[@]}" "${PYTEST_FLAGS[@]}" "${RUNTIME_PASSTHROUGH[@]}" "${NODES[@]:i:CHUNK_SIZE}"; then
         echo "[fast-test] chunk failed — cursor preserved at next test index $i (use --resume to retry)"
