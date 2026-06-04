@@ -32,6 +32,7 @@ RESET=0
 BENCH=0
 PASSTHROUGH=()
 RUNTIME_PASSTHROUGH=()
+PYTEST_CMD=()
 LOCK_DIR="$REPO_ROOT/.pytest_cache/fast-test.lock"
 LOCK_HELD=0
 CURSOR_TMP="$CURSOR_FILE.tmp"
@@ -62,11 +63,32 @@ if ! [[ "$CHUNK_SIZE" =~ ^[1-9][0-9]*$ ]]; then
     exit 1
 fi
 
+mktemp_file() {
+    local tmp
+    if tmp="$(mktemp -t fast-test.XXXXXX 2>/dev/null)"; then
+        printf '%s\n' "$tmp"
+        return 0
+    fi
+    if tmp="$(mktemp "${TMPDIR:-/tmp}/fast-test.XXXXXX" 2>/dev/null)"; then
+        printf '%s\n' "$tmp"
+        return 0
+    fi
+    mktemp
+}
+
 # Collection and execution do not share every pytest flag. Keep runtime
-# passthrough aligned with user intent while stripping collect-only toggles.
+# passthrough aligned with user intent while stripping collect-only toggles
+# and xdist-specific options that this script owns.
+skip_next=0
 for arg in "${PASSTHROUGH[@]}"; do
+    if (( skip_next )); then
+        skip_next=0
+        continue
+    fi
     case "$arg" in
         --collect-only|--co) ;;
+        -n|--numprocesses|--dist) skip_next=1 ;;
+        -n*|--numprocesses=*|--dist=*) ;;
         *) RUNTIME_PASSTHROUGH+=("$arg") ;;
     esac
 done
@@ -90,6 +112,18 @@ write_cursor() {
 cd "$REPO_ROOT"
 mkdir -p "$(dirname "$CURSOR_FILE")"
 
+if [[ -d "$LOCK_DIR" ]]; then
+    if [[ -f "$LOCK_DIR/pid" ]]; then
+        PID_CONTENTS="$(tr -d '[:space:]' < "$LOCK_DIR/pid" 2>/dev/null || true)"
+        if [[ "$PID_CONTENTS" =~ ^[0-9]+$ ]] && kill -0 "$PID_CONTENTS" 2>/dev/null; then
+            echo "[fast-test] another run is active (lock: $LOCK_DIR)" >&2
+            exit 1
+        fi
+        echo "[fast-test] removing stale lock (pid: ${PID_CONTENTS:-unknown})" >&2
+    fi
+    rm -f "$LOCK_DIR/pid"
+    rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR"
+fi
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
     echo "[fast-test] another run is active (lock: $LOCK_DIR)" >&2
     exit 1
@@ -104,10 +138,19 @@ if (( RESET )); then
 fi
 
 # 1. Collect node ids.
+if command -v uv >/dev/null 2>&1; then
+    PYTEST_CMD=(uv run pytest)
+elif command -v python >/dev/null 2>&1; then
+    PYTEST_CMD=(python -m pytest)
+else
+    echo "[fast-test] pytest runner not found (install uv or ensure python is on PATH)" >&2
+    exit 1
+fi
+
 echo "[fast-test] collecting tests ..."
-COLLECT_ERR="$(mktemp)"
-COLLECT_OUT="$(mktemp)"
-if ! uv run pytest --collect-only -q "${PASSTHROUGH[@]}" >"$COLLECT_OUT" 2>"$COLLECT_ERR"; then
+COLLECT_ERR="$(mktemp_file)"
+COLLECT_OUT="$(mktemp_file)"
+if ! "${PYTEST_CMD[@]}" --collect-only -q "${PASSTHROUGH[@]}" >"$COLLECT_OUT" 2>"$COLLECT_ERR"; then
     echo "[fast-test] test collection failed" >&2
     [[ -s "$COLLECT_ERR" ]] && { echo "--- collection stderr ---"; cat "$COLLECT_ERR"; } >&2
     rm -f "$COLLECT_ERR" "$COLLECT_OUT"
@@ -115,8 +158,8 @@ if ! uv run pytest --collect-only -q "${PASSTHROUGH[@]}" >"$COLLECT_OUT" 2>"$COL
 fi
 NODES=()
 while IFS= read -r node; do
-    NODES+=("$node")
-done < <(grep -E '::' "$COLLECT_OUT" || true)
+    [[ -n "$node" ]] && NODES+=("$node")
+done < "$COLLECT_OUT"
 rm -f "$COLLECT_ERR" "$COLLECT_OUT"
 TOTAL="${#NODES[@]}"
 if (( TOTAL == 0 )); then
@@ -159,7 +202,7 @@ while (( i < TOTAL )); do
     PYTEST_FLAGS=(-n auto --dist=load)
     (( BENCH )) && PYTEST_FLAGS+=(-q) || PYTEST_FLAGS+=(--no-header -q)
 
-    if ! uv run pytest "${PYTEST_FLAGS[@]}" "${RUNTIME_PASSTHROUGH[@]}" "${NODES[@]:i:CHUNK_SIZE}"; then
+    if ! "${PYTEST_CMD[@]}" "${PYTEST_FLAGS[@]}" "${RUNTIME_PASSTHROUGH[@]}" "${NODES[@]:i:CHUNK_SIZE}"; then
         echo "[fast-test] chunk failed — cursor preserved at next test index $i (use --resume to retry)"
         write_cursor "$i"
         exit 1
