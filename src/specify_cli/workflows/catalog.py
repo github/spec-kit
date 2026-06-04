@@ -1000,9 +1000,9 @@ class StepCatalog:
                 q = query.lower()
                 searchable = " ".join(
                     [
-                        step_data.get("name", ""),
-                        step_data.get("description", ""),
-                        step_data.get("id", ""),
+                        str(step_data.get("name") or ""),
+                        str(step_data.get("description") or ""),
+                        str(step_data.get("id") or ""),
                     ]
                 ).lower()
                 if q not in searchable:

@@ -2200,7 +2200,30 @@ class TestStepCatalog:
         assert len(results) == 1
         assert results[0]["id"] == "deploy"
 
-    def test_get_step_info_with_mock_catalog(self, project_dir, monkeypatch):
+    def test_search_with_non_string_fields(self, project_dir, monkeypatch):
+        """Non-string catalog fields (e.g. integer id) must not raise TypeError."""
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
+            "42": {
+                "id": 42,
+                "name": None,
+                "description": 99,
+                "_catalog_name": "test",
+                "_install_allowed": True,
+            },
+        })
+
+        results = catalog.search()
+        assert len(results) == 1
+
+        results = catalog.search(query="42")
+        assert len(results) == 1
+
+        results = catalog.search(query="missing")
+        assert len(results) == 0
+
         from specify_cli.workflows.catalog import StepCatalog
 
         catalog = StepCatalog(project_dir)
