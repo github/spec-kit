@@ -8,10 +8,10 @@
 #     pytest-xdist's `--dist=load` hands tests out one at a time to
 #     workers as they finish — natural FIFO progression with bounded
 #     in-flight memory.
-#   * Persist the cursor (next chunk index) to
+#   * Persist the cursor (next test index / chunk boundary) to
 #     `.pytest_cache/fast-test-cursor` after every successful chunk so
-#     `--resume` continues exactly where a crash left off.
-#   * `--reset` clears the cursor; `--bench` reports wall-time only.
+#     `--resume` continues from the last completed chunk.
+#   * `--reset` clears the cursor; `--bench` reduces pytest output (progress still prints).
 #
 # Usage:
 #   scripts/dev/test.sh                          # full suite, chunked
