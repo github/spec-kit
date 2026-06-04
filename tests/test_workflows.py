@@ -2716,6 +2716,112 @@ class TestRunState:
         with pytest.raises(FileNotFoundError):
             RunState.load("nonexistent", project_dir)
 
+    @pytest.mark.parametrize(
+        "malicious_run_id",
+        [
+            # Parent-directory traversal — the classic path-escape vector.
+            "../escape",
+            "..",
+            "../../etc/passwd",
+            # Embedded path separators — both POSIX and Windows.
+            "foo/bar",
+            "foo\\bar",
+            # Leading non-alphanumeric characters that the existing
+            # pattern's anchor blocks (would be mistaken for CLI flags
+            # or hidden files in shell completions / error messages).
+            ".hidden",
+            "-flag",
+            # NUL byte — some filesystems treat the prefix as a valid
+            # path and silently truncate at the NUL.
+            "foo\x00bar",
+            # Empty string — degenerate case, matches no file but the
+            # validator should reject it before any I/O.
+            "",
+        ],
+    )
+    def test_load_rejects_path_traversal(self, project_dir, malicious_run_id):
+        """``RunState.load`` validates ``run_id`` before touching the
+        filesystem.
+
+        Without this guard, a value like ``../escape`` passed via
+        ``specify workflow resume`` would interpolate path-traversal
+        segments into the lookup path. ``state_path.exists()`` would
+        probe arbitrary paths the process can read (a file-existence
+        oracle) and ``json.load`` would happily parse attacker-planted
+        JSON from outside ``.specify/workflows/runs/``. The check must
+        fire *before* the path is built — ``__init__``'s identical
+        regex on ``state_data["run_id"]`` fires too late.
+        """
+        from specify_cli.workflows.engine import RunState
+
+        # Plant a state.json *outside* the legitimate ``runs/`` directory
+        # at the location ``../escape`` would traverse to, so a missing
+        # guard would surface as a successful load rather than a
+        # ``FileNotFoundError`` (which would be ambiguous with the
+        # not-found case).
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        attacker_dir = project_dir / ".specify" / "workflows" / "escape"
+        attacker_dir.mkdir(exist_ok=True)
+        (attacker_dir / "state.json").write_text(
+            json.dumps(
+                {
+                    "run_id": "pwned",
+                    "workflow_id": "attacker-owned",
+                    "status": "created",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="Invalid run_id"):
+            RunState.load(malicious_run_id, project_dir)
+
+    @pytest.mark.parametrize(
+        "bad_run_id",
+        [
+            # One vector per category from ``test_load_rejects_path_traversal``
+            # — enough to prove both entry points agree without re-running
+            # the full attack matrix here.
+            "../escape",    # parent-directory traversal
+            "foo/bar",      # embedded path separator
+            ".hidden",      # leading non-alphanumeric
+            "",             # empty / degenerate
+        ],
+    )
+    def test_init_and_load_share_validation(self, project_dir, bad_run_id):
+        """``__init__`` *and* ``load`` reject the same malformed IDs.
+
+        The two entry points must stay in sync — drift would let an ID
+        slip in via one path that the other would reject, producing
+        confusing crashes mid-workflow. The previous version of this
+        test only exercised ``__init__`` and ``_validate_run_id`` (the
+        shared helper), so a regression in ``load`` — e.g. someone
+        deleting the ``cls._validate_run_id(run_id)`` call there — could
+        slip through despite ``__init__`` and the helper staying
+        aligned. We now hit ``load`` directly with the same vector so
+        any drift between the two call sites is caught by this test.
+        """
+        from specify_cli.workflows.engine import RunState
+
+        # ``__init__`` rejects up front.
+        with pytest.raises(ValueError, match="Invalid run_id"):
+            RunState(run_id=bad_run_id)
+
+        # The shared helper rejects the value too (sanity check that the
+        # ``__init__`` rejection came from the validator, not some
+        # unrelated constructor failure).
+        with pytest.raises(ValueError, match="Invalid run_id"):
+            RunState._validate_run_id(bad_run_id)
+
+        # And ``load`` rejects it *before* touching the filesystem. This
+        # is the assertion the previous version was missing: without it,
+        # a regression in ``load`` (e.g. forgetting to call the
+        # validator before building the path) would not be caught even
+        # though ``__init__`` and the helper still agreed.
+        with pytest.raises(ValueError, match="Invalid run_id"):
+            RunState.load(bad_run_id, project_dir)
+
     def test_append_log(self, project_dir):
         from specify_cli.workflows.engine import RunState
 

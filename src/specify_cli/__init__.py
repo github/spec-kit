@@ -1612,6 +1612,7 @@ def extension_add(
     extension: str = typer.Argument(help="Extension name or path"),
     dev: bool = typer.Option(False, "--dev", help="Install from local directory"),
     from_url: Optional[str] = typer.Option(None, "--from", help="Install from custom URL"),
+    force: bool = typer.Option(False, "--force", help="Overwrite if already installed"),
     priority: int = typer.Option(10, "--priority", help="Resolution priority (lower = higher precedence, default 10)"),
 ):
     """Install an extension."""
@@ -1625,6 +1626,9 @@ def extension_add(
 
     manager = ExtensionManager(project_root)
     speckit_version = get_speckit_version()
+
+    if force:
+        console.print("[yellow]--force:[/yellow] Will overwrite if already installed")
 
     # Prompt for URL-based installs BEFORE the spinner so the user can
     # actually see and respond to the confirmation (the Rich status
@@ -1676,11 +1680,15 @@ def extension_add(
                     console.print(f"[red]Error:[/red] No extension.yml found in {source_path}")
                     raise typer.Exit(1)
 
+                if force:
+                    console.print(f"[yellow]--force:[/yellow] Installing from [cyan]{source_path}[/cyan] (will overwrite if already installed)...")
+
                 manifest = manager.install_from_directory(
                     source_path,
                     speckit_version,
                     priority=priority,
                     link_commands=True,
+                    force=force
                 )
 
             elif from_url:
@@ -1702,7 +1710,7 @@ def extension_add(
                     zip_path.write_bytes(zip_data)
 
                     # Install from downloaded ZIP
-                    manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
+                    manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority, force=force)
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download from {safe_url}: {e}")
                     raise typer.Exit(1)
@@ -1715,7 +1723,9 @@ def extension_add(
                 # Try bundled extensions first (shipped with spec-kit)
                 bundled_path = _locate_bundled_extension(extension)
                 if bundled_path is not None:
-                    manifest = manager.install_from_directory(bundled_path, speckit_version, priority=priority)
+                    manifest = manager.install_from_directory(
+                        bundled_path, speckit_version, priority=priority, force=force
+                    )
                 else:
                     # Install from catalog (also resolves display names to IDs)
                     catalog = ExtensionCatalog(project_root)
@@ -1736,7 +1746,9 @@ def extension_add(
                     if resolved_id != extension:
                         bundled_path = _locate_bundled_extension(resolved_id)
                         if bundled_path is not None:
-                            manifest = manager.install_from_directory(bundled_path, speckit_version, priority=priority)
+                            manifest = manager.install_from_directory(
+                                bundled_path, speckit_version, priority=priority, force=force
+                            )
 
                     if bundled_path is None:
                         # Bundled extensions without a download URL must come from the local package
@@ -1772,7 +1784,7 @@ def extension_add(
 
                         try:
                             # Install from downloaded ZIP
-                            manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority)
+                            manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority, force=force)
                         finally:
                             # Clean up downloaded ZIP
                             if zip_path.exists():
@@ -2800,13 +2812,29 @@ def workflow_run(
     """Run a workflow from an installed ID or local YAML path."""
     from .workflows.engine import WorkflowEngine
 
-    project_root = _require_specify_project()
+    source_path = Path(source).expanduser()
+    is_file_source = source_path.suffix.lower() in (".yml", ".yaml") and source_path.is_file()
+
+    if is_file_source:
+        # When running a YAML file directly, use cwd as project root
+        # without requiring a .specify/ project directory.
+        project_root = Path.cwd()
+        specify_dir = project_root / ".specify"
+        if specify_dir.is_symlink():
+            console.print("[red]Error:[/red] Refusing to use symlinked .specify path in current directory")
+            raise typer.Exit(1)
+        if specify_dir.exists() and not specify_dir.is_dir():
+            console.print("[red]Error:[/red] .specify path exists but is not a directory")
+            raise typer.Exit(1)
+    else:
+        project_root = _require_specify_project()
+
     engine = WorkflowEngine(project_root)
     if not json_output:
         engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
     try:
-        definition = engine.load_workflow(source)
+        definition = engine.load_workflow(source_path if is_file_source else source)
     except FileNotFoundError:
         console.print(f"[red]Error:[/red] Workflow not found: {source}")
         raise typer.Exit(1)

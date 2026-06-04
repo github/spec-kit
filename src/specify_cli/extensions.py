@@ -1173,6 +1173,7 @@ class ExtensionManager:
         register_commands: bool = True,
         priority: int = 10,
         link_commands: bool = False,
+        force: bool = False,
     ) -> ExtensionManifest:
         """Install extension from a local directory.
 
@@ -1183,6 +1184,8 @@ class ExtensionManager:
             priority: Resolution priority (lower = higher precedence, default 10)
             link_commands: If True, register rendered agent artifacts as
                 symlinks to a dev cache when supported by the OS.
+            force: If True and extension is already installed, remove it first
+                   before proceeding with installation
 
         Returns:
             Installed extension manifest
@@ -1204,13 +1207,33 @@ class ExtensionManager:
 
         # Check if already installed
         if self.registry.is_installed(manifest.id):
-            raise ExtensionError(
-                f"Extension '{manifest.id}' is already installed. "
-                f"Use 'specify extension remove {manifest.id}' first."
-            )
+            if not force:
+                raise ExtensionError(
+                    f"Extension '{manifest.id}' is already installed. "
+                    f"Use 'specify extension remove {manifest.id}' first, "
+                    f"or retry with --force to overwrite."
+                )
 
         # Reject manifests that would shadow core commands or installed extensions.
         self._validate_install_conflicts(manifest)
+
+        # Remove existing installation AFTER all validations pass so that a
+        # validation failure doesn't leave the user with a half-uninstalled
+        # extension (configs stranded in .backup/).
+        did_remove = False
+        if force and self.registry.is_installed(manifest.id):
+            # Clear any stale backup from a previous remove so that only the
+            # backup produced by the current remove() call is restored later.
+            backup_config_dir = self.extensions_dir / ".backup" / manifest.id
+            # Check is_symlink first: is_dir() follows symlinks so a
+            # symlink-to-directory would pass, but rmtree() raises on them.
+            if backup_config_dir.is_symlink():
+                backup_config_dir.unlink()
+            elif backup_config_dir.is_dir():
+                shutil.rmtree(backup_config_dir)
+            elif backup_config_dir.exists():
+                backup_config_dir.unlink()
+            did_remove = self.remove(manifest.id)
 
         # Install extension
         dest_dir = self.extensions_dir / manifest.id
@@ -1239,6 +1262,26 @@ class ExtensionManager:
         hook_executor = HookExecutor(self.project_root)
         hook_executor.register_hooks(manifest)
 
+        # Restore config files from backup when --force triggered a removal.
+        # Only restore *.yml config files to match what remove() backs up,
+        # so unexpected artifacts in .backup/ are not resurrected.
+        if did_remove:
+            backup_config_dir = self.extensions_dir / ".backup" / manifest.id
+            # is_symlink first: is_dir() follows symlinks, but rmtree()
+            # raises on them — and we shouldn't follow symlinks to restore.
+            if backup_config_dir.is_symlink():
+                backup_config_dir.unlink()
+            elif backup_config_dir.is_dir():
+                for cfg_file in backup_config_dir.iterdir():
+                    if cfg_file.is_file() and not cfg_file.is_symlink() and (
+                        cfg_file.name.endswith("-config.yml") or
+                        cfg_file.name.endswith("-config.local.yml")
+                    ):
+                        shutil.copy2(cfg_file, dest_dir / cfg_file.name)
+                shutil.rmtree(backup_config_dir)
+            elif backup_config_dir.exists():
+                backup_config_dir.unlink()
+
         # Update registry
         self.registry.add(manifest.id, {
             "version": manifest.version,
@@ -1257,6 +1300,7 @@ class ExtensionManager:
         zip_path: Path,
         speckit_version: str,
         priority: int = 10,
+        force: bool = False,
     ) -> ExtensionManifest:
         """Install extension from ZIP file.
 
@@ -1264,6 +1308,8 @@ class ExtensionManager:
             zip_path: Path to extension ZIP file
             speckit_version: Current spec-kit version
             priority: Resolution priority (lower = higher precedence, default 10)
+            force: If True and extension is already installed, remove it first
+                   before proceeding with installation
 
         Returns:
             Installed extension manifest
@@ -1310,7 +1356,9 @@ class ExtensionManager:
                 raise ValidationError("No extension.yml found in ZIP file")
 
             # Install from extracted directory
-            return self.install_from_directory(extension_dir, speckit_version, priority=priority)
+            return self.install_from_directory(
+                extension_dir, speckit_version, priority=priority, force=force
+            )
 
     def remove(self, extension_id: str, keep_config: bool = False) -> bool:
         """Remove an installed extension.
@@ -2742,7 +2790,7 @@ class HookExecutor:
 
         if not isinstance(config, dict):
             config = {}
-            # We don't save yet, as there are no hooks to unregister, 
+            # We don't save yet, as there are no hooks to unregister,
             # but unregister_extension above might have already saved a normalized config.
             return
 

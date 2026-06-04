@@ -2,6 +2,20 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.9.3] - 2026-06-03
+
+### Changed
+
+- fix: render script command hints with active agent separator (#2649)
+- chore(tests): fix ruff lint violations in tests/ (#2827)
+- fix(workflows): validate run_id in RunState.load before touching the … (#2813)
+- feat(cli): implement specify self upgrade (#2475)
+- feat(workflows): allow resume to accept updated workflow inputs (#2815)
+- catalog: rename "superpowers-bridge" to "superspec" (v1.0.1) (#2772)
+- fix(cli): force UTF-8 stdout/stderr on Windows to prevent UnicodeEncodeError (#2817)
+- fix(plan): clarify quickstart validation guide scope (#2805)
+- chore: release 0.9.2, begin 0.9.3.dev0 development (#2823)
+
 ## [0.9.2] - 2026-06-02
 
 ### Changed

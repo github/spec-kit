@@ -23,7 +23,6 @@ def test_version_symbols_available_from_star_import():
 
 def test_version_module_symbols_directly_importable():
     from specify_cli._version import (
-        GITHUB_API_LATEST,
         _fetch_latest_release_tag,
         _get_installed_version,
         _is_newer,
