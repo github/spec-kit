@@ -231,8 +231,8 @@ class TestAlquimiaAIIntegration:
         assert init_options["ai_skills"] is True
         assert init_options["integration"] == "alquimia"
 
-    def test_alquimia_init_remains_usable_when_converter_fails(self, tmp_path):
-        """Alquimia init should succeed even without install_ai_skills."""
+    def test_alquimia_init_creates_skill_files(self, tmp_path):
+        """Init with --ai alquimia should create Alquimia skills and succeed."""
         from specify_cli import app
         from typer.testing import CliRunner
 

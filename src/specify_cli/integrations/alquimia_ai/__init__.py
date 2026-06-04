@@ -103,7 +103,7 @@ class AlquimiaAIIntegration(SkillsIntegration):
         return "".join(out)
 
     def _render_skill(self, template_name: str, frontmatter: dict[str, Any], body: str) -> str:
-        """Render a processed command template as a Alquimia skill."""
+        """Render a processed command template as an Alquimia skill."""
         skill_name = f"speckit-{template_name.replace('.', '-')}"
         description = frontmatter.get(
             "description",
