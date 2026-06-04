@@ -10,10 +10,20 @@ from typing import Any
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
 
-#: C0 control characters except tab — stripped from ``show_file`` content so a
-#: file containing ANSI escapes (e.g. ``\x1b[2J``) cannot clear the screen or
-#: spoof the prompt/options when its lines are printed to the terminal.
+#: C0 control characters except tab. Stripped from anything derived from a
+#: ``show_file`` before it is printed — both the file's contents and the path
+#: itself — so a file (or a path) containing ANSI escapes (e.g. ``\x1b[2J``)
+#: cannot clear the screen or spoof the prompt/options at the terminal.
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def _sanitize_for_display(text: str) -> str:
+    """Strip control characters so untrusted text cannot inject ANSI escapes.
+
+    Applied to every ``show_file``-derived string that reaches the terminal:
+    the displayed path, each file line, and the read-error notice.
+    """
+    return _CONTROL_CHARS.sub("", text)
 
 
 class GateStep(StepBase):
@@ -102,8 +112,11 @@ class GateStep(StepBase):
         text = str(message)
         if not show_file:
             return text
+        # The path is opened with the original value but displayed sanitized,
+        # so a path that itself contains escapes cannot spoof the terminal.
+        header = f"{_sanitize_for_display(show_file)}:"
         body = "\n".join(
-            [f"{show_file}:", *(f"  {line}" for line in cls._read_show_file(show_file))]
+            [header, *(f"  {line}" for line in cls._read_show_file(show_file))]
         )
         return f"{text}\n\n{body}"
 
@@ -157,9 +170,10 @@ class GateStep(StepBase):
                     if len(lines) >= GateStep.MAX_SHOW_FILE_LINES:
                         truncated = True
                         break
-                    lines.append(_CONTROL_CHARS.sub("", line.rstrip("\n")))
+                    lines.append(_sanitize_for_display(line.rstrip("\n")))
         except (OSError, UnicodeDecodeError, ValueError) as exc:
-            return [f"(could not read file: {exc})"]
+            # ``exc`` echoes the (possibly hostile) path, so sanitize it too.
+            return [_sanitize_for_display(f"(could not read file: {exc})")]
         if not lines and not truncated:
             return ["(file is empty)"]
         if truncated:

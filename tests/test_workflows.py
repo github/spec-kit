@@ -990,6 +990,16 @@ class TestGateStep:
         assert rendered == ["a[2Jb\tcd"]
         assert "\x1b" not in rendered[0] and "\x07" not in rendered[0]
 
+    def test_compose_prompt_sanitizes_show_file_path(self):
+        from specify_cli.workflows.steps.gate import GateStep
+
+        # The displayed path header (and the read-error notice it produces)
+        # must not carry escapes even when the path string itself contains
+        # control characters; the file is still opened with the raw value.
+        out = GateStep._compose_prompt("Review.", "evil\x1b[2Jpath.md")
+        assert "\x1b" not in out
+        assert "evil[2Jpath.md:" in out
+
     def test_interactive_non_string_message_renders(self, monkeypatch, capsys):
         from specify_cli.workflows.steps.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
