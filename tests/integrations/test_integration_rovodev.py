@@ -2,33 +2,60 @@
 
 from __future__ import annotations
 
-import json
 import os
 
+import pytest
 import yaml
+from click.testing import Result
+from typer.testing import CliRunner
 
+from specify_cli import app
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.manifest import IntegrationManifest
 
 
+def _run_init(project, *flags: str) -> Result:
+    """Run ``specify init --here`` in *project* with the given extra flags.
+
+    Centralises the cwd-management boilerplate so individual tests just
+    declare the flags they care about.
+    """
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        return CliRunner().invoke(
+            app,
+            ["init", "--here", *flags, "--script", "sh",
+             "--no-git", "--ignore-agent-tools"],
+            catch_exceptions=False,
+        )
+    finally:
+        os.chdir(old_cwd)
+
+
+@pytest.fixture
+def rovodev_init_project(tmp_path):
+    """Run ``specify init --integration rovodev`` once and return the project root.
+
+    Shared across the slow init-inventory tests so we pay the full-CLI cost
+    only once instead of three times.
+    """
+    project = tmp_path / "rovodev-init"
+    project.mkdir()
+    result = _run_init(project, "--integration", "rovodev")
+    assert result.exit_code == 0, result.output
+    return project
+
+
 class TestRovodevIntegration:
+    """Rovodev-specific tests (not inherited from SkillsIntegrationTests because
+    rovodev's setup() emits prompt wrappers + prompts.yml in addition to skills,
+    which violates the base mixin's pure-skills assumptions)."""
+
     KEY = "rovodev"
+    CONTEXT_FILE = "AGENTS.md"
 
-    def test_key_and_config(self):
-        impl = get_integration(self.KEY)
-        assert impl is not None
-        assert impl.key == self.KEY
-        assert impl.config["folder"] == ".rovodev/"
-        assert impl.config["commands_subdir"] == "skills"
-        assert impl.registrar_config["dir"] == ".rovodev/skills"
-        assert impl.registrar_config["extension"] == "/SKILL.md"
-        assert impl.context_file == "AGENTS.md"
-
-    def test_inherited_command_filename_for_base_compatibility(self):
-        impl = get_integration(self.KEY)
-        # RovoDev scaffolding does not use command_filename directly (skills +
-        # prompt wrappers), but this guards inherited IntegrationBase behavior.
-        assert impl.command_filename("plan") == "speckit.plan.md"
+    # -- ACLI dispatch -----------------------------------------------------
 
     def test_build_exec_args(self):
         impl = get_integration(self.KEY)
@@ -37,7 +64,46 @@ class TestRovodevIntegration:
         assert args[3] == "/speckit.plan add OAuth"
         assert "--output-schema" in args
 
-    def test_setup_creates_skills_prompts_and_manifest(self, tmp_path):
+    def test_build_exec_args_without_json(self):
+        impl = get_integration(self.KEY)
+        args = impl.build_exec_args("/speckit.plan add OAuth", output_json=False)
+        assert args == ["acli", "rovodev", "run", "/speckit.plan add OAuth"]
+
+    def test_build_exec_args_executable_env_override(self, monkeypatch):
+        """SPECKIT_INTEGRATION_ROVODEV_EXECUTABLE overrides the binary path.
+
+        Lets operators pin a specific ``acli`` build or relocate the binary
+        without modifying the integration. Mirrors codex/devin/claude/etc.
+        """
+        monkeypatch.setenv("SPECKIT_INTEGRATION_ROVODEV_EXECUTABLE", "/opt/atl/bin/acli")
+        impl = get_integration(self.KEY)
+        args = impl.build_exec_args("hello", output_json=False)
+        assert args == ["/opt/atl/bin/acli", "rovodev", "run", "hello"]
+
+    def test_build_exec_args_executable_env_blank_falls_back(self, monkeypatch):
+        """Whitespace/empty env override is treated as unset → default ``acli``."""
+        monkeypatch.setenv("SPECKIT_INTEGRATION_ROVODEV_EXECUTABLE", "   ")
+        impl = get_integration(self.KEY)
+        args = impl.build_exec_args("hello", output_json=False)
+        assert args[0] == "acli"
+
+    def test_build_exec_args_extra_args_env_injection(self, monkeypatch):
+        """SPECKIT_INTEGRATION_ROVODEV_EXTRA_ARGS injects extra CLI flags.
+
+        Useful for CI or non-interactive contexts that need to pass flags
+        the integration doesn't expose. Mirrors the contract on every other
+        CLI integration (claude, codex, devin, …).
+        """
+        monkeypatch.setenv("SPECKIT_INTEGRATION_ROVODEV_EXTRA_ARGS", "--quiet --no-color")
+        impl = get_integration(self.KEY)
+        args = impl.build_exec_args("hello", output_json=False)
+        assert args == [
+            "acli", "rovodev", "run", "hello", "--quiet", "--no-color",
+        ]
+
+    # -- Setup-level: prompt wrappers + prompts.yml ------------------------
+
+    def test_setup_creates_prompts_and_manifest(self, tmp_path):
         impl = get_integration(self.KEY)
         manifest = IntegrationManifest(self.KEY, tmp_path)
         created = impl.setup(tmp_path, manifest)
@@ -56,11 +122,10 @@ class TestRovodevIntegration:
         skill_dirs = sorted(d for d in skills_dir.iterdir() if d.is_dir() and d.name.startswith("speckit-"))
         assert len(prompt_files) == len(templates)
         assert len(skill_dirs) == len(templates)
-        # Each skill dir has a SKILL.md
         for skill_dir in skill_dirs:
             assert (skill_dir / "SKILL.md").exists()
 
-    def test_prompts_manifest_references_existing_files(self, tmp_path):
+    def test_prompts_manifest_entries_well_formed(self, tmp_path):
         impl = get_integration(self.KEY)
         manifest = IntegrationManifest(self.KEY, tmp_path)
         impl.setup(tmp_path, manifest)
@@ -76,15 +141,21 @@ class TestRovodevIntegration:
             content_file = tmp_path / ".rovodev" / entry["content_file"]
             assert content_file.exists(), f"Missing prompt file {content_file}"
 
-    def test_prompt_files_delegate_to_paired_skills(self, tmp_path):
+    def test_prompt_wrapper_format(self, tmp_path):
+        """Every prompt wrapper delegates to its paired skill via 'use skill ...'."""
         impl = get_integration(self.KEY)
         manifest = IntegrationManifest(self.KEY, tmp_path)
         impl.setup(tmp_path, manifest)
 
-        prompt_file = tmp_path / ".rovodev" / "prompts" / "speckit-plan.prompt.md"
-        content = prompt_file.read_text(encoding="utf-8")
-        assert content == "use skill speckit-plan $ARGUMENTS\n"
-
+        prompts_dir = tmp_path / ".rovodev" / "prompts"
+        prompt_files = sorted(prompts_dir.glob("speckit-*.prompt.md"))
+        assert prompt_files
+        for prompt_file in prompt_files:
+            skill_name = prompt_file.name.removesuffix(".prompt.md")
+            content = prompt_file.read_text(encoding="utf-8")
+            assert content == f"use skill {skill_name} $ARGUMENTS\n", (
+                f"{prompt_file} has unexpected wrapper format"
+            )
 
     def test_prompts_manifest_merge_preserves_user_entries(self, tmp_path):
         impl = get_integration(self.KEY)
@@ -92,19 +163,13 @@ class TestRovodevIntegration:
 
         prompts_manifest = tmp_path / ".rovodev" / "prompts.yml"
         prompts_manifest.parent.mkdir(parents=True, exist_ok=True)
+        user_entry = {
+            "name": "my-custom-prompt",
+            "description": "User-added prompt",
+            "content_file": "prompts/my-custom-prompt.md",
+        }
         prompts_manifest.write_text(
-            yaml.safe_dump(
-                {
-                    "prompts": [
-                        {
-                            "name": "custom.user.prompt",
-                            "description": "User-added prompt",
-                            "content_file": "prompts/custom.user.prompt.md",
-                        }
-                    ]
-                },
-                sort_keys=False,
-            ),
+            yaml.safe_dump({"prompts": [user_entry]}, sort_keys=False),
             encoding="utf-8",
         )
 
@@ -112,148 +177,129 @@ class TestRovodevIntegration:
 
         data = yaml.safe_load(prompts_manifest.read_text(encoding="utf-8"))
         names = {entry.get("name") for entry in data.get("prompts", [])}
-        assert "custom.user.prompt" in names
+        assert "my-custom-prompt" in names
         assert "speckit-plan" in names
 
-    def test_skill_files_have_rovodev_frontmatter(self, tmp_path):
+    def test_modified_prompts_yml_survives_uninstall(self, tmp_path):
         impl = get_integration(self.KEY)
         manifest = IntegrationManifest(self.KEY, tmp_path)
-        impl.setup(tmp_path, manifest)
-
-        skill_file = tmp_path / ".rovodev" / "skills" / "speckit-plan" / "SKILL.md"
-        content = skill_file.read_text(encoding="utf-8")
-        assert content.startswith("---\n")
-        first_end = content.find("\n---\n")
-        assert first_end != -1
-        frontmatter = yaml.safe_load(content[4:first_end])
-        assert frontmatter["name"] == "speckit-plan"
-        assert "description" in frontmatter
-        body = content[first_end + len("\n---\n"):]
-        assert not body.lstrip().startswith("---\n")
-
-    def test_skill_templates_are_processed(self, tmp_path):
-        impl = get_integration(self.KEY)
-        manifest = IntegrationManifest(self.KEY, tmp_path)
-        impl.setup(tmp_path, manifest)
-
-        skills_dir = tmp_path / ".rovodev" / "skills"
-        for skill_dir in skills_dir.iterdir():
-            if not skill_dir.is_dir():
-                continue
-            skill_file = skill_dir / "SKILL.md"
-            if not skill_file.exists():
-                continue
-            content = skill_file.read_text(encoding="utf-8")
-            assert "{SCRIPT}" not in content
-            assert "__AGENT__" not in content
-            assert "__SPECKIT_COMMAND_" not in content
-            assert "\nscripts:\n" not in content
-
-
-    def test_setup_upserts_context_section(self, tmp_path):
-        impl = get_integration(self.KEY)
-        manifest = IntegrationManifest(self.KEY, tmp_path)
-        impl.setup(tmp_path, manifest)
-        ctx_path = tmp_path / impl.context_file
-        assert ctx_path.exists()
-        content = ctx_path.read_text(encoding="utf-8")
-        assert "<!-- SPECKIT START -->" in content
-        assert "<!-- SPECKIT END -->" in content
-
-    def test_all_created_files_tracked_in_manifest(self, tmp_path):
-        impl = get_integration(self.KEY)
-        manifest = IntegrationManifest(self.KEY, tmp_path)
-        created = impl.setup(tmp_path, manifest)
-        for path in created:
-            rel = path.resolve().relative_to(tmp_path.resolve()).as_posix()
-            assert rel in manifest.files
-
-    def test_install_uninstall_roundtrip(self, tmp_path):
-        impl = get_integration(self.KEY)
-        manifest = IntegrationManifest(self.KEY, tmp_path)
-        created = impl.install(tmp_path, manifest)
-        manifest.save()
-        removed, skipped = impl.uninstall(tmp_path, manifest)
-        assert len(removed) == len(created)
-        assert skipped == []
-
-    def test_modified_file_survives_uninstall(self, tmp_path):
-        impl = get_integration(self.KEY)
-        manifest = IntegrationManifest(self.KEY, tmp_path)
-        created = impl.install(tmp_path, manifest)
+        impl.install(tmp_path, manifest)
         manifest.save()
         modified = tmp_path / ".rovodev" / "prompts.yml"
         modified.write_text("user modified this", encoding="utf-8")
-        removed, skipped = impl.uninstall(tmp_path, manifest)
+        _, skipped = impl.uninstall(tmp_path, manifest)
         assert modified.exists()
         assert modified in skipped
 
-    def test_init_inventory_sh(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
+    # -- Full-CLI init: skills + prompts integration with extensions -------
 
-        project = tmp_path / "rovodev-inventory"
-        project.mkdir()
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            result = CliRunner().invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--integration",
-                    "rovodev",
-                    "--script",
-                    "sh",
-                    "--no-git",
-                    "--ignore-agent-tools",
-                ],
-                catch_exceptions=False,
-            )
-        finally:
-            os.chdir(old_cwd)
-        assert result.exit_code == 0, result.output
+    def test_init_inventory(self, rovodev_init_project):
+        """Rovodev + extensions produce the expected skill / prompt set.
 
-        prompts_manifest = project / ".rovodev" / "prompts.yml"
-        assert prompts_manifest.exists()
+        Contract:
+          - Rovodev.setup() emits one SKILL.md + one .prompt.md per core template.
+          - Extensions install additional SKILL.md directories with NO prompt wrapper.
+        """
+        project = rovodev_init_project
+        impl = get_integration(self.KEY)
+        core_skill_names = {
+            f"speckit-{t.stem.replace('.', '-')}"
+            for t in impl.list_command_templates()
+        }
+
         prompt_files = sorted((project / ".rovodev" / "prompts").glob("speckit-*.prompt.md"))
+        prompt_stems = {p.name.removesuffix(".prompt.md") for p in prompt_files}
+
         skills_dir = project / ".rovodev" / "skills"
-        skill_dirs = sorted(d for d in skills_dir.iterdir() if d.is_dir() and d.name.startswith("speckit-"))
-        assert len(prompt_files) == 9
-        assert len(skill_dirs) == 9
-        assert (project / "AGENTS.md").exists()
-        assert (project / ".specify" / "integration.json").exists()
-        assert (project / ".specify" / "integrations" / "rovodev.manifest.json").exists()
-        assert (project / ".specify" / "integrations" / "speckit.manifest.json").exists()
+        skill_names = {
+            d.name for d in skills_dir.iterdir()
+            if d.is_dir() and d.name.startswith("speckit-")
+        }
+
+        # Prompts: exactly the core template set.
+        assert prompt_stems == core_skill_names
+
+        # Skills: core ∪ extension-installed.
+        assert core_skill_names.issubset(skill_names)
+        extension_skills = skill_names - core_skill_names
+        assert extension_skills, (
+            "Expected at least one extension-installed skill (e.g. agent-context)"
+        )
+
+        # prompts.yml mirrors the prompt files exactly.
+        prompts_manifest = project / ".rovodev" / "prompts.yml"
         data = yaml.safe_load(prompts_manifest.read_text(encoding="utf-8"))
-        assert len(data["prompts"]) == 9
+        assert {e["name"] for e in data["prompts"]} == core_skill_names
 
-    def test_init_options_include_context_file(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
+    def test_init_skill_files_well_formed(self, rovodev_init_project):
+        """Every speckit-* SKILL.md from full init has valid frontmatter +
+        processed body, including extension-installed skills."""
+        project = rovodev_init_project
+        skills_dir = project / ".rovodev" / "skills"
+        skill_dirs = sorted(
+            d for d in skills_dir.iterdir()
+            if d.is_dir() and d.name.startswith("speckit-")
+        )
+        assert skill_dirs
 
-        project = tmp_path / "opts"
-        project.mkdir()
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            result = CliRunner().invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--integration",
-                    "rovodev",
-                    "--script",
-                    "sh",
-                    "--no-git",
-                    "--ignore-agent-tools",
-                ],
-                catch_exceptions=False,
+        for skill_dir in skill_dirs:
+            skill_file = skill_dir / "SKILL.md"
+            assert skill_file.exists(), f"Missing {skill_file}"
+            content = skill_file.read_text(encoding="utf-8")
+
+            # Frontmatter delimited by leading '---\n' ... '\n---\n'
+            assert content.startswith("---\n"), f"{skill_file} missing frontmatter"
+            fm_end = content.find("\n---\n", 4)
+            assert fm_end != -1, f"{skill_file} has unterminated frontmatter"
+            fm = yaml.safe_load(content[4:fm_end])
+            body = content[fm_end + len("\n---\n"):]
+
+            assert fm.get("name") == skill_dir.name
+            assert fm.get("description")
+            assert body.strip(), f"{skill_file} has empty body"
+
+            for placeholder in ("{SCRIPT}", "__AGENT__", "__CONTEXT_FILE__", "__SPECKIT_COMMAND_"):
+                assert placeholder not in body, (
+                    f"{skill_file} body contains unprocessed placeholder {placeholder!r}"
+                )
+            # Skills agents must use hyphen-style refs in body.
+            assert "/speckit." not in body, (
+                f"{skill_file} body contains dot-notation /speckit. reference"
             )
-        finally:
-            os.chdir(old_cwd)
+
+        # The plan skill must reference the agent's context file.
+        plan_content = (skills_dir / "speckit-plan" / "SKILL.md").read_text(encoding="utf-8")
+        assert self.CONTEXT_FILE in plan_content
+
+    # -- Full-CLI init: integration metadata -------------------------------
+
+    def test_init_writes_integration_manifest_and_options(self, rovodev_init_project):
+        """Full init must produce an integration manifest and well-formed
+        init-options.json — used by extensions, presets, and uninstall."""
+        import json
+
+        project = rovodev_init_project
+
+        manifest_path = project / ".specify" / "integrations" / "rovodev.manifest.json"
+        speckit_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
+        assert manifest_path.exists(), "rovodev integration manifest missing"
+        assert speckit_manifest.exists(), "speckit shared manifest missing"
+
+        init_options = json.loads(
+            (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
+        )
+        assert init_options["integration"] == self.KEY
+        assert init_options["ai"] == self.KEY
+        # Rovodev is a SkillsIntegration, so ai_skills is auto-set.
+        assert init_options.get("ai_skills") is True
+        assert init_options.get("script") == "sh"
+
+    def test_ai_flag_auto_promotes_to_integration(self, tmp_path):
+        """``--ai rovodev`` should reach the same end-state as ``--integration rovodev``."""
+        project = tmp_path / "rovodev-ai"
+        project.mkdir()
+        result = _run_init(project, "--ai", "rovodev")
         assert result.exit_code == 0, result.output
-        init_options = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
-        assert init_options["context_file"] == "AGENTS.md"
+        assert (project / ".rovodev" / "skills" / "speckit-plan" / "SKILL.md").exists()
+        assert (project / ".rovodev" / "prompts.yml").exists()
+        assert (project / ".specify" / "integrations" / "rovodev.manifest.json").exists()

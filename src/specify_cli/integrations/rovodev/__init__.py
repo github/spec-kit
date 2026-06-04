@@ -7,6 +7,7 @@ under ``.rovodev/prompts/`` and a ``prompts.yml`` manifest.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,21 @@ class RovodevIntegration(SkillsIntegration):
 
     # -- CLI dispatch ------------------------------------------------------
 
+    def _resolve_executable(self) -> str:
+        """Return the binary to invoke (``acli``).
+
+        RovoDev is invoked as ``acli rovodev …`` — ``acli`` is the executable
+        and ``rovodev`` is a subcommand. The base implementation falls back
+        to ``self.key`` (``"rovodev"``), which is the wrong binary, so we
+        override the fallback to ``"acli"`` while still honouring the
+        standard ``SPECKIT_INTEGRATION_ROVODEV_EXECUTABLE`` env-var override.
+        """
+        env_name = (
+            f"SPECKIT_INTEGRATION_{self.key.upper().replace('-', '_')}_EXECUTABLE"
+        )
+        override = os.environ.get(env_name, "").strip()
+        return override if override else "acli"
+
     def build_exec_args(
         self,
         prompt: str,
@@ -58,9 +74,14 @@ class RovodevIntegration(SkillsIntegration):
         The integration currently does not apply ``model`` overrides because
         the expected config shape for ``--config-override`` is not yet wired
         in this adapter.
+
+        Honours the standard env-var contract:
+          - ``SPECKIT_INTEGRATION_ROVODEV_EXECUTABLE`` overrides ``acli``
+          - ``SPECKIT_INTEGRATION_ROVODEV_EXTRA_ARGS`` injects extra CLI flags
         """
         _ = model
-        args = ["acli", "rovodev", "run", prompt]
+        args = [self._resolve_executable(), "rovodev", "run", prompt]
+        self._apply_extra_args_env_var(args)
         if output_json:
             args.extend([
                 "--output-schema",
