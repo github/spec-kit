@@ -18,7 +18,7 @@
 #   scripts/dev/test.sh --chunk-size 100
 #   scripts/dev/test.sh --resume                 # continue from cursor
 #   scripts/dev/test.sh --reset                  # clear cursor
-#   scripts/dev/test.sh --bench                  # time only, no -v
+#   scripts/dev/test.sh --bench                  # quieter pytest output
 #   scripts/dev/test.sh -- tests/test_merge.py   # pass-through to pytest
 
 set -euo pipefail
@@ -32,6 +32,7 @@ RESET=0
 BENCH=0
 PASSTHROUGH=()
 RUNTIME_PASSTHROUGH=()
+COLLECT_PASSTHROUGH=()
 PYTEST_CMD=()
 LOCK_DIR="$REPO_ROOT/.pytest_cache/fast-test.lock"
 LOCK_HELD=0
@@ -73,7 +74,12 @@ mktemp_file() {
         printf '%s\n' "$tmp"
         return 0
     fi
-    mktemp
+    if tmp="$(mktemp "${TMPDIR:-/tmp}/fast-test.XXXXXX" 2>/dev/null)"; then
+        printf '%s\n' "$tmp"
+        return 0
+    fi
+    echo "[fast-test] mktemp failed; set TMPDIR or install a compatible mktemp" >&2
+    return 1
 }
 
 # Collection and execution do not share every pytest flag. Keep runtime
@@ -89,7 +95,10 @@ for arg in "${PASSTHROUGH[@]}"; do
         --collect-only|--co) ;;
         -n|--numprocesses|--dist) skip_next=1 ;;
         -n*|--numprocesses=*|--dist=*) ;;
-        *) RUNTIME_PASSTHROUGH+=("$arg") ;;
+        *)
+            RUNTIME_PASSTHROUGH+=("$arg")
+            COLLECT_PASSTHROUGH+=("$arg")
+            ;;
     esac
 done
 
@@ -150,7 +159,7 @@ fi
 echo "[fast-test] collecting tests ..."
 COLLECT_ERR="$(mktemp_file)"
 COLLECT_OUT="$(mktemp_file)"
-if ! "${PYTEST_CMD[@]}" --collect-only -q "${PASSTHROUGH[@]}" >"$COLLECT_OUT" 2>"$COLLECT_ERR"; then
+if ! "${PYTEST_CMD[@]}" --collect-only -q "${COLLECT_PASSTHROUGH[@]}" >"$COLLECT_OUT" 2>"$COLLECT_ERR"; then
     echo "[fast-test] test collection failed" >&2
     [[ -s "$COLLECT_ERR" ]] && { echo "--- collection stderr ---"; cat "$COLLECT_ERR"; } >&2
     rm -f "$COLLECT_ERR" "$COLLECT_OUT"
