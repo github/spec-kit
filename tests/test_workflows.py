@@ -995,9 +995,10 @@ class TestGateStep:
 
         # The displayed path header (and the read-error notice it produces)
         # must not carry escapes even when the path string itself contains
-        # control characters; the file is still opened with the raw value.
-        out = GateStep._compose_prompt("Review.", "evil\x1b[2Jpath.md")
-        assert "\x1b" not in out
+        # control characters — ESC, LF, and C1 CSI (\x9b); the file is still
+        # opened with the raw value.
+        out = GateStep._compose_prompt("Review.", "ev\x1bil\x9b[2J\npath.md")
+        assert "\x1b" not in out and "\x9b" not in out
         assert "evil[2Jpath.md:" in out
 
     def test_interactive_non_string_message_renders(self, monkeypatch, capsys):

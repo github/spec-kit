@@ -10,11 +10,11 @@ from typing import Any
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
 
-#: C0 control characters except tab. Stripped from anything derived from a
-#: ``show_file`` before it is printed — both the file's contents and the path
-#: itself — so a file (or a path) containing ANSI escapes (e.g. ``\x1b[2J``)
-#: cannot clear the screen or spoof the prompt/options at the terminal.
-_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+#: Control characters except tab: C0 (incl. LF, so an embedded newline cannot
+#: break the boxed layout), DEL, and C1 (incl. ``\x9b`` CSI). Stripped from
+#: anything derived from a ``show_file`` before it is printed — the file's
+#: contents and the path itself — so neither can inject ANSI/terminal escapes.
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f]")
 
 
 class GateStep(StepBase):
