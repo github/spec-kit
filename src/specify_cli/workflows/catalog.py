@@ -627,6 +627,10 @@ class StepRegistry:
         # read outside the project root.
         if self._has_symlinked_parent():
             return default_registry
+        # Defense-in-depth: also refuse to read a symlinked registry file,
+        # which could redirect the read outside the project root.
+        if self.registry_path.is_symlink():
+            return default_registry
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, encoding="utf-8") as f:

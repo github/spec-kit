@@ -89,9 +89,23 @@ def load_custom_steps(project_root: Path) -> list[str]:
     if not steps_dir.is_dir():
         return []
 
+    # Defense-in-depth: refuse to execute step code from a symlinked
+    # parent directory under .specify/workflows/steps, which could redirect
+    # the import outside the project root and bypass the install-time
+    # symlink guard.
+    _current = Path(project_root)
+    for _part in (".specify", "workflows", "steps"):
+        _current = _current / _part
+        if _current.is_symlink():
+            return []
+
     loaded: list[str] = []
     for step_dir in steps_dir.iterdir():
         if not step_dir.is_dir():
+            continue
+        # Skip symlinked step directories so the imported package always
+        # resolves to a real directory inside the project root.
+        if step_dir.is_symlink():
             continue
         step_yml = step_dir / "step.yml"
         init_py = step_dir / "__init__.py"

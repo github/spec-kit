@@ -6294,7 +6294,13 @@ def workflow_step_remove(
     if dir_exists and not in_registry:
         # No registry write needed; just delete the orphaned directory.
         import shutil
-        shutil.rmtree(step_dir)
+        try:
+            shutil.rmtree(step_dir)
+        except OSError as exc:
+            console.print(
+                f"[red]Error:[/red] Failed to remove step directory {step_dir}: {exc}"
+            )
+            raise typer.Exit(1)
     elif in_registry:
         # Remove the registry entry FIRST so that, if the registry write fails
         # (read-only filesystem, permission denied), the on-disk step directory
@@ -6306,7 +6312,13 @@ def workflow_step_remove(
             raise typer.Exit(1)
         if dir_exists:
             import shutil
-            shutil.rmtree(step_dir)
+            try:
+                shutil.rmtree(step_dir)
+            except OSError as exc:
+                console.print(
+                    f"[red]Error:[/red] Failed to remove step directory {step_dir}: {exc}"
+                )
+                raise typer.Exit(1)
     console.print(f"[green]✓[/green] Step type '{step_id}' uninstalled")
 
 
