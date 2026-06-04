@@ -60,7 +60,7 @@ while (( $# )); do
         --reset)      RESET=1;  shift ;;
         --bench)      BENCH=1;  shift ;;
         --)           shift; PASSTHROUGH+=("$@"); break ;;
-        -h|--help)    sed -n '2,22p' "$0"; exit 0 ;;
+        -h|--help)    print_help; exit 0 ;;
         *)            PASSTHROUGH+=("$1"); shift ;;
     esac
 done
@@ -82,6 +82,17 @@ mktemp_file() {
     fi
     echo "[fast-test] mktemp failed; set TMPDIR or install a compatible mktemp" >&2
     return 1
+}
+
+print_help() {
+    awk '
+        /^# Usage:/ {printing=1}
+        printing {
+            if ($0 !~ /^#/) {exit}
+            sub(/^# ?/, "", $0)
+            print
+        }
+    ' "$0"
 }
 
 # Collection and execution do not share every pytest flag. Keep runtime
@@ -115,6 +126,7 @@ if (( XDIST_IGNORED )); then
 fi
 
 cleanup() {
+    exec 3<&- 2>/dev/null || true
     [[ -n "$COLLECT_ERR" && -f "$COLLECT_ERR" ]] && rm -f "$COLLECT_ERR"
     [[ -n "$COLLECT_OUT" && -f "$COLLECT_OUT" ]] && rm -f "$COLLECT_OUT"
     [[ -n "$COLLECT_FILTERED" && -f "$COLLECT_FILTERED" ]] && rm -f "$COLLECT_FILTERED"
@@ -136,16 +148,16 @@ write_cursor() {
     mv "$CURSOR_TMP" "$CURSOR_FILE"
 }
 
-load_chunk_nodes() {
-    local start_index="$1"
-    local end_index="$2"
-    local start_line=$(( start_index + 1 ))
-    local end_line="$end_index"
-
+read_chunk() {
+    local count=0
     CHUNK_NODES=()
-    while IFS= read -r node; do
-        [[ -n "$node" ]] && CHUNK_NODES+=("$node")
-    done < <(awk -v start="$start_line" -v end="$end_line" 'NR < start {next} NR > end {exit} {print}' "$COLLECT_OUT")
+    while (( count < CHUNK_SIZE )); do
+        if ! IFS= read -r node <&3; then
+            break
+        fi
+        CHUNK_NODES+=("$node")
+        count=$((count + 1))
+    done
 }
 
 cd "$REPO_ROOT"
@@ -248,6 +260,15 @@ fi
 CHUNKS=$(( (TOTAL - START + CHUNK_SIZE - 1) / CHUNK_SIZE ))
 echo "[fast-test] $TOTAL tests · chunk=$CHUNK_SIZE · $CHUNKS chunk(s) queued · workers=auto"
 
+exec 3< "$COLLECT_OUT"
+skip_count=0
+while (( skip_count < START )); do
+    if ! IFS= read -r _ <&3; then
+        break
+    fi
+    skip_count=$((skip_count + 1))
+done
+
 # 3. FIFO dispatch.
 T_START=$(date +%s)
 i="$START"
@@ -256,6 +277,12 @@ while (( i < TOTAL )); do
     end=$(( i + CHUNK_SIZE ))
     (( end > TOTAL )) && end="$TOTAL"
     chunk_idx=$(( chunk_idx + 1 ))
+    read_chunk
+    if (( ${#CHUNK_NODES[@]} == 0 )); then
+        echo "[fast-test] no tests read for chunk; stopping" >&2
+        break
+    fi
+    end=$(( i + ${#CHUNK_NODES[@]} ))
     echo "[fast-test] chunk $chunk_idx/$CHUNKS  tests $((i+1))..$end"
 
     PYTEST_FLAGS=(-n auto --dist=load)
@@ -265,9 +292,8 @@ while (( i < TOTAL )); do
         PYTEST_FLAGS+=(--no-header)
     fi
 
-    load_chunk_nodes "$i" "$end"
     if ! "${PYTEST_CMD[@]}" "${PYTEST_FLAGS[@]}" "${RUNTIME_PASSTHROUGH[@]}" "${CHUNK_NODES[@]}"; then
-        echo "[fast-test] chunk failed — cursor preserved at next test index $i (use --resume to retry)"
+        echo "[fast-test] chunk failed — cursor preserved at next test index $i (use --resume to retry)" >&2
         write_cursor "$i"
         exit 1
     fi
@@ -277,6 +303,7 @@ while (( i < TOTAL )); do
 done
 
 T_END=$(date +%s)
+exec 3<&- 2>/dev/null || true
 rm -f "$COLLECT_OUT"
 rm -f "$CURSOR_FILE"
 echo "[fast-test] all $TOTAL tests passed in $((T_END - T_START))s"
