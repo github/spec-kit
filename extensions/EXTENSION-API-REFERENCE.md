@@ -52,7 +52,7 @@ provides:
       description: string
       required: boolean  # Default: false
 
-hooks:                   # Optional, event hooks
+hooks:                   # Optional, event hooks. Each event accepts either form below.
   event_name:            # e.g., "after_specify", "after_plan", "after_tasks", "after_implement"
     command: string      # Command to execute
     priority: integer    # Optional, >= 1, default 10 (lower runs first)
@@ -60,6 +60,11 @@ hooks:                   # Optional, event hooks
     prompt: string       # Prompt text for optional hooks
     description: string  # Hook description
     condition: string    # Optional, condition expression
+  another_event:         # Any event may instead use a list of mappings (multiple commands)
+    - command: string    # Same fields as the single mapping, per entry
+      priority: integer
+    - command: string
+      priority: integer
 
 tags:                    # Optional, array of tags (2-10 recommended)
   - string
