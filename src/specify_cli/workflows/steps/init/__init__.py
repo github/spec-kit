@@ -104,6 +104,10 @@ class InitStep(StepBase):
             except OSError:
                 not_empty = False
             if not_empty:
+                error_message = (
+                    f"Target directory {base!r} is not empty. Set "
+                    "'force: true' to merge into a non-empty directory."
+                )
                 return StepResult(
                     status=StepStatus.FAILED,
                     output={
@@ -112,11 +116,11 @@ class InitStep(StepBase):
                         "here": here,
                         "integration": integration,
                         "script": script,
+                        "exit_code": 1,
+                        "stdout": "",
+                        "stderr": error_message,
                     },
-                    error=(
-                        f"Target directory {base!r} is not empty. Set "
-                        "'force: true' to merge into a non-empty directory."
-                    ),
+                    error=error_message,
                 )
 
         if integration:
