@@ -213,6 +213,10 @@ cd "$REPO_ROOT"
 mkdir -p "$(dirname "$CURSOR_FILE")"
 
 if command -v flock >/dev/null 2>&1; then
+    if [[ -L "$LOCK_FILE" ]]; then
+        err "lock path is a symlink; refusing to use $LOCK_FILE"
+        exit 1
+    fi
     exec 9>"$LOCK_FILE" || { err "unable to open lock file: $LOCK_FILE"; exit 1; }
     if ! flock -n 9; then
         err "another run is active (lock: $LOCK_FILE)"
@@ -274,8 +278,8 @@ if ! "${PYTEST_CMD[@]}" --help 2>/dev/null | grep -Eq '(-n[[:space:]]|--numproce
 fi
 
 log "collecting tests ..."
-COLLECT_ERR="$(mktemp_file)"
-COLLECT_OUT="$(mktemp_file)"
+COLLECT_ERR="$(mktemp_file)" || exit 1
+COLLECT_OUT="$(mktemp_file)" || exit 1
 if ! "${PYTEST_CMD[@]}" --collect-only -q "${COLLECT_PASSTHROUGH[@]}" >"$COLLECT_OUT" 2>"$COLLECT_ERR"; then
     err "test collection failed"
     [[ -s "$COLLECT_ERR" ]] && { echo "--- collection stderr ---"; cat "$COLLECT_ERR"; } >&2
@@ -283,7 +287,7 @@ if ! "${PYTEST_CMD[@]}" --collect-only -q "${COLLECT_PASSTHROUGH[@]}" >"$COLLECT
     exit 1
 fi
 rm -f "$COLLECT_ERR"
-COLLECT_FILTERED="$(mktemp_file)"
+COLLECT_FILTERED="$(mktemp_file)" || exit 1
 awk 'NF' "$COLLECT_OUT" > "$COLLECT_FILTERED"
 mv "$COLLECT_FILTERED" "$COLLECT_OUT"
 TOTAL="$(wc -l < "$COLLECT_OUT" | tr -d '[:space:]')"
@@ -305,7 +309,10 @@ if [[ "$ARG_MAX" =~ ^[0-9]+$ ]]; then
     BASE_ARGS_SIZE="$(arg_bytes "${PYTEST_CMD[@]}" "${BASE_PYTEST_ARGS[@]}" "${RUNTIME_PASSTHROUGH[@]}")"
     SAFETY_MARGIN=2048
     AVAILABLE=$(( ARG_MAX - BASE_ARGS_SIZE - SAFETY_MARGIN ))
-    (( AVAILABLE < 0 )) && AVAILABLE=0
+    if (( AVAILABLE <= 0 )); then
+        err "base pytest invocation exceeds ARG_MAX; reduce passthrough args"
+        exit 1
+    fi
     PER_NODE=$(( MAX_NODE_LEN + 1 ))
     if (( PER_NODE > 0 )); then
         MAX_SAFE=$(( AVAILABLE / PER_NODE ))
