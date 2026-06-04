@@ -58,8 +58,9 @@ Map planned `U` design objects to concrete source, test, fixture, configuration,
 - write only `allowed_write_paths`
 - write `task_status_update.receipt_path` as `speckit.implement.receipt.v1`
 - validation_evidence must reference the relevant BDD scenario, behavior assertion, API contract, or quickstart path when the handoff context includes behavior contracts
-- Code review tasks must echo `task_type: code_review`, write `review_conclusion.checked_sources`, `consistency_repairs`, and `deferred_validation_todos` when applicable
-- repair design, sequence, or contract drift only inside `allowed_write_paths`; real e2e cannot run becomes a todo
+- Code review tasks must echo `task_type: code_review`, write `review_conclusion.checked_sources`, `data_side_effect_review`, `consistency_repairs`, and `deferred_validation_todos` when applicable
+- For data side-effect review, inspect the actual implementation diff for runtime database writes and field-level update/delete behavior, bulk writes, soft deletes, ORM whole-object saves, migrations/backfills, retries, rollback/compensation, and external-system writes
+- repair design, sequence, or contract drift and high-risk data side effects only inside `allowed_write_paths`; real e2e cannot run becomes a todo
 - Do not edit `tasks.md`, create handoffs, dispatch workers
 ## Lifecycle
 `intake` -> `context_indexing` -> `vertical_planning` -> `manifest_assembly` -> `worker_dispatch` -> `worker_execution` -> `receipt_review` -> `code_review` -> `task_commit` -> `integration_verification` -> `closeout`
@@ -110,8 +111,11 @@ Map planned `U` design objects to concrete source, test, fixture, configuration,
 - receipt path does not equal `task_status_update.receipt_path`
 ## Code Review Receipts
 - require `task_type: code_review` and `review_conclusion.checked_sources` from `allowed_read_paths` or `context_digest_path`
+- require `data_side_effect_review.reviewed_diff_paths`, `runtime_data_writes_found`, and `mutation_findings` for data side-effect review of the actual implementation diff
+- `data_side_effect_review.reviewed_diff_paths` must come from `allowed_read_paths` or `context_digest_path`
 - require quickstart/contract validation command evidence when `validation_commands` are declared
 - approved receipts must not contain unresolved critical/high findings
+- approved receipts must not contain unresolved critical/high data side-effect findings
 - approved receipts are invalid when real e2e cannot run
 - `consistency_repairs` changed paths must stay inside `allowed_write_paths`
 - `deferred_validation_todos` lists missing environment, quickstart path, and commands when real e2e cannot run

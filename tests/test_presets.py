@@ -3490,7 +3490,7 @@ class TestBundledPresetLocator:
         template_count = sum(1 for item in provided if item["type"] == "template")
 
         assert entry["bundled"] is True
-        assert entry["version"] == "1.3.2"
+        assert entry["version"] == "1.3.4"
         assert entry["version"] == manifest["preset"]["version"]
         assert entry["repository"] == manifest["preset"]["repository"]
         assert entry["requires"]["speckit_version"] == manifest["requires"]["speckit_version"]

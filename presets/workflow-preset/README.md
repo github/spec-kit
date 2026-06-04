@@ -2,7 +2,7 @@
 
 This Spec Kit community preset combines behavior-first specification, design-aware planning, and agent-native handoff orchestration.
 
-It keeps `/speckit.specify`, `/speckit.clarify`, `/speckit.checklist`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.analyze` compatible with the core workflow while adding a BDD readiness gate, Phase 0 behavior projection, optional design artifacts for internal object design and service sequencing, and task-time test strategy derivation. It replaces `/speckit.implement` with a Core Agent, Vertical Planner Agent, and Worker Agent orchestration contract that writes handoffs to disk.
+It keeps `/speckit.specify`, `/speckit.clarify`, `/speckit.checklist`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.analyze` compatible with the core workflow while adding a BDD and NFR readiness gate, Phase 0 behavior projection, optional design artifacts for internal object design and service sequencing, and task-time test strategy derivation. It replaces `/speckit.implement` with a Core Agent, Vertical Planner Agent, and Worker Agent orchestration contract that writes handoffs to disk.
 
 ## Goal
 
@@ -10,7 +10,7 @@ It keeps `/speckit.specify`, `/speckit.clarify`, `/speckit.checklist`, `/speckit
 
 The preset has four goals:
 
-- Make BDD readiness explicit before planning by checking `spec.md` for observable, verifiable behavior.
+- Make BDD readiness and NFR readiness explicit before planning by checking `spec.md` for observable, verifiable behavior and explicit non-functional requirement declarations.
 - Project accepted requirements into BDD, UIF intent, and fixture intent drafts during `/speckit.plan` Phase 0.
 - Preserve richer planning intent so downstream tasks and implementation do not lose object design, service-flow, or validation decisions.
 - Execute implementation through agent-native handoff orchestration so each worker receives explicit task IDs, lifecycle stage, vertical capability, context, read/write paths, validation commands, and receipt requirements.
@@ -21,7 +21,7 @@ Large Spec Kit features can overload the implementation phase. A single `/specki
 
 `workflow-preset` reduces that failure mode in three complementary ways:
 
-- Requirement enhancement keeps product requirements in `spec.md` and gates planning with a BDD readiness checklist.
+- Requirement enhancement keeps product requirements in `spec.md` and gates planning with a BDD/NFR readiness checklist.
 - Plan enhancement projects accepted behavior drafts, then gives object design, service sequencing, and validation intent stable homes before tasks are generated.
 - Implement handoff orchestration slices work by lifecycle and vertical capability, then gives each Worker Agent a compact digest, scoped paths, validation commands, and a receipt contract instead of the full planning corpus.
 
@@ -33,17 +33,18 @@ Requirement capabilities:
 
 - Wraps `/speckit.specify` so it produces or updates `spec.md` only.
 - Wraps `/speckit.clarify` so it resolves requirement ambiguity in `spec.md` only.
-- Wraps `/speckit.checklist` to add `checklists/behavior-testability.md` as a BDD readiness gate.
-- Checks user stories, acceptance criteria, Given/When/Then readiness, roles, permissions, states, data, validation, boundary, exception, and state-conflict behavior directly from `spec.md`.
-- Blocks planning when readiness gaps must return to `/speckit.clarify` or `/speckit.specify`.
+- Wraps `/speckit.checklist` to add `checklists/behavior-testability.md` as a BDD readiness gate and NFR readiness gate.
+- Checks user stories, acceptance criteria, Given/When/Then readiness, roles, permissions, states, data, validation, boundary, exception, state-conflict behavior, and non-functional requirements directly from `spec.md`.
+- Requires NFR dimensions to be marked Required, Not Applicable, or Unknown in product language before planning.
+- Blocks planning when readiness gaps or missing or unverifiable NFR assumptions must return to `/speckit.clarify` or `/speckit.specify`.
 
 Planning capabilities:
 
 - Wraps `/speckit.plan` to run Phase 0 preflight, Phase 0 behavior projection, and optional/contextual design artifacts when useful.
-- Requires the BDD readiness gate to pass before planning.
+- Requires the BDD and NFR readiness gate to pass before planning.
 - Treats Phase 0 preflight failures as report-only/no-write failures.
 - Writes `behavior/bdd.draft.feature`, `behavior/behavior-scenarios.draft.json`, `behavior/uif.intent.json`, and `behavior/data-fixtures.intent.json` during Phase 0 behavior projection.
-- Consumes Phase 0 behavior drafts and must formalize them into `contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` when the BDD readiness gate has passed.
+- Consumes Phase 0 behavior drafts and must formalize them into `contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` when the BDD and NFR readiness gate has passed.
 - Records `N/A or blocker` when behavior drafts cannot be formalized.
 - Keeps `plan.md` focused on technical decisions and navigation.
 - Adds plan-template navigation to the core plan output.
@@ -76,6 +77,7 @@ Implementation capabilities:
 - Defines deterministic shard, context digest, and allowed path derivation rules.
 - Keeps manifest, handoff, and receipt JSON contracts in standalone schema files.
 - Requires behavior-linked `validation_evidence` in worker receipts when behavior contracts are in handoff context.
+- Requires Final Code Review receipts to include post-implementation data side-effect review of actual implementation diffs before task status commit.
 - Assigns every handoff a lifecycle stage and vertical capability such as `domain-model`, `api-contract`, `persistence`, `service-flow`, `ui`, `test-validation`, `documentation`, `integration`, or `cleanup`.
 - Supports direct single-shard execution with `Use handoff JSON <path>`.
 - Blocks worker execution when generated context has unresolved `context_gaps`.
@@ -88,12 +90,13 @@ Context-load controls:
 - `context_gaps` are explicit blockers. A Worker Agent stops instead of guessing or expanding into full `spec.md`, `plan.md`, `research.md`, `contracts/`, `class-diagram.md`, or `quickstart.md`.
 - `allowed_read_paths` and `allowed_write_paths` make each handoff auditable and prevent broad implementation runs from silently crossing capability boundaries.
 - Worker receipts separate execution evidence from task status commits, so the Core Agent can review validation evidence before updating `tasks.md`.
+- Final Code Review analyzes implementation data side effects after Worker Agents finish and before task status commit.
 
 ## Workflow
 
 1. `/speckit.specify` keeps the core requirements output in `spec.md`.
 2. `/speckit.clarify` resolves requirement ambiguity in `spec.md`.
-3. `/speckit.checklist` checks BDD readiness directly from `spec.md` and blocks planning when readiness gaps remain.
+3. `/speckit.checklist` checks BDD and NFR readiness directly from `spec.md` and blocks planning when readiness gaps remain.
 4. `/speckit.plan` runs Phase 0 preflight, performs Phase 0 behavior projection, formalizes behavior drafts into contracts, and adds design artifacts when they help implementation.
 5. `/speckit.tasks` reads the core plan outputs, optional design artifacts, behavior contracts, interface contracts, `research.md`, and `quickstart.md`, then produces executable tasks with inline test level, data strategy, and evidence requirements.
 6. `/speckit.analyze` checks vertical consistency across requirements, behavior drafts, contracts, and tasks.
@@ -102,7 +105,8 @@ Context-load controls:
 9. Vertical Planner Agents produce shard plans, handoff drafts, context digest drafts, and allowed path derivations.
 10. The Core Agent assembles final handoffs and writes `handoff-manifest.json`.
 11. Worker Agents run only from persisted handoff JSON files and write receipts.
-12. The Core Agent reviews receipts, updates `tasks.md`, runs integration verification, and reports closeout status.
+12. Final Code Review checks consistency, implementation data side effects, and real e2e readiness.
+13. The Core Agent reviews receipts, updates `tasks.md`, runs integration verification, and reports closeout status.
 
 ## Non-Goals
 
@@ -119,7 +123,7 @@ Context-load controls:
 Release install:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.2/spec-kit-workflow-preset-v1.3.2.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.4/spec-kit-workflow-preset-v1.3.4.zip
 ```
 
 Local development install:
@@ -214,7 +218,7 @@ Development-only contract helpers:
 
 ## Artifact Roles
 
-`checklists/behavior-testability.md` is the BDD readiness gate. It checks `spec.md` before planning so user stories, acceptance criteria, Given context, executable When actions, and observable Then outcomes are ready for behavior projection.
+`checklists/behavior-testability.md` is the BDD and NFR readiness gate. It checks `spec.md` before planning so user stories, acceptance criteria, Given context, executable When actions, observable Then outcomes, and explicit non-functional requirement declarations are ready for behavior projection and planning. Each NFR dimension is marked Required, Not Applicable, or Unknown; missing or unverifiable NFR assumptions block planning when they affect downstream design.
 
 `behavior/bdd.draft.feature` captures Phase 0 behavior projection in readable Given/When/Then form. `behavior/behavior-scenarios.draft.json`, `behavior/uif.intent.json`, and `behavior/data-fixtures.intent.json` make the same draft behavior machine-readable enough for planning formalization.
 
@@ -226,8 +230,6 @@ Development-only contract helpers:
 
 Test strategy derivation happens during `/speckit.tasks`. The command derives unit, contract, integration, and end-to-end validation work from BDD contracts, Expected UIF contracts, behavior contracts, interface contracts, `research.md`, and `quickstart.md`, then writes the strategy inline on the relevant `tasks.md` checklist items.
 
-Final Code Review task generation happens during `/speckit.tasks`. The final review checks implementation consistency against `class-diagram.md`, `contracts/sequences.md`, `contracts/`, `research.md`, `quickstart.md`, and real e2e readiness. Authorized drift repairs are recorded during `/speckit.implement`; missing real e2e environments become deferred validation todos instead of passing evidence.
-
 The handoff context digest includes relevant design constraints, validation decisions, quickstart paths, and behavior contracts when present, so Worker Agents can preserve object boundaries, service flows, and validation intent without reading full planning documents by default.
 
 See `speckit-cross-agent-subagents.md` for the cross-platform subagent mapping, worker prompt, parallel dispatch rules, and minimal handoff/receipt contract.
@@ -238,7 +240,7 @@ The Core Agent is the lifecycle orchestrator. It owns context indexing, manifest
 
 Vertical Planner Agent runs are planners. A Vertical Planner Agent handles one `vertical_capability`, produces shard plans, handoff drafts, context digest drafts, and allowed path derivations, and does not execute implementation, write the final manifest, dispatch workers, or edit `tasks.md`.
 
-Worker Agent runs are executors. A Worker Agent handles one persisted handoff, writes only `allowed_write_paths`, does not edit `tasks.md`, does not dispatch additional workers, and writes a `speckit.implement.receipt.v1` receipt. Implementation receipts use `task_type: implementation`. Final Code Review receipts use `task_type: code_review` and include `review_conclusion.checked_sources`; when applicable they also record `consistency_repairs` and `deferred_validation_todos`.
+Worker Agent runs are executors. A Worker Agent handles one persisted handoff, writes only `allowed_write_paths`, does not edit `tasks.md`, does not dispatch additional workers, and writes a `speckit.implement.receipt.v1` receipt.
 
 Worker mode rejects handoff paths that do not exist or are not listed in `handoff-manifest.json`.
 
@@ -323,17 +325,17 @@ This repository owns preset artifact health:
 
 - run `tests/test_preset_contract.py`;
 - build `spec-kit-workflow-preset-v<version>.zip`;
-- smoke-install this checkout with a `specify` CLI built from `bigsmartben/spec-kit`;
+- smoke-install this checkout on an Ubuntu GitHub runner with a `specify` CLI built from `bigsmartben/spec-kit`;
 - publish or confirm the release artifact for a tag or manual release run;
 - create or update a `workflow-preset-release-v<version>` integration PR in `bigsmartben/spec-kit` on tag releases or manual runs with `create_integration_pr=true`.
 
-Manual release runs default to the next patch version when `version` is omitted. For example, a `preset.yml` version of `1.3.2` defaults to release version `1.3.3`.
+Manual release runs default to the next patch version when `version` is omitted. For example, a `preset.yml` version of `1.3.4` defaults to release version `1.3.5`.
 
 The integration PR step requires a repository secret named `SPEC_KIT_FORK_PR_TOKEN` with permission to push branches and open pull requests in `bigsmartben/spec-kit`. If a tag release or manual `create_integration_pr=true` run reaches that step without the secret, the workflow fails fast instead of skipping integration PR creation.
 
 This repository owns the release artifact and the fork integration PR. It does not open pull requests to `github/spec-kit`. The `bigsmartben/spec-kit` fork owns downstream integration validation, core compatibility fixes, catalog resolver checks, and any later community catalog PR flow.
 
-Validate local installation:
+Optional local CLI sanity check:
 
 ```bash
 specify preset add --dev /path/to/workflow-preset
@@ -341,10 +343,12 @@ specify preset info workflow-preset
 specify preset remove workflow-preset
 ```
 
+Release install smoke validation is intentionally owned by GitHub Actions, not by a local WSL environment.
+
 After tagging a release, validate archive installation:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.2/spec-kit-workflow-preset-v1.3.2.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.4/spec-kit-workflow-preset-v1.3.4.zip
 ```
 
 ## Source Rationale

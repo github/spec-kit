@@ -15,6 +15,7 @@ Include these sections:
 - Given Readiness
 - When Readiness
 - Then Readiness
+- Non-Functional Requirement Readiness
 - Gate Status
 - Blocking Items
 
@@ -26,9 +27,15 @@ Check When readiness from `spec.md`: each trigger is an executable user action, 
 
 Check Then readiness from `spec.md`: each outcome can become feedback, business state, error semantics, or assertion intent.
 
-Set `Gate Status: PASS` only when every applicable readiness item is checked and `Blocking Items: none`. Otherwise set `Gate Status: BLOCKED` and list each unchecked readiness item that prevents behavior projection.
+Check Non-Functional Requirement Readiness from `spec.md`: applicable performance, security and privacy, reliability and recovery, accessibility, compliance and auditability, observability, compatibility, data lifecycle, and cost or operational constraints are explicitly declared in `spec.md` as `Required`, `Not Applicable`, or `Unknown`.
 
-Unchecked readiness items that prevent behavior projection are blocking items. Do not proceed to `/speckit.plan`; Return to `/speckit.clarify` or `/speckit.specify` to resolve missing requirements before planning.
+For each NFR dimension, require either verifiable product-level criteria, a `Not Applicable` rationale, or an `Unknown` marker that identifies what must be clarified. Do not require technical designs such as SLAs, RTO/RPO formulas, cache layers, queues, deployment topology, or infrastructure choices unless the product requirement already states them.
+
+Treat these NFR readiness gaps as blocking items: Required but missing from `spec.md`; Required but not verifiable from product-level criteria; Unknown and affects downstream design. Do not block planning for NFR dimensions marked `Not Applicable` with a rationale or for dimensions with explicit no-special-requirement statements.
+
+Set `Gate Status: PASS` only when every applicable readiness item is checked and `Blocking Items: none`. Otherwise set `Gate Status: BLOCKED` and list each unchecked readiness item that prevents behavior projection or downstream planning.
+
+Unchecked readiness items that prevent behavior projection or downstream planning are blocking items. Do not proceed to `/speckit.plan`; Return to `/speckit.clarify` or `/speckit.specify` to resolve missing requirements before planning.
 
 {CORE_TEMPLATE}
 

@@ -28,6 +28,19 @@
 - [ ] Each outcome can become user feedback, business state, error semantics, or assertion intent.
 - [ ] Failure outcomes include precise feedback or error semantics.
 
+## Non-Functional Requirement Readiness
+- [ ] Performance - Status: Required|Not Applicable|Unknown; requirement or rationale is explicitly declared in `spec.md`.
+- [ ] Security and Privacy - Status: Required|Not Applicable|Unknown; requirement or rationale is explicitly declared in `spec.md`.
+- [ ] Reliability and Recovery - Status: Required|Not Applicable|Unknown; requirement or rationale is explicitly declared in `spec.md`.
+- [ ] Accessibility - Status: Required|Not Applicable|Unknown; requirement or rationale is explicitly declared in `spec.md`.
+- [ ] Compliance and Auditability - Status: Required|Not Applicable|Unknown; requirement or rationale is explicitly declared in `spec.md`.
+- [ ] Observability - Status: Required|Not Applicable|Unknown; requirement or rationale is explicitly declared in `spec.md`.
+- [ ] Compatibility - Status: Required|Not Applicable|Unknown; requirement or rationale is explicitly declared in `spec.md`.
+- [ ] Data Lifecycle - Status: Required|Not Applicable|Unknown; requirement or rationale is explicitly declared in `spec.md`.
+- [ ] Cost and Operational Constraints - Status: Required|Not Applicable|Unknown; requirement or rationale is explicitly declared in `spec.md`.
+- [ ] Required NFR entries have verifiable product-level criteria without prescribing architecture.
+- [ ] Unknown NFR entries that affect downstream design are listed as blocking items.
+
 ## Gate Status
 Gate Status: PASS|BLOCKED
 Blocking Items:

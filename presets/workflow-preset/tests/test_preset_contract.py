@@ -108,6 +108,14 @@ SEQUENCES_PATH = f"{FEATURE_PATH}/contracts/sequences.md"
 QUICKSTART_PATH = f"{FEATURE_PATH}/quickstart.md"
 
 
+def no_data_side_effects_review(*, paths: list[str] | None = None) -> dict:
+    return {
+        "reviewed_diff_paths": paths or [SERVICE_PATH],
+        "runtime_data_writes_found": False,
+        "mutation_findings": [],
+    }
+
+
 def minimal_shard(
     *,
     shard_id: str = SHARD_ID,
@@ -244,6 +252,7 @@ def minimal_receipt(
     changed_paths: list[str] | None = None,
     validation_evidence: list[str] | None = None,
     review_conclusion: dict | None = None,
+    data_side_effect_review: dict | None = None,
     consistency_repairs: list[dict] | None = None,
     deferred_validation_todos: list[dict] | None = None,
     task_type: str = "implementation",
@@ -262,6 +271,8 @@ def minimal_receipt(
     }
     if review_conclusion is not None:
         receipt["review_conclusion"] = review_conclusion
+    if data_side_effect_review is not None:
+        receipt["data_side_effect_review"] = data_side_effect_review
     if consistency_repairs is not None:
         receipt["consistency_repairs"] = consistency_repairs
     if deferred_validation_todos is not None:
@@ -390,7 +401,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertEqual("1.0", data["schema_version"])
         self.assertEqual("workflow-preset", data["preset"]["id"])
         self.assertEqual("Workflow Preset", data["preset"]["name"])
-        self.assertEqual("1.3.2", data["preset"]["version"])
+        self.assertEqual("1.3.4", data["preset"]["version"])
         self.assertEqual(
             "Behavior-first specification, design artifacts, and agent-native handoff orchestration",
             data["preset"]["description"],
@@ -445,7 +456,7 @@ class PresetContractTests(unittest.TestCase):
             entries["speckit.clarify"]["description"],
         )
         self.assertEqual(
-            "Wrap core checklist generation with BDD readiness gate",
+            "Wrap core checklist generation with BDD and NFR readiness gate",
             entries["speckit.checklist"]["description"],
         )
 
@@ -624,8 +635,13 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Final Code Review", tasks)
         self.assertIn("append the final phase after user-story tasks", tasks)
         self.assertIn("design, sequence, and contract consistency", tasks)
+        self.assertIn("data side-effect review", tasks)
+        self.assertIn("actual implementation diff", tasks)
+        self.assertIn("field-level update/delete", tasks)
+        self.assertIn("runtime database writes", tasks)
         self.assertIn("real e2e environment readiness", tasks)
         self.assertIn("task_type: code_review", tasks)
+        self.assertIn("data_side_effect_review", tasks)
         self.assertIn("review_conclusion", tasks)
         self.assertIn("checked_sources", tasks)
         self.assertIn("consistency_repairs", tasks)
@@ -647,6 +663,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("produce or update `spec.md` only", specify)
         self.assertIn("This command writes only `spec.md`", specify)
         self.assertIn("Product requirements stay in `spec.md`", specify)
+        self.assertIn("non-functional requirements", specify)
         self.assertIn("report the `spec.md` sections created or updated", specify)
         for forbidden in (
             "/speckit.plan",
@@ -670,6 +687,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Use `spec.md` as the clarification source", clarify)
         self.assertIn("Do not read or update behavior draft artifacts", clarify)
         self.assertIn("Product requirements stay in `spec.md`", clarify)
+        self.assertIn("non-functional requirement assumptions", clarify)
         self.assertIn("only after user-provided answers", clarify)
         for forbidden in (
             "behavior/bdd.draft.feature",
@@ -692,6 +710,19 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Given Readiness", checklist)
         self.assertIn("When Readiness", checklist)
         self.assertIn("Then Readiness", checklist)
+        self.assertIn("Non-Functional Requirement Readiness", checklist)
+        self.assertIn("Required", checklist)
+        self.assertIn("Not Applicable", checklist)
+        self.assertIn("Unknown", checklist)
+        self.assertIn("performance, security and privacy, reliability and recovery", checklist)
+        self.assertIn("accessibility, compliance and auditability, observability", checklist)
+        self.assertIn("compatibility, data lifecycle, and cost or operational constraints", checklist)
+        self.assertIn("explicitly declared in `spec.md`", checklist)
+        self.assertIn("verifiable product-level criteria", checklist)
+        self.assertIn("Do not require technical designs", checklist)
+        self.assertIn("Required but missing", checklist)
+        self.assertIn("Required but not verifiable", checklist)
+        self.assertIn("Unknown and affects downstream design", checklist)
         self.assertIn("Gate Status", checklist)
         self.assertIn("PASS", checklist)
         self.assertIn("BLOCKED", checklist)
@@ -871,6 +902,19 @@ class PresetContractTests(unittest.TestCase):
         behavior_checklist_template = BEHAVIOR_TEMPLATE_PATHS[
             "behavior-testability-checklist-template"
         ].read_text(encoding="utf-8")
+        self.assertIn("Non-Functional Requirement Readiness", behavior_checklist_template)
+        self.assertIn("Status: Required|Not Applicable|Unknown", behavior_checklist_template)
+        self.assertIn("Performance", behavior_checklist_template)
+        self.assertIn("Security and Privacy", behavior_checklist_template)
+        self.assertIn("Reliability and Recovery", behavior_checklist_template)
+        self.assertIn("Accessibility", behavior_checklist_template)
+        self.assertIn("Compliance and Auditability", behavior_checklist_template)
+        self.assertIn("Observability", behavior_checklist_template)
+        self.assertIn("Compatibility", behavior_checklist_template)
+        self.assertIn("Data Lifecycle", behavior_checklist_template)
+        self.assertIn("Cost and Operational Constraints", behavior_checklist_template)
+        self.assertIn("explicitly declared in `spec.md`", behavior_checklist_template)
+        self.assertIn("without prescribing architecture", behavior_checklist_template)
         self.assertIn("Gate Status: PASS|BLOCKED", behavior_checklist_template)
         self.assertIn("Blocking Items:", behavior_checklist_template)
         self.assertIn("none", behavior_checklist_template)
@@ -1013,6 +1057,11 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("task_type: code_review", command)
         self.assertIn("review_conclusion", command)
         self.assertIn("checked_sources", command)
+        self.assertIn("data_side_effect_review", command)
+        self.assertIn("data side-effect review", command)
+        self.assertIn("field-level update/delete", command)
+        self.assertIn("runtime database writes", command)
+        self.assertIn("actual implementation diff", command)
         self.assertIn("consistency_repairs", command)
         self.assertIn("deferred_validation_todos", command)
         self.assertIn("quickstart/contract validation command", command)
@@ -1052,6 +1101,9 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("task_type", receipt["required"])
         review_conclusion = receipt["properties"]["review_conclusion"]
         self.assertIn("checked_sources", review_conclusion["required"])
+        data_side_effect_review = receipt["properties"]["data_side_effect_review"]
+        self.assertIn("reviewed_diff_paths", data_side_effect_review["required"])
+        self.assertIn("mutation_findings", data_side_effect_review["required"])
 
     def test_manifest_schema_declares_runtime_neutral_execution_mode(self) -> None:
         schema = json.loads(MANIFEST_SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -1343,6 +1395,61 @@ class PresetContractTests(unittest.TestCase):
             receipts_by_path={RECEIPT_PATH: minimal_receipt()},
         )
 
+    def test_validate_implement_contract_rejects_code_review_that_misses_implementation_diff(
+        self,
+    ) -> None:
+        review_shard_id = "S02-service-flow-02"
+        review_receipt_path = f"{HANDOFF_DIR}/results/{review_shard_id}.json"
+        review_handoff_path = f"{HANDOFF_DIR}/{review_shard_id}.json"
+        manifest = minimal_manifest(
+            shards=[
+                minimal_shard(),
+                minimal_shard(
+                    shard_id=review_shard_id,
+                    task_ids=["T099"],
+                ),
+            ],
+            dependencies=[
+                {"shard_id": review_shard_id, "depends_on": [SHARD_ID]},
+            ],
+            dispatch_order=[[SHARD_ID], [review_shard_id]],
+        )
+        review_handoff = minimal_handoff(
+            shard_id=review_shard_id,
+            task_ids=["T099"],
+            allowed_write_paths=[review_receipt_path],
+            task_type="code_review",
+        )
+        review_handoff["allowed_read_paths"] = [TASKS_PATH, QUICKSTART_PATH, SERVICE_PATH]
+
+        with self.assertRaisesRegex(ValueError, "implementation changed_paths"):
+            validate_implement_contract(
+                manifest,
+                handoffs_by_path={
+                    f"{HANDOFF_DIR}/{SHARD_ID}.json": minimal_handoff(),
+                    review_handoff_path: review_handoff,
+                },
+                receipts_by_path={
+                    RECEIPT_PATH: minimal_receipt(changed_paths=[SERVICE_PATH]),
+                    review_receipt_path: minimal_receipt(
+                        shard_id=review_shard_id,
+                        task_ids=["T099"],
+                        task_type="code_review",
+                        changed_paths=[review_receipt_path],
+                        validation_evidence=["Code review checked implementation diff."],
+                        review_conclusion={
+                            "status": "approved",
+                            "summary": "Review complete.",
+                            "checked_sources": [QUICKSTART_PATH],
+                            "findings": [],
+                        },
+                        data_side_effect_review=no_data_side_effects_review(
+                            paths=[QUICKSTART_PATH]
+                        ),
+                    ),
+                },
+            )
+
     def test_validate_implement_contract_rejects_overlapping_allowed_write_paths(self) -> None:
         second_shard_id = "S02-service-flow-02"
         second_receipt_path = f"{HANDOFF_DIR}/results/{second_shard_id}.json"
@@ -1532,6 +1639,23 @@ class PresetContractTests(unittest.TestCase):
                         }
                     ],
                 },
+                data_side_effect_review={
+                    "reviewed_diff_paths": [SERVICE_PATH],
+                    "runtime_data_writes_found": True,
+                    "mutation_findings": [
+                        {
+                            "id": "DSE-001",
+                            "severity": "high",
+                            "category": "field_level_update",
+                            "summary": "Order status update may affect shared fulfillment flow.",
+                            "paths": [SERVICE_PATH],
+                            "operation": "update",
+                            "tables_or_entities": ["orders"],
+                            "fields": ["status"],
+                            "resolution": "blocked",
+                        }
+                    ],
+                },
                 consistency_repairs=[
                     {
                         "finding_id": "CR-001",
@@ -1561,6 +1685,44 @@ class PresetContractTests(unittest.TestCase):
                 "status": "approved",
                 "summary": "Review complete.",
                 "findings": [],
+            },
+        )
+
+        with self.assertRaises(ValidationError):
+            Draft202012Validator(schema).validate(receipt)
+
+    def test_receipt_schema_requires_data_side_effect_review_for_code_review_receipt(
+        self,
+    ) -> None:
+        schema = json.loads(RECEIPT_SCHEMA_PATH.read_text(encoding="utf-8"))
+        receipt = minimal_receipt(
+            task_type="code_review",
+            review_conclusion={
+                "status": "approved",
+                "summary": "Review complete.",
+                "checked_sources": [SERVICE_PATH],
+                "findings": [],
+            },
+        )
+
+        with self.assertRaises(ValidationError):
+            Draft202012Validator(schema).validate(receipt)
+
+    def test_receipt_schema_rejects_data_side_effect_review_without_reviewed_diff_paths(
+        self,
+    ) -> None:
+        schema = json.loads(RECEIPT_SCHEMA_PATH.read_text(encoding="utf-8"))
+        receipt = minimal_receipt(
+            task_type="code_review",
+            review_conclusion={
+                "status": "approved",
+                "summary": "Review complete.",
+                "checked_sources": [SERVICE_PATH],
+                "findings": [],
+            },
+            data_side_effect_review={
+                "runtime_data_writes_found": False,
+                "mutation_findings": [],
             },
         )
 
@@ -1656,6 +1818,94 @@ class PresetContractTests(unittest.TestCase):
                 RECEIPT_PATH,
             )
 
+    def test_validate_receipt_contract_requires_data_side_effect_review_for_code_review_task(
+        self,
+    ) -> None:
+        handoff = minimal_handoff(task_ids=["T099"], task_type="code_review")
+        handoff["allowed_read_paths"] = [TASKS_PATH, SERVICE_PATH]
+
+        with self.assertRaisesRegex(ValueError, "data_side_effect_review"):
+            validate_receipt_contract(
+                handoff,
+                minimal_receipt(
+                    task_ids=["T099"],
+                    task_type="code_review",
+                    review_conclusion={
+                        "status": "approved",
+                        "summary": "Review complete.",
+                        "checked_sources": [SERVICE_PATH],
+                        "findings": [],
+                    },
+                ),
+                RECEIPT_PATH,
+            )
+
+    def test_validate_receipt_contract_rejects_unreviewed_diff_path_for_data_side_effect_review(
+        self,
+    ) -> None:
+        handoff = minimal_handoff(task_ids=["T099"], task_type="code_review")
+        handoff["allowed_read_paths"] = [TASKS_PATH, SERVICE_PATH]
+
+        with self.assertRaisesRegex(ValueError, "reviewed_diff_paths"):
+            validate_receipt_contract(
+                handoff,
+                minimal_receipt(
+                    task_ids=["T099"],
+                    task_type="code_review",
+                    review_conclusion={
+                        "status": "approved",
+                        "summary": "Review complete.",
+                        "checked_sources": [SERVICE_PATH],
+                        "findings": [],
+                    },
+                    data_side_effect_review={
+                        "reviewed_diff_paths": [f"{FEATURE_PATH}/src/unread.py"],
+                        "runtime_data_writes_found": False,
+                        "mutation_findings": [],
+                    },
+                ),
+                RECEIPT_PATH,
+            )
+
+    def test_validate_receipt_contract_rejects_approved_with_unresolved_high_data_side_effect(
+        self,
+    ) -> None:
+        handoff = minimal_handoff(task_ids=["T099"], task_type="code_review")
+        handoff["allowed_read_paths"] = [TASKS_PATH, SERVICE_PATH]
+
+        with self.assertRaisesRegex(ValueError, "data side-effect"):
+            validate_receipt_contract(
+                handoff,
+                minimal_receipt(
+                    task_ids=["T099"],
+                    task_type="code_review",
+                    review_conclusion={
+                        "status": "approved",
+                        "summary": "Review complete.",
+                        "checked_sources": [SERVICE_PATH],
+                        "findings": [],
+                    },
+                    data_side_effect_review={
+                        "reviewed_diff_paths": [SERVICE_PATH],
+                        "runtime_data_writes_found": True,
+                        "mutation_findings": [
+                            {
+                                "id": "DSE-001",
+                                "severity": "high",
+                                "category": "field_level_update",
+                                "summary": "Shared status field update may disable other flows.",
+                                "paths": [SERVICE_PATH],
+                                "operation": "update",
+                                "tables_or_entities": ["orders"],
+                                "fields": ["status"],
+                                "resolution": "todo",
+                            }
+                        ],
+                    },
+                ),
+                RECEIPT_PATH,
+            )
+
     def test_validate_receipt_contract_rejects_checked_source_outside_allowed_reads(
         self,
     ) -> None:
@@ -1695,6 +1945,9 @@ class PresetContractTests(unittest.TestCase):
                         "checked_sources": [SEQUENCES_PATH],
                         "findings": [],
                     },
+                    data_side_effect_review=no_data_side_effects_review(
+                        paths=[SEQUENCES_PATH]
+                    ),
                     consistency_repairs=[
                         {
                             "finding_id": "CR-001",
@@ -1728,6 +1981,9 @@ class PresetContractTests(unittest.TestCase):
                         "checked_sources": [QUICKSTART_PATH],
                         "findings": [],
                     },
+                    data_side_effect_review=no_data_side_effects_review(
+                        paths=[QUICKSTART_PATH]
+                    ),
                 ),
                 RECEIPT_PATH,
             )
@@ -1759,6 +2015,9 @@ class PresetContractTests(unittest.TestCase):
                             }
                         ],
                     },
+                    data_side_effect_review=no_data_side_effects_review(
+                        paths=[API_CONTRACT_PATH]
+                    ),
                 ),
                 RECEIPT_PATH,
             )
@@ -1785,6 +2044,9 @@ class PresetContractTests(unittest.TestCase):
                         "checked_sources": [QUICKSTART_PATH],
                         "findings": [],
                     },
+                    data_side_effect_review=no_data_side_effects_review(
+                        paths=[QUICKSTART_PATH]
+                    ),
                     deferred_validation_todos=[
                         {
                             "id": "E2E-001",
@@ -1819,6 +2081,9 @@ class PresetContractTests(unittest.TestCase):
                         "checked_sources": [API_CONTRACT_PATH, QUICKSTART_PATH],
                         "findings": [],
                     },
+                    data_side_effect_review=no_data_side_effects_review(
+                        paths=[API_CONTRACT_PATH]
+                    ),
                 ),
                 RECEIPT_PATH,
             )
@@ -1831,6 +2096,7 @@ class PresetContractTests(unittest.TestCase):
             TASKS_PATH,
             SEQUENCES_PATH,
             QUICKSTART_PATH,
+            SERVICE_PATH,
         ]
         handoff["validation_commands"] = ["npm run e2e:payment"]
         handoff["task_text"] = ["T099 Review design drift and real e2e readiness"]
@@ -1859,6 +2125,7 @@ class PresetContractTests(unittest.TestCase):
                         }
                     ],
                 },
+                data_side_effect_review=no_data_side_effects_review(),
                 consistency_repairs=[
                     {
                         "finding_id": "CR-001",
@@ -2013,6 +2280,10 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("N/A or blocker", readme)
         self.assertIn("The preset has four goals:", readme)
         self.assertIn("BDD readiness gate", readme)
+        self.assertIn("NFR readiness", readme)
+        self.assertIn("explicit non-functional requirement declarations", readme)
+        self.assertIn("Required, Not Applicable, or Unknown", readme)
+        self.assertIn("missing or unverifiable NFR assumptions", readme)
         self.assertIn("Phase 0 behavior projection", readme)
         self.assertIn("validation_evidence", readme)
         self.assertIn("Context-load controls", readme)
@@ -2021,6 +2292,8 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("/speckit.constitution", changelog)
         self.assertIn("Moved behavior draft generation from `/speckit.specify` to `/speckit.plan` Phase 0", changelog)
         self.assertIn("BDD readiness gate", changelog)
+        self.assertIn("NFR readiness", changelog)
+        self.assertIn("explicitly declare applicable non-functional requirements", changelog)
         self.assertIn("Removed `behavior/open-questions.json`", changelog)
         self.assertIn("Hardened behavior contract quality gates", changelog)
         self.assertIn("formalization blockers", changelog)
@@ -2143,7 +2416,8 @@ class PresetContractTests(unittest.TestCase):
             "Behavior-first extension rule",
             "BDD and UIF artifacts need independent templates",
             "`/speckit.constitution`: constitution governance and project principles only",
-            "`/speckit.checklist`: checklist artifacts and BDD readiness gates only",
+            "`/speckit.checklist`: checklist artifacts and BDD/NFR readiness gates only",
+            "NFR readiness belongs in `spec.md` product requirements",
             "`/speckit.plan`: Phase 0 behavior projection, planning artifacts, and formal contracts",
             "Handoff extensions must update schema, validator, command, and cross-agent documentation together",
             "Do not bump preset version or release archive URLs until release preparation",
@@ -2215,7 +2489,16 @@ class PresetContractTests(unittest.TestCase):
             "spec-kit-workflow-preset-v${VERSION}.zip",
             "NEXT_PATCH_VERSION",
             "python3 -m unittest tests/test_preset_contract.py",
-            'project_dir="$(mktemp -d)"',
+            "python3 -m venv \"${GITHUB_WORKSPACE}/.venv-specify-smoke\"",
+            "echo \"${GITHUB_WORKSPACE}/.venv-specify-smoke/bin\" >> \"${GITHUB_PATH}\"",
+            'PATH="${GITHUB_WORKSPACE}/.venv-specify-smoke/bin:${PATH}"',
+            'project_dir="$(mktemp -d "${RUNNER_TEMP}/workflow-preset-smoke.XXXXXX")"',
+            'resolve_out="${RUNNER_TEMP}/plan-template-resolve.txt"',
+            "PIP_CONFIG_FILE: /dev/null",
+            'PYTEST_ADDOPTS: ""',
+            'export TMPDIR="${RUNNER_TEMP}"',
+            'export TEMP="${RUNNER_TEMP}"',
+            'export TMP="${RUNNER_TEMP}"',
             'specify init --here --ai claude --script sh --ignore-agent-tools',
             "specify preset remove workflow-preset",
             "specify preset add --dev",
@@ -2227,7 +2510,7 @@ class PresetContractTests(unittest.TestCase):
             "gh pr create",
             "gh pr edit",
             "WORKFLOW_PRESET_DOWNLOAD_URL",
-            'assert entry["version"] == "1.3.2"',
+            'assert entry\\["version"\\] == "[0-9]+\\.[0-9]+\\.[0-9]+"',
             "tests/test_presets.py",
             "speckit-cross-agent-subagents.md",
             "ZipInfo",
