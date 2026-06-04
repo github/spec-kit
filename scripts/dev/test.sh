@@ -126,7 +126,7 @@ if (( XDIST_IGNORED )); then
 fi
 
 cleanup() {
-    exec 3<&- 2>/dev/null || true
+    { exec 3<&-; } 2>/dev/null || true
     [[ -n "$COLLECT_ERR" && -f "$COLLECT_ERR" ]] && rm -f "$COLLECT_ERR"
     [[ -n "$COLLECT_OUT" && -f "$COLLECT_OUT" ]] && rm -f "$COLLECT_OUT"
     [[ -n "$COLLECT_FILTERED" && -f "$COLLECT_FILTERED" ]] && rm -f "$COLLECT_FILTERED"
@@ -280,7 +280,8 @@ while (( i < TOTAL )); do
     read_chunk
     if (( ${#CHUNK_NODES[@]} == 0 )); then
         echo "[fast-test] no tests read for chunk; stopping" >&2
-        break
+        write_cursor "$i"
+        exit 1
     fi
     end=$(( i + ${#CHUNK_NODES[@]} ))
     echo "[fast-test] chunk $chunk_idx/$CHUNKS  tests $((i+1))..$end"
@@ -303,7 +304,7 @@ while (( i < TOTAL )); do
 done
 
 T_END=$(date +%s)
-exec 3<&- 2>/dev/null || true
+{ exec 3<&-; } 2>/dev/null || true
 rm -f "$COLLECT_OUT"
 rm -f "$CURSOR_FILE"
 echo "[fast-test] all $TOTAL tests passed in $((T_END - T_START))s"
