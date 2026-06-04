@@ -178,6 +178,33 @@ def _receipt_mentions_any_command(receipt: dict[str, Any], commands: list[Any]) 
     return any(str(command) in evidence for command in commands)
 
 
+def _unresolved_high_or_critical(finding: dict[str, Any]) -> bool:
+    return (
+        finding.get("severity") in {"critical", "high"}
+        and finding.get("resolution") in {"todo", "blocked"}
+    )
+
+
+def _validate_data_side_effect_finding(finding: Any, *, index: int) -> None:
+    if not isinstance(finding, dict):
+        raise ValueError(
+            f"data_side_effect_review mutation_findings[{index}] must be an object"
+        )
+
+    context = f"data_side_effect_review mutation_findings[{index}]"
+    for key in ("id", "severity", "category", "summary", "operation", "resolution"):
+        if not isinstance(finding.get(key), str) or not finding.get(key):
+            raise ValueError(f"{context} must include {key}")
+
+    for key in ("tables_or_entities", "fields"):
+        values = finding.get(key)
+        if (
+            not isinstance(values, list)
+            or any(not isinstance(value, str) or not value for value in values)
+        ):
+            raise ValueError(f"{context} must include {key}")
+
+
 def validate_behavior_draft_contract(
     scenarios_draft: dict[str, Any],
     data_fixtures_intent: dict[str, Any],
@@ -363,6 +390,8 @@ def validate_implement_contract(
 
     write_path_owner: list[tuple[str, str]] = []
     capability_owner: list[tuple[str, str]] = []
+    implementation_changed_paths: set[str] = set()
+    code_review_receipts: list[dict[str, Any]] = []
     for shard in manifest.get("shards", []):
         handoff_path = shard["handoff_path"]
         handoff = handoffs_by_path.get(handoff_path)
@@ -411,6 +440,24 @@ def validate_implement_contract(
         receipt = receipts_by_path.get(receipt_path)
         if receipt is not None:
             validate_receipt_contract(handoff, receipt, receipt_path)
+            if receipt.get("task_type") == "implementation":
+                implementation_changed_paths.update(
+                    str(path) for path in receipt.get("changed_paths", [])
+                )
+            elif _handoff_is_code_review_task(handoff):
+                code_review_receipts.append(receipt)
+
+    for receipt in code_review_receipts:
+        data_side_effect_review = receipt.get("data_side_effect_review", {})
+        reviewed_diff_paths = {
+            str(path) for path in data_side_effect_review.get("reviewed_diff_paths", [])
+        }
+        missing_paths = sorted(implementation_changed_paths - reviewed_diff_paths)
+        if missing_paths:
+            raise ValueError(
+                "code review data_side_effect_review must cover implementation "
+                f"changed_paths: {missing_paths[0]}"
+            )
 
 
 def validate_handoff_contract(handoff: dict[str, Any]) -> None:
@@ -523,6 +570,32 @@ def validate_receipt_contract(
                     f"or context_digest_path: {source}"
                 )
 
+        data_side_effect_review = receipt.get("data_side_effect_review")
+        if not isinstance(data_side_effect_review, dict):
+            raise ValueError("code review receipt must include data_side_effect_review")
+
+        reviewed_diff_paths = data_side_effect_review.get("reviewed_diff_paths")
+        if not isinstance(reviewed_diff_paths, list) or not reviewed_diff_paths:
+            raise ValueError("data_side_effect_review must include reviewed_diff_paths")
+        for path in reviewed_diff_paths:
+            if not _code_review_checked_source_allowed(handoff, path):
+                raise ValueError(
+                    "data_side_effect_review reviewed_diff_paths must come from "
+                    f"allowed_read_paths or context_digest_path: {path}"
+                )
+
+        runtime_data_writes_found = data_side_effect_review.get(
+            "runtime_data_writes_found"
+        )
+        if not isinstance(runtime_data_writes_found, bool):
+            raise ValueError(
+                "data_side_effect_review must include runtime_data_writes_found"
+            )
+
+        mutation_findings = data_side_effect_review.get("mutation_findings")
+        if not isinstance(mutation_findings, list):
+            raise ValueError("data_side_effect_review must include mutation_findings")
+
         validation_commands = list(handoff.get("validation_commands", []))
         if validation_commands and not _receipt_mentions_any_command(
             receipt,
@@ -543,14 +616,18 @@ def validate_receipt_contract(
 
         review_status = review_conclusion.get("status")
         for finding in review_conclusion.get("findings", []):
-            unresolved_high = (
-                finding.get("severity") in {"critical", "high"}
-                and finding.get("resolution") in {"todo", "blocked"}
-            )
-            if review_status == "approved" and unresolved_high:
+            if review_status == "approved" and _unresolved_high_or_critical(finding):
                 raise ValueError(
                     "approved code review receipt must not include unresolved "
                     "critical/high findings"
+                )
+
+        for index, finding in enumerate(mutation_findings):
+            _validate_data_side_effect_finding(finding, index=index)
+            if review_status == "approved" and _unresolved_high_or_critical(finding):
+                raise ValueError(
+                    "approved code review receipt must not include unresolved "
+                    "critical/high data side-effect findings"
                 )
 
         e2e_deferred = _receipt_defers_real_e2e(receipt)

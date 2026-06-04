@@ -38,7 +38,7 @@ Stage ownership:
 - `/speckit.constitution`: constitution governance and project principles only.
 - `/speckit.specify`: requirement artifacts only.
 - `/speckit.clarify`: requirement clarification only.
-- `/speckit.checklist`: checklist artifacts and BDD readiness gates only.
+- `/speckit.checklist`: checklist artifacts and BDD/NFR readiness gates only.
 - `/speckit.plan`: Phase 0 behavior projection, planning artifacts, and formal contracts.
 - `/speckit.tasks`: `tasks.md` only.
 - `/speckit.analyze`: vertical consistency checks across requirements, behavior drafts, contracts, and tasks only.
@@ -85,9 +85,10 @@ interface contracts, `research.md`, and `quickstart.md`. Do not add a
 standalone `test-plan.md` artifact unless the preset contract is deliberately
 changed for an audit or manual-review requirement.
 
-Keep product requirements in `spec.md`, domain model details in
-`data-model.md`, interface schemas in `contracts/`, and validation run guidance
-in `quickstart.md`.
+Keep product requirements in `spec.md`, including explicit NFR assumptions;
+NFR readiness belongs in `spec.md` product requirements rather than downstream
+planning guesses. Keep domain model details in `data-model.md`, interface
+schemas in `contracts/`, and validation run guidance in `quickstart.md`.
 
 ## Handoff Extension Rules
 

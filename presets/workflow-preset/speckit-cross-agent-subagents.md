@@ -53,8 +53,9 @@ Use `agent-runtime=<spec-kit-integration-key>` as a prompt hint. The manifest re
 - Read only allowed_read_paths
 - Write only allowed_write_paths
 - write receipt_path as speckit.implement.receipt.v1 with validation_evidence references to relevant BDD scenario, behavior assertion, API contract, or quickstart path
-- Code Review Receipts use task_type: code_review, review_conclusion.checked_sources, consistency_repairs, deferred_validation_todos, and quickstart/contract validation command evidence
-- repair design, sequence, or contract drift only inside allowed_write_paths; real e2e gaps become todos
+- Code Review Receipts use task_type: code_review, review_conclusion.checked_sources, data_side_effect_review, consistency_repairs, deferred_validation_todos, and quickstart/contract validation command evidence
+- review actual implementation diff data side effects, including runtime database writes and field-level update/delete behavior
+- repair design, sequence, contract drift, or high-risk data side effects only inside allowed_write_paths; real e2e gaps become todos
 - must not edit tasks.md, create handoffs, dispatch workers
 ## Worker Prompt
 ```text
@@ -69,7 +70,7 @@ Handoff JSON: <path>
 - Do not edit tasks.md
 - Do not dispatch workers
 - Write receipt_path as speckit.implement.receipt.v1 with validation_evidence references to relevant BDD scenario, behavior assertion, API contract, or quickstart path
-- For Code Review tasks, echo task_type: code_review; add review_conclusion.checked_sources; include quickstart/contract validation command evidence; repair allowed drift; record real e2e todos
+- For Code Review tasks, echo task_type: code_review; add review_conclusion.checked_sources and data_side_effect_review; review actual implementation diff runtime database writes and field-level update/delete behavior; include quickstart/contract validation command evidence; repair allowed drift; record real e2e todos
 ```
 ## Planner Prompt
 ```text
@@ -109,4 +110,4 @@ vertical_capability: <capability>
 - `completed_task_ids` outside handoff
 - empty `validation_evidence` or missing relevant BDD scenario, behavior assertion, API contract, or quickstart path reference
 - receipt 路径不等于 handoff 中声明的 `task_status_update.receipt_path`
-- Code Review Receipts missing `task_type: code_review`, `review_conclusion.checked_sources`, quickstart/contract validation command evidence, in-scope `consistency_repairs`, or needed `deferred_validation_todos`
+- Code Review Receipts missing `task_type: code_review`, `review_conclusion.checked_sources`, `data_side_effect_review`, quickstart/contract validation command evidence, in-scope `consistency_repairs`, or needed `deferred_validation_todos`

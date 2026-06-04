@@ -59,8 +59,10 @@ Behavior task derivation must be explicit:
 
 ## Final Code Review
 
-When generating `tasks.md`, append the final phase after user-story tasks in the same checklist format. Add code review tasks that check design, sequence, and contract consistency against `class-diagram.md`, `contracts/sequences.md`, `contracts/`, `research.md`, and `quickstart.md`, plus real e2e environment readiness.
+When generating `tasks.md`, append the final phase after user-story tasks in the same checklist format. Add code review tasks that check design, sequence, and contract consistency against `class-diagram.md`, `contracts/sequences.md`, `contracts/`, `research.md`, and `quickstart.md`, plus data side-effect review and real e2e environment readiness.
 
-Code review task evidence must require a `speckit.implement.receipt.v1` review receipt with `task_type: code_review`, `review_conclusion.checked_sources`, plus `review_conclusion` and, when applicable, `consistency_repairs` and `deferred_validation_todos`. The task text must require quickstart/contract validation command evidence and state that implementation drift from the plan, sequences, or contracts is repaired during `/speckit.implement` when the repair path is authorized; real e2e environment gaps are recorded as todos instead of treated as passing evidence.
+Code review task text must require review of the actual implementation diff for runtime database writes and other persistent data changes, especially field-level update/delete behavior, bulk writes, soft deletes, ORM whole-object saves, migrations/backfills, retries, rollback/compensation, and external-system writes. Do not generate field-level mutation allowlists or pre-implementation data-write gates in normal tasks.
+
+Code review task evidence must require a `speckit.implement.receipt.v1` review receipt with `task_type: code_review`, `review_conclusion.checked_sources`, `data_side_effect_review`, plus `review_conclusion` and, when applicable, `consistency_repairs` and `deferred_validation_todos`. The task text must require quickstart/contract validation command evidence and state that implementation drift from the plan, sequences, contracts, or data side-effect review is repaired during `/speckit.implement` when the repair path is authorized; real e2e environment gaps are recorded as todos instead of treated as passing evidence.
 
 {CORE_TEMPLATE}

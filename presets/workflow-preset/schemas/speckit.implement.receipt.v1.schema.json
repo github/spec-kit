@@ -13,6 +13,21 @@
     "changed_paths",
     "validation_evidence"
   ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "task_type": {
+            "const": "code_review"
+          }
+        },
+        "required": ["task_type"]
+      },
+      "then": {
+        "required": ["review_conclusion", "data_side_effect_review"]
+      }
+    }
+  ],
   "properties": {
     "contract_type": {
       "const": "speckit.implement.receipt.v1"
@@ -88,6 +103,81 @@
               "paths": {
                 "type": "array",
                 "items": {"type": "string"}
+              },
+              "resolution": {
+                "enum": ["repaired", "todo", "accepted", "blocked"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "data_side_effect_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewed_diff_paths",
+        "runtime_data_writes_found",
+        "mutation_findings"
+      ],
+      "properties": {
+        "reviewed_diff_paths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "runtime_data_writes_found": {
+          "type": "boolean"
+        },
+        "mutation_findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "severity",
+              "category",
+              "summary",
+              "operation",
+              "tables_or_entities",
+              "fields",
+              "resolution"
+            ],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "severity": {"enum": ["low", "medium", "high", "critical"]},
+              "category": {"type": "string", "minLength": 1},
+              "summary": {"type": "string", "minLength": 1},
+              "paths": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "operation": {
+                "enum": [
+                  "insert",
+                  "update",
+                  "delete",
+                  "upsert",
+                  "save",
+                  "soft_delete",
+                  "migration",
+                  "backfill",
+                  "external_write",
+                  "unknown"
+                ]
+              },
+              "tables_or_entities": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1}
+              },
+              "fields": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1}
               },
               "resolution": {
                 "enum": ["repaired", "todo", "accepted", "blocked"]

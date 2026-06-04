@@ -7,9 +7,9 @@ strategy: wrap
 
 During specification, produce or update `spec.md` only. This command writes only `spec.md`.
 
-Product requirements stay in `spec.md`: user stories, acceptance criteria, functional requirements, constraints, assumptions, and any clarification markers required by the core template.
+Product requirements stay in `spec.md`: user stories, acceptance criteria, functional requirements, non-functional requirements, constraints, assumptions, and any clarification markers required by the core template.
 
-Keep requirement text implementation-agnostic and scoped to product behavior.
+Keep requirement text implementation-agnostic and scoped to product behavior. Non-functional requirements should be explicit product-level assumptions or constraints, including no-special-requirement or not-applicable statements when that is the confirmed requirement.
 
 {CORE_TEMPLATE}
 
