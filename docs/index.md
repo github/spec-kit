@@ -90,7 +90,7 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
     <span class="stat-label">Contributors</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">31</span>
+    <span class="stat-number">33</span>
     <span class="stat-label">Integrations</span>
   </div>
   <div class="stat-item">

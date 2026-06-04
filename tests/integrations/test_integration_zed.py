@@ -1,6 +1,7 @@
 """Tests for ZedIntegration."""
 
 import json
+import os
 
 from specify_cli.integrations import get_integration
 
@@ -69,8 +70,6 @@ class TestZedHookInvocations:
         project.mkdir()
         old_cwd = None
         try:
-            import os
-
             old_cwd = os.getcwd()
             os.chdir(project)
             runner = CliRunner()
