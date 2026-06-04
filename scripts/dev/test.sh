@@ -34,11 +34,17 @@ PASSTHROUGH=()
 RUNTIME_PASSTHROUGH=()
 COLLECT_PASSTHROUGH=()
 PYTEST_CMD=()
-LOCK_DIR="$REPO_ROOT/.pytest_cache/fast-test.lock"
+LOCK_FILE="$REPO_ROOT/.pytest_cache/fast-test.lock"
+LOCK_DIR="$REPO_ROOT/.pytest_cache/fast-test.lockdir"
+LOCK_MODE=""
 LOCK_HELD=0
+LOCK_NAME="$(basename "$0")"
 CURSOR_TMP="$CURSOR_FILE.tmp"
 COLLECT_ERR=""
 COLLECT_OUT=""
+COLLECT_FILTERED=""
+CHUNK_NODES=()
+XDIST_IGNORED=0
 
 while (( $# )); do
     case "$1" in
@@ -81,28 +87,43 @@ mktemp_file() {
 # Collection and execution do not share every pytest flag. Keep runtime
 # passthrough aligned with user intent while stripping collect-only toggles
 # and xdist-specific options that this script owns.
-skip_next=0
-for arg in "${PASSTHROUGH[@]}"; do
-    if (( skip_next )); then
-        skip_next=0
-        continue
-    fi
+idx=0
+while (( idx < ${#PASSTHROUGH[@]} )); do
+    arg="${PASSTHROUGH[$idx]}"
     case "$arg" in
         --collect-only|--co) ;;
-        -n|--numprocesses|--dist) skip_next=1 ;;
-        -n*|--numprocesses=*|--dist=*) ;;
+        -n|--numprocesses|--dist)
+            next="${PASSTHROUGH[$((idx + 1))]:-}"
+            if [[ -z "$next" || "$next" == -* ]]; then
+                echo "[fast-test] $arg requires a value, but xdist flags are managed by this script" >&2
+                exit 1
+            fi
+            XDIST_IGNORED=1
+            idx=$((idx + 1))
+            ;;
+        -n*|--numprocesses=*|--dist=*) XDIST_IGNORED=1 ;;
         *)
             RUNTIME_PASSTHROUGH+=("$arg")
             COLLECT_PASSTHROUGH+=("$arg")
             ;;
     esac
+    idx=$((idx + 1))
 done
+
+if (( XDIST_IGNORED )); then
+    echo "[fast-test] ignoring xdist flags (-n/--numprocesses/--dist); this script manages them" >&2
+fi
 
 cleanup() {
     [[ -n "$COLLECT_ERR" && -f "$COLLECT_ERR" ]] && rm -f "$COLLECT_ERR"
     [[ -n "$COLLECT_OUT" && -f "$COLLECT_OUT" ]] && rm -f "$COLLECT_OUT"
+    [[ -n "$COLLECT_FILTERED" && -f "$COLLECT_FILTERED" ]] && rm -f "$COLLECT_FILTERED"
     [[ -n "$CURSOR_TMP" && -f "$CURSOR_TMP" ]] && rm -f "$CURSOR_TMP"
-    if (( LOCK_HELD )); then
+    if [[ "$LOCK_MODE" == "flock" ]]; then
+        flock -u 9 2>/dev/null || true
+        exec 9>&- || true
+        rm -f "$LOCK_FILE"
+    elif (( LOCK_HELD )); then
         rm -f "$LOCK_DIR/pid"
         rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR"
     fi
@@ -114,27 +135,59 @@ write_cursor() {
     printf '%s\n' "$1" > "$CURSOR_TMP"
     mv "$CURSOR_TMP" "$CURSOR_FILE"
 }
+
+load_chunk_nodes() {
+    local start_index="$1"
+    local end_index="$2"
+    local start_line=$(( start_index + 1 ))
+    local end_line="$end_index"
+
+    CHUNK_NODES=()
+    while IFS= read -r node; do
+        [[ -n "$node" ]] && CHUNK_NODES+=("$node")
+    done < <(awk -v start="$start_line" -v end="$end_line" 'NR < start {next} NR > end {exit} {print}' "$COLLECT_OUT")
+}
+
 cd "$REPO_ROOT"
 mkdir -p "$(dirname "$CURSOR_FILE")"
 
-if [[ -d "$LOCK_DIR" ]]; then
-    if [[ -f "$LOCK_DIR/pid" ]]; then
-        PID_CONTENTS="$(tr -d '[:space:]' < "$LOCK_DIR/pid" 2>/dev/null || true)"
-        if [[ "$PID_CONTENTS" =~ ^[0-9]+$ ]] && kill -0 "$PID_CONTENTS" 2>/dev/null; then
-            echo "[fast-test] another run is active (lock: $LOCK_DIR)" >&2
-            exit 1
-        fi
-        echo "[fast-test] removing stale lock (pid: ${PID_CONTENTS:-unknown})" >&2
+if command -v flock >/dev/null 2>&1; then
+    exec 9>"$LOCK_FILE" || { echo "[fast-test] unable to open lock file: $LOCK_FILE" >&2; exit 1; }
+    if ! flock -n 9; then
+        echo "[fast-test] another run is active (lock: $LOCK_FILE)" >&2
+        exit 1
     fi
-    rm -f "$LOCK_DIR/pid"
-    rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR"
+    LOCK_MODE="flock"
+    LOCK_HELD=1
+else
+    if [[ -d "$LOCK_DIR" ]]; then
+        if [[ -f "$LOCK_DIR/pid" ]]; then
+            PID_CONTENTS="$(tr -d '[:space:]' < "$LOCK_DIR/pid" 2>/dev/null || true)"
+            if [[ "$PID_CONTENTS" =~ ^[0-9]+$ ]] && kill -0 "$PID_CONTENTS" 2>/dev/null; then
+                if command -v ps >/dev/null 2>&1; then
+                    CMDLINE="$(ps -p "$PID_CONTENTS" -o args= 2>/dev/null || true)"
+                    if [[ -z "$CMDLINE" || "$CMDLINE" == *"$LOCK_NAME"* ]]; then
+                        echo "[fast-test] another run is active (lock: $LOCK_DIR)" >&2
+                        exit 1
+                    fi
+                else
+                    echo "[fast-test] another run is active (lock: $LOCK_DIR)" >&2
+                    exit 1
+                fi
+            fi
+            echo "[fast-test] removing stale lock (pid: ${PID_CONTENTS:-unknown})" >&2
+        fi
+        rm -f "$LOCK_DIR/pid"
+        rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR"
+    fi
+    if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+        echo "[fast-test] another run is active (lock: $LOCK_DIR)" >&2
+        exit 1
+    fi
+    LOCK_MODE="dir"
+    LOCK_HELD=1
+    printf '%s\n' "$$" > "$LOCK_DIR/pid"
 fi
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-    echo "[fast-test] another run is active (lock: $LOCK_DIR)" >&2
-    exit 1
-fi
-LOCK_HELD=1
-printf '%s\n' "$$" > "$LOCK_DIR/pid"
 
 if (( RESET )); then
     rm -f "$CURSOR_FILE" "$CURSOR_TMP"
@@ -145,6 +198,8 @@ fi
 # 1. Collect node ids.
 if command -v uv >/dev/null 2>&1; then
     PYTEST_CMD=(uv run pytest)
+elif command -v python3 >/dev/null 2>&1; then
+    PYTEST_CMD=(python3 -m pytest)
 elif command -v python >/dev/null 2>&1; then
     PYTEST_CMD=(python -m pytest)
 else
@@ -161,12 +216,11 @@ if ! "${PYTEST_CMD[@]}" --collect-only -q "${COLLECT_PASSTHROUGH[@]}" >"$COLLECT
     rm -f "$COLLECT_ERR" "$COLLECT_OUT"
     exit 1
 fi
-NODES=()
-while IFS= read -r node; do
-    [[ -n "$node" ]] && NODES+=("$node")
-done < "$COLLECT_OUT"
-rm -f "$COLLECT_ERR" "$COLLECT_OUT"
-TOTAL="${#NODES[@]}"
+rm -f "$COLLECT_ERR"
+COLLECT_FILTERED="$(mktemp_file)"
+awk 'NF' "$COLLECT_OUT" > "$COLLECT_FILTERED"
+mv "$COLLECT_FILTERED" "$COLLECT_OUT"
+TOTAL="$(wc -l < "$COLLECT_OUT" | tr -d '[:space:]')"
 if (( TOTAL == 0 )); then
     echo "[fast-test] no tests collected" >&2
     exit 1
@@ -211,7 +265,8 @@ while (( i < TOTAL )); do
         PYTEST_FLAGS+=(--no-header)
     fi
 
-    if ! "${PYTEST_CMD[@]}" "${PYTEST_FLAGS[@]}" "${RUNTIME_PASSTHROUGH[@]}" "${NODES[@]:i:CHUNK_SIZE}"; then
+    load_chunk_nodes "$i" "$end"
+    if ! "${PYTEST_CMD[@]}" "${PYTEST_FLAGS[@]}" "${RUNTIME_PASSTHROUGH[@]}" "${CHUNK_NODES[@]}"; then
         echo "[fast-test] chunk failed — cursor preserved at next test index $i (use --resume to retry)"
         write_cursor "$i"
         exit 1
@@ -222,5 +277,6 @@ while (( i < TOTAL )); do
 done
 
 T_END=$(date +%s)
+rm -f "$COLLECT_OUT"
 rm -f "$CURSOR_FILE"
 echo "[fast-test] all $TOTAL tests passed in $((T_END - T_START))s"
