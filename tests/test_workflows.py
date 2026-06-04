@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -785,13 +786,12 @@ class TestShellStep:
 
 
 class _StubStdin:
-    """Stdin stub with a fixed ``isatty`` result.
+    """Stdin stub exposing only a fixed ``isatty`` result.
 
-    Swapped in via the gate module's ``sys.stdin`` rather than
-    ``setattr(sys.stdin, "isatty", …)`` because ``TextIOWrapper.isatty``
-    is not assignable under some runners (e.g. pytest with capture
-    disabled), and because forcing the value keeps interactive/non-
-    interactive tests deterministic regardless of how the suite is run.
+    A real ``TextIOWrapper.isatty`` is not assignable under some runners
+    (e.g. pytest with capture disabled), so the gate tests force the value
+    through this stub to stay deterministic regardless of how the suite is
+    run.
     """
 
     def __init__(self, tty: bool):
@@ -801,10 +801,26 @@ class _StubStdin:
         return self._tty
 
 
+class _FakeSys:
+    """Stand-in for the gate module's ``sys`` with a fixed-``isatty`` stdin.
+
+    Every other attribute delegates to the real ``sys``. Rebinding the gate
+    module's ``sys`` name (rather than mutating the process-wide
+    ``sys.stdin``) keeps the patch local to the gate module and leaves the
+    real stdin untouched.
+    """
+
+    def __init__(self, tty: bool):
+        self.stdin = _StubStdin(tty)
+
+    def __getattr__(self, name):
+        return getattr(sys, name)
+
+
 def _force_gate_stdin(monkeypatch, *, tty: bool):
     from specify_cli.workflows.steps import gate as gate_module
 
-    monkeypatch.setattr(gate_module.sys, "stdin", _StubStdin(tty=tty))
+    monkeypatch.setattr(gate_module, "sys", _FakeSys(tty=tty))
 
 
 class TestGateStep:
@@ -2735,19 +2751,11 @@ steps:
         from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
         from specify_cli.workflows.base import RunStatus
         from specify_cli.workflows.steps.gate import GateStep
-        from specify_cli.workflows.steps import gate as gate_module
 
         # Force the gate step into interactive mode and feed a "reject"
-        # choice so the abort path actually runs in the test env
-        # (default behaviour returns StepStatus.PAUSED when stdin is not a TTY).
-        # Swap sys.stdin itself for a stub: setattr on the real
-        # TextIOWrapper's `isatty` method is not assignable under some
-        # runners (e.g. pytest with capture disabled).
-        class _TTYStdin:
-            def isatty(self) -> bool:
-                return True
-
-        monkeypatch.setattr(gate_module.sys, "stdin", _TTYStdin())
+        # choice so the abort path actually runs in the test env (default
+        # behaviour returns StepStatus.PAUSED when stdin is not a TTY).
+        _force_gate_stdin(monkeypatch, tty=True)
         monkeypatch.setattr(
             GateStep, "_prompt", staticmethod(lambda _msg, _opts: "reject")
         )
