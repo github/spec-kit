@@ -134,10 +134,14 @@ cleanup() {
     if [[ "$LOCK_MODE" == "flock" ]]; then
         flock -u 9 2>/dev/null || true
         exec 9>&- || true
-        rm -f "$LOCK_FILE"
-    elif (( LOCK_HELD )); then
-        rm -f "$LOCK_DIR/pid"
-        rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR"
+    elif [[ "$LOCK_MODE" == "dir" ]] && (( LOCK_HELD )); then
+        if [[ -f "$LOCK_DIR/pid" ]]; then
+            PID_CONTENTS="$(tr -d '[:space:]' < "$LOCK_DIR/pid" 2>/dev/null || true)"
+            if [[ "$PID_CONTENTS" == "$$" ]]; then
+                rm -f "$LOCK_DIR/pid"
+                rmdir "$LOCK_DIR" 2>/dev/null || true
+            fi
+        fi
     fi
 }
 
@@ -208,6 +212,12 @@ elif command -v python >/dev/null 2>&1; then
     PYTEST_CMD=(python -m pytest)
 else
     echo "[fast-test] pytest runner not found (install uv or ensure python is on PATH)" >&2
+    exit 1
+fi
+
+if ! "${PYTEST_CMD[@]}" --help 2>/dev/null | grep -Eq '(-n[[:space:]]|--numprocesses)'; then
+    echo "[fast-test] pytest-xdist is required for this wrapper (missing -n/--numprocesses)." >&2
+    echo "[fast-test] install test extras, e.g. 'uv pip install -e .[test]'" >&2
     exit 1
 fi
 
