@@ -7,6 +7,7 @@
   "required": [
     "contract_type",
     "shard_id",
+    "task_type",
     "task_ids",
     "completed_task_ids",
     "changed_paths",
@@ -19,6 +20,10 @@
     "shard_id": {
       "type": "string",
       "minLength": 1
+    },
+    "task_type": {
+      "type": "string",
+      "enum": ["implementation", "code_review"]
     },
     "task_ids": {
       "type": "array",
@@ -46,6 +51,96 @@
       "items": {
         "type": "string",
         "minLength": 1
+      }
+    },
+    "review_conclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "summary", "checked_sources", "findings"],
+      "properties": {
+        "status": {
+          "enum": ["approved", "changes_requested", "blocked"]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checked_sources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "severity", "category", "summary", "resolution"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "severity": {"enum": ["low", "medium", "high", "critical"]},
+              "category": {"type": "string", "minLength": 1},
+              "summary": {"type": "string", "minLength": 1},
+              "paths": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "resolution": {
+                "enum": ["repaired", "todo", "accepted", "blocked"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "consistency_repairs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding_id", "reason", "changed_paths", "evidence"],
+        "properties": {
+          "finding_id": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1},
+          "changed_paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"}
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    },
+    "deferred_validation_todos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "reason", "missing_environment", "validation_path", "commands", "blocking"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1},
+          "missing_environment": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "validation_path": {"type": "string", "minLength": 1},
+          "commands": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "blocking": {"type": "boolean"}
+        }
       }
     }
   }

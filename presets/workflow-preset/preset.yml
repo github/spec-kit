@@ -1,232 +1,201 @@
-schema_version: "1.0"
-
+schema_version: '1.0'
 preset:
-  id: "workflow-preset"
-  name: "Workflow Preset"
-  version: "1.3.1"
-  description: "Behavior-first specification, design artifacts, and agent-native handoff orchestration"
-  author: "bigsmartben"
-  repository: "https://github.com/bigsmartben/spec-kit-workflow-preset"
-  license: "MIT"
-
+  id: workflow-preset
+  name: Workflow Preset
+  version: 1.3.2
+  description: Behavior-first specification, design artifacts, and agent-native handoff
+    orchestration
+  author: bigsmartben
+  repository: https://github.com/bigsmartben/spec-kit-workflow-preset
+  license: MIT
 requires:
-  speckit_version: ">=0.8.10.dev0"
-
+  speckit_version: '>=0.8.10.dev0'
 provides:
   templates:
-    - type: "template"
-      name: "plan-template"
-      file: "templates/plan-template.md"
-      description: "Add design artifact navigation to the plan template"
-      replaces: "plan-template"
-      strategy: "wrap"
-
-    - type: "template"
-      name: "constitution-template"
-      file: "templates/constitution-template.md"
-      description: "Add change scope granularity governance to the constitution template"
-      replaces: "constitution-template"
-      strategy: "wrap"
-
-    - type: "command"
-      name: "speckit.specify"
-      file: "commands/speckit.specify.md"
-      description: "Wrap core specification with spec-only requirement ownership"
-      replaces: "speckit.specify"
-      strategy: "wrap"
-
-    - type: "command"
-      name: "speckit.clarify"
-      file: "commands/speckit.clarify.md"
-      description: "Wrap core clarification with spec-only ambiguity resolution"
-      replaces: "speckit.clarify"
-      strategy: "wrap"
-
-    - type: "command"
-      name: "speckit.checklist"
-      file: "commands/speckit.checklist.md"
-      description: "Wrap core checklist generation with BDD readiness gate"
-      replaces: "speckit.checklist"
-      strategy: "wrap"
-
-    - type: "command"
-      name: "speckit.constitution"
-      file: "commands/speckit.constitution.md"
-      description: "Wrap core constitution updates with change scope granularity governance"
-      replaces: "speckit.constitution"
-      strategy: "wrap"
-
-    - type: "command"
-      name: "speckit.analyze"
-      file: "commands/speckit.analyze.md"
-      description: "Wrap core analysis with behavior-first vertical consistency checks"
-      replaces: "speckit.analyze"
-      strategy: "wrap"
-
-    - type: "command"
-      name: "speckit.plan"
-      file: "commands/speckit.plan.md"
-      description: "Wrap core planning with Phase 0 behavior projection and optional design artifacts"
-      replaces: "speckit.plan"
-      strategy: "wrap"
-
-    - type: "command"
-      name: "speckit.tasks"
-      file: "commands/speckit.tasks.md"
-      description: "Wrap task generation with optional design artifact awareness"
-      replaces: "speckit.tasks"
-      strategy: "wrap"
-
-    - type: "command"
-      name: "speckit.implement"
-      file: "commands/speckit.implement.md"
-      description: "Run agent-native handoff orchestration or execute one worker handoff"
-      replaces: "speckit.implement"
-      strategy: "replace"
-
-    - type: "template"
-      name: "behavior-bdd-draft-template"
-      file: "templates/behavior/bdd-draft.feature"
-      description: "Template for Phase 0 BDD drafts"
-      replaces: "behavior-bdd-draft-template"
-      strategy: "replace"
-
-    - type: "template"
-      name: "behavior-scenarios-draft-template"
-      file: "templates/behavior/behavior-scenarios-draft.json"
-      description: "Template for structured behavior scenario drafts"
-      replaces: "behavior-scenarios-draft-template"
-      strategy: "replace"
-
-    - type: "template"
-      name: "behavior-uif-intent-template"
-      file: "templates/behavior/uif-intent.json"
-      description: "Template for Phase 0 UIF intent"
-      replaces: "behavior-uif-intent-template"
-      strategy: "replace"
-
-    - type: "template"
-      name: "behavior-data-fixtures-intent-template"
-      file: "templates/behavior/data-fixtures-intent.json"
-      description: "Template for Phase 0 data fixture intent"
-      replaces: "behavior-data-fixtures-intent-template"
-      strategy: "replace"
-
-    - type: "template"
-      name: "behavior-testability-checklist-template"
-      file: "templates/behavior/behavior-testability-checklist.md"
-      description: "Template for BDD readiness gate output"
-      replaces: "behavior-testability-checklist-template"
-      strategy: "replace"
-
-    - type: "template"
-      name: "behavior-bdd-contract-template"
-      file: "templates/behavior/bdd-contract.feature"
-      description: "Template for formal BDD contracts"
-      replaces: "behavior-bdd-contract-template"
-      strategy: "replace"
-
-    - type: "template"
-      name: "behavior-uif-expected-template"
-      file: "templates/behavior/uif-expected.json"
-      description: "Template for Expected UIF contracts"
-      replaces: "behavior-uif-expected-template"
-      strategy: "replace"
-
-    - type: "template"
-      name: "behavior-scenario-instances-template"
-      file: "templates/behavior/scenario-instances.json"
-      description: "Template for formal behavior scenario instances"
-      replaces: "behavior-scenario-instances-template"
-      strategy: "replace"
-
-    - type: "template"
-      name: "behavior-data-fixtures-template"
-      file: "templates/behavior/data-fixtures.json"
-      description: "Template for formal behavior data fixtures"
-      replaces: "behavior-data-fixtures-template"
-      strategy: "replace"
-
-    - type: "template"
-      name: "behavior-assertions-template"
-      file: "templates/behavior/assertions.json"
-      description: "Template for formal behavior assertions"
-      replaces: "behavior-assertions-template"
-      strategy: "replace"
-
-    - type: "template"
-      name: "speckit-behavior-scenarios-draft-v1-schema"
-      file: "schemas/speckit.behavior.scenarios.draft.v1.schema.json"
-      description: "Schema for structured behavior scenario drafts"
-      replaces: "speckit-behavior-scenarios-draft-v1-schema"
-      strategy: "replace"
-
-    - type: "template"
-      name: "speckit-behavior-uif-intent-v1-schema"
-      file: "schemas/speckit.behavior.uif.intent.v1.schema.json"
-      description: "Schema for Phase 0 UIF intent"
-      replaces: "speckit-behavior-uif-intent-v1-schema"
-      strategy: "replace"
-
-    - type: "template"
-      name: "speckit-behavior-data-fixtures-intent-v1-schema"
-      file: "schemas/speckit.behavior.data-fixtures.intent.v1.schema.json"
-      description: "Schema for data fixture intent"
-      replaces: "speckit-behavior-data-fixtures-intent-v1-schema"
-      strategy: "replace"
-
-    - type: "template"
-      name: "speckit-behavior-uif-expected-v1-schema"
-      file: "schemas/speckit.behavior.uif.expected.v1.schema.json"
-      description: "Schema for Expected UIF contracts"
-      replaces: "speckit-behavior-uif-expected-v1-schema"
-      strategy: "replace"
-
-    - type: "template"
-      name: "speckit-behavior-scenario-instances-v1-schema"
-      file: "schemas/speckit.behavior.scenario-instances.v1.schema.json"
-      description: "Schema for formal behavior scenario instances"
-      replaces: "speckit-behavior-scenario-instances-v1-schema"
-      strategy: "replace"
-
-    - type: "template"
-      name: "speckit-behavior-data-fixtures-v1-schema"
-      file: "schemas/speckit.behavior.data-fixtures.v1.schema.json"
-      description: "Schema for formal behavior data fixtures"
-      replaces: "speckit-behavior-data-fixtures-v1-schema"
-      strategy: "replace"
-
-    - type: "template"
-      name: "speckit-behavior-assertions-v1-schema"
-      file: "schemas/speckit.behavior.assertions.v1.schema.json"
-      description: "Schema for formal behavior assertions"
-      replaces: "speckit-behavior-assertions-v1-schema"
-      strategy: "replace"
-
-    - type: "template"
-      name: "speckit-implement-manifest-v1-schema"
-      file: "schemas/speckit.implement.manifest.v1.schema.json"
-      description: "Decouple the handoff manifest JSON contract"
-      replaces: "speckit-implement-manifest-v1-schema"
-      strategy: "replace"
-
-    - type: "template"
-      name: "speckit-implement-handoff-v2-schema"
-      file: "schemas/speckit.implement.handoff.v2.schema.json"
-      description: "Decouple the handoff JSON contract"
-      replaces: "speckit-implement-handoff-v2-schema"
-      strategy: "replace"
-
-    - type: "template"
-      name: "speckit-implement-receipt-v1-schema"
-      file: "schemas/speckit.implement.receipt.v1.schema.json"
-      description: "Decouple the receipt JSON contract"
-      replaces: "speckit-implement-receipt-v1-schema"
-      strategy: "replace"
-
+  - type: template
+    name: plan-template
+    file: templates/plan-template.md
+    description: Add design artifact navigation to the plan template
+    replaces: plan-template
+    strategy: wrap
+  - type: template
+    name: constitution-template
+    file: templates/constitution-template.md
+    description: Add change scope granularity governance to the constitution template
+    replaces: constitution-template
+    strategy: wrap
+  - type: command
+    name: speckit.specify
+    file: commands/speckit.specify.md
+    description: Wrap core specification with spec-only requirement ownership
+    replaces: speckit.specify
+    strategy: wrap
+  - type: command
+    name: speckit.clarify
+    file: commands/speckit.clarify.md
+    description: Wrap core clarification with spec-only ambiguity resolution
+    replaces: speckit.clarify
+    strategy: wrap
+  - type: command
+    name: speckit.checklist
+    file: commands/speckit.checklist.md
+    description: Wrap core checklist generation with BDD readiness gate
+    replaces: speckit.checklist
+    strategy: wrap
+  - type: command
+    name: speckit.constitution
+    file: commands/speckit.constitution.md
+    description: Wrap core constitution updates with change scope granularity governance
+    replaces: speckit.constitution
+    strategy: wrap
+  - type: command
+    name: speckit.analyze
+    file: commands/speckit.analyze.md
+    description: Wrap core analysis with behavior-first vertical consistency checks
+    replaces: speckit.analyze
+    strategy: wrap
+  - type: command
+    name: speckit.plan
+    file: commands/speckit.plan.md
+    description: Wrap core planning with Phase 0 behavior projection and optional
+      design artifacts
+    replaces: speckit.plan
+    strategy: wrap
+  - type: command
+    name: speckit.tasks
+    file: commands/speckit.tasks.md
+    description: Wrap task generation with optional design artifact awareness
+    replaces: speckit.tasks
+    strategy: wrap
+  - type: command
+    name: speckit.implement
+    file: commands/speckit.implement.md
+    description: Run agent-native handoff orchestration or execute one worker handoff
+    replaces: speckit.implement
+    strategy: replace
+  - type: template
+    name: behavior-bdd-draft-template
+    file: templates/behavior/bdd-draft.feature
+    description: Template for Phase 0 BDD drafts
+    replaces: behavior-bdd-draft-template
+    strategy: replace
+  - type: template
+    name: behavior-scenarios-draft-template
+    file: templates/behavior/behavior-scenarios-draft.json
+    description: Template for structured behavior scenario drafts
+    replaces: behavior-scenarios-draft-template
+    strategy: replace
+  - type: template
+    name: behavior-uif-intent-template
+    file: templates/behavior/uif-intent.json
+    description: Template for Phase 0 UIF intent
+    replaces: behavior-uif-intent-template
+    strategy: replace
+  - type: template
+    name: behavior-data-fixtures-intent-template
+    file: templates/behavior/data-fixtures-intent.json
+    description: Template for Phase 0 data fixture intent
+    replaces: behavior-data-fixtures-intent-template
+    strategy: replace
+  - type: template
+    name: behavior-testability-checklist-template
+    file: templates/behavior/behavior-testability-checklist.md
+    description: Template for BDD readiness gate output
+    replaces: behavior-testability-checklist-template
+    strategy: replace
+  - type: template
+    name: behavior-bdd-contract-template
+    file: templates/behavior/bdd-contract.feature
+    description: Template for formal BDD contracts
+    replaces: behavior-bdd-contract-template
+    strategy: replace
+  - type: template
+    name: behavior-uif-expected-template
+    file: templates/behavior/uif-expected.json
+    description: Template for Expected UIF contracts
+    replaces: behavior-uif-expected-template
+    strategy: replace
+  - type: template
+    name: behavior-scenario-instances-template
+    file: templates/behavior/scenario-instances.json
+    description: Template for formal behavior scenario instances
+    replaces: behavior-scenario-instances-template
+    strategy: replace
+  - type: template
+    name: behavior-data-fixtures-template
+    file: templates/behavior/data-fixtures.json
+    description: Template for formal behavior data fixtures
+    replaces: behavior-data-fixtures-template
+    strategy: replace
+  - type: template
+    name: behavior-assertions-template
+    file: templates/behavior/assertions.json
+    description: Template for formal behavior assertions
+    replaces: behavior-assertions-template
+    strategy: replace
+  - type: template
+    name: speckit-behavior-scenarios-draft-v1-schema
+    file: schemas/speckit.behavior.scenarios.draft.v1.schema.json
+    description: Schema for structured behavior scenario drafts
+    replaces: speckit-behavior-scenarios-draft-v1-schema
+    strategy: replace
+  - type: template
+    name: speckit-behavior-uif-intent-v1-schema
+    file: schemas/speckit.behavior.uif.intent.v1.schema.json
+    description: Schema for Phase 0 UIF intent
+    replaces: speckit-behavior-uif-intent-v1-schema
+    strategy: replace
+  - type: template
+    name: speckit-behavior-data-fixtures-intent-v1-schema
+    file: schemas/speckit.behavior.data-fixtures.intent.v1.schema.json
+    description: Schema for data fixture intent
+    replaces: speckit-behavior-data-fixtures-intent-v1-schema
+    strategy: replace
+  - type: template
+    name: speckit-behavior-uif-expected-v1-schema
+    file: schemas/speckit.behavior.uif.expected.v1.schema.json
+    description: Schema for Expected UIF contracts
+    replaces: speckit-behavior-uif-expected-v1-schema
+    strategy: replace
+  - type: template
+    name: speckit-behavior-scenario-instances-v1-schema
+    file: schemas/speckit.behavior.scenario-instances.v1.schema.json
+    description: Schema for formal behavior scenario instances
+    replaces: speckit-behavior-scenario-instances-v1-schema
+    strategy: replace
+  - type: template
+    name: speckit-behavior-data-fixtures-v1-schema
+    file: schemas/speckit.behavior.data-fixtures.v1.schema.json
+    description: Schema for formal behavior data fixtures
+    replaces: speckit-behavior-data-fixtures-v1-schema
+    strategy: replace
+  - type: template
+    name: speckit-behavior-assertions-v1-schema
+    file: schemas/speckit.behavior.assertions.v1.schema.json
+    description: Schema for formal behavior assertions
+    replaces: speckit-behavior-assertions-v1-schema
+    strategy: replace
+  - type: template
+    name: speckit-implement-manifest-v1-schema
+    file: schemas/speckit.implement.manifest.v1.schema.json
+    description: Decouple the handoff manifest JSON contract
+    replaces: speckit-implement-manifest-v1-schema
+    strategy: replace
+  - type: template
+    name: speckit-implement-handoff-v2-schema
+    file: schemas/speckit.implement.handoff.v2.schema.json
+    description: Decouple the handoff JSON contract
+    replaces: speckit-implement-handoff-v2-schema
+    strategy: replace
+  - type: template
+    name: speckit-implement-receipt-v1-schema
+    file: schemas/speckit.implement.receipt.v1.schema.json
+    description: Decouple the receipt JSON contract
+    replaces: speckit-implement-receipt-v1-schema
+    strategy: replace
 tags:
-  - "behavior"
-  - "bdd"
-  - "planning"
-  - "implementation"
-  - "handoff"
+- behavior
+- bdd
+- planning
+- implementation
+- handoff
