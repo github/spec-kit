@@ -32,6 +32,11 @@ RESET=0
 BENCH=0
 PASSTHROUGH=()
 RUNTIME_PASSTHROUGH=()
+LOCK_DIR="$REPO_ROOT/.pytest_cache/fast-test.lock"
+LOCK_HELD=0
+CURSOR_TMP="$CURSOR_FILE.tmp"
+COLLECT_ERR=""
+COLLECT_OUT=""
 
 while (( $# )); do
     case "$1" in
@@ -66,14 +71,37 @@ for arg in "${PASSTHROUGH[@]}"; do
     esac
 done
 
+cleanup() {
+    [[ -n "$COLLECT_ERR" && -f "$COLLECT_ERR" ]] && rm -f "$COLLECT_ERR"
+    [[ -n "$COLLECT_OUT" && -f "$COLLECT_OUT" ]] && rm -f "$COLLECT_OUT"
+    [[ -n "$CURSOR_TMP" && -f "$CURSOR_TMP" ]] && rm -f "$CURSOR_TMP"
+    if (( LOCK_HELD )); then
+        rm -f "$LOCK_DIR/pid"
+        rmdir "$LOCK_DIR" 2>/dev/null || rm -rf "$LOCK_DIR"
+    fi
+}
+
+trap cleanup EXIT
+
+write_cursor() {
+    printf '%s\n' "$1" > "$CURSOR_TMP"
+    mv "$CURSOR_TMP" "$CURSOR_FILE"
+}
+cd "$REPO_ROOT"
+mkdir -p "$(dirname "$CURSOR_FILE")"
+
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "[fast-test] another run is active (lock: $LOCK_DIR)" >&2
+    exit 1
+fi
+LOCK_HELD=1
+printf '%s\n' "$$" > "$LOCK_DIR/pid"
+
 if (( RESET )); then
-    rm -f "$CURSOR_FILE"
+    rm -f "$CURSOR_FILE" "$CURSOR_TMP"
     echo "[fast-test] cursor cleared"
     exit 0
 fi
-
-cd "$REPO_ROOT"
-mkdir -p "$(dirname "$CURSOR_FILE")"
 
 # 1. Collect node ids.
 echo "[fast-test] collecting tests ..."
@@ -133,12 +161,12 @@ while (( i < TOTAL )); do
 
     if ! uv run pytest "${PYTEST_FLAGS[@]}" "${RUNTIME_PASSTHROUGH[@]}" "${NODES[@]:i:CHUNK_SIZE}"; then
         echo "[fast-test] chunk failed — cursor preserved at next test index $i (use --resume to retry)"
-        echo "$i" > "$CURSOR_FILE"
+        write_cursor "$i"
         exit 1
     fi
 
     i="$end"
-    echo "$i" > "$CURSOR_FILE"
+    write_cursor "$i"
 done
 
 T_END=$(date +%s)
