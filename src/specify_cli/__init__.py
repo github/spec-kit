@@ -26,6 +26,7 @@ Or install globally:
     specify init --here
 """
 
+import contextlib
 import os
 import sys
 import zipfile
@@ -85,6 +86,12 @@ from ._agent_config import (
     AI_ASSISTANT_HELP as AI_ASSISTANT_HELP,
     DEFAULT_INIT_INTEGRATION as DEFAULT_INIT_INTEGRATION,
     SCRIPT_TYPE_CHOICES as SCRIPT_TYPE_CHOICES,
+)
+from ._init_options import (
+    INIT_OPTIONS_FILE as INIT_OPTIONS_FILE,
+    is_ai_skills_enabled as _is_ai_skills_enabled,
+    load_init_options as load_init_options,
+    save_init_options as save_init_options,
 )
 
 app = typer.Typer(
@@ -259,65 +266,6 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
             for f in failures:
                 console.print(f"  - {f}")
 
-INIT_OPTIONS_FILE = ".specify/init-options.json"
-
-
-def save_init_options(project_path: Path, options: dict[str, Any]) -> None:
-    """Persist the CLI options used during ``specify init``.
-
-    Writes a small JSON file to ``.specify/init-options.json`` so that
-    later operations (e.g. preset install) can adapt their behaviour
-    without scanning the filesystem.
-    """
-    dest = project_path / INIT_OPTIONS_FILE
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    # Write JSON as real UTF-8 instead of ``\uXXXX`` escape sequences
-    # (``ensure_ascii=False``) and pin the file encoding to match.
-    #
-    # The default ``json.dumps`` output is ASCII-only — any non-ASCII
-    # character is encoded as a ``\uXXXX`` escape — so without the
-    # ``ensure_ascii=False`` flip below the encoding pin alone would be
-    # a no-op for any payload we plausibly write today. We pair the two
-    # so the on-disk bytes match a human's expectation of "this file is
-    # UTF-8" (greppable, readable in editors that don't decode JSON
-    # escapes, friendly to peers running ``cat`` or ``Get-Content``) and
-    # so the encoding pin is a real contract instead of a future hedge.
-    #
-    # ``Path.write_text`` without ``encoding=`` falls back to the system
-    # locale codec (cp1252 / gb2312 / cp932 on Windows), which would
-    # mis-encode non-ASCII bytes locally and produce a file a peer with
-    # a different locale couldn't decode. The sibling integration-
-    # catalog writer in ``integrations/catalog.py`` pins
-    # ``encoding="utf-8"`` for the same reason.
-    dest.write_text(
-        json.dumps(options, indent=2, sort_keys=True, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
-def load_init_options(project_path: Path) -> dict[str, Any]:
-    """Load the init options previously saved by ``specify init``.
-
-    Returns an empty dict if the file does not exist or cannot be parsed.
-    """
-    path = project_path / INIT_OPTIONS_FILE
-    if not path.exists():
-        return {}
-    try:
-        # Match the explicit UTF-8 used by ``save_init_options``; without
-        # it ``read_text`` falls back to the system codec on Windows and
-        # raises ``UnicodeDecodeError`` on any file containing the
-        # multi-byte UTF-8 sequences ``save_init_options`` now writes
-        # directly. ``UnicodeDecodeError`` is a subclass of
-        # ``ValueError``, not ``OSError`` / ``json.JSONDecodeError``, so
-        # it must be listed explicitly here to preserve the existing
-        # "fall back to empty dict" contract for corrupted / foreign-
-        # codec files.
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-        return {}
-
-
 # ---------------------------------------------------------------------------
 # Agent-context extension config helpers
 # ---------------------------------------------------------------------------
@@ -401,10 +349,10 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
     """Return the active skills directory, creating it on demand when enabled.
 
     Reads ``.specify/init-options.json`` to determine whether skills are
-    enabled and which agent was selected.  When ``ai_skills`` is true the
-    directory is created safely (symlink/containment checks); when false
-    only Kimi's native-skills fallback is honoured (directory must already
-    exist).
+    enabled and which agent was selected.  Only ``ai_skills`` set to boolean
+    ``True`` creates the directory safely (symlink/containment checks); when
+    ``ai_skills`` is not boolean ``True``, only Kimi's native-skills fallback
+    is honoured, and the native skills directory must already exist.
 
     Returns:
         The skills directory ``Path``, or ``None`` if skills are not active.
@@ -425,14 +373,15 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
     if not isinstance(agent, str) or not agent:
         return None
 
-    ai_skills_enabled = bool(opts.get("ai_skills"))
+    ai_skills_enabled = _is_ai_skills_enabled(opts)
     if not ai_skills_enabled and agent != "kimi":
         return None
 
     skills_dir = _get_skills_dir(project_root, agent)
 
     if not ai_skills_enabled:
-        # Kimi native-skills fallback: use the directory only if it exists.
+        # Kimi native-skills fallback when ai_skills is not boolean True:
+        # use the native skills directory only if it already exists.
         if not skills_dir.is_dir():
             return None
         _ensure_safe_shared_directory(
@@ -441,7 +390,7 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
         )
         return skills_dir
 
-    # ai_skills is explicitly enabled — create the directory safely.
+    # ai_skills is boolean True: create the directory safely.
     _ensure_safe_shared_directory(
         project_root, skills_dir, context="agent skills directory",
     )
@@ -2745,22 +2694,95 @@ def _parse_input_values(input_values: list[str] | None) -> dict[str, Any]:
     return inputs
 
 
+def _workflow_run_payload(state: Any) -> dict[str, Any]:
+    """Machine-readable summary of a run/resume outcome."""
+    return {
+        "run_id": state.run_id,
+        "workflow_id": state.workflow_id,
+        "status": state.status.value,
+        "current_step_id": state.current_step_id,
+        "current_step_index": state.current_step_index,
+    }
+
+
+def _emit_workflow_json(payload: dict[str, Any]) -> None:
+    """Write a workflow payload as machine-readable JSON to stdout.
+
+    Uses the builtin ``print`` rather than ``console.print`` so Rich
+    markup interpretation, syntax highlighting, and line-wrapping can
+    never alter the emitted JSON.
+    """
+    print(json.dumps(payload, indent=2))
+
+
+@contextlib.contextmanager
+def _stdout_to_stderr_when(active: bool):
+    """Redirect everything written to stdout onto stderr while *active*.
+
+    Suppressing the banner and the step-start callback is not enough to
+    keep a ``--json`` stream clean: individual steps may still write to
+    stdout while the engine runs — the gate step prints its prompt,
+    and the prompt step runs a subprocess that inherits the process's
+    stdout file descriptor. Either would corrupt the single JSON object.
+
+    Redirecting at the file-descriptor level (``dup2``) captures both
+    Python-level writes and inherited-fd subprocess output, so step
+    progress lands on stderr (still visible to a human) while stdout
+    carries only the emitted JSON. A no-op when *active* is false.
+    """
+    if not active:
+        yield
+        return
+    sys.stdout.flush()
+    saved_stdout_fd = os.dup(1)
+    try:
+        os.dup2(2, 1)  # fd 1 (stdout) now points at fd 2 (stderr)
+        with contextlib.redirect_stdout(sys.stderr):
+            yield
+    finally:
+        sys.stdout.flush()
+        os.dup2(saved_stdout_fd, 1)  # restore the real stdout
+        os.close(saved_stdout_fd)
+
+
 @workflow_app.command("run")
 def workflow_run(
     source: str = typer.Argument(..., help="Workflow ID or YAML file path"),
     input_values: list[str] | None = typer.Option(
         None, "--input", "-i", help="Input values as key=value pairs"
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the run outcome as a single JSON object instead of formatted text.",
+    ),
 ):
     """Run a workflow from an installed ID or local YAML path."""
     from .workflows.engine import WorkflowEngine
 
-    project_root = _require_specify_project()
+    source_path = Path(source).expanduser()
+    is_file_source = source_path.suffix.lower() in (".yml", ".yaml") and source_path.is_file()
+
+    if is_file_source:
+        # When running a YAML file directly, use cwd as project root
+        # without requiring a .specify/ project directory.
+        project_root = Path.cwd()
+        specify_dir = project_root / ".specify"
+        if specify_dir.is_symlink():
+            console.print("[red]Error:[/red] Refusing to use symlinked .specify path in current directory")
+            raise typer.Exit(1)
+        if specify_dir.exists() and not specify_dir.is_dir():
+            console.print("[red]Error:[/red] .specify path exists but is not a directory")
+            raise typer.Exit(1)
+    else:
+        project_root = _require_specify_project()
+
     engine = WorkflowEngine(project_root)
-    engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
+    if not json_output:
+        engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
     try:
-        definition = engine.load_workflow(source)
+        definition = engine.load_workflow(source_path if is_file_source else source)
     except FileNotFoundError:
         console.print(f"[red]Error:[/red] Workflow not found: {source}")
         raise typer.Exit(1)
@@ -2779,17 +2801,23 @@ def workflow_run(
     # Parse inputs
     inputs = _parse_input_values(input_values)
 
-    console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
-    console.print(f"[dim]Version: {definition.version}[/dim]\n")
+    if not json_output:
+        console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
+        console.print(f"[dim]Version: {definition.version}[/dim]\n")
 
     try:
-        state = engine.execute(definition, inputs)
+        with _stdout_to_stderr_when(json_output):
+            state = engine.execute(definition, inputs)
     except ValueError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
     except Exception as exc:
         console.print(f"[red]Workflow failed:[/red] {exc}")
         raise typer.Exit(1)
+
+    if json_output:
+        _emit_workflow_json(_workflow_run_payload(state))
+        return
 
     status_colors = {
         "completed": "green",
@@ -2811,18 +2839,25 @@ def workflow_resume(
     input_values: list[str] | None = typer.Option(
         None, "--input", "-i", help="Updated input values as key=value pairs"
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the resume outcome as a single JSON object instead of formatted text.",
+    ),
 ):
     """Resume a paused or failed workflow run."""
     from .workflows.engine import WorkflowEngine
 
     project_root = _require_specify_project()
     engine = WorkflowEngine(project_root)
-    engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
+    if not json_output:
+        engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
     inputs = _parse_input_values(input_values)
 
     try:
-        state = engine.resume(run_id, inputs or None)
+        with _stdout_to_stderr_when(json_output):
+            state = engine.resume(run_id, inputs or None)
     except FileNotFoundError:
         console.print(f"[red]Error:[/red] Run not found: {run_id}")
         raise typer.Exit(1)
@@ -2832,6 +2867,10 @@ def workflow_resume(
     except Exception as exc:
         console.print(f"[red]Resume failed:[/red] {exc}")
         raise typer.Exit(1)
+
+    if json_output:
+        _emit_workflow_json(_workflow_run_payload(state))
+        return
 
     status_colors = {
         "completed": "green",
@@ -2846,6 +2885,11 @@ def workflow_resume(
 @workflow_app.command("status")
 def workflow_status(
     run_id: str | None = typer.Argument(None, help="Run ID to inspect (shows all if omitted)"),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit run status as a single JSON object instead of formatted text.",
+    ),
 ):
     """Show workflow run status."""
     from .workflows.engine import WorkflowEngine
@@ -2860,6 +2904,21 @@ def workflow_status(
         except FileNotFoundError:
             console.print(f"[red]Error:[/red] Run not found: {run_id}")
             raise typer.Exit(1)
+
+        if json_output:
+            # Build on the shared run/resume payload so the common fields
+            # (including current_step_index) stay identical across commands.
+            payload = {
+                **_workflow_run_payload(state),
+                "created_at": state.created_at,
+                "updated_at": state.updated_at,
+                "steps": {
+                    sid: sd.get("status", "unknown")
+                    for sid, sd in state.step_results.items()
+                },
+            }
+            _emit_workflow_json(payload)
+            return
 
         status_colors = {
             "completed": "green",
@@ -2888,6 +2947,22 @@ def workflow_status(
                 console.print(f"    [{sc}]●[/{sc}] {step_id}: {s}")
     else:
         runs = engine.list_runs()
+
+        if json_output:
+            payload = {
+                "runs": [
+                    {
+                        "run_id": r["run_id"],
+                        "workflow_id": r.get("workflow_id"),
+                        "status": r.get("status", "unknown"),
+                        "updated_at": r.get("updated_at"),
+                    }
+                    for r in runs
+                ]
+            }
+            _emit_workflow_json(payload)
+            return
+
         if not runs:
             console.print("[yellow]No workflow runs found.[/yellow]")
             return

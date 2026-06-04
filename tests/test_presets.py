@@ -2255,6 +2255,51 @@ class TestInitOptions:
         assert loaded["ai"] == "claude"
         assert loaded["ai_skills"] is True
 
+    def test_save_and_load_available_from_init_options_module(self, project_dir):
+        from specify_cli._init_options import load_init_options, save_init_options
+
+        opts = {"ai": "codex", "ai_skills": True, "script": "sh"}
+        save_init_options(project_dir, opts)
+
+        assert load_init_options(project_dir) == opts
+
+    def test_save_uses_utf8_encoding(self, project_dir, monkeypatch):
+        from specify_cli import save_init_options
+
+        original_write_text = Path.write_text
+        seen: dict[str, str | None] = {}
+
+        def spy_write_text(path, data, *args, **kwargs):
+            if path == project_dir / ".specify" / "init-options.json":
+                seen["encoding"] = kwargs.get("encoding")
+            return original_write_text(path, data, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", spy_write_text)
+
+        save_init_options(project_dir, {"label": "中文测试"})
+
+        assert seen["encoding"] == "utf-8"
+
+    def test_load_uses_utf8_encoding(self, project_dir, monkeypatch):
+        from specify_cli import load_init_options
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_text('{"ai": "codex"}', encoding="utf-8")
+
+        original_read_text = Path.read_text
+        seen: dict[str, str | None] = {}
+
+        def spy_read_text(path, *args, **kwargs):
+            if path == opts_file:
+                seen["encoding"] = kwargs.get("encoding")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", spy_read_text)
+
+        assert load_init_options(project_dir) == {"ai": "codex"}
+        assert seen["encoding"] == "utf-8"
+
     def test_load_returns_empty_when_missing(self, project_dir):
         from specify_cli import load_init_options
 
@@ -2347,6 +2392,51 @@ class TestInitOptions:
         opts_file.write_bytes(b'{"project_name": "caf\xe9"}')
 
         assert load_init_options(project_dir) == {}
+
+    @pytest.mark.parametrize("payload", ["[]", '"value"', "42", "true", "null"])
+    def test_load_returns_empty_on_non_object_json(self, project_dir, payload):
+        from specify_cli import load_init_options
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_text(payload, encoding="utf-8")
+
+        assert load_init_options(project_dir) == {}
+
+    def test_load_returns_empty_on_unicode_decode_error(self, project_dir, monkeypatch):
+        from specify_cli import load_init_options
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_bytes(b"{}")
+
+        original_read_text = Path.read_text
+
+        def raise_decode_error(path, *args, **kwargs):
+            if path == opts_file:
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", raise_decode_error)
+
+        assert load_init_options(project_dir) == {}
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (True, True),
+            (False, False),
+            ("true", False),
+            ("false", False),
+            (1, False),
+            (0, False),
+            (None, False),
+        ],
+    )
+    def test_is_ai_skills_enabled_requires_boolean_true(self, value, expected):
+        from specify_cli._init_options import is_ai_skills_enabled
+
+        assert is_ai_skills_enabled({"ai_skills": value}) is expected
 
 
 class TestPresetSkills:

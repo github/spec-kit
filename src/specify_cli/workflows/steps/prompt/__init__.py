@@ -115,10 +115,17 @@ class PromptStep(StepBase):
             return None
 
         exec_args = impl.build_exec_args(prompt, model=model, output_json=False)
-        if exec_args is None:
+
+        # Check if the CLI tool is actually installed.
+        # Try the integration key first (covers most agents), then fall back
+        # to exec_args[0] for agents whose executable differs.
+        cli_path = shutil.which(impl.key)
+        fallback_cli_path = shutil.which(exec_args[0]) if exec_args else None
+        if cli_path is None and fallback_cli_path is None:
             return None
 
-        if not shutil.which(impl.key):
+        # Prompt dispatch executes exec_args directly; require a non-empty argv.
+        if not exec_args:
             return None
 
         import subprocess

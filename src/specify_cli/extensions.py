@@ -24,6 +24,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
+from ._init_options import is_ai_skills_enabled
 from .catalogs import CatalogEntry as BaseCatalogEntry
 from .catalogs import CatalogStackBase
 
@@ -826,10 +827,30 @@ class ExtensionManager:
         be created due to symlink, containment, or permission issues so
         that callers can fall back gracefully.
         """
-        from . import _print_cli_warning, resolve_active_skills_dir
+        from . import (
+            _print_cli_warning,
+            load_init_options,
+            resolve_active_skills_dir,
+        )
+
+        def _ensure_usable(skills_dir: Path) -> Optional[Path]:
+            try:
+                skills_dir.mkdir(parents=True, exist_ok=True)
+                if not skills_dir.is_dir():
+                    raise NotADirectoryError(f"{skills_dir} is not a directory")
+            except (OSError, ValueError) as exc:
+                _print_cli_warning(
+                    "resolve",
+                    "skills directory",
+                    str(skills_dir),
+                    exc,
+                    continuing="Continuing without skill registration.",
+                )
+                return None
+            return skills_dir
 
         try:
-            return resolve_active_skills_dir(self.project_root)
+            skills_dir = resolve_active_skills_dir(self.project_root)
         except (ValueError, OSError) as exc:
             _print_cli_warning(
                 "resolve",
@@ -839,6 +860,26 @@ class ExtensionManager:
                 continuing="Continuing without skill registration.",
             )
             return None
+        if skills_dir is None:
+            return None
+
+        opts = load_init_options(self.project_root)
+        if not isinstance(opts, dict):
+            return _ensure_usable(skills_dir)
+        selected_ai = opts.get("ai")
+        if not isinstance(selected_ai, str) or not selected_ai:
+            return _ensure_usable(skills_dir)
+
+        from .agents import CommandRegistrar
+
+        registrar = CommandRegistrar()
+        agent_config = registrar.AGENT_CONFIGS.get(selected_ai)
+        if agent_config and agent_config.get("extension") == "/SKILL.md":
+            agent_skills_dir = registrar._resolve_agent_dir(
+                selected_ai, agent_config, self.project_root
+            )
+            return _ensure_usable(agent_skills_dir)
+        return _ensure_usable(skills_dir)
 
     def _register_extension_skills(
         self,
@@ -1250,7 +1291,11 @@ class ExtensionManager:
             registrar = CommandRegistrar()
             # Register for all detected agents
             registered_commands = registrar.register_commands_for_all_agents(
-                manifest, dest_dir, self.project_root, link_outputs=link_commands
+                manifest,
+                dest_dir,
+                self.project_root,
+                link_outputs=link_commands,
+                create_missing_active_skills_dir=True,
             )
 
         # Auto-register extension commands as agent skills when --ai-skills
@@ -1559,9 +1604,10 @@ class ExtensionManager:
             init_options = {}
 
         active_agent = init_options.get("ai")
+        ai_skills_enabled = is_ai_skills_enabled(init_options)
         skills_mode_active = (
             active_agent == agent_name
-            and bool(init_options.get("ai_skills"))
+            and ai_skills_enabled
             and bool(agent_config)
             and agent_config.get("extension") != "/SKILL.md"
         )
@@ -1774,6 +1820,7 @@ class CommandRegistrar:
         extension_dir: Path,
         project_root: Path,
         link_outputs: bool = False,
+        create_missing_active_skills_dir: bool = False,
     ) -> Dict[str, List[str]]:
         """Register extension commands for all detected agents."""
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
@@ -1784,6 +1831,7 @@ class CommandRegistrar:
             project_root,
             context_note=context_note,
             link_outputs=link_outputs,
+            create_missing_active_skills_dir=create_missing_active_skills_dir,
         )
 
     def unregister_commands(
@@ -2595,12 +2643,12 @@ class HookExecutor:
 
         init_options = self._load_init_options()
         selected_ai = init_options.get("ai")
-        ai_skills = bool(init_options.get("ai_skills"))
+        ai_skills_enabled = is_ai_skills_enabled(init_options)
 
-        codex_skill_mode = selected_ai == "codex" and ai_skills
-        claude_skill_mode = selected_ai == "claude" and ai_skills
+        codex_skill_mode = selected_ai == "codex" and ai_skills_enabled
+        claude_skill_mode = selected_ai == "claude" and ai_skills_enabled
         kimi_skill_mode = selected_ai == "kimi"
-        cursor_skill_mode = selected_ai == "cursor-agent" and ai_skills
+        cursor_skill_mode = selected_ai == "cursor-agent" and ai_skills_enabled
         cline_mode = selected_ai == "cline"
 
         skill_name = self._skill_name_from_command(command_id)
@@ -2614,13 +2662,13 @@ class HookExecutor:
             return f"/{format_cline_command_name(command_id)}"
 
         # Agents that use /speckit-<name> (slash-skills invocation):
-        # - Unconditional: agy, devin, trae, zed
-        # - Conditional on ai_skills: claude, cursor-agent
-        always_slash: frozenset[str] = frozenset({"agy", "devin", "trae", "zed"})
-        conditional_slash: frozenset[str] = frozenset({"claude", "cursor-agent"})
+        # - Always skills-based: devin, trae, zed
+        # - Conditional on ai_skills: agy, claude, cursor-agent
+        always_slash: frozenset[str] = frozenset({"devin", "trae", "zed"})
+        conditional_slash: frozenset[str] = frozenset({"agy", "claude", "cursor-agent"})
 
         use_slash = selected_ai in always_slash or (
-            selected_ai in conditional_slash and ai_skills
+            selected_ai in conditional_slash and ai_skills_enabled
         )
 
         if skill_name and use_slash:

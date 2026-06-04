@@ -29,6 +29,7 @@ from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from .extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 from .integrations.base import IntegrationBase
+from ._init_options import is_ai_skills_enabled
 
 
 def _substitute_core_template(
@@ -1262,7 +1263,7 @@ class PresetManager:
         selected_ai = init_opts.get("ai")
         if not isinstance(selected_ai, str):
             return []
-        ai_skills_enabled = bool(init_opts.get("ai_skills"))
+        ai_skills_enabled = is_ai_skills_enabled(init_opts)
         registrar = CommandRegistrar()
         integration = get_integration(selected_ai)
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
