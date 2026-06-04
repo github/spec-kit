@@ -923,7 +923,7 @@ def register(app: typer.Typer) -> None:
             ai_skills or _is_skills_integration
         )
         kimi_skill_mode = selected_ai == "kimi"
-        agy_skill_mode = selected_ai == "agy" and _is_skills_integration
+        agy_skill_mode = selected_ai == "agy"
         trae_skill_mode = selected_ai == "trae"
         cursor_agent_skill_mode = selected_ai == "cursor-agent" and (
             ai_skills or _is_skills_integration
