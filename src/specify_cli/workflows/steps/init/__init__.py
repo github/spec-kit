@@ -92,6 +92,33 @@ class InitStep(StepBase):
             # No explicit target → initialize the current directory.
             argv.append(".")
 
+        # When the target is the current directory and ``force`` is not set,
+        # ``specify init`` prompts for confirmation if the directory is not
+        # empty.  Workflows run unattended (no stdin), so the prompt would
+        # abort with a confusing error.  Fail fast with an actionable message.
+        targets_current_dir = here or not project or str(project) == "."
+        if targets_current_dir and not force:
+            base = context.project_root or os.getcwd()
+            try:
+                not_empty = any(os.scandir(base))
+            except OSError:
+                not_empty = False
+            if not_empty:
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    output={
+                        "argv": argv,
+                        "project": project,
+                        "here": here,
+                        "integration": integration,
+                        "script": script,
+                    },
+                    error=(
+                        f"Target directory {base!r} is not empty. Set "
+                        "'force: true' to merge into a non-empty directory."
+                    ),
+                )
+
         if integration:
             argv.extend(["--integration", str(integration)])
         if script:
@@ -126,6 +153,7 @@ class InitStep(StepBase):
                 output=output,
                 error=(
                     stderr.strip()
+                    or stdout.strip()
                     or f"specify init exited with code {exit_code}."
                 ),
             )

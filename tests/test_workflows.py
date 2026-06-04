@@ -1056,6 +1056,24 @@ class TestInitStep:
         assert result.output["exit_code"] != 0
         assert result.error is not None
 
+    def test_non_empty_current_dir_without_force_fails_fast(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        (tmp_path / "existing.txt").write_text("data")
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {"id": "bootstrap", "here": True, "script": "sh", "no_git": True},
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert "force: true" in (result.error or "")
+        assert not (tmp_path / ".specify").exists()
+
     def test_validate_rejects_bad_script(self):
         from specify_cli.workflows.steps.init import InitStep
 
