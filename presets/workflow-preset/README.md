@@ -226,6 +226,8 @@ Development-only contract helpers:
 
 Test strategy derivation happens during `/speckit.tasks`. The command derives unit, contract, integration, and end-to-end validation work from BDD contracts, Expected UIF contracts, behavior contracts, interface contracts, `research.md`, and `quickstart.md`, then writes the strategy inline on the relevant `tasks.md` checklist items.
 
+Final Code Review task generation happens during `/speckit.tasks`. The final review checks implementation consistency against `class-diagram.md`, `contracts/sequences.md`, `contracts/`, `research.md`, `quickstart.md`, and real e2e readiness. Authorized drift repairs are recorded during `/speckit.implement`; missing real e2e environments become deferred validation todos instead of passing evidence.
+
 The handoff context digest includes relevant design constraints, validation decisions, quickstart paths, and behavior contracts when present, so Worker Agents can preserve object boundaries, service flows, and validation intent without reading full planning documents by default.
 
 See `speckit-cross-agent-subagents.md` for the cross-platform subagent mapping, worker prompt, parallel dispatch rules, and minimal handoff/receipt contract.
@@ -236,7 +238,7 @@ The Core Agent is the lifecycle orchestrator. It owns context indexing, manifest
 
 Vertical Planner Agent runs are planners. A Vertical Planner Agent handles one `vertical_capability`, produces shard plans, handoff drafts, context digest drafts, and allowed path derivations, and does not execute implementation, write the final manifest, dispatch workers, or edit `tasks.md`.
 
-Worker Agent runs are executors. A Worker Agent handles one persisted handoff, writes only `allowed_write_paths`, does not edit `tasks.md`, does not dispatch additional workers, and writes a `speckit.implement.receipt.v1` receipt.
+Worker Agent runs are executors. A Worker Agent handles one persisted handoff, writes only `allowed_write_paths`, does not edit `tasks.md`, does not dispatch additional workers, and writes a `speckit.implement.receipt.v1` receipt. Implementation receipts use `task_type: implementation`. Final Code Review receipts use `task_type: code_review` and include `review_conclusion.checked_sources`; when applicable they also record `consistency_repairs` and `deferred_validation_todos`.
 
 Worker mode rejects handoff paths that do not exist or are not listed in `handoff-manifest.json`.
 
@@ -257,6 +259,7 @@ Core Agent mode proceeds through these stages:
 - `worker_dispatch`
 - `worker_execution`
 - `receipt_review`
+- `code_review`
 - `task_commit`
 - `integration_verification`
 - `closeout`
@@ -324,7 +327,7 @@ This repository owns preset artifact health:
 - publish or confirm the release artifact for a tag or manual release run;
 - create or update a `workflow-preset-release-v<version>` integration PR in `bigsmartben/spec-kit` on tag releases or manual runs with `create_integration_pr=true`.
 
-Manual release runs default to the next patch version when `version` is omitted. For example, a `preset.yml` version of `1.3.1` defaults to release version `1.3.2`.
+Manual release runs default to the next patch version when `version` is omitted. For example, a `preset.yml` version of `1.3.2` defaults to release version `1.3.3`.
 
 The integration PR step requires a repository secret named `SPEC_KIT_FORK_PR_TOKEN` with permission to push branches and open pull requests in `bigsmartben/spec-kit`. If a tag release or manual `create_integration_pr=true` run reaches that step without the secret, the workflow fails fast instead of skipping integration PR creation.
 

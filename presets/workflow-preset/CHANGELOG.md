@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.2
 
 - Added Final Code Review task generation and structured code review receipts for implementation consistency repairs and deferred real e2e validation todos.
 

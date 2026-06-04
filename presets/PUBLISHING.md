@@ -276,7 +276,9 @@ When releasing a new version:
 1. Update `version` in `preset.yml`
 2. Update CHANGELOG.md
 3. Tag and push: `git tag v1.1.0 && git push origin v1.1.0`
-4. Submit PR to update `version` and `download_url` in `presets/catalog.community.json`
+4. Submit PR to update the catalog entry:
+   - Community presets update `version` and `download_url` in `presets/catalog.community.json`
+   - Bundled or official presets update `presets/catalog.json` and the bundled preset directory, including README release URLs and CHANGELOG entries
 
 ---
 

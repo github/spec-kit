@@ -617,10 +617,10 @@ EXECUTE_COMMAND: {command}
 
 **Options**:
 
-- `--available` - Show available extensions from catalog
-- `--all` - Show both installed and available
+- `--available` - Print guidance for discovering available extensions with `specify extension search`
+- `--all` - Print installed extensions plus guidance for discovering available extensions with `specify extension search`
 
-**Output**: List of installed extensions with metadata
+**Output**: List of installed extensions with metadata. Available catalog entries are discovered with `specify extension search`.
 
 ### extension catalog list
 
@@ -663,6 +663,7 @@ Removes a catalog entry from `.specify/extension-catalogs.yml`.
 
 - `--from URL` - Install from custom URL
 - `--dev PATH` - Install from local directory
+- `--priority INT` - Set registry priority for the installed extension
 
 **Arguments**:
 
@@ -716,6 +717,15 @@ Shows source catalog and install_allowed status.
 **Arguments**:
 
 - `EXTENSION` - Optional, extension ID (default: all)
+
+### extension set-priority
+
+**Usage**: `specify extension set-priority EXTENSION PRIORITY`
+
+**Arguments**:
+
+- `EXTENSION` - Extension ID
+- `PRIORITY` - Integer priority; lower numbers load earlier
 
 ### extension enable
 

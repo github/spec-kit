@@ -53,10 +53,10 @@ specify extension list
 
 | Option        | Description                                        |
 | ------------- | -------------------------------------------------- |
-| `--available` | Show available (uninstalled) extensions            |
-| `--all`       | Show both installed and available extensions       |
+| `--available` | Print guidance for discovering available extensions with `specify extension search` |
+| `--all`       | Show installed extensions plus discovery guidance |
 
-Lists installed extensions with their status, version, and command counts.
+Lists installed extensions with their status, version, and command counts. Use `specify extension search` to enumerate available catalog entries.
 
 ## Extension Info
 

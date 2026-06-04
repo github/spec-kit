@@ -871,7 +871,7 @@ Spec Kit uses two catalog files with different purposes:
 **URL**: `https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json`
 
 - **Purpose**: Organization's curated catalog of approved extensions
-- **Default State**: Empty by design - users populate with extensions they trust
+- **Default State**: Contains Spec Kit bundled or approved extensions; users can fork or override it with extensions they trust
 - **Usage**: Primary catalog (priority 1, `install_allowed: true`) in the default stack
 - **Control**: Organizations maintain their own fork/version for their teams
 

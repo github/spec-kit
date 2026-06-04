@@ -9,7 +9,7 @@ Spec Kit provides two catalog files with different purposes:
 ### Your Catalog (`catalog.json`)
 
 - **Purpose**: Default upstream catalog of extensions used by the Spec Kit CLI
-- **Default State**: Empty by design in the upstream project - you or your organization populate a fork/copy with extensions you trust
+- **Default State**: Contains Spec Kit bundled or approved extensions, such as `repository-governance`; you or your organization can fork or override it with extensions you trust
 - **Location (upstream)**: `extensions/catalog.json` in the GitHub-hosted spec-kit repo
 - **CLI Default**: The `specify extension` commands use the upstream catalog URL by default, unless overridden
 - **Org Catalog**: Point `SPECKIT_CATALOG_URL` at your organization's fork or hosted catalog JSON to use it instead of the upstream default
@@ -76,7 +76,7 @@ specify extension add <extension-name> --from https://github.com/org/spec-kit-ex
 
 🔍 **Browse and search community extensions on the [Community Extensions website](https://speckit-community.github.io/extensions/).**
 
-See the [Community Extensions](../README.md#-community-extensions) section in the main README for the full list of available community-contributed extensions.
+See the [Community Extensions docs](../docs/community/extensions.md) for the full list of available community-contributed extensions.
 
 For the raw catalog data, see [`catalog.community.json`](catalog.community.json).
 

@@ -153,7 +153,7 @@ To submit your extension to the community catalog, file a new issue using the **
 
 1. Your issue is automatically labeled and assigned to a maintainer for review
 2. A maintainer verifies that the catalog entry is complete and correctly formatted
-3. Once approved, the maintainer adds your extension to `extensions/catalog.community.json` and the Community Extensions table in the README
+3. Once approved, the maintainer adds your extension to `extensions/catalog.community.json` and refreshes `docs/community/extensions.md`
 4. Your extension becomes discoverable via `specify extension search`
 
 ### What Maintainers Check
@@ -274,8 +274,11 @@ When releasing a new version:
 A: The main catalog is for public extensions only. For private extensions:
 
 - Host your own catalog.json file
-- Users add your catalog: `specify extension add-catalog https://your-domain.com/catalog.json`
-- Not yet implemented - coming in Phase 4
+- Users add your catalog:
+
+  ```bash
+  specify extension catalog add https://your-domain.com/catalog.json --name your-org --install-allowed --description "Your organization extensions"
+  ```
 
 ### Q: How long does review take?
 

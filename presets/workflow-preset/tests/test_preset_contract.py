@@ -390,7 +390,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertEqual("1.0", data["schema_version"])
         self.assertEqual("workflow-preset", data["preset"]["id"])
         self.assertEqual("Workflow Preset", data["preset"]["name"])
-        self.assertEqual("1.3.1", data["preset"]["version"])
+        self.assertEqual("1.3.2", data["preset"]["version"])
         self.assertEqual(
             "Behavior-first specification, design artifacts, and agent-native handoff orchestration",
             data["preset"]["description"],
@@ -2227,7 +2227,7 @@ class PresetContractTests(unittest.TestCase):
             "gh pr create",
             "gh pr edit",
             "WORKFLOW_PRESET_DOWNLOAD_URL",
-            'assert entry["version"] == "1.3.1"',
+            'assert entry["version"] == "1.3.2"',
             "tests/test_presets.py",
             "speckit-cross-agent-subagents.md",
             "ZipInfo",

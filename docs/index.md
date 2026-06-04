@@ -43,7 +43,7 @@ Run `specify init` with your agent of choice and Spec Kit sets up the right comm
 
 ### Make it your own
 
-<span class="pillar-stat">91 community extensions</span> (50+ authors), <span class="pillar-stat">18 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, or replace it entirely. Build and publish your own.
+<span class="pillar-stat">91 community extensions</span> (50+ authors), <span class="pillar-stat">20 community presets plus 2 bundled presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, or replace it entirely. Build and publish your own.
 
 Including entirely different SDD processes:
 

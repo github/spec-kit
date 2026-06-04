@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-25T00:00:00Z",
+  "updated_at": "2026-06-03T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json",
   "extensions": {
     "arch": {
@@ -66,7 +66,7 @@
       "name": "Repository Governance",
       "id": "repository-governance",
       "version": "2.0.2",
-      "description": "Generate Repository Governance Framework files from Spec Kit metadata",
+      "description": "Generate or update the active Repository Governance Framework file with vertical SSOT routing and evidence",
       "author": "bigben",
       "repository": "https://github.com/bigsmartben/spec-kit-agent-governance",
       "license": "MIT",

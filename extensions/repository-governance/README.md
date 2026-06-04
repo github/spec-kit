@@ -25,6 +25,15 @@ Generate the active Repository Governance Framework SSOT section.
 
 ## Install
 
+New projects install `repository-governance` by default with `specify init`.
+Use the catalog command to restore or reinstall the bundled extension:
+
+```bash
+specify extension add repository-governance
+```
+
+Install a specific released archive when you need to pin an exact external version:
+
 ```bash
 specify extension add repository-governance --from https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v2.0.2.zip
 ```
@@ -82,6 +91,6 @@ Repository-local `SKILL.md` files are indexed by declared name, description, tri
 ## Verify
 
 ```bash
-uv run python -m py_compile scripts/refresh_repository_governance.py tests/test_governance_domains.py
-uv run pytest -q
+uv run python -m py_compile scripts/refresh_repository_governance.py
+uv run pytest -q tests/test_extensions.py::TestBundledCommunityExtensionLocator tests/integrations/test_cli.py::TestGitExtensionAutoInstall::test_community_extensions_and_workflow_preset_auto_installed
 ```

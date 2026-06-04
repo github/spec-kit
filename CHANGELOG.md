@@ -2,6 +2,13 @@
 
 <!-- insert new changelog below this comment -->
 
+## Unreleased
+
+### Changed
+
+- Update bundled Repository Governance extension to v2.0.2, including the `/speckit.repository-governance.refresh` command, `.specify/memory/repository-governance.md` internal cache, and default bundled installation behavior.
+- Update bundled Workflow Preset documentation for v1.3.2 Final Code Review task generation and structured code review receipts.
+
 ## [0.8.13] - 2026-05-21
 
 ### Changed
@@ -1367,6 +1374,7 @@
 - Update wording
 - Update release.yml
 
+
 ## [0.0.27] - 2025-09-12
 
 ### Changed
@@ -1550,4 +1558,3 @@
 ### Changed
 
 - Update release.yml
-
