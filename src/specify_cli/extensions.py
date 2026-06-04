@@ -1274,9 +1274,13 @@ class ExtensionManager:
                 backup_config_dir.unlink()
             elif backup_config_dir.is_dir():
                 for cfg_file in backup_config_dir.iterdir():
-                    if cfg_file.is_file() and not cfg_file.is_symlink() and (
-                        cfg_file.name.endswith("-config.yml") or
-                        cfg_file.name.endswith("-config.local.yml")
+                    if (
+                        cfg_file.is_file()
+                        and not cfg_file.is_symlink()
+                        and (
+                            cfg_file.name.endswith("-config.yml")
+                            or cfg_file.name.endswith("-config.local.yml")
+                        )
                     ):
                         shutil.copy2(cfg_file, dest_dir / cfg_file.name)
                 shutil.rmtree(backup_config_dir)
@@ -2602,6 +2606,8 @@ class HookExecutor:
             init_options.get("ai_skills")
         )
         zed_skill_mode = selected_ai == "zed"
+        agy_skill_mode = selected_ai == "agy"
+        devin_skill_mode = selected_ai == "devin"
         cline_mode = selected_ai == "cline"
 
         skill_name = self._skill_name_from_command(command_id)
@@ -2614,16 +2620,15 @@ class HookExecutor:
 
             return f"/{format_cline_command_name(command_id)}"
 
-        # Slash-skill integrations (Claude, Cursor when ai_skills enabled, Zed, Agy, Devin)
-        # Zed/Agy/Devin are always skills-based; Claude/Cursor are conditional
-        always_slash_skill = {"zed", "agy", "devin"}
-        conditional_slash_skill = {"claude", "cursor-agent"}
+        # Slash-skill integrations
+        # - Claude/Cursor: conditional on ai_skills flag
+        # - Zed/Agy/Devin: always skills-based
         if skill_name and (
-            selected_ai in always_slash_skill
-            or (
-                selected_ai in conditional_slash_skill
-                and bool(init_options.get("ai_skills"))
-            )
+            claude_skill_mode
+            or cursor_skill_mode
+            or zed_skill_mode
+            or agy_skill_mode
+            or devin_skill_mode
         ):
             return f"/{skill_name}"
 

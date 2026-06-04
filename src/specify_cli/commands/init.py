@@ -154,7 +154,7 @@ def register(app: typer.Typer) -> None:
         ai_skills: bool = typer.Option(
             False,
             "--ai-skills",
-            help="Install Prompt.MD templates as agent skills (requires --ai)",
+            help="Install Prompt.MD templates as agent skills (works with --ai or --integration; skills integrations install automatically)",
         ),
         offline: bool = typer.Option(
             False,
