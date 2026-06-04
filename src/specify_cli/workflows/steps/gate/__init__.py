@@ -17,15 +17,6 @@ from specify_cli.workflows.expressions import evaluate_expression
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
 
-def _sanitize_for_display(text: str) -> str:
-    """Strip control characters so untrusted text cannot inject ANSI escapes.
-
-    Applied to every ``show_file``-derived string that reaches the terminal:
-    the displayed path, each file line, and the read-error notice.
-    """
-    return _CONTROL_CHARS.sub("", text)
-
-
 class GateStep(StepBase):
     """Interactive review gate.
 
@@ -112,9 +103,9 @@ class GateStep(StepBase):
         text = str(message)
         if not show_file:
             return text
-        # The path is opened with the original value but displayed sanitized,
+        # The path is opened with the original value but displayed stripped,
         # so a path that itself contains escapes cannot spoof the terminal.
-        header = f"{_sanitize_for_display(show_file)}:"
+        header = f"{_CONTROL_CHARS.sub('', show_file)}:"
         body = "\n".join(
             [header, *(f"  {line}" for line in cls._read_show_file(show_file))]
         )
@@ -170,10 +161,10 @@ class GateStep(StepBase):
                     if len(lines) >= GateStep.MAX_SHOW_FILE_LINES:
                         truncated = True
                         break
-                    lines.append(_sanitize_for_display(line.rstrip("\n")))
+                    lines.append(_CONTROL_CHARS.sub("", line.rstrip("\n")))
         except (OSError, UnicodeDecodeError, ValueError) as exc:
-            # ``exc`` echoes the (possibly hostile) path, so sanitize it too.
-            return [_sanitize_for_display(f"(could not read file: {exc})")]
+            # ``exc`` echoes the (possibly hostile) path, so strip it too.
+            return [_CONTROL_CHARS.sub("", f"(could not read file: {exc})")]
         if not lines and not truncated:
             return ["(file is empty)"]
         if truncated:
