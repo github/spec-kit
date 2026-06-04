@@ -11,6 +11,8 @@
 #   * Persist the cursor (next test index / chunk boundary) to
 #     `.pytest_cache/fast-test-cursor` after every successful chunk so
 #     `--resume` continues from the last completed chunk.
+#   * Resume is tied to the current collection order; changing selection
+#     or order can skip or re-run tests.
 #   * `--reset` clears the cursor; `--bench` reduces pytest output (progress still prints).
 #
 # Usage:
@@ -20,6 +22,10 @@
 #   scripts/dev/test.sh --reset                  # clear cursor
 #   scripts/dev/test.sh --bench                  # quieter pytest output
 #   scripts/dev/test.sh -- tests/test_merge.py   # pass-through to pytest
+#
+# Notes:
+#   --resume assumes the same collection order; changing selection/order
+#   can skip or re-run tests.
 
 set -euo pipefail
 
@@ -45,6 +51,7 @@ COLLECT_OUT=""
 COLLECT_FILTERED=""
 CHUNK_NODES=()
 XDIST_IGNORED=0
+COLLECT_ONLY_REQUESTED=0
 
 print_help() {
     awk '
@@ -81,6 +88,10 @@ if ! [[ "$CHUNK_SIZE" =~ ^[1-9][0-9]*$ ]]; then
     exit 1
 fi
 
+if (( CHUNK_SIZE > 1000 )); then
+    echo "[fast-test] warning: large --chunk-size may exceed OS argument limits" >&2
+fi
+
 mktemp_file() {
     local tmp
     if tmp="$(mktemp -t fast-test.XXXXXX 2>/dev/null)"; then
@@ -102,7 +113,7 @@ idx=0
 while (( idx < ${#PASSTHROUGH[@]} )); do
     arg="${PASSTHROUGH[$idx]}"
     case "$arg" in
-        --collect-only|--co) ;;
+        --collect-only|--co) COLLECT_ONLY_REQUESTED=1 ;;
         -n|--numprocesses|--dist)
             next="${PASSTHROUGH[$((idx + 1))]:-}"
             if [[ -z "$next" || "$next" == -* ]]; then
@@ -120,6 +131,11 @@ while (( idx < ${#PASSTHROUGH[@]} )); do
     esac
     idx=$((idx + 1))
 done
+
+if (( COLLECT_ONLY_REQUESTED )); then
+    echo "[fast-test] --collect-only is not supported; run pytest --collect-only directly" >&2
+    exit 1
+fi
 
 if (( XDIST_IGNORED )); then
     echo "[fast-test] ignoring xdist flags (-n/--numprocesses/--dist); this script manages them" >&2
