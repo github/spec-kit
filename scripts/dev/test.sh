@@ -52,6 +52,7 @@ COLLECT_FILTERED=""
 CHUNK_NODES=()
 XDIST_IGNORED=0
 COLLECT_ONLY_REQUESTED=0
+FD3_OPEN=0
 
 log() {
     echo "$*" >&2
@@ -92,10 +93,6 @@ if ! [[ "$CHUNK_SIZE" =~ ^[1-9][0-9]*$ ]]; then
     exit 1
 fi
 
-if (( CHUNK_SIZE > 1000 )); then
-    log "[fast-test] warning: large --chunk-size may exceed OS argument limits"
-fi
-
 mktemp_file() {
     local tmp
     if tmp="$(mktemp -t fast-test.XXXXXX 2>/dev/null)"; then
@@ -108,6 +105,15 @@ mktemp_file() {
     fi
     echo "[fast-test] mktemp failed; set TMPDIR or install a compatible mktemp" >&2
     return 1
+}
+
+arg_bytes() {
+    local total=0
+    local arg
+    for arg in "$@"; do
+        total=$(( total + ${#arg} + 1 ))
+    done
+    printf '%s\n' "$total"
 }
 
 # Collection and execution do not share every pytest flag. Keep runtime
@@ -146,7 +152,10 @@ if (( XDIST_IGNORED )); then
 fi
 
 cleanup() {
-    { exec 3<&-; } 2>/dev/null || true
+    if (( FD3_OPEN )); then
+        { exec 3<&-; } 2>/dev/null || true
+        FD3_OPEN=0
+    fi
     [[ -n "$COLLECT_ERR" && -f "$COLLECT_ERR" ]] && rm -f "$COLLECT_ERR"
     [[ -n "$COLLECT_OUT" && -f "$COLLECT_OUT" ]] && rm -f "$COLLECT_OUT"
     [[ -n "$COLLECT_FILTERED" && -f "$COLLECT_FILTERED" ]] && rm -f "$COLLECT_FILTERED"
@@ -197,6 +206,10 @@ if command -v flock >/dev/null 2>&1; then
     LOCK_MODE="flock"
     LOCK_HELD=1
 else
+    if [[ -L "$LOCK_DIR" ]]; then
+        echo "[fast-test] lock path is a symlink; refusing to use $LOCK_DIR" >&2
+        exit 1
+    fi
     if [[ -d "$LOCK_DIR" ]]; then
         if [[ -f "$LOCK_DIR/pid" ]]; then
             PID_CONTENTS="$(tr -d '[:space:]' < "$LOCK_DIR/pid" 2>/dev/null || true)"
@@ -261,6 +274,38 @@ if (( TOTAL == 0 )); then
     exit 1
 fi
 
+ARG_MAX=""
+if command -v getconf >/dev/null 2>&1; then
+    ARG_MAX="$(getconf ARG_MAX 2>/dev/null || true)"
+fi
+if [[ "$ARG_MAX" =~ ^[0-9]+$ ]]; then
+    MAX_NODE_LEN="$(awk 'length > max { max = length } END { print max + 0 }' "$COLLECT_OUT")"
+    BASE_PYTEST_ARGS=(-n auto --dist=load --no-header)
+    if (( BENCH )); then
+        BASE_PYTEST_ARGS+=(-q)
+    fi
+    BASE_ARGS_SIZE="$(arg_bytes "${PYTEST_CMD[@]}" "${BASE_PYTEST_ARGS[@]}" "${RUNTIME_PASSTHROUGH[@]}")"
+    SAFETY_MARGIN=2048
+    AVAILABLE=$(( ARG_MAX - BASE_ARGS_SIZE - SAFETY_MARGIN ))
+    (( AVAILABLE < 0 )) && AVAILABLE=0
+    PER_NODE=$(( MAX_NODE_LEN + 1 ))
+    if (( PER_NODE > 0 )); then
+        MAX_SAFE=$(( AVAILABLE / PER_NODE ))
+        if (( MAX_SAFE <= 0 )); then
+            echo "[fast-test] chunk size too large for ARG_MAX; reduce --chunk-size" >&2
+            exit 1
+        fi
+        if (( CHUNK_SIZE > MAX_SAFE )); then
+            log "[fast-test] reducing --chunk-size from $CHUNK_SIZE to $MAX_SAFE to avoid ARG_MAX"
+            CHUNK_SIZE="$MAX_SAFE"
+        fi
+    fi
+else
+    if (( CHUNK_SIZE > 1000 )); then
+        log "[fast-test] warning: large --chunk-size may exceed OS argument limits"
+    fi
+fi
+
 # 2. Determine starting cursor.
 START=0
 if (( RESUME )) && [[ -f "$CURSOR_FILE" ]]; then
@@ -285,6 +330,7 @@ CHUNKS=$(( (TOTAL - START + CHUNK_SIZE - 1) / CHUNK_SIZE ))
 log "[fast-test] $TOTAL tests · chunk=$CHUNK_SIZE · $CHUNKS chunk(s) queued · workers=auto"
 
 exec 3< "$COLLECT_OUT"
+FD3_OPEN=1
 skip_count=0
 while (( skip_count < START )); do
     if ! IFS= read -r _ <&3; then
@@ -328,7 +374,10 @@ while (( i < TOTAL )); do
 done
 
 T_END=$(date +%s)
-{ exec 3<&-; } 2>/dev/null || true
+if (( FD3_OPEN )); then
+    { exec 3<&-; } 2>/dev/null || true
+    FD3_OPEN=0
+fi
 rm -f "$COLLECT_OUT"
 rm -f "$CURSOR_FILE"
 log "[fast-test] all $TOTAL tests passed in $((T_END - T_START))s"
