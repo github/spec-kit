@@ -2757,7 +2757,7 @@
       "description": "Thin orchestrator between Spec Kit (design) and Superpowers (implementation). Cross-agent.",
       "author": "lihan3238",
       "version": "1.0.2",
-      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/latest/download/speckit-superpowers-bridge.zip",
+      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v1.0.2/speckit-superpowers-bridge-v1.0.2.zip",
       "repository": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "homepage": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "documentation": "https://github.com/lihan3238/speckit-superpowers-bridge#readme",
