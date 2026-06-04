@@ -41,6 +41,14 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
         "taskstoissues",
     }
 )
+
+# Agents that use /speckit-<name> (slash-skills invocation) in hook messages.
+# - ALWAYS_SLASH_AGENTS: always render as /speckit-<name> regardless of ai_skills.
+# - CONDITIONAL_SLASH_AGENTS: render as /speckit-<name> only when ai_skills is enabled.
+ALWAYS_SLASH_AGENTS: frozenset[str] = frozenset({"devin", "trae", "zed"})
+CONDITIONAL_SLASH_AGENTS: frozenset[str] = frozenset(
+    {"agy", "claude", "copilot", "cursor-agent"}
+)
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
 
 REINSTALL_COMMAND = "uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git"
@@ -2663,12 +2671,9 @@ class HookExecutor:
 
         # Agents that use /speckit-<name> (slash-skills invocation):
         # - Always skills-based: devin, trae, zed
-        # - Conditional on ai_skills: agy, claude, cursor-agent
-        always_slash: frozenset[str] = frozenset({"devin", "trae", "zed"})
-        conditional_slash: frozenset[str] = frozenset({"agy", "claude", "cursor-agent"})
-
-        use_slash = selected_ai in always_slash or (
-            selected_ai in conditional_slash and ai_skills_enabled
+        # - Conditional on ai_skills: agy, claude, copilot, cursor-agent
+        use_slash = selected_ai in ALWAYS_SLASH_AGENTS or (
+            selected_ai in CONDITIONAL_SLASH_AGENTS and ai_skills_enabled
         )
 
         if skill_name and use_slash:

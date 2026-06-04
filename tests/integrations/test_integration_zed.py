@@ -1,7 +1,6 @@
 """Tests for ZedIntegration."""
 
 import json
-import os
 
 from specify_cli.integrations import get_integration
 
@@ -19,7 +18,9 @@ class TestZedIntegration(SkillsIntegrationTests):
         """Zed is always skills-based; no --skills option needed."""
         i = get_integration(self.KEY)
         skills_opts = [o for o in i.options() if o.name == "--skills"]
-        assert len(skills_opts) == 0
+        assert len(skills_opts) == 0, (
+            "Zed is always skills-based and should not expose a --skills option"
+        )
 
     def test_requires_cli_is_false(self):
         """Zed is IDE-based; requires_cli must remain False."""
@@ -57,7 +58,7 @@ class TestZedHookInvocations:
         assert "EXECUTE_COMMAND: speckit.plan" in message
         assert "EXECUTE_COMMAND_INVOCATION: /speckit-plan" in message
 
-    def test_init_persists_ai_skills_for_zed(self, tmp_path):
+    def test_init_persists_ai_skills_for_zed(self, tmp_path, monkeypatch):
         """specify init --integration zed must persist ai_skills: true,
         so HookExecutor renders slash-skill invocations without manual
         init-options manipulation."""
@@ -68,28 +69,22 @@ class TestZedHookInvocations:
 
         project = tmp_path / "zed-init-test"
         project.mkdir()
-        old_cwd = None
-        try:
-            old_cwd = os.getcwd()
-            os.chdir(project)
-            runner = CliRunner()
-            result = runner.invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--integration",
-                    "zed",
-                    "--script",
-                    "sh",
-                    "--no-git",
-                    "--ignore-agent-tools",
-                ],
-                catch_exceptions=False,
-            )
-        finally:
-            if old_cwd is not None:
-                os.chdir(old_cwd)
+        monkeypatch.chdir(project)
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                "--here",
+                "--integration",
+                "zed",
+                "--script",
+                "sh",
+                "--no-git",
+                "--ignore-agent-tools",
+            ],
+            catch_exceptions=False,
+        )
 
         assert result.exit_code == 0, f"init failed: {result.output}"
 
