@@ -335,10 +335,13 @@ def register(app: typer.Typer) -> None:
             )
             raise typer.Exit(1)
 
-        if ai_skills and not ai_assistant:
-            console.print("[red]Error:[/red] --ai-skills requires --ai to be specified")
+        if ai_skills and not (ai_assistant or integration):
+            console.print(
+                "[red]Error:[/red] --ai-skills requires --ai or --integration to be specified"
+            )
             console.print(
                 "[yellow]Usage:[/yellow] specify init <project> --ai <agent> --ai-skills"
+                "  or: specify init <project> --integration <key> --ai-skills"
             )
             raise typer.Exit(1)
 

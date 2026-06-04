@@ -2614,15 +2614,17 @@ class HookExecutor:
 
             return f"/{format_cline_command_name(command_id)}"
 
-        # Slash-skill integrations (Claude, Cursor, Zed, Agy, Devin…)
-        slash_skill_integrations = {
-            "claude",
-            "cursor-agent",
-            "zed",
-            "agy",
-            "devin",
-        }
-        if skill_name and selected_ai in slash_skill_integrations:
+        # Slash-skill integrations (Claude, Cursor when ai_skills enabled, Zed, Agy, Devin)
+        # Zed/Agy/Devin are always skills-based; Claude/Cursor are conditional
+        always_slash_skill = {"zed", "agy", "devin"}
+        conditional_slash_skill = {"claude", "cursor-agent"}
+        if skill_name and (
+            selected_ai in always_slash_skill
+            or (
+                selected_ai in conditional_slash_skill
+                and bool(init_options.get("ai_skills"))
+            )
+        ):
             return f"/{skill_name}"
 
         return f"/{command_id}"
