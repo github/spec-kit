@@ -53,6 +53,10 @@ CHUNK_NODES=()
 XDIST_IGNORED=0
 COLLECT_ONLY_REQUESTED=0
 
+log() {
+    echo "$*" >&2
+}
+
 print_help() {
     awk '
         /^# Usage:/ {printing=1}
@@ -89,7 +93,7 @@ if ! [[ "$CHUNK_SIZE" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 if (( CHUNK_SIZE > 1000 )); then
-    echo "[fast-test] warning: large --chunk-size may exceed OS argument limits" >&2
+    log "[fast-test] warning: large --chunk-size may exceed OS argument limits"
 fi
 
 mktemp_file() {
@@ -138,7 +142,7 @@ if (( COLLECT_ONLY_REQUESTED )); then
 fi
 
 if (( XDIST_IGNORED )); then
-    echo "[fast-test] ignoring xdist flags (-n/--numprocesses/--dist); this script manages them" >&2
+    log "[fast-test] ignoring xdist flags (-n/--numprocesses/--dist); this script manages them"
 fi
 
 cleanup() {
@@ -170,6 +174,7 @@ write_cursor() {
 
 read_chunk() {
     local count=0
+    local node
     CHUNK_NODES=()
     while (( count < CHUNK_SIZE )); do
         if ! IFS= read -r node <&3; then
@@ -215,7 +220,7 @@ fi
 
 if (( RESET )); then
     rm -f "$CURSOR_FILE" "$CURSOR_TMP"
-    echo "[fast-test] cursor cleared"
+    log "[fast-test] cursor cleared"
     exit 0
 fi
 
@@ -237,7 +242,7 @@ if ! "${PYTEST_CMD[@]}" --help 2>/dev/null | grep -Eq '(-n[[:space:]]|--numproce
     exit 1
 fi
 
-echo "[fast-test] collecting tests ..."
+log "[fast-test] collecting tests ..."
 COLLECT_ERR="$(mktemp_file)"
 COLLECT_OUT="$(mktemp_file)"
 if ! "${PYTEST_CMD[@]}" --collect-only -q "${COLLECT_PASSTHROUGH[@]}" >"$COLLECT_OUT" 2>"$COLLECT_ERR"; then
@@ -263,20 +268,21 @@ if (( RESUME )) && [[ -f "$CURSOR_FILE" ]]; then
     if [[ "$RAW_START" =~ ^[0-9]+$ ]]; then
         START="$RAW_START"
         (( START > TOTAL )) && START="$TOTAL"
-        echo "[fast-test] resuming from next test index: $START"
+        log "[fast-test] resuming from next test index: $START"
     else
         echo "[fast-test] cursor file is invalid ('$RAW_START'); starting from 0" >&2
+        rm -f "$CURSOR_FILE"
     fi
 fi
 
 if (( START >= TOTAL )); then
-    echo "[fast-test] nothing to resume (cursor at end: $START/$TOTAL)"
+    log "[fast-test] nothing to resume (cursor at end: $START/$TOTAL)"
     rm -f "$CURSOR_FILE"
     exit 0
 fi
 
 CHUNKS=$(( (TOTAL - START + CHUNK_SIZE - 1) / CHUNK_SIZE ))
-echo "[fast-test] $TOTAL tests · chunk=$CHUNK_SIZE · $CHUNKS chunk(s) queued · workers=auto"
+log "[fast-test] $TOTAL tests · chunk=$CHUNK_SIZE · $CHUNKS chunk(s) queued · workers=auto"
 
 exec 3< "$COLLECT_OUT"
 skip_count=0
@@ -302,7 +308,7 @@ while (( i < TOTAL )); do
         exit 1
     fi
     end=$(( i + ${#CHUNK_NODES[@]} ))
-    echo "[fast-test] chunk $chunk_idx/$CHUNKS  tests $((i+1))..$end"
+    log "[fast-test] chunk $chunk_idx/$CHUNKS  tests $((i+1))..$end"
 
     PYTEST_FLAGS=(-n auto --dist=load)
     if (( BENCH )); then
@@ -325,4 +331,4 @@ T_END=$(date +%s)
 { exec 3<&-; } 2>/dev/null || true
 rm -f "$COLLECT_OUT"
 rm -f "$CURSOR_FILE"
-echo "[fast-test] all $TOTAL tests passed in $((T_END - T_START))s"
+log "[fast-test] all $TOTAL tests passed in $((T_END - T_START))s"
