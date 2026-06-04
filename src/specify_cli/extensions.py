@@ -90,7 +90,7 @@ class CompatibilityError(ExtensionError):
     pass
 
 
-def normalize_priority(value: Any, default: int = 10) -> int:
+def normalize_priority(value: Any, default: int = DEFAULT_HOOK_PRIORITY) -> int:
     """Normalize a stored priority value for sorting and display.
 
     Corrupted registry data may contain missing, non-numeric, non-positive, or
@@ -98,7 +98,7 @@ def normalize_priority(value: Any, default: int = 10) -> int:
 
     Args:
         value: Priority value to normalize (may be int, str, None, etc.)
-        default: Default priority to use for invalid values (default: 10)
+        default: Default priority to use for invalid values
 
     Returns:
         Normalized priority as positive integer (>= 1)
