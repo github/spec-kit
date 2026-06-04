@@ -2606,6 +2606,7 @@ class HookExecutor:
             init_options.get("ai_skills")
         )
         zed_skill_mode = selected_ai == "zed"
+        trae_skill_mode = selected_ai == "trae"
         agy_skill_mode = selected_ai == "agy"
         devin_skill_mode = selected_ai == "devin"
         cline_mode = selected_ai == "cline"
@@ -2622,13 +2623,14 @@ class HookExecutor:
 
         # Slash-skill integrations
         # - Claude/Cursor: conditional on ai_skills flag
-        # - Zed/Agy/Devin: always skills-based
+        # - Zed/Agy/Devin/Trae: always skills-based
         if skill_name and (
             claude_skill_mode
             or cursor_skill_mode
             or zed_skill_mode
             or agy_skill_mode
             or devin_skill_mode
+            or trae_skill_mode
         ):
             return f"/{skill_name}"
 
