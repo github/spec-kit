@@ -710,8 +710,15 @@ def preset_add(
                 zip_path = Path(tmpdir) / "preset.zip"
                 try:
                     from specify_cli.authentication.http import open_url as _open_url
+                    from specify_cli._github_http import resolve_github_release_asset_api_url
 
-                    with _open_url(from_url, timeout=60) as response:
+                    _preset_extra_headers = None
+                    _resolved_from_url = resolve_github_release_asset_api_url(from_url, _open_url)
+                    if _resolved_from_url:
+                        from_url = _resolved_from_url
+                        _preset_extra_headers = {"Accept": "application/octet-stream"}
+
+                    with _open_url(from_url, timeout=60, extra_headers=_preset_extra_headers) as response:
                         zip_path.write_bytes(response.read())
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
@@ -3065,9 +3072,17 @@ def workflow_add(
             console.print("[red]Error:[/red] Only HTTPS URLs are allowed, except HTTP for localhost.")
             raise typer.Exit(1)
 
+        from specify_cli._github_http import resolve_github_release_asset_api_url as _resolve_gh_asset
+
+        _wf_url_extra_headers = None
+        _resolved_wf_url = _resolve_gh_asset(source, _open_url)
+        if _resolved_wf_url:
+            source = _resolved_wf_url
+            _wf_url_extra_headers = {"Accept": "application/octet-stream"}
+
         import tempfile
         try:
-            with _open_url(source, timeout=30) as resp:
+            with _open_url(source, timeout=30, extra_headers=_wf_url_extra_headers) as resp:
                 final_url = resp.geturl()
                 final_parsed = urlparse(final_url)
                 final_host = final_parsed.hostname or ""
@@ -3164,9 +3179,16 @@ def workflow_add(
 
     try:
         from specify_cli.authentication.http import open_url as _open_url
+        from specify_cli._github_http import resolve_github_release_asset_api_url as _resolve_gh_asset
+
+        _wf_cat_extra_headers = None
+        _resolved_workflow_url = _resolve_gh_asset(workflow_url, _open_url)
+        if _resolved_workflow_url:
+            workflow_url = _resolved_workflow_url
+            _wf_cat_extra_headers = {"Accept": "application/octet-stream"}
 
         workflow_dir.mkdir(parents=True, exist_ok=True)
-        with _open_url(workflow_url, timeout=30) as response:
+        with _open_url(workflow_url, timeout=30, extra_headers=_wf_cat_extra_headers) as response:
             # Validate final URL after redirects
             final_url = response.geturl()
             final_parsed = urlparse(final_url)

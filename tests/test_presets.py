@@ -1528,17 +1528,33 @@ class TestPresetCatalog:
             zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
         zip_bytes = zip_buf.getvalue()
 
-        mock_response = MagicMock()
-        mock_response.read.return_value = zip_bytes
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        release_response = MagicMock()
+        release_response.read.return_value = json.dumps(
+            {
+                "assets": [
+                    {
+                        "name": "test-pack.zip",
+                        "url": "https://api.github.com/repos/org/repo/releases/assets/1",
+                    }
+                ]
+            }
+        ).encode()
+        release_response.__enter__ = lambda s: s
+        release_response.__exit__ = MagicMock(return_value=False)
 
-        captured = {}
+        asset_response = MagicMock()
+        asset_response.read.return_value = zip_bytes
+        asset_response.__enter__ = lambda s: s
+        asset_response.__exit__ = MagicMock(return_value=False)
+
+        captured = []
         mock_opener = MagicMock()
 
         def fake_open(req, timeout=None):
-            captured["req"] = req
-            return mock_response
+            captured.append(req)
+            if req.full_url.endswith("/releases/tags/v1"):
+                return release_response
+            return asset_response
 
         mock_opener.open.side_effect = fake_open
 
@@ -1554,7 +1570,56 @@ class TestPresetCatalog:
              patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             catalog.download_pack("test-pack", target_dir=project_dir)
 
-        assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/tags/v1"
+        assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[1].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
+        assert captured[1].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[1].get_header("Accept") == "application/octet-stream"
+
+    def test_download_pack_accepts_direct_github_rest_asset_url(self, project_dir, monkeypatch):
+        """download_pack can use a GitHub REST release asset URL directly."""
+        from unittest.mock import patch, MagicMock
+
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
+        catalog = PresetCatalog(project_dir)
+
+        import io
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
+        zip_bytes = zip_buf.getvalue()
+
+        asset_response = MagicMock()
+        asset_response.read.return_value = zip_bytes
+        asset_response.__enter__ = lambda s: s
+        asset_response.__exit__ = MagicMock(return_value=False)
+
+        captured = []
+        mock_opener = MagicMock()
+
+        def fake_open(req, timeout=None):
+            captured.append(req)
+            return asset_response
+
+        mock_opener.open.side_effect = fake_open
+
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://api.github.com/repos/org/repo/releases/assets/1",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
+            catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert len(captured) == 1
+        assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
+        assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[0].get_header("Accept") == "application/octet-stream"
 
 
 # ===== Integration Tests =====
