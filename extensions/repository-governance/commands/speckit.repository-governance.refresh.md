@@ -35,9 +35,17 @@ $ARGUMENTS
    - Directory Structure evidence
    - Toolchain evidence
    - Agent Harness evidence
-9. Preserve content outside managed markers.
-10. Preserve managed markers verbatim.
-11. Run:
+9. Resolve the Spec Kit Agent Adapter for the active integration.
+   - context target
+   - repository-local skill discovery behavior
+   - MCP runtime discovery behavior
+   - repository MCP config candidates as evidence only
+10. Project the scenario capability index.
+    - repository-local skill capabilities from `SKILL.md` name, description, trigger, and source path
+    - MCP-backed external tool capability with runtime enumeration before use
+11. Preserve content outside managed markers.
+12. Preserve managed markers verbatim.
+13. Run:
 
    ```bash
    uv run python .specify/extensions/repository-governance/scripts/refresh_repository_governance.py

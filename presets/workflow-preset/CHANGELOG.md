@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added Final Code Review task generation and structured code review receipts for implementation consistency repairs and deferred real e2e validation todos.
+
 ## 1.3.1
 
 - Added GitHub Actions boundaries for preset contract tests, release artifact verification, project-scoped install smoke checks, and fail-fast fork integration dispatch.

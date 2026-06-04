@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Fixed
+
+- Keep spec-kit integration PR sync aligned with the runtime extension package boundary and current spec-kit test node ids.
+
+## [2.0.2] - 2026-06-03
+
+### Fixed
+
+- Fix release workflow smoke installation after `v2.0.1` failed before artifact publication when Spec Kit already installs the bundled repository-governance extension and projects Codex commands as `.agents/skills`.
+- Allow tag release artifact publication to complete when the optional spec-kit integration PR token is unavailable.
+
+## [2.0.1] - 2026-06-03
+
+### Added
+
+- Add GitHub Actions contract CI for repository governance validation.
+- Add a release artifact workflow that builds a deterministic runtime extension zip, smoke-installs the extension, and can open the bundled `bigsmartben/spec-kit` integration PR.
+- Document the local extension package build command for `dist/repository-governance.zip`.
+- Add repository extension governance documentation for command, template, script, path-safety, package-boundary, and verification rules.
+- Add a Spec Kit Agent Adapter layer and scenario capability index for repository-local skills and MCP-backed external tool evidence, with MCP config candidates treated as evidence only and runtime enumeration required before use.
+
 ## [2.0.0] - 2026-05-25
 
 ### Changed

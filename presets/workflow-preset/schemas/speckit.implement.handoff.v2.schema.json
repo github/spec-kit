@@ -14,6 +14,7 @@
     "planner_outputs",
     "draft_source",
     "task_ids",
+    "task_type",
     "task_text",
     "context_digest_path",
     "context_index_path",
@@ -220,6 +221,10 @@
         "type": "string",
         "minLength": 1
       }
+    },
+    "task_type": {
+      "type": "string",
+      "enum": ["implementation", "code_review"]
     },
     "task_text": {
       "type": "array",

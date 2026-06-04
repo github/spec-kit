@@ -71,14 +71,29 @@ Sync Impact Report
 - Protected files: implementation, CI, MCP config, secrets, permissions, tool settings
 - Protected-file writes: explicit user request only
 
+## Agent Platform Adapter
+
+- Repository Capability: abstract repository-local skill and MCP evidence into scenario capabilities.
+- Spec Kit Agent Adapter: map integration metadata to the active agent context target and supported discovery behavior.
+- Platform Projection: emit only the rules the active agent context file can safely apply.
+
+## Capability Index
+
+- Repository-local skills: use when the task matches a declared skill name, description, or trigger.
+- MCP-backed external tools: use when the task needs external tool or resource access; enumerate runtime tools before use.
+- Repository config candidates are evidence only unless the active adapter supports them.
+
 ## Skill Contract
 
-- Repository-local skill specs should declare purpose, trigger, allowed read paths, allowed write paths, forbidden paths, outputs, and validation command.
+- Repository-local skill specs should declare name, description or trigger, allowed read paths, allowed write paths, forbidden paths, outputs, and validation command.
+- Read matching `SKILL.md` files before planning or editing.
 
 ## MCP Policy
 
 - Default: read-only
 - Mutation: explicit user intent
+- Runtime discovery: enumerate available servers, resources, and tools before use.
+- Config candidates: evidence only, not proof of active tools.
 - External writes: target, action, result
 - Secrets: never log, never write
 
