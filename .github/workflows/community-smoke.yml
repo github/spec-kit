@@ -26,11 +26,17 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install CLI from checkout
+      - name: Build CLI wheel from checkout
+        run: |
+          set -euo pipefail
+          uv build --wheel --out-dir /tmp/specify-community-smoke-dist
+          ls -l /tmp/specify-community-smoke-dist/*.whl
+
+      - name: Install CLI from built wheel
         run: |
           set -euo pipefail
           uv venv /tmp/specify-community-smoke-venv
-          uv pip install --python /tmp/specify-community-smoke-venv/bin/python .
+          uv pip install --python /tmp/specify-community-smoke-venv/bin/python /tmp/specify-community-smoke-dist/*.whl
 
       - name: Verify bundled init defaults
         run: |
@@ -43,6 +49,20 @@ jobs:
           test -f .specify/extensions/preview/extension.yml
           test -f .specify/extensions/repository-governance/extension.yml
           test -f .specify/presets/workflow-preset/preset.yml
+          /tmp/specify-community-smoke-venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+
+          import yaml
+
+          manifest = yaml.safe_load(Path(".specify/presets/workflow-preset/preset.yml").read_text(encoding="utf-8"))
+          registry = json.loads(Path(".specify/presets/.registry").read_text(encoding="utf-8"))
+          manifest_version = manifest["preset"]["version"]
+          registry_version = registry["presets"]["workflow-preset"]["version"]
+          assert manifest_version == "1.3.2", manifest_version
+          assert registry_version == "1.3.2", registry_version
+          assert registry_version == manifest_version
+          PY
           test -f .specify/presets/workflow-preset/templates/behavior/behavior-scenarios-draft.json
           test -f .specify/presets/workflow-preset/templates/behavior/behavior-testability-checklist.md
           test -f .specify/presets/workflow-preset/templates/behavior/bdd-draft.feature
@@ -90,6 +110,42 @@ jobs:
           grep -q "Core Agent" .claude/skills/speckit-implement/SKILL.md
           grep -q "Vertical Planner Agent" .claude/skills/speckit-implement/SKILL.md
           grep -q "Worker Agent" .claude/skills/speckit-implement/SKILL.md
+
+          for extension_id in arch preview repository-governance; do
+            /tmp/specify-community-smoke-venv/bin/specify extension remove "$extension_id" --force
+            test ! -d ".specify/extensions/$extension_id"
+            case "$extension_id" in
+              arch)
+                test ! -d .claude/skills/speckit-arch-generate
+                test ! -d .claude/skills/speckit-arch-reverse
+                ;;
+              preview)
+                test ! -d .claude/skills/speckit-preview-html
+                ;;
+              repository-governance)
+                test ! -d .claude/skills/speckit-repository-governance-refresh
+                ;;
+            esac
+          done
+
+          for extension_id in arch preview repository-governance; do
+            /tmp/specify-community-smoke-venv/bin/specify extension add "$GITHUB_WORKSPACE/extensions/$extension_id" --dev
+            case "$extension_id" in
+              arch)
+                test -f .claude/skills/speckit-arch-generate/SKILL.md
+                test -f .claude/skills/speckit-arch-reverse/SKILL.md
+                grep -q "4+1 architecture workflow" .claude/skills/speckit-arch-generate/SKILL.md
+                ;;
+              preview)
+                test -f .claude/skills/speckit-preview-html/SKILL.md
+                grep -q "self-contained interactive HTML prototype" .claude/skills/speckit-preview-html/SKILL.md
+                ;;
+              repository-governance)
+                test -f .claude/skills/speckit-repository-governance-refresh/SKILL.md
+                grep -q "Repository Governance Generate/Update" .claude/skills/speckit-repository-governance-refresh/SKILL.md
+                ;;
+            esac
+          done
 
           /tmp/specify-community-smoke-venv/bin/specify preset resolve plan-template | tee resolve-plan-template.txt
           grep -q "workflow-preset" resolve-plan-template.txt

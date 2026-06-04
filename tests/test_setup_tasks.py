@@ -1,51 +1,52 @@
 """Tests for setup-tasks.{sh,ps1} template resolution and branch validation."""
- 
+
 import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
- 
+
 import pytest
- 
+
 from tests.conftest import requires_bash
- 
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
 SETUP_TASKS_SH = PROJECT_ROOT / "scripts" / "bash" / "setup-tasks.sh"
 COMMON_PS = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
 SETUP_TASKS_PS = PROJECT_ROOT / "scripts" / "powershell" / "setup-tasks.ps1"
 TASKS_TEMPLATE = PROJECT_ROOT / "templates" / "tasks-template.md"
- 
+
 HAS_PWSH = shutil.which("pwsh") is not None
 _POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
- 
+
 def _install_bash_scripts(repo: Path) -> None:
     d = repo / ".specify" / "scripts" / "bash"
     d.mkdir(parents=True, exist_ok=True)
     shutil.copy(COMMON_SH, d / "common.sh")
     shutil.copy(SETUP_TASKS_SH, d / "setup-tasks.sh")
- 
- 
+
+
 def _install_ps_scripts(repo: Path) -> None:
     d = repo / ".specify" / "scripts" / "powershell"
     d.mkdir(parents=True, exist_ok=True)
     shutil.copy(COMMON_PS, d / "common.ps1")
     shutil.copy(SETUP_TASKS_PS, d / "setup-tasks.ps1")
- 
- 
+
+
 def _install_core_tasks_template(repo: Path) -> None:
     """Copy the real tasks-template.md into the core template location."""
     tdir = repo / ".specify" / "templates"
     tdir.mkdir(parents=True, exist_ok=True)
     shutil.copy(TASKS_TEMPLATE, tdir / "tasks-template.md")
- 
- 
+
+
 def _minimal_feature(repo: Path) -> Path:
     """
     Create a numbered branch-style feature directory with spec.md and plan.md
@@ -57,8 +58,8 @@ def _minimal_feature(repo: Path) -> Path:
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
     (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
     return feat
- 
- 
+
+
 def _clean_env() -> dict[str, str]:
     """
     Return os.environ with all SPECIFY_* variables stripped so the scripts
@@ -69,8 +70,99 @@ def _clean_env() -> dict[str, str]:
         if key.startswith("SPECIFY_"):
             env.pop(key)
     return env
- 
- 
+
+
+def _is_windows_powershell(exe: str) -> bool:
+    return (
+        sys.platform != "win32"
+        and str(exe).endswith("powershell.exe")
+        and shutil.which("wslpath") is not None
+    )
+
+
+def _to_windows_path(path: Path) -> str:
+    result = subprocess.run(
+        ["wslpath", "-w", str(path)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def _to_posix_path(path: str) -> str:
+    if not path or not shutil.which("wslpath"):
+        return path
+    result = subprocess.run(
+        ["wslpath", "-u", path],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return path
+
+
+def _quote_ps(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _run_powershell(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+    env = _clean_env()
+    env.setdefault("NO_COLOR", "1")
+    run_args = list(args)
+    if args and _is_windows_powershell(args[0]):
+        exe, rest = args[0], args[1:]
+        cwd_command = f"Set-Location -LiteralPath {_quote_ps(_to_windows_path(cwd))}"
+        if "-File" in rest:
+            index = rest.index("-File")
+            script = rest[index + 1]
+            script_args = rest[index + 2 :]
+            command = f"{cwd_command}; & {_quote_ps(script)}"
+            if script_args:
+                command += " " + " ".join(script_args)
+            run_args = [exe, *rest[:index], "-Command", command]
+        elif "-Command" in rest:
+            index = rest.index("-Command")
+            command = f"{cwd_command}; {rest[index + 1]}"
+            run_args = [exe, *rest[:index], "-Command", command, *rest[index + 2 :]]
+
+    result = subprocess.run(
+        run_args,
+        cwd=cwd,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    return subprocess.CompletedProcess(
+        result.args,
+        result.returncode,
+        result.stdout.decode("utf-8", errors="replace"),
+        result.stderr.decode("utf-8", errors="replace"),
+    )
+
+
+def _powershell_script_arg(exe: str, script: Path) -> str:
+    if _is_windows_powershell(exe):
+        return _to_windows_path(script)
+    return str(script)
+
+
+def _powershell_has_git(exe: str, cwd: Path) -> bool:
+    result = _run_powershell(
+        [exe, "-NoProfile", "-Command", "git rev-parse --is-inside-work-tree"],
+        cwd=cwd,
+    )
+    return result.returncode == 0 and "true" in result.stdout.lower()
+
+
+def _path_from_powershell(value: str, exe: str) -> Path:
+    if _is_windows_powershell(exe):
+        return Path(_to_posix_path(value))
+    return Path(value)
+
+
 def _git_init(repo: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     subprocess.run(
@@ -80,12 +172,12 @@ def _git_init(repo: Path) -> None:
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "init", "-q"], cwd=repo, check=True
     )
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Shared fixture
 # ---------------------------------------------------------------------------
- 
+
 @pytest.fixture
 def tasks_repo(tmp_path: Path) -> Path:
     """
@@ -97,25 +189,25 @@ def tasks_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "proj"
     repo.mkdir()
     _git_init(repo)
- 
+
     # Switch to a numbered branch so branch validation passes without feature.json
     subprocess.run(
         ["git", "checkout", "-q", "-b", "001-my-feature"],
         cwd=repo,
         check=True,
     )
- 
+
     (repo / ".specify").mkdir()
     _install_core_tasks_template(repo)
     _install_bash_scripts(repo)
     _install_ps_scripts(repo)
     return repo
- 
- 
+
+
 # ===========================================================================
 # BASH TESTS
 # ===========================================================================
- 
+
 @requires_bash
 def test_setup_tasks_bash_core_template_resolved(tasks_repo: Path) -> None:
     """
@@ -125,7 +217,7 @@ def test_setup_tasks_bash_core_template_resolved(tasks_repo: Path) -> None:
     """
     feat = _minimal_feature(tasks_repo)
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
- 
+
     result = subprocess.run(
         ["bash", str(script), "--json"],
         cwd=tasks_repo,
@@ -134,16 +226,16 @@ def test_setup_tasks_bash_core_template_resolved(tasks_repo: Path) -> None:
         check=False,
         env=_clean_env(),
     )
- 
+
     assert result.returncode == 0, result.stderr + result.stdout
- 
+
     data = json.loads(result.stdout)
     tasks_tmpl = Path(data["TASKS_TEMPLATE"])
     assert tasks_tmpl.is_absolute(), "TASKS_TEMPLATE must be an absolute path"
     assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
     assert tasks_tmpl.name == "tasks-template.md"
- 
- 
+
+
 @requires_bash
 def test_setup_tasks_bash_override_wins(tasks_repo: Path) -> None:
     """
@@ -151,15 +243,15 @@ def test_setup_tasks_bash_override_wins(tasks_repo: Path) -> None:
     setup-tasks.sh --json must return the override path, not the core path.
     """
     feat = _minimal_feature(tasks_repo)
- 
+
     # Create the override
     overrides_dir = tasks_repo / ".specify" / "templates" / "overrides"
     overrides_dir.mkdir(parents=True, exist_ok=True)
     override_file = overrides_dir / "tasks-template.md"
     override_file.write_text("# override tasks template\n", encoding="utf-8")
- 
+
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
- 
+
     result = subprocess.run(
         ["bash", str(script), "--json"],
         cwd=tasks_repo,
@@ -168,9 +260,9 @@ def test_setup_tasks_bash_override_wins(tasks_repo: Path) -> None:
         check=False,
         env=_clean_env(),
     )
- 
+
     assert result.returncode == 0, result.stderr + result.stdout
- 
+
     data = json.loads(result.stdout)
     tasks_tmpl = Path(data["TASKS_TEMPLATE"])
     assert tasks_tmpl.is_absolute(), "TASKS_TEMPLATE must be an absolute path"
@@ -179,8 +271,8 @@ def test_setup_tasks_bash_override_wins(tasks_repo: Path) -> None:
     assert "overrides" in tasks_tmpl.parts, (
         f"Expected override path but got: {tasks_tmpl}"
     )
- 
- 
+
+
 @requires_bash
 def test_setup_tasks_bash_extension_wins_over_core(tasks_repo: Path) -> None:
     """
@@ -188,7 +280,7 @@ def test_setup_tasks_bash_extension_wins_over_core(tasks_repo: Path) -> None:
     tasks-template.md from the extension before falling back to the core path.
     """
     feat = _minimal_feature(tasks_repo)
- 
+
     # FIX: real extension layout is .specify/extensions/<id>/templates/<name>.md
     extension_dir = (
         tasks_repo / ".specify" / "extensions" / "test-extension" / "templates"
@@ -196,9 +288,9 @@ def test_setup_tasks_bash_extension_wins_over_core(tasks_repo: Path) -> None:
     extension_dir.mkdir(parents=True, exist_ok=True)
     extension_file = extension_dir / "tasks-template.md"
     extension_file.write_text("# extension tasks template\n", encoding="utf-8")
- 
+
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
- 
+
     result = subprocess.run(
         ["bash", str(script), "--json"],
         cwd=tasks_repo,
@@ -207,9 +299,9 @@ def test_setup_tasks_bash_extension_wins_over_core(tasks_repo: Path) -> None:
         check=False,
         env=_clean_env(),
     )
- 
+
     assert result.returncode == 0, result.stderr + result.stdout
- 
+
     data = json.loads(result.stdout)
     tasks_tmpl = Path(data["TASKS_TEMPLATE"])
     assert tasks_tmpl.is_absolute(), "TASKS_TEMPLATE must be an absolute path"
@@ -217,8 +309,8 @@ def test_setup_tasks_bash_extension_wins_over_core(tasks_repo: Path) -> None:
     assert tasks_tmpl == extension_file.resolve(), (
         f"Expected extension path but got: {tasks_tmpl}"
     )
- 
- 
+
+
 @requires_bash
 def test_setup_tasks_bash_preset_wins_over_extension(tasks_repo: Path) -> None:
     """
@@ -226,7 +318,7 @@ def test_setup_tasks_bash_preset_wins_over_extension(tasks_repo: Path) -> None:
     resolve the preset path because presets outrank extensions.
     """
     feat = _minimal_feature(tasks_repo)
- 
+
     # FIX: real extension layout is .specify/extensions/<id>/templates/<name>.md
     extension_dir = (
         tasks_repo / ".specify" / "extensions" / "test-extension" / "templates"
@@ -234,15 +326,15 @@ def test_setup_tasks_bash_preset_wins_over_extension(tasks_repo: Path) -> None:
     extension_dir.mkdir(parents=True, exist_ok=True)
     extension_file = extension_dir / "tasks-template.md"
     extension_file.write_text("# extension tasks template\n", encoding="utf-8")
- 
+
     # FIX: real preset layout is .specify/presets/<id>/templates/<name>.md
     preset_dir = tasks_repo / ".specify" / "presets" / "test-preset" / "templates"
     preset_dir.mkdir(parents=True, exist_ok=True)
     preset_file = preset_dir / "tasks-template.md"
     preset_file.write_text("# preset tasks template\n", encoding="utf-8")
- 
+
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
- 
+
     result = subprocess.run(
         ["bash", str(script), "--json"],
         cwd=tasks_repo,
@@ -251,9 +343,9 @@ def test_setup_tasks_bash_preset_wins_over_extension(tasks_repo: Path) -> None:
         check=False,
         env=_clean_env(),
     )
- 
+
     assert result.returncode == 0, result.stderr + result.stdout
- 
+
     data = json.loads(result.stdout)
     tasks_tmpl = Path(data["TASKS_TEMPLATE"])
     assert tasks_tmpl.is_absolute(), "TASKS_TEMPLATE must be an absolute path"
@@ -261,8 +353,8 @@ def test_setup_tasks_bash_preset_wins_over_extension(tasks_repo: Path) -> None:
     assert tasks_tmpl == preset_file.resolve(), (
         f"Expected preset path but got: {tasks_tmpl}"
     )
- 
- 
+
+
 @requires_bash
 def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
     """
@@ -270,7 +362,7 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
     .specify/presets/.registry wins.
     """
     feat = _minimal_feature(tasks_repo)
- 
+
     # resolve_template reads .specify/presets/.registry as a JSON object with a
     # "presets" map where each entry has a numeric "priority" (lower = higher
     # precedence). Create two presets; priority-1-preset wins over priority-2-preset.
@@ -283,7 +375,7 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
     low_priority_dir = (
         tasks_repo / ".specify" / "presets" / "priority-2-preset" / "templates"
     )
-    
+
     low_priority_dir.mkdir(parents=True, exist_ok=True)
     low_priority_file = low_priority_dir / "tasks-template.md"
     low_priority_file.write_text("# low priority preset tasks template\n", encoding="utf-8")
@@ -300,9 +392,9 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
         }),
         encoding="utf-8",
     )
- 
+
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
- 
+
     result = subprocess.run(
         ["bash", str(script), "--json"],
         cwd=tasks_repo,
@@ -311,9 +403,9 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
         check=False,
         env=_clean_env(),
     )
- 
+
     assert result.returncode == 0, result.stderr + result.stdout
- 
+
     data = json.loads(result.stdout)
     tasks_tmpl = Path(data["TASKS_TEMPLATE"])
     assert tasks_tmpl.is_absolute(), "TASKS_TEMPLATE must be an absolute path"
@@ -321,8 +413,8 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
     assert tasks_tmpl == high_priority_file.resolve(), (
         f"Expected high-priority preset path but got: {tasks_tmpl}"
     )
- 
- 
+
+
 @requires_bash
 def test_setup_tasks_bash_missing_template_errors(tasks_repo: Path) -> None:
     """
@@ -330,13 +422,13 @@ def test_setup_tasks_bash_missing_template_errors(tasks_repo: Path) -> None:
     exit non-zero and print a helpful ERROR message to stderr.
     """
     feat = _minimal_feature(tasks_repo)
- 
+
     # Remove the core template so no template exists anywhere
     core = tasks_repo / ".specify" / "templates" / "tasks-template.md"
     core.unlink()
- 
+
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
- 
+
     result = subprocess.run(
         ["bash", str(script), "--json"],
         cwd=tasks_repo,
@@ -345,12 +437,12 @@ def test_setup_tasks_bash_missing_template_errors(tasks_repo: Path) -> None:
         check=False,
         env=_clean_env(),
     )
- 
+
     assert result.returncode != 0
     assert "ERROR" in result.stderr
     assert "tasks-template" in result.stderr
- 
- 
+
+
 @requires_bash
 def test_setup_tasks_bash_passes_custom_branch_when_feature_json_valid(
     tasks_repo: Path,
@@ -364,19 +456,19 @@ def test_setup_tasks_bash_passes_custom_branch_when_feature_json_valid(
         cwd=tasks_repo,
         check=True,
     )
- 
+
     feat = tasks_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True, exist_ok=True)
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
     (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
- 
+
     (tasks_repo / ".specify" / "feature.json").write_text(
         json.dumps({"feature_directory": "specs/001-my-feature"}),
         encoding="utf-8",
     )
- 
+
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
- 
+
     result = subprocess.run(
         ["bash", str(script), "--json"],
         cwd=tasks_repo,
@@ -385,10 +477,10 @@ def test_setup_tasks_bash_passes_custom_branch_when_feature_json_valid(
         check=False,
         env=_clean_env(),
     )
- 
+
     assert result.returncode == 0, result.stderr + result.stdout
- 
- 
+
+
 @requires_bash
 def test_setup_tasks_bash_fails_custom_branch_without_feature_json(
     tasks_repo: Path,
@@ -402,9 +494,9 @@ def test_setup_tasks_bash_fails_custom_branch_without_feature_json(
         cwd=tasks_repo,
         check=True,
     )
- 
+
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
- 
+
     result = subprocess.run(
         ["bash", str(script), "--json"],
         cwd=tasks_repo,
@@ -413,15 +505,15 @@ def test_setup_tasks_bash_fails_custom_branch_without_feature_json(
         check=False,
         env=_clean_env(),
     )
- 
+
     assert result.returncode != 0
     assert "Not on a feature branch" in result.stderr
- 
- 
+
+
 # ===========================================================================
 # POWERSHELL TESTS
 # ===========================================================================
- 
+
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
 def test_setup_tasks_ps_core_template_resolved(tasks_repo: Path) -> None:
     """
@@ -432,25 +524,23 @@ def test_setup_tasks_ps_core_template_resolved(tasks_repo: Path) -> None:
     feat = _minimal_feature(tasks_repo)
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
- 
-    result = subprocess.run(
-        [exe, "-NoProfile", "-File", str(script), "-Json"],
+    if not _powershell_has_git(exe, tasks_repo):
+        pytest.skip("PowerShell cannot access git in this environment")
+
+    result = _run_powershell(
+        [exe, "-NoProfile", "-File", _powershell_script_arg(exe, script), "-Json"],
         cwd=tasks_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_clean_env(),
     )
- 
+
     assert result.returncode == 0, result.stderr + result.stdout
- 
+
     data = json.loads(result.stdout)
-    tasks_tmpl = Path(data["TASKS_TEMPLATE"])
+    tasks_tmpl = _path_from_powershell(data["TASKS_TEMPLATE"], exe)
     assert tasks_tmpl.is_absolute(), "TASKS_TEMPLATE must be an absolute path"
     assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
     assert tasks_tmpl.name == "tasks-template.md"
- 
- 
+
+
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
 def test_setup_tasks_ps_override_wins(tasks_repo: Path) -> None:
     """
@@ -458,35 +548,33 @@ def test_setup_tasks_ps_override_wins(tasks_repo: Path) -> None:
     setup-tasks.ps1 -Json must return the override path, not the core path.
     """
     feat = _minimal_feature(tasks_repo)
- 
+
     overrides_dir = tasks_repo / ".specify" / "templates" / "overrides"
     overrides_dir.mkdir(parents=True, exist_ok=True)
     override_file = overrides_dir / "tasks-template.md"
     override_file.write_text("# override tasks template\n", encoding="utf-8")
- 
+
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
- 
-    result = subprocess.run(
-        [exe, "-NoProfile", "-File", str(script), "-Json"],
+    if not _powershell_has_git(exe, tasks_repo):
+        pytest.skip("PowerShell cannot access git in this environment")
+
+    result = _run_powershell(
+        [exe, "-NoProfile", "-File", _powershell_script_arg(exe, script), "-Json"],
         cwd=tasks_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_clean_env(),
     )
- 
+
     assert result.returncode == 0, result.stderr + result.stdout
- 
+
     data = json.loads(result.stdout)
-    tasks_tmpl = Path(data["TASKS_TEMPLATE"])
+    tasks_tmpl = _path_from_powershell(data["TASKS_TEMPLATE"], exe)
     assert tasks_tmpl.is_absolute(), "TASKS_TEMPLATE must be an absolute path"
     assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
     assert "overrides" in tasks_tmpl.parts, (
         f"Expected override path but got: {tasks_tmpl}"
     )
- 
- 
+
+
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
 def test_setup_tasks_ps_missing_template_errors(tasks_repo: Path) -> None:
     """
@@ -494,26 +582,22 @@ def test_setup_tasks_ps_missing_template_errors(tasks_repo: Path) -> None:
     exit non-zero and write a helpful error to stderr.
     """
     feat = _minimal_feature(tasks_repo)
- 
+
     core = tasks_repo / ".specify" / "templates" / "tasks-template.md"
     core.unlink()
- 
+
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
- 
-    result = subprocess.run(
-        [exe, "-NoProfile", "-File", str(script), "-Json"],
+
+    result = _run_powershell(
+        [exe, "-NoProfile", "-File", _powershell_script_arg(exe, script), "-Json"],
         cwd=tasks_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_clean_env(),
     )
- 
+
     assert result.returncode != 0
     assert "tasks-template" in result.stderr.lower() or "tasks-template" in result.stdout.lower()
- 
- 
+
+
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
 def test_setup_tasks_ps_passes_custom_branch_when_feature_json_valid(
     tasks_repo: Path,
@@ -527,32 +611,28 @@ def test_setup_tasks_ps_passes_custom_branch_when_feature_json_valid(
         cwd=tasks_repo,
         check=True,
     )
- 
+
     feat = tasks_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True, exist_ok=True)
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
     (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
- 
+
     (tasks_repo / ".specify" / "feature.json").write_text(
         json.dumps({"feature_directory": "specs/001-my-feature"}),
         encoding="utf-8",
     )
- 
+
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
- 
-    result = subprocess.run(
-        [exe, "-NoProfile", "-File", str(script), "-Json"],
+
+    result = _run_powershell(
+        [exe, "-NoProfile", "-File", _powershell_script_arg(exe, script), "-Json"],
         cwd=tasks_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_clean_env(),
     )
- 
+
     assert result.returncode == 0, result.stderr + result.stdout
- 
- 
+
+
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
 def test_setup_tasks_ps_fails_custom_branch_without_feature_json(
     tasks_repo: Path,
@@ -566,19 +646,16 @@ def test_setup_tasks_ps_fails_custom_branch_without_feature_json(
         cwd=tasks_repo,
         check=True,
     )
- 
+
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
- 
-    result = subprocess.run(
-        [exe, "-NoProfile", "-File", str(script), "-Json"],
+    if not _powershell_has_git(exe, tasks_repo):
+        pytest.skip("PowerShell cannot access git in this environment")
+
+    result = _run_powershell(
+        [exe, "-NoProfile", "-File", _powershell_script_arg(exe, script), "-Json"],
         cwd=tasks_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_clean_env(),
     )
- 
+
     assert result.returncode != 0
     assert "Not on a feature branch" in result.stderr
- 

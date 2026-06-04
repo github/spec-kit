@@ -628,6 +628,12 @@ class TestInitIntegrationFlag:
         """Shared template writes use a safe default mode instead of chmod 666."""
         from specify_cli.shared_infra import install_shared_infra
 
+        probe = tmp_path / "mode-probe"
+        probe.write_text("x", encoding="utf-8")
+        probe.chmod(0o644)
+        if probe.stat().st_mode & 0o777 != 0o644:
+            pytest.skip("current filesystem does not preserve POSIX mode bits")
+
         project = tmp_path / "template-mode-test"
         project.mkdir()
 
@@ -985,6 +991,10 @@ class TestGitExtensionAutoInstall:
 
         preset_registry = json.loads((project / ".specify" / "presets" / ".registry").read_text())
         workflow_entry = preset_registry["presets"]["workflow-preset"]
+        installed_manifest = yaml.safe_load((preset_dir / "preset.yml").read_text(encoding="utf-8"))
+        assert installed_manifest["preset"]["version"] == "1.3.2"
+        assert workflow_entry["version"] == "1.3.2"
+        assert workflow_entry["version"] == installed_manifest["preset"]["version"]
         expected_preset_commands = {
             "speckit.specify",
             "speckit.clarify",
