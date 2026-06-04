@@ -1870,13 +1870,16 @@ class ExtensionCatalog(CatalogStackBase):
                     ValueError,
                     KeyError,
                     TypeError,
+                    AttributeError,
                 ):
                     # Cache validity is best-effort: invalid/missing metadata
                     # fields, an unreadable metadata file (permissions / disk),
-                    # or a wrongly-encoded metadata file (written by a tool
-                    # using the system locale codec) all degrade to "cache
-                    # invalid" so the caller falls through to a network
-                    # refetch instead of crashing.
+                    # a wrongly-encoded metadata file (written by a tool using
+                    # the system locale codec), or a metadata payload that
+                    # parses to a non-mapping like ``[]`` or ``"oops"`` (so
+                    # ``metadata.get(...)`` raises ``AttributeError``) all
+                    # degrade to "cache invalid" so the caller falls through
+                    # to a network refetch instead of crashing.
                     pass
 
         # Use cache if valid. A previously-cached payload must clear the
@@ -1908,10 +1911,11 @@ class ExtensionCatalog(CatalogStackBase):
 
             # Save to cache. Both files are explicitly UTF-8 to match the
             # ``read_text(encoding="utf-8")`` on the read side and the
-            # ``integrations/catalog.py:193-203`` precedent. Without this,
-            # platforms whose default encoding isn't UTF-8 would write
-            # locale-encoded bytes that the read path can't decode, forcing
-            # an unnecessary network refetch on every invocation.
+            # ``integrations/catalog.py`` precedent (see the cache write
+            # helpers in ``CatalogCache`` there). Without this, platforms
+            # whose default encoding isn't UTF-8 would write locale-encoded
+            # bytes that the read path can't decode, forcing an unnecessary
+            # network refetch on every invocation.
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             cache_file.write_text(
                 json.dumps(catalog_data, indent=2), encoding="utf-8"
@@ -2023,7 +2027,13 @@ class ExtensionCatalog(CatalogStackBase):
             ValueError,
             KeyError,
             TypeError,
+            AttributeError,
         ):
+            # ``AttributeError`` covers the case where the metadata file is
+            # valid JSON but parses to a non-mapping (``[]``, ``"oops"``,
+            # ``42``) so ``metadata.get(...)`` would otherwise crash. All
+            # decode/shape failures degrade to "cache invalid" so the
+            # caller falls through to a network refetch.
             return False
 
     def fetch_catalog(self, force_refresh: bool = False) -> Dict[str, Any]:
@@ -2072,10 +2082,10 @@ class ExtensionCatalog(CatalogStackBase):
 
             # Save to cache. Explicit UTF-8 on both writes mirrors the
             # ``read_text(encoding="utf-8")`` on the read side and the
-            # ``integrations/catalog.py:193-203`` precedent — otherwise
-            # platforms whose default encoding isn't UTF-8 would write
-            # locale-encoded bytes the read path can't decode, forcing an
-            # unnecessary refetch on every invocation.
+            # ``integrations/catalog.py`` precedent — otherwise platforms
+            # whose default encoding isn't UTF-8 would write locale-encoded
+            # bytes the read path can't decode, forcing an unnecessary
+            # refetch on every invocation.
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             self.cache_file.write_text(
                 json.dumps(catalog_data, indent=2), encoding="utf-8"

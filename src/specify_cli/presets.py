@@ -2066,12 +2066,16 @@ class PresetCatalog:
             ValueError,
             KeyError,
             TypeError,
+            AttributeError,
         ):
             # Cache validity is best-effort: invalid/missing fields, an
-            # unreadable metadata file (permissions / disk), or a wrongly
+            # unreadable metadata file (permissions / disk), a wrongly
             # encoded one (written by a tool using the system locale
-            # codec) all degrade to "cache invalid" so the caller falls
-            # through to a network refetch instead of crashing.
+            # codec), or a metadata payload that parses to a non-mapping
+            # like ``[]`` or ``"oops"`` (so ``metadata.get(...)`` raises
+            # ``AttributeError``) all degrade to "cache invalid" so the
+            # caller falls through to a network refetch instead of
+            # crashing.
             return False
 
     def _fetch_single_catalog(self, entry: PresetCatalogEntry, force_refresh: bool = False) -> Dict[str, Any]:
@@ -2116,7 +2120,7 @@ class PresetCatalog:
 
             # Both files are written explicitly as UTF-8 to match the
             # ``read_text(encoding="utf-8")`` on the read side and the
-            # ``integrations/catalog.py:193-203`` precedent. Without this,
+            # ``integrations/catalog.py`` precedent. Without this,
             # platforms whose default encoding isn't UTF-8 would write
             # locale-encoded bytes the read path can't decode, forcing an
             # unnecessary refetch on every invocation.
@@ -2207,7 +2211,13 @@ class PresetCatalog:
             ValueError,
             KeyError,
             TypeError,
+            AttributeError,
         ):
+            # ``AttributeError`` covers the case where the metadata file
+            # parses to a non-mapping (``[]``, ``"oops"``, ``42``) so
+            # ``metadata.get(...)`` would otherwise crash. All decode /
+            # shape failures degrade to "cache invalid" so the caller
+            # falls through to a network refetch.
             return False
 
     def fetch_catalog(self, force_refresh: bool = False) -> Dict[str, Any]:
@@ -2257,8 +2267,8 @@ class PresetCatalog:
 
             # Save to cache. Explicit UTF-8 on both writes mirrors the
             # ``read_text(encoding="utf-8")`` on the read side and the
-            # ``integrations/catalog.py:193-203`` precedent — otherwise
-            # platforms whose default encoding isn't UTF-8 would write
+            # ``integrations/catalog.py`` precedent — otherwise platforms
+            # whose default encoding isn't UTF-8 would write
             # locale-encoded bytes the read path can't decode, forcing an
             # unnecessary refetch on every invocation.
             self.cache_dir.mkdir(parents=True, exist_ok=True)

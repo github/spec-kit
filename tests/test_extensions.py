@@ -2809,6 +2809,42 @@ class TestExtensionCatalog:
 
         assert result == valid
 
+    @pytest.mark.parametrize(
+        "non_mapping_metadata",
+        [
+            "[]",       # JSON array
+            '"oops"',   # JSON string
+            "42",       # JSON number
+            "true",     # JSON bool
+            "null",     # JSON null
+        ],
+    )
+    def test_is_cache_valid_handles_non_mapping_metadata(
+        self, temp_dir, non_mapping_metadata
+    ):
+        """Metadata that parses to a non-mapping degrades to cache-invalid.
+
+        The cache-validity check calls ``metadata.get("cached_at", "")``
+        immediately after ``json.loads``. If the metadata file is valid
+        JSON but parses to a non-mapping (``[]``, ``"oops"``, ``42``,
+        ``true``, ``null``), ``.get`` raises ``AttributeError`` — which
+        previously slipped past the except tuple and crashed the
+        caller. The contract documented on ``is_cache_valid`` says any
+        decode/shape failure should return ``False`` so ``fetch_catalog``
+        falls through to a network refetch. This test pins that
+        contract across every JSON non-mapping root type so a regression
+        in the except clause can't silently re-introduce the crash.
+        """
+        catalog = self._make_catalog(temp_dir)
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text("{}", encoding="utf-8")
+        catalog.cache_metadata_file.write_text(
+            non_mapping_metadata, encoding="utf-8"
+        )
+
+        # Must not raise — the contract is "any decode/shape failure → False".
+        assert catalog.is_cache_valid() is False
+
     def test_fetch_catalog_writes_cache_as_utf8(self, temp_dir, monkeypatch):
         """Cache + metadata writes pass ``encoding="utf-8"``, observably.
 
