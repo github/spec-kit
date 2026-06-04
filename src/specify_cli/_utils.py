@@ -69,8 +69,10 @@ def check_tool(tool: str, tracker=None) -> bool:
                 else:
                     tracker.error(tool, "not found")
             return found
-    except ImportError:
-        pass
+    except ImportError as exc:
+        # Integrations module is unavailable in this environment; fall back
+        # to PATH-based detection below for non-integration tools.
+        _ = exc
 
     # Fallback for non-integration tools (e.g. "git").
     found = shutil.which(tool) is not None
