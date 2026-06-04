@@ -65,8 +65,8 @@
     "repository-governance": {
       "name": "Repository Governance",
       "id": "repository-governance",
-      "version": "2.0.0",
-      "description": "Generate Repository Governance Framework files with vertical SSOT routing and evidence",
+      "version": "2.0.2",
+      "description": "Generate Repository Governance Framework files from Spec Kit metadata",
       "author": "bigben",
       "repository": "https://github.com/bigsmartben/spec-kit-agent-governance",
       "license": "MIT",

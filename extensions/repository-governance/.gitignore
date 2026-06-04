@@ -5,3 +5,4 @@ __pycache__/
 .venv/
 dist/
 *.zip
+.worktrees/

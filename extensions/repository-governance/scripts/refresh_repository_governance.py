@@ -485,6 +485,12 @@ def render_projection(root: Path, target: Path, state: dict[str, Any], created_m
         f"- MCP configs: {', '.join(scan_mcp_configs(root)) or 'none'}",
         f"- Extensions config: .specify/extensions.yml ({extensions_status(root)})",
         "",
+        "## Agent Platform Adapter",
+        *agent_adapter_lines(root, target, default_key),
+        "",
+        "## Capability Index",
+        *capability_index_lines(root),
+        "",
         "## Repository Evidence",
         *section_or_default(source_text, ["## Repository Evidence"], repository_evidence_default()),
         "",
@@ -773,12 +779,95 @@ def scan_skills(root: Path) -> list[str]:
     return sorted(rel(root, path) for path in root.rglob("SKILL.md") if not ignored(path))
 
 
+def skill_capability_lines(root: Path) -> list[str]:
+    lines: list[str] = []
+    for path_text in scan_skills(root):
+        path = root / path_text
+        fields = skill_frontmatter(path)
+        name = fields.get("name") or fallback_skill_name(path_text)
+        description = fields.get("description") or f"Repository-local skill spec at {path_text}."
+        lines.extend(
+            [
+                f"- Repository capability: {name}",
+                f"  - Scenario: {description}",
+                f"  - Source: `{path_text}`.",
+                "  - Runtime action: read matching skill before planning or editing.",
+            ]
+        )
+    return lines
+
+
+def skill_frontmatter(path: Path) -> dict[str, str]:
+    try:
+        lines = normalize_newlines(path.read_text(encoding="utf-8-sig")).splitlines()
+    except (OSError, UnicodeDecodeError):
+        return {}
+    if not lines or lines[0].strip() != "---":
+        return {}
+    fields: dict[str, str] = {}
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        key, separator, value = line.partition(":")
+        if not separator:
+            continue
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key in {"name", "description"} and value:
+            fields[key] = value
+    return fields
+
+
+def fallback_skill_name(path_text: str) -> str:
+    parent = Path(path_text).parent.name
+    return parent or path_text.replace("/", "-")
+
+
+def capability_index_lines(root: Path) -> list[str]:
+    mcp_configs = scan_mcp_configs(root)
+    mcp_sources = format_values(mcp_configs) if mcp_configs else "none detected"
+    lines = skill_capability_lines(root)
+    lines.extend(
+        [
+            "- Repository capability: MCP-backed external tools",
+            f"  - Sources: MCP config candidates are evidence, not proof of active tools: {mcp_sources}.",
+            "  - Runtime action: enumerate available servers, resources, and tools before use.",
+        ]
+    )
+    return lines
+
+
+def agent_adapter_lines(root: Path, target: Path, integration: str) -> list[str]:
+    lines = [
+        "- Repository Capability layer: abstract repository-local abilities and evidence independent of agent runtime.",
+        "- Agent Adapter layer: translate repository capabilities into platform-specific discovery and activation rules.",
+        "- Platform Projection layer: render the active context target without claiming unavailable platform support.",
+        f"- Active integration: {integration}",
+        f"- Context target: {rel(root, target)}",
+    ]
+    if integration == "codex":
+        lines.extend(
+            [
+                "- Skill discovery: repository-local `SKILL.md` capability specs, sorted by path.",
+                "- MCP discovery: platform runtime enumeration first; repository config candidates are evidence only unless supported by this adapter.",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "- Skill discovery: evidence-only repository scan; platform activation is integration-specific.",
+                "- MCP discovery: platform-specific; repository config candidates are evidence only.",
+            ]
+        )
+    return lines
+
+
 def scan_mcp_configs(root: Path) -> list[str]:
     names = {".mcp.json", "mcp.json", "mcp.yml", "mcp.yaml", "mcp.config.json"}
     return sorted(
         rel(root, path)
         for path in root.rglob("*")
-        if path.is_file() and not ignored(path) and (path.name in names or "mcp" in path.name.lower())
+        if path.is_file() and not ignored(path) and path.name in names
     )
 
 
