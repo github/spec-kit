@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -54,6 +55,77 @@ def _clean_env() -> dict[str, str]:
         if key.startswith("SPECIFY_"):
             env.pop(key)
     return env
+
+
+def _is_windows_powershell(exe: str) -> bool:
+    return (
+        sys.platform != "win32"
+        and str(exe).endswith("powershell.exe")
+        and shutil.which("wslpath") is not None
+    )
+
+
+def _to_windows_path(path: Path) -> str:
+    result = subprocess.run(
+        ["wslpath", "-w", str(path)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def _quote_ps(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _run_powershell(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+    env = _clean_env()
+    env.setdefault("NO_COLOR", "1")
+    run_args = list(args)
+    if args and _is_windows_powershell(args[0]):
+        exe, rest = args[0], args[1:]
+        cwd_command = f"Set-Location -LiteralPath {_quote_ps(_to_windows_path(cwd))}"
+        if "-File" in rest:
+            index = rest.index("-File")
+            script = rest[index + 1]
+            script_args = rest[index + 2 :]
+            command = f"{cwd_command}; & {_quote_ps(script)}"
+            if script_args:
+                command += " " + " ".join(script_args)
+            run_args = [exe, *rest[:index], "-Command", command]
+        elif "-Command" in rest:
+            index = rest.index("-Command")
+            command = f"{cwd_command}; {rest[index + 1]}"
+            run_args = [exe, *rest[:index], "-Command", command, *rest[index + 2 :]]
+
+    result = subprocess.run(
+        run_args,
+        cwd=cwd,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    return subprocess.CompletedProcess(
+        result.args,
+        result.returncode,
+        result.stdout.decode("utf-8", errors="replace"),
+        result.stderr.decode("utf-8", errors="replace"),
+    )
+
+
+def _powershell_script_arg(exe: str, script: Path) -> str:
+    if _is_windows_powershell(exe):
+        return _to_windows_path(script)
+    return str(script)
+
+
+def _powershell_has_git(exe: str, cwd: Path) -> bool:
+    result = _run_powershell(
+        [exe, "-NoProfile", "-Command", "git rev-parse --is-inside-work-tree"],
+        cwd=cwd,
+    )
+    return result.returncode == 0 and "true" in result.stdout.lower()
 
 
 def _git_init(repo: Path) -> None:
@@ -167,13 +239,9 @@ def test_setup_plan_ps_passes_custom_branch_when_feature_json_valid(plan_repo: P
     )
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
-    result = subprocess.run(
-        [exe, "-NoProfile", "-File", str(script)],
+    result = _run_powershell(
+        [exe, "-NoProfile", "-File", _powershell_script_arg(exe, script)],
         cwd=plan_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_clean_env(),
     )
     assert result.returncode == 0, result.stderr + result.stdout
     assert (feat / "plan.md").is_file()
@@ -190,13 +258,11 @@ def test_setup_plan_ps_fails_custom_branch_without_feature_json(
     )
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
-    result = subprocess.run(
-        [exe, "-NoProfile", "-File", str(script)],
+    if not _powershell_has_git(exe, plan_repo):
+        pytest.skip("PowerShell cannot access git in this environment")
+    result = _run_powershell(
+        [exe, "-NoProfile", "-File", _powershell_script_arg(exe, script)],
         cwd=plan_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_clean_env(),
     )
     assert result.returncode != 0
     assert "Not on a feature branch" in result.stderr
