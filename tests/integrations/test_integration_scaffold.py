@@ -50,12 +50,12 @@ def test_dev_integration_scaffold_creates_markdown_files(tmp_path, monkeypatch):
     assert 'key = "my-agent"' in content
     assert '"folder": ".my-agent/"' in content
     assert '"extension": ".md"' in content
-    assert "multi_install_safe = True" in content
+    assert "multi_install_safe = False" in content
 
     test_content = test_file.read_text(encoding="utf-8")
     assert "from specify_cli.integrations.my_agent import MyAgentIntegration" in test_content
     assert 'assert integration.registrar_config["dir"] == ".my-agent/commands"' in test_content
-    assert "assert integration.multi_install_safe is True" in test_content
+    assert "assert integration.multi_install_safe is False" in test_content
 
 
 @pytest.mark.parametrize(

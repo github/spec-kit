@@ -118,7 +118,11 @@ class {class_name}({template.base_class}):
         "extension": "{template.extension}",
     }}
     context_file = "AGENTS.md"
-    multi_install_safe = True
+    # Default to False so the generated boilerplate passes the registry
+    # contract out of the box: multi-install-safe integrations must each have a
+    # distinct context_file, and the placeholder above ("AGENTS.md") collides
+    # with the existing codex integration. Opt in once you pick a unique one.
+    multi_install_safe = False
 '''
 
 
@@ -152,7 +156,7 @@ def test_metadata():
     assert integration.registrar_config["args"] == "{template.args}"
     assert integration.registrar_config["extension"] == "{template.extension}"
     assert integration.context_file == "AGENTS.md"
-    assert integration.multi_install_safe is True
+    assert integration.multi_install_safe is False
 '''
 
 
