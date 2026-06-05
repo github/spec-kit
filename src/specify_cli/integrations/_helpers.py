@@ -22,6 +22,8 @@ from ..integration_state import (
     write_integration_json as _write_integration_json_file,
 )
 
+_UNSET = object()
+
 
 def _get_speckit_version() -> str:
     """Return the current Spec Kit version.
@@ -273,6 +275,8 @@ def _update_init_options_for_integration(
     project_root: Path,
     integration: Any,
     script_type: str | None = None,
+    raw_options: str | None | object = _UNSET,
+    parsed_options: dict[str, Any] | None | object = _UNSET,
 ) -> None:
     """Update init-options.json and the agent-context extension config to
     reflect *integration* as the active one.
@@ -304,6 +308,18 @@ def _update_init_options_for_integration(
         opts["ai_skills"] = True
     else:
         opts.pop("ai_skills", None)
+
+    if raw_options is not _UNSET:
+        if isinstance(raw_options, str) and raw_options:
+            opts["integration_options"] = raw_options
+        else:
+            opts.pop("integration_options", None)
+
+    if parsed_options is not _UNSET:
+        if isinstance(parsed_options, dict) and parsed_options:
+            opts["integration_parsed_options"] = parsed_options
+        else:
+            opts.pop("integration_parsed_options", None)
 
     # Update the agent-context extension config BEFORE init-options.json
     # so a failure here doesn't leave init-options partially updated.
@@ -374,7 +390,13 @@ def _set_default_integration(
             ) from exc
 
     _write_integration_json(project_root, key, installed_keys, settings)
-    _update_init_options_for_integration(project_root, integration, script_type=resolved_script)
+    _update_init_options_for_integration(
+        project_root,
+        integration,
+        script_type=resolved_script,
+        raw_options=raw_options,
+        parsed_options=parsed_options,
+    )
 
 
 def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:

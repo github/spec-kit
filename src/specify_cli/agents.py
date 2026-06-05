@@ -335,7 +335,30 @@ class CommandRegistrar:
             description,
             f"{source_id}:{source_file}",
         )
-        return self.render_frontmatter(skill_frontmatter) + "\n" + body
+        skill_content = self.render_frontmatter(skill_frontmatter) + "\n" + body
+
+        from . import load_init_options
+        from .integrations import get_integration
+
+        init_options = load_init_options(project_root)
+        parsed_options = (
+            init_options.get("integration_parsed_options")
+            if isinstance(init_options, dict)
+            else None
+        )
+        if not isinstance(parsed_options, dict):
+            parsed_options = None
+        integration = get_integration(agent_name)
+        if integration is not None and hasattr(
+            integration,
+            "post_process_skill_content",
+        ):
+            skill_content = integration.post_process_skill_content(
+                skill_content,
+                parsed_options=parsed_options,
+            )
+
+        return skill_content
 
     @staticmethod
     def build_skill_frontmatter(

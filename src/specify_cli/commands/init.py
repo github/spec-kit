@@ -459,6 +459,10 @@ def register(app: typer.Typer) -> None:
                 from ..integrations.base import SkillsIntegration as _SkillsPersist
                 if isinstance(resolved_integration, _SkillsPersist) or getattr(resolved_integration, "_skills_mode", False):
                     init_opts["ai_skills"] = True
+                if integration_options:
+                    init_opts["integration_options"] = integration_options
+                    if integration_parsed_options:
+                        init_opts["integration_parsed_options"] = integration_parsed_options
                 save_init_options(project_path, init_opts)
 
                 # --- agent-context extension (bundled, auto-installed) ---

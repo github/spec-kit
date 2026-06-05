@@ -78,7 +78,11 @@ class AgyIntegration(SkillsIntegration):
             content,
         )
 
-    def post_process_skill_content(self, content: str) -> str:
+    def post_process_skill_content(
+        self,
+        content: str,
+        parsed_options: dict[str, Any] | None = None,
+    ) -> str:
         """Inject the dot-to-hyphen hook command note."""
         return self._inject_hook_command_note(content)
 
@@ -119,7 +123,10 @@ class AgyIntegration(SkillsIntegration):
                 continue
 
             content = path.read_bytes().decode("utf-8")
-            updated = self.post_process_skill_content(content)
+            updated = self.post_process_skill_content(
+                content,
+                parsed_options=parsed_options,
+            )
             if updated != content:
                 path.write_bytes(updated.encode("utf-8"))
                 self.record_file_in_manifest(path, project_root, manifest)

@@ -1056,6 +1056,13 @@ class PresetManager:
                     )
                     init_opts = load_init_options(self.project_root)
                     selected_ai = init_opts.get("ai") if isinstance(init_opts, dict) else ""
+                    integration_parsed_options = (
+                        init_opts.get("integration_parsed_options")
+                        if isinstance(init_opts, dict)
+                        else None
+                    )
+                    if not isinstance(integration_parsed_options, dict):
+                        integration_parsed_options = None
                     if isinstance(selected_ai, str):
                         body = registrar.resolve_skill_placeholders(
                             selected_ai, fm, body, self.project_root
@@ -1078,7 +1085,10 @@ class PresetManager:
                     from .integrations import get_integration
                     integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
                     if integration is not None and hasattr(integration, "post_process_skill_content"):
-                        skill_content = integration.post_process_skill_content(skill_content)
+                        skill_content = integration.post_process_skill_content(
+                            skill_content,
+                            parsed_options=integration_parsed_options,
+                        )
                     skill_file.write_text(skill_content, encoding="utf-8")
                 except Exception:
                     pass  # best-effort override skill restoration
@@ -1263,6 +1273,9 @@ class PresetManager:
         selected_ai = init_opts.get("ai")
         if not isinstance(selected_ai, str):
             return []
+        integration_parsed_options = init_opts.get("integration_parsed_options")
+        if not isinstance(integration_parsed_options, dict):
+            integration_parsed_options = None
         ai_skills_enabled = is_ai_skills_enabled(init_opts)
         registrar = CommandRegistrar()
         integration = get_integration(selected_ai)
@@ -1355,7 +1368,8 @@ class PresetManager:
                 )
                 if integration is not None and hasattr(integration, "post_process_skill_content"):
                     skill_content = integration.post_process_skill_content(
-                        skill_content
+                        skill_content,
+                        parsed_options=integration_parsed_options,
                     )
 
                 skill_file = skill_subdir / "SKILL.md"
@@ -1394,6 +1408,9 @@ class PresetManager:
         selected_ai = init_opts.get("ai")
         registrar = CommandRegistrar()
         integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
+        integration_parsed_options = init_opts.get("integration_parsed_options")
+        if not isinstance(integration_parsed_options, dict):
+            integration_parsed_options = None
         extension_restore_index = self._build_extension_skill_restore_index()
 
         for skill_name in skill_names:
@@ -1452,7 +1469,8 @@ class PresetManager:
                 )
                 if integration is not None and hasattr(integration, "post_process_skill_content"):
                     skill_content = integration.post_process_skill_content(
-                        skill_content
+                        skill_content,
+                        parsed_options=integration_parsed_options,
                     )
                 skill_file.write_text(skill_content, encoding="utf-8")
                 continue
@@ -1488,7 +1506,8 @@ class PresetManager:
                 )
                 if integration is not None and hasattr(integration, "post_process_skill_content"):
                     skill_content = integration.post_process_skill_content(
-                        skill_content
+                        skill_content,
+                        parsed_options=integration_parsed_options,
                     )
                 skill_file.write_text(skill_content, encoding="utf-8")
             else:

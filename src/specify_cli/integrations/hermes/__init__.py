@@ -172,7 +172,10 @@ class HermesIntegration(SkillsIntegration):
                 f"{processed_body}"
             )
 
-            skill_content = self.post_process_skill_content(skill_content)
+            skill_content = self.post_process_skill_content(
+                skill_content,
+                parsed_options=parsed_options,
+            )
 
             # Write directly to global ~/.hermes/skills/speckit-<name>/SKILL.md
             skill_dir = global_skills_dir / skill_name

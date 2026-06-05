@@ -1644,7 +1644,11 @@ class SkillsIntegration(IntegrationBase):
             content,
         )
 
-    def post_process_skill_content(self, content: str) -> str:
+    def post_process_skill_content(
+        self,
+        content: str,
+        parsed_options: dict[str, Any] | None = None,
+    ) -> str:
         """Post-process a SKILL.md file's content after generation.
 
         Called by external skill generators (presets, extensions) to let
@@ -1756,7 +1760,10 @@ class SkillsIntegration(IntegrationBase):
                 f"{processed_body}"
             )
 
-            skill_content = self.post_process_skill_content(skill_content)
+            skill_content = self.post_process_skill_content(
+                skill_content,
+                parsed_options=parsed_options,
+            )
 
             # Write speckit-<name>/SKILL.md
             skill_dir = skills_dir / skill_name
