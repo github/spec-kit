@@ -2907,6 +2907,52 @@ class TestExtensionCatalog:
                 f"{record['encoding']!r}; expected 'utf-8'"
             )
 
+    def test_fetch_catalog_survives_unwritable_cache(self, temp_dir, monkeypatch):
+        """An unwritable cache dir doesn't fail a successful fetch.
+
+        Cache writes are best-effort, mirroring the read side and the
+        ``integrations/catalog.py`` precedent: if ``mkdir``/``write_text``
+        raises ``OSError`` (read-only checkout, permissions), the
+        already-fetched-and-validated payload must still be returned
+        rather than surfacing the cache failure to the caller.
+        """
+        from unittest.mock import patch, MagicMock
+        from pathlib import Path as _PathCls
+
+        catalog = self._make_catalog(temp_dir)
+        valid = {
+            "schema_version": "1.0",
+            "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        # Simulate an unwritable cache dir: every write_text under the
+        # cache directory raises PermissionError (an OSError subclass).
+        real_write_text = _PathCls.write_text
+
+        def failing_write_text(self, data, *args, **kwargs):
+            if str(catalog.cache_dir) in str(self):
+                raise PermissionError("cache dir is read-only")
+            return real_write_text(self, data, *args, **kwargs)
+
+        monkeypatch.setattr(_PathCls, "write_text", failing_write_text)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            # Legacy single-catalog path.
+            assert catalog.fetch_catalog(force_refresh=True) == valid
+
+            # Multi-catalog path.
+            entry = CatalogEntry(
+                url="https://example.com/catalog.json",
+                name="default",
+                priority=1,
+                install_allowed=True,
+            )
+            assert catalog._fetch_single_catalog(entry, force_refresh=True) == valid
+
     def test_get_merged_extensions_skips_non_mapping_entries(self, temp_dir):
         """Per-entry guard: one malformed entry shouldn't poison the merge.
 

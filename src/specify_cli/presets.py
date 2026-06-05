@@ -2123,18 +2123,25 @@ class PresetCatalog:
             # ``integrations/catalog.py`` precedent. Without this,
             # platforms whose default encoding isn't UTF-8 would write
             # locale-encoded bytes the read path can't decode, forcing an
-            # unnecessary refetch on every invocation.
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(
-                json.dumps(catalog_data, indent=2), encoding="utf-8"
-            )
-            metadata = {
-                "cached_at": datetime.now(timezone.utc).isoformat(),
-                "catalog_url": entry.url,
-            }
-            metadata_file.write_text(
-                json.dumps(metadata, indent=2), encoding="utf-8"
-            )
+            # unnecessary refetch on every invocation. The write itself
+            # is best-effort like the read side: an unwritable cache dir
+            # (read-only checkout, permissions) must not be re-raised as
+            # a ``PresetError`` for a payload that was already fetched
+            # and validated.
+            try:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                cache_file.write_text(
+                    json.dumps(catalog_data, indent=2), encoding="utf-8"
+                )
+                metadata = {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": entry.url,
+                }
+                metadata_file.write_text(
+                    json.dumps(metadata, indent=2), encoding="utf-8"
+                )
+            except OSError:
+                pass  # Cache is best-effort; proceed with fetched data
 
             return catalog_data
 
@@ -2270,19 +2277,25 @@ class PresetCatalog:
             # ``integrations/catalog.py`` precedent — otherwise platforms
             # whose default encoding isn't UTF-8 would write
             # locale-encoded bytes the read path can't decode, forcing an
-            # unnecessary refetch on every invocation.
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            self.cache_file.write_text(
-                json.dumps(catalog_data, indent=2), encoding="utf-8"
-            )
+            # unnecessary refetch on every invocation. Like the read
+            # side, the write is best-effort: an unwritable cache dir
+            # must not be re-raised as a ``PresetError`` for a payload
+            # that was already fetched and validated.
+            try:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                self.cache_file.write_text(
+                    json.dumps(catalog_data, indent=2), encoding="utf-8"
+                )
 
-            metadata = {
-                "cached_at": datetime.now(timezone.utc).isoformat(),
-                "catalog_url": catalog_url,
-            }
-            self.cache_metadata_file.write_text(
-                json.dumps(metadata, indent=2), encoding="utf-8"
-            )
+                metadata = {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": catalog_url,
+                }
+                self.cache_metadata_file.write_text(
+                    json.dumps(metadata, indent=2), encoding="utf-8"
+                )
+            except OSError:
+                pass  # Cache is best-effort; proceed with fetched data
 
             return catalog_data
 
