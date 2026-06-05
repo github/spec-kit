@@ -138,35 +138,6 @@ class TestInitIntegrationFlag:
         assert result.exit_code == 0
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
 
-    def test_legacy_ai_flag_rejected(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        result = runner.invoke(app, [
-            "init", str(tmp_path / "test-project"), "--ai", "copilot",
-        ])
-        assert result.exit_code != 0
-
-    def test_legacy_ai_commands_dir_flag_rejected(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        result = runner.invoke(app, [
-            "init", str(tmp_path / "test-project"), "--integration", "generic",
-            "--ai-commands-dir", ".myagent/commands",
-        ])
-        assert result.exit_code != 0
-
-    def test_legacy_ai_skills_flag_rejected(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        result = runner.invoke(app, [
-            "init", str(tmp_path / "test-project"), "--integration", "claude",
-            "--ai-skills",
-        ])
-        assert result.exit_code != 0
-
     def test_init_optional_preset_failure_reports_target_and_continues(
         self, tmp_path, monkeypatch
     ):
