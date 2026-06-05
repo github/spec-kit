@@ -39,8 +39,8 @@ class TestAgentConfigConsistency:
         assert AGENT_CONFIG["codex"]["folder"] == ".agents/"
         assert AGENT_CONFIG["codex"]["commands_subdir"] == "skills"
 
-    def test_init_ai_help_includes_roo_and_kiro_alias(self):
-        """AGENT_CONFIG should include roo (via kiro-cli) and kiro alias in aliases."""
+    def test_agent_config_includes_kiro_cli(self):
+        """AGENT_CONFIG should include kiro-cli."""
         assert "kiro-cli" in AGENT_CONFIG
 
     def test_devcontainer_kiro_installer_uses_pinned_checksum(self):
@@ -77,7 +77,7 @@ class TestAgentConfigConsistency:
         assert cfg["args"] == "{{args}}"
         assert cfg["extension"] == ".toml"
 
-    def test_ai_help_includes_tabnine(self):
+    def test_agent_config_includes_tabnine(self):
         """AGENT_CONFIG should include tabnine."""
         assert "tabnine" in AGENT_CONFIG
 
@@ -99,7 +99,7 @@ class TestAgentConfigConsistency:
         assert kimi_cfg["dir"] == ".kimi/skills"
         assert kimi_cfg["extension"] == "/SKILL.md"
 
-    def test_ai_help_includes_kimi(self):
+    def test_agent_config_includes_kimi(self):
         """AGENT_CONFIG should include kimi."""
         assert "kimi" in AGENT_CONFIG
 
@@ -123,7 +123,7 @@ class TestAgentConfigConsistency:
         assert trae_cfg["args"] == "$ARGUMENTS"
         assert trae_cfg["extension"] == "/SKILL.md"
 
-    def test_ai_help_includes_trae(self):
+    def test_agent_config_includes_trae(self):
         """AGENT_CONFIG should include trae."""
         assert "trae" in AGENT_CONFIG
 
@@ -148,7 +148,7 @@ class TestAgentConfigConsistency:
         assert pi_cfg["args"] == "$ARGUMENTS"
         assert pi_cfg["extension"] == ".md"
 
-    def test_ai_help_includes_pi(self):
+    def test_agent_config_includes_pi(self):
         """AGENT_CONFIG should include pi."""
         assert "pi" in AGENT_CONFIG
 
@@ -170,7 +170,7 @@ class TestAgentConfigConsistency:
         assert cfg["iflow"]["format"] == "markdown"
         assert cfg["iflow"]["args"] == "$ARGUMENTS"
 
-    def test_ai_help_includes_iflow(self):
+    def test_agent_config_includes_iflow(self):
         """AGENT_CONFIG should include iflow."""
         assert "iflow" in AGENT_CONFIG
 
@@ -192,7 +192,7 @@ class TestAgentConfigConsistency:
         assert cfg["goose"]["format"] == "yaml"
         assert cfg["goose"]["args"] == "{{args}}"
 
-    def test_ai_help_includes_goose(self):
+    def test_agent_config_includes_goose(self):
         """AGENT_CONFIG should include goose."""
         assert "goose" in AGENT_CONFIG
 
@@ -301,6 +301,6 @@ class TestAgentConfigConsistency:
         assert rovodev_cfg["args"] == "$ARGUMENTS"
         assert rovodev_cfg["extension"] == "/SKILL.md"
 
-    def test_ai_help_includes_rovodev(self):
+    def test_agent_config_includes_rovodev(self):
         """AGENT_CONFIG should include rovodev."""
         assert "rovodev" in AGENT_CONFIG
