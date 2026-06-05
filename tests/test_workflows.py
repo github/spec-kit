@@ -3474,3 +3474,115 @@ steps:
             )
         assert result.exit_code == 1
         assert "Invalid input format" in result.stdout
+
+
+class TestWorkflowAddUrlResolution:
+    """CLI-level tests for workflow add <url> GitHub release URL resolution."""
+
+    VALID_WORKFLOW_YAML = """
+schema_version: "1.0"
+workflow:
+  id: "test-wf"
+  name: "Test Workflow"
+  version: "1.0.0"
+  description: "A test workflow"
+steps:
+  - id: step-one
+    type: shell
+    run: "echo hello"
+"""
+
+    def test_workflow_add_from_github_release_url_resolves_and_downloads(self, project_dir):
+        """'workflow add <github-release-url>' resolves to API asset URL."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data, url=None):
+                self._data = data
+                self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
+
+            def read(self):
+                return self._data
+
+            def geturl(self):
+                return self._url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None):
+            captured_urls.append((url, extra_headers, timeout))
+            if "releases/tags/" in url:
+                return FakeResponse(json.dumps({
+                    "assets": [{"name": "workflow.yml", "url": "https://api.github.com/repos/org/repo/releases/assets/42"}]
+                }).encode())
+            return FakeResponse(self.VALID_WORKFLOW_YAML.encode())
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "workflow", "add",
+                "https://github.com/org/repo/releases/download/v1.0/workflow.yml",
+            ])
+
+        assert result.exit_code == 0, result.output
+        assert "Test Workflow" in result.output
+        # First call resolves the release tag with timeout=30
+        tag_calls = [(url, h, t) for url, h, t in captured_urls if "releases/tags/" in url]
+        assert len(tag_calls) == 1
+        assert tag_calls[0][2] == 30  # timeout matches download timeout
+        # Second call downloads from the resolved asset URL with octet-stream
+        asset_calls = [(url, h, t) for url, h, t in captured_urls if "releases/assets/" in url]
+        assert len(asset_calls) >= 1
+        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    def test_workflow_add_from_direct_api_asset_url_passes_through(self, project_dir):
+        """'workflow add <api-asset-url>' uses URL directly with octet-stream."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data, url=None):
+                self._data = data
+                self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
+
+            def read(self):
+                return self._data
+
+            def geturl(self):
+                return self._url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None):
+            captured_urls.append((url, extra_headers))
+            return FakeResponse(self.VALID_WORKFLOW_YAML.encode())
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "workflow", "add",
+                "https://api.github.com/repos/org/repo/releases/assets/42",
+            ])
+
+        assert result.exit_code == 0, result.output
+        # Should go directly to the asset URL with Accept header
+        assert len(captured_urls) == 1
+        assert captured_urls[0][0] == "https://api.github.com/repos/org/repo/releases/assets/42"
+        assert captured_urls[0][1] == {"Accept": "application/octet-stream"}

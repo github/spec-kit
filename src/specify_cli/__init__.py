@@ -3075,7 +3075,7 @@ def workflow_add(
         from specify_cli._github_http import resolve_github_release_asset_api_url as _resolve_gh_asset
 
         _wf_url_extra_headers = None
-        _resolved_wf_url = _resolve_gh_asset(source, _open_url)
+        _resolved_wf_url = _resolve_gh_asset(source, _open_url, timeout=30)
         if _resolved_wf_url:
             source = _resolved_wf_url
             _wf_url_extra_headers = {"Accept": "application/octet-stream"}
@@ -3182,7 +3182,7 @@ def workflow_add(
         from specify_cli._github_http import resolve_github_release_asset_api_url as _resolve_gh_asset
 
         _wf_cat_extra_headers = None
-        _resolved_workflow_url = _resolve_gh_asset(workflow_url, _open_url)
+        _resolved_workflow_url = _resolve_gh_asset(workflow_url, _open_url, timeout=30)
         if _resolved_workflow_url:
             workflow_url = _resolved_workflow_url
             _wf_cat_extra_headers = {"Accept": "application/octet-stream"}
