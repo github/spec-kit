@@ -67,11 +67,11 @@ When a preset is installed with `type: "command"` entries, the `PresetManager` r
 flowchart TD
     A["specify preset add my-preset"] --> B{Preset has type: command?}
     B -- No --> Z["done (templates only)"]
-    B -- Yes --> C{Extension command?}
-    C -- "speckit.myext.cmd\n(3+ dot segments)" --> D{Extension installed?}
+    B -- Yes --> C{Targets extension override?}
+    C -- "replaces speckit.myext.cmd\nor composition strategy" --> D{Extension installed?}
     D -- No --> E["skip (extension not active)"]
     D -- Yes --> F["register command"]
-    C -- "speckit.specify\n(core command)" --> F
+    C -- "preset-provided command\nor core command" --> F
     F --> G["detect agent directories"]
     G --> H[".claude/commands/"]
     G --> I[".gemini/commands/"]
@@ -89,7 +89,7 @@ flowchart TD
 
 ### Extension safety check
 
-Command names follow the pattern `speckit.<ext-id>.<cmd-name>`. When a command has 3+ dot segments, the system extracts the extension ID and checks if `.specify/extensions/<ext-id>/` exists. If the extension isn't installed, the command is skipped — preventing orphan files referencing non-existent extensions.
+Preset-provided commands can use namespaced command IDs such as `speckit.extendedflow.reviewer`, so dot-count alone does not make a command an extension override. The missing-extension guard applies when a command explicitly declares `replaces: speckit.<ext-id>.<cmd-name>` or when it uses a composition strategy (`prepend`, `append`, or `wrap`) that needs a lower-priority base command. In those cases, the system extracts the extension ID and checks if `.specify/extensions/<ext-id>/` exists. If the extension isn't installed, the command is skipped — preventing orphan files referencing non-existent extensions.
 
 Core commands (e.g. `speckit.specify`, with only 2 segments) are always registered.
 

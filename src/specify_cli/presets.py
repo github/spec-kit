@@ -587,6 +587,40 @@ class PresetManager:
 
         return True
 
+    def _should_skip_missing_extension_command(
+        self,
+        command_template: Dict[str, Any],
+    ) -> bool:
+        """Return True when a preset command targets an absent extension.
+
+        Three-part command names are not enough to identify extension
+        overrides because presets can define their own namespaced commands,
+        such as ``speckit.extendedflow.reviewer``. Only commands that
+        explicitly replace an extension command, or composition strategies
+        that need a lower-priority base command, are gated on extension
+        installation.
+        """
+        command_name = command_template["name"]
+        strategy = command_template.get("strategy", "replace")
+        replaces = command_template.get("replaces")
+
+        target_name = None
+        if isinstance(replaces, str) and replaces:
+            target_name = replaces
+        elif strategy != "replace":
+            target_name = command_name
+
+        if target_name is None:
+            return False
+
+        parts = target_name.split(".")
+        if len(parts) < 3 or parts[0] != "speckit":
+            return False
+
+        ext_id = parts[1]
+        extensions_dir = self.project_root / ".specify" / "extensions"
+        return not (extensions_dir / ext_id).is_dir()
+
     def _register_commands(
         self,
         manifest: PresetManifest,
@@ -615,18 +649,10 @@ class PresetManager:
         if not command_templates:
             return {}
 
-        # Filter out extension command overrides if the extension isn't installed.
-        # Command names follow the pattern: speckit.<ext-id>.<cmd-name>
-        # Core commands (e.g. speckit.specify) have only one dot — always register.
-        extensions_dir = self.project_root / ".specify" / "extensions"
-        filtered = []
-        for cmd in command_templates:
-            parts = cmd["name"].split(".")
-            if len(parts) >= 3 and parts[0] == "speckit":
-                ext_id = parts[1]
-                if not (extensions_dir / ext_id).is_dir():
-                    continue
-            filtered.append(cmd)
+        filtered = [
+            cmd for cmd in command_templates
+            if not self._should_skip_missing_extension_command(cmd)
+        ]
 
         if not filtered:
             return {}
@@ -1234,17 +1260,10 @@ class PresetManager:
         if not command_templates:
             return []
 
-        # Filter out extension command overrides if the extension isn't installed,
-        # matching the same logic used by _register_commands().
-        extensions_dir = self.project_root / ".specify" / "extensions"
-        filtered = []
-        for cmd in command_templates:
-            parts = cmd["name"].split(".")
-            if len(parts) >= 3 and parts[0] == "speckit":
-                ext_id = parts[1]
-                if not (extensions_dir / ext_id).is_dir():
-                    continue
-            filtered.append(cmd)
+        filtered = [
+            cmd for cmd in command_templates
+            if not self._should_skip_missing_extension_command(cmd)
+        ]
 
         if not filtered:
             return []
@@ -1585,21 +1604,15 @@ class PresetManager:
             raise
 
         # Reconcile all affected commands from the full priority stack so that
-        # install order doesn't determine the winning command file.
-        # Apply the same extension-installed filter as _register_commands to
-        # avoid reconciling extension commands when the extension isn't installed.
-        extensions_dir = self.project_root / ".specify" / "extensions"
+        # install order doesn't determine the winning command file. Apply the
+        # same missing-extension override filter as _register_commands.
         cmd_names = []
         for t in manifest.templates:
             if t.get("type") != "command":
                 continue
-            name = t["name"]
-            parts = name.split(".")
-            if len(parts) >= 3 and parts[0] == "speckit":
-                ext_id = parts[1]
-                if not (extensions_dir / ext_id).is_dir():
-                    continue
-            cmd_names.append(name)
+            if self._should_skip_missing_extension_command(t):
+                continue
+            cmd_names.append(t["name"])
         if cmd_names:
             try:
                 self._reconcile_composed_commands(cmd_names)

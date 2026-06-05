@@ -2181,6 +2181,7 @@ class TestSelfTestPreset:
                         "name": "speckit.fakeext.cmd",
                         "file": "commands/speckit.fakeext.cmd.md",
                         "description": "Override fakeext cmd",
+                        "replaces": "speckit.fakeext.cmd",
                     }
                 ]
             },
@@ -2196,6 +2197,50 @@ class TestSelfTestPreset:
         assert not cmd_file.exists(), "Command registered for missing extension"
         metadata = manager.registry.get("ext-override")
         assert metadata["registered_commands"] == {}
+
+    def test_three_part_preset_command_registered_without_extension(self, project_dir, temp_dir):
+        """Three-part preset-provided commands must not require extension directories."""
+        claude_dir = project_dir / ".claude" / "skills"
+        claude_dir.mkdir(parents=True)
+
+        preset_dir = temp_dir / "extendedflow-preset"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.extendedflow.reviewer.md").write_text(
+            "---\ndescription: Extended flow reviewer\n---\nReview the current flow."
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "extendedflow",
+                "name": "Extended Flow",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.extendedflow.reviewer",
+                        "file": "commands/speckit.extendedflow.reviewer.md",
+                        "description": "Extended flow reviewer",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = claude_dir / "speckit-extendedflow-reviewer" / "SKILL.md"
+        assert skill_file.exists(), "Preset-provided three-part command was not registered"
+        metadata = manager.registry.get("extendedflow")
+        assert metadata["registered_commands"] == {
+            "claude": ["speckit.extendedflow.reviewer"]
+        }
 
     def test_extension_command_registered_when_extension_present(self, project_dir, temp_dir):
         """Test that extension command overrides ARE registered when the extension is installed."""
@@ -2225,6 +2270,7 @@ class TestSelfTestPreset:
                         "name": "speckit.fakeext.cmd",
                         "file": "commands/speckit.fakeext.cmd.md",
                         "description": "Override fakeext cmd",
+                        "replaces": "speckit.fakeext.cmd",
                     }
                 ]
             },
