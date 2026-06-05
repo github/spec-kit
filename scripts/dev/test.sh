@@ -118,9 +118,8 @@ ensure_single_link() {
 print_help() {
     awk '
         /^# Usage:/ {printing=1}
-    ensure_single_link "$CURSOR_FILE" "cursor path"
         printing {
-    cursor_tmp="$(mktemp_file "$PYTEST_CACHE_DIR")" || exit 1
+            if ($0 !~ /^#/) {exit}
             sub(/^# ?/, "", $0)
             print
         }
@@ -243,8 +242,9 @@ trap cleanup EXIT
 write_cursor() {
     ensure_dir_safe "$PYTEST_CACHE_DIR" "pytest cache dir"
     ensure_regular_file_or_missing "$CURSOR_FILE" "cursor path"
+    ensure_single_link "$CURSOR_FILE" "cursor path"
     local cursor_tmp
-    cursor_tmp="$(TMPDIR="$PYTEST_CACHE_DIR" mktemp_file)" || exit 1
+    cursor_tmp="$(mktemp_file "$PYTEST_CACHE_DIR")" || exit 1
     if [[ -L "$cursor_tmp" || ! -f "$cursor_tmp" ]]; then
         err "cursor temp path is unsafe; refusing to write $cursor_tmp"
         rm -f "$cursor_tmp" 2>/dev/null || true
