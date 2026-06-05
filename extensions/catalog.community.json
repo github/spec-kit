@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-04T00:00:00Z",
+  "updated_at": "2026-06-05T08:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -3001,8 +3001,8 @@
       "id": "superb",
       "description": "Bridges selected Superpowers disciplines into Spec Kit as evidence-first trust gates for agent workflows.",
       "author": "RbBtSn0w",
-      "version": "1.5.1",
-      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/superpowers-bridge-v1.5.1/superpowers-bridge.zip",
+      "version": "1.5.2",
+      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/superpowers-bridge-v1.5.2/superpowers-bridge.zip",
       "repository": "https://github.com/RbBtSn0w/spec-kit-extensions",
       "homepage": "https://github.com/RbBtSn0w/spec-kit-extensions",
       "documentation": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/superpowers-bridge/README.md",
@@ -3037,7 +3037,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-30T00:00:00Z",
-      "updated_at": "2026-06-04T02:29:46Z"
+      "updated_at": "2026-06-05T08:00:00Z"
     },
     "superspec": {
       "name": "Superspec",
