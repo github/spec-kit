@@ -67,7 +67,7 @@ log() {
 }
 
 err() {
-    echo "$LOG_PREFIX $*" >&2
+    echo "$LOG_PREFIX ERROR: $*" >&2
 }
 
 print_help() {
@@ -192,6 +192,14 @@ cleanup() {
 trap cleanup EXIT
 
 write_cursor() {
+    if [[ -L "$(dirname "$CURSOR_FILE")" ]]; then
+        err "cursor directory is a symlink; refusing to write $CURSOR_FILE"
+        exit 1
+    fi
+    if [[ -e "$CURSOR_FILE" && -L "$CURSOR_FILE" ]]; then
+        err "cursor path is a symlink; refusing to write $CURSOR_FILE"
+        exit 1
+    fi
     printf '%s\n' "$1" > "$CURSOR_TMP"
     mv "$CURSOR_TMP" "$CURSOR_FILE"
 }
