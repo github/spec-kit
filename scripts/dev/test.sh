@@ -304,7 +304,7 @@ fi
 log "collecting tests ..."
 COLLECT_ERR="$(mktemp_file)" || exit 1
 COLLECT_OUT="$(mktemp_file)" || exit 1
-if ! "${PYTEST_CMD[@]}" --collect-only -q "${COLLECT_PASSTHROUGH[@]}" >"$COLLECT_OUT" 2>"$COLLECT_ERR"; then
+if ! "${PYTEST_CMD[@]}" --collect-only -q --no-header --no-summary "${COLLECT_PASSTHROUGH[@]}" >"$COLLECT_OUT" 2>"$COLLECT_ERR"; then
     err "test collection failed"
     [[ -s "$COLLECT_ERR" ]] && { echo "--- collection stderr ---"; cat "$COLLECT_ERR"; } >&2
     rm -f "$COLLECT_ERR" "$COLLECT_OUT"
@@ -324,7 +324,7 @@ if (( TOTAL == 0 )); then
     exit 1
 fi
 
-BASE_PYTEST_FLAGS=(-n auto --dist=load --no-header)
+BASE_PYTEST_FLAGS=(-p xdist -n auto --dist=load --no-header)
 if (( BENCH )); then
     BASE_PYTEST_FLAGS+=(-q)
 fi
