@@ -37,7 +37,9 @@ class TestExtensionLayout:
         assert (EXT_DIR / "extension.yml").is_file()
 
     def test_extension_yml_has_required_fields(self):
-        manifest = yaml.safe_load((EXT_DIR / "extension.yml").read_text())
+        manifest = yaml.safe_load(
+            (EXT_DIR / "extension.yml").read_text(encoding="utf-8")
+        )
         assert manifest["extension"]["id"] == "bug"
         assert manifest["extension"]["name"] == "Bug Triage Workflow"
         assert manifest["extension"]["author"] == "spec-kit-core"

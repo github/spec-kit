@@ -73,7 +73,7 @@ specify extension enable bug
 - `speckit.bug.assess` and `speckit.bug.test` **never modify source code**. They read the repository and write only inside `.specify/bugs/<slug>/`.
 - `speckit.bug.fix` is the only command that edits source code, and it stays within the files listed in the assessment unless new evidence requires expanding scope (which is logged in `fix.md` under **Deviations from Assessment**).
 - None of the commands overwrite an existing report file without explicit confirmation; in automated mode they refuse and pick a new unique slug instead.
-- Verdicts and verification results are never over-claimed: reproduction that was not actually performed is reported as `partial` or `not-run`, not `verified`.
+- Verdicts and verification results are never over-claimed: a reproduction that was not actually performed is reported as `partial` or `not-run`, not `verified`.
 
 ## Hooks
 
