@@ -311,9 +311,13 @@ if ! "${PYTEST_CMD[@]}" --collect-only -q "${COLLECT_PASSTHROUGH[@]}" >"$COLLECT
     rm -f "$COLLECT_ERR" "$COLLECT_OUT"
     exit 1
 fi
+if [[ -s "$COLLECT_ERR" ]] && (( ! BENCH )); then
+    log "collection warnings:"
+    cat "$COLLECT_ERR" >&2
+fi
 rm -f "$COLLECT_ERR"
 COLLECT_FILTERED="$(mktemp_file)" || exit 1
-LC_ALL=C awk 'match($0, /\.py($|::)/) { print }' "$COLLECT_OUT" > "$COLLECT_FILTERED"
+LC_ALL=C awk 'NF { print }' "$COLLECT_OUT" > "$COLLECT_FILTERED"
 mv "$COLLECT_FILTERED" "$COLLECT_OUT"
 TOTAL="$(wc -l < "$COLLECT_OUT" | tr -d '[:space:]')"
 if (( TOTAL == 0 )); then
@@ -407,9 +411,7 @@ while (( i < TOTAL )); do
     end=$(( i + ${#CHUNK_NODES[@]} ))
     log "chunk $chunk_idx/$CHUNKS  tests $((i+1))..$end"
 
-    PYTEST_FLAGS=("${BASE_PYTEST_FLAGS[@]}")
-
-    if ! "${PYTEST_CMD[@]}" "${PYTEST_FLAGS[@]}" "${RUNTIME_PASSTHROUGH[@]}" "${CHUNK_NODES[@]}"; then
+    if ! "${PYTEST_CMD[@]}" "${BASE_PYTEST_FLAGS[@]}" "${RUNTIME_PASSTHROUGH[@]}" "${CHUNK_NODES[@]}"; then
         err "chunk failed — cursor preserved at next test index $i (use --resume to retry)"
         write_cursor "$i"
         exit 1
