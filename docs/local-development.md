@@ -162,7 +162,7 @@ rm -rf .venv dist build *.egg-info
 |---------|-----|
 | `ModuleNotFoundError: typer` | Run `uv pip install -e .` |
 | Scripts not executable (Linux) | Re-run init or `chmod +x scripts/*.sh` |
-| Git step skipped | You passed `--no-git` or Git not installed |
+| Git step skipped | Git not installed on your system |
 | Wrong script type downloaded | Pass `--script sh` or `--script ps` explicitly |
 | TLS errors on corporate network | Configure your environment's certificate store or proxy. The `--skip-tls` flag is deprecated and has no effect. |
 

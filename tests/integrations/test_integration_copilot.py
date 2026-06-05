@@ -186,12 +186,12 @@ class TestCopilotIntegration:
         try:
             os.chdir(project)
             result = CliRunner().invoke(app, [
-                "init", "--here", "--integration", "copilot", "--script", "sh", "--no-git",
+                "init", "--here", "--integration", "copilot", "--script", "sh",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file())
+        actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
         expected = sorted([
             ".github/agents/speckit.agent-context.update.agent.md",
             ".github/agents/speckit.analyze.agent.md",
@@ -256,12 +256,12 @@ class TestCopilotIntegration:
         try:
             os.chdir(project)
             result = CliRunner().invoke(app, [
-                "init", "--here", "--integration", "copilot", "--script", "ps", "--no-git",
+                "init", "--here", "--integration", "copilot", "--script", "ps",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file())
+        actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
         expected = sorted([
             ".github/agents/speckit.agent-context.update.agent.md",
             ".github/agents/speckit.analyze.agent.md",
@@ -622,7 +622,7 @@ class TestCopilotSkillsMode:
             result = CliRunner().invoke(app, [
                 "init", "--here", "--integration", "copilot",
                 "--integration-options", "--skills",
-                "--script", "sh", "--no-git",
+                "--script", "sh",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -648,12 +648,12 @@ class TestCopilotSkillsMode:
             result = CliRunner().invoke(app, [
                 "init", "--here", "--integration", "copilot",
                 "--integration-options", "--skills",
-                "--script", "sh", "--no-git",
+                "--script", "sh",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
-        actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file())
+        actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
         expected = sorted([
             # Skill files (core + extension-installed agent-context command)
             *[f".github/skills/speckit-{cmd}/SKILL.md" for cmd in self._SKILL_COMMANDS],
@@ -775,7 +775,6 @@ class TestCopilotSkillsMode:
             result = CliRunner().invoke(app, [
                 "init", "--here", "--integration", "copilot",
                 "--integration-options", "--skills",
-                "--script", "sh", "--no-git",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)

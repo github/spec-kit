@@ -36,7 +36,7 @@ class TestSaveBranchNumbering:
 
         project_dir = tmp_path / "proj"
         runner = CliRunner()
-        result = runner.invoke(app, ["init", str(project_dir), "--integration", "claude", "--ignore-agent-tools", "--no-git", "--script", "sh"])
+        result = runner.invoke(app, ["init", str(project_dir), "--integration", "claude", "--ignore-agent-tools", "--script", "sh"])
         assert result.exit_code == 0
 
         saved = json.loads((project_dir / ".specify/init-options.json").read_text())
@@ -60,7 +60,7 @@ class TestBranchNumberingValidation:
         from specify_cli import app
 
         runner = CliRunner()
-        result = runner.invoke(app, ["init", str(tmp_path / "proj"), "--integration", "claude", "--branch-numbering", "sequential", "--ignore-agent-tools", "--no-git", "--script", "sh"])
+        result = runner.invoke(app, ["init", str(tmp_path / "proj"), "--integration", "claude", "--branch-numbering", "sequential", "--ignore-agent-tools", "--script", "sh"])
         assert result.exit_code == 0
         assert "Invalid --branch-numbering" not in (result.output or "")
 
@@ -69,6 +69,6 @@ class TestBranchNumberingValidation:
         from specify_cli import app
 
         runner = CliRunner()
-        result = runner.invoke(app, ["init", str(tmp_path / "proj"), "--integration", "claude", "--branch-numbering", "timestamp", "--ignore-agent-tools", "--no-git", "--script", "sh"])
+        result = runner.invoke(app, ["init", str(tmp_path / "proj"), "--integration", "claude", "--branch-numbering", "timestamp", "--ignore-agent-tools", "--script", "sh"])
         assert result.exit_code == 0
         assert "Invalid --branch-numbering" not in (result.output or "")

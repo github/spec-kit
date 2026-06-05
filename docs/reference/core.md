@@ -15,7 +15,6 @@ specify init [<project_name>]
 | `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                       |
 | `--here`                 | Initialize in the current directory instead of creating a new one        |
 | `--force`                | Force merge/overwrite when initializing in an existing directory         |
-| `--no-git`               | Skip git repository initialization                                       |
 | `--ignore-agent-tools`   | Skip checks for AI coding agent CLI tools                                |
 | `--preset <id>`          | Install a preset during initialization                                   |
 | `--branch-numbering`     | Branch numbering strategy: `sequential` (default) or `timestamp`         |
@@ -23,8 +22,7 @@ specify init [<project_name>]
 Creates a new Spec Kit project with the necessary directory structure, templates, scripts, and AI coding agent integration files.
 
 > [!NOTE]
-> The git extension is currently enabled by default during `specify init`.
-> Starting in `v0.10.0`, it will require explicit opt-in. To add it after init, run `specify extension add git`.
+> The git extension is opt-in during `specify init`. To add it after init, run `specify extension add git`.
 
 Use `<project_name>` to create a new directory, or `--here` (or `.`) to initialize in the current directory. If the directory already has files, use `--force` to merge without confirmation.
 
@@ -44,9 +42,6 @@ specify init --here --force --integration copilot
 
 # Use PowerShell scripts (Windows/cross-platform)
 specify init my-project --integration copilot --script ps
-
-# Skip git initialization
-specify init my-project --integration copilot --no-git
 
 # Install a preset during initialization
 specify init my-project --integration copilot --preset compliance

@@ -137,7 +137,6 @@ class TestClaudeIntegration:
                     "claude",
                     "--script",
                     "sh",
-                    "--no-git",
                     "--ignore-agent-tools",
                 ],
                 catch_exceptions=False,
@@ -175,7 +174,6 @@ class TestClaudeIntegration:
                     "claude",
                     "--script",
                     "sh",
-                    "--no-git",
                     "--ignore-agent-tools",
                 ],
                 catch_exceptions=False,
@@ -208,7 +206,6 @@ class TestClaudeIntegration:
                         "--here",
                         "--script",
                         "sh",
-                        "--no-git",
                         "--ignore-agent-tools",
                     ],
                     catch_exceptions=False,
@@ -243,7 +240,7 @@ class TestClaudeIntegration:
 
         result = runner.invoke(
             app,
-            ["init", str(target), "--integration", "claude", "--script", "sh", "--no-git", "--ignore-agent-tools"],
+            ["init", str(target), "--integration", "claude", "--script", "sh", "--ignore-agent-tools"],
         )
 
         assert result.exit_code == 0

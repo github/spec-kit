@@ -71,7 +71,6 @@ def register(app: typer.Typer) -> None:
         project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
         script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
         ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for coding agent tools like Claude Code"),
-        no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
         here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
         force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
         skip_tls: bool = typer.Option(False, "--skip-tls", help="Deprecated (no-op). Previously: skip SSL/TLS verification.", hidden=True),
@@ -96,13 +95,12 @@ def register(app: typer.Typer) -> None:
            in non-interactive sessions
         3. Install bundled Spec Kit templates, scripts, workflow, and shared
            project infrastructure
-        4. Initialize a fresh git repository (if not --no-git and no existing repo)
+        4. Initialize a fresh git repository (if git is available and no existing repo)
         5. Set up coding agent integration commands and optional presets
 
         Examples:
             specify init my-project
             specify init my-project --integration claude
-            specify init my-project --integration copilot --no-git
             specify init --ignore-agent-tools my-project
             specify init . --integration claude         # Initialize in current directory
             specify init .                     # Initialize in current directory (interactive integration selection)
@@ -141,13 +139,6 @@ def register(app: typer.Typer) -> None:
                 available = ", ".join(sorted(INTEGRATION_REGISTRY))
                 console.print(f"[yellow]Available integrations:[/yellow] {available}")
                 raise typer.Exit(1)
-
-        if no_git:
-            console.print(
-                "[yellow]⚠️  --no-git is deprecated and will be removed in v0.10.0.[/yellow]\n"
-                "[yellow]The git extension will no longer be enabled by default "
-                "— use the [bold]specify extension[/bold] commands to install or enable the git extension if needed.[/yellow]"
-            )
 
         if project_name == ".":
             here = True
@@ -253,11 +244,9 @@ def register(app: typer.Typer) -> None:
 
         console.print(Panel("\n".join(setup_lines), border_style="cyan", padding=(1, 2)))
 
-        should_init_git = False
-        if not no_git:
-            should_init_git = check_tool("git")
-            if not should_init_git:
-                console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
+        should_init_git = check_tool("git")
+        if not should_init_git:
+            console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
 
         if not ignore_agent_tools:
             agent_config = AGENT_CONFIG.get(selected_ai)
@@ -308,14 +297,12 @@ def register(app: typer.Typer) -> None:
         for key, label in [
             ("chmod", "Ensure scripts executable"),
             ("constitution", "Constitution setup"),
-            ("git", "Install git extension"),
+            ("git", "Git repository setup"),
             ("workflow", "Install bundled workflow"),
             ("agent-context", "Install agent-context extension"),
             ("final", "Finalize"),
         ]:
             tracker.add(key, label)
-
-        git_default_notice = False
 
         with Live(tracker.render(), console=console, refresh_per_second=8, transient=True) as live:
             tracker.attach_refresh(lambda: live.update(tracker.render()))
@@ -369,54 +356,29 @@ def register(app: typer.Typer) -> None:
 
                 ensure_constitution_from_template(project_path, tracker=tracker)
 
-                if not no_git:
-                    tracker.start("git")
-                    git_messages = []
-                    git_has_error = False
-                    if is_git_repo(project_path):
-                        git_messages.append("existing repo detected")
-                    elif should_init_git:
-                        success, error_msg = init_git_repo(project_path, quiet=True)
-                        if success:
-                            git_messages.append("initialized")
-                        else:
-                            git_has_error = True
-                            if error_msg:
-                                sanitized = error_msg.replace('\n', ' ').strip()
-                                git_messages.append(f"init failed: {sanitized[:120]}")
-                            else:
-                                git_messages.append("init failed")
+                tracker.start("git")
+                git_messages = []
+                git_has_error = False
+                if is_git_repo(project_path):
+                    git_messages.append("existing repo detected")
+                elif should_init_git:
+                    success, error_msg = init_git_repo(project_path, quiet=True)
+                    if success:
+                        git_messages.append("initialized")
                     else:
-                        git_messages.append("git not available")
-                    try:
-                        from ..extensions import ExtensionManager
-                        bundled_path = _locate_bundled_extension("git")
-                        if bundled_path:
-                            manager = ExtensionManager(project_path)
-                            if manager.registry.is_installed("git"):
-                                git_messages.append("extension already installed")
-                            else:
-                                manager.install_from_directory(
-                                    bundled_path, get_speckit_version()
-                                )
-                                git_default_notice = True
-                                git_messages.append("extension installed")
-                        else:
-                            git_has_error = True
-                            git_messages.append("bundled extension not found")
-                    except Exception as ext_err:
                         git_has_error = True
-                        sanitized_ext = str(ext_err).replace('\n', ' ').strip()
-                        git_messages.append(
-                            f"extension install failed: {sanitized_ext[:120]}"
-                        )
-                    summary = "; ".join(git_messages)
-                    if git_has_error:
-                        tracker.error("git", summary)
-                    else:
-                        tracker.complete("git", summary)
+                        if error_msg:
+                            sanitized = error_msg.replace('\n', ' ').strip()
+                            git_messages.append(f"init failed: {sanitized[:120]}")
+                        else:
+                            git_messages.append("init failed")
                 else:
-                    tracker.skip("git", "--no-git flag")
+                    git_messages.append("git not available")
+                summary = "; ".join(git_messages)
+                if git_has_error:
+                    tracker.error("git", summary)
+                else:
+                    tracker.complete("git", summary)
 
                 try:
                     bundled_wf = _locate_bundled_workflow("speckit")
@@ -595,18 +557,6 @@ def register(app: typer.Typer) -> None:
                 )
                 console.print()
                 console.print(security_notice)
-
-        if git_default_notice:
-            default_change_notice = Panel(
-                "The git extension is currently enabled by default during [bold]specify init[/bold].\n"
-                "Starting in [bold]v0.10.0[/bold], this will require explicit opt-in.\n"
-                "Use [bold]specify extension add git[/bold] after init when needed.",
-                title="[yellow]Notice: Git Default Changing[/yellow]",
-                border_style="yellow",
-                padding=(1, 2),
-            )
-            console.print()
-            console.print(default_change_notice)
 
         steps_lines = []
         if not here:

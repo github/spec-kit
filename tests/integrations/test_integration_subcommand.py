@@ -23,7 +23,6 @@ def _init_project(tmp_path, integration="copilot"):
             "init", "--here",
             "--integration", integration,
             "--script", "sh",
-            "--no-git",
             "--ignore-agent-tools",
         ], catch_exceptions=False)
     finally:
