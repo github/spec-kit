@@ -147,12 +147,12 @@ mktemp_file() {
 arg_bytes() {
     local total=0
     local arg
-    local bytes
+    local old_lc_all="${LC_ALL:-}"
+    LC_ALL=C
     for arg in "$@"; do
-        bytes="$(LC_ALL=C printf '%s' "$arg" | wc -c | tr -d '[:space:]')"
-        bytes="${bytes:-0}"
-        total=$(( total + bytes + 1 ))
+        total=$(( total + ${#arg} + 1 ))
     done
+    LC_ALL="$old_lc_all"
     printf '%s\n' "$total"
 }
 
@@ -164,11 +164,7 @@ while (( idx < ${#PASSTHROUGH[@]} )); do
     arg="${PASSTHROUGH[$idx]}"
     case "$arg" in
         --collect-only|--co) COLLECT_ONLY_REQUESTED=1 ;;
-        -n|--numprocesses|--dist)
-            err "$arg is managed by this script; remove xdist flags from arguments"
-            exit 1
-            ;;
-        -n*|--numprocesses=*|--dist=*)
+        -n|--numprocesses|--dist|-n*|--numprocesses=*|--dist=*)
             err "$arg is managed by this script; remove xdist flags from arguments"
             exit 1
             ;;
