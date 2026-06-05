@@ -95,11 +95,32 @@ ensure_regular_file_or_missing() {
     fi
 }
 
+ensure_single_link() {
+    local path="$1"
+    local label="$2"
+    local links=""
+    if [[ ! -e "$path" ]]; then
+        return 0
+    fi
+    if links="$(stat -c %h "$path" 2>/dev/null)"; then
+        :
+    elif links="$(stat -f %l "$path" 2>/dev/null)"; then
+        :
+    else
+        return 0
+    fi
+    if [[ "$links" =~ ^[0-9]+$ ]] && (( links > 1 )); then
+        err "$label has multiple links ($links); refusing to use $path"
+        exit 1
+    fi
+}
+
 print_help() {
     awk '
         /^# Usage:/ {printing=1}
+    ensure_single_link "$CURSOR_FILE" "cursor path"
         printing {
-            if ($0 !~ /^#/) {exit}
+    cursor_tmp="$(mktemp_file "$PYTEST_CACHE_DIR")" || exit 1
             sub(/^# ?/, "", $0)
             print
         }
@@ -131,7 +152,20 @@ if ! [[ "$CHUNK_SIZE" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 mktemp_file() {
+    local target_dir="${1:-}"
     local tmp
+    if [[ -n "$target_dir" ]]; then
+        if tmp="$(mktemp -p "$target_dir" "${SCRIPT_STEM}.XXXXXX" 2>/dev/null)"; then
+            printf '%s\n' "$tmp"
+            return 0
+        fi
+        if tmp="$(mktemp "$target_dir/${SCRIPT_STEM}.XXXXXX" 2>/dev/null)"; then
+            printf '%s\n' "$tmp"
+            return 0
+        fi
+        err "mktemp failed in $target_dir; check permissions"
+        return 1
+    fi
     if tmp="$(mktemp -t "${SCRIPT_STEM}.XXXXXX" 2>/dev/null)"; then
         printf '%s\n' "$tmp"
         return 0
