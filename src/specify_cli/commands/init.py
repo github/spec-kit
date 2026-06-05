@@ -794,7 +794,7 @@ def register(app: typer.Typer) -> None:
         )
         copilot_skill_mode = selected_ai == "copilot" and _is_skills_integration
         devin_skill_mode = selected_ai == "devin"
-        zed_skill_mode = selected_ai == "zed"
+        zed_skill_mode = selected_ai == "zed" and _is_skills_integration
         cline_skill_mode = selected_ai == "cline"
         native_skill_mode = (
             codex_skill_mode
