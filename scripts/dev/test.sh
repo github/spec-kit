@@ -292,6 +292,7 @@ mkdir -p "$PYTEST_CACHE_DIR"
 
 if command -v flock >/dev/null 2>&1; then
     ensure_regular_file_or_missing "$LOCK_FILE" "lock file"
+    ensure_single_link "$LOCK_FILE" "lock file"
     exec 9>>"$LOCK_FILE" || { err "unable to open lock file: $LOCK_FILE"; exit 1; }
     if ! flock -n 9; then
         err "another run is active (lock: $LOCK_FILE)"
@@ -303,6 +304,9 @@ else
     ensure_dir_safe "$LOCK_DIR" "lock dir"
     if [[ -d "$LOCK_DIR" ]]; then
         if [[ -f "$LOCK_DIR/pid" ]]; then
+            local PID_CONTENTS
+            ensure_regular_file_or_missing "$LOCK_DIR/pid" "lock pid file"
+            ensure_single_link "$LOCK_DIR/pid" "lock pid file"
             PID_CONTENTS="$(tr -d '[:space:]' < "$LOCK_DIR/pid" 2>/dev/null || true)"
             if [[ "$PID_CONTENTS" =~ ^[0-9]+$ ]] && kill -0 "$PID_CONTENTS" 2>/dev/null; then
                 err "another run is active (lock: $LOCK_DIR)"
