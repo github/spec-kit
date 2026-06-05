@@ -31,7 +31,7 @@ Define what to build before building it. Rich templates, quality checklists, and
 
 ### Use any coding agent
 
-<span class="pillar-stat">33 integrations</span> — Copilot, Gemini, Codex, Windsurf, Zed, Claude, Forge, Kiro, and more. Switch freely between agents with a single command. No lock-in.
+<span class="pillar-stat">30+ integrations</span> — Copilot, Gemini, Codex, Windsurf, Zed, Claude, Forge, Kiro, and more. Switch freely between agents with a single command. No lock-in.
 
 Run `specify init` with your agent of choice and Spec Kit sets up the right command files, context rules, and directory structures automatically. If your agent isn't listed, the `generic` integration is an escape hatch for any tool.
 
@@ -90,7 +90,7 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
     <span class="stat-label">Contributors</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">33</span>
+    <span class="stat-number">30+</span>
     <span class="stat-label">Integrations</span>
   </div>
   <div class="stat-item">

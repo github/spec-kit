@@ -915,8 +915,6 @@ class ExtensionManager:
         if not skills_dir:
             return []
 
-        import yaml
-
         from . import load_init_options
         from .agents import CommandRegistrar
         from .integrations import get_integration

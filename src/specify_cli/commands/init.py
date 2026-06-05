@@ -341,6 +341,8 @@ def register(app: typer.Typer) -> None:
             )
             console.print(
                 "[yellow]Usage:[/yellow] specify init <project> --ai <agent> --ai-skills"
+            )
+            console.print(
                 "  or: specify init <project> --integration <key> --ai-skills"
             )
             raise typer.Exit(1)
