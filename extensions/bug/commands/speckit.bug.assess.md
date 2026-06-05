@@ -59,13 +59,13 @@ Before fetching, classify the URL by its host and scheme:
    - `stackoverflow.com`, `*.stackexchange.com`
    - `sentry.io`, `*.sentry.io`
 3. **Otherwise**, the host is unrecognized. Behavior depends on mode:
-   - **Interactive**: ask the user once, naming the resolved host explicitly — for example, `Fetch https://example.internal/foo (host: example.internal)? (yes/no)`. Default to **no**. Only fetch on an explicit affirmative.
+   - **Interactive**: ask the user once, naming the host parsed from the URL explicitly — for example, `Fetch https://example.internal/foo (host: example.internal)? (yes/no)`. Default to **no**. Only fetch on an explicit affirmative.
    - **Automated / non-interactive**: do **not** fetch. Record `[UNVERIFIED — fetch skipped: host not on safe list: <host>]` in the assessment and continue with whatever pasted text the user supplied.
 
 In every case, record in `assessment.md`:
 
 - The verbatim URL the user supplied.
-- The resolved host (post-redirect-resolution, if any).
+- The host parsed from that URL (no redirect following — see the rule above).
 - Which branch of the policy was taken: `allowlisted` / `confirmed-by-user` / `auto-refused: <reason>`.
 
 Do not attempt to validate the URL by issuing a preflight `HEAD` (or any other) request to "see what it is" — that probe is itself the request the policy gates.
