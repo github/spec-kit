@@ -2239,6 +2239,7 @@ class TestSelfTestPreset:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -2283,6 +2284,7 @@ class TestSelfTestPreset:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -2542,6 +2544,7 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -2699,6 +2702,7 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "commands": [
                     {
@@ -2752,6 +2756,7 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -2992,6 +2997,7 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -3044,6 +3050,7 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "commands": [
                     {
@@ -3072,6 +3079,7 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -3125,6 +3133,7 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -3221,6 +3230,7 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -3274,6 +3284,7 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -3330,6 +3341,7 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -3894,6 +3906,119 @@ class TestBundledPresetLocator:
         output = strip_ansi(result.output).lower()
         assert "bundled" in output, result.output
         assert "reinstall" in output, result.output
+
+
+class TestPresetAddFromUrlResolution:
+    """CLI-level tests for preset add --from <url> GitHub release resolution."""
+
+    def test_preset_add_from_github_release_url_resolves_and_downloads(self, project_dir):
+        """'preset add --from <github-release-url>' resolves to API asset URL."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        manifest_content = yaml.dump({
+            "schema_version": "1.0",
+            "preset": {"id": "my-preset", "name": "My Preset", "version": "1.0.0", "description": "Test preset", "author": "Test", "license": "MIT"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
+        })
+        zip_buf = __import__("io").BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", manifest_content)
+        zip_bytes = zip_buf.getvalue()
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data):
+                self._data = data
+
+            def read(self):
+                return self._data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None):
+            captured_urls.append((url, extra_headers))
+            if "releases/tags/" in url:
+                return FakeResponse(json.dumps({
+                    "assets": [{"name": "preset.zip", "url": "https://api.github.com/repos/org/repo/releases/assets/42"}]
+                }).encode())
+            return FakeResponse(zip_bytes)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="1.0.0"), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "preset", "add",
+                "--from", "https://github.com/org/repo/releases/download/v1.0/preset.zip",
+            ])
+
+        assert result.exit_code == 0, result.output
+        assert "My Preset" in result.output
+        # First call should resolve the release tag
+        assert any("releases/tags/v1.0" in url for url, _ in captured_urls)
+        # Second call should download from the resolved asset URL with octet-stream
+        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        assert len(asset_calls) >= 1
+        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    def test_preset_add_from_direct_api_asset_url_passes_through(self, project_dir):
+        """'preset add --from <api-asset-url>' uses URL directly with octet-stream."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manifest_content = yaml.dump({
+            "schema_version": "1.0",
+            "preset": {"id": "my-preset", "name": "My Preset", "version": "1.0.0", "description": "Test preset", "author": "Test", "license": "MIT"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
+        })
+        zip_buf = __import__("io").BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", manifest_content)
+        zip_bytes = zip_buf.getvalue()
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data):
+                self._data = data
+
+            def read(self):
+                return self._data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None):
+            captured_urls.append((url, extra_headers))
+            return FakeResponse(zip_bytes)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="1.0.0"), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "preset", "add",
+                "--from", "https://api.github.com/repos/org/repo/releases/assets/42",
+            ])
+
+        assert result.exit_code == 0, result.output
+        # Should go directly to the asset URL with Accept header
+        assert len(captured_urls) == 1
+        assert captured_urls[0][0] == "https://api.github.com/repos/org/repo/releases/assets/42"
+        assert captured_urls[0][1] == {"Accept": "application/octet-stream"}
 
 
 class TestWrapStrategy:
