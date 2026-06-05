@@ -24,8 +24,8 @@ find_specify_root() {
     return 1
 }
 
-# Get repository root, prioritizing .specify directory over git
-# This prevents using a parent git repo when spec-kit is initialized in a subdirectory
+# Get repository root, prioritizing .specify directory
+# This prevents using a parent repository when spec-kit is initialized in a subdirectory
 get_repo_root() {
     # First, look for .specify directory (spec-kit's own marker)
     local specify_root
@@ -34,18 +34,12 @@ get_repo_root() {
         return
     fi
 
-    # Fallback to git if no .specify found
-    if git rev-parse --show-toplevel >/dev/null 2>&1; then
-        git rev-parse --show-toplevel
-        return
-    fi
-
-    # Final fallback to script location for non-git repos
+    # Final fallback to script location
     local script_dir="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     (cd "$script_dir/../../.." && pwd)
 }
 
-# Get current branch, with fallback for non-git repositories
+# Get current feature name, with directory-based fallback
 get_current_branch() {
     # First check if SPECIFY_FEATURE environment variable is set
     if [[ -n "${SPECIFY_FEATURE:-}" ]]; then
@@ -53,14 +47,9 @@ get_current_branch() {
         return
     fi
 
-    # Then check git if available at the spec-kit root (not parent)
     local repo_root=$(get_repo_root)
-    if has_git; then
-        git -C "$repo_root" rev-parse --abbrev-ref HEAD
-        return
-    fi
 
-    # For non-git repos, try to find the latest feature directory
+    # Fall back to the latest feature directory
     local specs_dir="$repo_root/specs"
 
     if [[ -d "$specs_dir" ]]; then
@@ -101,58 +90,6 @@ get_current_branch() {
     echo "main"  # Final fallback
 }
 
-# Check if we have git available at the spec-kit root level
-# Returns true only if git is installed and the repo root is inside a git work tree
-# Handles both regular repos (.git directory) and worktrees/submodules (.git file)
-has_git() {
-    # First check if git command is available (before calling get_repo_root which may use git)
-    command -v git >/dev/null 2>&1 || return 1
-    local repo_root=$(get_repo_root)
-    # Check if .git exists (directory or file for worktrees/submodules)
-    [ -e "$repo_root/.git" ] || return 1
-    # Verify it's actually a valid git work tree
-    git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1
-}
-
-# Strip a single optional path segment (e.g. gitflow "feat/004-name" -> "004-name").
-# Only when the full name is exactly two slash-free segments; otherwise returns the raw name.
-spec_kit_effective_branch_name() {
-    local raw="$1"
-    if [[ "$raw" =~ ^([^/]+)/([^/]+)$ ]]; then
-        printf '%s\n' "${BASH_REMATCH[2]}"
-    else
-        printf '%s\n' "$raw"
-    fi
-}
-
-check_feature_branch() {
-    local raw="$1"
-    local has_git_repo="$2"
-
-    # For non-git repos, we can't enforce branch naming but still provide output
-    if [[ "$has_git_repo" != "true" ]]; then
-        echo "[specify] Warning: Git repository not detected; skipped branch validation" >&2
-        return 0
-    fi
-
-    local branch
-    branch=$(spec_kit_effective_branch_name "$raw")
-
-    # Accept sequential prefix (3+ digits) but exclude malformed timestamps
-    # Malformed: 7-or-8 digit date + 6-digit time with no trailing slug (e.g. "2026031-143022" or "20260319-143022")
-    local is_sequential=false
-    if [[ "$branch" =~ ^[0-9]{3,}- ]] && [[ ! "$branch" =~ ^[0-9]{7}-[0-9]{6}- ]] && [[ ! "$branch" =~ ^[0-9]{7,8}-[0-9]{6}$ ]]; then
-        is_sequential=true
-    fi
-    if [[ "$is_sequential" != "true" ]] && [[ ! "$branch" =~ ^[0-9]{8}-[0-9]{6}- ]]; then
-        echo "ERROR: Not on a feature branch. Current branch: $raw" >&2
-        echo "Feature branches should be named like: 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name" >&2
-        return 1
-    fi
-
-    return 0
-}
-
 # Safely read .specify/feature.json's "feature_directory" value.
 # Prints the raw value (possibly relative) to stdout, or empty string if the file
 # is missing, unparseable, or does not contain the key. Always returns 0 so callers
@@ -186,7 +123,7 @@ read_feature_json_feature_directory() {
 }
 
 # Returns 0 when .specify/feature.json lists feature_directory that exists as a directory
-# and matches the resolved active FEATURE_DIR (so __SPECKIT_COMMAND_PLAN__ can skip git branch pattern checks).
+# and matches the resolved active FEATURE_DIR.
 # Delegates parsing to read_feature_json_feature_directory, which is safe under `set -e`.
 feature_json_matches_feature_dir() {
     local repo_root="$1"
@@ -206,12 +143,14 @@ feature_json_matches_feature_dir() {
     [[ "$norm_json" == "$norm_active" ]]
 }
 
-# Find feature directory by numeric prefix instead of exact branch match
-# This allows multiple branches to work on the same spec (e.g., 004-fix-bug, 004-add-feature)
+# Find feature directory by numeric prefix instead of exact feature-name match
+# This allows multiple names to work on the same spec (e.g., feat/004-fix-bug, 004-add-feature)
 find_feature_dir_by_prefix() {
     local repo_root="$1"
-    local branch_name
-    branch_name=$(spec_kit_effective_branch_name "$2")
+    local branch_name="$2"
+    if [[ "$branch_name" =~ ^([^/]+)/([^/]+)$ ]]; then
+        branch_name="${BASH_REMATCH[2]}"
+    fi
     local specs_dir="$repo_root/specs"
 
     # Extract prefix from branch (e.g., "004" from "004-whatever" or "20260319-143022" from timestamp branches)
@@ -254,11 +193,6 @@ find_feature_dir_by_prefix() {
 get_feature_paths() {
     local repo_root=$(get_repo_root)
     local current_branch=$(get_current_branch)
-    local has_git_repo="false"
-
-    if has_git; then
-        has_git_repo="true"
-    fi
 
     # Resolve feature directory.  Priority:
     #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit override)
@@ -291,7 +225,6 @@ get_feature_paths() {
     # via crafted branch names or paths containing special characters
     printf 'REPO_ROOT=%q\n' "$repo_root"
     printf 'CURRENT_BRANCH=%q\n' "$current_branch"
-    printf 'HAS_GIT=%q\n' "$has_git_repo"
     printf 'FEATURE_DIR=%q\n' "$feature_dir"
     printf 'FEATURE_SPEC=%q\n' "$feature_dir/spec.md"
     printf 'IMPL_PLAN=%q\n' "$feature_dir/plan.md"

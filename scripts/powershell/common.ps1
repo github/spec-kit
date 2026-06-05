@@ -24,8 +24,8 @@ function Find-SpecifyRoot {
     }
 }
 
-# Get repository root, prioritizing .specify directory over git
-# This prevents using a parent git repo when spec-kit is initialized in a subdirectory
+# Get repository root, prioritizing .specify directory
+# This prevents using a parent repository when spec-kit is initialized in a subdirectory
 function Get-RepoRoot {
     # First, look for .specify directory (spec-kit's own marker)
     $specifyRoot = Find-SpecifyRoot
@@ -33,17 +33,7 @@ function Get-RepoRoot {
         return $specifyRoot
     }
 
-    # Fallback to git if no .specify found
-    try {
-        $result = git rev-parse --show-toplevel 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            return $result
-        }
-    } catch {
-        # Git command failed
-    }
-
-    # Final fallback to script location for non-git repos
+    # Final fallback to script location
     # Use -LiteralPath to handle paths with wildcard characters
     return (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "../../..")).Path
 }
@@ -54,20 +44,9 @@ function Get-CurrentBranch {
         return $env:SPECIFY_FEATURE
     }
 
-    # Then check git if available at the spec-kit root (not parent)
     $repoRoot = Get-RepoRoot
-    if (Test-HasGit) {
-        try {
-            $result = git -C $repoRoot rev-parse --abbrev-ref HEAD 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                return $result
-            }
-        } catch {
-            # Git command failed
-        }
-    }
 
-    # For non-git repos, try to find the latest feature directory
+    # Fall back to the latest feature directory
     $specsDir = Join-Path $repoRoot "specs"
     
     if (Test-Path $specsDir) {
@@ -104,68 +83,8 @@ function Get-CurrentBranch {
     return "main"
 }
 
-# Check if we have git available at the spec-kit root level
-# Returns true only if git is installed and the repo root is inside a git work tree
-# Handles both regular repos (.git directory) and worktrees/submodules (.git file)
-function Test-HasGit {
-    # First check if git command is available (before calling Get-RepoRoot which may use git)
-    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-        return $false
-    }
-    $repoRoot = Get-RepoRoot
-    # Check if .git exists (directory or file for worktrees/submodules)
-    # Use -LiteralPath to handle paths with wildcard characters
-    if (-not (Test-Path -LiteralPath (Join-Path $repoRoot ".git"))) {
-        return $false
-    }
-    # Verify it's actually a valid git work tree
-    try {
-        $null = git -C $repoRoot rev-parse --is-inside-work-tree 2>$null
-        return ($LASTEXITCODE -eq 0)
-    } catch {
-        return $false
-    }
-}
-
-# Strip a single optional path segment (e.g. gitflow "feat/004-name" -> "004-name").
-# Only when the full name is exactly two slash-free segments; otherwise returns the raw name.
-function Get-SpecKitEffectiveBranchName {
-    param([string]$Branch)
-    if ($Branch -match '^([^/]+)/([^/]+)$') {
-        return $Matches[2]
-    }
-    return $Branch
-}
-
-function Test-FeatureBranch {
-    param(
-        [string]$Branch,
-        [bool]$HasGit = $true
-    )
-    
-    # For non-git repos, we can't enforce branch naming but still provide output
-    if (-not $HasGit) {
-        Write-Warning "[specify] Warning: Git repository not detected; skipped branch validation"
-        return $true
-    }
-
-    $raw = $Branch
-    $Branch = Get-SpecKitEffectiveBranchName $raw
-    
-    # Accept sequential prefix (3+ digits) but exclude malformed timestamps
-    # Malformed: 7-or-8 digit date + 6-digit time with no trailing slug (e.g. "2026031-143022" or "20260319-143022")
-    $hasMalformedTimestamp = ($Branch -match '^[0-9]{7}-[0-9]{6}-') -or ($Branch -match '^(?:\d{7}|\d{8})-\d{6}$')
-    $isSequential = ($Branch -match '^[0-9]{3,}-') -and (-not $hasMalformedTimestamp)
-    if (-not $isSequential -and $Branch -notmatch '^\d{8}-\d{6}-') {
-        [Console]::Error.WriteLine("ERROR: Not on a feature branch. Current branch: $raw")
-        [Console]::Error.WriteLine("Feature branches should be named like: 001-feature-name, 1234-feature-name, or 20260319-143022-feature-name")
-        return $false
-    }
-    return $true
-}
-
 # True when .specify/feature.json pins an existing feature directory that matches the
-# active FEATURE_DIR from Get-FeaturePathsEnv (so __SPECKIT_COMMAND_PLAN__ can skip git branch pattern checks).
+# active FEATURE_DIR from Get-FeaturePathsEnv.
 function Test-FeatureJsonMatchesFeatureDir {
     param(
         [Parameter(Mandatory = $true)][string]$RepoRoot,
@@ -239,7 +158,10 @@ function Find-FeatureDirByPrefix {
         [Parameter(Mandatory = $true)][string]$Branch
     )
     $specsDir = Join-Path $RepoRoot 'specs'
-    $branchName = Get-SpecKitEffectiveBranchName $Branch
+    $branchName = $Branch
+    if ($branchName -match '^([^/]+)/([^/]+)$') {
+        $branchName = $Matches[2]
+    }
 
     $prefix = $null
     if ($branchName -match '^(\d{8}-\d{6})-') {
@@ -284,8 +206,7 @@ function Get-FeatureDirFromBranchPrefixOrExit {
 function Get-FeaturePathsEnv {
     $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
-    $hasGit = Test-HasGit
-
+ 
     # Resolve feature directory.  Priority:
     #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit override)
     #   2. .specify/feature.json "feature_directory" key (persisted by __SPECKIT_COMMAND_SPECIFY__)
@@ -321,7 +242,6 @@ function Get-FeaturePathsEnv {
     [PSCustomObject]@{
         REPO_ROOT     = $repoRoot
         CURRENT_BRANCH = $currentBranch
-        HAS_GIT       = $hasGit
         FEATURE_DIR   = $featureDir
         FEATURE_SPEC  = Join-Path $featureDir 'spec.md'
         IMPL_PLAN     = Join-Path $featureDir 'plan.md'

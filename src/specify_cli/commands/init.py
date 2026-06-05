@@ -23,7 +23,7 @@ from .._assets import (
     get_speckit_version,
 )
 from .._console import StepTracker, console, select_with_arrows, show_banner
-from .._utils import check_tool, init_git_repo, is_git_repo
+from .._utils import check_tool
 
 
 def _stdin_is_interactive() -> bool:
@@ -90,13 +90,12 @@ def register(app: typer.Typer) -> None:
         match the installed CLI version.
 
         This command will:
-        1. Check that required tools are installed (git is optional)
+        1. Check that required tools are installed
         2. Let you choose your coding agent integration, or default to Copilot
            in non-interactive sessions
         3. Install bundled Spec Kit templates, scripts, workflow, and shared
            project infrastructure
-        4. Initialize a fresh git repository (if git is available and no existing repo)
-        5. Set up coding agent integration commands and optional presets
+        4. Set up coding agent integration commands and optional presets
 
         Examples:
             specify init my-project
@@ -244,10 +243,6 @@ def register(app: typer.Typer) -> None:
 
         console.print(Panel("\n".join(setup_lines), border_style="cyan", padding=(1, 2)))
 
-        should_init_git = check_tool("git")
-        if not should_init_git:
-            console.print("[yellow]Git not found - will skip repository initialization[/yellow]")
-
         if not ignore_agent_tools:
             agent_config = AGENT_CONFIG.get(selected_ai)
             if agent_config and agent_config["requires_cli"]:
@@ -297,7 +292,6 @@ def register(app: typer.Typer) -> None:
         for key, label in [
             ("chmod", "Ensure scripts executable"),
             ("constitution", "Constitution setup"),
-            ("git", "Git repository setup"),
             ("workflow", "Install bundled workflow"),
             ("agent-context", "Install agent-context extension"),
             ("final", "Finalize"),
@@ -355,30 +349,6 @@ def register(app: typer.Typer) -> None:
                 tracker.complete("shared-infra", f"scripts ({selected_script}) + templates")
 
                 ensure_constitution_from_template(project_path, tracker=tracker)
-
-                tracker.start("git")
-                git_messages = []
-                git_has_error = False
-                if is_git_repo(project_path):
-                    git_messages.append("existing repo detected")
-                elif should_init_git:
-                    success, error_msg = init_git_repo(project_path, quiet=True)
-                    if success:
-                        git_messages.append("initialized")
-                    else:
-                        git_has_error = True
-                        if error_msg:
-                            sanitized = error_msg.replace('\n', ' ').strip()
-                            git_messages.append(f"init failed: {sanitized[:120]}")
-                        else:
-                            git_messages.append("init failed")
-                else:
-                    git_messages.append("git not available")
-                summary = "; ".join(git_messages)
-                if git_has_error:
-                    tracker.error("git", summary)
-                else:
-                    tracker.complete("git", summary)
 
                 try:
                     bundled_wf = _locate_bundled_workflow("speckit")
