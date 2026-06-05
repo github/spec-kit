@@ -24,7 +24,7 @@ Resolve `BUG_SLUG` in this order, stopping at the first match:
 
 1. **Explicit user input** — a slug passed in `$ARGUMENTS` (any of the forms above).
 2. **Conversation context** — if the current session has just run `__SPECKIT_COMMAND_BUG_ASSESS__`, the slug it reported is the working slug. Reuse it without re-prompting. Confirm it by checking that `.specify/bugs/<slug>/assessment.md` exists; if it does not, fall through.
-3. **Single candidate on disk** — list `.specify/bugs/*/assessment.md`. If exactly one bug directory exists, use it.
+3. **Single candidate on disk** — list `.specify/bugs/*/assessment.md`. If exactly one matching `assessment.md` is found, use the slug from its parent directory.
 4. **Disambiguate**:
    - **Interactive mode**: ask the user which bug to fix and list the candidates.
    - **Automated mode**: stop with an error listing the candidates. Do not guess.

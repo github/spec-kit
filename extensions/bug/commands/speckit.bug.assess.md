@@ -32,7 +32,7 @@ After resolution, set `BUG_SLUG` and `BUG_DIR = .specify/bugs/<BUG_SLUG>`.
 
 ## Prerequisites
 
-- Create `BUG_DIR` if it does not already exist: `mkdir -p .specify/bugs/<BUG_SLUG>`
+- Ensure the directory `.specify/bugs/<BUG_SLUG>/` (i.e., `BUG_DIR`) exists, creating it (including any missing parents) if necessary. Use whatever mechanism is appropriate for the current environment.
 - If `BUG_DIR/assessment.md` already exists, ask the user whether to overwrite it before continuing (in interactive mode); in automated mode, refuse and pick a new unique slug instead.
 
 ## Execution
