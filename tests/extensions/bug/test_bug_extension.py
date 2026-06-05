@@ -4,7 +4,9 @@ Validates:
 - Bundled layout (manifest, README, three command files)
 - Catalog registration
 - Wheel/source-checkout resolution via ``_locate_bundled_extension``
-- Install via ``ExtensionManager.install_from_directory`` registers the three commands
+- Install via ``ExtensionManager.install_from_directory`` copies the three
+  command files and records them in the installed manifest (command
+  registration with AI agents is exercised separately and not asserted here)
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from pathlib import Path
 
 import yaml
 
-from specify_cli._assets import _locate_bundled_extension
+from specify_cli import _locate_bundled_extension
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
