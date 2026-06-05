@@ -3495,7 +3495,7 @@ steps:
     def test_workflow_add_from_github_release_url_resolves_and_downloads(self, project_dir):
         """'workflow add <github-release-url>' resolves to API asset URL."""
         from typer.testing import CliRunner
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import patch
         from specify_cli import app
 
         captured_urls = []
