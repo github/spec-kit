@@ -595,7 +595,7 @@ def dev_integration_scaffold(
     integration_type: str = typer.Option(
         "markdown",
         "--type",
-        click_type=click.Choice(INTEGRATION_SCAFFOLD_TYPES),
+        click_type=click.Choice(INTEGRATION_SCAFFOLD_TYPES, case_sensitive=False),
         help=f"Scaffold type: {', '.join(INTEGRATION_SCAFFOLD_TYPES)}",
     ),
 ):

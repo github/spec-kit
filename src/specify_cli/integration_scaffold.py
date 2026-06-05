@@ -175,6 +175,37 @@ def _is_spec_kit_repo_root(project_root: Path) -> bool:
     )
 
 
+def _assert_safe_scaffold_target(project_root: Path, target: Path) -> None:
+    """Refuse to scaffold through a symlinked path that could escape the repo.
+
+    Walks each component of *target* under *project_root* and rejects any
+    existing symlinked directory (or symlinked target), then confirms the
+    write destination still resolves inside the repository root. Mirrors the
+    symlink-aware guarding used for integration manifests.
+    """
+    try:
+        rel = target.relative_to(project_root)
+    except ValueError:
+        raise ValueError(
+            f"Refusing to scaffold outside the repository root: {target}"
+        ) from None
+
+    current = project_root
+    for part in rel.parts:
+        current = current / part
+        if current.is_symlink():
+            label = current.relative_to(project_root).as_posix()
+            raise ValueError(f"Refusing to scaffold through symlinked path: {label}")
+
+    root_resolved = project_root.resolve()
+    try:
+        target.parent.resolve().relative_to(root_resolved)
+    except (OSError, ValueError):
+        raise ValueError(
+            f"Refusing to scaffold outside the repository root: {target}"
+        ) from None
+
+
 def scaffold_integration(
     project_root: Path,
     key: str,
@@ -199,6 +230,9 @@ def scaffold_integration(
     integration_dir = integrations_root / package_name
     integration_file = integration_dir / "__init__.py"
     test_file = tests_root / f"test_integration_{package_name}.py"
+
+    for target in (integration_file, test_file):
+        _assert_safe_scaffold_target(project_root, target)
 
     existing = [path for path in (integration_file, test_file) if path.exists()]
     if existing:

@@ -135,3 +135,40 @@ def test_scaffold_requires_integration_registry_file(tmp_path):
 
     with pytest.raises(ValueError, match="Spec Kit repository root"):
         scaffold_integration(root, "my-agent", "markdown")
+
+
+def test_scaffold_refuses_symlinked_target_directory(tmp_path):
+    root = _repo_root(tmp_path)
+    # `outside` carries its own __init__.py so the repo-root heuristic still
+    # passes through the symlink, isolating the symlink guard under test.
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "__init__.py").write_text("", encoding="utf-8")
+    integrations = root / "src" / "specify_cli" / "integrations"
+    (integrations / "__init__.py").unlink()
+    integrations.rmdir()
+    try:
+        integrations.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    with pytest.raises(ValueError, match="symlinked path"):
+        scaffold_integration(root, "my-agent", "markdown")
+
+    assert not (outside / "my_agent").exists()
+
+
+def test_dev_integration_scaffold_accepts_uppercase_type(tmp_path, monkeypatch):
+    root = _repo_root(tmp_path)
+    monkeypatch.chdir(root)
+
+    result = runner.invoke(app, [
+        "dev", "integration", "scaffold", "my-agent",
+        "--type", "YAML",
+    ], catch_exceptions=False)
+
+    assert result.exit_code == 0, strip_ansi(result.output)
+    content = (
+        root / "src" / "specify_cli" / "integrations" / "my_agent" / "__init__.py"
+    ).read_text(encoding="utf-8")
+    assert "class MyAgentIntegration(YamlIntegration):" in content
