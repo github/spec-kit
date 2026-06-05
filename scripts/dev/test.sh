@@ -415,6 +415,9 @@ fi
 # 2. Determine starting cursor.
 START=0
 if (( RESUME )) && [[ -f "$CURSOR_FILE" ]]; then
+    ensure_dir_safe "$PYTEST_CACHE_DIR" "pytest cache dir"
+    ensure_regular_file_or_missing "$CURSOR_FILE" "cursor path"
+    ensure_single_link "$CURSOR_FILE" "cursor path"
     RAW_START="$(tr -d '[:space:]' < "$CURSOR_FILE")"
     if [[ "$RAW_START" =~ ^[0-9]+$ ]]; then
         START="$RAW_START"
@@ -422,13 +425,13 @@ if (( RESUME )) && [[ -f "$CURSOR_FILE" ]]; then
         log "resuming from next test index: $START"
     else
         err "cursor file is invalid ('$RAW_START'); starting from 0"
-        rm -f "$CURSOR_FILE"
+        remove_cursor_safe
     fi
 fi
 
 if (( START >= TOTAL )); then
     log "nothing to resume (cursor at end: $START/$TOTAL)"
-    rm -f "$CURSOR_FILE"
+    remove_cursor_safe
     exit 0
 fi
 
