@@ -304,7 +304,6 @@ else
     ensure_dir_safe "$LOCK_DIR" "lock dir"
     if [[ -d "$LOCK_DIR" ]]; then
         if [[ -f "$LOCK_DIR/pid" ]]; then
-            local PID_CONTENTS
             ensure_regular_file_or_missing "$LOCK_DIR/pid" "lock pid file"
             ensure_single_link "$LOCK_DIR/pid" "lock pid file"
             PID_CONTENTS="$(tr -d '[:space:]' < "$LOCK_DIR/pid" 2>/dev/null || true)"
