@@ -618,13 +618,20 @@ class PresetManager:
         # Filter out extension command overrides if the extension isn't installed.
         # Command names follow the pattern: speckit.<ext-id>.<cmd-name>
         # Core commands (e.g. speckit.specify) have only one dot — always register.
+        # Only skip a 3-part command when it uses a composition strategy
+        # (append/prepend/wrap) and the target extension isn't installed — those
+        # commands require a base command to compose against.  Commands with the
+        # default "replace" strategy are self-contained and must always be
+        # registered, even when the <ext-id> segment doesn't match an installed
+        # extension (e.g. new preset commands in a fresh namespace).
         extensions_dir = self.project_root / ".specify" / "extensions"
         filtered = []
         for cmd in command_templates:
             parts = cmd["name"].split(".")
             if len(parts) >= 3 and parts[0] == "speckit":
                 ext_id = parts[1]
-                if not (extensions_dir / ext_id).is_dir():
+                strategy = cmd.get("strategy", "replace")
+                if strategy != "replace" and not (extensions_dir / ext_id).is_dir():
                     continue
             filtered.append(cmd)
 
@@ -1236,13 +1243,17 @@ class PresetManager:
 
         # Filter out extension command overrides if the extension isn't installed,
         # matching the same logic used by _register_commands().
+        # Only skip a 3-part command when it uses a composition strategy
+        # (append/prepend/wrap) and the target extension isn't installed; "replace"
+        # commands are self-contained and always registered.
         extensions_dir = self.project_root / ".specify" / "extensions"
         filtered = []
         for cmd in command_templates:
             parts = cmd["name"].split(".")
             if len(parts) >= 3 and parts[0] == "speckit":
                 ext_id = parts[1]
-                if not (extensions_dir / ext_id).is_dir():
+                strategy = cmd.get("strategy", "replace")
+                if strategy != "replace" and not (extensions_dir / ext_id).is_dir():
                     continue
             filtered.append(cmd)
 
@@ -1588,6 +1599,8 @@ class PresetManager:
         # install order doesn't determine the winning command file.
         # Apply the same extension-installed filter as _register_commands to
         # avoid reconciling extension commands when the extension isn't installed.
+        # Only skip composition-strategy (append/prepend/wrap) commands whose
+        # target extension isn't installed; "replace" commands are always included.
         extensions_dir = self.project_root / ".specify" / "extensions"
         cmd_names = []
         for t in manifest.templates:
@@ -1597,7 +1610,8 @@ class PresetManager:
             parts = name.split(".")
             if len(parts) >= 3 and parts[0] == "speckit":
                 ext_id = parts[1]
-                if not (extensions_dir / ext_id).is_dir():
+                strategy = t.get("strategy", "replace")
+                if strategy != "replace" and not (extensions_dir / ext_id).is_dir():
                     continue
             cmd_names.append(name)
         if cmd_names:

@@ -2155,7 +2155,7 @@ class TestSelfTestPreset:
         assert metadata["registered_commands"] == {}
 
     def test_extension_command_skipped_when_extension_missing(self, project_dir, temp_dir):
-        """Test that extension command overrides are skipped if the extension isn't installed."""
+        """Test that composition-strategy extension overrides are skipped if the extension isn't installed."""
         claude_dir = project_dir / ".claude" / "skills"
         claude_dir.mkdir(parents=True)
 
@@ -2181,6 +2181,7 @@ class TestSelfTestPreset:
                         "name": "speckit.fakeext.cmd",
                         "file": "commands/speckit.fakeext.cmd.md",
                         "description": "Override fakeext cmd",
+                        "strategy": "append",
                     }
                 ]
             },
@@ -2191,11 +2192,53 @@ class TestSelfTestPreset:
         manager = PresetManager(project_dir)
         manager.install_from_directory(preset_dir, "0.1.5")
 
-        # Extension not installed — command should NOT be registered
+        # Extension not installed — composition override should NOT be registered
         cmd_file = claude_dir / "speckit.fakeext.cmd.md"
-        assert not cmd_file.exists(), "Command registered for missing extension"
+        assert not cmd_file.exists(), "Composition override registered for missing extension"
         metadata = manager.registry.get("ext-override")
         assert metadata["registered_commands"] == {}
+
+    def test_preset_command_new_namespace_always_registered(self, project_dir, temp_dir):
+        """Test that preset commands in a new 3-part namespace are registered even without a matching extension."""
+        claude_dir = project_dir / ".claude" / "skills"
+        claude_dir.mkdir(parents=True)
+
+        preset_dir = temp_dir / "new-namespace-preset"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.myplugin.reviewer.md").write_text(
+            "---\ndescription: My plugin reviewer command\n---\nReviewer content"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "new-namespace",
+                "name": "New Namespace",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.myplugin.reviewer",
+                        "file": "commands/speckit.myplugin.reviewer.md",
+                        "description": "My plugin reviewer",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        # No extension named "myplugin" exists, but the command uses "replace" (default)
+        # strategy and is self-contained — it must be registered.
+        cmd_file = claude_dir / "speckit-myplugin-reviewer" / "SKILL.md"
+        assert cmd_file.exists(), "New preset command in novel namespace was not registered"
 
     def test_extension_command_registered_when_extension_present(self, project_dir, temp_dir):
         """Test that extension command overrides ARE registered when the extension is installed."""
