@@ -43,16 +43,6 @@ class TestCliDiagnosticFormatting:
 
 
 class TestInitIntegrationFlag:
-    def test_integration_and_ai_mutually_exclusive(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        result = runner.invoke(app, [
-            "init", str(tmp_path / "test-project"), "--ai", "claude", "--integration", "copilot",
-        ])
-        assert result.exit_code != 0
-        assert "mutually exclusive" in result.output
-
     def test_unknown_integration_rejected(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
@@ -131,7 +121,7 @@ class TestInitIntegrationFlag:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
 
-    def test_ai_copilot_auto_promotes(self, tmp_path):
+    def test_integration_copilot_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
         project = tmp_path / "promote-test"
@@ -141,65 +131,41 @@ class TestInitIntegrationFlag:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "copilot", "--script", "sh", "--no-git",
+                "init", "--here", "--integration", "copilot", "--script", "sh", "--no-git",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
 
-    def test_ai_emits_deprecation_warning_with_integration_replacement(self, tmp_path):
+    def test_legacy_ai_flag_rejected(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "init", str(tmp_path / "test-project"), "--ai", "copilot",
+        ])
+        assert result.exit_code != 0
 
-        project = tmp_path / "warn-ai"
-        project.mkdir()
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            runner = CliRunner()
-            result = runner.invoke(app, [
-                "init", "--here", "--ai", "copilot", "--script", "sh", "--no-git",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 0, result.output
-        assert "Deprecation Warning" in normalized_output
-        assert "--ai" in normalized_output
-        assert "deprecated" in normalized_output
-        assert "no longer be available" in normalized_output
-        assert "0.10.0" in normalized_output
-        assert "--integration copilot" in normalized_output
-        assert normalized_output.index("Deprecation Warning") < normalized_output.index("Next Steps")
-        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
-
-    def test_ai_generic_warning_suggests_integration_options_equivalent(self, tmp_path):
+    def test_legacy_ai_commands_dir_flag_rejected(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "init", str(tmp_path / "test-project"), "--integration", "generic",
+            "--ai-commands-dir", ".myagent/commands",
+        ])
+        assert result.exit_code != 0
 
-        project = tmp_path / "warn-generic"
-        project.mkdir()
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            runner = CliRunner()
-            result = runner.invoke(app, [
-                "init", "--here", "--ai", "generic", "--ai-commands-dir", ".myagent/commands",
-                "--script", "sh", "--no-git",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 0, result.output
-        assert "Deprecation Warning" in normalized_output
-        assert "--integration generic" in normalized_output
-        assert "--integration-options" in normalized_output
-        assert ".myagent/commands" in normalized_output
-        assert normalized_output.index("Deprecation Warning") < normalized_output.index("Next Steps")
-        assert (project / ".myagent" / "commands" / "speckit.plan.md").exists()
+    def test_legacy_ai_skills_flag_rejected(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "init", str(tmp_path / "test-project"), "--integration", "claude",
+            "--ai-skills",
+        ])
+        assert result.exit_code != 0
 
     def test_init_optional_preset_failure_reports_target_and_continues(
         self, tmp_path, monkeypatch
@@ -237,7 +203,7 @@ class TestInitIntegrationFlag:
         assert "Continuing without the optional preset" in normalized
         assert "Project ready" in normalized
 
-    def test_ai_claude_here_preserves_preexisting_commands(self, tmp_path):
+    def test_integration_claude_here_preserves_preexisting_commands(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -255,7 +221,7 @@ class TestInitIntegrationFlag:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--force", "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git", "--ignore-agent-tools",
+                "init", "--here", "--force", "--integration", "claude", "--script", "sh", "--no-git", "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -800,7 +766,7 @@ class TestGitExtensionAutoInstall:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "claude", "--script", "sh",
+                "init", "--here", "--integration", "claude", "--script", "sh",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -838,7 +804,7 @@ class TestGitExtensionAutoInstall:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "claude", "--script", "sh",
+                "init", "--here", "--integration", "claude", "--script", "sh",
                 "--no-git", "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -862,7 +828,7 @@ class TestGitExtensionAutoInstall:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "claude", "--script", "sh",
+                "init", "--here", "--integration", "claude", "--script", "sh",
                 "--no-git", "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -889,7 +855,7 @@ class TestGitExtensionAutoInstall:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "claude", "--script", "sh",
+                "init", "--here", "--integration", "claude", "--script", "sh",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -915,7 +881,7 @@ class TestGitExtensionAutoInstall:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "claude", "--script", "sh",
+                "init", "--here", "--integration", "claude", "--script", "sh",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:

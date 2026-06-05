@@ -92,19 +92,19 @@ class TestCursorMdcFrontmatter:
         assert not ctx_path.exists()
 
 
-class TestCursorAgentAutoPromote:
-    """--ai cursor-agent auto-promotes to integration path."""
+class TestCursorAgentIntegration:
+    """--integration cursor-agent creates expected files."""
 
-    def test_ai_cursor_agent_without_ai_skills_auto_promotes(self, tmp_path):
-        """--ai cursor-agent should work the same as --integration cursor-agent."""
+    def test_integration_cursor_agent_creates_skills(self, tmp_path):
+        """--integration cursor-agent should create skills in .cursor/skills."""
         from typer.testing import CliRunner
         from specify_cli import app
 
         runner = CliRunner()
         target = tmp_path / "test-proj"
-        result = runner.invoke(app, ["init", str(target), "--ai", "cursor-agent", "--no-git", "--ignore-agent-tools", "--script", "sh"])
+        result = runner.invoke(app, ["init", str(target), "--integration", "cursor-agent", "--no-git", "--ignore-agent-tools", "--script", "sh"])
 
-        assert result.exit_code == 0, f"init --ai cursor-agent failed: {result.output}"
+        assert result.exit_code == 0, f"init --integration cursor-agent failed: {result.output}"
         assert (target / ".cursor" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
 
@@ -120,7 +120,7 @@ class TestCursorAgentCliDispatch:
     def test_requires_cli_is_false_for_ide_first_flow(self):
         """``requires_cli`` must stay False so the IDE-only flow keeps working.
 
-        ``specify init --ai cursor-agent`` (without ``--ignore-agent-tools``)
+        ``specify init --integration cursor-agent`` (without ``--ignore-agent-tools``)
         treats ``requires_cli=True`` as a hard precheck and fails when the
         ``cursor-agent`` CLI isn't on PATH — even though the Cursor IDE
         / skills flow can run without it.  Workflow dispatch support is
