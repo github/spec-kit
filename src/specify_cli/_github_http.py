@@ -9,7 +9,7 @@ third-party hosts on redirects.
 import os
 import urllib.request
 from typing import Callable, Dict, Optional
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 # GitHub-owned hostnames that should receive the Authorization header.
 # Includes codeload.github.com because GitHub archive URL downloads
@@ -133,7 +133,8 @@ def resolve_github_release_asset_api_url(
 
     owner, repo, tag = parts[0], parts[1], parts[4]
     asset_name = "/".join(parts[5:])
-    release_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+    encoded_tag = quote(tag, safe="")
+    release_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{encoded_tag}"
 
     try:
         with open_url_fn(release_url, timeout=timeout) as response:
