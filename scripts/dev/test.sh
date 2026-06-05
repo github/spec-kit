@@ -115,6 +115,13 @@ ensure_single_link() {
     fi
 }
 
+remove_cursor_safe() {
+    ensure_dir_safe "$PYTEST_CACHE_DIR" "pytest cache dir"
+    ensure_regular_file_or_missing "$CURSOR_FILE" "cursor path"
+    ensure_single_link "$CURSOR_FILE" "cursor path"
+    rm -f "$CURSOR_FILE"
+}
+
 print_help() {
     awk '
         /^# Usage:/ {printing=1}
@@ -180,12 +187,20 @@ mktemp_file() {
 arg_bytes() {
     local total=0
     local arg
-    local old_lc_all="${LC_ALL:-}"
+    local old_lc_all="${LC_ALL-}"
+    local had_lc_all=0
+    if [[ ${LC_ALL+x} ]]; then
+        had_lc_all=1
+    fi
     LC_ALL=C
     for arg in "$@"; do
         total=$(( total + ${#arg} + 1 ))
     done
-    LC_ALL="$old_lc_all"
+    if (( had_lc_all )); then
+        LC_ALL="$old_lc_all"
+    else
+        unset LC_ALL
+    fi
     printf '%s\n' "$total"
 }
 
@@ -306,12 +321,16 @@ else
         exit 1
     fi
     LOCK_MODE="dir"
+    printf '%s\n' "$$" > "$LOCK_DIR/pid" || {
+        err "failed to write lock pid file: $LOCK_DIR/pid"
+        rmdir "$LOCK_DIR" 2>/dev/null || true
+        exit 1
+    }
     LOCK_HELD=1
-    printf '%s\n' "$$" > "$LOCK_DIR/pid"
 fi
 
 if (( RESET )); then
-    rm -f "$CURSOR_FILE"
+    remove_cursor_safe
     log "cursor cleared"
     exit 0
 fi
@@ -459,5 +478,5 @@ if (( FD3_OPEN )); then
     FD3_OPEN=0
 fi
 rm -f "$COLLECT_OUT"
-rm -f "$CURSOR_FILE"
+remove_cursor_safe
 log "all $TOTAL tests passed in $((T_END - T_START))s"
