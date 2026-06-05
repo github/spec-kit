@@ -56,7 +56,7 @@ class TestDevinBuildExecArgs:
         assert args == ["devin", "-p", "hi", "--model", "claude-sonnet-4"]
 
 
-class TestDevinIntegration:
+class TestDevinInitFlow:
     """--integration devin creates expected files."""
 
     def test_integration_devin_creates_skills(self, tmp_path):

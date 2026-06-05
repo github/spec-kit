@@ -14,7 +14,7 @@ class TestCodexIntegration(SkillsIntegrationTests):
     CONTEXT_FILE = "AGENTS.md"
 
 
-class TestCodexIntegration:
+class TestCodexInitFlow:
     """--integration codex creates expected files."""
 
     def test_integration_codex_creates_skills(self, tmp_path):

@@ -326,7 +326,7 @@ class TestHermesIntegration(SkillsIntegrationTests):
         )
 
 
-class TestHermesIntegration:
+class TestHermesInitFlow:
     """--integration hermes creates expected files."""
 
     def test_integration_hermes_creates_global_skills(self, tmp_path, monkeypatch):

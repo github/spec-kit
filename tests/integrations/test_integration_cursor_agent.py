@@ -92,7 +92,7 @@ class TestCursorMdcFrontmatter:
         assert not ctx_path.exists()
 
 
-class TestCursorAgentIntegration:
+class TestCursorAgentInitFlow:
     """--integration cursor-agent creates expected files."""
 
     def test_integration_cursor_agent_creates_skills(self, tmp_path):

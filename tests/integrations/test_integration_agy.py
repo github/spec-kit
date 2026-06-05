@@ -29,7 +29,7 @@ class TestAgyIntegration(SkillsIntegrationTests):
         assert i.config["install_url"] == "https://antigravity.google/"
 
 
-class TestAgyIntegration:
+class TestAgyInitFlow:
     """--integration agy creates expected files."""
 
     def test_integration_agy_creates_skills(self, tmp_path):
