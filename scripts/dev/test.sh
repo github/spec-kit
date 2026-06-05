@@ -39,7 +39,8 @@ SCRIPT_STEM="${SCRIPT_NAME%.*}"
 LOG_PREFIX="[${SCRIPT_STEM}]"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CURSOR_FILE="$REPO_ROOT/.pytest_cache/${SCRIPT_STEM}-cursor"
+PYTEST_CACHE_DIR="$REPO_ROOT/.pytest_cache"
+CURSOR_FILE="$PYTEST_CACHE_DIR/${SCRIPT_STEM}-cursor"
 
 CHUNK_SIZE=200
 RESUME=0
@@ -49,8 +50,8 @@ PASSTHROUGH=()
 RUNTIME_PASSTHROUGH=()
 COLLECT_PASSTHROUGH=()
 PYTEST_CMD=()
-LOCK_FILE="$REPO_ROOT/.pytest_cache/${SCRIPT_STEM}.lock"
-LOCK_DIR="$REPO_ROOT/.pytest_cache/${SCRIPT_STEM}.lockdir"
+LOCK_FILE="$PYTEST_CACHE_DIR/${SCRIPT_STEM}.lock"
+LOCK_DIR="$PYTEST_CACHE_DIR/${SCRIPT_STEM}.lockdir"
 LOCK_MODE=""
 LOCK_HELD=0
 CURSOR_TMP="$CURSOR_FILE.tmp"
@@ -192,6 +193,14 @@ cleanup() {
 trap cleanup EXIT
 
 write_cursor() {
+    if [[ -L "$PYTEST_CACHE_DIR" ]]; then
+        err "pytest cache dir is a symlink; refusing to write $CURSOR_FILE"
+        exit 1
+    fi
+    if [[ -e "$PYTEST_CACHE_DIR" && ! -d "$PYTEST_CACHE_DIR" ]]; then
+        err "pytest cache path is not a directory; refusing to write $CURSOR_FILE"
+        exit 1
+    fi
     if [[ -L "$(dirname "$CURSOR_FILE")" ]]; then
         err "cursor directory is a symlink; refusing to write $CURSOR_FILE"
         exit 1
@@ -218,7 +227,15 @@ read_chunk() {
 }
 
 cd "$REPO_ROOT"
-mkdir -p "$(dirname "$CURSOR_FILE")"
+if [[ -L "$PYTEST_CACHE_DIR" ]]; then
+    err "pytest cache dir is a symlink; refusing to use $PYTEST_CACHE_DIR"
+    exit 1
+fi
+if [[ -e "$PYTEST_CACHE_DIR" && ! -d "$PYTEST_CACHE_DIR" ]]; then
+    err "pytest cache path is not a directory; refusing to use $PYTEST_CACHE_DIR"
+    exit 1
+fi
+mkdir -p "$PYTEST_CACHE_DIR"
 
 if command -v flock >/dev/null 2>&1; then
     if [[ -L "$LOCK_FILE" ]]; then
@@ -296,12 +313,17 @@ if ! "${PYTEST_CMD[@]}" --collect-only -q "${COLLECT_PASSTHROUGH[@]}" >"$COLLECT
 fi
 rm -f "$COLLECT_ERR"
 COLLECT_FILTERED="$(mktemp_file)" || exit 1
-awk 'NF' "$COLLECT_OUT" > "$COLLECT_FILTERED"
+LC_ALL=C awk 'match($0, /\.py($|::)/) { print }' "$COLLECT_OUT" > "$COLLECT_FILTERED"
 mv "$COLLECT_FILTERED" "$COLLECT_OUT"
 TOTAL="$(wc -l < "$COLLECT_OUT" | tr -d '[:space:]')"
 if (( TOTAL == 0 )); then
     err "no tests collected"
     exit 1
+fi
+
+BASE_PYTEST_FLAGS=(-n auto --dist=load --no-header)
+if (( BENCH )); then
+    BASE_PYTEST_FLAGS+=(-q)
 fi
 
 ARG_MAX=""
@@ -310,11 +332,7 @@ if command -v getconf >/dev/null 2>&1; then
 fi
 if [[ "$ARG_MAX" =~ ^[0-9]+$ ]]; then
     MAX_NODE_LEN="$(LC_ALL=C awk 'length > max { max = length } END { print max + 0 }' "$COLLECT_OUT")"
-    BASE_PYTEST_ARGS=(-n auto --dist=load --no-header)
-    if (( BENCH )); then
-        BASE_PYTEST_ARGS+=(-q)
-    fi
-    BASE_ARGS_SIZE="$(arg_bytes "${PYTEST_CMD[@]}" "${BASE_PYTEST_ARGS[@]}" "${RUNTIME_PASSTHROUGH[@]}")"
+    BASE_ARGS_SIZE="$(arg_bytes "${PYTEST_CMD[@]}" "${BASE_PYTEST_FLAGS[@]}" "${RUNTIME_PASSTHROUGH[@]}")"
     SAFETY_MARGIN=2048
     AVAILABLE=$(( ARG_MAX - BASE_ARGS_SIZE - SAFETY_MARGIN ))
     if (( AVAILABLE <= 0 )); then
@@ -389,12 +407,7 @@ while (( i < TOTAL )); do
     end=$(( i + ${#CHUNK_NODES[@]} ))
     log "chunk $chunk_idx/$CHUNKS  tests $((i+1))..$end"
 
-    PYTEST_FLAGS=(-n auto --dist=load)
-    if (( BENCH )); then
-        PYTEST_FLAGS+=(--no-header -q)
-    else
-        PYTEST_FLAGS+=(--no-header)
-    fi
+    PYTEST_FLAGS=("${BASE_PYTEST_FLAGS[@]}")
 
     if ! "${PYTEST_CMD[@]}" "${PYTEST_FLAGS[@]}" "${RUNTIME_PASSTHROUGH[@]}" "${CHUNK_NODES[@]}"; then
         err "chunk failed — cursor preserved at next test index $i (use --resume to retry)"
