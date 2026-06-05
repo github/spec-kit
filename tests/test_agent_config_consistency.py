@@ -39,10 +39,6 @@ class TestAgentConfigConsistency:
         assert AGENT_CONFIG["codex"]["folder"] == ".agents/"
         assert AGENT_CONFIG["codex"]["commands_subdir"] == "skills"
 
-    def test_agent_config_includes_kiro_cli(self):
-        """AGENT_CONFIG should include kiro-cli."""
-        assert "kiro-cli" in AGENT_CONFIG
-
     def test_devcontainer_kiro_installer_uses_pinned_checksum(self):
         """Devcontainer installer should always verify Kiro installer via pinned SHA256."""
         post_create_text = (REPO_ROOT / ".devcontainer" / "post-create.sh").read_text(

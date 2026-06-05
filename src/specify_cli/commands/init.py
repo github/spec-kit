@@ -584,7 +584,7 @@ def register(app: typer.Typer) -> None:
 
         agent_config = AGENT_CONFIG.get(selected_ai)
         if agent_config:
-            agent_folder = agent_config["folder"]
+            agent_folder = agent_config["folder"] or integration_parsed_options.get("commands_dir")
             if agent_folder:
                 security_notice = Panel(
                     f"Some agents may store credentials, auth tokens, or other identifying and private artifacts in the agent folder within your project.\n"
