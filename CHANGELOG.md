@@ -2,13 +2,19 @@
 
 <!-- insert new changelog below this comment -->
 
-## [0.10.0] - Unreleased
+## [0.9.5] - 2026-06-05
 
-### Breaking Changes
+### Changed
 
-- **Removed legacy `--ai`, `--ai-commands-dir`, and `--ai-skills` flags from `specify init`.**
-  Use `--integration <name>`, `--integration-options="--commands-dir <dir>"`, and
-  `--integration-options="--skills"` respectively.
+- feat(extensions): add bundled bug triage workflow extension (#2871)
+- fix: resolve GitHub release asset API URL for private repo preset and workflow downloads (#2855)
+- chore(deps): bump github/gh-aw-actions from 0.77.0 to 0.78.1 (#2860)
+- chore(deps): bump actions/checkout from 6.0.2 to 6.0.3 (#2859)
+- chore(deps): bump astral-sh/setup-uv from 8.1.0 to 8.2.0 (#2858)
+- chore(deps): bump github/codeql-action from 4.36.0 to 4.36.2 (#2857)
+- fix(workflows): render gate show_file contents in the interactive prompt (#2810)
+- feat: add support for rovodev (#2539)
+- chore: release 0.9.4, begin 0.9.5.dev0 development (#2853)
 
 ## [0.9.4] - 2026-06-04
 
