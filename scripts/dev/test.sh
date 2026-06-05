@@ -214,7 +214,7 @@ write_cursor() {
     ensure_dir_safe "$PYTEST_CACHE_DIR" "pytest cache dir"
     ensure_regular_file_or_missing "$CURSOR_FILE" "cursor path"
     local cursor_tmp
-    cursor_tmp="$(mktemp "${PYTEST_CACHE_DIR}/${SCRIPT_STEM}.cursor.XXXXXX")" || exit 1
+    cursor_tmp="$(TMPDIR="$PYTEST_CACHE_DIR" mktemp_file)" || exit 1
     if [[ -L "$cursor_tmp" || ! -f "$cursor_tmp" ]]; then
         err "cursor temp path is unsafe; refusing to write $cursor_tmp"
         rm -f "$cursor_tmp" 2>/dev/null || true
@@ -268,7 +268,11 @@ else
         fi
     fi
     if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-        err "another run is active (lock: $LOCK_DIR)"
+        if [[ -d "$LOCK_DIR" ]]; then
+            err "another run is active (lock: $LOCK_DIR)"
+        else
+            err "failed to create lock dir: $LOCK_DIR"
+        fi
         exit 1
     fi
     LOCK_MODE="dir"
@@ -407,7 +411,7 @@ while (( i < TOTAL )); do
         exit 1
     fi
     end=$(( i + ${#CHUNK_NODES[@]} ))
-    log "chunk $chunk_idx/$CHUNKS  tests $((i+1))..$end"
+    log "chunk $chunk_idx/$CHUNKS tests $((i+1))..$end"
 
     if ! "${PYTEST_CMD[@]}" "${BASE_PYTEST_FLAGS[@]}" "${RUNTIME_PASSTHROUGH[@]}" "${CHUNK_NODES[@]}"; then
         err "chunk failed — cursor preserved at next test index $i (use --resume to retry)"
