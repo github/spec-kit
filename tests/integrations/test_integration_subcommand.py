@@ -698,12 +698,18 @@ class TestIntegrationStatus:
 
         # Build the prefixed strings explicitly so the test is meaningful on
         # every platform (POSIX won't parse backslash separators, but the
-        # helper operates on the string form).
+        # helper operates on the string form). Compare Path objects rather than
+        # their str() form: on Windows pathlib renders a UNC root with a
+        # trailing separator (``\\server\share\``), so an exact string match is
+        # brittle, whereas Path equality captures the intended semantics on
+        # both POSIX and Windows.
         bs = "\\"
-        plain = f"C:{bs}proj"
-        assert str(_strip_extended_length_prefix(Path(f"{bs}{bs}?{bs}{plain}"))) == plain
-        unc = f"{bs}{bs}server{bs}share"
-        assert str(_strip_extended_length_prefix(Path(f"{bs}{bs}?{bs}UNC{bs}server{bs}share"))) == unc
+        assert _strip_extended_length_prefix(
+            Path(f"{bs}{bs}?{bs}C:{bs}proj")
+        ) == Path(f"C:{bs}proj")
+        assert _strip_extended_length_prefix(
+            Path(f"{bs}{bs}?{bs}UNC{bs}server{bs}share")
+        ) == Path(f"{bs}{bs}server{bs}share")
         # Paths without the prefix are returned unchanged.
         assert _strip_extended_length_prefix(Path("relative/path")) == Path("relative/path")
 
