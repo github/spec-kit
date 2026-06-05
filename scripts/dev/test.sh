@@ -167,15 +167,13 @@ while (( idx < ${#PASSTHROUGH[@]} )); do
     case "$arg" in
         --collect-only|--co) COLLECT_ONLY_REQUESTED=1 ;;
         -n|--numprocesses|--dist)
-            next="${PASSTHROUGH[$((idx + 1))]:-}"
-            if [[ -z "$next" || "$next" == -* ]]; then
-                err "$arg requires a value, but xdist flags are managed by this script"
-                exit 1
-            fi
-            XDIST_IGNORED=1
-            idx=$((idx + 1))
+            err "$arg is managed by this script; remove xdist flags from arguments"
+            exit 1
             ;;
-        -n*|--numprocesses=*|--dist=*) XDIST_IGNORED=1 ;;
+        -n*|--numprocesses=*|--dist=*)
+            err "$arg is managed by this script; remove xdist flags from arguments"
+            exit 1
+            ;;
         *)
             RUNTIME_PASSTHROUGH+=("$arg")
             COLLECT_PASSTHROUGH+=("$arg")
@@ -206,6 +204,7 @@ cleanup() {
         flock -u 9 2>/dev/null || true
         exec 9>&- || true
     elif [[ "$LOCK_MODE" == "dir" ]] && (( LOCK_HELD )); then
+        local PID_CONTENTS
         if [[ -f "$LOCK_DIR/pid" ]]; then
             PID_CONTENTS="$(tr -d '[:space:]' < "$LOCK_DIR/pid" 2>/dev/null || true)"
             if [[ "$PID_CONTENTS" == "$$" ]]; then
@@ -244,7 +243,7 @@ mkdir -p "$PYTEST_CACHE_DIR"
 
 if command -v flock >/dev/null 2>&1; then
     ensure_regular_file_or_missing "$LOCK_FILE" "lock file"
-    exec 9>"$LOCK_FILE" || { err "unable to open lock file: $LOCK_FILE"; exit 1; }
+    exec 9>>"$LOCK_FILE" || { err "unable to open lock file: $LOCK_FILE"; exit 1; }
     if ! flock -n 9; then
         err "another run is active (lock: $LOCK_FILE)"
         exit 1
