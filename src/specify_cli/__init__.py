@@ -702,7 +702,6 @@ def preset_add(
                 raise typer.Exit(1)
 
             console.print(f"Installing preset from [cyan]{from_url}[/cyan]...")
-            import urllib.request
             import urllib.error
             import tempfile
 
