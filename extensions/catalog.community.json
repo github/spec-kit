@@ -2149,10 +2149,10 @@
     "ralph": {
       "name": "Ralph Loop",
       "id": "ralph",
-      "description": "Autonomous implementation loop using AI agent CLI.",
+      "description": "Autonomous implementation loop using AI agent CLI",
       "author": "Rubiss",
-      "version": "1.0.2",
-      "download_url": "https://github.com/Rubiss-Projects/spec-kit-ralph/archive/refs/tags/v1.0.2.zip",
+      "version": "1.1.1",
+      "download_url": "https://github.com/Rubiss-Projects/spec-kit-ralph/archive/refs/tags/v1.1.1.zip",
       "repository": "https://github.com/Rubiss-Projects/spec-kit-ralph",
       "homepage": "https://github.com/Rubiss-Projects/spec-kit-ralph",
       "documentation": "https://github.com/Rubiss-Projects/spec-kit-ralph/blob/main/README.md",
@@ -2163,7 +2163,11 @@
         "tools": [
           {
             "name": "copilot",
-            "required": true
+            "required": false
+          },
+          {
+            "name": "codex",
+            "required": false
           },
           {
             "name": "git",
@@ -2179,13 +2183,14 @@
         "implementation",
         "automation",
         "loop",
-        "copilot"
+        "copilot",
+        "codex"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-09T00:00:00Z",
-      "updated_at": "2026-05-04T17:02:08Z"
+      "updated_at": "2026-06-05T03:11:06Z"
     },
     "reconcile": {
       "name": "Reconcile Extension",
