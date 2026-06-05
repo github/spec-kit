@@ -71,6 +71,32 @@ err() {
     echo "$LOG_PREFIX ERROR: $*" >&2
 }
 
+ensure_dir_safe() {
+    local path="$1"
+    local label="$2"
+    if [[ -L "$path" ]]; then
+        err "$label is a symlink; refusing to use $path"
+        exit 1
+    fi
+    if [[ -e "$path" && ! -d "$path" ]]; then
+        err "$label is not a directory; refusing to use $path"
+        exit 1
+    fi
+}
+
+ensure_regular_file_or_missing() {
+    local path="$1"
+    local label="$2"
+    if [[ -L "$path" ]]; then
+        err "$label is a symlink; refusing to use $path"
+        exit 1
+    fi
+    if [[ -e "$path" && ! -f "$path" ]]; then
+        err "$label is not a regular file; refusing to use $path"
+        exit 1
+    fi
+}
+
 print_help() {
     awk '
         /^# Usage:/ {printing=1}
@@ -193,22 +219,8 @@ cleanup() {
 trap cleanup EXIT
 
 write_cursor() {
-    if [[ -L "$PYTEST_CACHE_DIR" ]]; then
-        err "pytest cache dir is a symlink; refusing to write $CURSOR_FILE"
-        exit 1
-    fi
-    if [[ -e "$PYTEST_CACHE_DIR" && ! -d "$PYTEST_CACHE_DIR" ]]; then
-        err "pytest cache path is not a directory; refusing to write $CURSOR_FILE"
-        exit 1
-    fi
-    if [[ -L "$(dirname "$CURSOR_FILE")" ]]; then
-        err "cursor directory is a symlink; refusing to write $CURSOR_FILE"
-        exit 1
-    fi
-    if [[ -e "$CURSOR_FILE" && -L "$CURSOR_FILE" ]]; then
-        err "cursor path is a symlink; refusing to write $CURSOR_FILE"
-        exit 1
-    fi
+    ensure_dir_safe "$PYTEST_CACHE_DIR" "pytest cache dir"
+    ensure_regular_file_or_missing "$CURSOR_FILE" "cursor path"
     printf '%s\n' "$1" > "$CURSOR_TMP"
     mv "$CURSOR_TMP" "$CURSOR_FILE"
 }
@@ -227,21 +239,11 @@ read_chunk() {
 }
 
 cd "$REPO_ROOT"
-if [[ -L "$PYTEST_CACHE_DIR" ]]; then
-    err "pytest cache dir is a symlink; refusing to use $PYTEST_CACHE_DIR"
-    exit 1
-fi
-if [[ -e "$PYTEST_CACHE_DIR" && ! -d "$PYTEST_CACHE_DIR" ]]; then
-    err "pytest cache path is not a directory; refusing to use $PYTEST_CACHE_DIR"
-    exit 1
-fi
+ensure_dir_safe "$PYTEST_CACHE_DIR" "pytest cache dir"
 mkdir -p "$PYTEST_CACHE_DIR"
 
 if command -v flock >/dev/null 2>&1; then
-    if [[ -L "$LOCK_FILE" ]]; then
-        err "lock path is a symlink; refusing to use $LOCK_FILE"
-        exit 1
-    fi
+    ensure_regular_file_or_missing "$LOCK_FILE" "lock file"
     exec 9>"$LOCK_FILE" || { err "unable to open lock file: $LOCK_FILE"; exit 1; }
     if ! flock -n 9; then
         err "another run is active (lock: $LOCK_FILE)"
@@ -250,10 +252,7 @@ if command -v flock >/dev/null 2>&1; then
     LOCK_MODE="flock"
     LOCK_HELD=1
 else
-    if [[ -L "$LOCK_DIR" ]]; then
-        err "lock path is a symlink; refusing to use $LOCK_DIR"
-        exit 1
-    fi
+    ensure_dir_safe "$LOCK_DIR" "lock dir"
     if [[ -d "$LOCK_DIR" ]]; then
         if [[ -f "$LOCK_DIR/pid" ]]; then
             PID_CONTENTS="$(tr -d '[:space:]' < "$LOCK_DIR/pid" 2>/dev/null || true)"
@@ -296,8 +295,8 @@ else
     exit 1
 fi
 
-if ! "${PYTEST_CMD[@]}" --help 2>/dev/null | grep -Eq '(-n[[:space:]]|--numprocesses)'; then
-    err "pytest-xdist is required for this wrapper (missing -n/--numprocesses)."
+if ! "${PYTEST_CMD[@]}" -p xdist --version >/dev/null 2>&1; then
+    err "pytest-xdist is required for this wrapper (missing xdist plugin)."
     err "install test extras, e.g. 'uv pip install -e .[test]'"
     exit 1
 fi
