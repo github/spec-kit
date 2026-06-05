@@ -54,12 +54,10 @@ LOCK_FILE="$PYTEST_CACHE_DIR/${SCRIPT_STEM}.lock"
 LOCK_DIR="$PYTEST_CACHE_DIR/${SCRIPT_STEM}.lockdir"
 LOCK_MODE=""
 LOCK_HELD=0
-CURSOR_TMP="$CURSOR_FILE.tmp"
 COLLECT_ERR=""
 COLLECT_OUT=""
 COLLECT_FILTERED=""
 CHUNK_NODES=()
-XDIST_IGNORED=0
 COLLECT_ONLY_REQUESTED=0
 FD3_OPEN=0
 
@@ -160,7 +158,7 @@ arg_bytes() {
 
 # Collection and execution do not share every pytest flag. Keep runtime
 # passthrough aligned with user intent while stripping collect-only toggles
-# and xdist-specific options that this script owns.
+# and failing fast on xdist-specific options owned by this script.
 idx=0
 while (( idx < ${#PASSTHROUGH[@]} )); do
     arg="${PASSTHROUGH[$idx]}"
@@ -187,10 +185,6 @@ if (( COLLECT_ONLY_REQUESTED )); then
     exit 1
 fi
 
-if (( XDIST_IGNORED )); then
-    log "ignoring xdist flags (-n/--numprocesses/--dist); this script manages them"
-fi
-
 cleanup() {
     if (( FD3_OPEN )); then
         { exec 3<&-; } 2>/dev/null || true
@@ -199,7 +193,6 @@ cleanup() {
     [[ -n "$COLLECT_ERR" && -f "$COLLECT_ERR" ]] && rm -f "$COLLECT_ERR"
     [[ -n "$COLLECT_OUT" && -f "$COLLECT_OUT" ]] && rm -f "$COLLECT_OUT"
     [[ -n "$COLLECT_FILTERED" && -f "$COLLECT_FILTERED" ]] && rm -f "$COLLECT_FILTERED"
-    [[ -n "$CURSOR_TMP" && -f "$CURSOR_TMP" ]] && rm -f "$CURSOR_TMP"
     if [[ "$LOCK_MODE" == "flock" ]]; then
         flock -u 9 2>/dev/null || true
         exec 9>&- || true
@@ -220,8 +213,15 @@ trap cleanup EXIT
 write_cursor() {
     ensure_dir_safe "$PYTEST_CACHE_DIR" "pytest cache dir"
     ensure_regular_file_or_missing "$CURSOR_FILE" "cursor path"
-    printf '%s\n' "$1" > "$CURSOR_TMP"
-    mv "$CURSOR_TMP" "$CURSOR_FILE"
+    local cursor_tmp
+    cursor_tmp="$(mktemp "${PYTEST_CACHE_DIR}/${SCRIPT_STEM}.cursor.XXXXXX")" || exit 1
+    if [[ -L "$cursor_tmp" || ! -f "$cursor_tmp" ]]; then
+        err "cursor temp path is unsafe; refusing to write $cursor_tmp"
+        rm -f "$cursor_tmp" 2>/dev/null || true
+        exit 1
+    fi
+    printf '%s\n' "$1" > "$cursor_tmp"
+    mv "$cursor_tmp" "$CURSOR_FILE"
 }
 
 read_chunk() {
@@ -277,7 +277,7 @@ else
 fi
 
 if (( RESET )); then
-    rm -f "$CURSOR_FILE" "$CURSOR_TMP"
+    rm -f "$CURSOR_FILE"
     log "cursor cleared"
     exit 0
 fi
