@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from specify_cli import AGENT_CONFIG, AI_ASSISTANT_ALIASES, AI_ASSISTANT_HELP
+from specify_cli import AGENT_CONFIG
 from specify_cli.extensions import CommandRegistrar
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -39,13 +39,6 @@ class TestAgentConfigConsistency:
         assert AGENT_CONFIG["codex"]["folder"] == ".agents/"
         assert AGENT_CONFIG["codex"]["commands_subdir"] == "skills"
 
-    def test_init_ai_help_includes_roo_and_kiro_alias(self):
-        """CLI help text for --ai should stay in sync with agent config and alias guidance."""
-        assert "roo" in AI_ASSISTANT_HELP
-        for alias, target in AI_ASSISTANT_ALIASES.items():
-            assert alias in AI_ASSISTANT_HELP
-            assert target in AI_ASSISTANT_HELP
-
     def test_devcontainer_kiro_installer_uses_pinned_checksum(self):
         """Devcontainer installer should always verify Kiro installer via pinned SHA256."""
         post_create_text = (REPO_ROOT / ".devcontainer" / "post-create.sh").read_text(
@@ -80,9 +73,9 @@ class TestAgentConfigConsistency:
         assert cfg["args"] == "{{args}}"
         assert cfg["extension"] == ".toml"
 
-    def test_ai_help_includes_tabnine(self):
-        """CLI help text for --ai should include tabnine."""
-        assert "tabnine" in AI_ASSISTANT_HELP
+    def test_agent_config_includes_tabnine(self):
+        """AGENT_CONFIG should include tabnine."""
+        assert "tabnine" in AGENT_CONFIG
 
     # --- Kimi Code CLI consistency checks ---
 
@@ -102,9 +95,9 @@ class TestAgentConfigConsistency:
         assert kimi_cfg["dir"] == ".kimi/skills"
         assert kimi_cfg["extension"] == "/SKILL.md"
 
-    def test_ai_help_includes_kimi(self):
-        """CLI help text for --ai should include kimi."""
-        assert "kimi" in AI_ASSISTANT_HELP
+    def test_agent_config_includes_kimi(self):
+        """AGENT_CONFIG should include kimi."""
+        assert "kimi" in AGENT_CONFIG
 
     # --- Trae IDE consistency checks ---
 
@@ -126,9 +119,9 @@ class TestAgentConfigConsistency:
         assert trae_cfg["args"] == "$ARGUMENTS"
         assert trae_cfg["extension"] == "/SKILL.md"
 
-    def test_ai_help_includes_trae(self):
-        """CLI help text for --ai should include trae."""
-        assert "trae" in AI_ASSISTANT_HELP
+    def test_agent_config_includes_trae(self):
+        """AGENT_CONFIG should include trae."""
+        assert "trae" in AGENT_CONFIG
 
     # --- Pi Coding Agent consistency checks ---
 
@@ -151,9 +144,9 @@ class TestAgentConfigConsistency:
         assert pi_cfg["args"] == "$ARGUMENTS"
         assert pi_cfg["extension"] == ".md"
 
-    def test_ai_help_includes_pi(self):
-        """CLI help text for --ai should include pi."""
-        assert "pi" in AI_ASSISTANT_HELP
+    def test_agent_config_includes_pi(self):
+        """AGENT_CONFIG should include pi."""
+        assert "pi" in AGENT_CONFIG
 
     # --- iFlow CLI consistency checks ---
 
@@ -173,9 +166,9 @@ class TestAgentConfigConsistency:
         assert cfg["iflow"]["format"] == "markdown"
         assert cfg["iflow"]["args"] == "$ARGUMENTS"
 
-    def test_ai_help_includes_iflow(self):
-        """CLI help text for --ai should include iflow."""
-        assert "iflow" in AI_ASSISTANT_HELP
+    def test_agent_config_includes_iflow(self):
+        """AGENT_CONFIG should include iflow."""
+        assert "iflow" in AGENT_CONFIG
 
     # --- Goose consistency checks ---
 
@@ -195,9 +188,9 @@ class TestAgentConfigConsistency:
         assert cfg["goose"]["format"] == "yaml"
         assert cfg["goose"]["args"] == "{{args}}"
 
-    def test_ai_help_includes_goose(self):
-        """CLI help text for --ai should include goose."""
-        assert "goose" in AI_ASSISTANT_HELP
+    def test_agent_config_includes_goose(self):
+        """AGENT_CONFIG should include goose."""
+        assert "goose" in AGENT_CONFIG
 
     # --- invoke_separator propagation checks ---
 
@@ -304,6 +297,6 @@ class TestAgentConfigConsistency:
         assert rovodev_cfg["args"] == "$ARGUMENTS"
         assert rovodev_cfg["extension"] == "/SKILL.md"
 
-    def test_ai_help_includes_rovodev(self):
-        """CLI help text for --ai should include rovodev."""
-        assert "rovodev" in AI_ASSISTANT_HELP
+    def test_agent_config_includes_rovodev(self):
+        """AGENT_CONFIG should include rovodev."""
+        assert "rovodev" in AGENT_CONFIG

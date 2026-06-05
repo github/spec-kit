@@ -32,13 +32,13 @@
 #   - GITHUB_TOKEN
 #
 # Custom actions used:
-#   - actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+#   - actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 #   - actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
 #   - actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
 #   - actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0 (source v9)
 #   - actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
 #   - actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-#   - github/gh-aw-actions/setup@b11be78086764c43fa463398aed7ffdcf40549c1 # v0.77.0
+#   - github/gh-aw-actions/setup@73ed520ae4ecd087a485e1991605595978b32ac1 # v0.78.1
 #
 # Container images used:
 #   - ghcr.io/github/gh-aw-firewall/agent:0.25.49
@@ -90,7 +90,7 @@ jobs:
     steps:
       - name: Setup Scripts
         id: setup
-        uses: github/gh-aw-actions/setup@b11be78086764c43fa463398aed7ffdcf40549c1 # v0.77.0
+        uses: github/gh-aw-actions/setup@73ed520ae4ecd087a485e1991605595978b32ac1 # v0.78.1
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
           job-name: ${{ github.job }}
@@ -134,7 +134,7 @@ jobs:
         env:
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
       - name: Checkout .github and .agents folders
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           sparse-checkout: |
@@ -368,7 +368,7 @@ jobs:
     steps:
       - name: Setup Scripts
         id: setup
-        uses: github/gh-aw-actions/setup@b11be78086764c43fa463398aed7ffdcf40549c1 # v0.77.0
+        uses: github/gh-aw-actions/setup@73ed520ae4ecd087a485e1991605595978b32ac1 # v0.78.1
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
           job-name: ${{ github.job }}
@@ -388,7 +388,7 @@ jobs:
             echo "GH_AW_SAFE_OUTPUTS_TOOLS_PATH=${RUNNER_TEMP}/gh-aw/safeoutputs/tools.json"
           } >> "$GITHUB_OUTPUT"
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -1045,7 +1045,7 @@ jobs:
     steps:
       - name: Setup Scripts
         id: setup
-        uses: github/gh-aw-actions/setup@b11be78086764c43fa463398aed7ffdcf40549c1 # v0.77.0
+        uses: github/gh-aw-actions/setup@73ed520ae4ecd087a485e1991605595978b32ac1 # v0.78.1
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
           job-name: ${{ github.job }}
@@ -1186,7 +1186,7 @@ jobs:
     steps:
       - name: Setup Scripts
         id: setup
-        uses: github/gh-aw-actions/setup@b11be78086764c43fa463398aed7ffdcf40549c1 # v0.77.0
+        uses: github/gh-aw-actions/setup@73ed520ae4ecd087a485e1991605595978b32ac1 # v0.78.1
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
           job-name: ${{ github.job }}
@@ -1213,7 +1213,7 @@ jobs:
           echo "GH_AW_AGENT_OUTPUT=/tmp/gh-aw/agent_output.json" >> "$GITHUB_OUTPUT"
       - name: Checkout repository for patch context
         if: needs.agent.outputs.has_patch == 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       # --- Threat Detection ---
@@ -1382,7 +1382,7 @@ jobs:
     steps:
       - name: Setup Scripts
         id: setup
-        uses: github/gh-aw-actions/setup@b11be78086764c43fa463398aed7ffdcf40549c1 # v0.77.0
+        uses: github/gh-aw-actions/setup@73ed520ae4ecd087a485e1991605595978b32ac1 # v0.78.1
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
           job-name: ${{ github.job }}
@@ -1454,7 +1454,7 @@ jobs:
     steps:
       - name: Setup Scripts
         id: setup
-        uses: github/gh-aw-actions/setup@b11be78086764c43fa463398aed7ffdcf40549c1 # v0.77.0
+        uses: github/gh-aw-actions/setup@73ed520ae4ecd087a485e1991605595978b32ac1 # v0.78.1
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
           job-name: ${{ github.job }}
@@ -1510,7 +1510,7 @@ jobs:
           fi
       - name: Checkout repository (trusted default branch for comment events)
         if: (!cancelled()) && needs.agent.result != 'skipped' && contains(needs.agent.outputs.output_types, 'create_pull_request') && (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment')
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ github.event.repository.default_branch }}
           token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
@@ -1518,7 +1518,7 @@ jobs:
           fetch-depth: 1
       - name: Checkout repository
         if: (!cancelled()) && needs.agent.result != 'skipped' && contains(needs.agent.outputs.output_types, 'create_pull_request') && github.event_name != 'issue_comment' && github.event_name != 'pull_request_review_comment'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ steps.extract-base-branch.outputs.base-branch || github.base_ref || github.event.pull_request.base.ref || github.ref_name || github.event.repository.default_branch }}
           token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}

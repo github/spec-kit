@@ -2,7 +2,7 @@
 Unit tests for extension skill auto-registration.
 
 Tests cover:
-- SKILL.md generation when --ai-skills was used during init
+- SKILL.md generation when skills mode was used during init
 - No skills created when ai_skills not active
 - SKILL.md content correctness
 - Existing user-modified skills not overwritten
@@ -162,7 +162,7 @@ def extension_dir(temp_dir):
 
 @pytest.fixture
 def skills_project(project_dir):
-    """Create a project with --ai-skills enabled and skills directory."""
+    """Create a project with skills mode enabled and skills directory."""
     _create_init_options(project_dir, ai="claude", ai_skills=True)
     skills_dir = _create_skills_dir(project_dir, ai="claude")
     return project_dir, skills_dir
@@ -170,7 +170,7 @@ def skills_project(project_dir):
 
 @pytest.fixture
 def no_skills_project(project_dir):
-    """Create a project without --ai-skills."""
+    """Create a project without skills mode."""
     _create_init_options(project_dir, ai="claude", ai_skills=False)
     return project_dir
 

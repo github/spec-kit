@@ -16,14 +16,10 @@ def test_commands_init_importable():
 def test_agent_config_importable():
     from specify_cli._agent_config import (
         AGENT_CONFIG,
-        AI_ASSISTANT_ALIASES,
-        AI_ASSISTANT_HELP,
         DEFAULT_INIT_INTEGRATION,
         SCRIPT_TYPE_CHOICES,
     )
     assert isinstance(AGENT_CONFIG, dict)
-    assert isinstance(AI_ASSISTANT_ALIASES, dict)
-    assert isinstance(AI_ASSISTANT_HELP, str)
     assert DEFAULT_INIT_INTEGRATION == "copilot"
     assert "sh" in SCRIPT_TYPE_CHOICES
 

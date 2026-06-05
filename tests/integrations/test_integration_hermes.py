@@ -326,12 +326,11 @@ class TestHermesIntegration(SkillsIntegrationTests):
         )
 
 
-class TestHermesAutoPromote:
-    """--ai hermes auto-promotes to integration path."""
+class TestHermesInitFlow:
+    """--integration hermes creates expected files."""
 
-    def test_ai_hermes_without_ai_skills_auto_promotes(self, tmp_path, monkeypatch):
-        """--ai hermes should work the same as --integration hermes,
-        creating global skills and a local marker."""
+    def test_integration_hermes_creates_global_skills(self, tmp_path, monkeypatch):
+        """--integration hermes should create global skills and a local marker."""
         home = _fake_home(tmp_path)
         monkeypatch.setattr(Path, "home", lambda: home)
 
@@ -342,13 +341,13 @@ class TestHermesAutoPromote:
         target = tmp_path / "test-proj"
         result = runner.invoke(app, [
             "init", str(target),
-            "--ai", "hermes",
+            "--integration", "hermes",
             "--no-git",
             "--ignore-agent-tools",
             "--script", "sh",
         ])
 
-        assert result.exit_code == 0, f"init --ai hermes failed: {result.output}"
+        assert result.exit_code == 0, f"init --integration hermes failed: {result.output}"
         # Skills should be in global ~/.hermes/skills/
         assert (home / ".hermes" / "skills" / "speckit-plan" / "SKILL.md").exists()
         # Local marker should exist

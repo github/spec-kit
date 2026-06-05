@@ -22,7 +22,7 @@ class CursorAgentIntegration(SkillsIntegration):
         "folder": ".cursor/",
         "commands_subdir": "skills",
         "install_url": "https://docs.cursor.com/en/cli/overview",
-        # IDE-first integration: ``specify init --ai cursor-agent`` must
+        # IDE-first integration: ``specify init --integration cursor-agent`` must
         # work without the ``cursor-agent`` CLI installed (the IDE flow
         # uses skills directly).  Workflow dispatch additionally requires
         # the CLI on PATH, but that's enforced at dispatch time via
