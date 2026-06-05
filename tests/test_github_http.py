@@ -1,6 +1,5 @@
 """Tests for GitHub-authenticated HTTP request helpers."""
 
-import io
 import json
 import os
 from contextlib import contextmanager

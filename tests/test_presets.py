@@ -2239,7 +2239,6 @@ class TestSelfTestPreset:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -2284,7 +2283,6 @@ class TestSelfTestPreset:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -2544,7 +2542,6 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -2702,7 +2699,6 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "commands": [
                     {
@@ -2756,7 +2752,6 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -2997,7 +2992,6 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -3050,7 +3044,6 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "commands": [
                     {
@@ -3079,7 +3072,6 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -3133,7 +3125,6 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -3230,7 +3221,6 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -3284,7 +3274,6 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {
@@ -3341,7 +3330,6 @@ class TestPresetSkills:
                 "description": "Test",
             },
             "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
             "provides": {
                 "templates": [
                     {

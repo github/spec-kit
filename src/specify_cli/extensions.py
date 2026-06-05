@@ -1861,41 +1861,15 @@ class ExtensionCatalog(CatalogStackBase):
         download_url: str,
         timeout: int = 60,
     ) -> Optional[str]:
-        """Resolve a GitHub release asset URL to its API asset URL."""
-        import urllib.error
-        from urllib.parse import unquote, urlparse
+        """Resolve a GitHub release asset URL to its API asset URL.
 
-        parsed = urlparse(download_url)
-        parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
-        if (
-            parsed.hostname == "api.github.com"
-            and len(parts) >= 6
-            and parts[:1] == ["repos"]
-            and parts[3:5] == ["releases", "assets"]
-        ):
-            return download_url
+        Delegates to the shared helper in :mod:`specify_cli._github_http`.
+        """
+        from specify_cli._github_http import resolve_github_release_asset_api_url
 
-        if parsed.hostname != "github.com":
-            return None
-
-        if len(parts) < 6 or parts[2:4] != ["releases", "download"]:
-            return None
-
-        owner, repo, tag = parts[0], parts[1], parts[4]
-        asset_name = "/".join(parts[5:])
-        release_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
-
-        try:
-            with self._open_url(release_url, timeout=timeout) as response:
-                release_data = json.loads(response.read())
-        except (urllib.error.URLError, json.JSONDecodeError):
-            return None
-
-        for asset in release_data.get("assets", []):
-            if asset.get("name") == asset_name and asset.get("url"):
-                return str(asset["url"])
-
-        return None
+        return resolve_github_release_asset_api_url(
+            download_url, self._open_url, timeout=timeout
+        )
 
     def get_active_catalogs(self) -> List[CatalogEntry]:
         """Get the ordered list of active catalogs.
