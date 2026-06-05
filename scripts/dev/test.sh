@@ -266,7 +266,11 @@ write_cursor() {
         exit 1
     fi
     printf '%s\n' "$1" > "$cursor_tmp"
-    mv "$cursor_tmp" "$CURSOR_FILE"
+    if ! mv "$cursor_tmp" "$CURSOR_FILE"; then
+        err "failed to persist cursor to $CURSOR_FILE"
+        rm -f "$cursor_tmp" 2>/dev/null || true
+        exit 1
+    fi
 }
 
 read_chunk() {
@@ -418,7 +422,7 @@ if (( RESUME )) && [[ -f "$CURSOR_FILE" ]]; then
     ensure_dir_safe "$PYTEST_CACHE_DIR" "pytest cache dir"
     ensure_regular_file_or_missing "$CURSOR_FILE" "cursor path"
     ensure_single_link "$CURSOR_FILE" "cursor path"
-    RAW_START="$(tr -d '[:space:]' < "$CURSOR_FILE")"
+    RAW_START="$(tr -d '[:space:]' < "$CURSOR_FILE" 2>/dev/null || true)"
     if [[ "$RAW_START" =~ ^[0-9]+$ ]]; then
         START="$RAW_START"
         (( START > TOTAL )) && START="$TOTAL"
