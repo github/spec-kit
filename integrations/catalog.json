@@ -277,7 +277,7 @@
       "id": "generic",
       "name": "Generic (bring your own agent)",
       "version": "1.0.0",
-      "description": "Generic integration for any agent via --ai-commands-dir",
+      "description": "Generic integration for any agent via --integration-options",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["generic"]

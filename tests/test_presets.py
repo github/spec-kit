@@ -2557,8 +2557,8 @@ class TestPresetSkills:
         return preset_dir
 
     def test_skill_overridden_on_preset_install(self, project_dir, temp_dir):
-        """When --ai-skills was used, a preset command override should update the skill."""
-        # Simulate --ai-skills having been used: write init-options + create skill
+        """When skills mode was used, a preset command override should update the skill."""
+        # Simulate skills mode having been used: write init-options + create skill
         self._write_init_options(project_dir, ai="claude")
         skills_dir = project_dir / ".claude" / "skills"
         self._create_skill(skills_dir, "speckit-specify")
@@ -2843,7 +2843,7 @@ class TestPresetSkills:
         assert "override taskstoissues body" in content
 
     def test_skill_not_updated_when_ai_skills_disabled(self, project_dir, temp_dir):
-        """When --ai-skills was NOT used, preset install should not touch skills."""
+        """When skills mode was NOT used, preset install should not touch skills."""
         self._write_init_options(project_dir, ai="qwen", ai_skills=False)
         skills_dir = project_dir / ".qwen" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
@@ -2962,7 +2962,7 @@ class TestPresetSkills:
     def test_no_skills_registered_when_no_skill_dir_exists(self, project_dir, temp_dir):
         """Skills should not be created when no existing skill dir is found."""
         self._write_init_options(project_dir, ai="claude")
-        # Don't create skills dir — simulate --ai-skills never created them
+        # Don't create skills dir — simulate skills mode never created them
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -4123,7 +4123,7 @@ class TestWrapStrategy:
             "---\ndescription: core wrap-test\n---\n\n# Core Wrap-Test Body\n"
         )
 
-        # Set up skills dir (simulating --ai claude)
+        # Set up skills dir (simulating --integration claude)
         skills_dir = project_dir / ".claude" / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
         skill_subdir = skills_dir / "speckit-wrap-test"

@@ -1219,7 +1219,7 @@ class PresetManager:
         directory.  If so, the skill is overwritten with content derived
         from the preset's command file.  This ensures that presets that
         override commands also propagate to the agentskills.io skill
-        layer when ``--ai-skills`` was used during project initialisation.
+        layer when skills mode was used during project initialisation.
 
         Args:
             manifest: Preset manifest.
@@ -1559,7 +1559,7 @@ class PresetManager:
                 "registered_commands": registered_commands,
             })
 
-            # Update corresponding skills when --ai-skills was previously used
+            # Update corresponding skills when skills mode was previously used
             # and persist that result as well.
             registered_skills = self._register_skills(manifest, dest_dir)
             self.registry.update(manifest.id, {

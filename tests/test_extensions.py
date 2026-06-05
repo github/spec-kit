@@ -4932,7 +4932,7 @@ class TestHookInvocationRendering:
         assert "EXECUTE_COMMAND_INVOCATION: /skill:speckit-plan" in message
 
     def test_codex_hooks_render_dollar_skill_invocation(self, project_dir):
-        """Codex projects with --ai-skills should render $speckit-* invocations."""
+        """Codex projects with skills mode should render $speckit-* invocations."""
         init_options = project_dir / ".specify" / "init-options.json"
         init_options.parent.mkdir(parents=True, exist_ok=True)
         init_options.write_text(json.dumps({"ai": "codex", "ai_skills": True}))

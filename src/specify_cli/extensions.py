@@ -889,7 +889,7 @@ class ExtensionManager:
 
         For every command in the extension manifest, creates a SKILL.md
         file in the agent's skills directory following the agentskills.io
-        specification.  This is only done when ``--ai-skills`` was used
+        specification.  This is only done when skills mode was used
         during project initialisation.
 
         Args:
@@ -1295,7 +1295,7 @@ class ExtensionManager:
                 create_missing_active_skills_dir=True,
             )
 
-        # Auto-register extension commands as agent skills when --ai-skills
+        # Auto-register extension commands as agent skills when skills mode
         # was used during project initialisation (feature parity).
         registered_skills = self._register_extension_skills(
             manifest, dest_dir, link_outputs=link_commands
