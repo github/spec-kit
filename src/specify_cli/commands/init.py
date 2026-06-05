@@ -73,20 +73,75 @@ def ensure_constitution_from_template(
 def register(app: typer.Typer) -> None:
     @app.command()
     def init(
-        project_name: str = typer.Argument(None, help="Name for your new project directory (optional if using --here, or use '.' for current directory)"),
-        script_type: str = typer.Option(None, "--script", help="Script type to use: sh or ps"),
-        ignore_agent_tools: bool = typer.Option(False, "--ignore-agent-tools", help="Skip checks for coding agent tools like Claude Code"),
-        no_git: bool = typer.Option(False, "--no-git", help="Skip git repository initialization"),
-        here: bool = typer.Option(False, "--here", help="Initialize project in the current directory instead of creating a new one"),
-        force: bool = typer.Option(False, "--force", help="Force merge/overwrite when using --here (skip confirmation)"),
-        skip_tls: bool = typer.Option(False, "--skip-tls", help="Deprecated (no-op). Previously: skip SSL/TLS verification.", hidden=True),
-        debug: bool = typer.Option(False, "--debug", help="Deprecated. Previously: show verbose diagnostic output; currently only prints additional diagnostic details on failure.", hidden=True),
-        github_token: str = typer.Option(None, "--github-token", help="Deprecated (no-op). Previously: GitHub token for API requests.", hidden=True),
-        offline: bool = typer.Option(False, "--offline", help="Deprecated (no-op). All scaffolding now uses bundled assets.", hidden=True),
-        preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
-        branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, …, 1000, … — expands past 999 automatically) or 'timestamp' (YYYYMMDD-HHMMSS)"),
-        integration: str = typer.Option(None, "--integration", help="AI coding agent integration to use (e.g. --integration copilot). See 'specify check' for available integrations."),
-        integration_options: str = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
+        project_name: str = typer.Argument(
+            None,
+            help="Name for your new project directory (optional if using --here, or use '.' for current directory)",
+        ),
+        script_type: str = typer.Option(
+            None, "--script", help="Script type to use: sh or ps"
+        ),
+        ignore_agent_tools: bool = typer.Option(
+            False,
+            "--ignore-agent-tools",
+            help="Skip checks for coding agent tools like Claude Code",
+        ),
+        no_git: bool = typer.Option(
+            False, "--no-git", help="Skip git repository initialization"
+        ),
+        here: bool = typer.Option(
+            False,
+            "--here",
+            help="Initialize project in the current directory instead of creating a new one",
+        ),
+        force: bool = typer.Option(
+            False,
+            "--force",
+            help="Force merge/overwrite when using --here (skip confirmation)",
+        ),
+        skip_tls: bool = typer.Option(
+            False,
+            "--skip-tls",
+            help="Deprecated (no-op). Previously: skip SSL/TLS verification.",
+            hidden=True,
+        ),
+        debug: bool = typer.Option(
+            False,
+            "--debug",
+            help="Deprecated. Previously: show verbose diagnostic output; currently only prints additional diagnostic details on failure.",
+            hidden=True,
+        ),
+        github_token: str = typer.Option(
+            None,
+            "--github-token",
+            help="Deprecated (no-op). Previously: GitHub token for API requests.",
+            hidden=True,
+        ),
+        offline: bool = typer.Option(
+            False,
+            "--offline",
+            help="Deprecated (no-op). All scaffolding now uses bundled assets.",
+            hidden=True,
+        ),
+        preset: str = typer.Option(
+            None,
+            "--preset",
+            help="Install a preset during initialization (by preset ID)",
+        ),
+        branch_numbering: str = typer.Option(
+            None,
+            "--branch-numbering",
+            help="Branch numbering strategy: 'sequential' (001, 002, …, 1000, … — expands past 999 automatically) or 'timestamp' (YYYYMMDD-HHMMSS)",
+        ),
+        integration: str = typer.Option(
+            None,
+            "--integration",
+            help="AI coding agent integration to use (e.g. --integration copilot). See 'specify check' for available integrations.",
+        ),
+        integration_options: str = typer.Option(
+            None,
+            "--integration-options",
+            help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")',
+        ),
     ):
         """
         Initialize a new Specify project.
@@ -239,7 +294,9 @@ def register(app: typer.Typer) -> None:
 
         if integration:
             if integration not in AGENT_CONFIG:
-                console.print(f"[red]Error:[/red] Invalid integration '{integration}'. Choose from: {', '.join(AGENT_CONFIG.keys())}")
+                console.print(
+                    f"[red]Error:[/red] Invalid integration '{integration}'. Choose from: {', '.join(AGENT_CONFIG.keys())}"
+                )
                 raise typer.Exit(1)
             selected_ai = integration
         elif not _stdin_is_interactive():
@@ -263,8 +320,12 @@ def register(app: typer.Typer) -> None:
                 raise typer.Exit(1)
 
         if selected_ai == "generic" and not integration_options:
-            console.print("[red]Error:[/red] --integration generic requires --integration-options with --commands-dir")
-            console.print('[dim]Example: specify init my-project --integration generic --integration-options="--commands-dir .myagent/commands/"[/dim]')
+            console.print(
+                "[red]Error:[/red] --integration generic requires --integration-options with --commands-dir"
+            )
+            console.print(
+                '[dim]Example: specify init my-project --integration generic --integration-options="--commands-dir .myagent/commands/"[/dim]'
+            )
             raise typer.Exit(1)
 
         current_dir = Path.cwd()
@@ -681,7 +742,9 @@ def register(app: typer.Typer) -> None:
 
         agent_config = AGENT_CONFIG.get(selected_ai)
         if agent_config:
-            agent_folder = agent_config["folder"] or integration_parsed_options.get("commands_dir")
+            agent_folder = agent_config["folder"] or integration_parsed_options.get(
+                "commands_dir"
+            )
             if agent_folder:
                 security_notice = Panel(
                     f"Some agents may store credentials, auth tokens, or other identifying and private artifacts in the agent folder within your project.\n"
@@ -717,12 +780,18 @@ def register(app: typer.Typer) -> None:
 
         from ..integrations.base import SkillsIntegration as _SkillsInt
 
+        _is_skills_integration = isinstance(
+            resolved_integration, _SkillsInt
+        ) or getattr(resolved_integration, "_skills_mode", False)
+
         codex_skill_mode = selected_ai == "codex" and _is_skills_integration
         claude_skill_mode = selected_ai == "claude" and _is_skills_integration
         kimi_skill_mode = selected_ai == "kimi"
         agy_skill_mode = selected_ai == "agy" and _is_skills_integration
         trae_skill_mode = selected_ai == "trae"
-        cursor_agent_skill_mode = selected_ai == "cursor-agent" and _is_skills_integration
+        cursor_agent_skill_mode = (
+            selected_ai == "cursor-agent" and _is_skills_integration
+        )
         copilot_skill_mode = selected_ai == "copilot" and _is_skills_integration
         devin_skill_mode = selected_ai == "devin"
         zed_skill_mode = selected_ai == "zed"
@@ -740,13 +809,19 @@ def register(app: typer.Typer) -> None:
         )
 
         if codex_skill_mode:
-            steps_lines.append(f"{step_num}. Start Codex in this project directory; spec-kit skills were installed to [cyan].agents/skills[/cyan]")
+            steps_lines.append(
+                f"{step_num}. Start Codex in this project directory; spec-kit skills were installed to [cyan].agents/skills[/cyan]"
+            )
             step_num += 1
         if claude_skill_mode:
-            steps_lines.append(f"{step_num}. Start Claude in this project directory; spec-kit skills were installed to [cyan].claude/skills[/cyan]")
+            steps_lines.append(
+                f"{step_num}. Start Claude in this project directory; spec-kit skills were installed to [cyan].claude/skills[/cyan]"
+            )
             step_num += 1
         if cursor_agent_skill_mode:
-            steps_lines.append(f"{step_num}. Start Cursor Agent in this project directory; spec-kit skills were installed to [cyan].cursor/skills[/cyan]")
+            steps_lines.append(
+                f"{step_num}. Start Cursor Agent in this project directory; spec-kit skills were installed to [cyan].cursor/skills[/cyan]"
+            )
             step_num += 1
         if devin_skill_mode:
             steps_lines.append(
