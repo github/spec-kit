@@ -599,7 +599,12 @@ class TestInitIntegrationFlag:
             def chmod_call_matches(call) -> bool:
                 target = call.args[0] if call.args else call.kwargs.get("self")
                 mode = call.args[1] if len(call.args) > 1 else call.kwargs.get("mode")
-                return target is not None and Path(target).parent == written.parent and mode == 0o644
+                if target is None or mode != 0o644:
+                    return False
+                target_path = Path(target)
+                if target_path.parent != written.parent:
+                    return False
+                return target_path.name == written.name or target_path.name.startswith(f".{written.name}.")
 
             assert any(
                 chmod_call_matches(call)

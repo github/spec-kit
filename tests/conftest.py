@@ -150,7 +150,7 @@ def _build_parallel_injected_args(args: list[str], workers: int) -> list[str]:
 
 def pytest_load_initial_conftests(early_config, parser, args):
     """Inject xdist flags early so --parallel actually runs with workers."""
-    if "--parallel" not in args:
+    if "--parallel" not in _args_before_double_dash(args):
         return
     if not _has_xdist_installed():
         return

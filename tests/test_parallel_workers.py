@@ -308,6 +308,13 @@ def test_extract_cli_option_ignores_args_after_double_dash():
     assert _extract_cli_option(args, "--parallel-tier", "medium") == "medium"
 
 
+def test_args_before_double_dash_excludes_parallel_after_sentinel():
+    from tests.conftest import _args_before_double_dash
+
+    args = ["-q", "--", "--parallel"]
+    assert "--parallel" not in _args_before_double_dash(args)
+
+
 def test_is_plugin_autoload_disabled_truthy(monkeypatch):
     monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
     assert _is_plugin_autoload_disabled()
