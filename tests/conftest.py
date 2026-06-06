@@ -77,6 +77,23 @@ def _is_xdist_disabled(args: list[str]) -> bool:
     return False
 
 
+def _is_xdist_explicitly_enabled(args: list[str]) -> bool:
+    """Return True when users explicitly enable xdist via -p xdist."""
+    args = _args_before_double_dash(args)
+    idx = 0
+    while idx < len(args):
+        arg = args[idx]
+        if arg == "-p":
+            if idx + 1 < len(args) and "xdist" in args[idx + 1] and not args[idx + 1].startswith("no:"):
+                return True
+            idx += 2
+            continue
+        if arg.startswith("-p") and "xdist" in arg and "no:xdist" not in arg:
+            return True
+        idx += 1
+    return False
+
+
 def _extract_cli_option(args: list[str], option: str, default: str | None = None) -> str | None:
     """Extract option value from --opt value or --opt=value forms."""
     args = _args_before_double_dash(args)
@@ -129,7 +146,7 @@ def pytest_load_initial_conftests(early_config, parser, args):
         return
     if not _has_xdist_installed():
         return
-    if _is_plugin_autoload_disabled():
+    if _is_plugin_autoload_disabled() and not _is_xdist_explicitly_enabled(args):
         return
     if _is_xdist_disabled(args):
         return

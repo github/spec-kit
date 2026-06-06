@@ -9,6 +9,7 @@ from tests.conftest import (
     _has_dist_arg,
     _has_numprocesses_arg,
     _is_plugin_autoload_disabled,
+    _is_xdist_explicitly_enabled,
     _is_xdist_disabled,
     pytest_report_header,
 )
@@ -217,6 +218,21 @@ def test_detect_cgroup_cpu_quota_count_v1_floors_fractional_quota(monkeypatch):
     assert _parallel._detect_cgroup_cpu_quota_count() == 1
 
 
+def test_detect_total_memory_uses_sc_pagesize_fallback(monkeypatch):
+    def fake_sysconf(name):
+        if name == "SC_PAGE_SIZE":
+            raise OSError("unsupported")
+        if name == "SC_PAGESIZE":
+            return 4096
+        if name == "SC_PHYS_PAGES":
+            return 10
+        raise ValueError(name)
+
+    monkeypatch.setattr(_parallel.os, "sysconf", fake_sysconf, raising=False)
+    monkeypatch.setattr(_parallel.sys, "platform", "linux")
+    assert _parallel.detect_total_memory_bytes() == 40960
+
+
 def test_parallel_report_header_formats_zero_memory_values():
     settings = _parallel.ParallelSettings(
         tier="medium",
@@ -263,6 +279,14 @@ def test_is_xdist_disabled_detects_split_plugin_flag():
 
 def test_is_xdist_disabled_detects_compact_plugin_flag():
     assert _is_xdist_disabled(["--parallel", "-pno:xdist"])
+
+
+def test_is_xdist_explicitly_enabled_detects_split_plugin_flag():
+    assert _is_xdist_explicitly_enabled(["--parallel", "-p", "xdist"])
+
+
+def test_is_xdist_explicitly_enabled_detects_compact_plugin_flag():
+    assert _is_xdist_explicitly_enabled(["--parallel", "-pxdist"])
 
 
 def test_numprocesses_and_dist_detection_ignore_args_after_double_dash():

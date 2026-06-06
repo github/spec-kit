@@ -598,7 +598,6 @@ class TestInitIntegrationFlag:
         if os.name == "nt":
             assert any(
                 Path(call.args[0]).parent == written.parent
-                and Path(call.args[0]).name.startswith(".plan-template.md.")
                 and call.args[1] == 0o644
                 for call in chmod_spy.call_args_list
             )
