@@ -2,14 +2,15 @@
  
 import json
 import os
-import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
  
 import pytest
  
 from tests.conftest import requires_bash
+from tests._path_utils import assert_normalized_path_equal
  
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
@@ -99,11 +100,6 @@ def _is_shell_absolute(path_value: str) -> bool:
     return Path(path_value).is_absolute() or path_value.startswith("/")
 
 
-def _normalize_path_text(path_value: str) -> str:
-    normalized = path_value.replace("\\", "/")
-    return re.sub(r"/{2,}", "/", normalized)
- 
- 
 def _run_bash_format_command(repo: Path, command_name: str) -> subprocess.CompletedProcess:
     script = repo / ".specify" / "scripts" / "bash" / "common.sh"
     return subprocess.run(
@@ -206,7 +202,10 @@ def test_setup_tasks_bash_core_template_resolved(tasks_repo: Path) -> None:
     tasks_tmpl_raw = data["TASKS_TEMPLATE"]
     if os.name == "nt":
         assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
-        assert _normalize_path_text(tasks_tmpl_raw).endswith("/.specify/templates/tasks-template.md")
+        assert_normalized_path_equal(
+            tasks_tmpl_raw,
+            tasks_repo / ".specify" / "templates" / "tasks-template.md",
+        )
     else:
         tasks_tmpl = Path(tasks_tmpl_raw)
         assert tasks_tmpl.is_absolute(), "TASKS_TEMPLATE must be an absolute path"
@@ -246,9 +245,7 @@ def test_setup_tasks_bash_override_wins(tasks_repo: Path) -> None:
     assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
     # The resolved path must be inside the overrides directory
     if os.name == "nt":
-        assert _normalize_path_text(tasks_tmpl_raw).endswith("/.specify/templates/overrides/tasks-template.md"), (
-            f"Expected override path but got: {tasks_tmpl_raw}"
-        )
+        assert_normalized_path_equal(tasks_tmpl_raw, override_file.resolve())
     else:
         tasks_tmpl = Path(tasks_tmpl_raw)
         assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
@@ -290,10 +287,7 @@ def test_setup_tasks_bash_extension_wins_over_core(tasks_repo: Path) -> None:
     tasks_tmpl_raw = data["TASKS_TEMPLATE"]
     assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
     if os.name == "nt":
-        expected_rel = extension_file.relative_to(tasks_repo).as_posix()
-        assert _normalize_path_text(tasks_tmpl_raw).endswith(expected_rel), (
-            f"Expected extension path but got: {tasks_tmpl_raw}"
-        )
+        assert_normalized_path_equal(tasks_tmpl_raw, extension_file.resolve())
     else:
         tasks_tmpl = Path(tasks_tmpl_raw)
         assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
@@ -341,10 +335,7 @@ def test_setup_tasks_bash_preset_wins_over_extension(tasks_repo: Path) -> None:
     tasks_tmpl_raw = data["TASKS_TEMPLATE"]
     assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
     if os.name == "nt":
-        expected_rel = preset_file.relative_to(tasks_repo).as_posix()
-        assert _normalize_path_text(tasks_tmpl_raw).endswith(expected_rel), (
-            f"Expected preset path but got: {tasks_tmpl_raw}"
-        )
+        assert_normalized_path_equal(tasks_tmpl_raw, preset_file.resolve())
     else:
         tasks_tmpl = Path(tasks_tmpl_raw)
         assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
@@ -363,20 +354,22 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
  
     # resolve_template reads .specify/presets/.registry as a JSON object with a
     # "presets" map where each entry has a numeric "priority" (lower = higher
-    # precedence). Create two presets; priority-1-preset wins over priority-2-preset.
+    # precedence). Use explicit registry priorities instead of inferring from
+    # preset IDs so the contract is unambiguous on all platforms.
+    low_priority_dir = (
+        tasks_repo / ".specify" / "presets" / "priority-2-preset" / "templates"
+    )
+
+    low_priority_dir.mkdir(parents=True, exist_ok=True)
+    low_priority_file = low_priority_dir / "tasks-template.md"
+    low_priority_file.write_text("# low priority preset tasks template\n", encoding="utf-8")
+
     high_priority_dir = (
         tasks_repo / ".specify" / "presets" / "priority-1-preset" / "templates"
     )
     high_priority_dir.mkdir(parents=True, exist_ok=True)
     high_priority_file = high_priority_dir / "tasks-template.md"
     high_priority_file.write_text("# high priority preset tasks template\n", encoding="utf-8")
-    low_priority_dir = (
-        tasks_repo / ".specify" / "presets" / "priority-2-preset" / "templates"
-    )
-    
-    low_priority_dir.mkdir(parents=True, exist_ok=True)
-    low_priority_file = low_priority_dir / "tasks-template.md"
-    low_priority_file.write_text("# low priority preset tasks template\n", encoding="utf-8")
 
     # Write .registry JSON using the correct schema: object with "presets" map,
     # each preset has a numeric "priority" (lower number = higher precedence).
@@ -408,12 +401,7 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
     tasks_tmpl_raw = data["TASKS_TEMPLATE"]
     assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
     if os.name == "nt":
-        normalized = _normalize_path_text(tasks_tmpl_raw)
-        expected_high = high_priority_file.relative_to(tasks_repo).as_posix()
-        expected_low = low_priority_file.relative_to(tasks_repo).as_posix()
-        assert normalized.endswith(expected_high) or normalized.endswith(expected_low), (
-            f"Unexpected preset path resolution: {tasks_tmpl_raw}"
-        )
+        assert_normalized_path_equal(tasks_tmpl_raw, high_priority_file.resolve())
     else:
         tasks_tmpl = Path(tasks_tmpl_raw)
         assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
@@ -539,13 +527,27 @@ def test_setup_tasks_bash_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -
 
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
 
+    env = _clean_env()
+    if os.name == "nt":
+        shim_dir = tasks_repo / ".specify" / "shim-bin"
+        shim_dir.mkdir(parents=True, exist_ok=True)
+        python3_shim = shim_dir / "python3"
+        python_exe = sys.executable.replace("\\", "/")
+        python3_shim.write_text(
+            f"#!/usr/bin/env bash\n\"{python_exe}\" \"$@\"\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        python3_shim.chmod(0o755)
+        env["PATH"] = f"{shim_dir}:{env.get('PATH', '')}"
+
     result = subprocess.run(
         ["bash", str(script), "--json"],
         cwd=tasks_repo,
         capture_output=True,
         text=True,
         check=False,
-        env=_clean_env(),
+        env=env,
     )
 
     assert result.returncode != 0

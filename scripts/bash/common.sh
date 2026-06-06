@@ -433,12 +433,16 @@ resolve_template() {
     local presets_dir="$repo_root/.specify/presets"
     if [ -d "$presets_dir" ]; then
         local registry_file="$presets_dir/.registry"
-        if [ -f "$registry_file" ] && command -v python3 >/dev/null 2>&1; then
+        if [ -f "$registry_file" ] && (command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1); then
             # Read preset IDs sorted by priority (lower number = higher precedence).
             # The python3 call is wrapped in an if-condition so that set -e does not
             # abort the function when python3 exits non-zero (e.g. invalid JSON).
             local sorted_presets=""
-            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" python3 -c "
+            local python_cmd="python3"
+            if ! command -v "$python_cmd" >/dev/null 2>&1; then
+                python_cmd="python"
+            fi
+            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "$python_cmd" -c "
 import json, sys, os
 try:
     with open(os.environ['SPECKIT_REGISTRY']) as f:
@@ -453,6 +457,7 @@ except Exception:
                 if [ -n "$sorted_presets" ]; then
                     # python3 succeeded and returned preset IDs — search in priority order
                     while IFS= read -r preset_id; do
+                        preset_id="${preset_id%$'\r'}"
                         local candidate="$presets_dir/$preset_id/templates/${template_name}.md"
                         [ -f "$candidate" ] && echo "$candidate" && return 0
                     done <<< "$sorted_presets"
@@ -460,19 +465,19 @@ except Exception:
                 # python3 succeeded but registry has no presets — nothing to search
             else
                 # python3 failed (missing, or registry parse error) — fall back to unordered directory scan
-                for preset in "$presets_dir"/*/; do
+                while IFS= read -r preset; do
                     [ -d "$preset" ] || continue
                     local candidate="$preset/templates/${template_name}.md"
                     [ -f "$candidate" ] && echo "$candidate" && return 0
-                done
+                done < <(find "$presets_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | LC_ALL=C sort)
             fi
         else
             # Fallback: alphabetical directory order (no python3 available)
-            for preset in "$presets_dir"/*/; do
+            while IFS= read -r preset; do
                 [ -d "$preset" ] || continue
                 local candidate="$preset/templates/${template_name}.md"
                 [ -f "$candidate" ] && echo "$candidate" && return 0
-            done
+            done < <(find "$presets_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | LC_ALL=C sort)
         fi
     fi
 

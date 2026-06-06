@@ -257,6 +257,10 @@ def pytest_configure(config):
     if not config.getoption("--parallel"):
         return
 
+    invocation_args = list(config.invocation_params.args)
+    if _is_xdist_disabled(invocation_args):
+        raise pytest.UsageError("--parallel cannot be used with '-p no:xdist'.")
+
     max_workers = config.getoption("--parallel-max-workers")
     tier = config.getoption("--parallel-tier")
     if max_workers is not None and max_workers < 1:
