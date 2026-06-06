@@ -5,10 +5,169 @@ import re
 import shutil
 import subprocess
 import sys
+import importlib.util
 
 import pytest
 
+from tests._parallel import (
+    compute_recommended_workers,
+    detect_available_memory_bytes,
+    detect_effective_cpu_count,
+    detect_total_memory_bytes,
+)
+
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _args_before_double_dash(args: list[str]) -> list[str]:
+    """Return only option-parsed args before '--' positional sentinel."""
+    if "--" in args:
+        return args[:args.index("--")]
+    return args
+
+
+def _has_xdist_installed() -> bool:
+    """Return whether pytest-xdist is importable in this environment."""
+    return importlib.util.find_spec("xdist") is not None
+
+
+def _has_numprocesses_arg(args: list[str]) -> bool:
+    """Return True when users explicitly pass -n/--numprocesses."""
+    args = _args_before_double_dash(args)
+    idx = 0
+    while idx < len(args):
+        arg = args[idx]
+        if arg in ("-n", "--numprocesses"):
+            return True
+        if arg.startswith("--numprocesses="):
+            return True
+        # Support compact forms like -n2 or -nauto
+        if arg.startswith("-n") and arg != "-n":
+            return True
+        idx += 1
+    return False
+
+
+def _has_dist_arg(args: list[str]) -> bool:
+    """Return True when users explicitly pass --dist."""
+    args = _args_before_double_dash(args)
+    return any(arg == "--dist" or arg.startswith("--dist=") for arg in args)
+
+
+def _is_xdist_disabled(args: list[str]) -> bool:
+    """Return True when users explicitly disable xdist with -p no:xdist."""
+    args = _args_before_double_dash(args)
+    idx = 0
+    while idx < len(args):
+        arg = args[idx]
+        if arg == "-p":
+            if idx + 1 < len(args) and args[idx + 1].startswith("no:xdist"):
+                return True
+            idx += 2
+            continue
+        if arg.startswith("-pno:xdist"):
+            return True
+        idx += 1
+    return False
+
+
+def _extract_cli_option(args: list[str], option: str, default: str | None = None) -> str | None:
+    """Extract option value from --opt value or --opt=value forms."""
+    args = _args_before_double_dash(args)
+    prefix = f"{option}="
+    idx = 0
+    while idx < len(args):
+        arg = args[idx]
+        if arg == option:
+            if idx + 1 < len(args):
+                return args[idx + 1]
+            return default
+        if arg.startswith(prefix):
+            return arg[len(prefix):]
+        idx += 1
+    return default
+
+
+def pytest_load_initial_conftests(early_config, parser, args):
+    """Inject xdist flags early so --parallel actually runs with workers."""
+    if "--parallel" not in args:
+        return
+    if not _has_xdist_installed():
+        return
+    if _is_xdist_disabled(args):
+        return
+    if _has_numprocesses_arg(args):
+        return
+
+    tier = _extract_cli_option(args, "--parallel-tier", "medium")
+    max_workers_raw = _extract_cli_option(args, "--parallel-max-workers", None)
+    max_workers = None
+    if max_workers_raw not in (None, ""):
+        try:
+            max_workers = int(max_workers_raw)
+        except ValueError:
+            max_workers = None
+
+    settings = compute_recommended_workers(
+        cpu_count=detect_effective_cpu_count(),
+        total_memory_bytes=detect_total_memory_bytes(),
+        available_memory_bytes=detect_available_memory_bytes(),
+        platform_name=sys.platform,
+        max_workers=max_workers,
+        tier=tier if tier in ("low", "medium", "high") else "medium",
+    )
+
+    injected_args = ["-n", str(settings.workers)]
+    if not _has_dist_arg(args):
+        injected_args.extend(["--dist", "worksteal"])
+    if "--" in args:
+        idx = args.index("--")
+        args[idx:idx] = injected_args
+    else:
+        args.extend(injected_args)
+
+
+def pytest_cmdline_main(config):
+    """Reinvoke pytest with explicit xdist args when --parallel is requested."""
+    if not config.getoption("--parallel"):
+        return None
+    if not _has_xdist_installed():
+        return None
+    if os.environ.get("SPEC_KIT_PARALLEL_REINVOKED") == "1":
+        return None
+
+    original_args = list(config.invocation_params.args)
+    if _is_xdist_disabled(original_args):
+        return None
+    if _has_numprocesses_arg(original_args):
+        return None
+
+    max_workers = config.getoption("--parallel-max-workers")
+    tier = config.getoption("--parallel-tier")
+    settings = compute_recommended_workers(
+        cpu_count=detect_effective_cpu_count(),
+        total_memory_bytes=detect_total_memory_bytes(),
+        available_memory_bytes=detect_available_memory_bytes(),
+        platform_name=sys.platform,
+        max_workers=max_workers,
+        tier=tier,
+    )
+
+    injected_args = ["-n", str(settings.workers)]
+    if not _has_dist_arg(original_args):
+        injected_args.extend(["--dist", "worksteal"])
+
+    reinvoke_args = list(original_args)
+    if "--" in reinvoke_args:
+        idx = reinvoke_args.index("--")
+        reinvoke_args[idx:idx] = injected_args
+    else:
+        reinvoke_args.extend(injected_args)
+
+    env = os.environ.copy()
+    env["SPEC_KIT_PARALLEL_REINVOKED"] = "1"
+    result = subprocess.run([sys.executable, "-m", "pytest", *reinvoke_args], env=env)
+    return result.returncode
 
 
 def _has_working_bash() -> bool:
@@ -66,6 +225,95 @@ requires_bash = pytest.mark.skipif(
 def strip_ansi(text: str) -> str:
     """Remove ANSI escape codes from Rich-formatted CLI output."""
     return _ANSI_ESCAPE_RE.sub("", text)
+
+
+def pytest_addoption(parser):
+    """Add Spec Kit parallel-test controls on top of pytest-xdist."""
+    group = parser.getgroup("spec-kit")
+    group.addoption(
+        "--parallel",
+        action="store_true",
+        default=False,
+        help="Run tests in parallel using a system-aware worker limit.",
+    )
+    group.addoption(
+        "--parallel-max-workers",
+        action="store",
+        type=int,
+        default=None,
+        help="Upper bound for --parallel worker count.",
+    )
+    group.addoption(
+        "--parallel-tier",
+        action="store",
+        choices=("low", "medium", "high"),
+        default="medium",
+        help="Parallel aggressiveness tier: low, medium, or high (default: medium).",
+    )
+
+
+def pytest_configure(config):
+    """Enable bounded xdist parallelism only when --parallel is requested."""
+    if not config.getoption("--parallel"):
+        return
+
+    max_workers = config.getoption("--parallel-max-workers")
+    tier = config.getoption("--parallel-tier")
+    if max_workers is not None and max_workers < 1:
+        raise pytest.UsageError("--parallel-max-workers must be >= 1")
+
+    if not hasattr(config.option, "numprocesses"):
+        raise pytest.UsageError(
+            "--parallel requires pytest-xdist. Install test extras with `uv sync --extra test`."
+        )
+
+    settings = compute_recommended_workers(
+        cpu_count=detect_effective_cpu_count(),
+        total_memory_bytes=detect_total_memory_bytes(),
+        available_memory_bytes=detect_available_memory_bytes(),
+        platform_name=sys.platform,
+        max_workers=max_workers,
+        tier=tier,
+    )
+
+    # Respect explicit -n values from CLI; otherwise keep the early-injected value.
+    requested_numprocesses = getattr(config.option, "numprocesses", None)
+    if requested_numprocesses in (None, 0):
+        config.option.numprocesses = settings.workers
+    if hasattr(config.option, "dist") and not config.option.dist:
+        config.option.dist = "worksteal"
+
+    setattr(config, "_spec_kit_parallel_settings", settings)
+    setattr(config, "_spec_kit_parallel_effective_workers", getattr(config.option, "numprocesses", settings.workers))
+
+
+def pytest_report_header(config):
+    """Display resolved system-aware parallel settings in pytest header."""
+    settings = getattr(config, "_spec_kit_parallel_settings", None)
+    if settings is None:
+        return None
+
+    effective_workers = getattr(config, "_spec_kit_parallel_effective_workers", settings.workers)
+
+    total_gib = (
+        f"{settings.total_memory_bytes / (1024 ** 3):.1f}GiB"
+        if settings.total_memory_bytes is not None
+        else "unknown"
+    )
+    avail_gib = (
+        f"{settings.available_memory_bytes / (1024 ** 3):.1f}GiB"
+        if settings.available_memory_bytes is not None
+        else "unknown"
+    )
+    return (
+        "[spec-kit] --parallel settings: "
+        f"tier={settings.tier}, "
+        f"workers={effective_workers} "
+        f"(cpu_cap={settings.cpu_cap}, mem_cap={settings.memory_cap}, os_cap={settings.os_cap}), "
+        f"effective_cpus={settings.effective_cpus}, "
+        f"avail_mem={avail_gib}, total_mem={total_gib}, "
+        f"mem_per_worker={settings.memory_per_worker_gib:.1f}GiB"
+    )
 
 
 # ---------------------------------------------------------------------------

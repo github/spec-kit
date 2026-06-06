@@ -51,6 +51,7 @@ packages = ["src/specify_cli"]
 test = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "pytest-xdist>=3.6.1",
 ]
 
 [tool.pytest.ini_options]

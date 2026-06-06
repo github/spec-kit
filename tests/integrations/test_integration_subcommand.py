@@ -2,6 +2,9 @@
 
 import json
 import os
+import sys
+
+import pytest
 
 from typer.testing import CliRunner
 
@@ -10,6 +13,23 @@ from tests.conftest import strip_ansi
 
 
 runner = CliRunner()
+
+
+def _can_create_dir_symlink(tmp_path) -> bool:
+    target = tmp_path / "symlink-target"
+    link = tmp_path / "symlink-link"
+    target.mkdir(exist_ok=True)
+    try:
+        link.symlink_to(target, target_is_directory=True)
+        return True
+    except (OSError, NotImplementedError):
+        return False
+    finally:
+        try:
+            if link.exists() or link.is_symlink():
+                link.unlink()
+        except OSError:
+            pass
 
 
 def _init_project(tmp_path, integration="copilot"):
@@ -1079,10 +1099,8 @@ class TestIntegrationSwitch:
         Copilot follow-up on #2375: leaf-only symlink check let writes escape
         when an *ancestor* directory was symlinked outside the project root.
         """
-        import sys
-        if sys.platform.startswith("win"):
-            import pytest as _pytest
-            _pytest.skip("Symlink creation typically requires admin on Windows")
+        if sys.platform.startswith("win") and not _can_create_dir_symlink(tmp_path):
+            pytest.skip("Directory symlink creation is not available in this Windows environment")
 
         project = _init_project(tmp_path, "claude")
         bash_dir = project / ".specify" / "scripts" / "bash"

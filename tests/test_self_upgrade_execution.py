@@ -1,5 +1,6 @@
 """Installer execution, verification, and error-path tests for `specify self upgrade`."""
 
+import os
 import errno
 import subprocess
 from unittest.mock import patch
@@ -74,16 +75,17 @@ class TestInstallerMissing:
             result = runner.invoke(app, ["self", "upgrade"])
         assert result.exit_code == 0
 
-    @requires_posix
     def test_relative_installer_path_does_not_require_path_lookup(
-        self, monkeypatch, uv_tool_argv0, clean_environ, tmp_path
+        self, uv_tool_argv0, clean_environ, tmp_path, monkeypatch
     ):
-        fake_uv = tmp_path / "uv"
+        fake_uv = tmp_path / "uv-installer"
         fake_uv.write_text("#!/bin/sh\n")
         fake_uv.chmod(0o755)
         monkeypatch.chdir(tmp_path)
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda name: None
+        ), patch(
+            "specify_cli._version.os.access", return_value=True
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ), patch(
@@ -91,7 +93,7 @@ class TestInstallerMissing:
         ), patch(
             "specify_cli._version._assemble_installer_argv",
             return_value=[
-                "./uv",
+                "./uv-installer",
                 "tool",
                 "install",
                 "specify-cli",
@@ -105,11 +107,10 @@ class TestInstallerMissing:
             result = runner.invoke(app, ["self", "upgrade"])
 
         assert result.exit_code == 0
-        assert mock_run.call_args.args[0][0] == "./uv"
+        assert mock_run.call_args.args[0][0] == "./uv-installer"
 
-    @requires_posix
     def test_relative_installer_path_missing_gets_path_specific_message(
-        self, monkeypatch, uv_tool_argv0, clean_environ, tmp_path
+        self, uv_tool_argv0, clean_environ, tmp_path, monkeypatch
     ):
         monkeypatch.chdir(tmp_path)
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
@@ -117,7 +118,7 @@ class TestInstallerMissing:
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"), patch(
             "specify_cli._version._assemble_installer_argv",
             return_value=[
-                "./uv",
+                "./uv-installer",
                 "tool",
                 "install",
                 "specify-cli",
@@ -131,7 +132,7 @@ class TestInstallerMissing:
 
         assert result.exit_code == 3
         assert (
-            "Installer path ./uv no longer exists; reinstall it and retry."
+            "Installer path ./uv-installer no longer exists; reinstall it and retry."
             in strip_ansi(result.output)
         )
         assert "not found on PATH" not in strip_ansi(result.output)
@@ -194,11 +195,10 @@ class TestInstallerMissing:
             in strip_ansi(result.output)
         )
 
-    @requires_posix
     def test_relative_installer_path_not_executable_gets_path_specific_message(
-        self, monkeypatch, uv_tool_argv0, clean_environ, tmp_path
+        self, uv_tool_argv0, clean_environ, tmp_path, monkeypatch
     ):
-        fake_uv = tmp_path / "uv"
+        fake_uv = tmp_path / "uv-installer"
         fake_uv.write_text("#!/bin/sh\n")
         fake_uv.chmod(0o644)
         monkeypatch.chdir(tmp_path)
@@ -209,7 +209,7 @@ class TestInstallerMissing:
         ), patch(
             "specify_cli._version._assemble_installer_argv",
             return_value=[
-                "./uv",
+                "./uv-installer",
                 "tool",
                 "install",
                 "specify-cli",
@@ -224,10 +224,10 @@ class TestInstallerMissing:
         out = strip_ansi(result.output)
         assert result.exit_code == 3
         assert (
-            "Installer path ./uv is not an executable file; fix the path or reinstall it and retry."
+            "Installer path ./uv-installer is not an executable file; fix the path or reinstall it and retry."
             in out
         )
-        assert "Installer ./uv is not executable" not in out
+        assert "Installer ./uv-installer is not executable" not in out
 
     def test_real_installer_exit_126_is_not_treated_as_invalid_path(
         self, uv_tool_argv0, clean_environ
