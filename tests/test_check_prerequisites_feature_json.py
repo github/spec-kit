@@ -66,9 +66,9 @@ def _populate_feature(repo: Path, *, with_tasks: bool = False) -> Path:
     return feat
 
 
-def _pin_feature_json(repo: Path) -> None:
+def _pin_feature_json(repo: Path, feature_directory: str = "specs/001-tiny-notes-app") -> None:
     (repo / ".specify" / "feature.json").write_text(
-        json.dumps({"feature_directory": "specs/001-tiny-notes-app"}),
+        json.dumps({"feature_directory": feature_directory}),
         encoding="utf-8",
     )
 
@@ -137,6 +137,27 @@ def test_bash_json_fails_custom_branch_without_feature_json(prereq_repo: Path) -
 
 
 @requires_bash
+def test_bash_json_enforces_branch_when_feature_json_pins_missing_dir(prereq_repo: Path) -> None:
+    # The bypass must only trigger when feature.json matches an EXISTING dir.
+    # A bogus pin must NOT bypass the branch check.
+    _populate_feature(prereq_repo)
+    _pin_feature_json(prereq_repo, feature_directory="specs/999-does-not-exist")
+    result = _run_bash(prereq_repo, "--json")
+    assert result.returncode != 0
+    assert "Not on a feature branch" in result.stderr
+
+
+@requires_bash
+def test_bash_json_enforces_branch_when_feature_json_malformed(prereq_repo: Path) -> None:
+    # Malformed feature.json must fail safe (enforce the branch check), not bypass it.
+    _populate_feature(prereq_repo)
+    (prereq_repo / ".specify" / "feature.json").write_text("{ not json", encoding="utf-8")
+    result = _run_bash(prereq_repo, "--json")
+    assert result.returncode != 0
+    assert "Not on a feature branch" in result.stderr
+
+
+@requires_bash
 def test_bash_paths_only_always_succeeds(prereq_repo: Path) -> None:
     # --paths-only performs no validation and must succeed regardless of branch.
     result = _run_bash(prereq_repo, "--json", "--paths-only")
@@ -156,3 +177,15 @@ def test_ps_json_fails_custom_branch_without_feature_json(prereq_repo: Path) -> 
     _populate_feature(prereq_repo)
     result = _run_ps(prereq_repo, "-Json")
     assert result.returncode != 0
+    # Assert the branch check is the failure cause — not the later "feature dir
+    # not found" check, which would also exit 1 and mask a broken guard.
+    assert "Not on a feature branch" in result.stderr
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+def test_ps_json_enforces_branch_when_feature_json_pins_missing_dir(prereq_repo: Path) -> None:
+    _populate_feature(prereq_repo)
+    _pin_feature_json(prereq_repo, feature_directory="specs/999-does-not-exist")
+    result = _run_ps(prereq_repo, "-Json")
+    assert result.returncode != 0
+    assert "Not on a feature branch" in result.stderr
