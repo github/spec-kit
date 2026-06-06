@@ -50,6 +50,15 @@ def _install_core_tasks_template(repo: Path) -> None:
     shutil.copy(TASKS_TEMPLATE, tdir / "tasks-template.md")
  
  
+def _write_feature_json(
+    repo: Path, feature_directory: str = "specs/001-my-feature"
+) -> None:
+    (repo / ".specify" / "feature.json").write_text(
+        json.dumps({"feature_directory": feature_directory}),
+        encoding="utf-8",
+    )
+
+
 def _minimal_feature(repo: Path) -> Path:
     """
     Create a numbered branch-style feature directory with spec.md and plan.md
@@ -60,6 +69,7 @@ def _minimal_feature(repo: Path) -> Path:
     feat.mkdir(parents=True, exist_ok=True)
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
     (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+    _write_feature_json(repo)
     return feat
 
 
@@ -493,6 +503,7 @@ def test_setup_tasks_bash_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -
     feat = tasks_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True, exist_ok=True)
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+    _write_feature_json(tasks_repo)
 
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
 
@@ -551,11 +562,7 @@ def test_setup_tasks_bash_passes_custom_branch_when_feature_json_valid(
     feat.mkdir(parents=True, exist_ok=True)
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
     (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
- 
-    (tasks_repo / ".specify" / "feature.json").write_text(
-        json.dumps({"feature_directory": "specs/001-my-feature"}),
-        encoding="utf-8",
-    )
+    _write_feature_json(tasks_repo)
  
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
  
@@ -572,10 +579,10 @@ def test_setup_tasks_bash_passes_custom_branch_when_feature_json_valid(
  
  
 @requires_bash
-def test_setup_tasks_bash_falls_back_to_main_without_feature_json(
+def test_setup_tasks_bash_errors_without_feature_context(
     tasks_repo: Path,
 ) -> None:
-    """Without feature.json, setup-tasks.sh falls back to specs/main."""
+    """Without feature.json or SPECIFY_FEATURE_DIRECTORY, setup-tasks.sh must error."""
     main_feat = tasks_repo / "specs" / "main"
     main_feat.mkdir(parents=True, exist_ok=True)
     (main_feat / "spec.md").write_text("# spec\n", encoding="utf-8")
@@ -592,9 +599,8 @@ def test_setup_tasks_bash_falls_back_to_main_without_feature_json(
         env=_clean_env(),
     )
 
-    assert result.returncode == 0, result.stderr + result.stdout
-    data = json.loads(result.stdout)
-    assert Path(data["FEATURE_DIR"]) == main_feat
+    assert result.returncode != 0
+    assert "Feature directory not found" in result.stderr
  
 # ===========================================================================
 # POWERSHELL TESTS
@@ -729,6 +735,7 @@ def test_setup_tasks_ps_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -> 
     feat = tasks_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True, exist_ok=True)
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+    _write_feature_json(tasks_repo)
 
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
@@ -791,11 +798,7 @@ def test_setup_tasks_ps_passes_custom_branch_when_feature_json_valid(
     feat.mkdir(parents=True, exist_ok=True)
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
     (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
- 
-    (tasks_repo / ".specify" / "feature.json").write_text(
-        json.dumps({"feature_directory": "specs/001-my-feature"}),
-        encoding="utf-8",
-    )
+    _write_feature_json(tasks_repo)
  
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
@@ -813,10 +816,10 @@ def test_setup_tasks_ps_passes_custom_branch_when_feature_json_valid(
  
  
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
-def test_setup_tasks_ps_falls_back_to_main_without_feature_json(
+def test_setup_tasks_ps_errors_without_feature_context(
     tasks_repo: Path,
 ) -> None:
-    """Without feature.json, setup-tasks.ps1 falls back to specs/main."""
+    """Without feature.json or SPECIFY_FEATURE_DIRECTORY, setup-tasks.ps1 must error."""
     main_feat = tasks_repo / "specs" / "main"
     main_feat.mkdir(parents=True, exist_ok=True)
     (main_feat / "spec.md").write_text("# spec\n", encoding="utf-8")
@@ -834,6 +837,6 @@ def test_setup_tasks_ps_falls_back_to_main_without_feature_json(
         env=_clean_env(),
     )
 
-    assert result.returncode == 0, result.stderr + result.stdout
-    data = json.loads(result.stdout)
-    assert Path(data["FEATURE_DIR"]) == main_feat
+    output = result.stderr + result.stdout
+    assert result.returncode != 0
+    assert "Feature directory not found" in output

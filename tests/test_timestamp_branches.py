@@ -293,50 +293,11 @@ class TestCoreCommonRemovesGitHelpers:
 
 
 @requires_bash
-class TestFindFeatureDirByPrefix:
-    def test_timestamp_branch(self, tmp_path: Path):
-        """Test 10: find_feature_dir_by_prefix with timestamp branch."""
-        (tmp_path / "specs" / "20260319-143022-user-auth").mkdir(parents=True)
-        result = source_and_call(
-            f'find_feature_dir_by_prefix "{tmp_path}" "20260319-143022-user-auth"'
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip() == f"{tmp_path}/specs/20260319-143022-user-auth"
-
-    def test_cross_branch_prefix(self, tmp_path: Path):
-        """Test 11: find_feature_dir_by_prefix cross-branch (different suffix, same timestamp)."""
-        (tmp_path / "specs" / "20260319-143022-original-feat").mkdir(parents=True)
-        result = source_and_call(
-            f'find_feature_dir_by_prefix "{tmp_path}" "20260319-143022-different-name"'
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip() == f"{tmp_path}/specs/20260319-143022-original-feat"
-
-    def test_four_digit_sequential_prefix(self, tmp_path: Path):
-        """find_feature_dir_by_prefix resolves 4+ digit sequential prefix."""
-        (tmp_path / "specs" / "1000-original-feat").mkdir(parents=True)
-        result = source_and_call(
-            f'find_feature_dir_by_prefix "{tmp_path}" "1000-different-name"'
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip() == f"{tmp_path}/specs/1000-original-feat"
-
-    def test_sequential_with_single_path_prefix(self, tmp_path: Path):
-        """Strip one optional prefix segment before prefix directory lookup."""
-        (tmp_path / "specs" / "004-only-dir").mkdir(parents=True)
-        result = source_and_call(
-            f'find_feature_dir_by_prefix "{tmp_path}" "feat/004-other-suffix"'
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip() == f"{tmp_path}/specs/004-only-dir"
-
-    def test_timestamp_with_single_path_prefix_cross_branch(self, tmp_path: Path):
-        (tmp_path / "specs" / "20260319-143022-canonical").mkdir(parents=True)
-        result = source_and_call(
-            f'find_feature_dir_by_prefix "{tmp_path}" "hotfix/20260319-143022-alias"'
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip() == f"{tmp_path}/specs/20260319-143022-canonical"
+class TestFindFeatureDirByPrefixRemoved:
+    def test_find_feature_dir_by_prefix_removed(self):
+        """Directory scanning helper is removed from core common.sh."""
+        result = source_and_call('declare -F find_feature_dir_by_prefix >/dev/null')
+        assert result.returncode != 0
 
 
 # ── get_feature_paths + single-prefix integration ───────────────────────────
@@ -344,26 +305,29 @@ class TestFindFeatureDirByPrefix:
 
 class TestGetFeaturePathsSinglePrefix:
     @requires_bash
-    def test_bash_specify_feature_prefixed_resolves_by_prefix(self, tmp_path: Path):
-        """get_feature_paths: SPECIFY_FEATURE with one optional prefix uses effective name for lookup."""
+    def test_bash_specify_feature_prefixed_requires_explicit_feature_context(
+        self, tmp_path: Path
+    ):
+        """SPECIFY_FEATURE alone no longer triggers path lookup in bash."""
         (tmp_path / ".specify").mkdir()
         (tmp_path / "specs" / "001-target-spec").mkdir(parents=True)
         cmd = (
             f'cd "{tmp_path}" && export SPECIFY_FEATURE="feat/001-other" && '
-            f'source "{COMMON_SH}" && eval "$(get_feature_paths)" && printf "%s" "$FEATURE_DIR"'
+            f'source "{COMMON_SH}" && get_feature_paths'
         )
         result = subprocess.run(
             ["bash", "-c", cmd],
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 0, result.stderr
-        assert result.stdout.strip() == str(tmp_path / "specs" / "001-target-spec")
-
+        assert result.returncode != 0
+        assert "Feature directory not found" in result.stderr
 
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
-    def test_ps_specify_feature_prefixed_resolves_by_prefix(self, git_repo: Path):
-        """PowerShell Get-FeaturePathsEnv: same prefix stripping as bash."""
+    def test_ps_specify_feature_prefixed_requires_explicit_feature_context(
+        self, git_repo: Path
+    ):
+        """PowerShell also requires feature.json or SPECIFY_FEATURE_DIRECTORY."""
         common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
         spec_dir = git_repo / "specs" / "001-ps-prefix-spec"
         spec_dir.mkdir(parents=True)
@@ -375,14 +339,8 @@ class TestGetFeaturePathsSinglePrefix:
             text=True,
             env={**os.environ, "SPECIFY_FEATURE": "feat/001-other"},
         )
-        assert result.returncode == 0, result.stderr
-        for line in result.stdout.splitlines():
-            if line.startswith("FEATURE_DIR="):
-                val = line.split("=", 1)[1].strip()
-                assert val == str(spec_dir)
-                break
-        else:
-            pytest.fail("FEATURE_DIR not found in PowerShell output")
+        assert result.returncode != 0
+        assert "Feature directory not found" in (result.stderr + result.stdout)
 
 
 # ── get_current_branch Tests ─────────────────────────────────────────────────
@@ -1102,8 +1060,8 @@ class TestFeatureDirectoryResolution:
             pytest.fail("FEATURE_DIR not found in output")
 
     @requires_bash
-    def test_fallback_to_directory_lookup(self, git_repo: Path):
-        """Without env var or feature.json, falls back to feature-directory lookup."""
+    def test_errors_without_env_var_or_feature_json(self, git_repo: Path):
+        """Without env var or feature.json, get_feature_paths now errors."""
         spec_dir = git_repo / "specs" / "001-test-feat"
         spec_dir.mkdir(parents=True)
 
@@ -1113,14 +1071,8 @@ class TestFeatureDirectoryResolution:
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 0, result.stderr
-        for line in result.stdout.splitlines():
-            if line.startswith("FEATURE_DIR="):
-                val = line.split("=", 1)[1].strip("'\"")
-                assert val == str(spec_dir)
-                break
-        else:
-            pytest.fail("FEATURE_DIR not found in output")
+        assert result.returncode != 0
+        assert "Feature directory not found" in result.stderr
 
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
     def test_ps_env_var_overrides_branch_lookup(self, git_repo: Path):

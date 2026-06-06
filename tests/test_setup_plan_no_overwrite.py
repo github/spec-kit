@@ -41,6 +41,15 @@ def _minimal_templates(repo: Path) -> None:
     shutil.copy(PLAN_TEMPLATE, tdir / "plan-template.md")
 
 
+def _write_feature_json(
+    repo: Path, feature_directory: str = "specs/001-my-feature"
+) -> None:
+    (repo / ".specify" / "feature.json").write_text(
+        json.dumps({"feature_directory": feature_directory}),
+        encoding="utf-8",
+    )
+
+
 def _clean_env() -> dict[str, str]:
     env = os.environ.copy()
     for key in list(env):
@@ -74,6 +83,7 @@ def plan_repo(tmp_path: Path) -> Path:
     _minimal_templates(repo)
     _install_bash_scripts(repo)
     _install_ps_scripts(repo)
+    _write_feature_json(repo)
     return repo
 
 

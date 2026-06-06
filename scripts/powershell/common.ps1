@@ -39,48 +39,15 @@ function Get-RepoRoot {
 }
 
 function Get-CurrentBranch {
-    # First check if SPECIFY_FEATURE environment variable is set
+    # Return feature name from explicit state only.
+    # Feature state is set by the git extension (via SPECIFY_FEATURE) or by
+    # the specify command (via .specify/feature.json read in Get-FeaturePathsEnv).
     if ($env:SPECIFY_FEATURE) {
         return $env:SPECIFY_FEATURE
     }
 
-    $repoRoot = Get-RepoRoot
-
-    # Fall back to the latest feature directory
-    $specsDir = Join-Path $repoRoot "specs"
-    
-    if (Test-Path $specsDir) {
-        $latestFeature = ""
-        $highest = 0
-        $latestTimestamp = ""
-
-        Get-ChildItem -Path $specsDir -Directory | ForEach-Object {
-            if ($_.Name -match '^(\d{8}-\d{6})-') {
-                # Timestamp-based branch: compare lexicographically
-                $ts = $matches[1]
-                if ($ts -gt $latestTimestamp) {
-                    $latestTimestamp = $ts
-                    $latestFeature = $_.Name
-                }
-            } elseif ($_.Name -match '^(\d{3,})-') {
-                $num = [long]$matches[1]
-                if ($num -gt $highest) {
-                    $highest = $num
-                    # Only update if no timestamp branch found yet
-                    if (-not $latestTimestamp) {
-                        $latestFeature = $_.Name
-                    }
-                }
-            }
-        }
-
-        if ($latestFeature) {
-            return $latestFeature
-        }
-    }
-    
-    # Final fallback
-    return "main"
+    # No explicit feature set - return empty to signal "unknown".
+    return ""
 }
 
 # True when .specify/feature.json pins an existing feature directory that matches the
@@ -151,66 +118,14 @@ function Test-FeatureJsonMatchesFeatureDir {
     return [string]::Equals($normJson, $normActive, $comparison)
 }
 
-# Resolve specs/<feature-dir> by numeric/timestamp prefix (mirrors scripts/bash/common.sh find_feature_dir_by_prefix).
-function Find-FeatureDirByPrefix {
-    param(
-        [Parameter(Mandatory = $true)][string]$RepoRoot,
-        [Parameter(Mandatory = $true)][string]$Branch
-    )
-    $specsDir = Join-Path $RepoRoot 'specs'
-    $branchName = $Branch
-    if ($branchName -match '^([^/]+)/([^/]+)$') {
-        $branchName = $Matches[2]
-    }
-
-    $prefix = $null
-    if ($branchName -match '^(\d{8}-\d{6})-') {
-        $prefix = $Matches[1]
-    } elseif ($branchName -match '^(\d{3,})-') {
-        $prefix = $Matches[1]
-    } else {
-        return (Join-Path $specsDir $branchName)
-    }
-
-    $dirMatches = @()
-    if (Test-Path -LiteralPath $specsDir -PathType Container) {
-        $dirMatches = @(Get-ChildItem -LiteralPath $specsDir -Filter "$prefix-*" -Directory -ErrorAction SilentlyContinue)
-    }
-
-    if ($dirMatches.Count -eq 0) {
-        return (Join-Path $specsDir $branchName)
-    }
-    if ($dirMatches.Count -eq 1) {
-        return $dirMatches[0].FullName
-    }
-    $names = ($dirMatches | ForEach-Object { $_.Name }) -join ' '
-    [Console]::Error.WriteLine("ERROR: Multiple spec directories found with prefix '$prefix': $names")
-    [Console]::Error.WriteLine('Please ensure only one spec directory exists per prefix.')
-    return $null
-}
-
-# Branch-based prefix resolution; mirrors bash get_feature_paths failure (stderr + exit 1).
-function Get-FeatureDirFromBranchPrefixOrExit {
-    param(
-        [Parameter(Mandatory = $true)][string]$RepoRoot,
-        [Parameter(Mandatory = $true)][string]$CurrentBranch
-    )
-    $resolved = Find-FeatureDirByPrefix -RepoRoot $RepoRoot -Branch $CurrentBranch
-    if ($null -eq $resolved) {
-        [Console]::Error.WriteLine('ERROR: Failed to resolve feature directory')
-        exit 1
-    }
-    return $resolved
-}
-
 function Get-FeaturePathsEnv {
     $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
  
     # Resolve feature directory.  Priority:
     #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit override)
-    #   2. .specify/feature.json "feature_directory" key (persisted by __SPECKIT_COMMAND_SPECIFY__)
-    #   3. Branch-name-based prefix lookup (same as scripts/bash/common.sh)
+    #   2. .specify/feature.json "feature_directory" key (persisted by specify command)
+    #   3. Error - no feature context available
     $featureJson = Join-Path $repoRoot '.specify/feature.json'
     if ($env:SPECIFY_FEATURE_DIRECTORY) {
         $featureDir = $env:SPECIFY_FEATURE_DIRECTORY
@@ -233,10 +148,12 @@ function Get-FeaturePathsEnv {
                 $featureDir = Join-Path $repoRoot $featureDir
             }
         } else {
-            $featureDir = Get-FeatureDirFromBranchPrefixOrExit -RepoRoot $repoRoot -CurrentBranch $currentBranch
+            [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE or ensure .specify/feature.json contains feature_directory.")
+            exit 1
         }
     } else {
-        $featureDir = Get-FeatureDirFromBranchPrefixOrExit -RepoRoot $repoRoot -CurrentBranch $currentBranch
+        [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE or run the specify command to create .specify/feature.json.")
+        exit 1
     }
     
     [PSCustomObject]@{

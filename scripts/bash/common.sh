@@ -39,55 +39,19 @@ get_repo_root() {
     (cd "$script_dir/../../.." && pwd)
 }
 
-# Get current feature name, with directory-based fallback
+# Get current feature name from explicit state only.
+# Returns the feature identifier or errors if none is set.
+# Feature state is set by the git extension (via SPECIFY_FEATURE) or by
+# the specify command (via .specify/feature.json read in get_feature_paths).
 get_current_branch() {
-    # First check if SPECIFY_FEATURE environment variable is set
     if [[ -n "${SPECIFY_FEATURE:-}" ]]; then
         echo "$SPECIFY_FEATURE"
         return
     fi
 
-    local repo_root=$(get_repo_root)
-
-    # Fall back to the latest feature directory
-    local specs_dir="$repo_root/specs"
-
-    if [[ -d "$specs_dir" ]]; then
-        local latest_feature=""
-        local highest=0
-        local latest_timestamp=""
-
-        for dir in "$specs_dir"/*; do
-            if [[ -d "$dir" ]]; then
-                local dirname=$(basename "$dir")
-                if [[ "$dirname" =~ ^([0-9]{8}-[0-9]{6})- ]]; then
-                    # Timestamp-based branch: compare lexicographically
-                    local ts="${BASH_REMATCH[1]}"
-                    if [[ "$ts" > "$latest_timestamp" ]]; then
-                        latest_timestamp="$ts"
-                        latest_feature=$dirname
-                    fi
-                elif [[ "$dirname" =~ ^([0-9]{3,})- ]]; then
-                    local number=${BASH_REMATCH[1]}
-                    number=$((10#$number))
-                    if [[ "$number" -gt "$highest" ]]; then
-                        highest=$number
-                        # Only update if no timestamp branch found yet
-                        if [[ -z "$latest_timestamp" ]]; then
-                            latest_feature=$dirname
-                        fi
-                    fi
-                fi
-            fi
-        done
-
-        if [[ -n "$latest_feature" ]]; then
-            echo "$latest_feature"
-            return
-        fi
-    fi
-
-    echo "main"  # Final fallback
+    # No explicit feature set — caller must handle this via feature.json
+    # in get_feature_paths(). Return empty to signal "unknown".
+    echo ""
 }
 
 # Safely read .specify/feature.json's "feature_directory" value.
@@ -143,81 +107,32 @@ feature_json_matches_feature_dir() {
     [[ "$norm_json" == "$norm_active" ]]
 }
 
-# Find feature directory by numeric prefix instead of exact feature-name match
-# This allows multiple names to work on the same spec (e.g., feat/004-fix-bug, 004-add-feature)
-find_feature_dir_by_prefix() {
-    local repo_root="$1"
-    local branch_name="$2"
-    if [[ "$branch_name" =~ ^([^/]+)/([^/]+)$ ]]; then
-        branch_name="${BASH_REMATCH[2]}"
-    fi
-    local specs_dir="$repo_root/specs"
-
-    # Extract prefix from branch (e.g., "004" from "004-whatever" or "20260319-143022" from timestamp branches)
-    local prefix=""
-    if [[ "$branch_name" =~ ^([0-9]{8}-[0-9]{6})- ]]; then
-        prefix="${BASH_REMATCH[1]}"
-    elif [[ "$branch_name" =~ ^([0-9]{3,})- ]]; then
-        prefix="${BASH_REMATCH[1]}"
-    else
-        # If branch doesn't have a recognized prefix, fall back to exact match
-        echo "$specs_dir/$branch_name"
-        return
-    fi
-
-    # Search for directories in specs/ that start with this prefix
-    local matches=()
-    if [[ -d "$specs_dir" ]]; then
-        for dir in "$specs_dir"/"$prefix"-*; do
-            if [[ -d "$dir" ]]; then
-                matches+=("$(basename "$dir")")
-            fi
-        done
-    fi
-
-    # Handle results
-    if [[ ${#matches[@]} -eq 0 ]]; then
-        # No match found - return the branch name path (will fail later with clear error)
-        echo "$specs_dir/$branch_name"
-    elif [[ ${#matches[@]} -eq 1 ]]; then
-        # Exactly one match - perfect!
-        echo "$specs_dir/${matches[0]}"
-    else
-        # Multiple matches - this shouldn't happen with proper naming convention
-        echo "ERROR: Multiple spec directories found with prefix '$prefix': ${matches[*]}" >&2
-        echo "Please ensure only one spec directory exists per prefix." >&2
-        return 1
-    fi
-}
-
 get_feature_paths() {
     local repo_root=$(get_repo_root)
     local current_branch=$(get_current_branch)
 
     # Resolve feature directory.  Priority:
     #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit override)
-    #   2. .specify/feature.json "feature_directory" key (persisted by __SPECKIT_COMMAND_SPECIFY__)
-    #   3. Branch-name-based prefix lookup (legacy fallback)
+    #   2. .specify/feature.json "feature_directory" key (persisted by specify command)
+    #   3. Error — no feature context available
     local feature_dir
     if [[ -n "${SPECIFY_FEATURE_DIRECTORY:-}" ]]; then
         feature_dir="$SPECIFY_FEATURE_DIRECTORY"
         # Normalize relative paths to absolute under repo root
         [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
     elif [[ -f "$repo_root/.specify/feature.json" ]]; then
-        # Shared, set -e-safe parser: jq -> python3 -> grep/sed. Returns empty on
-        # missing/unparseable/unset so we fall through to the branch-prefix lookup.
         local _fd
         _fd=$(read_feature_json_feature_directory "$repo_root")
         if [[ -n "$_fd" ]]; then
             feature_dir="$_fd"
             # Normalize relative paths to absolute under repo root
             [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
-        elif ! feature_dir=$(find_feature_dir_by_prefix "$repo_root" "$current_branch"); then
-            echo "ERROR: Failed to resolve feature directory" >&2
+        else
+            echo "ERROR: Feature directory not found. Set SPECIFY_FEATURE or ensure .specify/feature.json contains feature_directory." >&2
             return 1
         fi
-    elif ! feature_dir=$(find_feature_dir_by_prefix "$repo_root" "$current_branch"); then
-        echo "ERROR: Failed to resolve feature directory" >&2
+    else
+        echo "ERROR: Feature directory not found. Set SPECIFY_FEATURE or run the specify command to create .specify/feature.json." >&2
         return 1
     fi
 
