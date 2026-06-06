@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
  
 from tests.conftest import requires_bash
-from tests._path_utils import assert_normalized_path_equal
+from tests._path_utils import assert_normalized_path_equal, path_from_bash_output
  
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
@@ -202,6 +202,8 @@ def test_setup_tasks_bash_core_template_resolved(tasks_repo: Path) -> None:
     tasks_tmpl_raw = data["TASKS_TEMPLATE"]
     if os.name == "nt":
         assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
+        tasks_tmpl = path_from_bash_output(tasks_tmpl_raw)
+        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
         assert_normalized_path_equal(
             tasks_tmpl_raw,
             tasks_repo / ".specify" / "templates" / "tasks-template.md",
@@ -245,6 +247,8 @@ def test_setup_tasks_bash_override_wins(tasks_repo: Path) -> None:
     assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
     # The resolved path must be inside the overrides directory
     if os.name == "nt":
+        tasks_tmpl = path_from_bash_output(tasks_tmpl_raw)
+        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
         assert_normalized_path_equal(tasks_tmpl_raw, override_file.resolve())
     else:
         tasks_tmpl = Path(tasks_tmpl_raw)
@@ -287,6 +291,8 @@ def test_setup_tasks_bash_extension_wins_over_core(tasks_repo: Path) -> None:
     tasks_tmpl_raw = data["TASKS_TEMPLATE"]
     assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
     if os.name == "nt":
+        tasks_tmpl = path_from_bash_output(tasks_tmpl_raw)
+        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
         assert_normalized_path_equal(tasks_tmpl_raw, extension_file.resolve())
     else:
         tasks_tmpl = Path(tasks_tmpl_raw)
@@ -335,6 +341,8 @@ def test_setup_tasks_bash_preset_wins_over_extension(tasks_repo: Path) -> None:
     tasks_tmpl_raw = data["TASKS_TEMPLATE"]
     assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
     if os.name == "nt":
+        tasks_tmpl = path_from_bash_output(tasks_tmpl_raw)
+        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
         assert_normalized_path_equal(tasks_tmpl_raw, preset_file.resolve())
     else:
         tasks_tmpl = Path(tasks_tmpl_raw)
@@ -401,6 +409,8 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
     tasks_tmpl_raw = data["TASKS_TEMPLATE"]
     assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
     if os.name == "nt":
+        tasks_tmpl = path_from_bash_output(tasks_tmpl_raw)
+        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
         assert_normalized_path_equal(tasks_tmpl_raw, high_priority_file.resolve())
     else:
         tasks_tmpl = Path(tasks_tmpl_raw)
@@ -539,7 +549,8 @@ def test_setup_tasks_bash_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -
             newline="\n",
         )
         python3_shim.chmod(0o755)
-        env["PATH"] = f"{shim_dir}:{env.get('PATH', '')}"
+        shim_dir_posix = str(shim_dir).replace("\\", "/")
+        env["PATH"] = f"{shim_dir_posix}:{env.get('PATH', '')}"
 
     result = subprocess.run(
         ["bash", str(script), "--json"],

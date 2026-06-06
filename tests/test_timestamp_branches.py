@@ -218,7 +218,7 @@ class TestTimestampBranch:
         if result.returncode != 0:
             # On Windows, deep temp paths can still exceed fs limits even after truncation.
             assert os.name == "nt"
-            assert "Filename too long" in result.stderr
+            assert re.search(r"too\s+long", result.stderr, flags=re.IGNORECASE)
             return
         branch = None
         for line in result.stdout.splitlines():

@@ -4,7 +4,14 @@ from types import SimpleNamespace
 
 from tests import _parallel
 from tests._parallel import compute_recommended_workers, detect_effective_cpu_count
-from tests.conftest import _extract_cli_option, _has_dist_arg, _has_numprocesses_arg, _is_xdist_disabled, pytest_report_header
+from tests.conftest import (
+    _extract_cli_option,
+    _has_dist_arg,
+    _has_numprocesses_arg,
+    _is_plugin_autoload_disabled,
+    _is_xdist_disabled,
+    pytest_report_header,
+)
 
 
 def test_worker_count_cpu_bound_when_memory_is_large():
@@ -267,3 +274,13 @@ def test_numprocesses_and_dist_detection_ignore_args_after_double_dash():
 def test_extract_cli_option_ignores_args_after_double_dash():
     args = ["--parallel", "--", "--parallel-tier", "high"]
     assert _extract_cli_option(args, "--parallel-tier", "medium") == "medium"
+
+
+def test_is_plugin_autoload_disabled_truthy(monkeypatch):
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+    assert _is_plugin_autoload_disabled()
+
+
+def test_is_plugin_autoload_disabled_false_when_unset(monkeypatch):
+    monkeypatch.delenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", raising=False)
+    assert not _is_plugin_autoload_disabled()
