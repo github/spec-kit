@@ -11,7 +11,7 @@ from pathlib import Path
 def normalize_path_text(path_value: str) -> str:
     """Normalize slashes and repeated separators for string checks."""
     normalized = path_value.replace("\\", "/")
-    if normalized.startswith("//"):
+    if path_value.startswith("\\\\"):
         unc_tail = normalized.lstrip("/")
         return "//" + re.sub(r"/{2,}", "/", unc_tail)
     return re.sub(r"/{2,}", "/", normalized)

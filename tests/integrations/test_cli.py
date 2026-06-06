@@ -596,9 +596,13 @@ class TestInitIntegrationFlag:
 
         written = project / ".specify" / "templates" / "plan-template.md"
         if os.name == "nt":
+            def chmod_call_matches(call) -> bool:
+                target = call.args[0] if call.args else call.kwargs.get("self")
+                mode = call.args[1] if len(call.args) > 1 else call.kwargs.get("mode")
+                return target is not None and Path(target).parent == written.parent and mode == 0o644
+
             assert any(
-                Path(call.args[0]).parent == written.parent
-                and call.args[1] == 0o644
+                chmod_call_matches(call)
                 for call in chmod_spy.call_args_list
             )
         else:
