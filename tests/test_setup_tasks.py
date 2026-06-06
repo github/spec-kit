@@ -550,6 +550,8 @@ def test_setup_tasks_bash_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -
         )
         python3_shim.chmod(0o755)
         shim_dir_posix = str(shim_dir).replace("\\", "/")
+        # Keep inherited PATH bytes unchanged; rewriting Windows PATH delimiters
+        # can corrupt drive-letter entries under Git Bash.
         env["PATH"] = f"{shim_dir_posix}:{env.get('PATH', '')}"
 
     result = subprocess.run(

@@ -174,7 +174,6 @@ class TestInstallerMissing:
         fake_uv = tmp_path / "installer-bin" / "uv"
         fake_uv.parent.mkdir()
         fake_uv.write_text("#!/bin/sh\n")
-        fake_uv.chmod(0o644)
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda name: None
         ), patch("specify_cli._version.os.access", return_value=False), patch(
@@ -204,7 +203,6 @@ class TestInstallerMissing:
     ):
         fake_uv = tmp_path / "uv-installer"
         fake_uv.write_text("#!/bin/sh\n")
-        fake_uv.chmod(0o644)
         monkeypatch.chdir(tmp_path)
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda name: None
