@@ -31,8 +31,9 @@ If the user explicitly provided `GIT_BRANCH_NAME` (e.g., via environment variabl
 Determine the branch numbering strategy by checking configuration in this order:
 
 1. Check `.specify/extensions/git/git-config.yml` for `branch_numbering` value
-2. Check `.specify/init-options.json` for `branch_numbering` value (backward compatibility)
-3. Default to `sequential` if neither exists
+2. Check `.specify/init-options.json` for `feature_numbering` value (inherit from core)
+3. Check `.specify/init-options.json` for `branch_numbering` value (deprecated, backward compatibility — will be removed in a future release)
+4. Default to `sequential` if none of the above exist
 
 ## Execution
 

@@ -381,6 +381,7 @@ def register(app: typer.Typer) -> None:
                     "integration": resolved_integration.key,
                     "here": here,
                     "script": selected_script,
+                    "feature_numbering": "sequential",
                     "speckit_version": get_speckit_version(),
                 }
                 from ..integrations.base import SkillsIntegration as _SkillsPersist
