@@ -107,12 +107,8 @@ def test_setup_plan_passes_custom_branch_when_feature_json_valid(plan_repo: Path
 
 
 @requires_bash
-def test_setup_plan_fails_custom_branch_without_feature_json(plan_repo: Path) -> None:
-    subprocess.run(
-        ["git", "checkout", "-q", "-b", "feature/my-feature-branch"],
-        cwd=plan_repo,
-        check=True,
-    )
+def test_setup_plan_falls_back_to_main_without_feature_json(plan_repo: Path) -> None:
+    """Without feature.json or SPECIFY_FEATURE, setup-plan uses 'main' as fallback."""
     script = plan_repo / ".specify" / "scripts" / "bash" / "setup-plan.sh"
     result = subprocess.run(
         ["bash", str(script)],
@@ -122,14 +118,15 @@ def test_setup_plan_fails_custom_branch_without_feature_json(plan_repo: Path) ->
         check=False,
         env=_clean_env(),
     )
-    assert result.returncode != 0
-    assert "Not on a feature branch" in result.stderr
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert (plan_repo / "specs" / "main" / "plan.md").is_file()
 
 
 @requires_bash
 def test_setup_plan_numbered_branch_unchanged_without_feature_json(
     plan_repo: Path,
 ) -> None:
+    """Without feature.json, setup-plan still finds an existing numbered spec dir."""
     subprocess.run(
         ["git", "checkout", "-q", "-b", "001-tiny-notes-app"],
         cwd=plan_repo,
@@ -180,14 +177,9 @@ def test_setup_plan_ps_passes_custom_branch_when_feature_json_valid(plan_repo: P
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
-def test_setup_plan_ps_fails_custom_branch_without_feature_json(
+def test_setup_plan_ps_falls_back_to_main_without_feature_json(
     plan_repo: Path,
 ) -> None:
-    subprocess.run(
-        ["git", "checkout", "-q", "-b", "feature/my-feature-branch"],
-        cwd=plan_repo,
-        check=True,
-    )
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
     result = subprocess.run(
@@ -198,5 +190,5 @@ def test_setup_plan_ps_fails_custom_branch_without_feature_json(
         check=False,
         env=_clean_env(),
     )
-    assert result.returncode != 0
-    assert "Not on a feature branch" in result.stderr
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert (plan_repo / "specs" / "main" / "plan.md").is_file()

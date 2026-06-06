@@ -1,4 +1,4 @@
-"""Tests for setup-tasks.{sh,ps1} template resolution and branch validation."""
+"""Tests for setup-tasks.{sh,ps1} template resolution and feature resolution."""
  
 import json
 import os
@@ -85,7 +85,7 @@ def _write_integration_state(repo: Path, integration: str = "claude", separator:
 def _clean_env() -> dict[str, str]:
     """
     Return os.environ with all SPECIFY_* variables stripped so the scripts
-    rely purely on git branch + feature.json state set up by each fixture.
+    rely purely on feature.json and on-disk feature directories set up by each fixture.
     """
     env = os.environ.copy()
     for key in list(env):
@@ -153,7 +153,8 @@ def tasks_repo(tmp_path: Path) -> Path:
     repo.mkdir()
     _git_init(repo)
  
-    # Switch to a numbered branch so branch validation passes without feature.json
+    # Keep a numbered branch name in this repo fixture; setup-tasks now resolves
+    # feature directories from repository state rather than validating git branches.
     subprocess.run(
         ["git", "checkout", "-q", "-b", "001-my-feature"],
         cwd=repo,
@@ -571,21 +572,17 @@ def test_setup_tasks_bash_passes_custom_branch_when_feature_json_valid(
  
  
 @requires_bash
-def test_setup_tasks_bash_fails_custom_branch_without_feature_json(
+def test_setup_tasks_bash_falls_back_to_main_without_feature_json(
     tasks_repo: Path,
 ) -> None:
-    """
-    On a non-standard branch with no feature.json, setup-tasks.sh must fail
-    and report that we are not on a feature branch.
-    """
-    subprocess.run(
-        ["git", "checkout", "-q", "-b", "feature/custom-branch"],
-        cwd=tasks_repo,
-        check=True,
-    )
- 
+    """Without feature.json, setup-tasks.sh falls back to specs/main."""
+    main_feat = tasks_repo / "specs" / "main"
+    main_feat.mkdir(parents=True, exist_ok=True)
+    (main_feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+    (main_feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
- 
+
     result = subprocess.run(
         ["bash", str(script), "--json"],
         cwd=tasks_repo,
@@ -595,8 +592,9 @@ def test_setup_tasks_bash_fails_custom_branch_without_feature_json(
         env=_clean_env(),
     )
 
-    assert result.returncode != 0
-    assert "Not on a feature branch" in result.stderr
+    assert result.returncode == 0, result.stderr + result.stdout
+    data = json.loads(result.stdout)
+    assert Path(data["FEATURE_DIR"]) == main_feat
  
 # ===========================================================================
 # POWERSHELL TESTS
@@ -815,22 +813,18 @@ def test_setup_tasks_ps_passes_custom_branch_when_feature_json_valid(
  
  
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
-def test_setup_tasks_ps_fails_custom_branch_without_feature_json(
+def test_setup_tasks_ps_falls_back_to_main_without_feature_json(
     tasks_repo: Path,
 ) -> None:
-    """
-    On a non-standard branch with no feature.json, setup-tasks.ps1 must fail
-    and report that we are not on a feature branch.
-    """
-    subprocess.run(
-        ["git", "checkout", "-q", "-b", "feature/custom-branch"],
-        cwd=tasks_repo,
-        check=True,
-    )
- 
+    """Without feature.json, setup-tasks.ps1 falls back to specs/main."""
+    main_feat = tasks_repo / "specs" / "main"
+    main_feat.mkdir(parents=True, exist_ok=True)
+    (main_feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+    (main_feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
- 
+
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json"],
         cwd=tasks_repo,
@@ -839,6 +833,7 @@ def test_setup_tasks_ps_fails_custom_branch_without_feature_json(
         check=False,
         env=_clean_env(),
     )
- 
-    assert result.returncode != 0
-    assert "Not on a feature branch" in result.stderr
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    data = json.loads(result.stdout)
+    assert Path(data["FEATURE_DIR"]) == main_feat

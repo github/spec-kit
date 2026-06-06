@@ -88,20 +88,17 @@ def test_paths_only_succeeds_on_non_spec_branch(prereq_repo: Path) -> None:
 
 @requires_bash
 def test_paths_only_succeeds_on_spec_branch(prereq_repo: Path) -> None:
-    """--paths-only must also work on a properly named spec branch."""
-    subprocess.run(
-        ["git", "checkout", "-q", "-b", "001-my-feature"],
-        cwd=prereq_repo,
-        check=True,
-    )
+    """--paths-only must also work when SPECIFY_FEATURE is set to a feature name."""
     script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+    env = _clean_env()
+    env["SPECIFY_FEATURE"] = "001-my-feature"
     result = subprocess.run(
         ["bash", str(script), "--json", "--paths-only"],
         cwd=prereq_repo,
         capture_output=True,
         text=True,
         check=False,
-        env=_clean_env(),
+        env=env,
     )
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
@@ -128,7 +125,7 @@ def test_paths_only_text_mode_on_non_spec_branch(prereq_repo: Path) -> None:
 
 @requires_bash
 def test_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
-    """Without --paths-only, branch validation must still fail on main."""
+    """Without --paths-only, feature directory validation must still fail on main."""
     script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
     result = subprocess.run(
         ["bash", str(script), "--json"],
@@ -139,7 +136,7 @@ def test_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
         env=_clean_env(),
     )
     assert result.returncode != 0
-    assert "Not on a feature branch" in result.stderr
+    assert "Feature directory not found" in result.stderr
 
 
 # ── PowerShell tests ──────────────────────────────────────────────────────
@@ -190,7 +187,7 @@ def test_ps_paths_only_succeeds_on_spec_branch(prereq_repo: Path) -> None:
 
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
 def test_ps_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
-    """Without -PathsOnly, branch validation must still fail on main."""
+    """Without -PathsOnly, feature directory validation must still fail on main."""
     script = prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
     result = subprocess.run(
@@ -202,4 +199,5 @@ def test_ps_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
         env=_clean_env(),
     )
     assert result.returncode != 0
-    assert "Not on a feature branch" in result.stderr
+    combined = result.stdout + result.stderr
+    assert "Feature directory not found" in combined

@@ -78,7 +78,6 @@ def register(app: typer.Typer) -> None:
         github_token: str = typer.Option(None, "--github-token", help="Deprecated (no-op). Previously: GitHub token for API requests.", hidden=True),
         offline: bool = typer.Option(False, "--offline", help="Deprecated (no-op). All scaffolding now uses bundled assets.", hidden=True),
         preset: str = typer.Option(None, "--preset", help="Install a preset during initialization (by preset ID)"),
-        branch_numbering: str = typer.Option(None, "--branch-numbering", help="Branch numbering strategy: 'sequential' (001, 002, …, 1000, … — expands past 999 automatically) or 'timestamp' (YYYYMMDD-HHMMSS)"),
         integration: str = typer.Option(None, "--integration", help="AI coding agent integration to use (e.g. --integration copilot). See 'specify check' for available integrations."),
         integration_options: str = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
     ):
@@ -151,10 +150,7 @@ def register(app: typer.Typer) -> None:
             console.print("[red]Error:[/red] Must specify either a project name, use '.' for current directory, or use --here flag")
             raise typer.Exit(1)
 
-        BRANCH_NUMBERING_CHOICES = {"sequential", "timestamp"}
-        if branch_numbering and branch_numbering not in BRANCH_NUMBERING_CHOICES:
-            console.print(f"[red]Error:[/red] Invalid --branch-numbering value '{branch_numbering}'. Choose from: {', '.join(sorted(BRANCH_NUMBERING_CHOICES))}")
-            raise typer.Exit(1)
+
 
         dir_existed_before = False
         if here:
@@ -383,7 +379,6 @@ def register(app: typer.Typer) -> None:
                 init_opts = {
                     "ai": selected_ai,
                     "integration": resolved_integration.key,
-                    "branch_numbering": branch_numbering or "sequential",
                     "here": here,
                     "script": selected_script,
                     "speckit_version": get_speckit_version(),

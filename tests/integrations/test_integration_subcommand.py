@@ -960,7 +960,7 @@ class TestIntegrationSwitch:
     def test_switch_refreshes_managed_shared_script_refs(self, tmp_path):
         """Switching refreshes managed shared scripts to the target command style."""
         project = _init_project(tmp_path, "claude")
-        shared_script = project / ".specify" / "scripts" / "bash" / "common.sh"
+        shared_script = project / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
         assert shared_script.exists()
         shared_content = shared_script.read_text(encoding="utf-8")
         assert "/speckit-plan" in shared_content
@@ -986,7 +986,7 @@ class TestIntegrationSwitch:
         import hashlib
 
         project = _init_project(tmp_path, "claude")
-        shared_script = project / ".specify" / "scripts" / "bash" / "common.sh"
+        shared_script = project / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
         assert "/speckit-plan" in shared_script.read_text(encoding="utf-8")
 
         # Simulate a stale vendored script: write truncated content as bytes
@@ -998,7 +998,7 @@ class TestIntegrationSwitch:
 
         manifest_path = project / ".specify" / "integrations" / "speckit.manifest.json"
         manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest_data["files"][".specify/scripts/bash/common.sh"] = (
+        manifest_data["files"][".specify/scripts/bash/setup-tasks.sh"] = (
             hashlib.sha256(stale_bytes).hexdigest()
         )
         manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
@@ -1047,7 +1047,7 @@ class TestIntegrationSwitch:
     def test_switch_refresh_shared_infra_overwrites_customizations(self, tmp_path):
         """--refresh-shared-infra explicitly overwrites user customizations on switch."""
         project = _init_project(tmp_path, "claude")
-        shared_script = project / ".specify" / "scripts" / "bash" / "common.sh"
+        shared_script = project / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
         assert "/speckit-plan" in shared_script.read_text(encoding="utf-8")
         rendered_bytes = shared_script.read_bytes()
 
