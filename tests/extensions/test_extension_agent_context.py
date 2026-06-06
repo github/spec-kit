@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from pathlib import Path
 
 import yaml
+from typer.testing import CliRunner
 
 from specify_cli import (
     _load_agent_context_config,
     _save_agent_context_config,
+    app,
     load_init_options,
     save_init_options,
 )
@@ -19,6 +23,7 @@ from specify_cli.integrations.claude import ClaudeIntegration
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "agent-context"
+runner = CliRunner()
 
 
 def _write_ext_config(project_root: Path, **overrides: object) -> None:
@@ -282,6 +287,71 @@ class TestExtensionEnabledGate:
         assert i.remove_context_section(tmp_path) is False
         # File must be unchanged when extension is disabled
         assert ctx.read_text(encoding="utf-8") == original
+
+
+class TestAgentContextSelfHeal:
+    def test_cli_invocation_restores_missing_extension_and_preserves_config(
+        self, tmp_path
+    ):
+        project = tmp_path / "proj"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            init_result = runner.invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    "claude",
+                    "--script",
+                    "sh",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+            assert init_result.exit_code == 0, init_result.output
+
+            custom_markers = {
+                "start": "<!-- CUSTOM START -->",
+                "end": "<!-- CUSTOM END -->",
+            }
+            _write_ext_config(
+                project,
+                context_file="CLAUDE.md",
+                context_markers=custom_markers,
+            )
+            ext_dir = project / ".specify" / "extensions" / "agent-context"
+            for child in ext_dir.iterdir():
+                if child.name == "agent-context-config.yml":
+                    continue
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+            registry = project / ".specify" / "extensions" / ".registry"
+            data = json.loads(registry.read_text(encoding="utf-8"))
+            data["extensions"].pop("agent-context", None)
+            registry.write_text(json.dumps(data), encoding="utf-8")
+
+            result = runner.invoke(app, ["version"], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        ext_dir = project / ".specify" / "extensions" / "agent-context"
+        assert (ext_dir / "extension.yml").is_file()
+        assert (ext_dir / "commands" / "speckit.agent-context.update.md").is_file()
+        data = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert data["extensions"]["agent-context"]["enabled"] is True
+        cfg = _load_agent_context_config(project)
+        assert cfg["context_file"] == "CLAUDE.md"
+        assert cfg["context_markers"] == custom_markers
 
 
 # ── Extension config writers ─────────────────────────────────────────────────

@@ -307,20 +307,11 @@ def _update_init_options_for_integration(
 
     # Update the agent-context extension config BEFORE init-options.json
     # so a failure here doesn't leave init-options partially updated.
-    ext_cfg_path = project_root / _AGENT_CTX_EXT_CONFIG
-    if ext_cfg_path.exists():
+    if integration.context_file:
         _update_agent_context_config_file(
             project_root,
             integration.context_file,
             preserve_markers=True,
-        )
-    elif integration.context_file:
-        # Extension config doesn't exist yet (extension not installed).
-        # Write defaults so scripts have something to read.
-        _update_agent_context_config_file(
-            project_root,
-            integration.context_file,
-            preserve_markers=False,
         )
 
     save_init_options(project_root, opts)

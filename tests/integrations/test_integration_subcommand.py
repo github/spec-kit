@@ -49,7 +49,6 @@ def _write_invalid_manifest(project, key):
     manifest.write_bytes(b"\xff\xfe\x00")
     return manifest
 
-
 def _copy_project_template(tmp_path, template):
     project = tmp_path / "proj"
     shutil.copytree(template, project)
@@ -74,6 +73,34 @@ def copilot_project(tmp_path, status_copilot_template):
 @pytest.fixture
 def claude_project(tmp_path, status_claude_template):
     return _copy_project_template(tmp_path, status_claude_template)
+
+
+def _remove_agent_context_extension(project):
+    ext_dir = project / ".specify" / "extensions" / "agent-context"
+    if ext_dir.exists():
+        shutil.rmtree(ext_dir)
+
+    registry = project / ".specify" / "extensions" / ".registry"
+    if registry.exists():
+        data = json.loads(registry.read_text(encoding="utf-8"))
+        data.get("extensions", {}).pop("agent-context", None)
+        registry.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _assert_agent_context_installed(project, context_file):
+    ext_dir = project / ".specify" / "extensions" / "agent-context"
+    assert (ext_dir / "extension.yml").is_file()
+    assert (ext_dir / "commands" / "speckit.agent-context.update.md").is_file()
+    assert (ext_dir / "scripts" / "bash" / "update-agent-context.sh").is_file()
+
+    registry = project / ".specify" / "extensions" / ".registry"
+    data = json.loads(registry.read_text(encoding="utf-8"))
+    assert "agent-context" in data["extensions"]
+
+    from specify_cli import _load_agent_context_config
+
+    cfg = _load_agent_context_config(project)
+    assert cfg["context_file"] == context_file
 
 
 def _integration_list_row_cells(output: str, key: str) -> list[str]:
@@ -1035,6 +1062,21 @@ class TestIntegrationInstall:
         assert "specify integration use codex" in normalized
         assert "specify integration upgrade codex" in normalized
         assert "specify integration uninstall codex" not in normalized
+
+    def test_install_backfills_agent_context_extension_when_missing(self, tmp_path):
+        project = _init_project(tmp_path, "copilot")
+        _remove_agent_context_extension(project)
+        (project / ".specify" / "integration.json").unlink()
+        (project / ".specify" / "integrations" / "copilot.manifest.json").unlink()
+        shutil.rmtree(project / ".github")
+
+        result = _run_in_project(project, [
+            "integration", "install", "copilot",
+            "--script", "sh",
+        ])
+
+        assert result.exit_code == 0, result.output
+        _assert_agent_context_installed(project, ".github/copilot-instructions.md")
 
     def test_install_different_when_one_exists(self, tmp_path):
         project = _init_project(tmp_path, "copilot")
@@ -2039,6 +2081,18 @@ class TestIntegrationSwitch:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "claude"
 
+    def test_switch_backfills_agent_context_extension_when_missing(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        _remove_agent_context_extension(project)
+
+        result = _run_in_project(project, [
+            "integration", "switch", "copilot",
+            "--script", "sh",
+        ])
+
+        assert result.exit_code == 0, result.output
+        _assert_agent_context_installed(project, ".github/copilot-instructions.md")
+
     def test_failed_switch_keeps_fallback_metadata_consistent(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         old_cwd = os.getcwd()
@@ -2191,6 +2245,19 @@ class TestIntegrationUpgrade:
         assert "/speckit-specify" in managed_content
         assert "/speckit.specify" not in managed_content
         assert customized_script.read_text(encoding="utf-8") == customized_before
+
+    def test_upgrade_backfills_agent_context_extension_when_missing(self, tmp_path):
+        project = _init_project(tmp_path, "copilot")
+        _remove_agent_context_extension(project)
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "copilot",
+            "--script", "sh",
+            "--force",
+        ])
+
+        assert result.exit_code == 0, result.output
+        _assert_agent_context_installed(project, ".github/copilot-instructions.md")
 
     def test_upgrade_non_default_keeps_default_template_invocations(self, tmp_path):
         project = _init_project(tmp_path, "gemini")

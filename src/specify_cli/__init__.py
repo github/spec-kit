@@ -109,6 +109,8 @@ def callback(
     version: bool = typer.Option(False, "--version", "-V", callback=_version_callback, is_eager=True, help="Show version and exit."),
 ):
     """Show banner when no subcommand is provided."""
+    if ctx.invoked_subcommand != "init":
+        _self_heal_agent_context_extension(Path.cwd())
     if ctx.invoked_subcommand is None and "--help" not in sys.argv and "-h" not in sys.argv:
         show_banner()
         console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
@@ -326,6 +328,60 @@ def _update_agent_context_config_file(
             "end": IntegrationBase.CONTEXT_MARKER_END,
         }
     _save_agent_context_config(project_root, cfg)
+
+
+def _agent_context_self_heal_enabled(project_root: Path) -> bool:
+    registry_path = project_root / ".specify" / "extensions" / ".registry"
+    if not registry_path.exists():
+        return True
+    try:
+        data = json.loads(registry_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return True
+    if not isinstance(data, dict):
+        return True
+    extensions = data.get("extensions")
+    if not isinstance(extensions, dict):
+        return True
+    entry = extensions.get("agent-context")
+    if not isinstance(entry, dict):
+        return True
+    return entry.get("enabled", True) is not False
+
+
+def _self_heal_agent_context_extension(project_root: Path) -> None:
+    if not (project_root / ".specify").is_dir():
+        return
+    if not _agent_context_self_heal_enabled(project_root):
+        return
+
+    from .extensions import ExtensionManager
+
+    ext_mgr = ExtensionManager(project_root)
+    ext_dir = project_root / ".specify" / "extensions" / "agent-context"
+    if (
+        ext_mgr.registry.is_installed("agent-context")
+        and (ext_dir / "extension.yml").is_file()
+        and (ext_dir / "agent-context-config.yml").is_file()
+    ):
+        return
+
+    existing_cfg = None
+    if (project_root / _AGENT_CTX_EXT_CONFIG).exists():
+        existing_cfg = _load_agent_context_config(project_root)
+
+    bundled_ac = _locate_bundled_extension("agent-context")
+    if bundled_ac is None:
+        raise ValueError("bundled agent-context extension not found")
+
+    ext_mgr.install_from_directory(
+        bundled_ac,
+        get_speckit_version(),
+        force=ext_mgr.registry.is_installed("agent-context"),
+    )
+
+    if existing_cfg is not None:
+        _save_agent_context_config(project_root, existing_cfg)
 
 
 def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
