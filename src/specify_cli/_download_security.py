@@ -117,6 +117,59 @@ def verify_sha256(
         )
 
 
+def read_zip_member_limited(
+    zf: zipfile.ZipFile,
+    name: str,
+    *,
+    max_bytes: int = MAX_ZIP_MEMBER_BYTES,
+    error_type: type[ErrorT] = ValueError,
+    label: str | None = None,
+) -> bytes:
+    """Read a single ZIP member into memory under a hard size cap.
+
+    Reading a member with ``zf.open(name).read()`` is unbounded: a crafted
+    archive can declare a tiny ``file_size`` yet decompress to many gigabytes (a
+    "zip bomb"), exhausting memory before the caller ever inspects the data.
+    This rejects members whose *declared* size already exceeds *max_bytes* and,
+    to defend against headers that lie, also reads in bounded chunks and stops
+    one byte past the limit.
+
+    Use this for any inline manifest/metadata read that happens *before*
+    :func:`safe_extract_zip` (which already enforces the same per-member bound
+    during extraction); a raw ``zf.open(...).read()`` bypasses that protection.
+    """
+    member_label = label or name
+    try:
+        info = zf.getinfo(name)
+    except KeyError as exc:
+        _raise_from(error_type, f"ZIP member not found: {name}", exc)
+    if info.file_size > max_bytes:
+        _raise(
+            error_type,
+            f"ZIP member {member_label} exceeds maximum size of {max_bytes} bytes",
+        )
+
+    chunks: list[bytes] = []
+    total = 0
+    limit = max_bytes + 1
+    try:
+        with zf.open(name, "r") as source:
+            while total < limit:
+                chunk = source.read(min(READ_CHUNK_SIZE, limit - total))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+    except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
+        _raise_from(error_type, f"Failed to read ZIP member {member_label}: {exc}", exc)
+    if total > max_bytes:
+        _raise(
+            error_type,
+            f"ZIP member {member_label} exceeds maximum size of {max_bytes} bytes",
+        )
+    return b"".join(chunks)
+
+
 def _safe_zip_name(name: str, *, error_type: type[ErrorT]) -> str:
     """Return a normalized ZIP member name or raise on traversal."""
     if "\x00" in name:

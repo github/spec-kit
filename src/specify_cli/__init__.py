@@ -40,6 +40,7 @@ import typer
 from rich.panel import Panel
 from rich.align import Align
 from rich.table import Table
+from ._download_security import read_zip_member_limited
 from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
@@ -1715,17 +1716,24 @@ def extension_update(
                         manifest_data = None
                         namelist = zf.namelist()
 
-                        # First try root-level extension.yml
+                        # Read the manifest under a hard size cap: this happens
+                        # before install_from_zip()'s safe_extract_zip(), so a
+                        # raw zf.open().read() here would bypass that bound and
+                        # let a zip-bomb extension.yml exhaust memory.
+                        manifest_member = None
                         if "extension.yml" in namelist:
-                            with zf.open("extension.yml") as f:
-                                manifest_data = yaml.safe_load(f) or {}
+                            manifest_member = "extension.yml"
                         else:
                             # Look for extension.yml in a single top-level subdirectory
                             # (e.g., "repo-name-branch/extension.yml")
                             manifest_paths = [n for n in namelist if n.endswith("/extension.yml") and n.count("/") == 1]
                             if len(manifest_paths) == 1:
-                                with zf.open(manifest_paths[0]) as f:
-                                    manifest_data = yaml.safe_load(f) or {}
+                                manifest_member = manifest_paths[0]
+
+                        if manifest_member is not None:
+                            manifest_data = yaml.safe_load(
+                                read_zip_member_limited(zf, manifest_member)
+                            ) or {}
 
                         if manifest_data is None:
                             raise ValueError("Downloaded extension archive is missing 'extension.yml'")

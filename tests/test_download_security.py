@@ -11,6 +11,7 @@ import pytest
 
 from specify_cli._download_security import (
     read_response_limited,
+    read_zip_member_limited,
     safe_extract_zip,
     verify_sha256,
 )
@@ -263,6 +264,40 @@ def test_safe_extract_zip_wraps_directory_filesystem_errors(tmp_path):
             blocked_parent / "out",
             error_type=_CustomZipError,
         )
+
+
+def test_read_zip_member_limited_returns_member_within_limit(tmp_path):
+    zip_path = tmp_path / "ok.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("extension.yml", "extension:\n  id: demo\n")
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        data = read_zip_member_limited(zf, "extension.yml")
+
+    assert data == b"extension:\n  id: demo\n"
+
+
+def test_read_zip_member_limited_rejects_oversized_member(tmp_path):
+    # A manifest whose declared size already blows the cap (the zip-bomb shape:
+    # a few KB compressed that decompresses to gigabytes) is rejected before any
+    # of it is read into memory.
+    zip_path = tmp_path / "bomb.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("extension.yml", "a" * 5000)
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        with pytest.raises(ValueError, match="exceeds maximum size"):
+            read_zip_member_limited(zf, "extension.yml", max_bytes=16)
+
+
+def test_read_zip_member_limited_wraps_missing_member(tmp_path):
+    zip_path = tmp_path / "ok.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("other.txt", "x")
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        with pytest.raises(_CustomZipError, match="ZIP member not found"):
+            read_zip_member_limited(zf, "extension.yml", error_type=_CustomZipError)
 
 
 def test_safe_extract_zip_extracts_safe_archive(tmp_path):

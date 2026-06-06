@@ -501,7 +501,12 @@ class TestAzureDevOpsAuth:
         mock_resp.read.side_effect = io.BytesIO(b'{"access_token": "ad-acquired-token"}').read
         mock_resp.__enter__ = lambda s: s
         mock_resp.__exit__ = MagicMock(return_value=False)
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        # The token request goes through a strict-redirect opener (so a 307/308
+        # cannot forward the client_secret body to a non-HTTPS host), not bare
+        # urlopen; patch the opener it builds.
+        mock_opener = MagicMock()
+        mock_opener.open.return_value = mock_resp
+        with patch("urllib.request.build_opener", return_value=mock_opener):
             assert AzureDevOpsAuth().resolve_token(entry) == "ad-acquired-token"
 
     def test_resolve_token_azure_ad_missing_secret_returns_none(self, monkeypatch):

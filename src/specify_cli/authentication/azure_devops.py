@@ -114,7 +114,19 @@ class AzureDevOpsAuth(AuthProvider):
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+            from specify_cli.authentication.http import (
+                _StripAuthOnRedirect,
+                _validate_strict_redirect,
+            )
+
+            # A 307/308 redirect preserves the POST body, which carries the
+            # client_secret. Reuse the package HTTPS-downgrade guard (empty host
+            # list means no auth header to strip, just the scheme check) so the
+            # secret can never be forwarded to a non-HTTPS, non-loopback host.
+            opener = urllib.request.build_opener(
+                _StripAuthOnRedirect((), _validate_strict_redirect)
+            )
+            with opener.open(req, timeout=30) as resp:  # noqa: S310
                 payload = _json.loads(
                     read_response_limited(
                         resp,
