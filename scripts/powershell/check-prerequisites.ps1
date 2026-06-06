@@ -81,9 +81,12 @@ if ($PathsOnly) {
     exit 0
 }
 
-# Validate branch name
-if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit:$paths.HAS_GIT)) {
-    exit 1
+# Validate branch name (skipped when feature.json pins an existing feature dir,
+# matching setup-plan.ps1 / setup-tasks.ps1 so the command set stays consistent)
+if (-not (Test-FeatureJsonMatchesFeatureDir -RepoRoot $paths.REPO_ROOT -ActiveFeatureDir $paths.FEATURE_DIR)) {
+    if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit:$paths.HAS_GIT)) {
+        exit 1
+    }
 }
 
 # Validate required directories and files
