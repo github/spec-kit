@@ -149,13 +149,22 @@ def detect_total_memory_bytes() -> int | None:
         return int(stats.ullTotalPhys)
 
     if hasattr(os, "sysconf"):
-        try:
-            page_size = int(os.sysconf("SC_PAGE_SIZE"))
-            pages = int(os.sysconf("SC_PHYS_PAGES"))
-            if page_size > 0 and pages > 0:
-                return page_size * pages
-        except (ValueError, OSError):
-            return None
+        page_size = None
+        for key in ("SC_PAGE_SIZE", "SC_PAGESIZE"):
+            try:
+                value = int(os.sysconf(key))
+            except (ValueError, OSError):
+                continue
+            if value > 0:
+                page_size = value
+                break
+        if page_size is not None:
+            try:
+                pages = int(os.sysconf("SC_PHYS_PAGES"))
+                if pages > 0:
+                    return page_size * pages
+            except (ValueError, OSError):
+                return None
 
     return None
 

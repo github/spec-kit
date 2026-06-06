@@ -219,7 +219,7 @@ class TestTimestampBranch:
             # On Windows, deep temp paths can still exceed fs limits even after truncation.
             assert os.name == "nt"
             assert re.search(r"too\s+long", result.stderr, flags=re.IGNORECASE)
-            return
+            pytest.xfail("Windows path-length limitation exceeded during long-name truncation test")
         branch = None
         for line in result.stdout.splitlines():
             if line.startswith("BRANCH_NAME:"):

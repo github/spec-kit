@@ -145,39 +145,6 @@ def pytest_load_initial_conftests(early_config, parser, args):
         args.extend(injected_args)
 
 
-def pytest_cmdline_main(config):
-    """Reinvoke pytest with explicit xdist args when --parallel is requested."""
-    if not config.getoption("--parallel"):
-        return None
-    if not _has_xdist_installed():
-        return None
-    if _is_plugin_autoload_disabled():
-        return None
-    if os.environ.get("SPEC_KIT_PARALLEL_REINVOKED") == "1":
-        return None
-
-    original_args = list(config.invocation_params.args)
-    if _is_xdist_disabled(original_args):
-        return None
-    if _has_numprocesses_arg(original_args):
-        return None
-
-    settings = _compute_parallel_settings_from_args(original_args)
-    injected_args = _build_parallel_injected_args(original_args, settings.workers)
-
-    reinvoke_args = list(original_args)
-    if "--" in reinvoke_args:
-        idx = reinvoke_args.index("--")
-        reinvoke_args[idx:idx] = injected_args
-    else:
-        reinvoke_args.extend(injected_args)
-
-    env = os.environ.copy()
-    env["SPEC_KIT_PARALLEL_REINVOKED"] = "1"
-    result = subprocess.run([sys.executable, "-m", "pytest", *reinvoke_args], env=env)
-    return result.returncode
-
-
 def _has_working_bash() -> bool:
     """Check whether a functional native bash is available.
 

@@ -550,7 +550,7 @@ def test_setup_tasks_bash_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -
         )
         python3_shim.chmod(0o755)
         shim_dir_posix = str(shim_dir).replace("\\", "/")
-        env["PATH"] = f"{shim_dir_posix}:{env.get('PATH', '')}"
+        env["PATH"] = f"{shim_dir_posix}{os.pathsep}{env.get('PATH', '')}"
 
     result = subprocess.run(
         ["bash", str(script), "--json"],
