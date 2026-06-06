@@ -110,7 +110,33 @@ def _assert_tasks_template_matches(tasks_tmpl_raw: str, expected_path: Path) -> 
         return
     tasks_tmpl = Path(tasks_tmpl_raw)
     assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-    assert tasks_tmpl == expected, f"Expected {expected} but got: {tasks_tmpl}"
+    assert tasks_tmpl.resolve() == expected, f"Expected {expected} but got: {tasks_tmpl}"
+
+
+def _run_bash_resolve_template(repo: Path, path_override: str | None = None) -> subprocess.CompletedProcess:
+    script = repo / ".specify" / "scripts" / "bash" / "common.sh"
+    cmd = 'source "$1"; '
+    if path_override is not None:
+        cmd += 'export PATH="$2"; '
+    cmd += 'resolve_template tasks-template "$PWD"'
+    argv = ["bash", "-c", cmd, "bash", str(script)]
+    if path_override is not None:
+        argv.append(path_override)
+    return subprocess.run(
+        argv,
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+
+def _to_bash_path(path: Path) -> str:
+    value = str(path).replace("\\", "/")
+    if os.name == "nt" and len(value) >= 2 and value[1] == ":":
+        return f"/{value[0].lower()}{value[2:]}"
+    return value
 
 
 def _run_bash_format_command(repo: Path, command_name: str) -> subprocess.CompletedProcess:
@@ -548,6 +574,72 @@ def test_check_prerequisites_bash_uses_invoke_separator_in_tasks_hint(
     assert result.returncode != 0
     assert "Run /speckit-tasks first" in result.stderr
     assert "/speckit.tasks" not in result.stderr
+
+
+@requires_bash
+def test_resolve_template_uses_python_when_python3_missing(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "py-fallback" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / "tasks-template.md").write_text("# py fallback\n", encoding="utf-8")
+    (presets_root / ".registry").write_text(json.dumps({"presets": {"py-fallback": {"priority": 1}}}), encoding="utf-8")
+
+    shim_dir = tasks_repo / ".specify" / "python-fallback-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    python_shim = shim_dir / "python"
+    python_shim.write_text("#!/usr/bin/env bash\nprintf 'py-fallback\\n'\n", encoding="utf-8", newline="\n")
+    python_shim.chmod(0o755)
+
+    result = _run_bash_resolve_template(tasks_repo, f"{_to_bash_path(shim_dir)}:/usr/bin:/bin")
+
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
+
+
+@requires_bash
+def test_resolve_template_trims_crlf_preset_ids(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "crlf-preset" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / "tasks-template.md").write_text("# crlf\n", encoding="utf-8")
+    (presets_root / ".registry").write_text(json.dumps({"presets": {"crlf-preset": {"priority": 1}}}), encoding="utf-8")
+
+    shim_dir = tasks_repo / ".specify" / "python-crlf-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    python3_shim = shim_dir / "python3"
+    python3_shim.write_text("#!/usr/bin/env bash\nprintf 'crlf-preset\\r\\n'\n", encoding="utf-8", newline="\n")
+    python3_shim.chmod(0o755)
+
+    result = _run_bash_resolve_template(tasks_repo, f"{_to_bash_path(shim_dir)}:/usr/bin:/bin")
+
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
+
+
+@requires_bash
+def test_resolve_template_fallback_scan_is_deterministic_when_python_fails(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    a_dir = presets_root / "a-preset" / "templates"
+    b_dir = presets_root / "b-preset" / "templates"
+    a_dir.mkdir(parents=True, exist_ok=True)
+    b_dir.mkdir(parents=True, exist_ok=True)
+    (a_dir / "tasks-template.md").write_text("# a\n", encoding="utf-8")
+    (b_dir / "tasks-template.md").write_text("# b\n", encoding="utf-8")
+    (presets_root / ".registry").write_text("{invalid json", encoding="utf-8")
+
+    shim_dir = tasks_repo / ".specify" / "python-fail-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    fail_script = "#!/usr/bin/env bash\nexit 1\n"
+    (shim_dir / "python3").write_text(fail_script, encoding="utf-8", newline="\n")
+    (shim_dir / "python").write_text(fail_script, encoding="utf-8", newline="\n")
+    (shim_dir / "python3").chmod(0o755)
+    (shim_dir / "python").chmod(0o755)
+
+    path_override = f"{_to_bash_path(shim_dir)}:/usr/bin:/bin"
+    result = _run_bash_resolve_template(tasks_repo, path_override)
+
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), a_dir / "tasks-template.md")
 
 
 @requires_bash

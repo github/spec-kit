@@ -6,11 +6,13 @@ from tests import _parallel
 from tests._parallel import compute_recommended_workers, detect_effective_cpu_count
 from tests.conftest import (
     _extract_cli_option,
+    _args_before_double_dash,
     _has_dist_arg,
     _has_numprocesses_arg,
     _is_plugin_autoload_disabled,
     _is_xdist_explicitly_enabled,
     _is_xdist_disabled,
+    pytest_load_initial_conftests,
     pytest_report_header,
 )
 
@@ -321,10 +323,31 @@ def test_extract_cli_option_ignores_args_after_double_dash():
 
 
 def test_args_before_double_dash_excludes_parallel_after_sentinel():
-    from tests.conftest import _args_before_double_dash
-
     args = ["-q", "--", "--parallel"]
     assert "--parallel" not in _args_before_double_dash(args)
+
+
+def test_load_initial_conftests_ignores_parallel_after_sentinel():
+    args = ["-q", "--", "--parallel"]
+    original = list(args)
+
+    pytest_load_initial_conftests(None, None, args)
+
+    assert args == original
+
+
+def test_load_initial_conftests_injects_before_sentinel(monkeypatch):
+    args = ["--parallel", "--", "tests/test_parallel_workers.py"]
+
+    monkeypatch.setattr("tests.conftest._has_xdist_installed", lambda: True)
+    monkeypatch.setattr("tests.conftest._is_plugin_autoload_disabled", lambda: False)
+    monkeypatch.setattr("tests.conftest._is_xdist_disabled", lambda _args: False)
+    monkeypatch.setattr("tests.conftest._has_numprocesses_arg", lambda _args: False)
+    monkeypatch.setattr("tests.conftest._compute_parallel_settings_from_args", lambda _args: SimpleNamespace(workers=3))
+
+    pytest_load_initial_conftests(None, None, args)
+
+    assert args == ["--parallel", "-n", "3", "--dist", "worksteal", "--", "tests/test_parallel_workers.py"]
 
 
 def test_is_plugin_autoload_disabled_truthy(monkeypatch):
