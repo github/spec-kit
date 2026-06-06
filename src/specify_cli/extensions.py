@@ -2626,9 +2626,7 @@ class HookExecutor:
         ai_skills_enabled = is_ai_skills_enabled(init_options)
 
         codex_skill_mode = selected_ai == "codex" and ai_skills_enabled
-        claude_skill_mode = selected_ai == "claude" and ai_skills_enabled
         kimi_skill_mode = selected_ai == "kimi"
-        cursor_skill_mode = selected_ai == "cursor-agent" and ai_skills_enabled
         cline_mode = selected_ai == "cline"
 
         skill_name = self._skill_name_from_command(command_id)
