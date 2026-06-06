@@ -8,6 +8,11 @@ def test_normalize_path_text_preserves_unc_prefix():
     assert normalize_path_text(value) == "//server/share/folder"
 
 
+def test_normalize_path_text_collapses_overprefixed_unc_leading_slashes():
+    value = "////server//share///folder"
+    assert normalize_path_text(value) == "//server/share/folder"
+
+
 def test_normalize_path_text_collapses_redundant_non_unc_slashes():
     value = "foo///bar//baz"
     assert normalize_path_text(value) == "foo/bar/baz"

@@ -289,6 +289,14 @@ def test_is_xdist_explicitly_enabled_detects_compact_plugin_flag():
     assert _is_xdist_explicitly_enabled(["--parallel", "-pxdist"])
 
 
+def test_is_xdist_explicitly_enabled_detects_qualified_plugin_name():
+    assert _is_xdist_explicitly_enabled(["--parallel", "-p", "xdist.plugin"])
+
+
+def test_is_xdist_explicitly_enabled_ignores_non_xdist_plugin_names():
+    assert not _is_xdist_explicitly_enabled(["--parallel", "-p", "myxdisthelper"])
+
+
 def test_numprocesses_and_dist_detection_ignore_args_after_double_dash():
     args = ["--parallel", "--", "-n", "4", "--dist", "load"]
     assert not _has_numprocesses_arg(args)

@@ -79,17 +79,25 @@ def _is_xdist_disabled(args: list[str]) -> bool:
 
 def _is_xdist_explicitly_enabled(args: list[str]) -> bool:
     """Return True when users explicitly enable xdist via -p xdist."""
+
+    def _is_xdist_plugin_name(name: str) -> bool:
+        return name == "xdist" or name.startswith("xdist.")
+
     args = _args_before_double_dash(args)
     idx = 0
     while idx < len(args):
         arg = args[idx]
         if arg == "-p":
-            if idx + 1 < len(args) and "xdist" in args[idx + 1] and not args[idx + 1].startswith("no:"):
-                return True
+            if idx + 1 < len(args):
+                plugin_name = args[idx + 1]
+                if not plugin_name.startswith("no:") and _is_xdist_plugin_name(plugin_name):
+                    return True
             idx += 2
             continue
-        if arg.startswith("-p") and "xdist" in arg and "no:xdist" not in arg:
-            return True
+        if arg.startswith("-p") and arg != "-p":
+            plugin_name = arg[2:]
+            if plugin_name and not plugin_name.startswith("no:") and _is_xdist_plugin_name(plugin_name):
+                return True
         idx += 1
     return False
 

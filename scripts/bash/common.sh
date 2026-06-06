@@ -472,7 +472,7 @@ except Exception:
                 done < <(find "$presets_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | LC_ALL=C sort)
             fi
         else
-            # Fallback: alphabetical directory order (no python3 available)
+            # Fallback: alphabetical directory order (no usable python interpreter available)
             while IFS= read -r preset; do
                 [ -d "$preset" ] || continue
                 local candidate="$preset/templates/${template_name}.md"
