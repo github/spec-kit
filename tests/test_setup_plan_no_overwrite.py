@@ -2,8 +2,10 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -47,6 +49,17 @@ def _clean_env() -> dict[str, str]:
         if key.startswith("SPECIFY_"):
             env.pop(key)
     return env
+
+
+def _path_from_bash_output(path_value: str) -> Path:
+    """Normalize bash-emitted paths for assertions on Windows/Git Bash."""
+    if os.name == "nt":
+        if path_value.startswith("/tmp/"):
+            return Path(tempfile.gettempdir()) / path_value[len("/tmp/"):]
+        m = re.match(r"^/([a-zA-Z])/(.*)$", path_value)
+        if m:
+            return Path(f"{m.group(1).upper()}:/{m.group(2)}")
+    return Path(path_value)
 
 
 def _git_init(repo: Path) -> None:
@@ -94,7 +107,7 @@ def test_setup_plan_creates_plan_when_missing(plan_repo: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
-    plan_path = Path(data["IMPL_PLAN"])
+    plan_path = _path_from_bash_output(data["IMPL_PLAN"])
     assert plan_path.is_file()
     # Template content should be present
     content = plan_path.read_text(encoding="utf-8")
