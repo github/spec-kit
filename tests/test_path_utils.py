@@ -1,6 +1,8 @@
 """Unit tests for shared path normalization helpers."""
 
-from tests._path_utils import normalize_path_text
+import os
+
+from tests._path_utils import normalize_path_text, path_from_bash_output
 
 
 def test_normalize_path_text_preserves_unc_prefix():
@@ -26,3 +28,10 @@ def test_normalize_path_text_collapses_redundant_non_unc_slashes():
 def test_normalize_path_text_collapses_redundant_posix_leading_slashes():
     value = "///usr//local///bin"
     assert normalize_path_text(value) == "/usr/local/bin"
+
+
+def test_path_from_bash_output_trims_quotes_whitespace_and_crlf():
+    raw = "  '/tmp/my-feature/path'\r\n"
+    parsed = path_from_bash_output(raw)
+    expected_suffix = os.path.join("my-feature", "path")
+    assert str(parsed).endswith(expected_suffix)

@@ -53,6 +53,18 @@ def test_worker_count_platform_cap_on_windows():
     assert settings.workers == 4
 
 
+def test_worker_count_unknown_platform_uses_most_permissive_known_cap():
+    settings = compute_recommended_workers(
+        cpu_count=32,
+        total_memory_bytes=128 * 1024 ** 3,
+        available_memory_bytes=128 * 1024 ** 3,
+        platform_name="freebsd14",
+        max_workers=None,
+        tier="medium",
+    )
+    assert settings.os_cap == 8
+
+
 def test_worker_count_honors_parallel_max_workers():
     settings = compute_recommended_workers(
         cpu_count=16,

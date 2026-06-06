@@ -100,6 +100,19 @@ def _is_shell_absolute(path_value: str) -> bool:
     return Path(path_value).is_absolute() or path_value.startswith("/")
 
 
+def _assert_tasks_template_matches(tasks_tmpl_raw: str, expected_path: Path) -> None:
+    assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
+    expected = expected_path.resolve()
+    if os.name == "nt":
+        tasks_tmpl = path_from_bash_output(tasks_tmpl_raw)
+        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
+        assert_normalized_path_equal(tasks_tmpl_raw, expected)
+        return
+    tasks_tmpl = Path(tasks_tmpl_raw)
+    assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
+    assert tasks_tmpl == expected, f"Expected {expected} but got: {tasks_tmpl}"
+
+
 def _run_bash_format_command(repo: Path, command_name: str) -> subprocess.CompletedProcess:
     script = repo / ".specify" / "scripts" / "bash" / "common.sh"
     return subprocess.run(
@@ -199,20 +212,10 @@ def test_setup_tasks_bash_core_template_resolved(tasks_repo: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
  
     data = json.loads(result.stdout)
-    tasks_tmpl_raw = data["TASKS_TEMPLATE"]
-    if os.name == "nt":
-        assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
-        tasks_tmpl = path_from_bash_output(tasks_tmpl_raw)
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert_normalized_path_equal(
-            tasks_tmpl_raw,
-            tasks_repo / ".specify" / "templates" / "tasks-template.md",
-        )
-    else:
-        tasks_tmpl = Path(tasks_tmpl_raw)
-        assert tasks_tmpl.is_absolute(), "TASKS_TEMPLATE must be an absolute path"
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert tasks_tmpl == tasks_repo / ".specify" / "templates" / "tasks-template.md"
+    _assert_tasks_template_matches(
+        data["TASKS_TEMPLATE"],
+        tasks_repo / ".specify" / "templates" / "tasks-template.md",
+    )
  
  
 @requires_bash
@@ -243,19 +246,7 @@ def test_setup_tasks_bash_override_wins(tasks_repo: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
  
     data = json.loads(result.stdout)
-    tasks_tmpl_raw = data["TASKS_TEMPLATE"]
-    assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
-    # The resolved path must be inside the overrides directory
-    if os.name == "nt":
-        tasks_tmpl = path_from_bash_output(tasks_tmpl_raw)
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert_normalized_path_equal(tasks_tmpl_raw, override_file.resolve())
-    else:
-        tasks_tmpl = Path(tasks_tmpl_raw)
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert tasks_tmpl == override_file.resolve(), (
-            f"Expected override path but got: {tasks_tmpl}"
-        )
+    _assert_tasks_template_matches(data["TASKS_TEMPLATE"], override_file)
  
  
 @requires_bash
@@ -288,18 +279,7 @@ def test_setup_tasks_bash_extension_wins_over_core(tasks_repo: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
  
     data = json.loads(result.stdout)
-    tasks_tmpl_raw = data["TASKS_TEMPLATE"]
-    assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
-    if os.name == "nt":
-        tasks_tmpl = path_from_bash_output(tasks_tmpl_raw)
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert_normalized_path_equal(tasks_tmpl_raw, extension_file.resolve())
-    else:
-        tasks_tmpl = Path(tasks_tmpl_raw)
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert tasks_tmpl == extension_file.resolve(), (
-            f"Expected extension path but got: {tasks_tmpl}"
-        )
+    _assert_tasks_template_matches(data["TASKS_TEMPLATE"], extension_file)
  
  
 @requires_bash
@@ -338,18 +318,7 @@ def test_setup_tasks_bash_preset_wins_over_extension(tasks_repo: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
  
     data = json.loads(result.stdout)
-    tasks_tmpl_raw = data["TASKS_TEMPLATE"]
-    assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
-    if os.name == "nt":
-        tasks_tmpl = path_from_bash_output(tasks_tmpl_raw)
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert_normalized_path_equal(tasks_tmpl_raw, preset_file.resolve())
-    else:
-        tasks_tmpl = Path(tasks_tmpl_raw)
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert tasks_tmpl == preset_file.resolve(), (
-            f"Expected preset path but got: {tasks_tmpl}"
-        )
+    _assert_tasks_template_matches(data["TASKS_TEMPLATE"], preset_file)
  
  
 @requires_bash
@@ -406,18 +375,7 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
  
     data = json.loads(result.stdout)
-    tasks_tmpl_raw = data["TASKS_TEMPLATE"]
-    assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
-    if os.name == "nt":
-        tasks_tmpl = path_from_bash_output(tasks_tmpl_raw)
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert_normalized_path_equal(tasks_tmpl_raw, high_priority_file.resolve())
-    else:
-        tasks_tmpl = Path(tasks_tmpl_raw)
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert tasks_tmpl == high_priority_file.resolve(), (
-            f"Expected high-priority preset path but got: {tasks_tmpl}"
-        )
+    _assert_tasks_template_matches(data["TASKS_TEMPLATE"], high_priority_file)
  
  
 @requires_bash

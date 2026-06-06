@@ -596,6 +596,8 @@ class TestInitIntegrationFlag:
 
         written = project / ".specify" / "templates" / "plan-template.md"
         if os.name == "nt":
+            assert written.is_file()
+
             def chmod_call_matches(call) -> bool:
                 target = call.args[0] if call.args else call.kwargs.get("self")
                 mode = call.args[1] if len(call.args) > 1 else call.kwargs.get("mode")

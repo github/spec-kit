@@ -269,7 +269,11 @@ def compute_recommended_workers(
     elif memory_basis is not None:
         memory_cap = 1
 
-    os_cap = cfg.os_cap_by_platform.get(platform_name, cfg.os_cap_by_platform["win32"])
+    os_cap = cfg.os_cap_by_platform.get(platform_name)
+    if os_cap is None:
+        # Unknown platforms should default to the most permissive known cap,
+        # not the strictest Windows cap.
+        os_cap = max(cfg.os_cap_by_platform.values())
 
     workers = min(cpu_cap, memory_cap, os_cap)
 

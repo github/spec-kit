@@ -69,6 +69,7 @@ def assert_shell_path_matches(actual: str, expected: Path) -> None:
 
 def path_from_bash_output(path_value: str) -> Path:
     """Normalize bash-emitted paths for assertions on Windows/Git Bash."""
+    path_value = path_value.strip().strip("'\"")
     if os.name == "nt":
         if path_value.startswith("/tmp/"):
             return Path(tempfile.gettempdir()) / path_value[len("/tmp/"):]
