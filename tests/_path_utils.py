@@ -39,6 +39,13 @@ def assert_shell_path_matches(actual: str, expected: Path) -> None:
     """Assert shell-emitted path matches expected path with Windows-only relaxations."""
     actual_raw = actual.strip().strip("'\"")
     expected_raw = str(expected)
+    if os.name == "nt":
+        nested_drive = re.search(r"[\\/][A-Za-z]:[\\/]", actual_raw)
+        if nested_drive:
+            actual_raw = actual_raw[nested_drive.start() + 1:]
+        actual_raw = str(path_from_bash_output(actual_raw))
+        expected_raw = str(path_from_bash_output(expected_raw))
+
     if actual_raw == expected_raw:
         return
 
@@ -53,11 +60,6 @@ def assert_shell_path_matches(actual: str, expected: Path) -> None:
 
     if os.name == "nt" and trim_to_pytest(actual_parts) == trim_to_pytest(expected_parts):
         return
-
-    if os.name == "nt":
-        tail = min(4, len(expected_parts), len(actual_parts))
-        if tail > 0 and actual_parts[-tail:] == expected_parts[-tail:]:
-            return
 
     raise AssertionError(f"Path mismatch. actual={actual_raw!r} expected={expected_raw!r}")
 

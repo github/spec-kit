@@ -435,8 +435,8 @@ resolve_template() {
         local registry_file="$presets_dir/.registry"
         if [ -f "$registry_file" ] && (command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1); then
             # Read preset IDs sorted by priority (lower number = higher precedence).
-            # The python3 call is wrapped in an if-condition so that set -e does not
-            # abort the function when python3 exits non-zero (e.g. invalid JSON).
+            # The python call is wrapped in an if-condition so that set -e does not
+            # abort the function when the interpreter exits non-zero (e.g. invalid JSON).
             local sorted_presets=""
             local python_cmd="python3"
             if ! command -v "$python_cmd" >/dev/null 2>&1; then
@@ -455,16 +455,16 @@ except Exception:
     sys.exit(1)
 " 2>/dev/null); then
                 if [ -n "$sorted_presets" ]; then
-                    # python3 succeeded and returned preset IDs — search in priority order
+                    # Python interpreter succeeded and returned preset IDs — search in priority order
                     while IFS= read -r preset_id; do
                         preset_id="${preset_id%$'\r'}"
                         local candidate="$presets_dir/$preset_id/templates/${template_name}.md"
                         [ -f "$candidate" ] && echo "$candidate" && return 0
                     done <<< "$sorted_presets"
                 fi
-                # python3 succeeded but registry has no presets — nothing to search
+                # Python interpreter succeeded but registry has no presets — nothing to search
             else
-                # python3 failed (missing, or registry parse error) — fall back to unordered directory scan
+                # Interpreter invocation failed (missing, or registry parse error) — fall back to deterministic directory scan
                 while IFS= read -r preset; do
                     [ -d "$preset" ] || continue
                     local candidate="$preset/templates/${template_name}.md"

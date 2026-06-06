@@ -296,7 +296,7 @@ def pytest_configure(config):
     requested_numprocesses = getattr(config.option, "numprocesses", None)
     if requested_numprocesses in (None, 0):
         config.option.numprocesses = settings.workers
-    if hasattr(config.option, "dist") and not config.option.dist:
+    if hasattr(config.option, "dist") and not _has_dist_arg(invocation_args):
         config.option.dist = "worksteal"
 
     setattr(config, "_spec_kit_parallel_settings", settings)
