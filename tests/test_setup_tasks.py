@@ -113,8 +113,9 @@ def _assert_tasks_template_matches(tasks_tmpl_raw: str, expected_path: Path) -> 
     assert tasks_tmpl.resolve() == expected, f"Expected {expected} but got: {tasks_tmpl}"
 
 
-def _run_bash_resolve_template(
+def _run_bash_template_resolver(
     repo: Path,
+    resolver_fn: str,
     path_override: str | None = None,
     *,
     replace_path_override: bool = False,
@@ -126,7 +127,7 @@ def _run_bash_resolve_template(
             cmd += 'export PATH="$2"; '
         else:
             cmd += 'export PATH="$2:$PATH"; '
-    cmd += 'resolve_template tasks-template "$PWD"'
+    cmd += f'{resolver_fn} tasks-template "$PWD"'
     argv = ["bash", "-c", cmd, "bash", str(script)]
     if path_override is not None:
         argv.append(path_override)
@@ -142,32 +143,31 @@ def _run_bash_resolve_template(
     )
 
 
+def _run_bash_resolve_template(
+    repo: Path,
+    path_override: str | None = None,
+    *,
+    replace_path_override: bool = False,
+) -> subprocess.CompletedProcess:
+    return _run_bash_template_resolver(
+        repo,
+        "resolve_template",
+        path_override,
+        replace_path_override=replace_path_override,
+    )
+
+
 def _run_bash_resolve_template_content(
     repo: Path,
     path_override: str | None = None,
     *,
     replace_path_override: bool = False,
 ) -> subprocess.CompletedProcess:
-    script = repo / ".specify" / "scripts" / "bash" / "common.sh"
-    cmd = 'source "$1"; '
-    if path_override is not None:
-        if replace_path_override:
-            cmd += 'export PATH="$2"; '
-        else:
-            cmd += 'export PATH="$2:$PATH"; '
-    cmd += 'resolve_template_content tasks-template "$PWD"'
-    argv = ["bash", "-c", cmd, "bash", str(script)]
-    if path_override is not None:
-        argv.append(path_override)
-    return subprocess.run(
-        argv,
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        env=_clean_env(),
+    return _run_bash_template_resolver(
+        repo,
+        "resolve_template_content",
+        path_override,
+        replace_path_override=replace_path_override,
     )
 
 
