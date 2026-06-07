@@ -7,7 +7,7 @@
 <!-- How did you test your changes? -->
 
 - [ ] Tested locally with `uv run specify --help`
-- [ ] Ran existing tests with `uv sync && uv run pytest` (optionally `uv run pytest --parallel --parallel-tier medium`)
+	- [ ] Ran existing tests with `uv sync && uv run pytest` (optionally `uv run pytest --parallel --parallel-tier medium`)
 - [ ] Tested with a sample project (if applicable)
 
 ## AI Disclosure

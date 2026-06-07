@@ -469,7 +469,7 @@ except Exception:
                     [ -d "$preset" ] || continue
                     local candidate="$preset/templates/${template_name}.md"
                     [ -f "$candidate" ] && echo "$candidate" && return 0
-                done < <(find "$presets_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | LC_ALL=C sort)
+                done < <(find "$presets_dir" -mindepth 1 -maxdepth 1 -type d -not -name '.*' 2>/dev/null | LC_ALL=C sort)
             fi
         else
             # Fallback: alphabetical directory order (no usable python interpreter available)
@@ -477,7 +477,7 @@ except Exception:
                 [ -d "$preset" ] || continue
                 local candidate="$preset/templates/${template_name}.md"
                 [ -f "$candidate" ] && echo "$candidate" && return 0
-            done < <(find "$presets_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | LC_ALL=C sort)
+            done < <(find "$presets_dir" -mindepth 1 -maxdepth 1 -type d -not -name '.*' 2>/dev/null | LC_ALL=C sort)
         fi
     fi
 
