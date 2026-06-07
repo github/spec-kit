@@ -601,6 +601,9 @@ except Exception:
                 if [ $parse_status -eq 0 ] && [ -n "$result" ]; then
                     IFS=$'\t' read -r strategy manifest_file <<< "$result"
                     strategy=$(printf '%s' "$strategy" | tr '[:upper:]' '[:lower:]')
+                else
+                    strategy="replace"
+                    manifest_file=""
                 fi
                 if [ "$yaml_warned" = false ] && grep -q 'yaml_missing' "$py_stderr" 2>/dev/null; then
                     echo "Warning: PyYAML not available; composition strategies may be ignored" >&2

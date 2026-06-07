@@ -1059,6 +1059,54 @@ def test_resolve_template_content_ignores_unsafe_registry_preset_ids(tasks_repo:
 
 
 @requires_bash
+def test_resolve_template_content_does_not_leak_manifest_state_between_presets(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+
+    first_preset = presets_root / "first-preset"
+    second_preset = presets_root / "second-preset"
+    (first_preset / "templates").mkdir(parents=True, exist_ok=True)
+    (second_preset / "templates").mkdir(parents=True, exist_ok=True)
+
+    first_overlay = first_preset / "overlay.md"
+    first_overlay_content = "First overlay content\n"
+    first_overlay.write_text(first_overlay_content, encoding="utf-8")
+
+    (first_preset / "preset.yml").write_text(
+        "provides:\n"
+        "  templates:\n"
+        "    - name: tasks-template\n"
+        "      type: template\n"
+        "      strategy: append\n"
+        "      file: overlay.md\n",
+        encoding="utf-8",
+    )
+
+    second_template = second_preset / "templates" / "tasks-template.md"
+    second_content = "Second base content\n"
+    second_template.write_text(second_content, encoding="utf-8")
+
+    (presets_root / ".registry").write_text(
+        json.dumps(
+            {
+                "presets": {
+                    "first-preset": {"priority": 1, "enabled": True},
+                    "second-preset": {"priority": 2, "enabled": True},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_bash_resolve_template_content(tasks_repo)
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout or ""
+    assert second_content.strip() in output
+    assert first_overlay_content.strip() in output
+    assert "Task list template for feature implementation" not in output
+
+
+@requires_bash
 def test_setup_tasks_bash_passes_custom_branch_when_feature_json_valid(
     tasks_repo: Path,
 ) -> None:
