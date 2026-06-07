@@ -447,6 +447,14 @@ _iter_preset_ids_ordered() {
         python_cmd="$_RESOLVE_TEMPLATE_PYTHON_CMD"
         if SPECKIT_REGISTRY="$registry_file" "$python_cmd" -c "
 import json, sys, os
+def priority_key(meta):
+    if not isinstance(meta, dict):
+        return 10
+    raw = meta.get('priority', 10)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 10
 try:
     with open(os.environ['SPECKIT_REGISTRY']) as f:
         data = json.load(f)
@@ -454,7 +462,7 @@ try:
     for pid, meta in sorted(
         presets.items(),
         key=lambda x: (
-            x[1].get('priority', 10) if isinstance(x[1], dict) else 10,
+            priority_key(x[1]),
             x[0],
         ),
     ):
@@ -479,7 +487,7 @@ _is_safe_preset_id() {
     local preset_id="$1"
     [ -n "$preset_id" ] || return 1
     case "$preset_id" in
-        .|..|.*|*/*|*\\*|*..*) return 1 ;;
+        .|..|.*|*/*|*\\*) return 1 ;;
     esac
     return 0
 }

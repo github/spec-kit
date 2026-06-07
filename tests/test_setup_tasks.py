@@ -479,6 +479,65 @@ def test_setup_tasks_bash_preset_priority_tie_breaks_by_id(tasks_repo: Path) -> 
 
 
 @requires_bash
+def test_setup_tasks_bash_preset_priority_coerces_mixed_types(tasks_repo: Path) -> None:
+    """Mixed-type priority values should still produce deterministic registry ordering."""
+    _minimal_feature(tasks_repo)
+
+    alpha_dir = tasks_repo / ".specify" / "presets" / "alpha-mixed" / "templates"
+    zulu_dir = tasks_repo / ".specify" / "presets" / "zulu-mixed" / "templates"
+    alpha_dir.mkdir(parents=True, exist_ok=True)
+    zulu_dir.mkdir(parents=True, exist_ok=True)
+
+    alpha_file = alpha_dir / "tasks-template.md"
+    zulu_file = zulu_dir / "tasks-template.md"
+    alpha_file.write_text("# alpha mixed\n", encoding="utf-8")
+    zulu_file.write_text("# zulu mixed\n", encoding="utf-8")
+
+    (tasks_repo / ".specify" / "presets" / ".registry").write_text(
+        json.dumps(
+            {
+                "presets": {
+                    "alpha-mixed": {"priority": "20", "enabled": True},
+                    "zulu-mixed": {"priority": 1, "enabled": True},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--json"],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    data = json.loads(result.stdout)
+    _assert_tasks_template_matches(data["TASKS_TEMPLATE"], zulu_file)
+
+
+@requires_bash
+def test_resolve_template_allows_benign_double_dot_preset_ids(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "v1..0" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / "tasks-template.md").write_text("# benign dots\n", encoding="utf-8")
+
+    (presets_root / ".registry").write_text(
+        json.dumps({"presets": {"v1..0": {"priority": 1, "enabled": True}}}),
+        encoding="utf-8",
+    )
+
+    result = _run_bash_resolve_template(tasks_repo)
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
+
+
+@requires_bash
 def test_resolve_template_ignores_unsafe_registry_preset_ids(tasks_repo: Path) -> None:
     presets_root = tasks_repo / ".specify" / "presets"
     safe_dir = presets_root / "safe-preset" / "templates"

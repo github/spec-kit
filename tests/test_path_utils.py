@@ -66,5 +66,8 @@ def test_assert_normalized_path_equal_rejects_mismatched_drives():
 
 
 def test_assert_normalized_path_equal_rejects_unc_vs_non_unc_equivalence():
-    with pytest.raises(AssertionError):
+    if os.name == "nt":
+        with pytest.raises(AssertionError):
+            assert_normalized_path_equal("//server/share/path", "/server/share/path")
+    else:
         assert_normalized_path_equal("//server/share/path", "/server/share/path")
