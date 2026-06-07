@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from tests import _parallel
 from tests._parallel import compute_recommended_workers, detect_effective_cpu_count
 from tests.conftest import (
@@ -348,6 +350,30 @@ def test_load_initial_conftests_injects_before_sentinel(monkeypatch):
     pytest_load_initial_conftests(None, None, args)
 
     assert args == ["--parallel", "-n", "3", "--dist", "worksteal", "--", "tests/test_parallel_workers.py"]
+
+
+def test_load_initial_conftests_raises_for_invalid_parallel_max_workers(monkeypatch):
+    args = ["--parallel", "--parallel-max-workers", "not-a-number"]
+
+    monkeypatch.setattr("tests.conftest._has_xdist_installed", lambda: True)
+    monkeypatch.setattr("tests.conftest._is_plugin_autoload_disabled", lambda: False)
+    monkeypatch.setattr("tests.conftest._is_xdist_disabled", lambda _args: False)
+    monkeypatch.setattr("tests.conftest._has_numprocesses_arg", lambda _args: False)
+
+    with pytest.raises(pytest.UsageError, match="--parallel-max-workers must be an integer >= 1"):
+        pytest_load_initial_conftests(None, None, args)
+
+
+def test_load_initial_conftests_raises_for_parallel_max_workers_below_one(monkeypatch):
+    args = ["--parallel", "--parallel-max-workers", "0"]
+
+    monkeypatch.setattr("tests.conftest._has_xdist_installed", lambda: True)
+    monkeypatch.setattr("tests.conftest._is_plugin_autoload_disabled", lambda: False)
+    monkeypatch.setattr("tests.conftest._is_xdist_disabled", lambda _args: False)
+    monkeypatch.setattr("tests.conftest._has_numprocesses_arg", lambda _args: False)
+
+    with pytest.raises(pytest.UsageError, match="--parallel-max-workers must be >= 1"):
+        pytest_load_initial_conftests(None, None, args)
 
 
 def test_is_plugin_autoload_disabled_truthy(monkeypatch):

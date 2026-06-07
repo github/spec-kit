@@ -537,7 +537,7 @@ def test_setup_tasks_bash_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -
         # Keep inherited PATH bytes unchanged; rewriting Windows PATH delimiters
         # can corrupt drive-letter entries under Git Bash.
         inherited_path = env.get("PATH", "")
-        env["PATH"] = f"{shim_dir_posix}:{inherited_path}" if inherited_path else shim_dir_posix
+        env["PATH"] = f"{shim_dir_posix}{os.pathsep}{inherited_path}" if inherited_path else shim_dir_posix
 
     result = subprocess.run(
         ["bash", str(script), "--json"],
@@ -587,10 +587,10 @@ def test_resolve_template_uses_python_when_python3_missing(tasks_repo: Path) -> 
     shim_dir = tasks_repo / ".specify" / "python-fallback-shim"
     shim_dir.mkdir(parents=True, exist_ok=True)
     python_shim = shim_dir / "python"
-    python_shim.write_text("#!/usr/bin/env bash\nprintf 'py-fallback\\n'\n", encoding="utf-8", newline="\n")
+    python_shim.write_text("#!/bin/sh\nprintf 'py-fallback\\n'\n", encoding="utf-8", newline="\n")
     python_shim.chmod(0o755)
 
-    result = _run_bash_resolve_template(tasks_repo, f"{_to_bash_path(shim_dir)}:/usr/bin:/bin")
+    result = _run_bash_resolve_template(tasks_repo, _to_bash_path(shim_dir))
 
     assert result.returncode == 0, result.stderr
     _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")

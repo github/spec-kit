@@ -128,7 +128,9 @@ def _compute_parallel_settings_from_args(args: list[str]):
         try:
             max_workers = int(max_workers_raw)
         except ValueError:
-            max_workers = None
+            raise pytest.UsageError("--parallel-max-workers must be an integer >= 1") from None
+        if max_workers < 1:
+            raise pytest.UsageError("--parallel-max-workers must be >= 1")
 
     return compute_recommended_workers(
         cpu_count=detect_effective_cpu_count(),

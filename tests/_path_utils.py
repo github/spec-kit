@@ -72,7 +72,8 @@ def path_from_bash_output(path_value: str) -> Path:
     path_value = path_value.strip().strip("'\"")
     if os.name == "nt":
         if path_value.startswith("/tmp/"):
-            return Path(tempfile.gettempdir()) / path_value[len("/tmp/"):]
+            mapped = Path(tempfile.gettempdir()) / path_value[len("/tmp/"):]
+            return mapped if mapped.exists() else Path(path_value)
         match = re.match(r"^/([a-zA-Z])/(.*)$", path_value)
         if match:
             return Path(f"{match.group(1).upper()}:/{match.group(2)}")
