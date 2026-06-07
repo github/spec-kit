@@ -23,7 +23,10 @@ def normalize_path_text(path_value: str) -> str:
 def normalized_parts(path_value: str) -> list[str]:
     """Return normalized path components with consistent slash handling."""
     normalized = normalize_path_text(path_value.strip().strip("'\""))
-    return [p for p in normalized.split("/") if p]
+    parts = [p for p in normalized.split("/") if p]
+    if normalized.startswith("//") and not normalized.startswith("///"):
+        return ["__UNC__", *parts]
+    return parts
 
 
 def assert_normalized_path_equal(actual: str, expected: Path | str) -> None:

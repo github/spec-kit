@@ -468,12 +468,20 @@ except Exception:
     fi
 
     find "$presets_dir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' 2>/dev/null \
-        | sed -E 's#\\/*$##' \
         | LC_ALL=C sort \
         | while IFS= read -r preset; do
             [ -n "$preset" ] || continue
             basename "$preset"
         done
+}
+
+_is_safe_preset_id() {
+    local preset_id="$1"
+    [ -n "$preset_id" ] || return 1
+    case "$preset_id" in
+        .|..|.*|*/*|*\\*|*..*) return 1 ;;
+    esac
+    return 0
 }
 
 # Resolve a template name to a file path using the priority stack:
@@ -499,6 +507,7 @@ resolve_template() {
         fi
         while IFS= read -r preset_id; do
             preset_id="${preset_id%$'\r'}"
+            _is_safe_preset_id "$preset_id" || continue
             local candidate="$presets_dir/$preset_id/templates/${template_name}.md"
             [ -f "$candidate" ] && echo "$candidate" && return 0
         done < <(_iter_preset_ids_ordered "$presets_dir")
@@ -559,6 +568,7 @@ resolve_template_content() {
         local yaml_warned=false
         while IFS= read -r preset_id; do
             preset_id="${preset_id%$'\r'}"
+            _is_safe_preset_id "$preset_id" || continue
             # Read strategy and file path from preset manifest
             local strategy="replace"
             local manifest_file=""

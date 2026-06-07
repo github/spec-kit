@@ -63,3 +63,8 @@ def test_bash_path_from_host_converts_windows_drive_paths():
 def test_assert_normalized_path_equal_rejects_mismatched_drives():
     with pytest.raises(AssertionError):
         assert_normalized_path_equal("C:/tmp/spec-kit", "D:/tmp/spec-kit")
+
+
+def test_assert_normalized_path_equal_rejects_unc_vs_non_unc_equivalence():
+    with pytest.raises(AssertionError):
+        assert_normalized_path_equal("//server/share/path", "/server/share/path")

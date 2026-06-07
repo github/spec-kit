@@ -476,6 +476,32 @@ def test_setup_tasks_bash_preset_priority_tie_breaks_by_id(tasks_repo: Path) -> 
     assert result.returncode == 0, result.stderr + result.stdout
     data = json.loads(result.stdout)
     _assert_tasks_template_matches(data["TASKS_TEMPLATE"], alpha_file)
+
+
+@requires_bash
+def test_resolve_template_ignores_unsafe_registry_preset_ids(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    safe_dir = presets_root / "safe-preset" / "templates"
+    safe_dir.mkdir(parents=True, exist_ok=True)
+    (safe_dir / "tasks-template.md").write_text("# safe preset\n", encoding="utf-8")
+
+    outside_dir = tasks_repo / ".specify" / "escaped" / "templates"
+    outside_dir.mkdir(parents=True, exist_ok=True)
+    (outside_dir / "tasks-template.md").write_text("# escaped preset\n", encoding="utf-8")
+
+    (presets_root / ".registry").write_text(
+        json.dumps({
+            "presets": {
+                "../escaped": {"priority": 0, "enabled": True},
+                "safe-preset": {"priority": 1, "enabled": True},
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    result = _run_bash_resolve_template(tasks_repo)
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), safe_dir / "tasks-template.md")
  
  
 @requires_bash
@@ -999,6 +1025,37 @@ def test_resolve_template_content_uses_cached_python_fallback_for_manifest_parse
     output = (result.stdout or "")
     assert overlay_content.strip() in output
     assert fallback_content not in output
+
+
+@requires_bash
+def test_resolve_template_content_ignores_unsafe_registry_preset_ids(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+
+    safe_dir = presets_root / "safe-content" / "templates"
+    safe_dir.mkdir(parents=True, exist_ok=True)
+    safe_content = "Safe content layer\n"
+    (safe_dir / "tasks-template.md").write_text(safe_content, encoding="utf-8")
+
+    escaped_dir = tasks_repo / ".specify" / "escaped-content" / "templates"
+    escaped_dir.mkdir(parents=True, exist_ok=True)
+    escaped_content = "Escaped content layer\n"
+    (escaped_dir / "tasks-template.md").write_text(escaped_content, encoding="utf-8")
+
+    (presets_root / ".registry").write_text(
+        json.dumps({
+            "presets": {
+                "../escaped-content": {"priority": 0, "enabled": True},
+                "safe-content": {"priority": 1, "enabled": True},
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    result = _run_bash_resolve_template_content(tasks_repo)
+    assert result.returncode == 0, result.stderr
+    output = result.stdout or ""
+    assert safe_content.strip() in output
+    assert escaped_content.strip() not in output
 
 
 @requires_bash

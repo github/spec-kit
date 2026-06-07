@@ -583,9 +583,7 @@ class TestInitIntegrationFlag:
         templates_src.mkdir(parents=True)
         (templates_src / "plan-template.md").write_text("# plan\n", encoding="utf-8")
 
-        patch_kwargs = {"autospec": True}
-        if os.name != "nt":
-            patch_kwargs["wraps"] = Path.chmod
+        patch_kwargs = {"autospec": True, "wraps": Path.chmod}
 
         with patch("specify_cli.shared_infra.Path.chmod", **patch_kwargs) as chmod_spy:
             install_shared_infra(
