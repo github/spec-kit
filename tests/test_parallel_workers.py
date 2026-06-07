@@ -480,6 +480,66 @@ def test_pytest_configure_parallel_single_worker_noops_without_xdist(monkeypatch
     assert getattr(config, "_spec_kit_parallel_settings").workers == 1
 
 
+def test_pytest_configure_parallel_missing_xdist_reports_install_guidance(monkeypatch):
+    settings = SimpleNamespace(
+        tier="medium",
+        workers=2,
+        cpu_cap=2,
+        memory_cap=2,
+        os_cap=8,
+        effective_cpus=2,
+        total_memory_bytes=4 * 1024 ** 3,
+        available_memory_bytes=4 * 1024 ** 3,
+        memory_per_worker_gib=1.5,
+    )
+    monkeypatch.setattr("tests.conftest._EARLY_PARALLEL_SETTINGS", settings)
+    monkeypatch.setattr("tests.conftest._has_xdist_installed", lambda: False)
+    monkeypatch.setattr("tests.conftest._is_plugin_autoload_disabled", lambda: True)
+
+    config = SimpleNamespace(
+        option=SimpleNamespace(dist="worksteal"),
+        invocation_params=SimpleNamespace(args=("--parallel",)),
+        getoption=lambda opt: {
+            "--parallel": True,
+            "--parallel-max-workers": None,
+            "--parallel-tier": "medium",
+        }[opt],
+    )
+
+    with pytest.raises(pytest.UsageError, match="Install test extras"):
+        pytest_configure(config)
+
+
+def test_pytest_configure_parallel_autoload_disabled_reports_plugin_guidance(monkeypatch):
+    settings = SimpleNamespace(
+        tier="medium",
+        workers=2,
+        cpu_cap=2,
+        memory_cap=2,
+        os_cap=8,
+        effective_cpus=2,
+        total_memory_bytes=4 * 1024 ** 3,
+        available_memory_bytes=4 * 1024 ** 3,
+        memory_per_worker_gib=1.5,
+    )
+    monkeypatch.setattr("tests.conftest._EARLY_PARALLEL_SETTINGS", settings)
+    monkeypatch.setattr("tests.conftest._has_xdist_installed", lambda: True)
+    monkeypatch.setattr("tests.conftest._is_plugin_autoload_disabled", lambda: True)
+
+    config = SimpleNamespace(
+        option=SimpleNamespace(dist="worksteal"),
+        invocation_params=SimpleNamespace(args=("--parallel",)),
+        getoption=lambda opt: {
+            "--parallel": True,
+            "--parallel-max-workers": None,
+            "--parallel-tier": "medium",
+        }[opt],
+    )
+
+    with pytest.raises(pytest.UsageError, match="plugin loading"):
+        pytest_configure(config)
+
+
 def test_is_plugin_autoload_disabled_truthy(monkeypatch):
     monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
     assert _is_plugin_autoload_disabled()

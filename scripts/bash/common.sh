@@ -425,17 +425,14 @@ _is_python3_command() {
 
 resolve_template_python_cmd() {
     if [ -n "$_RESOLVE_TEMPLATE_PYTHON_CMD" ]; then
-        echo "$_RESOLVE_TEMPLATE_PYTHON_CMD"
         return 0
     fi
     if _is_python3_command "python3"; then
         _RESOLVE_TEMPLATE_PYTHON_CMD="python3"
-        echo "python3"
         return 0
     fi
     if _is_python3_command "python"; then
         _RESOLVE_TEMPLATE_PYTHON_CMD="python"
-        echo "python"
         return 0
     fi
     return 1
@@ -460,7 +457,8 @@ resolve_template() {
     if [ -d "$presets_dir" ]; then
         local registry_file="$presets_dir/.registry"
         local python_cmd=""
-        if [ -f "$registry_file" ] && python_cmd=$(resolve_template_python_cmd); then
+        if [ -f "$registry_file" ] && resolve_template_python_cmd; then
+            python_cmd="$_RESOLVE_TEMPLATE_PYTHON_CMD"
             # Read preset IDs sorted by priority (lower number = higher precedence).
             # The python call is wrapped in an if-condition so that set -e does not
             # abort the function when the interpreter exits non-zero (e.g. invalid JSON).
@@ -554,7 +552,8 @@ resolve_template_content() {
         local registry_file="$presets_dir/.registry"
         local sorted_presets=""
         local python_cmd=""
-        if [ -f "$registry_file" ] && python_cmd=$(resolve_template_python_cmd); then
+        if [ -f "$registry_file" ] && resolve_template_python_cmd; then
+            python_cmd="$_RESOLVE_TEMPLATE_PYTHON_CMD"
             if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "$python_cmd" -c "
 import json, sys, os
 try:

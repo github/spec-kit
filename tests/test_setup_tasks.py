@@ -731,6 +731,67 @@ def test_resolve_template_uses_python_when_python3_is_not_py3(tasks_repo: Path) 
 
 
 @requires_bash
+def test_resolve_template_python_probe_is_cached_across_resolver_calls(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "cache-probe" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / "tasks-template.md").write_text("# cache probe\n", encoding="utf-8")
+    (presets_root / ".registry").write_text(
+        json.dumps({"presets": {"cache-probe": {"priority": 1}}}),
+        encoding="utf-8",
+    )
+
+    shim_dir = tasks_repo / ".specify" / "python-cache-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    python3_shim = shim_dir / "python3"
+    python3_shim.write_text(
+        "#!/usr/bin/env bash\n"
+        "counter=\"${SPECKIT_COUNTER_FILE:?}\"\n"
+        "kind=parse\n"
+        "if [[ \"$2\" == *\"sys.version_info\"* ]]; then\n"
+        "  kind=probe\n"
+        "fi\n"
+        "printf '%s\\n' \"$kind\" >> \"$counter\"\n"
+        "if [[ -n \"${SPECKIT_REGISTRY:-}\" ]]; then\n"
+        "  printf 'cache-probe\\n'\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python3_shim.chmod(0o755)
+
+    counter_file = tasks_repo / ".specify" / "python-call-kinds.log"
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "common.sh"
+    path_override = f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin"
+    counter_file_arg = bash_path_from_host(counter_file)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; export PATH="$2"; export SPECKIT_COUNTER_FILE="$3"; '
+            'resolve_template tasks-template "$PWD" >/dev/null; '
+            'resolve_template_content tasks-template "$PWD" >/dev/null',
+            "bash",
+            str(script),
+            path_override,
+            counter_file_arg,
+        ],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr
+    kinds = [line.strip() for line in counter_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert kinds.count("probe") == 1
+    assert kinds.count("parse") == 2
+
+
+@requires_bash
 def test_resolve_template_fallback_scan_is_deterministic_when_python_fails(tasks_repo: Path) -> None:
     presets_root = tasks_repo / ".specify" / "presets"
     a_dir = presets_root / "a-preset" / "templates"

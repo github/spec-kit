@@ -3,7 +3,10 @@
 import os
 from pathlib import Path
 
+import pytest
+
 from tests._path_utils import bash_path_from_host, normalize_path_text, path_from_bash_output
+from tests._path_utils import assert_normalized_path_equal
 
 
 def test_normalize_path_text_preserves_unc_prefix():
@@ -55,3 +58,8 @@ def test_bash_path_from_host_converts_windows_drive_paths():
         assert converted == "/c/tmp/spec-kit"
     else:
         assert converted == "C:/tmp/spec-kit"
+
+
+def test_assert_normalized_path_equal_rejects_mismatched_drives():
+    with pytest.raises(AssertionError):
+        assert_normalized_path_equal("C:/tmp/spec-kit", "D:/tmp/spec-kit")

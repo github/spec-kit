@@ -306,12 +306,16 @@ def pytest_configure(config):
         return
 
     if not hasattr(config.option, "numprocesses"):
+        if not _has_xdist_installed():
+            raise pytest.UsageError(
+                "--parallel requires pytest-xdist. Install test extras with `uv sync --extra test`."
+            )
         if _is_plugin_autoload_disabled():
             raise pytest.UsageError(
                 "--parallel requires pytest-xdist plugin loading. Unset PYTEST_DISABLE_PLUGIN_AUTOLOAD or enable xdist explicitly."
             )
         raise pytest.UsageError(
-            "--parallel requires pytest-xdist. Install test extras with `uv sync --extra test`."
+            "--parallel requires pytest-xdist plugin loading. Ensure xdist is enabled."
         )
 
     # Respect explicit -n values from CLI; otherwise keep the early-injected value.

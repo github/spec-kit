@@ -21,10 +21,8 @@ def normalize_path_text(path_value: str) -> str:
 
 
 def normalized_parts(path_value: str) -> list[str]:
-    """Return normalized path components with OS-aware drive handling."""
+    """Return normalized path components with consistent slash handling."""
     normalized = normalize_path_text(path_value.strip().strip("'\""))
-    if os.name == "nt":
-        normalized = re.sub(r"^[A-Za-z]:", "", normalized)
     return [p for p in normalized.split("/") if p]
 
 
