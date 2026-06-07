@@ -598,6 +598,34 @@ def test_resolve_template_uses_python_when_python3_missing(tasks_repo: Path) -> 
 
 
 @requires_bash
+def test_resolve_template_skips_python_when_python_is_not_py3(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "py2-fallback" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / "tasks-template.md").write_text("# py2 fallback\n", encoding="utf-8")
+    (presets_root / ".registry").write_text(json.dumps({"presets": {"py2-fallback": {"priority": 1}}}), encoding="utf-8")
+
+    shim_dir = tasks_repo / ".specify" / "python-py2-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    python_shim = shim_dir / "python"
+    python_shim.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [ \"$1\" = \"-c\" ]; then\n"
+        "  exit 1\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python_shim.chmod(0o755)
+
+    result = _run_bash_resolve_template(tasks_repo, bash_path_from_host(shim_dir))
+
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
+
+
+@requires_bash
 def test_resolve_template_trims_crlf_preset_ids(tasks_repo: Path) -> None:
     presets_root = tasks_repo / ".specify" / "presets"
     preset_dir = presets_root / "crlf-preset" / "templates"

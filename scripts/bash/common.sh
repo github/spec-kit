@@ -415,6 +415,20 @@ json_escape() {
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
+resolve_template_python_cmd() {
+    if command -v python3 >/dev/null 2>&1; then
+        echo "python3"
+        return 0
+    fi
+    if command -v python >/dev/null 2>&1; then
+        if python -c 'import sys; sys.exit(0 if sys.version_info[0] >= 3 else 1)' >/dev/null 2>&1; then
+            echo "python"
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # Resolve a template name to a file path using the priority stack:
 #   1. .specify/templates/overrides/
 #   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)
@@ -433,15 +447,12 @@ resolve_template() {
     local presets_dir="$repo_root/.specify/presets"
     if [ -d "$presets_dir" ]; then
         local registry_file="$presets_dir/.registry"
-        if [ -f "$registry_file" ] && (command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1); then
+        local python_cmd=""
+        if [ -f "$registry_file" ] && python_cmd=$(resolve_template_python_cmd); then
             # Read preset IDs sorted by priority (lower number = higher precedence).
             # The python call is wrapped in an if-condition so that set -e does not
             # abort the function when the interpreter exits non-zero (e.g. invalid JSON).
             local sorted_presets=""
-            local python_cmd="python3"
-            if ! command -v "$python_cmd" >/dev/null 2>&1; then
-                python_cmd="python"
-            fi
             if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "$python_cmd" -c "
 import json, sys, os
 try:
@@ -530,8 +541,9 @@ resolve_template_content() {
     if [ -d "$presets_dir" ]; then
         local registry_file="$presets_dir/.registry"
         local sorted_presets=""
-        if [ -f "$registry_file" ] && command -v python3 >/dev/null 2>&1; then
-            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" python3 -c "
+        local python_cmd=""
+        if [ -f "$registry_file" ] && python_cmd=$(resolve_template_python_cmd); then
+            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" "$python_cmd" -c "
 import json, sys, os
 try:
     with open(os.environ['SPECKIT_REGISTRY']) as f:
