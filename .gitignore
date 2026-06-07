@@ -33,6 +33,7 @@ env/
 *.swo
 .DS_Store
 *.tmp
+.tmp_*
 
 # Project specific
 *.log
