@@ -451,7 +451,13 @@ try:
     with open(os.environ['SPECKIT_REGISTRY']) as f:
         data = json.load(f)
     presets = data.get('presets', {})
-    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10) if isinstance(x[1], dict) else 10):
+    for pid, meta in sorted(
+        presets.items(),
+        key=lambda x: (
+            x[1].get('priority', 10) if isinstance(x[1], dict) else 10,
+            x[0],
+        ),
+    ):
         if isinstance(meta, dict) and meta.get('enabled', True) is not False:
             print(pid)
 except Exception:
@@ -549,6 +555,7 @@ resolve_template_content() {
         if [ -f "$registry_file" ]; then
             resolve_template_python_cmd || true
         fi
+        local manifest_python_cmd="$_RESOLVE_TEMPLATE_PYTHON_CMD"
         local yaml_warned=false
         while IFS= read -r preset_id; do
             preset_id="${preset_id%$'\r'}"
@@ -556,12 +563,12 @@ resolve_template_content() {
             local strategy="replace"
             local manifest_file=""
             local manifest="$presets_dir/$preset_id/preset.yml"
-            if [ -f "$manifest" ] && command -v python3 >/dev/null 2>&1; then
+            if [ -f "$manifest" ] && [ -n "$manifest_python_cmd" ]; then
                 # Requires PyYAML; falls back to replace/convention if unavailable
                 local result
                 local py_stderr
                 py_stderr=$(mktemp)
-                result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" python3 -c "
+                result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" "$manifest_python_cmd" -c "
 import sys, os
 try:
     import yaml

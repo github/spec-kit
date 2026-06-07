@@ -270,7 +270,7 @@ class TestLoadAuthConfig:
         entries = load_auth_config(cfg)
         assert entries[0].hosts == ("*.visualstudio.com",)
 
-    def test_world_readable_warns(self, tmp_path, monkeypatch):
+    def test_world_readable_warns(self, tmp_path):
         import stat
         import specify_cli.authentication.config as auth_config
 

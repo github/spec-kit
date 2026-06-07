@@ -135,6 +135,8 @@ def _run_bash_resolve_template(
         cwd=repo,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         env=_clean_env(),
     )
@@ -162,6 +164,8 @@ def _run_bash_resolve_template_content(
         cwd=repo,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         env=_clean_env(),
     )
@@ -430,6 +434,48 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
  
     data = json.loads(result.stdout)
     _assert_tasks_template_matches(data["TASKS_TEMPLATE"], high_priority_file)
+
+
+@requires_bash
+def test_setup_tasks_bash_preset_priority_tie_breaks_by_id(tasks_repo: Path) -> None:
+    """When priorities tie, lower preset id should win deterministically."""
+    _minimal_feature(tasks_repo)
+
+    alpha_dir = tasks_repo / ".specify" / "presets" / "alpha-preset" / "templates"
+    zulu_dir = tasks_repo / ".specify" / "presets" / "zulu-preset" / "templates"
+    alpha_dir.mkdir(parents=True, exist_ok=True)
+    zulu_dir.mkdir(parents=True, exist_ok=True)
+
+    alpha_file = alpha_dir / "tasks-template.md"
+    zulu_file = zulu_dir / "tasks-template.md"
+    alpha_file.write_text("# alpha preset tasks template\n", encoding="utf-8")
+    zulu_file.write_text("# zulu preset tasks template\n", encoding="utf-8")
+
+    registry_json = tasks_repo / ".specify" / "presets" / ".registry"
+    # Intentionally place zulu first to verify tie-break is id-based, not insertion-order.
+    registry_json.write_text(
+        json.dumps({
+            "presets": {
+                "zulu-preset": {"priority": 1, "enabled": True},
+                "alpha-preset": {"priority": 1, "enabled": True},
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--json"],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    data = json.loads(result.stdout)
+    _assert_tasks_template_matches(data["TASKS_TEMPLATE"], alpha_file)
  
  
 @requires_bash
@@ -891,6 +937,68 @@ def test_resolve_template_content_fallback_scan_is_deterministic_when_python_fai
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == a_content
+
+
+@requires_bash
+def test_resolve_template_content_uses_cached_python_fallback_for_manifest_parse(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "manifest-python-fallback" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    fallback_content = "Fallback preset content\n"
+    (preset_dir / "tasks-template.md").write_text(fallback_content, encoding="utf-8")
+
+    overlay_path = presets_root / "manifest-python-fallback" / "overlay.md"
+    overlay_content = "Overlay content\n"
+    overlay_path.write_text(overlay_content, encoding="utf-8")
+
+    manifest_path = presets_root / "manifest-python-fallback" / "preset.yml"
+    manifest_path.write_text(
+        "provides:\n"
+        "  templates:\n"
+        "    - name: tasks-template\n"
+        "      type: template\n"
+        "      strategy: append\n"
+        "      file: overlay.md\n",
+        encoding="utf-8",
+    )
+
+    (presets_root / ".registry").write_text(
+        json.dumps({"presets": {"manifest-python-fallback": {"priority": 1, "enabled": True}}}),
+        encoding="utf-8",
+    )
+
+    shim_dir = tasks_repo / ".specify" / "python-manifest-fallback-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    python_shim = shim_dir / "python"
+    python_shim.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"$2\" == *\"sys.version_info\"* ]]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [[ -n \"${SPECKIT_REGISTRY:-}\" ]]; then\n"
+        "  printf 'manifest-python-fallback\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [[ -n \"${SPECKIT_MANIFEST:-}\" ]]; then\n"
+        "  printf 'append\\toverlay.md\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python_shim.chmod(0o755)
+
+    result = _run_bash_resolve_template_content(
+        tasks_repo,
+        f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin",
+        replace_path_override=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = (result.stdout or "")
+    assert overlay_content.strip() in output
+    assert fallback_content not in output
 
 
 @requires_bash
