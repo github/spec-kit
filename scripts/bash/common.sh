@@ -415,6 +415,8 @@ json_escape() {
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
+_RESOLVE_TEMPLATE_PYTHON_CMD=""
+
 _is_python3_command() {
     local cmd="$1"
     command -v "$cmd" >/dev/null 2>&1 || return 1
@@ -422,11 +424,17 @@ _is_python3_command() {
 }
 
 resolve_template_python_cmd() {
+    if [ -n "$_RESOLVE_TEMPLATE_PYTHON_CMD" ]; then
+        echo "$_RESOLVE_TEMPLATE_PYTHON_CMD"
+        return 0
+    fi
     if _is_python3_command "python3"; then
+        _RESOLVE_TEMPLATE_PYTHON_CMD="python3"
         echo "python3"
         return 0
     fi
     if _is_python3_command "python"; then
+        _RESOLVE_TEMPLATE_PYTHON_CMD="python"
         echo "python"
         return 0
     fi

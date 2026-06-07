@@ -281,9 +281,11 @@ class TestLoadAuthConfig:
         monkeypatch.setattr(auth_config.os, "name", "posix", raising=False)
         fake_mode = stat.S_IFREG | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
         real_path_stat = auth_config.Path.stat
+        cfg_path = os.path.normcase(os.path.abspath(str(cfg)))
 
         def fake_path_stat(self, *args, **kwargs):
-            if self == cfg:
+            self_path = os.path.normcase(os.path.abspath(os.fspath(self)))
+            if self_path == cfg_path:
                 return SimpleNamespace(st_mode=fake_mode)
             return real_path_stat(self, *args, **kwargs)
 
