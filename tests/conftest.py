@@ -150,6 +150,8 @@ def _compute_parallel_settings_from_args(args: list[str]):
 
 def _build_parallel_injected_args(args: list[str], workers: int) -> list[str]:
     """Build xdist args to inject for parallel execution."""
+    if workers <= 1:
+        return []
     injected_args = ["-n", str(workers)]
     if not _has_dist_arg(args):
         injected_args.extend(["--dist", "worksteal"])
@@ -279,15 +281,6 @@ def pytest_configure(config):
     if max_workers is not None and max_workers < 1:
         raise pytest.UsageError("--parallel-max-workers must be >= 1")
 
-    if not hasattr(config.option, "numprocesses"):
-        if _is_plugin_autoload_disabled():
-            raise pytest.UsageError(
-                "--parallel requires pytest-xdist plugin loading. Unset PYTEST_DISABLE_PLUGIN_AUTOLOAD or enable xdist explicitly."
-            )
-        raise pytest.UsageError(
-            "--parallel requires pytest-xdist. Install test extras with `uv sync --extra test`."
-        )
-
     settings = _EARLY_PARALLEL_SETTINGS
     if settings is None:
         settings = compute_recommended_workers(
@@ -297,6 +290,22 @@ def pytest_configure(config):
             platform_name=sys.platform,
             max_workers=max_workers,
             tier=tier,
+        )
+
+    explicit_numprocesses = _has_numprocesses_arg(invocation_args)
+    if settings.workers <= 1 and not explicit_numprocesses:
+        setattr(config, "_spec_kit_parallel_settings", settings)
+        setattr(config, "_spec_kit_parallel_effective_workers", 1)
+        _EARLY_PARALLEL_SETTINGS = None
+        return
+
+    if not hasattr(config.option, "numprocesses"):
+        if _is_plugin_autoload_disabled():
+            raise pytest.UsageError(
+                "--parallel requires pytest-xdist plugin loading. Unset PYTEST_DISABLE_PLUGIN_AUTOLOAD or enable xdist explicitly."
+            )
+        raise pytest.UsageError(
+            "--parallel requires pytest-xdist. Install test extras with `uv sync --extra test`."
         )
 
     # Respect explicit -n values from CLI; otherwise keep the early-injected value.

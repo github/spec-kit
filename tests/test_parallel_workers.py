@@ -354,6 +354,20 @@ def test_load_initial_conftests_injects_before_sentinel(monkeypatch):
     assert args == ["--parallel", "-n", "3", "--dist", "worksteal", "--", "tests/test_parallel_workers.py"]
 
 
+def test_load_initial_conftests_does_not_inject_for_single_worker(monkeypatch):
+    args = ["--parallel", "--", "tests/test_parallel_workers.py"]
+
+    monkeypatch.setattr("tests.conftest._has_xdist_installed", lambda: True)
+    monkeypatch.setattr("tests.conftest._is_plugin_autoload_disabled", lambda: False)
+    monkeypatch.setattr("tests.conftest._is_xdist_disabled", lambda _args: False)
+    monkeypatch.setattr("tests.conftest._has_numprocesses_arg", lambda _args: False)
+    monkeypatch.setattr("tests.conftest._compute_parallel_settings_from_args", lambda _args: SimpleNamespace(workers=1))
+
+    pytest_load_initial_conftests(None, None, args)
+
+    assert args == ["--parallel", "--", "tests/test_parallel_workers.py"]
+
+
 def test_load_initial_conftests_raises_for_invalid_parallel_max_workers(monkeypatch):
     args = ["--parallel", "--parallel-max-workers", "not-a-number"]
 
@@ -434,6 +448,36 @@ def test_parallel_settings_computed_once_across_early_and_configure(monkeypatch)
     pytest_configure(config)
 
     assert calls["count"] == 1
+
+
+def test_pytest_configure_parallel_single_worker_noops_without_xdist(monkeypatch):
+    settings = SimpleNamespace(
+        tier="medium",
+        workers=1,
+        cpu_cap=1,
+        memory_cap=1,
+        os_cap=8,
+        effective_cpus=1,
+        total_memory_bytes=2 * 1024 ** 3,
+        available_memory_bytes=2 * 1024 ** 3,
+        memory_per_worker_gib=1.5,
+    )
+    monkeypatch.setattr("tests.conftest._EARLY_PARALLEL_SETTINGS", settings)
+
+    config = SimpleNamespace(
+        option=SimpleNamespace(dist="worksteal"),
+        invocation_params=SimpleNamespace(args=("--parallel",)),
+        getoption=lambda opt: {
+            "--parallel": True,
+            "--parallel-max-workers": None,
+            "--parallel-tier": "medium",
+        }[opt],
+    )
+
+    pytest_configure(config)
+
+    assert getattr(config, "_spec_kit_parallel_effective_workers") == 1
+    assert getattr(config, "_spec_kit_parallel_settings").workers == 1
 
 
 def test_is_plugin_autoload_disabled_truthy(monkeypatch):

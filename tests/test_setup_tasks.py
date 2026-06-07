@@ -117,7 +117,7 @@ def _run_bash_resolve_template(repo: Path, path_override: str | None = None) -> 
     script = repo / ".specify" / "scripts" / "bash" / "common.sh"
     cmd = 'source "$1"; '
     if path_override is not None:
-        cmd += 'export PATH="$2"; '
+        cmd += 'export PATH="$2:$PATH"; '
     cmd += 'resolve_template tasks-template "$PWD"'
     argv = ["bash", "-c", cmd, "bash", str(script)]
     if path_override is not None:
@@ -580,7 +580,15 @@ def test_resolve_template_uses_python_when_python3_missing(tasks_repo: Path) -> 
     shim_dir = tasks_repo / ".specify" / "python-fallback-shim"
     shim_dir.mkdir(parents=True, exist_ok=True)
     python_shim = shim_dir / "python"
-    python_shim.write_text("#!/bin/sh\nprintf 'py-fallback\\n'\n", encoding="utf-8", newline="\n")
+    python_shim.write_text(
+        "#!/bin/sh\n"
+        "[ \"$1\" = \"-c\" ] || exit 10\n"
+        "[ -n \"$SPECKIT_REGISTRY\" ] || exit 11\n"
+        "[ -f \"$SPECKIT_REGISTRY\" ] || exit 12\n"
+        "printf 'py-fallback\\n'\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     python_shim.chmod(0o755)
 
     result = _run_bash_resolve_template(tasks_repo, bash_path_from_host(shim_dir))
