@@ -69,16 +69,22 @@ def _has_dist_arg(args: list[str]) -> bool:
 def _is_xdist_disabled(args: list[str]) -> bool:
     """Return True when users explicitly disable xdist with -p no:xdist."""
     args = _args_before_double_dash(args)
+
+    def _is_xdist_disable_name(name: str) -> bool:
+        return name == "no:xdist" or name.startswith("no:xdist.")
+
     idx = 0
     while idx < len(args):
         arg = args[idx]
         if arg == "-p":
-            if idx + 1 < len(args) and args[idx + 1].startswith("no:xdist"):
+            if idx + 1 < len(args) and _is_xdist_disable_name(args[idx + 1]):
                 return True
             idx += 2
             continue
-        if arg.startswith("-pno:xdist"):
-            return True
+        if arg.startswith("-pno:"):
+            plugin_name = arg[2:]
+            if _is_xdist_disable_name(plugin_name):
+                return True
         idx += 1
     return False
 

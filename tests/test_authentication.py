@@ -280,7 +280,14 @@ class TestLoadAuthConfig:
         }))
         monkeypatch.setattr(auth_config.os, "name", "posix", raising=False)
         fake_mode = stat.S_IFREG | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
-        with patch("specify_cli.authentication.config.Path.stat", return_value=SimpleNamespace(st_mode=fake_mode)):
+        real_path_stat = auth_config.Path.stat
+
+        def fake_path_stat(self, *args, **kwargs):
+            if self == cfg:
+                return SimpleNamespace(st_mode=fake_mode)
+            return real_path_stat(self, *args, **kwargs)
+
+        with patch("specify_cli.authentication.config.Path.stat", autospec=True, side_effect=fake_path_stat):
             with pytest.warns(UserWarning, match="readable by group"):
                 load_auth_config(cfg)
 
