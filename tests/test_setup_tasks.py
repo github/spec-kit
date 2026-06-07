@@ -113,11 +113,19 @@ def _assert_tasks_template_matches(tasks_tmpl_raw: str, expected_path: Path) -> 
     assert tasks_tmpl.resolve() == expected, f"Expected {expected} but got: {tasks_tmpl}"
 
 
-def _run_bash_resolve_template(repo: Path, path_override: str | None = None) -> subprocess.CompletedProcess:
+def _run_bash_resolve_template(
+    repo: Path,
+    path_override: str | None = None,
+    *,
+    replace_path_override: bool = False,
+) -> subprocess.CompletedProcess:
     script = repo / ".specify" / "scripts" / "bash" / "common.sh"
     cmd = 'source "$1"; '
     if path_override is not None:
-        cmd += 'export PATH="$2:$PATH"; '
+        if replace_path_override:
+            cmd += 'export PATH="$2"; '
+        else:
+            cmd += 'export PATH="$2:$PATH"; '
     cmd += 'resolve_template tasks-template "$PWD"'
     argv = ["bash", "-c", cmd, "bash", str(script)]
     if path_override is not None:
@@ -583,15 +591,22 @@ def test_resolve_template_uses_python_when_python3_missing(tasks_repo: Path) -> 
     python_shim.write_text(
         "#!/bin/sh\n"
         "[ \"$1\" = \"-c\" ] || exit 10\n"
-        "[ -n \"$SPECKIT_REGISTRY\" ] || exit 11\n"
-        "[ -f \"$SPECKIT_REGISTRY\" ] || exit 12\n"
-        "printf 'py-fallback\\n'\n",
+        "if [ -n \"$SPECKIT_REGISTRY\" ]; then\n"
+        "  [ -f \"$SPECKIT_REGISTRY\" ] || exit 12\n"
+        "  printf 'py-fallback\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 0\n",
         encoding="utf-8",
         newline="\n",
     )
     python_shim.chmod(0o755)
 
-    result = _run_bash_resolve_template(tasks_repo, bash_path_from_host(shim_dir))
+    result = _run_bash_resolve_template(
+        tasks_repo,
+        bash_path_from_host(shim_dir),
+        replace_path_override=True,
+    )
 
     assert result.returncode == 0, result.stderr
     _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
@@ -607,10 +622,24 @@ def test_resolve_template_skips_python_when_python_is_not_py3(tasks_repo: Path) 
 
     shim_dir = tasks_repo / ".specify" / "python-py2-shim"
     shim_dir.mkdir(parents=True, exist_ok=True)
+
+    python3_shim = shim_dir / "python3"
+    python3_shim.write_text(
+        "#!/bin/sh\n"
+        "[ \"$1\" = \"-c\" ] || exit 1\n"
+        "exit 1\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python3_shim.chmod(0o755)
+
     python_shim = shim_dir / "python"
     python_shim.write_text(
-        "#!/usr/bin/env bash\n"
+        "#!/bin/sh\n"
         "if [ \"$1\" = \"-c\" ]; then\n"
+        "  if [ -n \"$SPECKIT_REGISTRY\" ]; then\n"
+        "    exit 1\n"
+        "  fi\n"
         "  exit 1\n"
         "fi\n"
         "exit 1\n",
@@ -619,7 +648,11 @@ def test_resolve_template_skips_python_when_python_is_not_py3(tasks_repo: Path) 
     )
     python_shim.chmod(0o755)
 
-    result = _run_bash_resolve_template(tasks_repo, bash_path_from_host(shim_dir))
+    result = _run_bash_resolve_template(
+        tasks_repo,
+        f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin",
+        replace_path_override=True,
+    )
 
     assert result.returncode == 0, result.stderr
     _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
@@ -640,6 +673,58 @@ def test_resolve_template_trims_crlf_preset_ids(tasks_repo: Path) -> None:
     python3_shim.chmod(0o755)
 
     result = _run_bash_resolve_template(tasks_repo, f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin")
+
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
+
+
+@requires_bash
+def test_resolve_template_uses_python_when_python3_is_not_py3(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "python3-stub-fallback" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / "tasks-template.md").write_text("# python fallback\n", encoding="utf-8")
+    (presets_root / ".registry").write_text(
+        json.dumps({"presets": {"python3-stub-fallback": {"priority": 1}}}),
+        encoding="utf-8",
+    )
+
+    shim_dir = tasks_repo / ".specify" / "python3-stub-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+
+    python3_shim = shim_dir / "python3"
+    python3_shim.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"-c\" ]; then\n"
+        "  exit 1\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python3_shim.chmod(0o755)
+
+    python_shim = shim_dir / "python"
+    python_shim.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"-c\" ]; then\n"
+        "  if [ -n \"$SPECKIT_REGISTRY\" ]; then\n"
+        "    printf 'python3-stub-fallback\\n'\n"
+        "    exit 0\n"
+        "  fi\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python_shim.chmod(0o755)
+
+    result = _run_bash_resolve_template(
+        tasks_repo,
+        bash_path_from_host(shim_dir),
+        replace_path_override=True,
+    )
 
     assert result.returncode == 0, result.stderr
     _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")

@@ -415,16 +415,20 @@ json_escape() {
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
+_is_python3_command() {
+    local cmd="$1"
+    command -v "$cmd" >/dev/null 2>&1 || return 1
+    "$cmd" -c 'import sys; sys.exit(0 if sys.version_info[0] >= 3 else 1)' >/dev/null 2>&1
+}
+
 resolve_template_python_cmd() {
-    if command -v python3 >/dev/null 2>&1; then
+    if _is_python3_command "python3"; then
         echo "python3"
         return 0
     fi
-    if command -v python >/dev/null 2>&1; then
-        if python -c 'import sys; sys.exit(0 if sys.version_info[0] >= 3 else 1)' >/dev/null 2>&1; then
-            echo "python"
-            return 0
-        fi
+    if _is_python3_command "python"; then
+        echo "python"
+        return 0
     fi
     return 1
 }
