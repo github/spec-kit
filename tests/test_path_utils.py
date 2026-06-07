@@ -20,6 +20,11 @@ def test_normalize_path_text_collapses_overprefixed_unc_leading_slashes():
     assert normalize_path_text(value) == "//server/share/folder"
 
 
+def test_normalize_path_text_preserves_overprefixed_slash_unc_like_path():
+    value = "////server//share///folder"
+    assert normalize_path_text(value) == "//server/share/folder"
+
+
 def test_normalize_path_text_collapses_redundant_non_unc_slashes():
     value = "foo///bar//baz"
     assert normalize_path_text(value) == "foo/bar/baz"
@@ -35,3 +40,9 @@ def test_path_from_bash_output_trims_quotes_whitespace_and_crlf():
     parsed = path_from_bash_output(raw)
     expected_suffix = os.path.join("my-feature", "path")
     assert str(parsed).endswith(expected_suffix)
+
+
+def test_path_from_bash_output_tmp_mapping_ignores_existence(monkeypatch):
+    monkeypatch.setenv("SPECKIT_BASH_TMPDIR", "/virtual-tmp")
+    parsed = path_from_bash_output("/tmp/a/b")
+    assert str(parsed).endswith(os.path.join("virtual-tmp", "a", "b"))

@@ -17,6 +17,7 @@ from tests._parallel import (
 )
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_EARLY_PARALLEL_SETTINGS = None
 
 
 def _args_before_double_dash(args: list[str]) -> list[str]:
@@ -152,6 +153,7 @@ def _build_parallel_injected_args(args: list[str], workers: int) -> list[str]:
 
 def pytest_load_initial_conftests(early_config, parser, args):
     """Inject xdist flags early so --parallel actually runs with workers."""
+    global _EARLY_PARALLEL_SETTINGS
     if "--parallel" not in _args_before_double_dash(args):
         return
     if not _has_xdist_installed():
@@ -164,6 +166,7 @@ def pytest_load_initial_conftests(early_config, parser, args):
         return
 
     settings = _compute_parallel_settings_from_args(args)
+    _EARLY_PARALLEL_SETTINGS = settings
     injected_args = _build_parallel_injected_args(args, settings.workers)
     if "--" in args:
         idx = args.index("--")
@@ -256,6 +259,7 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     """Enable bounded xdist parallelism only when --parallel is requested."""
+    global _EARLY_PARALLEL_SETTINGS
     if not config.getoption("--parallel"):
         return
 
@@ -277,14 +281,16 @@ def pytest_configure(config):
             "--parallel requires pytest-xdist. Install test extras with `uv sync --extra test`."
         )
 
-    settings = compute_recommended_workers(
-        cpu_count=detect_effective_cpu_count(),
-        total_memory_bytes=detect_total_memory_bytes(),
-        available_memory_bytes=detect_available_memory_bytes(),
-        platform_name=sys.platform,
-        max_workers=max_workers,
-        tier=tier,
-    )
+    settings = _EARLY_PARALLEL_SETTINGS
+    if settings is None:
+        settings = compute_recommended_workers(
+            cpu_count=detect_effective_cpu_count(),
+            total_memory_bytes=detect_total_memory_bytes(),
+            available_memory_bytes=detect_available_memory_bytes(),
+            platform_name=sys.platform,
+            max_workers=max_workers,
+            tier=tier,
+        )
 
     # Respect explicit -n values from CLI; otherwise keep the early-injected value.
     requested_numprocesses = getattr(config.option, "numprocesses", None)
@@ -295,6 +301,7 @@ def pytest_configure(config):
 
     setattr(config, "_spec_kit_parallel_settings", settings)
     setattr(config, "_spec_kit_parallel_effective_workers", getattr(config.option, "numprocesses", settings.workers))
+    _EARLY_PARALLEL_SETTINGS = None
 
 
 def pytest_report_header(config):

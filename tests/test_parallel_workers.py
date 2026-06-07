@@ -15,6 +15,7 @@ from tests.conftest import (
     _is_xdist_explicitly_enabled,
     _is_xdist_disabled,
     pytest_load_initial_conftests,
+    pytest_configure,
     pytest_report_header,
 )
 
@@ -374,6 +375,50 @@ def test_load_initial_conftests_raises_for_parallel_max_workers_below_one(monkey
 
     with pytest.raises(pytest.UsageError, match="--parallel-max-workers must be >= 1"):
         pytest_load_initial_conftests(None, None, args)
+
+
+def test_parallel_settings_computed_once_across_early_and_configure(monkeypatch):
+    calls = {"count": 0}
+
+    def fake_compute(*, cpu_count, total_memory_bytes, available_memory_bytes, platform_name, max_workers, tier):
+        calls["count"] += 1
+        return SimpleNamespace(
+            tier=tier,
+            workers=3,
+            cpu_cap=3,
+            memory_cap=3,
+            os_cap=8,
+            effective_cpus=cpu_count,
+            total_memory_bytes=total_memory_bytes,
+            available_memory_bytes=available_memory_bytes,
+            memory_per_worker_gib=1.5,
+        )
+
+    monkeypatch.setattr("tests.conftest.compute_recommended_workers", fake_compute)
+    monkeypatch.setattr("tests.conftest.detect_effective_cpu_count", lambda: 8)
+    monkeypatch.setattr("tests.conftest.detect_total_memory_bytes", lambda: 8 * 1024 ** 3)
+    monkeypatch.setattr("tests.conftest.detect_available_memory_bytes", lambda: 8 * 1024 ** 3)
+    monkeypatch.setattr("tests.conftest._has_xdist_installed", lambda: True)
+    monkeypatch.setattr("tests.conftest._is_plugin_autoload_disabled", lambda: False)
+    monkeypatch.setattr("tests.conftest._is_xdist_disabled", lambda _args: False)
+    monkeypatch.setattr("tests.conftest._has_numprocesses_arg", lambda _args: False)
+
+    args = ["--parallel"]
+    pytest_load_initial_conftests(None, None, args)
+
+    config = SimpleNamespace(
+        option=SimpleNamespace(numprocesses=3, dist="worksteal"),
+        invocation_params=SimpleNamespace(args=("--parallel",)),
+        getoption=lambda opt: {
+            "--parallel": True,
+            "--parallel-max-workers": None,
+            "--parallel-tier": "medium",
+        }[opt],
+    )
+
+    pytest_configure(config)
+
+    assert calls["count"] == 1
 
 
 def test_is_plugin_autoload_disabled_truthy(monkeypatch):
