@@ -150,22 +150,8 @@ def detect_effective_cpu_count() -> int:
 def detect_total_memory_bytes() -> int | None:
     """Best-effort total system memory in bytes, or None if unavailable."""
     if sys.platform == "win32":
-        class MEMORYSTATUSEX(ctypes.Structure):
-            _fields_ = [
-                ("dwLength", ctypes.c_ulong),
-                ("dwMemoryLoad", ctypes.c_ulong),
-                ("ullTotalPhys", ctypes.c_ulonglong),
-                ("ullAvailPhys", ctypes.c_ulonglong),
-                ("ullTotalPageFile", ctypes.c_ulonglong),
-                ("ullAvailPageFile", ctypes.c_ulonglong),
-                ("ullTotalVirtual", ctypes.c_ulonglong),
-                ("ullAvailVirtual", ctypes.c_ulonglong),
-                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-            ]
-
-        stats = MEMORYSTATUSEX()
-        stats.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stats)) == 0:
+        stats = _read_windows_memory_status()
+        if stats is None:
             return None
         return int(stats.ullTotalPhys)
 
@@ -193,22 +179,8 @@ def detect_total_memory_bytes() -> int | None:
 def detect_available_memory_bytes() -> int | None:
     """Best-effort currently available memory in bytes, or None if unavailable."""
     if sys.platform == "win32":
-        class MEMORYSTATUSEX(ctypes.Structure):
-            _fields_ = [
-                ("dwLength", ctypes.c_ulong),
-                ("dwMemoryLoad", ctypes.c_ulong),
-                ("ullTotalPhys", ctypes.c_ulonglong),
-                ("ullAvailPhys", ctypes.c_ulonglong),
-                ("ullTotalPageFile", ctypes.c_ulonglong),
-                ("ullAvailPageFile", ctypes.c_ulonglong),
-                ("ullTotalVirtual", ctypes.c_ulonglong),
-                ("ullAvailVirtual", ctypes.c_ulonglong),
-                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-            ]
-
-        stats = MEMORYSTATUSEX()
-        stats.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stats)) == 0:
+        stats = _read_windows_memory_status()
+        if stats is None:
             return None
         return int(stats.ullAvailPhys)
 
