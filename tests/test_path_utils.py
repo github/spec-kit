@@ -1,8 +1,9 @@
 """Unit tests for shared path normalization helpers."""
 
 import os
+from pathlib import Path
 
-from tests._path_utils import normalize_path_text, path_from_bash_output
+from tests._path_utils import bash_path_from_host, normalize_path_text, path_from_bash_output
 
 
 def test_normalize_path_text_preserves_unc_prefix():
@@ -46,3 +47,11 @@ def test_path_from_bash_output_tmp_mapping_ignores_existence(monkeypatch):
     monkeypatch.setenv("SPECKIT_BASH_TMPDIR", "/virtual-tmp")
     parsed = path_from_bash_output("/tmp/a/b")
     assert str(parsed).endswith(os.path.join("virtual-tmp", "a", "b"))
+
+
+def test_bash_path_from_host_converts_windows_drive_paths():
+    converted = bash_path_from_host(Path("C:/tmp/spec-kit"))
+    if os.name == "nt":
+        assert converted == "/c/tmp/spec-kit"
+    else:
+        assert converted == "C:/tmp/spec-kit"

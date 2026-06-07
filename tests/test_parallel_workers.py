@@ -12,6 +12,7 @@ from tests.conftest import (
     _has_dist_arg,
     _has_numprocesses_arg,
     _is_plugin_autoload_disabled,
+    _is_xdist_worker_process,
     _is_xdist_explicitly_enabled,
     _is_xdist_disabled,
     pytest_load_initial_conftests,
@@ -375,6 +376,20 @@ def test_load_initial_conftests_raises_for_parallel_max_workers_below_one(monkey
 
     with pytest.raises(pytest.UsageError, match="--parallel-max-workers must be >= 1"):
         pytest_load_initial_conftests(None, None, args)
+
+
+def test_is_xdist_worker_process_detects_worker_env(monkeypatch):
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw0")
+    assert _is_xdist_worker_process()
+
+
+def test_load_initial_conftests_noops_in_xdist_worker(monkeypatch):
+    args = ["--parallel"]
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw0")
+
+    pytest_load_initial_conftests(None, None, args)
+
+    assert args == ["--parallel"]
 
 
 def test_parallel_settings_computed_once_across_early_and_configure(monkeypatch):

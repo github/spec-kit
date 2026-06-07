@@ -39,7 +39,6 @@ def _detect_cgroup_available_memory_bytes() -> int | None:
     # cgroup v2
     limit_raw = _read_text("/sys/fs/cgroup/memory.max")
     used_raw = _read_text("/sys/fs/cgroup/memory.current")
-
     if limit_raw and used_raw and limit_raw != "max":
         try:
             limit = int(limit_raw)
@@ -56,12 +55,38 @@ def _detect_cgroup_available_memory_bytes() -> int | None:
         try:
             limit = int(limit_raw)
             used = int(used_raw)
-            if limit > 0 and limit < (1 << 60):  # ignore effectively-unlimited sentinel values
+            if limit > 0 and limit < (1 << 60):
                 return max(0, limit - used)
         except ValueError:
             pass
 
     return None
+
+
+if sys.platform == "win32":
+    class MEMORYSTATUSEX(ctypes.Structure):
+        _fields_ = [
+            ("dwLength", ctypes.c_ulong),
+            ("dwMemoryLoad", ctypes.c_ulong),
+            ("ullTotalPhys", ctypes.c_ulonglong),
+            ("ullAvailPhys", ctypes.c_ulonglong),
+            ("ullTotalPageFile", ctypes.c_ulonglong),
+            ("ullAvailPageFile", ctypes.c_ulonglong),
+            ("ullTotalVirtual", ctypes.c_ulonglong),
+            ("ullAvailVirtual", ctypes.c_ulonglong),
+            ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
+
+
+def _read_windows_memory_status() -> MEMORYSTATUSEX | None:
+    if sys.platform != "win32":
+        return None
+
+    stats = MEMORYSTATUSEX()
+    stats.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+    if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stats)) == 0:
+        return None
+    return stats
 
 
 def _detect_cgroup_cpu_quota_count() -> int | None:
@@ -79,8 +104,6 @@ def _detect_cgroup_cpu_quota_count() -> int | None:
                 pass
 
     # cgroup v1
-    # Some distros/runtimes mount under /sys/fs/cgroup/cpu/, while others use
-    # /sys/fs/cgroup/cpu,cpuacct/.
     quota_candidates = (
         "/sys/fs/cgroup/cpu/cpu.cfs_quota_us",
         "/sys/fs/cgroup/cpu,cpuacct/cpu.cfs_quota_us",
@@ -91,7 +114,6 @@ def _detect_cgroup_cpu_quota_count() -> int | None:
         "/sys/fs/cgroup/cpu,cpuacct/cpu.cfs_period_us",
         "/sys/fs/cgroup/cpuacct,cpu/cpu.cfs_period_us",
     )
-
     for quota_path, period_path in zip(quota_candidates, period_candidates):
         quota_raw = _read_text(quota_path)
         period_raw = _read_text(period_path)
@@ -100,7 +122,6 @@ def _detect_cgroup_cpu_quota_count() -> int | None:
         try:
             quota = int(quota_raw)
             period = int(period_raw)
-            # cgroup v1 uses -1 for unlimited quota.
             if quota > 0 and period > 0:
                 return max(1, quota // period)
         except ValueError:

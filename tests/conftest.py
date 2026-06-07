@@ -32,6 +32,11 @@ def _has_xdist_installed() -> bool:
     return importlib.util.find_spec("xdist") is not None
 
 
+def _is_xdist_worker_process() -> bool:
+    """Return True when running inside an xdist worker process."""
+    return bool(os.environ.get("PYTEST_XDIST_WORKER"))
+
+
 def _is_plugin_autoload_disabled() -> bool:
     """Return True when pytest plugin autoload is explicitly disabled."""
     value = os.environ.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "")
@@ -155,6 +160,8 @@ def pytest_load_initial_conftests(early_config, parser, args):
     """Inject xdist flags early so --parallel actually runs with workers."""
     global _EARLY_PARALLEL_SETTINGS
     if "--parallel" not in _args_before_double_dash(args):
+        return
+    if _is_xdist_worker_process():
         return
     if not _has_xdist_installed():
         return

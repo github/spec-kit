@@ -81,3 +81,11 @@ def path_from_bash_output(path_value: str) -> Path:
         if match:
             return Path(f"{match.group(1).upper()}:/{match.group(2)}")
     return Path(path_value)
+
+
+def bash_path_from_host(path: Path) -> str:
+    """Convert a host path to a Git Bash-compatible path string on Windows."""
+    value = str(path).replace("\\", "/")
+    if os.name == "nt" and len(value) >= 2 and value[1] == ":":
+        return f"/{value[0].lower()}{value[2:]}"
+    return value

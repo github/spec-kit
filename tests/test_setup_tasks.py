@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
  
 from tests.conftest import requires_bash
-from tests._path_utils import assert_normalized_path_equal, path_from_bash_output
+from tests._path_utils import assert_normalized_path_equal, bash_path_from_host, path_from_bash_output
  
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
@@ -130,13 +130,6 @@ def _run_bash_resolve_template(repo: Path, path_override: str | None = None) -> 
         check=False,
         env=_clean_env(),
     )
-
-
-def _to_bash_path(path: Path) -> str:
-    value = str(path).replace("\\", "/")
-    if os.name == "nt" and len(value) >= 2 and value[1] == ":":
-        return f"/{value[0].lower()}{value[2:]}"
-    return value
 
 
 def _run_bash_format_command(repo: Path, command_name: str) -> subprocess.CompletedProcess:
@@ -590,7 +583,7 @@ def test_resolve_template_uses_python_when_python3_missing(tasks_repo: Path) -> 
     python_shim.write_text("#!/bin/sh\nprintf 'py-fallback\\n'\n", encoding="utf-8", newline="\n")
     python_shim.chmod(0o755)
 
-    result = _run_bash_resolve_template(tasks_repo, _to_bash_path(shim_dir))
+    result = _run_bash_resolve_template(tasks_repo, bash_path_from_host(shim_dir))
 
     assert result.returncode == 0, result.stderr
     _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
@@ -610,7 +603,7 @@ def test_resolve_template_trims_crlf_preset_ids(tasks_repo: Path) -> None:
     python3_shim.write_text("#!/usr/bin/env bash\nprintf 'crlf-preset\\r\\n'\n", encoding="utf-8", newline="\n")
     python3_shim.chmod(0o755)
 
-    result = _run_bash_resolve_template(tasks_repo, f"{_to_bash_path(shim_dir)}:/usr/bin:/bin")
+    result = _run_bash_resolve_template(tasks_repo, f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin")
 
     assert result.returncode == 0, result.stderr
     _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
@@ -635,7 +628,7 @@ def test_resolve_template_fallback_scan_is_deterministic_when_python_fails(tasks
     (shim_dir / "python3").chmod(0o755)
     (shim_dir / "python").chmod(0o755)
 
-    path_override = f"{_to_bash_path(shim_dir)}:/usr/bin:/bin"
+    path_override = f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin"
     result = _run_bash_resolve_template(tasks_repo, path_override)
 
     assert result.returncode == 0, result.stderr
