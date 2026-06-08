@@ -17,6 +17,7 @@ from tests._parallel import (
 )
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_EARLY_PARALLEL_SETTINGS = None
 
 
 def _args_before_double_dash(args: list[str]) -> list[str]:
@@ -29,6 +30,17 @@ def _args_before_double_dash(args: list[str]) -> list[str]:
 def _has_xdist_installed() -> bool:
     """Return whether pytest-xdist is importable in this environment."""
     return importlib.util.find_spec("xdist") is not None
+
+
+def _is_xdist_worker_process() -> bool:
+    """Return True when running inside an xdist worker process."""
+    return bool(os.environ.get("PYTEST_XDIST_WORKER"))
+
+
+def _is_plugin_autoload_disabled() -> bool:
+    """Return True when pytest plugin autoload is explicitly disabled."""
+    value = os.environ.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _has_numprocesses_arg(args: list[str]) -> bool:
@@ -57,16 +69,47 @@ def _has_dist_arg(args: list[str]) -> bool:
 def _is_xdist_disabled(args: list[str]) -> bool:
     """Return True when users explicitly disable xdist with -p no:xdist."""
     args = _args_before_double_dash(args)
+
+    def _is_xdist_disable_name(name: str) -> bool:
+        return name == "no:xdist" or name.startswith("no:xdist.")
+
     idx = 0
     while idx < len(args):
         arg = args[idx]
         if arg == "-p":
-            if idx + 1 < len(args) and args[idx + 1].startswith("no:xdist"):
+            if idx + 1 < len(args) and _is_xdist_disable_name(args[idx + 1]):
                 return True
             idx += 2
             continue
-        if arg.startswith("-pno:xdist"):
-            return True
+        if arg.startswith("-pno:"):
+            plugin_name = arg[2:]
+            if _is_xdist_disable_name(plugin_name):
+                return True
+        idx += 1
+    return False
+
+
+def _is_xdist_explicitly_enabled(args: list[str]) -> bool:
+    """Return True when users explicitly enable xdist via -p xdist."""
+
+    def _is_xdist_plugin_name(name: str) -> bool:
+        return name == "xdist" or name.startswith("xdist.")
+
+    args = _args_before_double_dash(args)
+    idx = 0
+    while idx < len(args):
+        arg = args[idx]
+        if arg == "-p":
+            if idx + 1 < len(args):
+                plugin_name = args[idx + 1]
+                if not plugin_name.startswith("no:") and _is_xdist_plugin_name(plugin_name):
+                    return True
+            idx += 2
+            continue
+        if arg.startswith("-p") and arg != "-p":
+            plugin_name = arg[2:]
+            if plugin_name and not plugin_name.startswith("no:") and _is_xdist_plugin_name(plugin_name):
+                return True
         idx += 1
     return False
 
@@ -81,24 +124,18 @@ def _extract_cli_option(args: list[str], option: str, default: str | None = None
         if arg == option:
             if idx + 1 < len(args):
                 return args[idx + 1]
-            return default
+            raise pytest.UsageError(f"{option} requires a value")
         if arg.startswith(prefix):
-            return arg[len(prefix):]
+            value = arg[len(prefix):]
+            if value == "":
+                raise pytest.UsageError(f"{option} requires a value")
+            return value
         idx += 1
     return default
 
 
-def pytest_load_initial_conftests(early_config, parser, args):
-    """Inject xdist flags early so --parallel actually runs with workers."""
-    if "--parallel" not in args:
-        return
-    if not _has_xdist_installed():
-        return
-    if _is_xdist_disabled(args):
-        return
-    if _has_numprocesses_arg(args):
-        return
-
+def _compute_parallel_settings_from_args(args: list[str]):
+    """Compute parallel worker settings from CLI args using shared detection."""
     tier = _extract_cli_option(args, "--parallel-tier", "medium")
     max_workers_raw = _extract_cli_option(args, "--parallel-max-workers", None)
     max_workers = None
@@ -106,9 +143,11 @@ def pytest_load_initial_conftests(early_config, parser, args):
         try:
             max_workers = int(max_workers_raw)
         except ValueError:
-            max_workers = None
+            raise pytest.UsageError("--parallel-max-workers must be an integer >= 1") from None
+        if max_workers < 1:
+            raise pytest.UsageError("--parallel-max-workers must be >= 1")
 
-    settings = compute_recommended_workers(
+    return compute_recommended_workers(
         cpu_count=detect_effective_cpu_count(),
         total_memory_bytes=detect_total_memory_bytes(),
         available_memory_bytes=detect_available_memory_bytes(),
@@ -117,57 +156,42 @@ def pytest_load_initial_conftests(early_config, parser, args):
         tier=tier if tier in ("low", "medium", "high") else "medium",
     )
 
-    injected_args = ["-n", str(settings.workers)]
+
+def _build_parallel_injected_args(args: list[str], workers: int) -> list[str]:
+    """Build xdist args to inject for parallel execution."""
+    if workers <= 1:
+        return []
+    injected_args = ["-n", str(workers)]
     if not _has_dist_arg(args):
         injected_args.extend(["--dist", "worksteal"])
+    return injected_args
+
+
+def pytest_load_initial_conftests(early_config, parser, args):
+    """Inject xdist flags early so --parallel actually runs with workers."""
+    global _EARLY_PARALLEL_SETTINGS
+    if "--parallel" not in _args_before_double_dash(args):
+        return
+    if _is_xdist_worker_process():
+        return
+    if not _has_xdist_installed():
+        return
+    if _is_plugin_autoload_disabled() and not _is_xdist_explicitly_enabled(args):
+        return
+    if _is_xdist_disabled(args):
+        return
+    if _has_numprocesses_arg(args):
+        return
+
+    settings = _compute_parallel_settings_from_args(args)
+    _EARLY_PARALLEL_SETTINGS = settings
+    injected_args = _build_parallel_injected_args(args, settings.workers)
     if "--" in args:
         idx = args.index("--")
         args[idx:idx] = injected_args
     else:
-        args.extend(injected_args)
-
-
-def pytest_cmdline_main(config):
-    """Reinvoke pytest with explicit xdist args when --parallel is requested."""
-    if not config.getoption("--parallel"):
-        return None
-    if not _has_xdist_installed():
-        return None
-    if os.environ.get("SPEC_KIT_PARALLEL_REINVOKED") == "1":
-        return None
-
-    original_args = list(config.invocation_params.args)
-    if _is_xdist_disabled(original_args):
-        return None
-    if _has_numprocesses_arg(original_args):
-        return None
-
-    max_workers = config.getoption("--parallel-max-workers")
-    tier = config.getoption("--parallel-tier")
-    settings = compute_recommended_workers(
-        cpu_count=detect_effective_cpu_count(),
-        total_memory_bytes=detect_total_memory_bytes(),
-        available_memory_bytes=detect_available_memory_bytes(),
-        platform_name=sys.platform,
-        max_workers=max_workers,
-        tier=tier,
-    )
-
-    injected_args = ["-n", str(settings.workers)]
-    if not _has_dist_arg(original_args):
-        injected_args.extend(["--dist", "worksteal"])
-
-    reinvoke_args = list(original_args)
-    if "--" in reinvoke_args:
-        idx = reinvoke_args.index("--")
-        reinvoke_args[idx:idx] = injected_args
-    else:
-        reinvoke_args.extend(injected_args)
-
-    env = os.environ.copy()
-    env["SPEC_KIT_PARALLEL_REINVOKED"] = "1"
-    result = subprocess.run([sys.executable, "-m", "pytest", *reinvoke_args], env=env)
-    return result.returncode
+        parallel_idx = args.index("--parallel")
+        args[parallel_idx + 1:parallel_idx + 1] = injected_args
 
 
 def _has_working_bash() -> bool:
@@ -254,37 +278,60 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     """Enable bounded xdist parallelism only when --parallel is requested."""
+    global _EARLY_PARALLEL_SETTINGS
     if not config.getoption("--parallel"):
         return
+
+    invocation_args = list(config.invocation_params.args)
+    if _is_xdist_disabled(invocation_args):
+        raise pytest.UsageError("--parallel cannot be used with '-p no:xdist'.")
 
     max_workers = config.getoption("--parallel-max-workers")
     tier = config.getoption("--parallel-tier")
     if max_workers is not None and max_workers < 1:
         raise pytest.UsageError("--parallel-max-workers must be >= 1")
 
-    if not hasattr(config.option, "numprocesses"):
-        raise pytest.UsageError(
-            "--parallel requires pytest-xdist. Install test extras with `uv sync --extra test`."
+    settings = _EARLY_PARALLEL_SETTINGS
+    if settings is None:
+        settings = compute_recommended_workers(
+            cpu_count=detect_effective_cpu_count(),
+            total_memory_bytes=detect_total_memory_bytes(),
+            available_memory_bytes=detect_available_memory_bytes(),
+            platform_name=sys.platform,
+            max_workers=max_workers,
+            tier=tier,
         )
 
-    settings = compute_recommended_workers(
-        cpu_count=detect_effective_cpu_count(),
-        total_memory_bytes=detect_total_memory_bytes(),
-        available_memory_bytes=detect_available_memory_bytes(),
-        platform_name=sys.platform,
-        max_workers=max_workers,
-        tier=tier,
-    )
+    explicit_numprocesses = _has_numprocesses_arg(invocation_args)
+    if settings.workers <= 1 and not explicit_numprocesses:
+        setattr(config, "_spec_kit_parallel_settings", settings)
+        setattr(config, "_spec_kit_parallel_effective_workers", 1)
+        _EARLY_PARALLEL_SETTINGS = None
+        return
+
+    if not hasattr(config.option, "numprocesses"):
+        if not _has_xdist_installed():
+            raise pytest.UsageError(
+                "--parallel requires pytest-xdist. Install test extras with `uv sync --extra test`."
+            )
+        if _is_plugin_autoload_disabled():
+            raise pytest.UsageError(
+                "--parallel requires pytest-xdist plugin loading. Unset PYTEST_DISABLE_PLUGIN_AUTOLOAD or enable xdist explicitly."
+            )
+        raise pytest.UsageError(
+            "--parallel requires pytest-xdist plugin loading. Ensure xdist is enabled."
+        )
 
     # Respect explicit -n values from CLI; otherwise keep the early-injected value.
     requested_numprocesses = getattr(config.option, "numprocesses", None)
     if requested_numprocesses in (None, 0):
         config.option.numprocesses = settings.workers
-    if hasattr(config.option, "dist") and not config.option.dist:
+    if hasattr(config.option, "dist") and not _has_dist_arg(invocation_args):
         config.option.dist = "worksteal"
 
     setattr(config, "_spec_kit_parallel_settings", settings)
     setattr(config, "_spec_kit_parallel_effective_workers", getattr(config.option, "numprocesses", settings.workers))
+    _EARLY_PARALLEL_SETTINGS = None
 
 
 def pytest_report_header(config):

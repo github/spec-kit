@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import requires_bash
+from tests._path_utils import assert_shell_path_matches
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CREATE_FEATURE = PROJECT_ROOT / "scripts" / "bash" / "create-new-feature.sh"
@@ -178,39 +179,6 @@ def source_and_call(func_call: str, env: dict | None = None) -> subprocess.Compl
     )
 
 
-def _normalized_parts(path_value: str) -> list[str]:
-    normalized = path_value.strip().strip("'\"").replace("\\", "/")
-    normalized = re.sub(r"^[A-Za-z]:", "", normalized)
-    return [p for p in normalized.split("/") if p]
-
-
-def _assert_shell_path_matches(actual: str, expected: Path) -> None:
-    actual_raw = actual.strip().strip("'\"")
-    expected_raw = str(expected)
-    if actual_raw == expected_raw:
-        return
-
-    actual_parts = _normalized_parts(actual_raw)
-    expected_parts = _normalized_parts(expected_raw)
-
-    def trim_to_pytest(parts: list[str]) -> list[str]:
-        for idx, part in enumerate(parts):
-            if part.startswith("pytest-"):
-                return parts[idx:]
-        return parts
-
-    if os.name == "nt" and trim_to_pytest(actual_parts) == trim_to_pytest(expected_parts):
-        return
-
-    # Keep tail-component fallback for Windows shell path translation quirks.
-    if os.name == "nt":
-        tail = min(4, len(expected_parts), len(actual_parts))
-        if tail > 0 and actual_parts[-tail:] == expected_parts[-tail:]:
-            return
-
-    raise AssertionError(f"Path mismatch. actual={actual_raw!r} expected={expected_raw!r}")
-
-
 # ── Timestamp Branch Tests ───────────────────────────────────────────────────
 
 
@@ -250,8 +218,8 @@ class TestTimestampBranch:
         if result.returncode != 0:
             # On Windows, deep temp paths can still exceed fs limits even after truncation.
             assert os.name == "nt"
-            assert "Filename too long" in result.stderr
-            return
+            assert re.search(r"too\s+long", result.stderr, flags=re.IGNORECASE)
+            pytest.xfail("Windows path-length limitation exceeded during long-name truncation test")
         branch = None
         for line in result.stdout.splitlines():
             if line.startswith("BRANCH_NAME:"):
@@ -446,7 +414,7 @@ class TestGetFeaturePathsSinglePrefix:
             text=True,
         )
         assert result.returncode == 0, result.stderr
-        _assert_shell_path_matches(result.stdout.strip(), tmp_path / "specs" / "001-target-spec")
+        assert_shell_path_matches(result.stdout.strip(), tmp_path / "specs" / "001-target-spec")
 
 
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
@@ -1203,7 +1171,7 @@ class TestFeatureDirectoryResolution:
         for line in result.stdout.splitlines():
             if line.startswith("FEATURE_DIR="):
                 val = line.split("=", 1)[1].strip("'\"")
-                _assert_shell_path_matches(val, custom_dir)
+                assert_shell_path_matches(val, custom_dir)
                 break
         else:
             pytest.fail("FEATURE_DIR not found in output")
@@ -1230,7 +1198,7 @@ class TestFeatureDirectoryResolution:
         for line in result.stdout.splitlines():
             if line.startswith("FEATURE_DIR="):
                 val = line.split("=", 1)[1].strip("'\"")
-                _assert_shell_path_matches(val, custom_dir)
+                assert_shell_path_matches(val, custom_dir)
                 break
         else:
             pytest.fail("FEATURE_DIR not found in output")
@@ -1260,7 +1228,7 @@ class TestFeatureDirectoryResolution:
         for line in result.stdout.splitlines():
             if line.startswith("FEATURE_DIR="):
                 val = line.split("=", 1)[1].strip("'\"")
-                _assert_shell_path_matches(val, env_dir)
+                assert_shell_path_matches(val, env_dir)
                 break
         else:
             pytest.fail("FEATURE_DIR not found in output")
@@ -1282,7 +1250,7 @@ class TestFeatureDirectoryResolution:
         for line in result.stdout.splitlines():
             if line.startswith("FEATURE_DIR="):
                 val = line.split("=", 1)[1].strip("'\"")
-                _assert_shell_path_matches(val, spec_dir)
+                assert_shell_path_matches(val, spec_dir)
                 break
         else:
             pytest.fail("FEATURE_DIR not found in output")

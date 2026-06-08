@@ -426,10 +426,12 @@ When an issue exists, include its number immediately after the prefix — this i
 ## Responding to PR Review Comments
 
 - If you are an agent working on behalf of a human, **disclose your identity in your PR comment** — name the agent (and model, if applicable) and the human you are acting for (e.g., "Posted on behalf of @user by GitHub Copilot (model: &lt;name-if-known&gt;)").
+- When an AI-generated PR comment is posted on your behalf, include an explicit attribution line in the comment body before the substantive update, such as "Posted on behalf of @user by GitHub Copilot (model: GPT-5.4 mini).".
 - Post **one** top-level summary comment per review round listing what changed and the commit SHA. Do not reply on every individual comment.
 - Reply inline only when context is needed (disagreement, deferral, non-obvious fix). Keep it to a sentence or two.
 - **Never click "Resolve conversation"** — that belongs to the reviewer or PR author.
 - No emoji, no celebratory framing, no checklist mirroring the reviewer's items, no restating what the reviewer wrote.
+- Keep the PR description Review Fix Ledger additive with commit-level entries for each review round, and refresh the Copilot guidance when new evidence shows a feedback-loop risk.
 - Re-request review once per round (when all feedback is addressed), not after every intermediate push.
 
 ---

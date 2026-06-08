@@ -583,7 +583,9 @@ class TestInitIntegrationFlag:
         templates_src.mkdir(parents=True)
         (templates_src / "plan-template.md").write_text("# plan\n", encoding="utf-8")
 
-        with patch("specify_cli.shared_infra.Path.chmod", autospec=True, wraps=Path.chmod) as chmod_spy:
+        patch_kwargs = {"autospec": True, "wraps": Path.chmod}
+
+        with patch("specify_cli.shared_infra.Path.chmod", **patch_kwargs) as chmod_spy:
             install_shared_infra(
                 project,
                 "sh",
@@ -596,7 +598,22 @@ class TestInitIntegrationFlag:
 
         written = project / ".specify" / "templates" / "plan-template.md"
         if os.name == "nt":
-            assert any(call.args[1] == 0o644 for call in chmod_spy.call_args_list)
+            assert written.is_file()
+
+            def chmod_call_matches(call) -> bool:
+                target = call.args[0] if call.args else call.kwargs.get("self")
+                mode = call.args[1] if len(call.args) > 1 else call.kwargs.get("mode")
+                if target is None or mode != 0o644:
+                    return False
+                target_path = Path(target)
+                if target_path.parent != written.parent:
+                    return False
+                return target_path.name == written.name or target_path.name.startswith(f".{written.name}.")
+
+            assert any(
+                chmod_call_matches(call)
+                for call in chmod_spy.call_args_list
+            )
         else:
             assert written.stat().st_mode & 0o777 == 0o644
 

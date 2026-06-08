@@ -39,7 +39,6 @@ def _detect_cgroup_available_memory_bytes() -> int | None:
     # cgroup v2
     limit_raw = _read_text("/sys/fs/cgroup/memory.max")
     used_raw = _read_text("/sys/fs/cgroup/memory.current")
-
     if limit_raw and used_raw and limit_raw != "max":
         try:
             limit = int(limit_raw)
@@ -56,12 +55,38 @@ def _detect_cgroup_available_memory_bytes() -> int | None:
         try:
             limit = int(limit_raw)
             used = int(used_raw)
-            if limit > 0 and limit < (1 << 60):  # ignore effectively-unlimited sentinel values
+            if limit > 0 and limit < (1 << 60):
                 return max(0, limit - used)
         except ValueError:
             pass
 
     return None
+
+
+if sys.platform == "win32":
+    class MEMORYSTATUSEX(ctypes.Structure):
+        _fields_ = [
+            ("dwLength", ctypes.c_ulong),
+            ("dwMemoryLoad", ctypes.c_ulong),
+            ("ullTotalPhys", ctypes.c_ulonglong),
+            ("ullAvailPhys", ctypes.c_ulonglong),
+            ("ullTotalPageFile", ctypes.c_ulonglong),
+            ("ullAvailPageFile", ctypes.c_ulonglong),
+            ("ullTotalVirtual", ctypes.c_ulonglong),
+            ("ullAvailVirtual", ctypes.c_ulonglong),
+            ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
+
+
+def _read_windows_memory_status() -> MEMORYSTATUSEX | None:
+    if sys.platform != "win32":
+        return None
+
+    stats = MEMORYSTATUSEX()
+    stats.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+    if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stats)) == 0:
+        return None
+    return stats
 
 
 def _detect_cgroup_cpu_quota_count() -> int | None:
@@ -79,8 +104,6 @@ def _detect_cgroup_cpu_quota_count() -> int | None:
                 pass
 
     # cgroup v1
-    # Some distros/runtimes mount under /sys/fs/cgroup/cpu/, while others use
-    # /sys/fs/cgroup/cpu,cpuacct/.
     quota_candidates = (
         "/sys/fs/cgroup/cpu/cpu.cfs_quota_us",
         "/sys/fs/cgroup/cpu,cpuacct/cpu.cfs_quota_us",
@@ -91,7 +114,6 @@ def _detect_cgroup_cpu_quota_count() -> int | None:
         "/sys/fs/cgroup/cpu,cpuacct/cpu.cfs_period_us",
         "/sys/fs/cgroup/cpuacct,cpu/cpu.cfs_period_us",
     )
-
     for quota_path, period_path in zip(quota_candidates, period_candidates):
         quota_raw = _read_text(quota_path)
         period_raw = _read_text(period_path)
@@ -100,7 +122,6 @@ def _detect_cgroup_cpu_quota_count() -> int | None:
         try:
             quota = int(quota_raw)
             period = int(period_raw)
-            # cgroup v1 uses -1 for unlimited quota.
             if quota > 0 and period > 0:
                 return max(1, quota // period)
         except ValueError:
@@ -129,33 +150,28 @@ def detect_effective_cpu_count() -> int:
 def detect_total_memory_bytes() -> int | None:
     """Best-effort total system memory in bytes, or None if unavailable."""
     if sys.platform == "win32":
-        class MEMORYSTATUSEX(ctypes.Structure):
-            _fields_ = [
-                ("dwLength", ctypes.c_ulong),
-                ("dwMemoryLoad", ctypes.c_ulong),
-                ("ullTotalPhys", ctypes.c_ulonglong),
-                ("ullAvailPhys", ctypes.c_ulonglong),
-                ("ullTotalPageFile", ctypes.c_ulonglong),
-                ("ullAvailPageFile", ctypes.c_ulonglong),
-                ("ullTotalVirtual", ctypes.c_ulonglong),
-                ("ullAvailVirtual", ctypes.c_ulonglong),
-                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-            ]
-
-        stats = MEMORYSTATUSEX()
-        stats.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stats)) == 0:
+        stats = _read_windows_memory_status()
+        if stats is None:
             return None
         return int(stats.ullTotalPhys)
 
     if hasattr(os, "sysconf"):
-        try:
-            page_size = int(os.sysconf("SC_PAGE_SIZE"))
-            pages = int(os.sysconf("SC_PHYS_PAGES"))
-            if page_size > 0 and pages > 0:
-                return page_size * pages
-        except (ValueError, OSError):
-            return None
+        page_size = None
+        for key in ("SC_PAGE_SIZE", "SC_PAGESIZE"):
+            try:
+                value = int(os.sysconf(key))
+            except (ValueError, OSError):
+                continue
+            if value > 0:
+                page_size = value
+                break
+        if page_size is not None:
+            try:
+                pages = int(os.sysconf("SC_PHYS_PAGES"))
+                if pages > 0:
+                    return page_size * pages
+            except (ValueError, OSError):
+                return None
 
     return None
 
@@ -163,22 +179,8 @@ def detect_total_memory_bytes() -> int | None:
 def detect_available_memory_bytes() -> int | None:
     """Best-effort currently available memory in bytes, or None if unavailable."""
     if sys.platform == "win32":
-        class MEMORYSTATUSEX(ctypes.Structure):
-            _fields_ = [
-                ("dwLength", ctypes.c_ulong),
-                ("dwMemoryLoad", ctypes.c_ulong),
-                ("ullTotalPhys", ctypes.c_ulonglong),
-                ("ullAvailPhys", ctypes.c_ulonglong),
-                ("ullTotalPageFile", ctypes.c_ulonglong),
-                ("ullAvailPageFile", ctypes.c_ulonglong),
-                ("ullTotalVirtual", ctypes.c_ulonglong),
-                ("ullAvailVirtual", ctypes.c_ulonglong),
-                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-            ]
-
-        stats = MEMORYSTATUSEX()
-        stats.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stats)) == 0:
+        stats = _read_windows_memory_status()
+        if stats is None:
             return None
         return int(stats.ullAvailPhys)
 
@@ -260,7 +262,11 @@ def compute_recommended_workers(
     elif memory_basis is not None:
         memory_cap = 1
 
-    os_cap = cfg.os_cap_by_platform.get(platform_name, cfg.os_cap_by_platform["win32"])
+    os_cap = cfg.os_cap_by_platform.get(platform_name)
+    if os_cap is None:
+        # Unknown platforms should default to the most permissive known cap,
+        # not the strictest Windows cap.
+        os_cap = max(cfg.os_cap_by_platform.values())
 
     workers = min(cpu_cap, memory_cap, os_cap)
 

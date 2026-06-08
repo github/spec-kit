@@ -54,6 +54,8 @@ class TestInstallerMissing:
         fake_uv.chmod(0o755)
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda name: None
+        ), patch(
+            "specify_cli._version.os.access", return_value=True
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ), patch(
@@ -152,6 +154,8 @@ class TestInstallerMissing:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which",
             side_effect=lambda name: str(fake_uv) if name == "uv" else None,
+        ), patch(
+            "specify_cli._version.os.access", return_value=True
         ), patch("specify_cli._version.subprocess.run", side_effect=fake_run), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -170,7 +174,6 @@ class TestInstallerMissing:
         fake_uv = tmp_path / "installer-bin" / "uv"
         fake_uv.parent.mkdir()
         fake_uv.write_text("#!/bin/sh\n")
-        fake_uv.chmod(0o644)
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda name: None
         ), patch("specify_cli._version.os.access", return_value=False), patch(
@@ -200,7 +203,6 @@ class TestInstallerMissing:
     ):
         fake_uv = tmp_path / "uv-installer"
         fake_uv.write_text("#!/bin/sh\n")
-        fake_uv.chmod(0o644)
         monkeypatch.chdir(tmp_path)
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.shutil.which", side_effect=lambda name: None

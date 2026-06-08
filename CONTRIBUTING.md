@@ -107,7 +107,7 @@ Use `--parallel-tier low|medium|high` to tune aggressiveness:
 Recommended starting points:
 
 | Environment | Suggested tier | Example command |
-|---|---|---|
+| --- | --- | --- |
 | Laptop / shared desktop | low | `uv run pytest --parallel --parallel-tier low` |
 | Developer workstation | medium | `uv run pytest --parallel --parallel-tier medium` |
 | Dedicated CI runner | high | `uv run pytest --parallel --parallel-tier high` |

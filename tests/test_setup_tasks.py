@@ -2,14 +2,15 @@
  
 import json
 import os
-import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
  
 import pytest
  
 from tests.conftest import requires_bash
+from tests._path_utils import assert_normalized_path_equal, bash_path_from_host, path_from_bash_output
  
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
@@ -99,11 +100,77 @@ def _is_shell_absolute(path_value: str) -> bool:
     return Path(path_value).is_absolute() or path_value.startswith("/")
 
 
-def _normalize_path_text(path_value: str) -> str:
-    normalized = path_value.replace("\\", "/")
-    return re.sub(r"/{2,}", "/", normalized)
- 
- 
+def _assert_tasks_template_matches(tasks_tmpl_raw: str, expected_path: Path) -> None:
+    assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
+    expected = expected_path.resolve()
+    if os.name == "nt":
+        tasks_tmpl = path_from_bash_output(tasks_tmpl_raw)
+        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
+        assert_normalized_path_equal(tasks_tmpl_raw, expected)
+        return
+    tasks_tmpl = Path(tasks_tmpl_raw)
+    assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
+    assert tasks_tmpl.resolve() == expected, f"Expected {expected} but got: {tasks_tmpl}"
+
+
+def _run_bash_template_resolver(
+    repo: Path,
+    resolver_fn: str,
+    path_override: str | None = None,
+    *,
+    replace_path_override: bool = False,
+) -> subprocess.CompletedProcess:
+    script = repo / ".specify" / "scripts" / "bash" / "common.sh"
+    cmd = 'source "$1"; '
+    if path_override is not None:
+        if replace_path_override:
+            cmd += 'export PATH="$2"; '
+        else:
+            cmd += 'export PATH="$2:$PATH"; '
+    cmd += f'{resolver_fn} tasks-template "$PWD"'
+    argv = ["bash", "-c", cmd, "bash", str(script)]
+    if path_override is not None:
+        argv.append(path_override)
+    return subprocess.run(
+        argv,
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=_clean_env(),
+    )
+
+
+def _run_bash_resolve_template(
+    repo: Path,
+    path_override: str | None = None,
+    *,
+    replace_path_override: bool = False,
+) -> subprocess.CompletedProcess:
+    return _run_bash_template_resolver(
+        repo,
+        "resolve_template",
+        path_override,
+        replace_path_override=replace_path_override,
+    )
+
+
+def _run_bash_resolve_template_content(
+    repo: Path,
+    path_override: str | None = None,
+    *,
+    replace_path_override: bool = False,
+) -> subprocess.CompletedProcess:
+    return _run_bash_template_resolver(
+        repo,
+        "resolve_template_content",
+        path_override,
+        replace_path_override=replace_path_override,
+    )
+
+
 def _run_bash_format_command(repo: Path, command_name: str) -> subprocess.CompletedProcess:
     script = repo / ".specify" / "scripts" / "bash" / "common.sh"
     return subprocess.run(
@@ -203,15 +270,10 @@ def test_setup_tasks_bash_core_template_resolved(tasks_repo: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
  
     data = json.loads(result.stdout)
-    tasks_tmpl_raw = data["TASKS_TEMPLATE"]
-    if os.name == "nt":
-        assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
-        assert _normalize_path_text(tasks_tmpl_raw).endswith("/.specify/templates/tasks-template.md")
-    else:
-        tasks_tmpl = Path(tasks_tmpl_raw)
-        assert tasks_tmpl.is_absolute(), "TASKS_TEMPLATE must be an absolute path"
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert tasks_tmpl == tasks_repo / ".specify" / "templates" / "tasks-template.md"
+    _assert_tasks_template_matches(
+        data["TASKS_TEMPLATE"],
+        tasks_repo / ".specify" / "templates" / "tasks-template.md",
+    )
  
  
 @requires_bash
@@ -242,19 +304,7 @@ def test_setup_tasks_bash_override_wins(tasks_repo: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
  
     data = json.loads(result.stdout)
-    tasks_tmpl_raw = data["TASKS_TEMPLATE"]
-    assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
-    # The resolved path must be inside the overrides directory
-    if os.name == "nt":
-        assert _normalize_path_text(tasks_tmpl_raw).endswith("/.specify/templates/overrides/tasks-template.md"), (
-            f"Expected override path but got: {tasks_tmpl_raw}"
-        )
-    else:
-        tasks_tmpl = Path(tasks_tmpl_raw)
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert tasks_tmpl == override_file.resolve(), (
-            f"Expected override path but got: {tasks_tmpl}"
-        )
+    _assert_tasks_template_matches(data["TASKS_TEMPLATE"], override_file)
  
  
 @requires_bash
@@ -287,19 +337,7 @@ def test_setup_tasks_bash_extension_wins_over_core(tasks_repo: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
  
     data = json.loads(result.stdout)
-    tasks_tmpl_raw = data["TASKS_TEMPLATE"]
-    assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
-    if os.name == "nt":
-        expected_rel = extension_file.relative_to(tasks_repo).as_posix()
-        assert _normalize_path_text(tasks_tmpl_raw).endswith(expected_rel), (
-            f"Expected extension path but got: {tasks_tmpl_raw}"
-        )
-    else:
-        tasks_tmpl = Path(tasks_tmpl_raw)
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert tasks_tmpl == extension_file.resolve(), (
-            f"Expected extension path but got: {tasks_tmpl}"
-        )
+    _assert_tasks_template_matches(data["TASKS_TEMPLATE"], extension_file)
  
  
 @requires_bash
@@ -338,19 +376,7 @@ def test_setup_tasks_bash_preset_wins_over_extension(tasks_repo: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
  
     data = json.loads(result.stdout)
-    tasks_tmpl_raw = data["TASKS_TEMPLATE"]
-    assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
-    if os.name == "nt":
-        expected_rel = preset_file.relative_to(tasks_repo).as_posix()
-        assert _normalize_path_text(tasks_tmpl_raw).endswith(expected_rel), (
-            f"Expected preset path but got: {tasks_tmpl_raw}"
-        )
-    else:
-        tasks_tmpl = Path(tasks_tmpl_raw)
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert tasks_tmpl == preset_file.resolve(), (
-            f"Expected preset path but got: {tasks_tmpl}"
-        )
+    _assert_tasks_template_matches(data["TASKS_TEMPLATE"], preset_file)
  
  
 @requires_bash
@@ -363,20 +389,22 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
  
     # resolve_template reads .specify/presets/.registry as a JSON object with a
     # "presets" map where each entry has a numeric "priority" (lower = higher
-    # precedence). Create two presets; priority-1-preset wins over priority-2-preset.
+    # precedence). Use explicit registry priorities instead of inferring from
+    # preset IDs so the contract is unambiguous on all platforms.
+    low_priority_dir = (
+        tasks_repo / ".specify" / "presets" / "priority-2-preset" / "templates"
+    )
+
+    low_priority_dir.mkdir(parents=True, exist_ok=True)
+    low_priority_file = low_priority_dir / "tasks-template.md"
+    low_priority_file.write_text("# low priority preset tasks template\n", encoding="utf-8")
+
     high_priority_dir = (
         tasks_repo / ".specify" / "presets" / "priority-1-preset" / "templates"
     )
     high_priority_dir.mkdir(parents=True, exist_ok=True)
     high_priority_file = high_priority_dir / "tasks-template.md"
     high_priority_file.write_text("# high priority preset tasks template\n", encoding="utf-8")
-    low_priority_dir = (
-        tasks_repo / ".specify" / "presets" / "priority-2-preset" / "templates"
-    )
-    
-    low_priority_dir.mkdir(parents=True, exist_ok=True)
-    low_priority_file = low_priority_dir / "tasks-template.md"
-    low_priority_file.write_text("# low priority preset tasks template\n", encoding="utf-8")
 
     # Write .registry JSON using the correct schema: object with "presets" map,
     # each preset has a numeric "priority" (lower number = higher precedence).
@@ -405,21 +433,134 @@ def test_setup_tasks_bash_preset_priority_order(tasks_repo: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
  
     data = json.loads(result.stdout)
-    tasks_tmpl_raw = data["TASKS_TEMPLATE"]
-    assert _is_shell_absolute(tasks_tmpl_raw), "TASKS_TEMPLATE must be an absolute path"
-    if os.name == "nt":
-        normalized = _normalize_path_text(tasks_tmpl_raw)
-        expected_high = high_priority_file.relative_to(tasks_repo).as_posix()
-        expected_low = low_priority_file.relative_to(tasks_repo).as_posix()
-        assert normalized.endswith(expected_high) or normalized.endswith(expected_low), (
-            f"Unexpected preset path resolution: {tasks_tmpl_raw}"
-        )
-    else:
-        tasks_tmpl = Path(tasks_tmpl_raw)
-        assert tasks_tmpl.is_file(), "TASKS_TEMPLATE must point to an existing file"
-        assert tasks_tmpl == high_priority_file.resolve(), (
-            f"Expected high-priority preset path but got: {tasks_tmpl}"
-        )
+    _assert_tasks_template_matches(data["TASKS_TEMPLATE"], high_priority_file)
+
+
+@requires_bash
+def test_setup_tasks_bash_preset_priority_tie_breaks_by_id(tasks_repo: Path) -> None:
+    """When priorities tie, lower preset id should win deterministically."""
+    _minimal_feature(tasks_repo)
+
+    alpha_dir = tasks_repo / ".specify" / "presets" / "alpha-preset" / "templates"
+    zulu_dir = tasks_repo / ".specify" / "presets" / "zulu-preset" / "templates"
+    alpha_dir.mkdir(parents=True, exist_ok=True)
+    zulu_dir.mkdir(parents=True, exist_ok=True)
+
+    alpha_file = alpha_dir / "tasks-template.md"
+    zulu_file = zulu_dir / "tasks-template.md"
+    alpha_file.write_text("# alpha preset tasks template\n", encoding="utf-8")
+    zulu_file.write_text("# zulu preset tasks template\n", encoding="utf-8")
+
+    registry_json = tasks_repo / ".specify" / "presets" / ".registry"
+    # Intentionally place zulu first to verify tie-break is id-based, not insertion-order.
+    registry_json.write_text(
+        json.dumps({
+            "presets": {
+                "zulu-preset": {"priority": 1, "enabled": True},
+                "alpha-preset": {"priority": 1, "enabled": True},
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--json"],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    data = json.loads(result.stdout)
+    _assert_tasks_template_matches(data["TASKS_TEMPLATE"], alpha_file)
+
+
+@requires_bash
+def test_setup_tasks_bash_preset_priority_coerces_mixed_types(tasks_repo: Path) -> None:
+    """Mixed-type priority values should still produce deterministic registry ordering."""
+    _minimal_feature(tasks_repo)
+
+    alpha_dir = tasks_repo / ".specify" / "presets" / "alpha-mixed" / "templates"
+    zulu_dir = tasks_repo / ".specify" / "presets" / "zulu-mixed" / "templates"
+    alpha_dir.mkdir(parents=True, exist_ok=True)
+    zulu_dir.mkdir(parents=True, exist_ok=True)
+
+    alpha_file = alpha_dir / "tasks-template.md"
+    zulu_file = zulu_dir / "tasks-template.md"
+    alpha_file.write_text("# alpha mixed\n", encoding="utf-8")
+    zulu_file.write_text("# zulu mixed\n", encoding="utf-8")
+
+    (tasks_repo / ".specify" / "presets" / ".registry").write_text(
+        json.dumps(
+            {
+                "presets": {
+                    "alpha-mixed": {"priority": "20", "enabled": True},
+                    "zulu-mixed": {"priority": 1, "enabled": True},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--json"],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    data = json.loads(result.stdout)
+    _assert_tasks_template_matches(data["TASKS_TEMPLATE"], zulu_file)
+
+
+@requires_bash
+def test_resolve_template_allows_benign_double_dot_preset_ids(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "v1..0" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / "tasks-template.md").write_text("# benign dots\n", encoding="utf-8")
+
+    (presets_root / ".registry").write_text(
+        json.dumps({"presets": {"v1..0": {"priority": 1, "enabled": True}}}),
+        encoding="utf-8",
+    )
+
+    result = _run_bash_resolve_template(tasks_repo)
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
+
+
+@requires_bash
+def test_resolve_template_ignores_unsafe_registry_preset_ids(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    safe_dir = presets_root / "safe-preset" / "templates"
+    safe_dir.mkdir(parents=True, exist_ok=True)
+    (safe_dir / "tasks-template.md").write_text("# safe preset\n", encoding="utf-8")
+
+    outside_dir = tasks_repo / ".specify" / "escaped" / "templates"
+    outside_dir.mkdir(parents=True, exist_ok=True)
+    (outside_dir / "tasks-template.md").write_text("# escaped preset\n", encoding="utf-8")
+
+    (presets_root / ".registry").write_text(
+        json.dumps({
+            "presets": {
+                "../escaped": {"priority": 0, "enabled": True},
+                "safe-preset": {"priority": 1, "enabled": True},
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    result = _run_bash_resolve_template(tasks_repo)
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), safe_dir / "tasks-template.md")
  
  
 @requires_bash
@@ -539,13 +680,31 @@ def test_setup_tasks_bash_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -
 
     script = tasks_repo / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
 
+    env = _clean_env()
+    if os.name == "nt":
+        shim_dir = tasks_repo / ".specify" / "shim-bin"
+        shim_dir.mkdir(parents=True, exist_ok=True)
+        python3_shim = shim_dir / "python3"
+        python_exe = sys.executable.replace("\\", "/")
+        python3_shim.write_text(
+            f"#!/usr/bin/env bash\n\"{python_exe}\" \"$@\"\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        python3_shim.chmod(0o755)
+        shim_dir_posix = bash_path_from_host(shim_dir)
+        # Keep inherited PATH bytes unchanged; rewriting Windows PATH delimiters
+        # can corrupt drive-letter entries under Git Bash.
+        inherited_path = env.get("PATH", "")
+        env["PATH"] = f"{shim_dir_posix}:{inherited_path}" if inherited_path else shim_dir_posix
+
     result = subprocess.run(
         ["bash", str(script), "--json"],
         cwd=tasks_repo,
         capture_output=True,
         text=True,
         check=False,
-        env=_clean_env(),
+        env=env,
     )
 
     assert result.returncode != 0
@@ -574,6 +733,561 @@ def test_check_prerequisites_bash_uses_invoke_separator_in_tasks_hint(
     assert result.returncode != 0
     assert "Run /speckit-tasks first" in result.stderr
     assert "/speckit.tasks" not in result.stderr
+
+
+@requires_bash
+def test_resolve_template_uses_python_when_python3_missing(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "py-fallback" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / "tasks-template.md").write_text("# py fallback\n", encoding="utf-8")
+    (presets_root / ".registry").write_text(json.dumps({"presets": {"py-fallback": {"priority": 1}}}), encoding="utf-8")
+
+    shim_dir = tasks_repo / ".specify" / "python-fallback-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    python_shim = shim_dir / "python"
+    python_shim.write_text(
+        "#!/bin/sh\n"
+        "[ \"$1\" = \"-c\" ] || exit 10\n"
+        "if [ -n \"$SPECKIT_REGISTRY\" ]; then\n"
+        "  [ -f \"$SPECKIT_REGISTRY\" ] || exit 12\n"
+        "  printf 'py-fallback\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python_shim.chmod(0o755)
+
+    result = _run_bash_resolve_template(
+        tasks_repo,
+        bash_path_from_host(shim_dir),
+        replace_path_override=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
+
+
+@requires_bash
+def test_resolve_template_skips_python_when_python_is_not_py3(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "py2-fallback" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / "tasks-template.md").write_text("# py2 fallback\n", encoding="utf-8")
+    (presets_root / ".registry").write_text(json.dumps({"presets": {"py2-fallback": {"priority": 1}}}), encoding="utf-8")
+
+    shim_dir = tasks_repo / ".specify" / "python-py2-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+
+    python3_shim = shim_dir / "python3"
+    python3_shim.write_text(
+        "#!/bin/sh\n"
+        "[ \"$1\" = \"-c\" ] || exit 1\n"
+        "exit 1\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python3_shim.chmod(0o755)
+
+    python_shim = shim_dir / "python"
+    python_shim.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"-c\" ]; then\n"
+        "  if [ -n \"$SPECKIT_REGISTRY\" ]; then\n"
+        "    exit 1\n"
+        "  fi\n"
+        "  exit 1\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python_shim.chmod(0o755)
+
+    result = _run_bash_resolve_template(
+        tasks_repo,
+        f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin",
+        replace_path_override=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
+
+
+@requires_bash
+def test_resolve_template_trims_crlf_preset_ids(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "crlf-preset" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / "tasks-template.md").write_text("# crlf\n", encoding="utf-8")
+    (presets_root / ".registry").write_text(json.dumps({"presets": {"crlf-preset": {"priority": 1}}}), encoding="utf-8")
+
+    shim_dir = tasks_repo / ".specify" / "python-crlf-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    python3_shim = shim_dir / "python3"
+    python3_shim.write_text("#!/usr/bin/env bash\nprintf 'crlf-preset\\r\\n'\n", encoding="utf-8", newline="\n")
+    python3_shim.chmod(0o755)
+
+    result = _run_bash_resolve_template(tasks_repo, f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin")
+
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
+
+
+@requires_bash
+def test_resolve_template_content_trims_crlf_preset_ids(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "crlf-content" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    expected_content = "# crlf content\n"
+    (preset_dir / "tasks-template.md").write_text(expected_content, encoding="utf-8")
+    (presets_root / ".registry").write_text(json.dumps({"presets": {"crlf-content": {"priority": 1}}}), encoding="utf-8")
+
+    shim_dir = tasks_repo / ".specify" / "python-crlf-content-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    python3_shim = shim_dir / "python3"
+    python3_shim.write_text("#!/usr/bin/env bash\nprintf 'crlf-content\r\n'\n", encoding="utf-8", newline="\n")
+    python3_shim.chmod(0o755)
+
+    result = _run_bash_resolve_template_content(tasks_repo, f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == expected_content
+
+
+@requires_bash
+def test_resolve_template_uses_python_when_python3_is_not_py3(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "python3-stub-fallback" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / "tasks-template.md").write_text("# python fallback\n", encoding="utf-8")
+    (presets_root / ".registry").write_text(
+        json.dumps({"presets": {"python3-stub-fallback": {"priority": 1}}}),
+        encoding="utf-8",
+    )
+
+    shim_dir = tasks_repo / ".specify" / "python3-stub-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+
+    python3_shim = shim_dir / "python3"
+    python3_shim.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"-c\" ]; then\n"
+        "  exit 1\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python3_shim.chmod(0o755)
+
+    python_shim = shim_dir / "python"
+    python_shim.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"-c\" ]; then\n"
+        "  if [ -n \"$SPECKIT_REGISTRY\" ]; then\n"
+        "    printf 'python3-stub-fallback\\n'\n"
+        "    exit 0\n"
+        "  fi\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python_shim.chmod(0o755)
+
+    result = _run_bash_resolve_template(
+        tasks_repo,
+        bash_path_from_host(shim_dir),
+        replace_path_override=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), preset_dir / "tasks-template.md")
+
+
+@requires_bash
+def test_resolve_template_python_probe_is_cached_across_resolver_calls(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "cache-probe" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    (preset_dir / "tasks-template.md").write_text("# cache probe\n", encoding="utf-8")
+    (presets_root / ".registry").write_text(
+        json.dumps({"presets": {"cache-probe": {"priority": 1}}}),
+        encoding="utf-8",
+    )
+
+    shim_dir = tasks_repo / ".specify" / "python-cache-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    python3_shim = shim_dir / "python3"
+    python3_shim.write_text(
+        "#!/usr/bin/env bash\n"
+        "counter=\"${SPECKIT_COUNTER_FILE:?}\"\n"
+        "kind=parse\n"
+        "if [[ \"$2\" == *\"sys.version_info\"* ]]; then\n"
+        "  kind=probe\n"
+        "fi\n"
+        "printf '%s\\n' \"$kind\" >> \"$counter\"\n"
+        "if [[ -n \"${SPECKIT_REGISTRY:-}\" ]]; then\n"
+        "  printf 'cache-probe\\n'\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python3_shim.chmod(0o755)
+
+    counter_file = tasks_repo / ".specify" / "python-call-kinds.log"
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "common.sh"
+    path_override = f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin"
+    counter_file_arg = bash_path_from_host(counter_file)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; export PATH="$2"; export SPECKIT_COUNTER_FILE="$3"; '
+            'resolve_template tasks-template "$PWD" >/dev/null; '
+            'resolve_template_content tasks-template "$PWD" >/dev/null',
+            "bash",
+            str(script),
+            path_override,
+            counter_file_arg,
+        ],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr
+    kinds = [line.strip() for line in counter_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert kinds.count("probe") == 1
+    assert kinds.count("parse") == 2
+
+
+@requires_bash
+def test_resolve_template_fallback_scan_is_deterministic_when_python_fails(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    a_dir = presets_root / "a-preset" / "templates"
+    b_dir = presets_root / "b-preset" / "templates"
+    a_dir.mkdir(parents=True, exist_ok=True)
+    b_dir.mkdir(parents=True, exist_ok=True)
+    (a_dir / "tasks-template.md").write_text("# a\n", encoding="utf-8")
+    (b_dir / "tasks-template.md").write_text("# b\n", encoding="utf-8")
+    (presets_root / ".registry").write_text("{invalid json", encoding="utf-8")
+
+    shim_dir = tasks_repo / ".specify" / "python-fail-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    fail_script = "#!/usr/bin/env bash\nexit 1\n"
+    (shim_dir / "python3").write_text(fail_script, encoding="utf-8", newline="\n")
+    (shim_dir / "python").write_text(fail_script, encoding="utf-8", newline="\n")
+    (shim_dir / "python3").chmod(0o755)
+    (shim_dir / "python").chmod(0o755)
+
+    path_override = f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin"
+    result = _run_bash_resolve_template(tasks_repo, path_override)
+
+    assert result.returncode == 0, result.stderr
+    _assert_tasks_template_matches(result.stdout.strip(), a_dir / "tasks-template.md")
+
+
+@requires_bash
+def test_resolve_template_content_fallback_scan_is_deterministic_when_python_fails(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    a_dir = presets_root / "a-content" / "templates"
+    b_dir = presets_root / "b-content" / "templates"
+    a_dir.mkdir(parents=True, exist_ok=True)
+    b_dir.mkdir(parents=True, exist_ok=True)
+    a_content = "# a content\n"
+    b_content = "# b content\n"
+    (a_dir / "tasks-template.md").write_text(a_content, encoding="utf-8")
+    (b_dir / "tasks-template.md").write_text(b_content, encoding="utf-8")
+    (presets_root / ".registry").write_text("{invalid json", encoding="utf-8")
+
+    shim_dir = tasks_repo / ".specify" / "python-fail-content-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    fail_script = "#!/usr/bin/env bash\nexit 1\n"
+    (shim_dir / "python3").write_text(fail_script, encoding="utf-8", newline="\n")
+    (shim_dir / "python").write_text(fail_script, encoding="utf-8", newline="\n")
+    (shim_dir / "python3").chmod(0o755)
+    (shim_dir / "python").chmod(0o755)
+
+    path_override = f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin"
+    result = _run_bash_resolve_template_content(tasks_repo, path_override)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == a_content
+
+
+@requires_bash
+def test_resolve_template_content_uses_cached_python_fallback_for_manifest_parse(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "manifest-python-fallback" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+    fallback_content = "Fallback preset content\n"
+    (preset_dir / "tasks-template.md").write_text(fallback_content, encoding="utf-8")
+
+    overlay_path = presets_root / "manifest-python-fallback" / "overlay.md"
+    overlay_content = "Overlay content\n"
+    overlay_path.write_text(overlay_content, encoding="utf-8")
+
+    manifest_path = presets_root / "manifest-python-fallback" / "preset.yml"
+    manifest_path.write_text(
+        "provides:\n"
+        "  templates:\n"
+        "    - name: tasks-template\n"
+        "      type: template\n"
+        "      strategy: append\n"
+        "      file: overlay.md\n",
+        encoding="utf-8",
+    )
+
+    (presets_root / ".registry").write_text(
+        json.dumps({"presets": {"manifest-python-fallback": {"priority": 1, "enabled": True}}}),
+        encoding="utf-8",
+    )
+
+    shim_dir = tasks_repo / ".specify" / "python-manifest-fallback-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    python_shim = shim_dir / "python"
+    python_shim.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"$2\" == *\"sys.version_info\"* ]]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [[ -n \"${SPECKIT_REGISTRY:-}\" ]]; then\n"
+        "  printf 'manifest-python-fallback\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [[ -n \"${SPECKIT_MANIFEST:-}\" ]]; then\n"
+        "  printf 'append\\toverlay.md\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python_shim.chmod(0o755)
+
+    result = _run_bash_resolve_template_content(
+        tasks_repo,
+        f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin",
+        replace_path_override=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = (result.stdout or "")
+    assert overlay_content.strip() in output
+    assert fallback_content not in output
+
+
+@requires_bash
+def test_resolve_template_content_trims_manifest_parser_crlf_fields(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+    preset_dir = presets_root / "manifest-crlf" / "templates"
+    preset_dir.mkdir(parents=True, exist_ok=True)
+
+    fallback_content = "Fallback content\n"
+    (preset_dir / "tasks-template.md").write_text(fallback_content, encoding="utf-8")
+
+    overlay_path = presets_root / "manifest-crlf" / "overlay.md"
+    overlay_content = "Overlay CRLF content\n"
+    overlay_path.write_text(overlay_content, encoding="utf-8")
+
+    manifest_path = presets_root / "manifest-crlf" / "preset.yml"
+    manifest_path.write_text("provides:\n  templates: []\n", encoding="utf-8")
+
+    (presets_root / ".registry").write_text(
+        json.dumps({"presets": {"manifest-crlf": {"priority": 1, "enabled": True}}}),
+        encoding="utf-8",
+    )
+
+    shim_dir = tasks_repo / ".specify" / "python-manifest-crlf-shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    python_shim = shim_dir / "python"
+    python_shim.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"$2\" == *\"sys.version_info\"* ]]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [[ -n \"${SPECKIT_REGISTRY:-}\" ]]; then\n"
+        "  printf 'manifest-crlf\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [[ -n \"${SPECKIT_MANIFEST:-}\" ]]; then\n"
+        "  printf 'append\\toverlay.md\\r\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python_shim.chmod(0o755)
+
+    result = _run_bash_resolve_template_content(
+        tasks_repo,
+        f"{bash_path_from_host(shim_dir)}:/usr/bin:/bin",
+        replace_path_override=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout or ""
+    assert overlay_content.strip() in output
+    assert fallback_content not in output
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    "manifest_file",
+    [
+        "..",
+        "foo/..",
+        "bar/../baz",
+        "..\\escape.md",
+        "foo\\..\\escape.md",
+        "bar\\..\\baz",
+        "/tmp/escape.md",
+        "C:/tmp/escape.md",
+        "C:\\tmp\\escape.md",
+    ],
+)
+def test_manifest_relative_path_guard_rejects_unsafe_inputs(
+    tasks_repo: Path,
+    manifest_file: str,
+) -> None:
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "common.sh"
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; if _is_safe_manifest_relative_path "$2"; then echo safe; else echo unsafe; fi',
+            "bash",
+            str(script),
+            manifest_file,
+        ],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "unsafe"
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    "manifest_file",
+    ["overlay.md", "templates/tasks-template.md", "nested/path/file.md", "v1..0.md", "a:overlay.md"],
+)
+def test_manifest_relative_path_guard_allows_safe_relative_inputs(
+    tasks_repo: Path,
+    manifest_file: str,
+) -> None:
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "common.sh"
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; if _is_safe_manifest_relative_path "$2"; then echo safe; else echo unsafe; fi',
+            "bash",
+            str(script),
+            manifest_file,
+        ],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "safe"
+
+
+@requires_bash
+def test_resolve_template_content_ignores_unsafe_registry_preset_ids(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+
+    safe_dir = presets_root / "safe-content" / "templates"
+    safe_dir.mkdir(parents=True, exist_ok=True)
+    safe_content = "Safe content layer\n"
+    (safe_dir / "tasks-template.md").write_text(safe_content, encoding="utf-8")
+
+    escaped_dir = tasks_repo / ".specify" / "escaped-content" / "templates"
+    escaped_dir.mkdir(parents=True, exist_ok=True)
+    escaped_content = "Escaped content layer\n"
+    (escaped_dir / "tasks-template.md").write_text(escaped_content, encoding="utf-8")
+
+    (presets_root / ".registry").write_text(
+        json.dumps({
+            "presets": {
+                "../escaped-content": {"priority": 0, "enabled": True},
+                "safe-content": {"priority": 1, "enabled": True},
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    result = _run_bash_resolve_template_content(tasks_repo)
+    assert result.returncode == 0, result.stderr
+    output = result.stdout or ""
+    assert safe_content.strip() in output
+    assert escaped_content.strip() not in output
+
+
+@requires_bash
+def test_resolve_template_content_does_not_leak_manifest_state_between_presets(tasks_repo: Path) -> None:
+    presets_root = tasks_repo / ".specify" / "presets"
+
+    first_preset = presets_root / "first-preset"
+    second_preset = presets_root / "second-preset"
+    (first_preset / "templates").mkdir(parents=True, exist_ok=True)
+    (second_preset / "templates").mkdir(parents=True, exist_ok=True)
+
+    first_overlay = first_preset / "overlay.md"
+    first_overlay_content = "First overlay content\n"
+    first_overlay.write_text(first_overlay_content, encoding="utf-8")
+
+    (first_preset / "preset.yml").write_text(
+        "provides:\n"
+        "  templates:\n"
+        "    - name: tasks-template\n"
+        "      type: template\n"
+        "      strategy: append\n"
+        "      file: overlay.md\n",
+        encoding="utf-8",
+    )
+
+    second_template = second_preset / "templates" / "tasks-template.md"
+    second_content = "Second base content\n"
+    second_template.write_text(second_content, encoding="utf-8")
+
+    (presets_root / ".registry").write_text(
+        json.dumps(
+            {
+                "presets": {
+                    "first-preset": {"priority": 1, "enabled": True},
+                    "second-preset": {"priority": 2, "enabled": True},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_bash_resolve_template_content(tasks_repo)
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout or ""
+    assert second_content.strip() in output
+    assert first_overlay_content.strip() in output
+    assert "Task list template for feature implementation" not in output
 
 
 @requires_bash

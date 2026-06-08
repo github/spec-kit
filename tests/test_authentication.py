@@ -270,7 +270,7 @@ class TestLoadAuthConfig:
         entries = load_auth_config(cfg)
         assert entries[0].hosts == ("*.visualstudio.com",)
 
-    def test_world_readable_warns(self, tmp_path, monkeypatch):
+    def test_world_readable_warns(self, tmp_path):
         import stat
         import specify_cli.authentication.config as auth_config
 
@@ -278,11 +278,20 @@ class TestLoadAuthConfig:
         cfg.write_text(json.dumps({
             "providers": [{"hosts": ["github.com"], "provider": "github", "auth": "bearer", "token_env": "GH_TOKEN"}]
         }))
-        monkeypatch.setattr(auth_config.os, "name", "posix", raising=False)
         fake_mode = stat.S_IFREG | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
-        with patch("specify_cli.authentication.config.Path.stat", return_value=SimpleNamespace(st_mode=fake_mode)):
-            with pytest.warns(UserWarning, match="readable by group"):
-                load_auth_config(cfg)
+        real_path_stat = auth_config.Path.stat
+        cfg_path = os.path.normcase(os.path.abspath(str(cfg)))
+
+        def fake_path_stat(self, *args, **kwargs):
+            self_path = os.path.normcase(os.path.abspath(os.fspath(self)))
+            if self_path == cfg_path:
+                return SimpleNamespace(st_mode=fake_mode)
+            return real_path_stat(self, *args, **kwargs)
+
+        with patch.object(auth_config.os, "name", "posix"):
+            with patch("specify_cli.authentication.config.Path.stat", autospec=True, side_effect=fake_path_stat):
+                with pytest.warns(UserWarning, match="readable by group"):
+                    load_auth_config(cfg)
 
 
 # ---------------------------------------------------------------------------

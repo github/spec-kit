@@ -415,6 +415,102 @@ json_escape() {
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 
+_RESOLVE_TEMPLATE_PYTHON_CMD=""
+
+_is_python3_command() {
+    local cmd="$1"
+    command -v "$cmd" >/dev/null 2>&1 || return 1
+    "$cmd" -c 'import sys; sys.exit(0 if sys.version_info[0] >= 3 else 1)' >/dev/null 2>&1
+}
+
+resolve_template_python_cmd() {
+    if [ -n "$_RESOLVE_TEMPLATE_PYTHON_CMD" ]; then
+        return 0
+    fi
+    if _is_python3_command "python3"; then
+        _RESOLVE_TEMPLATE_PYTHON_CMD="python3"
+        return 0
+    fi
+    if _is_python3_command "python"; then
+        _RESOLVE_TEMPLATE_PYTHON_CMD="python"
+        return 0
+    fi
+    return 1
+}
+
+_iter_preset_ids_ordered() {
+    local presets_dir="$1"
+    local registry_file="$presets_dir/.registry"
+    local python_cmd="$_RESOLVE_TEMPLATE_PYTHON_CMD"
+
+    if [ -f "$registry_file" ] && [ -n "$python_cmd" ]; then
+        if SPECKIT_REGISTRY="$registry_file" "$python_cmd" -c "
+import json, sys, os
+def priority_key(meta):
+    if not isinstance(meta, dict):
+        return 10
+    raw = meta.get('priority', 10)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 10
+try:
+    with open(os.environ['SPECKIT_REGISTRY']) as f:
+        data = json.load(f)
+    presets = data.get('presets', {})
+    for pid, meta in sorted(
+        presets.items(),
+        key=lambda x: (
+            priority_key(x[1]),
+            x[0],
+        ),
+    ):
+        if isinstance(meta, dict) and meta.get('enabled', True) is not False:
+            print(pid)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    find "$presets_dir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' 2>/dev/null \
+        | LC_ALL=C sort \
+        | while IFS= read -r preset; do
+            [ -n "$preset" ] || continue
+            basename "$preset"
+        done
+}
+
+_is_safe_preset_id() {
+    local preset_id="$1"
+    [ -n "$preset_id" ] || return 1
+    case "$preset_id" in
+        .|..|.*|*/*|*\\*) return 1 ;;
+    esac
+    return 0
+}
+
+_is_safe_manifest_relative_path() {
+    local manifest_file="$1"
+    [ -n "$manifest_file" ] || return 1
+
+    # Reject absolute and drive-rooted paths.
+    case "$manifest_file" in
+        /*|\\*|[A-Za-z]:/*|[A-Za-z]:\\*) return 1 ;;
+    esac
+
+    # Normalize separators so any Windows-style traversal is caught consistently.
+    local normalized="${manifest_file//\\//}"
+    local segment
+    IFS='/' read -r -a segments <<< "$normalized"
+    for segment in "${segments[@]}"; do
+        [ "$segment" = ".." ] && return 1
+    done
+
+    return 0
+}
+
 # Resolve a template name to a file path using the priority stack:
 #   1. .specify/templates/overrides/
 #   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)
@@ -433,47 +529,15 @@ resolve_template() {
     local presets_dir="$repo_root/.specify/presets"
     if [ -d "$presets_dir" ]; then
         local registry_file="$presets_dir/.registry"
-        if [ -f "$registry_file" ] && command -v python3 >/dev/null 2>&1; then
-            # Read preset IDs sorted by priority (lower number = higher precedence).
-            # The python3 call is wrapped in an if-condition so that set -e does not
-            # abort the function when python3 exits non-zero (e.g. invalid JSON).
-            local sorted_presets=""
-            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" python3 -c "
-import json, sys, os
-try:
-    with open(os.environ['SPECKIT_REGISTRY']) as f:
-        data = json.load(f)
-    presets = data.get('presets', {})
-    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10) if isinstance(x[1], dict) else 10):
-        if isinstance(meta, dict) and meta.get('enabled', True) is not False:
-            print(pid)
-except Exception:
-    sys.exit(1)
-" 2>/dev/null); then
-                if [ -n "$sorted_presets" ]; then
-                    # python3 succeeded and returned preset IDs — search in priority order
-                    while IFS= read -r preset_id; do
-                        local candidate="$presets_dir/$preset_id/templates/${template_name}.md"
-                        [ -f "$candidate" ] && echo "$candidate" && return 0
-                    done <<< "$sorted_presets"
-                fi
-                # python3 succeeded but registry has no presets — nothing to search
-            else
-                # python3 failed (missing, or registry parse error) — fall back to unordered directory scan
-                for preset in "$presets_dir"/*/; do
-                    [ -d "$preset" ] || continue
-                    local candidate="$preset/templates/${template_name}.md"
-                    [ -f "$candidate" ] && echo "$candidate" && return 0
-                done
-            fi
-        else
-            # Fallback: alphabetical directory order (no python3 available)
-            for preset in "$presets_dir"/*/; do
-                [ -d "$preset" ] || continue
-                local candidate="$preset/templates/${template_name}.md"
-                [ -f "$candidate" ] && echo "$candidate" && return 0
-            done
+        if [ -f "$registry_file" ]; then
+            resolve_template_python_cmd || true
         fi
+        while IFS= read -r preset_id; do
+            preset_id="${preset_id%$'\r'}"
+            _is_safe_preset_id "$preset_id" || continue
+            local candidate="$presets_dir/$preset_id/templates/${template_name}.md"
+            [ -f "$candidate" ] && echo "$candidate" && return 0
+        done < <(_iter_preset_ids_ordered "$presets_dir")
     fi
 
     # Priority 3: Extension-provided templates
@@ -524,33 +588,24 @@ resolve_template_content() {
     local presets_dir="$repo_root/.specify/presets"
     if [ -d "$presets_dir" ]; then
         local registry_file="$presets_dir/.registry"
-        local sorted_presets=""
-        if [ -f "$registry_file" ] && command -v python3 >/dev/null 2>&1; then
-            if sorted_presets=$(SPECKIT_REGISTRY="$registry_file" python3 -c "
-import json, sys, os
-try:
-    with open(os.environ['SPECKIT_REGISTRY']) as f:
-        data = json.load(f)
-    presets = data.get('presets', {})
-    for pid, meta in sorted(presets.items(), key=lambda x: x[1].get('priority', 10) if isinstance(x[1], dict) else 10):
-        if isinstance(meta, dict) and meta.get('enabled', True) is not False:
-            print(pid)
-except Exception:
-    sys.exit(1)
-" 2>/dev/null); then
-                if [ -n "$sorted_presets" ]; then
-                    local yaml_warned=false
-                    while IFS= read -r preset_id; do
-                        # Read strategy and file path from preset manifest
-                        local strategy="replace"
-                        local manifest_file=""
-                        local manifest="$presets_dir/$preset_id/preset.yml"
-                        if [ -f "$manifest" ] && command -v python3 >/dev/null 2>&1; then
-                            # Requires PyYAML; falls back to replace/convention if unavailable
-                            local result
-                            local py_stderr
-                            py_stderr=$(mktemp)
-                            result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" python3 -c "
+        if [ -f "$registry_file" ]; then
+            resolve_template_python_cmd || true
+        fi
+        local manifest_python_cmd="$_RESOLVE_TEMPLATE_PYTHON_CMD"
+        local yaml_warned=false
+        while IFS= read -r preset_id; do
+            preset_id="${preset_id%$'\r'}"
+            _is_safe_preset_id "$preset_id" || continue
+            # Read strategy and file path from preset manifest
+            local strategy="replace"
+            local manifest_file=""
+            local manifest="$presets_dir/$preset_id/preset.yml"
+            if [ -f "$manifest" ] && [ -n "$manifest_python_cmd" ]; then
+                # Requires PyYAML; falls back to replace/convention if unavailable
+                local result
+                local py_stderr
+                py_stderr=$(mktemp)
+                result=$(SPECKIT_MANIFEST="$manifest" SPECKIT_TMPL="$template_name" "$manifest_python_cmd" -c "
 import sys, os
 try:
     import yaml
@@ -569,61 +624,40 @@ try:
 except Exception:
     print('replace\t')
 " 2>"$py_stderr")
-                            local parse_status=$?
-                            if [ $parse_status -eq 0 ] && [ -n "$result" ]; then
-                                IFS=$'\t' read -r strategy manifest_file <<< "$result"
-                                strategy=$(printf '%s' "$strategy" | tr '[:upper:]' '[:lower:]')
-                            fi
-                            if [ "$yaml_warned" = false ] && grep -q 'yaml_missing' "$py_stderr" 2>/dev/null; then
-                                echo "Warning: PyYAML not available; composition strategies may be ignored" >&2
-                                yaml_warned=true
-                            fi
-                            rm -f "$py_stderr"
-                        fi
-                        # Try manifest file path first, then convention path
-                        local candidate=""
-                        if [ -n "$manifest_file" ]; then
-                            # Reject absolute paths and parent traversal
-                            case "$manifest_file" in
-                                /*|*../*|../*) manifest_file="" ;;
-                            esac
-                        fi
-                        if [ -n "$manifest_file" ]; then
-                            local mf="$presets_dir/$preset_id/$manifest_file"
-                            [ -f "$mf" ] && candidate="$mf"
-                        fi
-                        if [ -z "$candidate" ]; then
-                            local cf="$presets_dir/$preset_id/templates/${template_name}.md"
-                            [ -f "$cf" ] && candidate="$cf"
-                        fi
-                        if [ -n "$candidate" ]; then
-                            layer_paths+=("$candidate")
-                            layer_strategies+=("$strategy")
-                        fi
-                    done <<< "$sorted_presets"
+                local parse_status=$?
+                if [ $parse_status -eq 0 ] && [ -n "$result" ]; then
+                    IFS=$'\t' read -r strategy manifest_file <<< "$result"
+                    strategy="${strategy%$'\r'}"
+                    manifest_file="${manifest_file%$'\r'}"
+                    strategy=$(printf '%s' "$strategy" | tr '[:upper:]' '[:lower:]')
+                else
+                    strategy="replace"
+                    manifest_file=""
                 fi
-            else
-                # python3 failed — fall back to unordered directory scan (replace only)
-                for preset in "$presets_dir"/*/; do
-                    [ -d "$preset" ] || continue
-                    local candidate="$preset/templates/${template_name}.md"
-                    if [ -f "$candidate" ]; then
-                        layer_paths+=("$candidate")
-                        layer_strategies+=("replace")
-                    fi
-                done
+                if [ "$yaml_warned" = false ] && grep -q 'yaml_missing' "$py_stderr" 2>/dev/null; then
+                    echo "Warning: PyYAML not available; composition strategies may be ignored" >&2
+                    yaml_warned=true
+                fi
+                rm -f "$py_stderr"
             fi
-        else
-            # No python3 or registry — fall back to unordered directory scan (replace only)
-            for preset in "$presets_dir"/*/; do
-                [ -d "$preset" ] || continue
-                local candidate="$preset/templates/${template_name}.md"
-                if [ -f "$candidate" ]; then
-                    layer_paths+=("$candidate")
-                    layer_strategies+=("replace")
-                fi
-            done
-        fi
+            # Try manifest file path first, then convention path
+            local candidate=""
+            if [ -n "$manifest_file" ]; then
+                _is_safe_manifest_relative_path "$manifest_file" || manifest_file=""
+            fi
+            if [ -n "$manifest_file" ]; then
+                local mf="$presets_dir/$preset_id/$manifest_file"
+                [ -f "$mf" ] && candidate="$mf"
+            fi
+            if [ -z "$candidate" ]; then
+                local cf="$presets_dir/$preset_id/templates/${template_name}.md"
+                [ -f "$cf" ] && candidate="$cf"
+            fi
+            if [ -n "$candidate" ]; then
+                layer_paths+=("$candidate")
+                layer_strategies+=("$strategy")
+            fi
+        done < <(_iter_preset_ids_ordered "$presets_dir")
     fi
 
     # Priority 3: Extension-provided templates (always "replace")

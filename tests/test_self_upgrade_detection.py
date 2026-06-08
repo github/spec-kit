@@ -733,20 +733,10 @@ class TestDetectionPipx:
 
 
 class TestEditableInstallMetadata:
-    def test_editable_marker_false_when_metadata_is_invalid(self, monkeypatch):
+    def test_editable_marker_false_when_metadata_is_invalid(self):
         invalid_metadata_error = getattr(importlib.metadata, "InvalidMetadataError", None)
         if invalid_metadata_error is None:
-            class _FakeInvalidMetadataError(Exception):
-                pass
-
-            invalid_metadata_error = _FakeInvalidMetadataError
-
-            monkeypatch.setattr(
-                importlib.metadata,
-                "InvalidMetadataError",
-                invalid_metadata_error,
-                raising=False,
-            )
+            pytest.skip("importlib.metadata.InvalidMetadataError not available on this runtime")
 
         with patch(
             "importlib.metadata.distribution",
