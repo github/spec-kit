@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-04T00:00:00Z",
+  "updated_at": "2026-06-08T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -242,11 +242,11 @@
       "id": "architecture-guard",
       "description": "Framework-agnostic architecture review extension for validating implementation against governance and architecture constitutions, detecting architectural drift, and generating non-blocking refactor tasks.",
       "author": "DyanGalih",
-      "version": "1.8.9",
-      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.8.9.zip",
+      "version": "1.8.17",
+      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.8.17.zip",
       "repository": "https://github.com/DyanGalih/spec-kit-architecture-guard",
       "homepage": "https://github.com/DyanGalih/spec-kit-architecture-guard",
-      "documentation": "https://github.com/DyanGalih/spec-kit-architecture-guard/blob/main/README.md",
+      "documentation": "https://github.com/DyanGalih/spec-kit-architecture-guard/blob/main/docs/architecture-overview.md",
       "changelog": "https://github.com/DyanGalih/spec-kit-architecture-guard/releases",
       "license": "MIT",
       "requires": {
@@ -269,7 +269,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-05T07:26:00Z",
-      "updated_at": "2026-05-27T00:00:00Z"
+      "updated_at": "2026-06-08T00:00:00Z"
     },
     "archive": {
       "name": "Archive Extension",
