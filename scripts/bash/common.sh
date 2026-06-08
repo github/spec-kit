@@ -107,6 +107,38 @@ feature_json_matches_feature_dir() {
     [[ "$norm_json" == "$norm_active" ]]
 }
 
+# Persist a feature_directory value to .specify/feature.json.
+# Writes only when the file is missing or the value differs from what's stored.
+# Accepts the raw (possibly relative) path — callers should pass the original
+# user-supplied value, not the normalized absolute path.
+_persist_feature_json() {
+    local repo_root="$1"
+    local feature_dir_value="$2"
+    local fj="$repo_root/.specify/feature.json"
+
+    # Strip repo_root prefix if the value is absolute and under repo_root
+    if [[ "$feature_dir_value" == "$repo_root/"* ]]; then
+        feature_dir_value="${feature_dir_value#"$repo_root/"}"
+    fi
+
+    # Read current value (if any) and skip write when unchanged
+    local current_val
+    current_val=$(read_feature_json_feature_directory "$repo_root")
+    if [[ "$current_val" == "$feature_dir_value" ]]; then
+        return 0
+    fi
+
+    # Ensure .specify/ directory exists
+    mkdir -p "$repo_root/.specify"
+
+    # Write feature.json — prefer jq for safe JSON, fall back to printf
+    if command -v jq >/dev/null 2>&1; then
+        jq -cn --arg fd "$feature_dir_value" '{feature_directory:$fd}' > "$fj"
+    else
+        printf '{"feature_directory":"%s"}\n' "$feature_dir_value" > "$fj"
+    fi
+}
+
 get_feature_paths() {
     local repo_root=$(get_repo_root)
     local current_branch=$(get_current_branch)
@@ -120,6 +152,8 @@ get_feature_paths() {
         feature_dir="$SPECIFY_FEATURE_DIRECTORY"
         # Normalize relative paths to absolute under repo root
         [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
+        # Persist to feature.json so future sessions without the env var still work
+        _persist_feature_json "$repo_root" "$SPECIFY_FEATURE_DIRECTORY"
     elif [[ -f "$repo_root/.specify/feature.json" ]]; then
         local _fd
         _fd=$(read_feature_json_feature_directory "$repo_root")

@@ -118,6 +118,46 @@ function Test-FeatureJsonMatchesFeatureDir {
     return [string]::Equals($normJson, $normActive, $comparison)
 }
 
+# Persist a feature_directory value to .specify/feature.json.
+# Writes only when the file is missing or the value differs from what's stored.
+function Save-FeatureJson {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$FeatureDirectory
+    )
+
+    # Strip repo root prefix if the value is absolute and under repo root
+    $prefix = $RepoRoot + [System.IO.Path]::DirectorySeparatorChar
+    if ($FeatureDirectory.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $FeatureDirectory = $FeatureDirectory.Substring($prefix.Length)
+    }
+
+    $fjPath = Join-Path (Join-Path $RepoRoot '.specify') 'feature.json'
+
+    # Read current value and skip write when unchanged
+    if (Test-Path -LiteralPath $fjPath -PathType Leaf) {
+        try {
+            $raw = Get-Content -LiteralPath $fjPath -Raw
+            $cfg = $raw | ConvertFrom-Json
+            if ($cfg.feature_directory -eq $FeatureDirectory) {
+                return
+            }
+        } catch {
+            # File is corrupt or unreadable — overwrite it
+        }
+    }
+
+    # Ensure .specify/ directory exists
+    $specifyDir = Join-Path $RepoRoot '.specify'
+    if (-not (Test-Path -LiteralPath $specifyDir -PathType Container)) {
+        New-Item -ItemType Directory -Path $specifyDir -Force | Out-Null
+    }
+
+    # Write feature.json
+    $json = @{ feature_directory = $FeatureDirectory } | ConvertTo-Json -Compress
+    Set-Content -LiteralPath $fjPath -Value $json -Encoding utf8NoBOM
+}
+
 function Get-FeaturePathsEnv {
     $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
@@ -133,6 +173,8 @@ function Get-FeaturePathsEnv {
         if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
             $featureDir = Join-Path $repoRoot $featureDir
         }
+        # Persist to feature.json so future sessions without the env var still work
+        Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
     } elseif (Test-Path $featureJson) {
         $featureJsonRaw = Get-Content -LiteralPath $featureJson -Raw
         try {
