@@ -24,7 +24,6 @@ from specify_cli.extensions import (
     CatalogEntry,
     CORE_COMMAND_NAMES,
     DEFAULT_HOOK_PRIORITY,
-    VALID_CATEGORIES,
     VALID_EFFECTS,
     ExtensionManifest,
     ExtensionRegistry,
@@ -303,10 +302,10 @@ class TestExtensionManifest:
             ExtensionManifest(manifest_path)
 
     def test_valid_category(self, temp_dir, valid_manifest_data):
-        """Test manifest with valid category values."""
+        """Test manifest with various category values (free-form string)."""
         import yaml
 
-        for category in ("docs", "code", "process", "integration", "visibility"):
+        for category in ("docs", "code", "process", "integration", "visibility", "custom-category"):
             valid_manifest_data["extension"]["category"] = category
             manifest_path = temp_dir / "extension.yml"
             with open(manifest_path, 'w') as f:
@@ -327,10 +326,10 @@ class TestExtensionManifest:
             assert manifest.effect == effect
 
     def test_invalid_category(self, temp_dir, valid_manifest_data):
-        """Test manifest with invalid category raises ValidationError."""
+        """Test manifest with empty category raises ValidationError."""
         import yaml
 
-        valid_manifest_data["extension"]["category"] = "invalid-category"
+        valid_manifest_data["extension"]["category"] = ""
         manifest_path = temp_dir / "extension.yml"
         with open(manifest_path, 'w') as f:
             yaml.dump(valid_manifest_data, f)

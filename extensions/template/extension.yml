@@ -14,7 +14,7 @@ extension:
   description: "Brief description of what your extension does"
 
   # CUSTOMIZE: Extension category — describes what the extension operates on
-  # One of: docs | code | process | integration | visibility
+  # Common values: docs, code, process, integration, visibility
   category: "process"
 
   # CUSTOMIZE: Extension effect — whether it modifies project files

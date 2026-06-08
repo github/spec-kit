@@ -89,7 +89,7 @@ Use the existing entries as the format template. Required fields:
 }
 ```
 
-**Category** — one of: `docs`, `code`, `process`, `integration`, `visibility`
+**Category** — free-form string; common values: `docs`, `code`, `process`, `integration`, `visibility`
 **Effect** — one of: `read-only`, `read-write`
 
 If the extension has optional tool dependencies, add a `"tools"` array inside `"requires"`:
@@ -118,7 +118,7 @@ Determine the category and effect from the extension's behavior:
 | <Name> | <Description> | `<category>` | <Effect> | [<repo-name>](<repository-url>) |
 ```
 
-**Category** — one of: `docs`, `code`, `process`, `integration`, `visibility`
+**Category** — free-form; common values: `docs`, `code`, `process`, `integration`, `visibility`
 **Effect** — `Read-only` (produces reports only) or `Read+Write` (modifies project files)
 
 ### 6. Commit, push, and open PR

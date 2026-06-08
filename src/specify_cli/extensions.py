@@ -41,7 +41,6 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset({
 })
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
 
-VALID_CATEGORIES = frozenset({"docs", "code", "process", "integration", "visibility"})
 VALID_EFFECTS = frozenset({"read-only", "read-write"})
 
 DEFAULT_HOOK_PRIORITY = 10
@@ -204,12 +203,11 @@ class ExtensionManifest:
         except pkg_version.InvalidVersion:
             raise ValidationError(f"Invalid version: {ext['version']}")
 
-        # Validate optional category field
+        # Validate optional category field (free-form string)
         if "category" in ext:
-            if ext["category"] not in VALID_CATEGORIES:
+            if not isinstance(ext["category"], str) or not ext["category"].strip():
                 raise ValidationError(
-                    f"Invalid extension.category '{ext['category']}': "
-                    f"must be one of {sorted(VALID_CATEGORIES)}"
+                    "Invalid extension.category: must be a non-empty string"
                 )
 
         # Validate optional effect field
