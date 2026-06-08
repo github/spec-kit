@@ -102,6 +102,28 @@ def test_dev_integration_scaffold_rejects_unknown_type_before_scaffolding(tmp_pa
     assert not (root / "src" / "specify_cli" / "integrations" / "my_agent").exists()
 
 
+def test_dev_integration_scaffold_reports_filesystem_errors_cleanly(tmp_path, monkeypatch):
+    root = _repo_root(tmp_path)
+    monkeypatch.chdir(root)
+
+    import specify_cli.integration_scaffold as scaffold_module
+
+    def boom(*args, **kwargs):
+        raise PermissionError("Permission denied: read-only checkout")
+
+    monkeypatch.setattr(scaffold_module, "scaffold_integration", boom)
+
+    result = runner.invoke(app, [
+        "dev", "integration", "scaffold", "my-agent",
+        "--type", "markdown",
+    ], catch_exceptions=False)
+
+    output = strip_ansi(result.output)
+    assert result.exit_code == 1
+    assert "Error:" in output
+    assert "Permission denied" in output
+
+
 def test_scaffold_refuses_invalid_key(tmp_path):
     root = _repo_root(tmp_path)
 

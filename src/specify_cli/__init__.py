@@ -605,7 +605,11 @@ def dev_integration_scaffold(
     project_root = Path.cwd()
     try:
         result = scaffold_integration(project_root, key, integration_type)
-    except (FileExistsError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
+        # OSError covers filesystem failures during mkdir()/write_text()
+        # (permission denied, read-only checkout, a path component that is a
+        # file, ...) as well as FileExistsError; surface them as a clean CLI
+        # error instead of a traceback.
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
 
