@@ -19,14 +19,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CREATE_FEATURE = PROJECT_ROOT / "scripts" / "bash" / "create-new-feature.sh"
 CREATE_FEATURE_PS = PROJECT_ROOT / "scripts" / "powershell" / "create-new-feature.ps1"
 EXT_CREATE_FEATURE = (
-    PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
+    PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature-branch.sh"
 )
 EXT_CREATE_FEATURE_PS = (
-    PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
+    PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
 )
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
-EXT_CREATE_FEATURE = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
-EXT_CREATE_FEATURE_PS = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
+EXT_CREATE_FEATURE = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature-branch.sh"
+EXT_CREATE_FEATURE_PS = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
 
 HAS_PWSH = shutil.which("pwsh") is not None
 
@@ -77,7 +77,7 @@ def ext_git_repo(tmp_path: Path) -> Path:
     # Copy extension script
     ext_dir = tmp_path / ".specify" / "extensions" / "git" / "scripts" / "bash"
     ext_dir.mkdir(parents=True)
-    shutil.copy(EXT_CREATE_FEATURE, ext_dir / "create-new-feature.sh")
+    shutil.copy(EXT_CREATE_FEATURE, ext_dir / "create-new-feature-branch.sh")
     # Also copy git-common.sh if it exists
     git_common = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
     if git_common.exists():
@@ -106,7 +106,7 @@ def ext_ps_git_repo(tmp_path: Path) -> Path:
     # Copy extension script
     ext_ps = tmp_path / ".specify" / "extensions" / "git" / "scripts" / "powershell"
     ext_ps.mkdir(parents=True)
-    shutil.copy(EXT_CREATE_FEATURE_PS, ext_ps / "create-new-feature.ps1")
+    shutil.copy(EXT_CREATE_FEATURE_PS, ext_ps / "create-new-feature-branch.ps1")
     git_common_ps = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "git-common.ps1"
     if git_common_ps.exists():
         shutil.copy(git_common_ps, ext_ps / "git-common.ps1")
@@ -876,10 +876,10 @@ class TestPowerShellDryRun:
 
 @requires_bash
 class TestGitBranchNameOverrideBash:
-    """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature.sh."""
+    """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature-branch.sh."""
 
     def _run_ext(self, ext_git_repo: Path, env_extras: dict, *extra_args: str):
-        script = ext_git_repo / ".specify" / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
+        script = ext_git_repo / ".specify" / "extensions" / "git" / "scripts" / "bash" / "create-new-feature-branch.sh"
         cmd = ["bash", str(script), "--json", *extra_args, "ignored"]
         return subprocess.run(cmd, cwd=ext_git_repo, capture_output=True, text=True,
                               env={**os.environ, **env_extras})
@@ -931,10 +931,10 @@ class TestGitBranchNameOverrideBash:
 
 @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
 class TestGitBranchNameOverridePowerShell:
-    """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature.ps1."""
+    """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature-branch.ps1."""
 
     def _run_ext(self, ext_ps_git_repo: Path, env_extras: dict):
-        script = ext_ps_git_repo / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
+        script = ext_ps_git_repo / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
         return subprocess.run(
             ["pwsh", "-NoProfile", "-File", str(script), "-Json", "ignored"],
             cwd=ext_ps_git_repo, capture_output=True, text=True,
@@ -1166,7 +1166,7 @@ class TestDescriptionQuoting:
         ids=["apostrophe", "double-quotes", "backslashes", "mixed"],
     )
     def test_ext_script_handles_special_chars(self, ext_git_repo: Path, description: str):
-        """Extension create-new-feature.sh succeeds with special characters in description."""
+        """Extension create-new-feature-branch.sh succeeds with special characters in description."""
         script = (
             ext_git_repo
             / ".specify"
@@ -1174,7 +1174,7 @@ class TestDescriptionQuoting:
             / "git"
             / "scripts"
             / "bash"
-            / "create-new-feature.sh"
+            / "create-new-feature-branch.sh"
         )
         result = subprocess.run(
             ["bash", str(script), "--dry-run", "--short-name", "feat", description],
