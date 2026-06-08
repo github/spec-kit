@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 from packaging import version as pkg_version
 
-from .._download_security import read_response_limited
+from .._download_security import MAX_JSON_CATALOG_BYTES, read_response_limited
 from ..catalogs import CatalogEntry, CatalogStackBase
 
 
@@ -174,6 +174,7 @@ class IntegrationCatalog(CatalogStackBase):
                 catalog_data = json.loads(
                     read_response_limited(
                         resp,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
                         error_type=IntegrationCatalogError,
                         label=f"integration catalog {entry.url}",
                     )

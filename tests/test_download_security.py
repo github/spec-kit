@@ -32,7 +32,7 @@ class _Response:
         self.data = data
         self.pos = 0
         # When set, never return more than *chunk* bytes per call even if more is
-        # requested — simulates short reads (e.g. chunked transfer encoding).
+        # requested - simulates short reads (e.g. chunked transfer encoding).
         self.chunk = chunk
 
     def read(self, size: int = -1) -> bytes:
@@ -112,7 +112,7 @@ def test_read_response_limited_returns_full_body_within_limit():
 
 def test_read_response_limited_enforces_bound_under_short_reads():
     # A server that streams more than max_bytes total while every read() returns
-    # fewer bytes than requested (chunked encoding) must still be rejected — a
+    # fewer bytes than requested (chunked encoding) must still be rejected - a
     # single read(max_bytes + 1) could be fooled, the accumulating loop cannot.
     response = _Response(b"x" * 100, chunk=8)
     with pytest.raises(ValueError, match="exceeds maximum size"):
@@ -194,7 +194,7 @@ def test_safe_extract_zip_rejects_symlink_without_partial_extraction(tmp_path):
     with pytest.raises(ValueError, match="Unsafe symlink"):
         safe_extract_zip(zip_path, out_dir)
 
-    # Nothing should have been written — not even the benign member that
+    # Nothing should have been written - not even the benign member that
     # precedes the symlink in the archive.
     assert not out_dir.exists() or not any(out_dir.rglob("*"))
 
@@ -226,6 +226,50 @@ def test_safe_extract_zip_rejects_total_uncompressed_size(tmp_path):
 
     with pytest.raises(ValueError, match="maximum uncompressed size"):
         safe_extract_zip(zip_path, tmp_path / "out", max_total_bytes=5)
+
+
+def test_safe_extract_zip_bounds_actual_written_bytes_when_headers_understate_size(
+    tmp_path, monkeypatch
+):
+    # Defense in depth: the pre-extraction check sums the *declared*
+    # member.file_size values, which a crafted archive can understate so that
+    # check passes. If the ZIP reader then yields more bytes than the header
+    # promised, the extraction loop must still abort once the cumulative bytes
+    # actually written exceed max_total_bytes. CPython's own zipfile happens to
+    # bound member reads to file_size and CRC-check them, so we substitute a
+    # reader that does not - exercising our guard rather than the stdlib's.
+    zip_path = tmp_path / "liar.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("a.txt", "")  # declared file_size 0 means declared total stays 0
+        zf.writestr("b.txt", "")
+
+    class _OverreadingStream:
+        """A member reader that yields more bytes than any header declared."""
+
+        def __init__(self, payload: bytes):
+            self._remaining = payload
+
+        def read(self, size: int = -1) -> bytes:
+            if size is None or size < 0:
+                size = len(self._remaining)
+            out, self._remaining = self._remaining[:size], self._remaining[size:]
+            return out
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    # Each member streams 8 bytes despite declaring 0; the per-member cap (10 MiB
+    # default) is untouched, so only the cumulative guard can stop this.
+    monkeypatch.setattr(
+        zipfile.ZipFile, "open", lambda self, *a, **k: _OverreadingStream(b"x" * 8)
+    )
+
+    # 8 bytes for "a.txt" (total 8 ≤ 12), then "b.txt" busts the 12-byte ceiling.
+    with pytest.raises(ValueError, match="maximum uncompressed size"):
+        safe_extract_zip(zip_path, tmp_path / "out", max_total_bytes=12)
 
 
 def test_safe_extract_zip_wraps_bad_zip_file(tmp_path):

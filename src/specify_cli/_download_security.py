@@ -14,12 +14,24 @@ from urllib.parse import urlparse
 ErrorT = TypeVar("ErrorT", bound=Exception)
 
 MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
-MAX_JSON_CATALOG_BYTES = 5 * 1024 * 1024
-MAX_JSON_METADATA_BYTES = 1 * 1024 * 1024
 MAX_ZIP_ENTRIES = 512
 MAX_ZIP_MEMBER_BYTES = 10 * 1024 * 1024
 MAX_ZIP_TOTAL_BYTES = 50 * 1024 * 1024
 READ_CHUNK_SIZE = 1024 * 1024
+
+# Tighter ceilings for responses that are read fully into memory and parsed as
+# JSON. The 50 MiB MAX_DOWNLOAD_BYTES default is sized for archive/payload
+# downloads; JSON responses are far smaller, so capping them close to their real
+# size shrinks the memory-DoS surface and keeps the "too large" error reachable
+# (rather than only triggering on tens of MiB). Pass the matching constant
+# explicitly at each JSON call site so the intended bound is pinned there.
+#   * METADATA - fixed-shape single-object responses (an OAuth token, one
+#     release's metadata): a few KiB in practice, 1 MiB is already generous.
+#   * CATALOG - listings that grow with the number of published items. The
+#     largest bundled catalog is ~130 KiB today, so 8 MiB leaves ~60x headroom
+#     for growth while staying well under the download ceiling.
+MAX_JSON_METADATA_BYTES = 1 * 1024 * 1024
+MAX_JSON_CATALOG_BYTES = 8 * 1024 * 1024
 SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
@@ -180,8 +192,8 @@ def _safe_zip_name(name: str, *, error_type: type[ErrorT]) -> str:
     raw_parts = normalized.split("/")
     # Strip a single trailing empty segment, i.e. the one-slash directory
     # marker that legitimate ZIPs use ("mydir/", "mydir/subdir/"). Anything
-    # else that produces an empty segment — consecutive slashes ("a//b") or a
-    # second trailing slash — is left in place and rejected below as malformed.
+    # else that produces an empty segment - consecutive slashes ("a//b") or a
+    # second trailing slash - is left in place and rejected below as malformed.
     if raw_parts and raw_parts[-1] == "":
         raw_parts = raw_parts[:-1]
     has_windows_drive = re.match(r"^[A-Za-z]:", normalized) is not None
@@ -265,6 +277,11 @@ def safe_extract_zip(
 
             normalized_members.append((member, normalized_name))
 
+        # The loop above bounds the *declared* total via member.file_size, but a
+        # crafted archive can understate those headers. Mirror the per-member
+        # guard below with a cumulative count of the bytes actually written so
+        # the total-size bound holds even when the headers lie.
+        total_written = 0
         for member, normalized_name in normalized_members:
             member_path = target_dir / normalized_name
             if member.is_dir():
@@ -299,6 +316,13 @@ def safe_extract_zip(
                                 error_type,
                                 f"ZIP member {member.filename} exceeds maximum size "
                                 f"of {max_member_bytes} bytes",
+                            )
+                        total_written += len(chunk)
+                        if total_written > max_total_bytes:
+                            _raise(
+                                error_type,
+                                f"ZIP archive exceeds maximum uncompressed size "
+                                f"of {max_total_bytes} bytes",
                             )
                         dest.write(chunk)
             except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
