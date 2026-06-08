@@ -444,7 +444,6 @@ SKILL_DESCRIPTIONS = {
 from .commands import init as _init_cmd  # noqa: E402
 _init_cmd.register(app)
 
-
 @app.command()
 def check():
     """Check that all required tools are installed."""
