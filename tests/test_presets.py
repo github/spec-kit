@@ -4292,6 +4292,49 @@ class TestBundledPresetLocator:
         assert exc_info.value.exit_code == 1
         assert installed is False
 
+    def test_preset_add_from_url_rejects_hostless_https_url(self, project_dir):
+        """URL installs reject HTTPS URLs without a hostname before downloading."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url") as open_url:
+            result = runner.invoke(app, ["preset", "add", "--from", "https:///preset.zip"])
+
+        assert result.exit_code == 1
+        assert "URL must use HTTPS" in strip_ansi(result.output)
+        open_url.assert_not_called()
+
+    def test_preset_add_from_url_redirect_error_describes_disallowed_url(self, project_dir, monkeypatch, capsys):
+        """Redirect rejection message covers hostless HTTPS, not only non-HTTPS URLs."""
+        import typer
+        from specify_cli import preset_add
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "https:///preset.zip"
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
+        monkeypatch.setattr("specify_cli.authentication.http.open_url", lambda url, timeout: FakeResponse(b"zip"))
+        monkeypatch.setattr(PresetManager, "install_from_zip", lambda *args, **kwargs: None)
+
+        with pytest.raises(typer.Exit) as exc_info:
+            preset_add(preset_id=None, from_url="https://example.com/preset.zip", dev=None, priority=10)
+
+        assert exc_info.value.exit_code == 1
+        output = strip_ansi(capsys.readouterr().out)
+        assert "redirected to a disallowed URL" in output
+        assert "must use HTTPS with a hostname" in output
+
     def test_preset_add_from_url_streams_download_to_zip(self, project_dir, monkeypatch):
         """URL installs stream response bytes to disk before installing the ZIP."""
         from specify_cli import preset_add

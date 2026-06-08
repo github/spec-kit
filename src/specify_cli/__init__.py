@@ -690,7 +690,9 @@ def preset_add(
             _parsed = _urlparse(from_url)
 
             def _is_allowed_download_url(parsed_url):
-                host = parsed_url.hostname or ""
+                host = parsed_url.hostname
+                if not host:
+                    return False
                 is_loopback = host == "localhost"
                 if not is_loopback:
                     try:
@@ -724,7 +726,11 @@ def preset_add(
                     with _open_url(from_url, timeout=60, extra_headers=_preset_extra_headers) as response:
                         final_url = response.geturl() if hasattr(response, "geturl") else from_url
                         if not _is_allowed_download_url(_urlparse(final_url)):
-                            console.print(f"[red]Error:[/red] Preset URL redirected to non-HTTPS URL: {final_url}")
+                            console.print(
+                                "[red]Error:[/red] Preset URL redirected to a disallowed URL: "
+                                f"{final_url}. Redirect targets must use HTTPS with a hostname, "
+                                "or HTTP for localhost/loopback."
+                            )
                             raise typer.Exit(1)
                         with zip_path.open("wb") as output:
                             try:
