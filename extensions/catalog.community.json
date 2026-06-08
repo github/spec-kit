@@ -1218,7 +1218,7 @@
     "jira-sync": {
       "name": "Jira Integration (Sync Engine)",
       "id": "jira-sync",
-      "description": "A real reconcile engine — idempotent, drift-aware, fail-closed — that mirrors spec-kit specs into Jira (Epic per repo, Story per spec, Subtask per phase) and never corrupts your board.",
+      "description": "An idempotent, drift-aware, fail-closed reconcile engine that mirrors spec-kit specs into Jira (Epic per repo, Story per spec, Subtask per phase).",
       "author": "Ash Brener",
       "version": "0.1.0",
       "download_url": "https://github.com/ashbrener/spec-kit-jira-sync/archive/refs/tags/v0.1.0.zip",
