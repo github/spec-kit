@@ -40,7 +40,7 @@ get_repo_root() {
 }
 
 # Get current feature name from explicit state only.
-# Returns the feature identifier or errors if none is set.
+# Returns the feature identifier or empty string if none is set.
 # Feature state is set by the git extension (via SPECIFY_FEATURE) or by
 # the specify command (via .specify/feature.json read in get_feature_paths).
 get_current_branch() {
@@ -162,11 +162,11 @@ get_feature_paths() {
             # Normalize relative paths to absolute under repo root
             [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
         else
-            echo "ERROR: Feature directory not found. Set SPECIFY_FEATURE or ensure .specify/feature.json contains feature_directory." >&2
+            echo "ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory." >&2
             return 1
         fi
     else
-        echo "ERROR: Feature directory not found. Set SPECIFY_FEATURE or run the specify command to create .specify/feature.json." >&2
+        echo "ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or run the specify command to create .specify/feature.json." >&2
         return 1
     fi
 

@@ -278,15 +278,17 @@ If you later decide you want the git extension's commands and hooks, install it 
 specify extension add git
 ```
 
-Projects that do not use Git can still work with Spec Kit by setting `SPECIFY_FEATURE` manually before planning commands:
+Projects that do not use Git can still work with Spec Kit by setting `SPECIFY_FEATURE_DIRECTORY` to the feature directory path before planning commands:
 
 ```bash
 # Bash/Zsh
-export SPECIFY_FEATURE="001-my-feature"
+export SPECIFY_FEATURE_DIRECTORY="specs/001-my-feature"
 
 # PowerShell
-$env:SPECIFY_FEATURE = "001-my-feature"
+$env:SPECIFY_FEATURE_DIRECTORY = "specs/001-my-feature"
 ```
+
+Alternatively, run the `/speckit.specify` command which creates `.specify/feature.json` automatically.
 
 ---
 

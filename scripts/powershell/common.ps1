@@ -143,7 +143,7 @@ function Save-FeatureJson {
                 return
             }
         } catch {
-            # File is corrupt or unreadable — overwrite it
+            # File is corrupt or unreadable - overwrite it
         }
     }
 
@@ -190,11 +190,11 @@ function Get-FeaturePathsEnv {
                 $featureDir = Join-Path $repoRoot $featureDir
             }
         } else {
-            [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE or ensure .specify/feature.json contains feature_directory.")
+            [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory.")
             exit 1
         }
     } else {
-        [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE or run the specify command to create .specify/feature.json.")
+        [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or run the specify command to create .specify/feature.json.")
         exit 1
     }
     
