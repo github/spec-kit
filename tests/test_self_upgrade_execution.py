@@ -1,6 +1,5 @@
 """Installer execution, verification, and error-path tests for `specify self upgrade`."""
 
-import os
 import errno
 import subprocess
 from unittest.mock import patch

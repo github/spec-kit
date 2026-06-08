@@ -503,6 +503,7 @@ _is_safe_manifest_relative_path() {
     # Normalize separators so any Windows-style traversal is caught consistently.
     local normalized="${manifest_file//\\//}"
     local segment
+    local -a segments=()
     IFS='/' read -r -a segments <<< "$normalized"
     for segment in "${segments[@]}"; do
         [ "$segment" = ".." ] && return 1
