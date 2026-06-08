@@ -13,6 +13,14 @@ extension:
   # CUSTOMIZE: Brief description (under 200 characters)
   description: "Brief description of what your extension does"
 
+  # CUSTOMIZE: Extension category — describes what the extension operates on
+  # One of: docs | code | process | integration | visibility
+  category: "process"
+
+  # CUSTOMIZE: Extension effect — whether it modifies project files
+  # One of: read-only | read-write
+  effect: "read-write"
+
   # CUSTOMIZE: Your name or organization name
   author: "Your Name"
 

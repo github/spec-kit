@@ -24,6 +24,8 @@ from specify_cli.extensions import (
     CatalogEntry,
     CORE_COMMAND_NAMES,
     DEFAULT_HOOK_PRIORITY,
+    VALID_CATEGORIES,
+    VALID_EFFECTS,
     ExtensionManifest,
     ExtensionRegistry,
     ExtensionManager,
@@ -299,6 +301,69 @@ class TestExtensionManifest:
 
         with pytest.raises(ValidationError, match="Invalid version"):
             ExtensionManifest(manifest_path)
+
+    def test_valid_category(self, temp_dir, valid_manifest_data):
+        """Test manifest with valid category values."""
+        import yaml
+
+        for category in ("docs", "code", "process", "integration", "visibility"):
+            valid_manifest_data["extension"]["category"] = category
+            manifest_path = temp_dir / "extension.yml"
+            with open(manifest_path, 'w') as f:
+                yaml.dump(valid_manifest_data, f)
+            manifest = ExtensionManifest(manifest_path)
+            assert manifest.category == category
+
+    def test_valid_effect(self, temp_dir, valid_manifest_data):
+        """Test manifest with valid effect values."""
+        import yaml
+
+        for effect in ("read-only", "read-write"):
+            valid_manifest_data["extension"]["effect"] = effect
+            manifest_path = temp_dir / "extension.yml"
+            with open(manifest_path, 'w') as f:
+                yaml.dump(valid_manifest_data, f)
+            manifest = ExtensionManifest(manifest_path)
+            assert manifest.effect == effect
+
+    def test_invalid_category(self, temp_dir, valid_manifest_data):
+        """Test manifest with invalid category raises ValidationError."""
+        import yaml
+
+        valid_manifest_data["extension"]["category"] = "invalid-category"
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid extension.category"):
+            ExtensionManifest(manifest_path)
+
+    def test_invalid_effect(self, temp_dir, valid_manifest_data):
+        """Test manifest with invalid effect raises ValidationError."""
+        import yaml
+
+        valid_manifest_data["extension"]["effect"] = "write-only"
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid extension.effect"):
+            ExtensionManifest(manifest_path)
+
+    def test_category_and_effect_optional(self, temp_dir, valid_manifest_data):
+        """Test that omitting category and effect still passes validation."""
+        import yaml
+
+        # Ensure no category/effect in data
+        valid_manifest_data["extension"].pop("category", None)
+        valid_manifest_data["extension"].pop("effect", None)
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+        assert manifest.category is None
+        assert manifest.effect is None
 
     def test_invalid_command_name(self, temp_dir, valid_manifest_data):
         """Test manifest with command name that cannot be auto-corrected raises ValidationError."""

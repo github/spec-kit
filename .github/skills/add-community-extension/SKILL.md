@@ -70,6 +70,8 @@ Use the existing entries as the format template. Required fields:
     "documentation": "<documentation>",
     "changelog": "<changelog>",
     "license": "<license>",
+    "category": "<category>",
+    "effect": "<effect>",
     "requires": {
       "speckit_version": "<speckit_version>"
     },
@@ -86,6 +88,9 @@ Use the existing entries as the format template. Required fields:
   }
 }
 ```
+
+**Category** — one of: `docs`, `code`, `process`, `integration`, `visibility`
+**Effect** — one of: `read-only`, `read-write`
 
 If the extension has optional tool dependencies, add a `"tools"` array inside `"requires"`:
 

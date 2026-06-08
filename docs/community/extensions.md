@@ -20,6 +20,9 @@ The following community-contributed extensions are available in [`catalog.commun
 - `Read-only` — produces reports without modifying files
 - `Read+Write` — modifies files, creates artifacts, or updates specs
 
+> [!TIP]
+> Extension authors can declare `category` and `effect` in their `extension.yml` under the `extension:` block. These fields are also available in `catalog.community.json` for tooling and the CLI (`specify extension info`).
+
 | Extension | Purpose | Category | Effect | URL |
 |-----------|---------|----------|--------|-----|
 | Agent Assign | Assign specialized Claude Code agents to spec-kit tasks for targeted execution | `process` | Read+Write | [spec-kit-agent-assign](https://github.com/xymelon/spec-kit-agent-assign) |

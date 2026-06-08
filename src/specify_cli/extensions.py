@@ -41,6 +41,9 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset({
 })
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
 
+VALID_CATEGORIES = frozenset({"docs", "code", "process", "integration", "visibility"})
+VALID_EFFECTS = frozenset({"read-only", "read-write"})
+
 DEFAULT_HOOK_PRIORITY = 10
 
 REINSTALL_COMMAND = "uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git"
@@ -200,6 +203,22 @@ class ExtensionManifest:
             pkg_version.Version(ext["version"])
         except pkg_version.InvalidVersion:
             raise ValidationError(f"Invalid version: {ext['version']}")
+
+        # Validate optional category field
+        if "category" in ext:
+            if ext["category"] not in VALID_CATEGORIES:
+                raise ValidationError(
+                    f"Invalid extension.category '{ext['category']}': "
+                    f"must be one of {sorted(VALID_CATEGORIES)}"
+                )
+
+        # Validate optional effect field
+        if "effect" in ext:
+            if ext["effect"] not in VALID_EFFECTS:
+                raise ValidationError(
+                    f"Invalid extension.effect '{ext['effect']}': "
+                    f"must be one of {sorted(VALID_EFFECTS)}"
+                )
 
         # Validate requires section
         requires = self.data["requires"]
@@ -373,6 +392,16 @@ class ExtensionManifest:
     def description(self) -> str:
         """Get extension description."""
         return self.data["extension"]["description"]
+
+    @property
+    def category(self) -> Optional[str]:
+        """Get extension category (docs, code, process, integration, visibility)."""
+        return self.data["extension"].get("category")
+
+    @property
+    def effect(self) -> Optional[str]:
+        """Get extension effect (read-only, read-write)."""
+        return self.data["extension"].get("effect")
 
     @property
     def requires_speckit_version(self) -> str:
