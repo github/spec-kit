@@ -1751,6 +1751,78 @@ class TestWorkflowCatalog:
         assert configs[0]["name"] == "default"
         assert isinstance(configs[0]["install_allowed"], bool)
 
+    def test_load_catalog_config_non_dict_yaml_raises(self, project_dir):
+        """A YAML catalog config that is a list (not a mapping) must raise WorkflowValidationError."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text("- item1\n- item2\n", encoding="utf-8")
+
+        catalog = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowValidationError, match="expected a mapping"):
+            catalog.get_active_catalogs()
+
+    def test_add_catalog_malformed_yaml_raises(self, project_dir):
+        """A malformed YAML config file must raise WorkflowValidationError when adding a catalog."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(": invalid: yaml: {\n", encoding="utf-8")
+
+        catalog = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowValidationError, match="unreadable or malformed"):
+            catalog.add_catalog("https://example.com/new.json")
+
+    def test_remove_catalog_malformed_yaml_raises(self, project_dir):
+        """A malformed YAML config file must raise WorkflowValidationError when removing a catalog."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        catalog = WorkflowCatalog(project_dir)
+        catalog.add_catalog("https://example.com/c1.json", "first")
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(": bad: yaml: {\n", encoding="utf-8")
+
+        with pytest.raises(WorkflowValidationError, match="unreadable or malformed"):
+            catalog.remove_catalog(0)
+
+    def test_add_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
+        """An OSError on write must be wrapped as WorkflowValidationError."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+        import builtins
+
+        catalog = WorkflowCatalog(project_dir)
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        real_open = builtins.open
+
+        def _raising_open(file, mode="r", *args, **kwargs):
+            if Path(file) == config_path and "w" in mode:
+                raise OSError("simulated write failure")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _raising_open)
+        with pytest.raises(WorkflowValidationError, match="Failed to write catalog config"):
+            catalog.add_catalog("https://example.com/new-catalog.json", "my-catalog")
+
+    def test_remove_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
+        """An OSError on write must be wrapped as WorkflowValidationError."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+        import builtins
+
+        catalog = WorkflowCatalog(project_dir)
+        catalog.add_catalog("https://example.com/c1.json", "first")
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        real_open = builtins.open
+
+        def _raising_open(file, mode="r", *args, **kwargs):
+            if Path(file) == config_path and "w" in mode:
+                raise OSError("simulated write failure")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _raising_open)
+        with pytest.raises(WorkflowValidationError, match="Failed to write catalog config"):
+            catalog.remove_catalog(0)
+
 
 # ===== Integration Test =====
 

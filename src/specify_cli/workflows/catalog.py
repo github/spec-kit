@@ -183,6 +183,11 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
             )
+        if not isinstance(data, dict):
+            raise WorkflowValidationError(
+                f"Invalid catalog config: expected a mapping, "
+                f"got {type(data).__name__}"
+            )
         catalogs_data = data.get("catalogs", [])
         if not catalogs_data:
             # Empty catalogs list (e.g. after removing last entry)
@@ -476,7 +481,12 @@ class WorkflowCatalog:
 
         data: dict[str, Any] = {"catalogs": []}
         if config_path.exists():
-            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            try:
+                raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
+                raise WorkflowValidationError(
+                    f"Catalog config file is unreadable or malformed: {exc}"
+                ) from exc
             if not isinstance(raw, dict):
                 raise WorkflowValidationError(
                     "Catalog config file is corrupted (expected a mapping)."
@@ -523,9 +533,14 @@ class WorkflowCatalog:
         )
         data["catalogs"] = catalogs
 
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        except OSError as exc:
+            raise WorkflowValidationError(
+                f"Failed to write catalog config {config_path}: {exc}"
+            ) from exc
 
     def remove_catalog(self, index: int) -> str:
         """Remove a catalog source by index (0-based). Returns the removed name."""
@@ -533,7 +548,12 @@ class WorkflowCatalog:
         if not config_path.exists():
             raise WorkflowValidationError("No catalog config file found.")
 
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        try:
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
+            raise WorkflowValidationError(
+                f"Catalog config file is unreadable or malformed: {exc}"
+            ) from exc
         if not isinstance(data, dict):
             raise WorkflowValidationError(
                 "Catalog config file is corrupted (expected a mapping)."
@@ -552,8 +572,13 @@ class WorkflowCatalog:
         removed = catalogs.pop(index)
         data["catalogs"] = catalogs
 
-        with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        except OSError as exc:
+            raise WorkflowValidationError(
+                f"Failed to write catalog config {config_path}: {exc}"
+            ) from exc
 
         if isinstance(removed, dict):
             return removed.get("name", f"catalog-{index + 1}")
