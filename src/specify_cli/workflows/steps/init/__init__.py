@@ -100,7 +100,8 @@ class InitStep(StepBase):
         if targets_current_dir and not force:
             base = context.project_root or os.getcwd()
             try:
-                not_empty = any(os.scandir(base))
+                with os.scandir(base) as it:
+                    not_empty = any(it)
             except OSError:
                 not_empty = False
             if not_empty:
@@ -202,7 +203,10 @@ class InitStep(StepBase):
         try:
             result = runner.invoke(app, argv, catch_exceptions=True)
         finally:
-            os.chdir(prev_cwd)
+            try:
+                os.chdir(prev_cwd)
+            except OSError:
+                pass
 
         stdout = result.output or ""
         # click >= 8.2 captures stderr separately; older versions mix it into
@@ -221,7 +225,12 @@ class InitStep(StepBase):
     def validate(self, config: dict[str, Any]) -> list[str]:
         errors = super().validate(config)
         script = config.get("script")
-        if (
+        if script is not None and not isinstance(script, str):
+            errors.append(
+                f"Init step {config.get('id', '?')!r}: 'script' must be a string "
+                f"({' or '.join(repr(s) for s in VALID_SCRIPT_TYPES)})."
+            )
+        elif (
             isinstance(script, str)
             and "{{" not in script
             and script not in VALID_SCRIPT_TYPES
