@@ -43,6 +43,17 @@ def test_normalize_path_text_collapses_redundant_posix_leading_slashes():
     assert normalize_path_text(value) == "/usr/local/bin"
 
 
+def test_normalize_path_text_preserves_windows_extended_prefix_without_unc_rewrite():
+    value = r"\\?\C:\temp\\folder"
+    assert normalize_path_text(value) == "/?/C:/temp/folder"
+
+
+def test_assert_normalized_path_equal_rejects_unc_vs_windows_device_prefix_on_windows():
+    if os.name == "nt":
+        with pytest.raises(AssertionError):
+            assert_normalized_path_equal(r"\\?\C:\path", "//C/path")
+
+
 def test_path_from_bash_output_trims_quotes_whitespace_and_crlf():
     raw = "  '/tmp/my-feature/path'\r\n"
     parsed = path_from_bash_output(raw)

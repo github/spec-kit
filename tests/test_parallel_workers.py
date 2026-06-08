@@ -326,6 +326,18 @@ def test_extract_cli_option_ignores_args_after_double_dash():
     assert _extract_cli_option(args, "--parallel-tier", "medium") == "medium"
 
 
+def test_extract_cli_option_raises_when_value_missing_split_form():
+    args = ["--parallel", "--parallel-tier"]
+    with pytest.raises(pytest.UsageError, match="--parallel-tier requires a value"):
+        _extract_cli_option(args, "--parallel-tier", "medium")
+
+
+def test_extract_cli_option_raises_when_value_missing_equals_form():
+    args = ["--parallel", "--parallel-max-workers="]
+    with pytest.raises(pytest.UsageError, match="--parallel-max-workers requires a value"):
+        _extract_cli_option(args, "--parallel-max-workers", None)
+
+
 def test_args_before_double_dash_excludes_parallel_after_sentinel():
     args = ["-q", "--", "--parallel"]
     assert "--parallel" not in _args_before_double_dash(args)
@@ -403,6 +415,18 @@ def test_load_initial_conftests_raises_for_parallel_max_workers_below_one(monkey
     monkeypatch.setattr("tests.conftest._has_numprocesses_arg", lambda _args: False)
 
     with pytest.raises(pytest.UsageError, match="--parallel-max-workers must be >= 1"):
+        pytest_load_initial_conftests(None, None, args)
+
+
+def test_load_initial_conftests_raises_for_missing_parallel_tier_value(monkeypatch):
+    args = ["--parallel", "--parallel-tier"]
+
+    monkeypatch.setattr("tests.conftest._has_xdist_installed", lambda: True)
+    monkeypatch.setattr("tests.conftest._is_plugin_autoload_disabled", lambda: False)
+    monkeypatch.setattr("tests.conftest._is_xdist_disabled", lambda _args: False)
+    monkeypatch.setattr("tests.conftest._has_numprocesses_arg", lambda _args: False)
+
+    with pytest.raises(pytest.UsageError, match="--parallel-tier requires a value"):
         pytest_load_initial_conftests(None, None, args)
 
 

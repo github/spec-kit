@@ -124,9 +124,12 @@ def _extract_cli_option(args: list[str], option: str, default: str | None = None
         if arg == option:
             if idx + 1 < len(args):
                 return args[idx + 1]
-            return default
+            raise pytest.UsageError(f"{option} requires a value")
         if arg.startswith(prefix):
-            return arg[len(prefix):]
+            value = arg[len(prefix):]
+            if value == "":
+                raise pytest.UsageError(f"{option} requires a value")
+            return value
         idx += 1
     return default
 

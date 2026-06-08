@@ -11,6 +11,8 @@ from pathlib import Path
 def normalize_path_text(path_value: str) -> str:
     """Normalize slashes and repeated separators for string checks."""
     normalized = path_value.replace("\\", "/")
+    if path_value.startswith("\\\\?\\") or path_value.startswith("\\\\.\\"):
+        return re.sub(r"/{2,}", "/", normalized)
     is_unc_backslash = path_value.startswith("\\\\")
     is_unc_slash_double = normalized.startswith("//") and not normalized.startswith("///")
     is_unc_slash_overprefixed = normalized.startswith("////")
@@ -24,7 +26,13 @@ def normalized_parts(path_value: str) -> list[str]:
     """Return normalized path components with consistent slash handling."""
     normalized = normalize_path_text(path_value.strip().strip("'\""))
     parts = [p for p in normalized.split("/") if p]
-    if os.name == "nt" and normalized.startswith("//") and not normalized.startswith("///"):
+    if (
+        os.name == "nt"
+        and normalized.startswith("//")
+        and not normalized.startswith("///")
+        and not normalized.startswith("//?/")
+        and not normalized.startswith("//./")
+    ):
         return ["__UNC__", *parts]
     return parts
 

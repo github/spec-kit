@@ -627,6 +627,8 @@ except Exception:
                 local parse_status=$?
                 if [ $parse_status -eq 0 ] && [ -n "$result" ]; then
                     IFS=$'\t' read -r strategy manifest_file <<< "$result"
+                    strategy="${strategy%$'\r'}"
+                    manifest_file="${manifest_file%$'\r'}"
                     strategy=$(printf '%s' "$strategy" | tr '[:upper:]' '[:lower:]')
                 else
                     strategy="replace"
