@@ -1087,6 +1087,76 @@ def test_resolve_template_content_uses_cached_python_fallback_for_manifest_parse
 
 
 @requires_bash
+@pytest.mark.parametrize(
+    "manifest_file",
+    [
+        "..",
+        "foo/..",
+        "bar/../baz",
+        "..\\escape.md",
+        "foo\\..\\escape.md",
+        "bar\\..\\baz",
+        "/tmp/escape.md",
+        "C:/tmp/escape.md",
+        "C:\\tmp\\escape.md",
+    ],
+)
+def test_manifest_relative_path_guard_rejects_unsafe_inputs(
+    tasks_repo: Path,
+    manifest_file: str,
+) -> None:
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "common.sh"
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; if _is_safe_manifest_relative_path "$2"; then echo safe; else echo unsafe; fi',
+            "bash",
+            str(script),
+            manifest_file,
+        ],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "unsafe"
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    "manifest_file",
+    ["overlay.md", "templates/tasks-template.md", "nested/path/file.md", "v1..0.md"],
+)
+def test_manifest_relative_path_guard_allows_safe_relative_inputs(
+    tasks_repo: Path,
+    manifest_file: str,
+) -> None:
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "common.sh"
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; if _is_safe_manifest_relative_path "$2"; then echo safe; else echo unsafe; fi',
+            "bash",
+            str(script),
+            manifest_file,
+        ],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "safe"
+
+
+@requires_bash
 def test_resolve_template_content_ignores_unsafe_registry_preset_ids(tasks_repo: Path) -> None:
     presets_root = tasks_repo / ".specify" / "presets"
 

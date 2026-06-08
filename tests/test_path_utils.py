@@ -5,8 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from tests._path_utils import bash_path_from_host, normalize_path_text, path_from_bash_output
-from tests._path_utils import assert_normalized_path_equal
+from tests._path_utils import (
+    assert_normalized_path_equal,
+    bash_path_from_host,
+    normalize_path_text,
+    path_from_bash_output,
+)
 
 
 def test_normalize_path_text_preserves_unc_prefix():

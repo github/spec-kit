@@ -491,6 +491,26 @@ _is_safe_preset_id() {
     return 0
 }
 
+_is_safe_manifest_relative_path() {
+    local manifest_file="$1"
+    [ -n "$manifest_file" ] || return 1
+
+    # Reject absolute and drive-prefixed paths.
+    case "$manifest_file" in
+        /*|\\*|[A-Za-z]:*) return 1 ;;
+    esac
+
+    # Normalize separators so any Windows-style traversal is caught consistently.
+    local normalized="${manifest_file//\\//}"
+    local segment
+    IFS='/' read -r -a segments <<< "$normalized"
+    for segment in "${segments[@]}"; do
+        [ "$segment" = ".." ] && return 1
+    done
+
+    return 0
+}
+
 # Resolve a template name to a file path using the priority stack:
 #   1. .specify/templates/overrides/
 #   2. .specify/presets/<preset-id>/templates/ (sorted by priority from .registry)
@@ -621,10 +641,7 @@ except Exception:
             # Try manifest file path first, then convention path
             local candidate=""
             if [ -n "$manifest_file" ]; then
-                # Reject absolute paths and parent traversal
-                case "$manifest_file" in
-                    /*|*../*|../*) manifest_file="" ;;
-                esac
+                _is_safe_manifest_relative_path "$manifest_file" || manifest_file=""
             fi
             if [ -n "$manifest_file" ]; then
                 local mf="$presets_dir/$preset_id/$manifest_file"
