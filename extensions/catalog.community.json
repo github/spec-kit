@@ -1251,12 +1251,12 @@
       "id": "linear",
       "description": "Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional).",
       "author": "Ash Brener",
-      "version": "0.2.0",
-      "download_url": "https://github.com/ashbrener/spec-kit-linear/archive/refs/tags/v0.2.0.zip",
-      "repository": "https://github.com/ashbrener/spec-kit-linear",
-      "homepage": "https://github.com/ashbrener/spec-kit-linear",
-      "documentation": "https://github.com/ashbrener/spec-kit-linear/blob/main/README.md",
-      "changelog": "https://github.com/ashbrener/spec-kit-linear/releases",
+      "version": "0.3.0",
+      "download_url": "https://github.com/ashbrener/spec-kit-linear-sync/archive/refs/tags/v0.3.0.zip",
+      "repository": "https://github.com/ashbrener/spec-kit-linear-sync",
+      "homepage": "https://github.com/ashbrener/spec-kit-linear-sync",
+      "documentation": "https://github.com/ashbrener/spec-kit-linear-sync/blob/main/README.md",
+      "changelog": "https://github.com/ashbrener/spec-kit-linear-sync/releases",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.1.0"
@@ -1277,7 +1277,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-01T00:00:00Z",
-      "updated_at": "2026-06-01T00:00:00Z"
+      "updated_at": "2026-06-08T00:00:00Z"
     },
     "m365": {
       "name": "Microsoft 365 Integration",
