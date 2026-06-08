@@ -337,7 +337,10 @@ def _manifest_suggestion(key: str, default_key: str | None) -> str:
     if key == _SHARED_MANIFEST_KEY:
         if default_key and default_key in INTEGRATION_REGISTRY:
             return f"Run `specify integration upgrade {default_key}` to regenerate shared managed files."
-        return "Run `specify init --here --force` to regenerate shared managed files."
+        return (
+            "Run `specify init --here --force --integration <key>` to regenerate "
+            "shared managed files."
+        )
     if key not in INTEGRATION_REGISTRY:
         return (
             "Upgrade Spec Kit, reinstall with a supported CLI version, "
