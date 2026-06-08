@@ -50,73 +50,7 @@ function Get-CurrentBranch {
     return ""
 }
 
-# True when .specify/feature.json pins an existing feature directory that matches the
-# active FEATURE_DIR from Get-FeaturePathsEnv.
-function Test-FeatureJsonMatchesFeatureDir {
-    param(
-        [Parameter(Mandatory = $true)][string]$RepoRoot,
-        [Parameter(Mandatory = $true)][string]$ActiveFeatureDir
-    )
 
-    $featureJson = Join-Path (Join-Path $RepoRoot '.specify') 'feature.json'
-    if (-not (Test-Path -LiteralPath $featureJson -PathType Leaf)) {
-        return $false
-    }
-
-    try {
-        $raw = Get-Content -LiteralPath $featureJson -Raw
-        $cfg = $raw | ConvertFrom-Json
-    } catch {
-        return $false
-    }
-
-    $fd = $cfg.feature_directory
-    if ([string]::IsNullOrWhiteSpace([string]$fd)) {
-        return $false
-    }
-
-    if (-not [System.IO.Path]::IsPathRooted($fd)) {
-        $fd = Join-Path $RepoRoot $fd
-    }
-
-    if (-not (Test-Path -LiteralPath $fd -PathType Container)) {
-        return $false
-    }
-
-    # Resolve both paths to canonical absolute form. Prefer Resolve-Path (follows
-    # symlinks and is the canonical PS way); fall back to [Path]::GetFullPath when
-    # Resolve-Path can't produce a value. Mirrors the pattern used by Find-SpecifyRoot.
-    $resolvedJson = Resolve-Path -LiteralPath $fd -ErrorAction SilentlyContinue
-    if ($resolvedJson) {
-        $normJson = $resolvedJson.Path
-    } else {
-        $normJson = [System.IO.Path]::GetFullPath($fd)
-    }
-
-    $resolvedActive = Resolve-Path -LiteralPath $ActiveFeatureDir -ErrorAction SilentlyContinue
-    if ($resolvedActive) {
-        $normActive = $resolvedActive.Path
-    } else {
-        $normActive = [System.IO.Path]::GetFullPath($ActiveFeatureDir)
-    }
-
-    # Use case-insensitive compare only on Windows; POSIX filesystems are case-sensitive.
-    # PowerShell 5.1 is Windows-only and does not define $IsWindows, so treat its
-    # absence as "we're on Windows".
-    if ($null -ne $IsWindows) {
-        $onWindows = $IsWindows
-    } else {
-        $onWindows = $true
-    }
-
-    if ($onWindows) {
-        $comparison = [System.StringComparison]::OrdinalIgnoreCase
-    } else {
-        $comparison = [System.StringComparison]::Ordinal
-    }
-
-    return [string]::Equals($normJson, $normActive, $comparison)
-}
 
 # Persist a feature_directory value to .specify/feature.json.
 # Writes only when the file is missing or the value differs from what's stored.

@@ -86,27 +86,6 @@ read_feature_json_feature_directory() {
     return 0
 }
 
-# Returns 0 when .specify/feature.json lists feature_directory that exists as a directory
-# and matches the resolved active FEATURE_DIR.
-# Delegates parsing to read_feature_json_feature_directory, which is safe under `set -e`.
-feature_json_matches_feature_dir() {
-    local repo_root="$1"
-    local active_feature_dir="$2"
-
-    local _fd
-    _fd=$(read_feature_json_feature_directory "$repo_root")
-
-    [[ -n "$_fd" ]] || return 1
-    [[ "$_fd" != /* ]] && _fd="$repo_root/$_fd"
-    [[ -d "$_fd" ]] || return 1
-
-    local norm_json norm_active
-    norm_json="$(cd -- "$_fd" 2>/dev/null && pwd -P)" || return 1
-    norm_active="$(cd -- "$active_feature_dir" 2>/dev/null && pwd -P)" || return 1
-
-    [[ "$norm_json" == "$norm_active" ]]
-}
-
 # Persist a feature_directory value to .specify/feature.json.
 # Writes only when the file is missing or the value differs from what's stored.
 # Accepts the raw (possibly relative) path — callers should pass the original
