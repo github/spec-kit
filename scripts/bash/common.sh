@@ -41,8 +41,8 @@ get_repo_root() {
 
 # Get current feature name from explicit state only.
 # Returns the feature identifier or empty string if none is set.
-# Feature state is set by the git extension (via SPECIFY_FEATURE) or by
-# the specify command (via .specify/feature.json read in get_feature_paths).
+# Feature state is set by SPECIFY_FEATURE (from create-new-feature or
+# the git extension) or implicitly via .specify/feature.json.
 get_current_branch() {
     if [[ -n "${SPECIFY_FEATURE:-}" ]]; then
         echo "$SPECIFY_FEATURE"

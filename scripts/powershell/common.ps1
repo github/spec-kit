@@ -40,8 +40,8 @@ function Get-RepoRoot {
 
 function Get-CurrentBranch {
     # Return feature name from explicit state only.
-    # Feature state is set by the git extension (via SPECIFY_FEATURE) or by
-    # the specify command (via .specify/feature.json read in Get-FeaturePathsEnv).
+    # Feature state is set by SPECIFY_FEATURE (from create-new-feature or
+    # the git extension) or implicitly via .specify/feature.json.
     if ($env:SPECIFY_FEATURE) {
         return $env:SPECIFY_FEATURE
     }
@@ -60,9 +60,16 @@ function Save-FeatureJson {
         [Parameter(Mandatory = $true)][string]$FeatureDirectory
     )
 
-    # Strip repo root prefix if the value is absolute and under repo root
+    # Strip repo root prefix if the value is absolute and under repo root.
+    # Use case-insensitive comparison on Windows only (case-sensitive filesystems elsewhere).
     $prefix = $RepoRoot + [System.IO.Path]::DirectorySeparatorChar
-    if ($FeatureDirectory.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    if ($null -ne $IsWindows) { $onWin = $IsWindows } else { $onWin = $true }
+    if ($onWin) {
+        $cmp = [System.StringComparison]::OrdinalIgnoreCase
+    } else {
+        $cmp = [System.StringComparison]::Ordinal
+    }
+    if ($FeatureDirectory.StartsWith($prefix, $cmp)) {
         $FeatureDirectory = $FeatureDirectory.Substring($prefix.Length)
     }
 

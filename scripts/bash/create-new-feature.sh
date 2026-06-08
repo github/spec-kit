@@ -258,8 +258,12 @@ if [ "$DRY_RUN" != true ]; then
         fi
     fi
 
-    # Inform the user how to persist the feature variable in their own shell
+    # Persist to .specify/feature.json so downstream commands can find the feature
+    _persist_feature_json "$REPO_ROOT" "$FEATURE_DIR"
+
+    # Inform the user how to set feature state in their own shell
     printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
+    printf '#              export SPECIFY_FEATURE_DIRECTORY=%q\n' "$FEATURE_DIR" >&2
 fi
 
 if $JSON_MODE; then
@@ -290,5 +294,6 @@ else
     echo "FEATURE_NUM: $FEATURE_NUM"
     if [ "$DRY_RUN" != true ]; then
         printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"
+        printf '#                           export SPECIFY_FEATURE_DIRECTORY=%q\n' "$FEATURE_DIR"
     fi
 fi

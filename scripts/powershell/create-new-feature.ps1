@@ -208,8 +208,12 @@ if (-not $DryRun) {
         }
     }
 
-    # Set the SPECIFY_FEATURE environment variable for the current session
+    # Persist to .specify/feature.json so downstream commands can find the feature
+    Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $featureDir
+
+    # Set environment variables for the current session
     $env:SPECIFY_FEATURE = $branchName
+    $env:SPECIFY_FEATURE_DIRECTORY = $featureDir
 }
 
 if ($Json) {
@@ -227,6 +231,7 @@ if ($Json) {
     Write-Output "SPEC_FILE: $specFile"
     Write-Output "FEATURE_NUM: $featureNum"
     if (-not $DryRun) {
-        Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
+        Write-Output "SPECIFY_FEATURE set to: $branchName"
+        Write-Output "SPECIFY_FEATURE_DIRECTORY set to: $featureDir"
     }
 }

@@ -27,7 +27,7 @@ _paths_output=$(get_feature_paths) || { echo "ERROR: Failed to resolve feature p
 eval "$_paths_output"
 unset _paths_output
 
-# Validate branch
+# Validate required files
 if [[ ! -f "$IMPL_PLAN" ]]; then
     echo "ERROR: plan.md not found in $FEATURE_DIR" >&2
     echo "Run $(format_speckit_command plan "$REPO_ROOT") first to create the implementation plan." >&2
