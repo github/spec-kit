@@ -495,9 +495,9 @@ _is_safe_manifest_relative_path() {
     local manifest_file="$1"
     [ -n "$manifest_file" ] || return 1
 
-    # Reject absolute and drive-prefixed paths.
+    # Reject absolute and drive-rooted paths.
     case "$manifest_file" in
-        /*|\\*|[A-Za-z]:*) return 1 ;;
+        /*|\\*|[A-Za-z]:/*|[A-Za-z]:\\*) return 1 ;;
     esac
 
     # Normalize separators so any Windows-style traversal is caught consistently.

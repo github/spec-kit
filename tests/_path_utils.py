@@ -11,7 +11,12 @@ from pathlib import Path
 def normalize_path_text(path_value: str) -> str:
     """Normalize slashes and repeated separators for string checks."""
     normalized = path_value.replace("\\", "/")
-    if path_value.startswith("\\\\?\\") or path_value.startswith("\\\\.\\"):
+    if (
+        path_value.startswith("\\\\?\\")
+        or path_value.startswith("\\\\.\\")
+        or normalized.startswith("//?/")
+        or normalized.startswith("//./")
+    ):
         return re.sub(r"/{2,}", "/", normalized)
     is_unc_backslash = path_value.startswith("\\\\")
     is_unc_slash_double = normalized.startswith("//") and not normalized.startswith("///")

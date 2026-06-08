@@ -1184,7 +1184,7 @@ def test_manifest_relative_path_guard_rejects_unsafe_inputs(
 @requires_bash
 @pytest.mark.parametrize(
     "manifest_file",
-    ["overlay.md", "templates/tasks-template.md", "nested/path/file.md", "v1..0.md"],
+    ["overlay.md", "templates/tasks-template.md", "nested/path/file.md", "v1..0.md", "a:overlay.md"],
 )
 def test_manifest_relative_path_guard_allows_safe_relative_inputs(
     tasks_repo: Path,

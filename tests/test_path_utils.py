@@ -48,6 +48,11 @@ def test_normalize_path_text_preserves_windows_extended_prefix_without_unc_rewri
     assert normalize_path_text(value) == "/?/C:/temp/folder"
 
 
+def test_normalize_path_text_normalizes_slash_form_device_prefix_without_unc_rewrite():
+    value = "//?/C:/temp//folder"
+    assert normalize_path_text(value) == "/?/C:/temp/folder"
+
+
 def test_assert_normalized_path_equal_rejects_unc_vs_windows_device_prefix_on_windows():
     if os.name == "nt":
         with pytest.raises(AssertionError):
