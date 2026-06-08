@@ -393,7 +393,7 @@ class ExtensionManifest:
 
     @property
     def category(self) -> Optional[str]:
-        """Get extension category (docs, code, process, integration, visibility)."""
+        """Get extension category (free-form; common values: docs, code, process, integration, visibility)."""
         return self.data["extension"].get("category")
 
     @property
