@@ -187,7 +187,8 @@ def pytest_load_initial_conftests(early_config, parser, args):
         idx = args.index("--")
         args[idx:idx] = injected_args
     else:
-        args.extend(injected_args)
+        parallel_idx = args.index("--parallel")
+        args[parallel_idx + 1:parallel_idx + 1] = injected_args
 
 
 def _has_working_bash() -> bool:

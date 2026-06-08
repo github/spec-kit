@@ -441,10 +441,9 @@ resolve_template_python_cmd() {
 _iter_preset_ids_ordered() {
     local presets_dir="$1"
     local registry_file="$presets_dir/.registry"
-    local python_cmd=""
+    local python_cmd="$_RESOLVE_TEMPLATE_PYTHON_CMD"
 
-    if [ -f "$registry_file" ] && resolve_template_python_cmd; then
-        python_cmd="$_RESOLVE_TEMPLATE_PYTHON_CMD"
+    if [ -f "$registry_file" ] && [ -n "$python_cmd" ]; then
         if SPECKIT_REGISTRY="$registry_file" "$python_cmd" -c "
 import json, sys, os
 def priority_key(meta):

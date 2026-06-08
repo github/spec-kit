@@ -354,6 +354,20 @@ def test_load_initial_conftests_injects_before_sentinel(monkeypatch):
     assert args == ["--parallel", "-n", "3", "--dist", "worksteal", "--", "tests/test_parallel_workers.py"]
 
 
+def test_load_initial_conftests_injects_adjacent_to_parallel_without_sentinel(monkeypatch):
+    args = ["-q", "--parallel", "tests/test_parallel_workers.py"]
+
+    monkeypatch.setattr("tests.conftest._has_xdist_installed", lambda: True)
+    monkeypatch.setattr("tests.conftest._is_plugin_autoload_disabled", lambda: False)
+    monkeypatch.setattr("tests.conftest._is_xdist_disabled", lambda _args: False)
+    monkeypatch.setattr("tests.conftest._has_numprocesses_arg", lambda _args: False)
+    monkeypatch.setattr("tests.conftest._compute_parallel_settings_from_args", lambda _args: SimpleNamespace(workers=3))
+
+    pytest_load_initial_conftests(None, None, args)
+
+    assert args == ["-q", "--parallel", "-n", "3", "--dist", "worksteal", "tests/test_parallel_workers.py"]
+
+
 def test_load_initial_conftests_does_not_inject_for_single_worker(monkeypatch):
     args = ["--parallel", "--", "tests/test_parallel_workers.py"]
 
