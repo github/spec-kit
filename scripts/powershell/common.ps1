@@ -121,7 +121,7 @@ function Test-FeatureJsonMatchesFeatureDir {
 function Get-FeaturePathsEnv {
     $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
- 
+
     # Resolve feature directory.  Priority:
     #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit override)
     #   2. .specify/feature.json "feature_directory" key (persisted by specify command)
