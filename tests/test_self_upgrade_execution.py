@@ -9,7 +9,6 @@ from specify_cli import app
 from tests.self_upgrade_helpers import (
     _completed_process,
     mock_urlopen_response,
-    requires_posix,
     runner,
     strip_ansi,
 )
