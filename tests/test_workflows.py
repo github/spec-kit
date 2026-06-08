@@ -2071,6 +2071,20 @@ class TestStepRegistryCustom:
         registry = StepRegistry(project_dir)
         assert registry.list() == {}
 
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_registry_save_refuses_symlinked_steps_dir(self, project_dir):
+        """save() must refuse symlinked registry paths (defense-in-depth)."""
+        from specify_cli.workflows.catalog import StepRegistry, StepValidationError
+
+        outside = project_dir.parent / "outside-steps-save"
+        outside.mkdir(parents=True, exist_ok=True)
+        steps_link = project_dir / ".specify" / "workflows" / "steps"
+        steps_link.symlink_to(outside, target_is_directory=True)
+
+        registry = StepRegistry(project_dir)
+        with pytest.raises(StepValidationError, match="symlinked path"):
+            registry.save()
+
 
 # ===== Step Catalog Tests =====
 
@@ -2296,6 +2310,31 @@ class TestStepCatalog:
         results = catalog.search(query="missing")
         assert len(results) == 0
 
+    def test_get_merged_steps_normalizes_list_ids_to_strings(self, project_dir, monkeypatch):
+        """List-based catalog entries with non-string ids must be normalized."""
+        from specify_cli.workflows.catalog import StepCatalog, StepCatalogEntry
+
+        catalog = StepCatalog(project_dir)
+        entry = StepCatalogEntry(
+            name="test",
+            url="https://example.com/steps.json",
+            priority=1,
+            install_allowed=True,
+        )
+        monkeypatch.setattr(catalog, "get_active_catalogs", lambda: [entry])
+        monkeypatch.setattr(
+            catalog,
+            "_fetch_single_catalog",
+            lambda _entry, _force_refresh=False: {
+                "steps": [{"id": 42, "name": "Integer ID"}]
+            },
+        )
+
+        merged = catalog._get_merged_steps()
+        assert "42" in merged
+        assert 42 not in merged
+        assert merged["42"]["id"] == "42"
+
         from specify_cli.workflows.catalog import StepCatalog
 
         catalog = StepCatalog(project_dir)
@@ -2388,6 +2427,26 @@ class TestCustomStep(StepBase):
 
         loaded = load_custom_steps(project_dir)
         assert "bad-step2" not in loaded
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_skip_symlinked_step_files(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "bad-symlinked-files"
+        step_dir.mkdir(parents=True)
+
+        outside = project_dir.parent / "outside-step-files"
+        outside.mkdir(parents=True, exist_ok=True)
+        step_yml_target = outside / "step.yml"
+        step_yml_target.write_text("step:\n  type_key: bad-symlinked-files\n", encoding="utf-8")
+        init_target = outside / "__init__.py"
+        init_target.write_text("# external code", encoding="utf-8")
+
+        (step_dir / "step.yml").symlink_to(step_yml_target)
+        (step_dir / "__init__.py").symlink_to(init_target)
+
+        loaded = load_custom_steps(project_dir)
+        assert "bad-symlinked-files" not in loaded
 
     def test_skip_already_registered(self, project_dir):
         from specify_cli.workflows import load_custom_steps

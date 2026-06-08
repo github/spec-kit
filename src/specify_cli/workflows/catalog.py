@@ -677,6 +677,10 @@ class StepRegistry:
         errors (read-only fs, permission denied, ...) so callers can surface
         a clean error to the user rather than an unhandled ``OSError``.
         """
+        if self._has_symlinked_parent() or self.registry_path.is_symlink():
+            raise StepValidationError(
+                "Refusing to write step registry through a symlinked path."
+            )
         try:
             self.steps_dir.mkdir(parents=True, exist_ok=True)
             with open(self.registry_path, "w", encoding="utf-8") as f:
@@ -1000,8 +1004,10 @@ class StepCatalog:
                 for step_data in steps:
                     if not isinstance(step_data, dict):
                         continue
-                    step_id = step_data.get("id", "")
+                    raw_step_id = step_data.get("id", "")
+                    step_id = str(raw_step_id or "").strip()
                     if step_id:
+                        step_data["id"] = step_id
                         step_data["_catalog_name"] = entry.name
                         step_data["_install_allowed"] = entry.install_allowed
                         merged[step_id] = step_data

@@ -109,7 +109,9 @@ def load_custom_steps(project_root: Path) -> list[str]:
             continue
         step_yml = step_dir / "step.yml"
         init_py = step_dir / "__init__.py"
-        if not step_yml.exists() or not init_py.exists():
+        if step_yml.is_symlink() or init_py.is_symlink():
+            continue
+        if not step_yml.is_file() or not init_py.is_file():
             continue
 
         try:
