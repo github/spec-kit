@@ -135,7 +135,7 @@ _persist_feature_json() {
     if command -v jq >/dev/null 2>&1; then
         jq -cn --arg fd "$feature_dir_value" '{feature_directory:$fd}' > "$fj"
     else
-        printf '{"feature_directory":"%s"}\n' "$feature_dir_value" > "$fj"
+        printf '{"feature_directory":"%s"}\n' "$(json_escape "$feature_dir_value")" > "$fj"
     fi
 }
 

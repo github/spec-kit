@@ -155,7 +155,8 @@ function Save-FeatureJson {
 
     # Write feature.json
     $json = @{ feature_directory = $FeatureDirectory } | ConvertTo-Json -Compress
-    Set-Content -LiteralPath $fjPath -Value $json -Encoding utf8NoBOM
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($fjPath, $json, $utf8NoBom)
 }
 
 function Get-FeaturePathsEnv {
