@@ -212,9 +212,9 @@ class ExtensionManifest:
 
         # Validate optional effect field
         if "effect" in ext:
-            if ext["effect"] not in VALID_EFFECTS:
+            if not isinstance(ext["effect"], str) or ext["effect"] not in VALID_EFFECTS:
                 raise ValidationError(
-                    f"Invalid extension.effect '{ext['effect']}': "
+                    f"Invalid extension.effect '{ext.get('effect')}': "
                     f"must be one of {sorted(VALID_EFFECTS)}"
                 )
 

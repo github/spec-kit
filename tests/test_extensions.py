@@ -317,7 +317,7 @@ class TestExtensionManifest:
         """Test manifest with valid effect values."""
         import yaml
 
-        for effect in ("read-only", "read-write"):
+        for effect in sorted(VALID_EFFECTS):
             valid_manifest_data["extension"]["effect"] = effect
             manifest_path = temp_dir / "extension.yml"
             with open(manifest_path, 'w') as f:
